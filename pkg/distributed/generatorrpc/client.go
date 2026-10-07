@@ -225,6 +225,11 @@ type MetricsTelemetry struct {
 	GeneratorProcessingLagMs   float64
 	TransportLagMs             float64
 	DroppedSubscriberBatches   int64
+	// TestDroppedSubscriberBatches counts this test's batches dropped for slow
+	// subscribers in this process; TestDroppedSubscriberBatchesReported is
+	// false for older generators that report only the process-wide count.
+	TestDroppedSubscriberBatches         int64
+	TestDroppedSubscriberBatchesReported bool
 	// MissingMetricWindows is controller-computed from gaps in BatchSequence.
 	// It is cumulative for the target stream and remains zero for older
 	// generators that do not publish a sequence.
@@ -1584,19 +1589,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 	}
 
 	stats := generatorStatsFromProto(batch.GetStats())
-	var telemetry *MetricsTelemetry
-	if batch.GetTelemetry() != nil {
-		telemetry = &MetricsTelemetry{
-			DroppedResults:           batch.GetTelemetry().GetDroppedResults(),
-			SheddedArrivals:          batch.GetTelemetry().GetSheddedArrivals(),
-			CollectedAtUnixMs:        batch.GetTelemetry().GetCollectedAtUnixMs(),
-			PublishedAtUnixMs:        batch.GetTelemetry().GetPublishedAtUnixMs(),
-			SampleAgeMs:              batch.GetTelemetry().GetSampleAgeMs(),
-			GeneratorProcessingLagMs: batch.GetTelemetry().GetGeneratorProcessingLagMs(),
-			TransportLagMs:           batch.GetTelemetry().GetTransportLagMs(),
-			DroppedSubscriberBatches: batch.GetTelemetry().GetDroppedSubscriberBatches(),
-		}
-	}
+	telemetry := metricsTelemetryFromProto(batch.GetTelemetry())
 
 	return MetricsBatch{
 		BrowserDocuments:           browserDocumentsFromJSON(batch.GetBrowserDocumentSummaryJson(), batch.GetBrowserDocumentSummaryVersion()),
@@ -2187,4 +2180,27 @@ func (c *Client) javaHostSelectionNegotiated(q *pb.WorkAssignment) bool {
 		}
 	}
 	return false
+}
+
+// metricsTelemetryFromProto reads a publication's telemetry. A per-test
+// subscriber-drop count is reported only when the field is present: older
+// generators send none, which is not zero.
+func metricsTelemetryFromProto(in *pb.MetricsBatchTelemetry) *MetricsTelemetry {
+	if in == nil {
+		return nil
+	}
+	telemetry := &MetricsTelemetry{
+		DroppedResults:           in.GetDroppedResults(),
+		SheddedArrivals:          in.GetSheddedArrivals(),
+		CollectedAtUnixMs:        in.GetCollectedAtUnixMs(),
+		PublishedAtUnixMs:        in.GetPublishedAtUnixMs(),
+		SampleAgeMs:              in.GetSampleAgeMs(),
+		GeneratorProcessingLagMs: in.GetGeneratorProcessingLagMs(),
+		TransportLagMs:           in.GetTransportLagMs(),
+		DroppedSubscriberBatches: in.GetDroppedSubscriberBatches(),
+	}
+	if in.TestDroppedSubscriberBatches != nil {
+		telemetry.TestDroppedSubscriberBatches, telemetry.TestDroppedSubscriberBatchesReported = in.GetTestDroppedSubscriberBatches(), true
+	}
+	return telemetry
 }

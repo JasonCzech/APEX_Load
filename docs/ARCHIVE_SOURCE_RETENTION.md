@@ -473,6 +473,31 @@ epoch, counted as `legacy_epochs` in the summary, and their loss is only a
 lower bound. That count stands in for the specification's `legacy_unknown`
 label. Gap ranges and observation windows are not persisted per interval yet.
 
+Each record also carries `counters`: the process's cumulative
+`dropped_results`, `shedded_arrivals` and `dropped_subscriber_batches` for the
+test at its last publication, each with a `state` of `exact`, `lower_bound`
+or `unavailable`, its `value`, and the `reason` it is not exact. A count is
+exact only for an epoch observed from its first publication to its terminal
+one with no publication lost, whose count never decreased and was never
+negative; otherwise it is the largest count seen (`legacy_source`,
+`counter_regressed`, `invalid_value`, `unsequenced_publication`,
+`origin_unobserved`, `terminal_unobserved`, `epoch_not_fully_observed`,
+`publications_lost`) or unavailable (`not_reported`, `generation_unobserved`).
+Subscriber drops are attributed to the test only by generators that send
+`test_dropped_subscriber_batches` (`MetricsBatchTelemetry` field 9); older ones
+report only their process-wide count, which reads as unavailable
+(`process_wide_only`), never zero. The run's totals are `telemetry.loss` in
+the live metrics and archived interval summaries: a generator process keeps
+one cumulative count across the execution generations it serves, so it
+contributes its latest count once, and separate processes add up. A total is
+exact only when every process's count is, no generation went unobserved and
+the ledger kept every epoch; a source that reported nothing, or a sum that
+overflows, leaves a lower bound. `lost_publications` totals the coverage
+loss above. The WebSocket drop counters are shared by every run on the
+controller and read as `unavailable` (`controller_wide`) in a run's totals. A
+run executed in the controller's own process reports its dropped results and
+shed arrivals as exact.
+
 `interval_distributions.jsonl` has its own allowance,
 `APEXLOAD_ARCHIVE_INTERVAL_DISTRIBUTIONS_MAX_BYTES` (default 256 MiB, positive
 integer bytes up to 4 GiB), with the same free-space floor. It is separate so a

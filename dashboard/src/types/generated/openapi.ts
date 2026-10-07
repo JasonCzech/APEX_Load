@@ -34307,6 +34307,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "loss"?: (Record<string, unknown>) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -34789,6 +34790,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "loss"?: (Record<string, unknown>) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -41920,6 +41922,14 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "loss"?: ({
+                  "dropped_results"?: (Record<string, unknown>) | null;
+                  "dropped_subscriber_batches"?: (Record<string, unknown>) | null;
+                  "lost_publications"?: (Record<string, unknown>) | null;
+                  "shedded_arrivals"?: (Record<string, unknown>) | null;
+                  "websocket_dropped_events"?: (Record<string, unknown>) | null;
+                  "websocket_dropped_messages"?: (Record<string, unknown>) | null;
+                }) | null;
                 "missing_metric_windows"?: number;
                 "published_at"?: string;
                 "sample_age_ms"?: number;
@@ -43459,6 +43469,14 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "loss"?: ({
+                  "dropped_results"?: (Record<string, unknown>) | null;
+                  "dropped_subscriber_batches"?: (Record<string, unknown>) | null;
+                  "lost_publications"?: (Record<string, unknown>) | null;
+                  "shedded_arrivals"?: (Record<string, unknown>) | null;
+                  "websocket_dropped_events"?: (Record<string, unknown>) | null;
+                  "websocket_dropped_messages"?: (Record<string, unknown>) | null;
+                }) | null;
                 "missing_metric_windows"?: number;
                 "published_at"?: string;
                 "sample_age_ms"?: number;
@@ -58777,6 +58795,14 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "loss"?: ({
+                  "dropped_results"?: (Record<string, unknown>) | null;
+                  "dropped_subscriber_batches"?: (Record<string, unknown>) | null;
+                  "lost_publications"?: (Record<string, unknown>) | null;
+                  "shedded_arrivals"?: (Record<string, unknown>) | null;
+                  "websocket_dropped_events"?: (Record<string, unknown>) | null;
+                  "websocket_dropped_messages"?: (Record<string, unknown>) | null;
+                }) | null;
                 "missing_metric_windows"?: number;
                 "published_at"?: string;
                 "sample_age_ms"?: number;
@@ -60316,6 +60342,14 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "loss"?: ({
+                  "dropped_results"?: (Record<string, unknown>) | null;
+                  "dropped_subscriber_batches"?: (Record<string, unknown>) | null;
+                  "lost_publications"?: (Record<string, unknown>) | null;
+                  "shedded_arrivals"?: (Record<string, unknown>) | null;
+                  "websocket_dropped_events"?: (Record<string, unknown>) | null;
+                  "websocket_dropped_messages"?: (Record<string, unknown>) | null;
+                }) | null;
                 "missing_metric_windows"?: number;
                 "published_at"?: string;
                 "sample_age_ms"?: number;
@@ -62448,6 +62482,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "loss"?: (Record<string, unknown>) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -62930,6 +62965,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "loss"?: (Record<string, unknown>) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -76478,6 +76514,14 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "loss"?: ({
+                  "dropped_results"?: (Record<string, unknown>) | null;
+                  "dropped_subscriber_batches"?: (Record<string, unknown>) | null;
+                  "lost_publications"?: (Record<string, unknown>) | null;
+                  "shedded_arrivals"?: (Record<string, unknown>) | null;
+                  "websocket_dropped_events"?: (Record<string, unknown>) | null;
+                  "websocket_dropped_messages"?: (Record<string, unknown>) | null;
+                }) | null;
                 "missing_metric_windows"?: number;
                 "published_at"?: string;
                 "sample_age_ms"?: number;
@@ -78017,6 +78061,14 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "loss"?: ({
+                  "dropped_results"?: (Record<string, unknown>) | null;
+                  "dropped_subscriber_batches"?: (Record<string, unknown>) | null;
+                  "lost_publications"?: (Record<string, unknown>) | null;
+                  "shedded_arrivals"?: (Record<string, unknown>) | null;
+                  "websocket_dropped_events"?: (Record<string, unknown>) | null;
+                  "websocket_dropped_messages"?: (Record<string, unknown>) | null;
+                }) | null;
                 "missing_metric_windows"?: number;
                 "published_at"?: string;
                 "sample_age_ms"?: number;
@@ -96635,6 +96687,14 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "loss"?: ({
+                  "dropped_results"?: (Record<string, unknown>) | null;
+                  "dropped_subscriber_batches"?: (Record<string, unknown>) | null;
+                  "lost_publications"?: (Record<string, unknown>) | null;
+                  "shedded_arrivals"?: (Record<string, unknown>) | null;
+                  "websocket_dropped_events"?: (Record<string, unknown>) | null;
+                  "websocket_dropped_messages"?: (Record<string, unknown>) | null;
+                }) | null;
                 "missing_metric_windows"?: number;
                 "published_at"?: string;
                 "sample_age_ms"?: number;
@@ -98174,6 +98234,14 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "loss"?: ({
+                  "dropped_results"?: (Record<string, unknown>) | null;
+                  "dropped_subscriber_batches"?: (Record<string, unknown>) | null;
+                  "lost_publications"?: (Record<string, unknown>) | null;
+                  "shedded_arrivals"?: (Record<string, unknown>) | null;
+                  "websocket_dropped_events"?: (Record<string, unknown>) | null;
+                  "websocket_dropped_messages"?: (Record<string, unknown>) | null;
+                }) | null;
                 "missing_metric_windows"?: number;
                 "published_at"?: string;
                 "sample_age_ms"?: number;
@@ -111372,6 +111440,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "loss"?: (Record<string, unknown>) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -111854,6 +111923,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "loss"?: (Record<string, unknown>) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -113098,6 +113168,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "loss"?: (Record<string, unknown>) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -113580,6 +113651,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "loss"?: (Record<string, unknown>) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -114824,6 +114896,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "loss"?: (Record<string, unknown>) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -115306,6 +115379,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "loss"?: (Record<string, unknown>) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -116550,6 +116624,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "loss"?: (Record<string, unknown>) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -117032,6 +117107,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "loss"?: (Record<string, unknown>) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -118276,6 +118352,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "loss"?: (Record<string, unknown>) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -118758,6 +118835,7 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
+                  "loss"?: (Record<string, unknown>) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -143140,6 +143218,14 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "loss"?: ({
+                  "dropped_results"?: (Record<string, unknown>) | null;
+                  "dropped_subscriber_batches"?: (Record<string, unknown>) | null;
+                  "lost_publications"?: (Record<string, unknown>) | null;
+                  "shedded_arrivals"?: (Record<string, unknown>) | null;
+                  "websocket_dropped_events"?: (Record<string, unknown>) | null;
+                  "websocket_dropped_messages"?: (Record<string, unknown>) | null;
+                }) | null;
                 "missing_metric_windows"?: number;
                 "published_at"?: string;
                 "sample_age_ms"?: number;
@@ -144679,6 +144765,14 @@ export interface operations {
                 "generator_processing_lag_ms"?: number;
                 "generator_published_at"?: string;
                 "history_points"?: number;
+                "loss"?: ({
+                  "dropped_results"?: (Record<string, unknown>) | null;
+                  "dropped_subscriber_batches"?: (Record<string, unknown>) | null;
+                  "lost_publications"?: (Record<string, unknown>) | null;
+                  "shedded_arrivals"?: (Record<string, unknown>) | null;
+                  "websocket_dropped_events"?: (Record<string, unknown>) | null;
+                  "websocket_dropped_messages"?: (Record<string, unknown>) | null;
+                }) | null;
                 "missing_metric_windows"?: number;
                 "published_at"?: string;
                 "sample_age_ms"?: number;

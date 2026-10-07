@@ -2640,6 +2640,15 @@ func TestDistributedExecutionBackendStagesRemoteArchiveOnCompletion(t *testing.T
 	if epoch.TerminalSequence == 0 || epoch.TerminalSequence != epoch.LastSequence || !epoch.LossExact {
 		t.Fatalf("archived source epoch is not exact after a complete run: %s", sources)
 	}
+	// Its loss counters, this test's subscriber drops included, are exact
+	// when every publication arrived.
+	if epoch.LostPublications == 0 {
+		for _, name := range telemetryEpochCounters {
+			if epoch.Counters[name].State != TelemetryCounterExact {
+				t.Fatalf("archived %s is not exact after a complete run: %s", name, sources)
+			}
+		}
+	}
 	// The live roll-up reached the interval summaries the run archived.
 	intervals, err := os.ReadFile(filepath.Join(completed.Archive.ArchivePath, "interval_summaries.jsonl"))
 	if err != nil {
@@ -2648,7 +2657,8 @@ func TestDistributedExecutionBackendStagesRemoteArchiveOnCompletion(t *testing.T
 	rolledUp := false
 	for _, line := range bytes.Split(bytes.TrimSpace(intervals), []byte("\n")) {
 		var interval IntervalSummaryRecord
-		if json.Unmarshal(line, &interval) == nil && interval.Telemetry != nil && interval.Telemetry.Sources != nil && interval.Telemetry.Sources.Epochs >= 1 && interval.Telemetry.Sources.Sources >= 1 {
+		if json.Unmarshal(line, &interval) == nil && interval.Telemetry != nil && interval.Telemetry.Sources != nil && interval.Telemetry.Sources.Epochs >= 1 && interval.Telemetry.Sources.Sources >= 1 &&
+			interval.Telemetry.Loss != nil && interval.Telemetry.Loss.DroppedResults != nil && interval.Telemetry.Loss.LostPublications != nil {
 			rolledUp = true
 			break
 		}

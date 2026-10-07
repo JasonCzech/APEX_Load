@@ -119,6 +119,7 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 			DroppedResultsAvailable: true,
 			SheddedArrivals:         snap.Telemetry.SheddedArrivals,
 			CollectedAt:             snap.Timestamp,
+			Loss:                    localTelemetryLossTotals(snap.Telemetry.DroppedResults, snap.Telemetry.SheddedArrivals),
 		}
 	}
 

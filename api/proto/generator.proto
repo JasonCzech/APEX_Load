@@ -543,7 +543,13 @@ message MetricsBatchTelemetry {
   int64 shedded_arrivals = 5;
   double generator_processing_lag_ms = 6;
   double transport_lag_ms = 7;
+  // dropped_subscriber_batches counts batches dropped for slow subscribers
+  // across every test this process has run.
   int64 dropped_subscriber_batches = 8;
+  // test_dropped_subscriber_batches counts this test's batches dropped for slow
+  // subscribers in this process, cumulative from zero. Absent from older
+  // generators, which report only the process-wide count.
+  optional int64 test_dropped_subscriber_batches = 9;
 }
 
 message GroupMetric {

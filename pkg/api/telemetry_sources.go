@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"os"
 	"sort"
 	"sync"
@@ -53,8 +54,211 @@ type TelemetrySourceEpoch struct {
 	RangesTruncated     bool       `json:"ranges_truncated,omitempty"`
 	FirstObservedAt     time.Time  `json:"first_observed_at"`
 	LastObservedAt      time.Time  `json:"last_observed_at"`
+	// Counters holds each loss counter this epoch reported: the process's
+	// cumulative count at its last publication, exact or a lower bound.
+	Counters map[string]TelemetryCounterTotal `json:"counters,omitempty"`
 
-	ranges [][2]uint64
+	ranges   [][2]uint64
+	counters map[string]*telemetryCounterTrack
+}
+
+// Loss counters accounted per source epoch and per run.
+const (
+	TelemetryCounterDroppedResults           = "dropped_results"
+	TelemetryCounterShedArrivals             = "shedded_arrivals"
+	TelemetryCounterDroppedSubscriberBatches = "dropped_subscriber_batches"
+	TelemetryCounterLostPublications         = "lost_publications"
+	TelemetryCounterWebsocketDroppedMessages = "websocket_dropped_messages"
+	TelemetryCounterWebsocketDroppedEvents   = "websocket_dropped_events"
+)
+
+// telemetryEpochCounters are the cumulative counters a generator reports
+// for its test, from zero, in every publication.
+var telemetryEpochCounters = []string{TelemetryCounterDroppedResults, TelemetryCounterShedArrivals, TelemetryCounterDroppedSubscriberBatches}
+
+// States of a loss counter total.
+const (
+	TelemetryCounterExact       = "exact"
+	TelemetryCounterLowerBound  = "lower_bound"
+	TelemetryCounterUnavailable = "unavailable"
+)
+
+// TelemetryCounterTotal is a loss counter's total: exact, an observed lower
+// bound, or unavailable, with the reason it is not exact.
+type TelemetryCounterTotal struct {
+	State  string `json:"state"`
+	Value  int64  `json:"value"`
+	Reason string `json:"reason,omitempty"`
+}
+
+// TelemetryLossAccounting is a run's total of each loss counter. A counter
+// that does not apply (subscriber drops and lost publications in a run
+// executed in this process) is absent.
+type TelemetryLossAccounting struct {
+	DroppedResults           *TelemetryCounterTotal `json:"dropped_results,omitempty"`
+	ShedArrivals             *TelemetryCounterTotal `json:"shedded_arrivals,omitempty"`
+	DroppedSubscriberBatches *TelemetryCounterTotal `json:"dropped_subscriber_batches,omitempty"`
+	LostPublications         *TelemetryCounterTotal `json:"lost_publications,omitempty"`
+	WebsocketDroppedMessages *TelemetryCounterTotal `json:"websocket_dropped_messages,omitempty"`
+	WebsocketDroppedEvents   *TelemetryCounterTotal `json:"websocket_dropped_events,omitempty"`
+}
+
+func telemetryLossAccounting(totals map[string]TelemetryCounterTotal) *TelemetryLossAccounting {
+	if len(totals) == 0 {
+		return nil
+	}
+	pick := func(name string) *TelemetryCounterTotal {
+		if total, ok := totals[name]; ok {
+			return &total
+		}
+		return nil
+	}
+	return &TelemetryLossAccounting{
+		DroppedResults: pick(TelemetryCounterDroppedResults), ShedArrivals: pick(TelemetryCounterShedArrivals),
+		DroppedSubscriberBatches: pick(TelemetryCounterDroppedSubscriberBatches), LostPublications: pick(TelemetryCounterLostPublications),
+		WebsocketDroppedMessages: pick(TelemetryCounterWebsocketDroppedMessages), WebsocketDroppedEvents: pick(TelemetryCounterWebsocketDroppedEvents),
+	}
+}
+
+func (a *TelemetryLossAccounting) clone() *TelemetryLossAccounting {
+	if a == nil {
+		return nil
+	}
+	out := *a
+	for _, field := range []**TelemetryCounterTotal{&out.DroppedResults, &out.ShedArrivals, &out.DroppedSubscriberBatches, &out.LostPublications, &out.WebsocketDroppedMessages, &out.WebsocketDroppedEvents} {
+		if *field != nil {
+			copied := **field
+			*field = &copied
+		}
+	}
+	return &out
+}
+
+// telemetryCounterTrack follows one cumulative counter through an epoch's
+// publications in sequence order.
+type telemetryCounterTrack struct {
+	usable, invalid, absent int64
+	processWideOnly         bool
+	max                     int64
+	lastSequence            uint64
+	last                    int64
+	unordered               bool
+	regressed               bool
+	terminal                bool
+	terminalValue           int64
+}
+
+type telemetryCounterReading struct {
+	value       int64
+	absent      bool
+	processWide bool
+}
+
+// telemetryCounterReadings reads the epoch counters one publication carries.
+// A state-only publication carries none (the controller marks its missing
+// telemetry with DroppedResultsUnavailable on receipt); a generator that
+// reports only its process-wide subscriber drops cannot attribute them to
+// this test.
+func telemetryCounterReadings(batch generatorrpc.MetricsBatch) map[string]telemetryCounterReading {
+	t := batch.Telemetry
+	if t == nil || t.DroppedResultsUnavailable {
+		return map[string]telemetryCounterReading{TelemetryCounterDroppedResults: {absent: true}, TelemetryCounterShedArrivals: {absent: true}, TelemetryCounterDroppedSubscriberBatches: {absent: true}}
+	}
+	readings := map[string]telemetryCounterReading{
+		TelemetryCounterDroppedResults: {value: t.DroppedResults},
+		TelemetryCounterShedArrivals:   {value: t.SheddedArrivals},
+	}
+	if t.TestDroppedSubscriberBatchesReported {
+		readings[TelemetryCounterDroppedSubscriberBatches] = telemetryCounterReading{value: t.TestDroppedSubscriberBatches}
+	} else {
+		readings[TelemetryCounterDroppedSubscriberBatches] = telemetryCounterReading{absent: true, processWide: true}
+	}
+	return readings
+}
+
+// observeCounters records one new (not duplicate) publication's counters.
+func (r *TelemetrySourceEpoch) observeCounters(batch generatorrpc.MetricsBatch) {
+	if r.counters == nil {
+		r.counters = map[string]*telemetryCounterTrack{}
+	}
+	sequence, terminal := batch.BatchSequence, isTerminalRemoteLifecycle(batch.LifecycleState)
+	for name, reading := range telemetryCounterReadings(batch) {
+		track := r.counters[name]
+		if track == nil {
+			track = &telemetryCounterTrack{}
+			r.counters[name] = track
+		}
+		switch {
+		case reading.absent:
+			track.absent++
+			track.processWideOnly = track.processWideOnly || reading.processWide
+			continue
+		case reading.value < 0:
+			// Negative is malformed, or an overflowed counter.
+			track.invalid++
+			continue
+		}
+		track.usable++
+		track.max = max(track.max, reading.value)
+		if sequence == 0 {
+			track.unordered = true
+			continue
+		}
+		if sequence > track.lastSequence {
+			// A cumulative counter never decreases within one process.
+			if track.lastSequence != 0 && reading.value < track.last {
+				track.regressed = true
+			}
+			track.lastSequence, track.last = sequence, reading.value
+		} else if reading.value > track.last {
+			// An older publication reported more than a newer one.
+			track.regressed = true
+		}
+		if terminal {
+			track.terminal, track.terminalValue = true, reading.value
+		}
+	}
+}
+
+// total settles a counter: exact only within one fully observed epoch, from
+// its first publication (the count starts at zero with the process; a
+// state-only publication carries none and changes nothing) to its terminal
+// one, with every publication received and the count never decreasing.
+// Anything less is the largest count seen, a lower bound, or unavailable.
+func (t *telemetryCounterTrack) total(r *TelemetrySourceEpoch) TelemetryCounterTotal {
+	if t == nil || t.usable == 0 {
+		reason := "not_reported"
+		switch {
+		case t != nil && t.invalid > 0:
+			reason = "invalid_value"
+		case t != nil && t.processWideOnly:
+			reason = "process_wide_only"
+		}
+		return TelemetryCounterTotal{State: TelemetryCounterUnavailable, Reason: reason}
+	}
+	reason := ""
+	switch {
+	case r.Epoch == "":
+		reason = "legacy_source"
+	case t.regressed:
+		reason = "counter_regressed"
+	case t.invalid > 0:
+		reason = "invalid_value"
+	case t.unordered:
+		reason = "unsequenced_publication"
+	case r.FirstSequence != 1:
+		reason = "origin_unobserved"
+	case !t.terminal:
+		reason = "terminal_unobserved"
+	case !r.LossExact:
+		reason = "epoch_not_fully_observed"
+	case r.LostPublications > 0:
+		reason = "publications_lost"
+	}
+	if reason == "" {
+		return TelemetryCounterTotal{State: TelemetryCounterExact, Value: t.terminalValue}
+	}
+	return TelemetryCounterTotal{State: TelemetryCounterLowerBound, Value: t.max, Reason: reason}
 }
 
 // TelemetrySourceSummary is the live roll-up of a run's source epochs.
@@ -111,12 +315,14 @@ func (l *telemetrySourceLedger) observe(source string, batch generatorrpc.Metric
 	sequence := batch.BatchSequence
 	if sequence == 0 {
 		record.Unsequenced++
+		record.observeCounters(batch)
 		return
 	}
 	if isTerminalRemoteLifecycle(batch.LifecycleState) && sequence > record.TerminalSequence {
 		record.TerminalSequence = sequence
 	}
 	if record.covers(sequence) {
+		// A retried publication repeats a cumulative count already seen.
 		record.Duplicates++
 		return
 	}
@@ -124,6 +330,7 @@ func (l *telemetrySourceLedger) observe(source string, batch generatorrpc.Metric
 		record.OutOfOrder++
 	}
 	record.add(sequence)
+	record.observeCounters(batch)
 }
 
 func (r *TelemetrySourceEpoch) covers(sequence uint64) bool {
@@ -163,8 +370,21 @@ func (r *TelemetrySourceEpoch) add(sequence uint64) {
 	}
 }
 
-// settle computes the loss fields from the retained ranges.
+// settle computes the loss fields from the retained ranges, then the
+// epoch's counter totals.
 func (r *TelemetrySourceEpoch) settle() {
+	r.settleLoss()
+	r.Counters = map[string]TelemetryCounterTotal{}
+	for _, name := range telemetryEpochCounters {
+		if r.Unobserved {
+			r.Counters[name] = TelemetryCounterTotal{State: TelemetryCounterUnavailable, Reason: "generation_unobserved"}
+			continue
+		}
+		r.Counters[name] = r.counters[name].total(r)
+	}
+}
+
+func (r *TelemetrySourceEpoch) settleLoss() {
 	r.LostPublications, r.LossExact = 0, false
 	if r.LastSequence == 0 {
 		return
@@ -196,7 +416,10 @@ func (l *telemetrySourceLedger) snapshot(failovers ...RunFailover) ([]TelemetryS
 	for _, record := range l.epochs {
 		copied := *record
 		copied.ranges = append([][2]uint64(nil), record.ranges...)
+		// settle reads the live counter tracks under the ledger lock; the
+		// copy keeps only their settled totals.
 		copied.settle()
+		copied.counters = nil
 		out = append(out, copied)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -228,7 +451,9 @@ func unobservedTelemetryGenerations(epochs []TelemetrySourceEpoch, failovers []R
 			continue
 		}
 		observed[failover.PriorGeneration] = true
-		epochs = append(epochs, TelemetrySourceEpoch{Schema: telemetrySourceEpochSchema, Source: "*", ExecutionGeneration: failover.PriorGeneration, Unobserved: true, FirstObservedAt: failover.AdoptedAt.UTC(), LastObservedAt: failover.AdoptedAt.UTC()})
+		unobserved := TelemetrySourceEpoch{Schema: telemetrySourceEpochSchema, Source: "*", ExecutionGeneration: failover.PriorGeneration, Unobserved: true, FirstObservedAt: failover.AdoptedAt.UTC(), LastObservedAt: failover.AdoptedAt.UTC()}
+		unobserved.settle()
+		epochs = append(epochs, unobserved)
 	}
 	return epochs
 }
@@ -255,6 +480,149 @@ func (l *telemetrySourceLedger) summary(failovers ...RunFailover) *TelemetrySour
 	}
 	summary.Sources = len(sources)
 	return summary
+}
+
+// lossTotals is the run's total of each loss counter. A generator process
+// keeps one cumulative count across every execution generation it serves,
+// so each process contributes its latest generation's count once, and
+// separate processes (epochs) add up. A total is exact only when every
+// process's count is exact, no execution generation went unobserved and the
+// ledger kept every epoch.
+func (l *telemetrySourceLedger) lossTotals(failovers ...RunFailover) map[string]TelemetryCounterTotal {
+	epochs, truncated := l.snapshot(failovers...)
+	if len(epochs) == 0 && !truncated {
+		return nil
+	}
+	unobserved := false
+	for _, epoch := range epochs {
+		unobserved = unobserved || epoch.Unobserved
+	}
+	type processKey struct{ source, epoch string }
+	totals := map[string]TelemetryCounterTotal{}
+	for _, name := range telemetryEpochCounters {
+		processes := map[processKey]TelemetryCounterTotal{}
+		latest := map[processKey]uint64{}
+		for _, epoch := range epochs {
+			if epoch.Unobserved {
+				continue
+			}
+			key, count := processKey{epoch.Source, epoch.Epoch}, epoch.Counters[name]
+			previous, seen := processes[key]
+			switch {
+			case !seen:
+				processes[key], latest[key] = count, epoch.ExecutionGeneration
+			case count.State == TelemetryCounterUnavailable:
+			case previous.State == TelemetryCounterUnavailable:
+				processes[key], latest[key] = count, epoch.ExecutionGeneration
+			case epoch.Epoch == "":
+				// Legacy processes cannot be told apart: their largest
+				// count is a lower bound.
+				processes[key] = TelemetryCounterTotal{State: TelemetryCounterLowerBound, Value: max(previous.Value, count.Value), Reason: "legacy_source"}
+			case epoch.ExecutionGeneration > latest[key]:
+				if count.Value < previous.Value {
+					count = TelemetryCounterTotal{State: TelemetryCounterLowerBound, Value: previous.Value, Reason: "counter_regressed"}
+				}
+				processes[key], latest[key] = count, epoch.ExecutionGeneration
+			case count.Value > previous.Value:
+				// An earlier generation reported more than a later one.
+				processes[key] = TelemetryCounterTotal{State: TelemetryCounterLowerBound, Value: count.Value, Reason: "counter_regressed"}
+			}
+		}
+		keys := make([]processKey, 0, len(processes))
+		for key := range processes {
+			keys = append(keys, key)
+		}
+		sort.Slice(keys, func(i, j int) bool {
+			if keys[i].source != keys[j].source {
+				return keys[i].source < keys[j].source
+			}
+			return keys[i].epoch < keys[j].epoch
+		})
+		counts := make([]TelemetryCounterTotal, 0, len(keys))
+		for _, key := range keys {
+			counts = append(counts, processes[key])
+		}
+		totals[name] = sumTelemetryCounterTotals(counts, truncated, unobserved)
+	}
+	lost := TelemetryCounterTotal{State: TelemetryCounterExact}
+	legacy := false
+	for _, epoch := range epochs {
+		if epoch.Unobserved {
+			continue
+		}
+		legacy = legacy || epoch.Epoch == ""
+		lost.Value = min(lost.Value+epoch.LostPublications, 1<<62)
+		if !epoch.LossExact && lost.Reason == "" {
+			lost.Reason = "epoch_not_fully_observed"
+		}
+	}
+	switch {
+	case truncated:
+		lost.Reason = "ledger_truncated"
+	case unobserved:
+		lost.Reason = "generation_unobserved"
+	case legacy:
+		lost.Reason = "legacy_source"
+	}
+	if lost.Reason != "" {
+		lost.State = TelemetryCounterLowerBound
+	}
+	totals[TelemetryCounterLostPublications] = lost
+	addControllerWideTelemetryCounters(totals)
+	return totals
+}
+
+// sumTelemetryCounterTotals adds per-process counts. Any process that is not
+// exact, is unavailable, or overflows the sum leaves a lower bound; none
+// usable leaves the total unavailable.
+func sumTelemetryCounterTotals(counts []TelemetryCounterTotal, truncated, unobserved bool) TelemetryCounterTotal {
+	total := TelemetryCounterTotal{State: TelemetryCounterExact}
+	usable, firstUnavailable := false, ""
+	for _, count := range counts {
+		if count.State == TelemetryCounterUnavailable {
+			if firstUnavailable == "" {
+				firstUnavailable = count.Reason
+			}
+			continue
+		}
+		usable = true
+		if count.State != TelemetryCounterExact && total.Reason == "" {
+			total.Reason = count.Reason
+		}
+		if total.Value > math.MaxInt64-count.Value {
+			total.Value, total.Reason = math.MaxInt64, "overflow"
+			continue
+		}
+		total.Value += count.Value
+	}
+	if !usable {
+		reason := firstUnavailable
+		if reason == "" {
+			reason = "not_reported"
+		}
+		return TelemetryCounterTotal{State: TelemetryCounterUnavailable, Reason: reason}
+	}
+	switch {
+	case total.Reason != "":
+	case firstUnavailable != "":
+		total.Reason = "source_" + firstUnavailable
+	case truncated:
+		total.Reason = "ledger_truncated"
+	case unobserved:
+		total.Reason = "generation_unobserved"
+	}
+	if total.Reason != "" {
+		total.State = TelemetryCounterLowerBound
+	}
+	return total
+}
+
+// addControllerWideTelemetryCounters marks the WebSocket hub's drop counters,
+// which every run on the controller shares, as not attributable to one run.
+func addControllerWideTelemetryCounters(totals map[string]TelemetryCounterTotal) {
+	for _, name := range []string{TelemetryCounterWebsocketDroppedMessages, TelemetryCounterWebsocketDroppedEvents} {
+		totals[name] = TelemetryCounterTotal{State: TelemetryCounterUnavailable, Reason: "controller_wide"}
+	}
 }
 
 // telemetrySourceLedgerLocked returns the run's ledger, creating it on first
@@ -288,6 +656,11 @@ func observeTelemetryPublicationLocked(tr *TestRunner, test *ManagedTest, target
 // adopted from a failed-over controller count as unobserved.
 func telemetrySourceSummaryLocked(test *ManagedTest) *TelemetrySourceSummary {
 	return test.telemetrySources.summary(test.continuityFailovers...)
+}
+
+// telemetryLossTotalsLocked is the run's live loss accounting.
+func telemetryLossTotalsLocked(test *ManagedTest) *TelemetryLossAccounting {
+	return telemetryLossAccounting(test.telemetrySources.lossTotals(test.continuityFailovers...))
 }
 
 // persistTelemetrySourceArchive writes telemetry_sources.jsonl after
@@ -339,4 +712,19 @@ func (tr *TestRunner) persistTelemetrySourceArchive(ctx context.Context, test *M
 	// The ledger stays with the run: a later finalization step that fails
 	// is retried from a reloaded manifest and rewrites this sidecar.
 	return updateRunArchiveSingleArtifactIntegrity(record.ArchivePath, manifest, RunArchiveArtifact{Name: telemetrySourcesFileName, Kind: "evidence", Format: "jsonl", RecordType: telemetrySourcesRecordType, Count: count})
+}
+
+// localTelemetryLossTotals accounts a run executed in this process: its
+// collector counts from zero and is read directly, so its counts are exact.
+func localTelemetryLossTotals(droppedResults, shedArrivals int64) *TelemetryLossAccounting {
+	totals := map[string]TelemetryCounterTotal{}
+	for name, value := range map[string]int64{TelemetryCounterDroppedResults: droppedResults, TelemetryCounterShedArrivals: shedArrivals} {
+		if value < 0 {
+			totals[name] = TelemetryCounterTotal{State: TelemetryCounterUnavailable, Reason: "invalid_value"}
+			continue
+		}
+		totals[name] = TelemetryCounterTotal{State: TelemetryCounterExact, Value: value}
+	}
+	addControllerWideTelemetryCounters(totals)
+	return telemetryLossAccounting(totals)
 }

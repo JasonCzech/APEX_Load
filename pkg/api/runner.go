@@ -1068,6 +1068,10 @@ type TelemetryHealth struct {
 	// Sources rolls up per-generator source epochs: publications lost
 	// between received sequence numbers, exact or a lower bound.
 	Sources *TelemetrySourceSummary `json:"sources,omitempty"`
+	// Loss is the run's total of each loss counter, exact, an observed lower
+	// bound or unavailable, with the reason it is not exact. The cumulative
+	// fields above stay as reported.
+	Loss *TelemetryLossAccounting `json:"loss,omitempty"`
 }
 
 type TelemetryRunHealth struct {

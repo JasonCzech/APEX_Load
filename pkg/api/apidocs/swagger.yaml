@@ -82575,6 +82575,11 @@ paths:
                                 history_points:
                                   type: integer
                                   format: int64
+                                loss:
+                                  type: object
+                                  description: 'Go type: TelemetryLossAccounting'
+                                  additionalProperties: true
+                                  nullable: true
                                 missing_metric_windows:
                                   type: integer
                                   format: int64
@@ -84167,6 +84172,10 @@ paths:
                               history_points:
                                 type: integer
                                 format: int64
+                              loss:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               missing_metric_windows:
                                 type: integer
                                 format: int64
@@ -87885,6 +87894,11 @@ paths:
                                 history_points:
                                   type: integer
                                   format: int64
+                                loss:
+                                  type: object
+                                  description: 'Go type: TelemetryLossAccounting'
+                                  additionalProperties: true
+                                  nullable: true
                                 missing_metric_windows:
                                   type: integer
                                   format: int64
@@ -89477,6 +89491,10 @@ paths:
                               history_points:
                                 type: integer
                                 format: int64
+                              loss:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               missing_metric_windows:
                                 type: integer
                                 format: int64
@@ -93196,6 +93214,11 @@ paths:
                                 history_points:
                                   type: integer
                                   format: int64
+                                loss:
+                                  type: object
+                                  description: 'Go type: TelemetryLossAccounting'
+                                  additionalProperties: true
+                                  nullable: true
                                 missing_metric_windows:
                                   type: integer
                                   format: int64
@@ -94788,6 +94811,10 @@ paths:
                               history_points:
                                 type: integer
                                 format: int64
+                              loss:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               missing_metric_windows:
                                 type: integer
                                 format: int64
@@ -98519,6 +98546,11 @@ paths:
                                 history_points:
                                   type: integer
                                   format: int64
+                                loss:
+                                  type: object
+                                  description: 'Go type: TelemetryLossAccounting'
+                                  additionalProperties: true
+                                  nullable: true
                                 missing_metric_windows:
                                   type: integer
                                   format: int64
@@ -100111,6 +100143,10 @@ paths:
                               history_points:
                                 type: integer
                                 format: int64
+                              loss:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               missing_metric_windows:
                                 type: integer
                                 format: int64
@@ -103842,6 +103878,11 @@ paths:
                                 history_points:
                                   type: integer
                                   format: int64
+                                loss:
+                                  type: object
+                                  description: 'Go type: TelemetryLossAccounting'
+                                  additionalProperties: true
+                                  nullable: true
                                 missing_metric_windows:
                                   type: integer
                                   format: int64
@@ -105434,6 +105475,10 @@ paths:
                               history_points:
                                 type: integer
                                 format: int64
+                              loss:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               missing_metric_windows:
                                 type: integer
                                 format: int64
@@ -109165,6 +109210,11 @@ paths:
                                 history_points:
                                   type: integer
                                   format: int64
+                                loss:
+                                  type: object
+                                  description: 'Go type: TelemetryLossAccounting'
+                                  additionalProperties: true
+                                  nullable: true
                                 missing_metric_windows:
                                   type: integer
                                   format: int64
@@ -110757,6 +110807,10 @@ paths:
                               history_points:
                                 type: integer
                                 format: int64
+                              loss:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               missing_metric_windows:
                                 type: integer
                                 format: int64
@@ -114488,6 +114542,11 @@ paths:
                                 history_points:
                                   type: integer
                                   format: int64
+                                loss:
+                                  type: object
+                                  description: 'Go type: TelemetryLossAccounting'
+                                  additionalProperties: true
+                                  nullable: true
                                 missing_metric_windows:
                                   type: integer
                                   format: int64
@@ -116080,6 +116139,10 @@ paths:
                               history_points:
                                 type: integer
                                 format: int64
+                              loss:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               missing_metric_windows:
                                 type: integer
                                 format: int64
@@ -321349,6 +321412,40 @@ paths:
                             history_points:
                               type: integer
                               format: int64
+                            loss:
+                              type: object
+                              properties:
+                                dropped_results:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                dropped_subscriber_batches:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                lost_publications:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                shedded_arrivals:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                websocket_dropped_events:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                websocket_dropped_messages:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                              nullable: true
                             missing_metric_windows:
                               type: integer
                               format: int64
@@ -326636,6 +326733,34 @@ paths:
                           history_points:
                             type: integer
                             format: int64
+                          loss:
+                            type: object
+                            properties:
+                              dropped_results:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              dropped_subscriber_batches:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              lost_publications:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              shedded_arrivals:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              websocket_dropped_events:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              websocket_dropped_messages:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
                           missing_metric_windows:
                             type: integer
                             format: int64
@@ -333602,6 +333727,40 @@ paths:
                             history_points:
                               type: integer
                               format: int64
+                            loss:
+                              type: object
+                              properties:
+                                dropped_results:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                dropped_subscriber_batches:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                lost_publications:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                shedded_arrivals:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                websocket_dropped_events:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                websocket_dropped_messages:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                              nullable: true
                             missing_metric_windows:
                               type: integer
                               format: int64
@@ -338889,6 +339048,34 @@ paths:
                           history_points:
                             type: integer
                             format: int64
+                          loss:
+                            type: object
+                            properties:
+                              dropped_results:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              dropped_subscriber_batches:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              lost_publications:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              shedded_arrivals:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              websocket_dropped_events:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              websocket_dropped_messages:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
                           missing_metric_windows:
                             type: integer
                             format: int64
@@ -371139,6 +371326,40 @@ paths:
                             history_points:
                               type: integer
                               format: int64
+                            loss:
+                              type: object
+                              properties:
+                                dropped_results:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                dropped_subscriber_batches:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                lost_publications:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                shedded_arrivals:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                websocket_dropped_events:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                websocket_dropped_messages:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                              nullable: true
                             missing_metric_windows:
                               type: integer
                               format: int64
@@ -376426,6 +376647,34 @@ paths:
                           history_points:
                             type: integer
                             format: int64
+                          loss:
+                            type: object
+                            properties:
+                              dropped_results:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              dropped_subscriber_batches:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              lost_publications:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              shedded_arrivals:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              websocket_dropped_events:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              websocket_dropped_messages:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
                           missing_metric_windows:
                             type: integer
                             format: int64
@@ -383336,6 +383585,40 @@ paths:
                             history_points:
                               type: integer
                               format: int64
+                            loss:
+                              type: object
+                              properties:
+                                dropped_results:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                dropped_subscriber_batches:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                lost_publications:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                shedded_arrivals:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                websocket_dropped_events:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                websocket_dropped_messages:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                              nullable: true
                             missing_metric_windows:
                               type: integer
                               format: int64
@@ -388623,6 +388906,34 @@ paths:
                           history_points:
                             type: integer
                             format: int64
+                          loss:
+                            type: object
+                            properties:
+                              dropped_results:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              dropped_subscriber_batches:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              lost_publications:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              shedded_arrivals:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              websocket_dropped_events:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              websocket_dropped_messages:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
                           missing_metric_windows:
                             type: integer
                             format: int64
@@ -402675,6 +402986,40 @@ paths:
                             history_points:
                               type: integer
                               format: int64
+                            loss:
+                              type: object
+                              properties:
+                                dropped_results:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                dropped_subscriber_batches:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                lost_publications:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                shedded_arrivals:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                websocket_dropped_events:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                                websocket_dropped_messages:
+                                  type: object
+                                  description: 'Go type: TelemetryCounterTotal'
+                                  additionalProperties: true
+                                  nullable: true
+                              nullable: true
                             missing_metric_windows:
                               type: integer
                               format: int64
@@ -407963,6 +408308,34 @@ paths:
                           history_points:
                             type: integer
                             format: int64
+                          loss:
+                            type: object
+                            properties:
+                              dropped_results:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              dropped_subscriber_batches:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              lost_publications:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              shedded_arrivals:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              websocket_dropped_events:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              websocket_dropped_messages:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            nullable: true
                           missing_metric_windows:
                             type: integer
                             format: int64

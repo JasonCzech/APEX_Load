@@ -608,6 +608,7 @@ func cloneTelemetryHealth(in *TelemetryHealth) *TelemetryHealth {
 		sources := *in.Sources
 		out.Sources = &sources
 	}
+	out.Loss = in.Loss.clone()
 	return &out
 }
 

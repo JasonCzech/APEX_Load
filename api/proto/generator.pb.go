@@ -3511,9 +3511,15 @@ type MetricsBatchTelemetry struct {
 	SheddedArrivals          int64   `protobuf:"varint,5,opt,name=shedded_arrivals,json=sheddedArrivals,proto3" json:"shedded_arrivals,omitempty"`
 	GeneratorProcessingLagMs float64 `protobuf:"fixed64,6,opt,name=generator_processing_lag_ms,json=generatorProcessingLagMs,proto3" json:"generator_processing_lag_ms,omitempty"`
 	TransportLagMs           float64 `protobuf:"fixed64,7,opt,name=transport_lag_ms,json=transportLagMs,proto3" json:"transport_lag_ms,omitempty"`
-	DroppedSubscriberBatches int64   `protobuf:"varint,8,opt,name=dropped_subscriber_batches,json=droppedSubscriberBatches,proto3" json:"dropped_subscriber_batches,omitempty"`
-	unknownFields            protoimpl.UnknownFields
-	sizeCache                protoimpl.SizeCache
+	// dropped_subscriber_batches counts batches dropped for slow subscribers
+	// across every test this process has run.
+	DroppedSubscriberBatches int64 `protobuf:"varint,8,opt,name=dropped_subscriber_batches,json=droppedSubscriberBatches,proto3" json:"dropped_subscriber_batches,omitempty"`
+	// test_dropped_subscriber_batches counts this test's batches dropped for slow
+	// subscribers in this process, cumulative from zero. Absent from older
+	// generators, which report only the process-wide count.
+	TestDroppedSubscriberBatches *int64 `protobuf:"varint,9,opt,name=test_dropped_subscriber_batches,json=testDroppedSubscriberBatches,proto3,oneof" json:"test_dropped_subscriber_batches,omitempty"`
+	unknownFields                protoimpl.UnknownFields
+	sizeCache                    protoimpl.SizeCache
 }
 
 func (x *MetricsBatchTelemetry) Reset() {
@@ -3598,6 +3604,13 @@ func (x *MetricsBatchTelemetry) GetTransportLagMs() float64 {
 func (x *MetricsBatchTelemetry) GetDroppedSubscriberBatches() int64 {
 	if x != nil {
 		return x.DroppedSubscriberBatches
+	}
+	return 0
+}
+
+func (x *MetricsBatchTelemetry) GetTestDroppedSubscriberBatches() int64 {
+	if x != nil && x.TestDroppedSubscriberBatches != nil {
+		return *x.TestDroppedSubscriberBatches
 	}
 	return 0
 }
@@ -7068,7 +7081,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x1dbrowser_document_summary_json\x18\x1d \x01(\tR\x1abrowserDocumentSummaryJson\x12G\n" +
 	" browser_document_summary_version\x18\x1e \x01(\rR\x1dbrowserDocumentSummaryVersion\x12!\n" +
 	"\fsource_epoch\x18\x1f \x01(\tR\vsourceEpoch\x12>\n" +
-	"\x1csource_epoch_started_unix_ms\x18  \x01(\x03R\x18sourceEpochStartedUnixMs\"\x98\x03\n" +
+	"\x1csource_epoch_started_unix_ms\x18  \x01(\x03R\x18sourceEpochStartedUnixMs\"\x88\x04\n" +
 	"\x15MetricsBatchTelemetry\x12'\n" +
 	"\x0fdropped_results\x18\x01 \x01(\x03R\x0edroppedResults\x12/\n" +
 	"\x14collected_at_unix_ms\x18\x02 \x01(\x03R\x11collectedAtUnixMs\x12/\n" +
@@ -7077,7 +7090,9 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x10shedded_arrivals\x18\x05 \x01(\x03R\x0fsheddedArrivals\x12=\n" +
 	"\x1bgenerator_processing_lag_ms\x18\x06 \x01(\x01R\x18generatorProcessingLagMs\x12(\n" +
 	"\x10transport_lag_ms\x18\a \x01(\x01R\x0etransportLagMs\x12<\n" +
-	"\x1adropped_subscriber_batches\x18\b \x01(\x03R\x18droppedSubscriberBatches\"~\n" +
+	"\x1adropped_subscriber_batches\x18\b \x01(\x03R\x18droppedSubscriberBatches\x12J\n" +
+	"\x1ftest_dropped_subscriber_batches\x18\t \x01(\x03H\x00R\x1ctestDroppedSubscriberBatches\x88\x01\x01B\"\n" +
+	" _test_dropped_subscriber_batches\"~\n" +
 	"\vGroupMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12#\n" +
 	"\ractive_vusers\x18\x02 \x01(\x05R\factiveVusers\x126\n" +
@@ -7665,6 +7680,7 @@ func file_api_proto_generator_proto_init() {
 	if File_api_proto_generator_proto != nil {
 		return
 	}
+	file_api_proto_generator_proto_msgTypes[34].OneofWrappers = []any{}
 	file_api_proto_generator_proto_msgTypes[43].OneofWrappers = []any{}
 	file_api_proto_generator_proto_msgTypes[44].OneofWrappers = []any{}
 	file_api_proto_generator_proto_msgTypes[45].OneofWrappers = []any{}

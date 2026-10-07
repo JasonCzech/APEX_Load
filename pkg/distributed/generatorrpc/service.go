@@ -2393,6 +2393,10 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 			TransportLagMs:           telemetry.TransportLagMs,
 			DroppedSubscriberBatches: telemetry.DroppedSubscriberBatches,
 		}
+		// The broker attributes every dropped batch to its test, so this
+		// count starts at zero with the test.
+		testDropped := s.metricsBroker.droppedCountForTest(testID)
+		protoTelemetry.TestDroppedSubscriberBatches = &testDropped
 	}
 	return &pb.MetricsBatch{
 		BrowserDocumentSummaryJson:    browserDocumentsJSON(aggregates.BrowserDocuments),

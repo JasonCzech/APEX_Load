@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -325,5 +326,134 @@ func TestMissingMetricWindowsAreCountedWithinOneSourceEpoch(t *testing.T) {
 	// stream that was replaced); 7 is not a gap after the old epoch's 4.
 	if missing := store("epoch-2", 7, 5000); missing != 2 {
 		t.Fatalf("a new epoch's first window added a gap: missing = %d, want 2", missing)
+	}
+}
+
+// counterBatch is one publication carrying the three epoch counters.
+func counterBatch(epoch string, generation, sequence uint64, terminal bool, dropped, shed, subscriber int64) generatorrpc.MetricsBatch {
+	batch := generatorrpc.MetricsBatch{ExecutionGeneration: generation, SourceEpoch: epoch, SourceEpochStartedUnixMs: 1000, BatchSequence: sequence,
+		Telemetry: &generatorrpc.MetricsTelemetry{DroppedResults: dropped, SheddedArrivals: shed, TestDroppedSubscriberBatches: subscriber, TestDroppedSubscriberBatchesReported: true}}
+	if terminal {
+		batch.LifecycleState = "COMPLETE"
+	}
+	return batch
+}
+
+func observeCounterBatches(ledger *telemetrySourceLedger, source string, batches ...generatorrpc.MetricsBatch) {
+	at := time.Unix(1_800_000_000, 0)
+	for _, batch := range batches {
+		at = at.Add(time.Second)
+		ledger.observe(source, batch, at)
+	}
+}
+
+// The counter matrix: a cumulative counter is exact only within one fully
+// observed epoch from its first publication to its terminal one; anything
+// less is a lower bound or unavailable, with the reason.
+func TestTelemetryEpochCountersAreExactOnlyWhenFullyObserved(t *testing.T) {
+	type want struct {
+		state  string
+		value  int64
+		reason string
+	}
+	for name, tc := range map[string]struct {
+		batches []generatorrpc.MetricsBatch
+		mutate  func(*generatorrpc.MetricsBatch)
+		want    want
+	}{
+		"exact":                        {batches: []generatorrpc.MetricsBatch{counterBatch("e", 7, 1, false, 0, 0, 0), counterBatch("e", 7, 2, false, 2, 1, 0), counterBatch("e", 7, 3, true, 5, 1, 0)}, want: want{TelemetryCounterExact, 5, ""}},
+		"state-only first publication": {batches: []generatorrpc.MetricsBatch{{ExecutionGeneration: 7, SourceEpoch: "e", BatchSequence: 1, Telemetry: &generatorrpc.MetricsTelemetry{DroppedResultsUnavailable: true}}, counterBatch("e", 7, 2, false, 1, 0, 0), counterBatch("e", 7, 3, true, 2, 0, 0)}, want: want{TelemetryCounterExact, 2, ""}},
+		"zero":                         {batches: []generatorrpc.MetricsBatch{counterBatch("e", 7, 1, false, 0, 0, 0), counterBatch("e", 7, 2, true, 0, 0, 0)}, want: want{TelemetryCounterExact, 0, ""}},
+		"legacy":                       {batches: []generatorrpc.MetricsBatch{counterBatch("", 7, 1, false, 1, 0, 0), counterBatch("", 7, 2, true, 3, 0, 0)}, want: want{TelemetryCounterLowerBound, 3, "legacy_source"}},
+		"no telemetry":                 {batches: []generatorrpc.MetricsBatch{{ExecutionGeneration: 7, SourceEpoch: "e", BatchSequence: 1}, {ExecutionGeneration: 7, SourceEpoch: "e", BatchSequence: 2, LifecycleState: "COMPLETE"}}, want: want{TelemetryCounterUnavailable, 0, "not_reported"}},
+		"one negative":                 {batches: []generatorrpc.MetricsBatch{counterBatch("e", 7, 1, false, 2, 0, 0), counterBatch("e", 7, 2, false, -1, 0, 0), counterBatch("e", 7, 3, true, 4, 0, 0)}, want: want{TelemetryCounterLowerBound, 4, "invalid_value"}},
+		"all negative":                 {batches: []generatorrpc.MetricsBatch{counterBatch("e", 7, 1, false, -1, 0, 0), counterBatch("e", 7, 2, true, -5, 0, 0)}, want: want{TelemetryCounterUnavailable, 0, "invalid_value"}},
+		"reset":                        {batches: []generatorrpc.MetricsBatch{counterBatch("e", 7, 1, false, 5, 0, 0), counterBatch("e", 7, 2, false, 3, 0, 0), counterBatch("e", 7, 3, true, 4, 0, 0)}, want: want{TelemetryCounterLowerBound, 5, "counter_regressed"}},
+		"consistent out of order":      {batches: []generatorrpc.MetricsBatch{counterBatch("e", 7, 1, false, 1, 0, 0), counterBatch("e", 7, 3, false, 3, 0, 0), counterBatch("e", 7, 2, false, 2, 0, 0), counterBatch("e", 7, 4, true, 4, 0, 0)}, want: want{TelemetryCounterExact, 4, ""}},
+		"inconsistent out of order":    {batches: []generatorrpc.MetricsBatch{counterBatch("e", 7, 1, false, 1, 0, 0), counterBatch("e", 7, 3, false, 1, 0, 0), counterBatch("e", 7, 2, false, 5, 0, 0), counterBatch("e", 7, 4, true, 6, 0, 0)}, want: want{TelemetryCounterLowerBound, 6, "counter_regressed"}},
+		"retried":                      {batches: []generatorrpc.MetricsBatch{counterBatch("e", 7, 1, false, 1, 0, 0), counterBatch("e", 7, 2, false, 2, 0, 0), counterBatch("e", 7, 2, false, 2, 0, 0), counterBatch("e", 7, 3, true, 2, 0, 0)}, want: want{TelemetryCounterExact, 2, ""}},
+		"cold start":                   {batches: []generatorrpc.MetricsBatch{counterBatch("e", 7, 3, false, 4, 0, 0), counterBatch("e", 7, 4, true, 6, 0, 0)}, want: want{TelemetryCounterLowerBound, 6, "origin_unobserved"}},
+		"no terminal":                  {batches: []generatorrpc.MetricsBatch{counterBatch("e", 7, 1, false, 1, 0, 0), counterBatch("e", 7, 2, false, 3, 0, 0)}, want: want{TelemetryCounterLowerBound, 3, "terminal_unobserved"}},
+		"gap":                          {batches: []generatorrpc.MetricsBatch{counterBatch("e", 7, 1, false, 1, 0, 0), counterBatch("e", 7, 3, true, 3, 0, 0)}, want: want{TelemetryCounterLowerBound, 3, "publications_lost"}},
+		"unsequenced":                  {batches: []generatorrpc.MetricsBatch{counterBatch("e", 7, 0, true, 3, 0, 0)}, want: want{TelemetryCounterLowerBound, 3, "unsequenced_publication"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ledger := newTelemetrySourceLedger()
+			observeCounterBatches(ledger, "gen-a", tc.batches...)
+			got := onlyEpoch(t, ledger).Counters[TelemetryCounterDroppedResults]
+			if got.State != tc.want.state || got.Value != tc.want.value || got.Reason != tc.want.reason {
+				t.Fatalf("dropped_results = %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+	// An older generator reports only its process-wide subscriber drops.
+	ledger := newTelemetrySourceLedger()
+	batch := counterBatch("e", 7, 1, true, 0, 0, 0)
+	batch.Telemetry.TestDroppedSubscriberBatchesReported, batch.Telemetry.DroppedSubscriberBatches = false, 9
+	observeCounterBatches(ledger, "gen-a", batch)
+	if got := onlyEpoch(t, ledger).Counters[TelemetryCounterDroppedSubscriberBatches]; got.State != TelemetryCounterUnavailable || got.Reason != "process_wide_only" {
+		t.Fatalf("process-wide subscriber drops: %+v", got)
+	}
+}
+
+// Run totals add separate processes, count a process once across the
+// generations it served, and are exact only when every process is.
+func TestTelemetryLossTotalsAddProcessesOnce(t *testing.T) {
+	exact := func(epoch string, generation uint64, values ...int64) []generatorrpc.MetricsBatch {
+		out := []generatorrpc.MetricsBatch{}
+		for i, value := range values {
+			out = append(out, counterBatch(epoch, generation, uint64(i+1), i == len(values)-1, value, value, value))
+		}
+		return out
+	}
+	ledger := newTelemetrySourceLedger()
+	observeCounterBatches(ledger, "gen-a", exact("a", 7, 1, 2)...)
+	observeCounterBatches(ledger, "gen-b", exact("b", 7, 0, 3)...)
+	totals := ledger.lossTotals()
+	if got := totals[TelemetryCounterDroppedResults]; got != (TelemetryCounterTotal{State: TelemetryCounterExact, Value: 5}) {
+		t.Fatalf("two exact processes: %+v", got)
+	}
+	if got := totals[TelemetryCounterLostPublications]; got != (TelemetryCounterTotal{State: TelemetryCounterExact}) {
+		t.Fatalf("lost publications: %+v", got)
+	}
+	if got := totals[TelemetryCounterWebsocketDroppedEvents]; got.State != TelemetryCounterUnavailable || got.Reason != "controller_wide" {
+		t.Fatalf("websocket events: %+v", got)
+	}
+	// The same process serves a later generation: its count carries over and
+	// counts once.
+	adopted := newTelemetrySourceLedger()
+	observeCounterBatches(adopted, "gen-a", exact("a", 7, 1, 3)...)
+	observeCounterBatches(adopted, "gen-a", exact("a", 8, 3, 6)...)
+	if got := adopted.lossTotals()[TelemetryCounterDroppedResults]; got != (TelemetryCounterTotal{State: TelemetryCounterExact, Value: 6}) {
+		t.Fatalf("one process across generations: %+v", got)
+	}
+	// A generation this controller never observed leaves a lower bound.
+	if got := adopted.lossTotals(RunFailover{PriorGeneration: 6, AdoptedAt: time.Unix(1_800_000_000, 0)})[TelemetryCounterDroppedResults]; got.State != TelemetryCounterLowerBound || got.Value != 6 || got.Reason != "generation_unobserved" {
+		t.Fatalf("unobserved generation: %+v", got)
+	}
+	// A process that reports nothing leaves the others as a lower bound.
+	partial := newTelemetrySourceLedger()
+	observeCounterBatches(partial, "gen-a", exact("a", 7, 1, 2)...)
+	observeCounterBatches(partial, "gen-b", generatorrpc.MetricsBatch{ExecutionGeneration: 7, SourceEpoch: "b", BatchSequence: 1, LifecycleState: "COMPLETE"})
+	if got := partial.lossTotals()[TelemetryCounterDroppedResults]; got.State != TelemetryCounterLowerBound || got.Value != 2 || got.Reason != "source_not_reported" {
+		t.Fatalf("a silent process: %+v", got)
+	}
+	// Totals that overflow stop at the largest count, a lower bound.
+	overflow := newTelemetrySourceLedger()
+	observeCounterBatches(overflow, "gen-a", exact("a", 7, math.MaxInt64-1)...)
+	observeCounterBatches(overflow, "gen-b", exact("b", 7, math.MaxInt64-1)...)
+	if got := overflow.lossTotals()[TelemetryCounterDroppedResults]; got.State != TelemetryCounterLowerBound || got.Value != math.MaxInt64 || got.Reason != "overflow" {
+		t.Fatalf("overflow: %+v", got)
+	}
+	// Nothing usable anywhere is unavailable.
+	silent := newTelemetrySourceLedger()
+	observeCounterBatches(silent, "gen-a", generatorrpc.MetricsBatch{ExecutionGeneration: 7, SourceEpoch: "a", BatchSequence: 1})
+	if got := silent.lossTotals()[TelemetryCounterShedArrivals]; got.State != TelemetryCounterUnavailable || got.Reason != "not_reported" {
+		t.Fatalf("silent run: %+v", got)
+	}
+	// A run executed in this process reads its own collector: exact.
+	local := localTelemetryLossTotals(4, 1)
+	if *local.DroppedResults != (TelemetryCounterTotal{State: TelemetryCounterExact, Value: 4}) || *local.ShedArrivals != (TelemetryCounterTotal{State: TelemetryCounterExact, Value: 1}) || local.DroppedSubscriberBatches != nil || local.WebsocketDroppedMessages.Reason != "controller_wide" {
+		t.Fatalf("local run: %+v", local)
 	}
 }

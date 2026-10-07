@@ -361,3 +361,44 @@ func TestRestoredTerminalReplaysUnderThisProcessEpoch(t *testing.T) {
 		t.Fatalf("a terminal with its own epoch was restamped: %#v", kept)
 	}
 }
+
+// Dropped batches are attributed to their own test, including a batch of
+// another test evicted from an unscoped subscriber's queue, and a test's
+// count is released with the test.
+func TestMetricsBrokerAttributesDroppedBatchesToTheirTest(t *testing.T) {
+	broker := newMetricsBroker(10, 10, 0)
+	id, _, _, err := registerMetricsBrokerSubscriber(t, broker, 7, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer broker.unregister(id)
+	for index := 0; index < metricsSubscriberQueueCapacity; index++ {
+		broker.publish(&pb.MetricsBatch{TestId: "busy", ExecutionGeneration: 7, LifecycleState: "RUNNING"}, nil)
+	}
+	// The queue is full: a live batch of another test is dropped as itself,
+	// and a terminal batch evicts the newest live batch of the busy test.
+	broker.publish(&pb.MetricsBatch{TestId: "quiet", ExecutionGeneration: 7, LifecycleState: "RUNNING"}, nil)
+	broker.publishTerminal(&pb.MetricsBatch{TestId: "quiet", ExecutionGeneration: 7, LifecycleState: "COMPLETE"})
+	if busy, quiet := broker.droppedCountForTest("busy"), broker.droppedCountForTest("quiet"); busy != 1 || quiet != 1 || broker.droppedCount() != 2 {
+		t.Fatalf("dropped busy=%d quiet=%d total=%d, want 1, 1 and 2", busy, quiet, broker.droppedCount())
+	}
+	broker.deleteTerminalsForTest("busy")
+	if broker.droppedCountForTest("busy") != 0 || broker.droppedCountForTest("quiet") != 1 {
+		t.Fatal("a deleted test's count was kept, or another test's was released")
+	}
+}
+
+// A per-test subscriber-drop count is reported only when present on the
+// wire; an older generator's batch reads as not reported, never zero.
+func TestTestDroppedSubscriberBatchesPresenceSurvivesTheWire(t *testing.T) {
+	zero := int64(0)
+	if got := metricsTelemetryFromProto(&pb.MetricsBatchTelemetry{DroppedSubscriberBatches: 4, TestDroppedSubscriberBatches: &zero}); !got.TestDroppedSubscriberBatchesReported || got.TestDroppedSubscriberBatches != 0 {
+		t.Fatalf("reported zero: %+v", got)
+	}
+	if got := metricsTelemetryFromProto(&pb.MetricsBatchTelemetry{DroppedSubscriberBatches: 4}); got.TestDroppedSubscriberBatchesReported {
+		t.Fatalf("an older generator's batch read as reported: %+v", got)
+	}
+	if metricsTelemetryFromProto(nil) != nil {
+		t.Fatal("absent telemetry read as present")
+	}
+}

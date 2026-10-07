@@ -1764,6 +1764,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 	live := buildLiveMetricsFromDistributedBatch(test, aggregated, fleetTPS, groupTPS)
 	if live.Telemetry != nil {
 		live.Telemetry.Sources = telemetrySourceSummaryLocked(test)
+		live.Telemetry.Loss = telemetryLossTotalsLocked(test)
 	}
 	qualifyExpectedMessagingProgress(test, live, batches)
 	if live.Telemetry != nil {

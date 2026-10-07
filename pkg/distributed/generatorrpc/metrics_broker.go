@@ -40,8 +40,15 @@ type metricsSubscriber struct {
 }
 
 func (s *metricsSubscriber) enqueue(batch *pb.MetricsBatch) int64 {
+	dropped, _ := s.enqueueAttributed(batch)
+	return dropped
+}
+
+// enqueueAttributed queues batch and reports how many batches were dropped
+// and the test they belonged to.
+func (s *metricsSubscriber) enqueueAttributed(batch *pb.MetricsBatch) (int64, string) {
 	if s == nil || batch == nil {
-		return 0
+		return 0, ""
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -58,7 +65,7 @@ func (s *metricsSubscriber) enqueue(batch *pb.MetricsBatch) int64 {
 			if queued.GetTestId() == batch.GetTestId() && queued.GetExecutionGeneration() == batch.GetExecutionGeneration() && isGeneratorTerminalLifecycle(queued.GetLifecycleState()) {
 				s.queue[index] = batch
 				s.signalLocked()
-				return 0
+				return 0, ""
 			}
 		}
 		if len(s.queue) >= metricsSubscriberQueueCapacity {
@@ -71,35 +78,36 @@ func (s *metricsSubscriber) enqueue(batch *pb.MetricsBatch) int64 {
 				if isGeneratorTerminalLifecycle(queued.GetLifecycleState()) {
 					continue
 				}
+				evicted := queued.GetTestId()
 				copy(s.queue[index:], s.queue[index+1:])
 				s.queue[len(s.queue)-1] = nil
 				s.queue = s.queue[:len(s.queue)-1]
 				s.queue = append(s.queue, batch)
 				s.signalLocked()
-				return 1
+				return 1, evicted
 			}
 			// Every terminal batch has already been retained as a broker tombstone.
 			// Fence a subscriber that cannot keep up with a terminal-only backlog;
 			// reconnecting replays retained state without growing this queue.
 			s.overflowed.Store(true)
 			s.fence()
-			return 1
+			return 1, batch.GetTestId()
 		}
 		s.queue = append(s.queue, batch)
 		s.signalLocked()
-		return 0
+		return 0, ""
 	}
 	if _, terminalSeen := s.terminal[key]; terminalSeen {
 		// A terminal lifecycle is immutable for a test generation. A delayed
 		// nonterminal publisher must never regress a live stream.
-		return 0
+		return 0, ""
 	}
 	if len(s.queue) >= metricsSubscriberQueueCapacity {
-		return 1
+		return 1, batch.GetTestId()
 	}
 	s.queue = append(s.queue, batch)
 	s.signalLocked()
-	return 0
+	return 0, ""
 }
 
 func (s *metricsSubscriber) signalLocked() {
@@ -154,7 +162,10 @@ type metricsBroker struct {
 	terminalTTL     time.Duration
 
 	droppedBatches atomic.Int64
-	lifecycleHook  func(*pb.MetricsBatch)
+	// droppedByTest attributes dropped batches to their test.
+	droppedByTestMu sync.Mutex
+	droppedByTest   map[string]int64
+	lifecycleHook   func(*pb.MetricsBatch)
 }
 
 func newMetricsBroker(maxSubscribers, terminalMax int, terminalTTL time.Duration) *metricsBroker {
@@ -363,8 +374,14 @@ func (broker *metricsBroker) publishOwnedLocked(batch *pb.MetricsBatch, accept f
 		if subscriber.generation != batch.GetExecutionGeneration() || (subscriber.testID != "" && subscriber.testID != batch.GetTestId()) {
 			continue
 		}
-		if dropped := subscriber.enqueue(batch); dropped > 0 {
+		if dropped, testID := subscriber.enqueueAttributed(batch); dropped > 0 {
 			broker.droppedBatches.Add(dropped)
+			broker.droppedByTestMu.Lock()
+			if broker.droppedByTest == nil {
+				broker.droppedByTest = map[string]int64{}
+			}
+			broker.droppedByTest[testID] += dropped
+			broker.droppedByTestMu.Unlock()
 		}
 	}
 }
@@ -546,6 +563,9 @@ func (broker *metricsBroker) deleteTerminalsForTest(testID string) {
 		}
 	}
 	broker.mu.Unlock()
+	broker.droppedByTestMu.Lock()
+	delete(broker.droppedByTest, testID)
+	broker.droppedByTestMu.Unlock()
 	for key := range broker.batchSequences {
 		if key.testID == testID {
 			delete(broker.batchSequences, key)
@@ -571,6 +591,17 @@ func (broker *metricsBroker) droppedCount() int64 {
 		return 0
 	}
 	return broker.droppedBatches.Load()
+}
+
+// droppedCountForTest is the number of testID's batches dropped for slow
+// subscribers in this process.
+func (broker *metricsBroker) droppedCountForTest(testID string) int64 {
+	if broker == nil {
+		return 0
+	}
+	broker.droppedByTestMu.Lock()
+	defer broker.droppedByTestMu.Unlock()
+	return broker.droppedByTest[testID]
 }
 
 func (broker *metricsBroker) subscriberCount() int {
