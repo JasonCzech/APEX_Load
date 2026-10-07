@@ -13756,7 +13756,7 @@
     {
       "method": "GET",
       "path": "/api/v1/system/acceptance-records",
-      "operation_id": "handleFeatureAcceptanceRecords",
+      "operation_id": "handleListFeatureAcceptanceRecords",
       "public": false,
       "authenticated": true,
       "state": "GREEN",
@@ -13778,7 +13778,7 @@
     {
       "method": "POST",
       "path": "/api/v1/system/acceptance-records",
-      "operation_id": "handleFeatureAcceptanceRecords_2",
+      "operation_id": "handleCreateFeatureAcceptanceRecord",
       "public": false,
       "authenticated": true,
       "state": "GREEN",

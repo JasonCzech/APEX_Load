@@ -48,6 +48,16 @@ func applyAuthoringIdempotencyContract(route discoveredRoute, contract *inferred
 		}
 		response.Description += " Idempotency outcomes carry a code; other failures keep the generic error body."
 		response.Content = body(codes...)
+		if status == "409" {
+			response.Headers = map[string]oasHeader{"Retry-After": {Description: "Seconds to wait before retrying idempotency_request_in_progress.", Schema: oasParamSchema{Type: "string"}}}
+		}
+		if status == "503" && route.Path == "/api/v1/scenarios" {
+			// A create whose commit acknowledgement was lost may have
+			// committed: unlike idempotency_unavailable, it must not be
+			// retried without its key.
+			response.Description += " scenario_save_outcome_unknown means the create may already have committed: retry only with the same Idempotency-Key, which adopts it."
+			response.Content = map[string]oasMediaType{"application/json": {Schema: scenarioSaveErrorBody(append(codes, "scenario_save_outcome_unknown")...)}}
+		}
 		contract.Responses[status] = response
 	}
 }

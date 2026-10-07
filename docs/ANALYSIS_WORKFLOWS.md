@@ -143,11 +143,38 @@ comparison sides; saved definitions retain the executed selectors. See
 [imported measurement identities](ANALYSIS_IDENTITY.md) for nested scalar paths,
 legacy mapping behavior, quality admission and saved-bound precision.
 
-Percentiles require raw observations. Summary-only percentiles are never averaged
-or treated as transaction samples. Counters require explicit rate conversion;
+Percentiles come from raw observations, from a summary that declares the
+percentile it reports, or interpolated within a histogram's bins. Summary
+percentiles are never averaged or treated as transaction samples. Counters require explicit rate conversion;
 resets, duplicate instants and missing samples interrupt the rate chain. Queries
 are bounded to 10,000 buckets and 366 days. Unsupported semantics produce an
 explicit error instead of a misleading chart.
+
+A summary measure declares the one statistic its column reports (`avg`, `min`,
+`max`, `sum`, `count`, `p50`, `p75`, `p90`, `p95`, `p99` or `p999`), its
+`window_seconds` (1–86,400) and optionally the columns holding each window's
+sample count and sum; new mappings must declare them, and a stored summary
+without a declared statistic is refused at query time with a request to
+re-import it. A series answers only its declared statistic: counts and sums
+add across windows, minimum and maximum combine, an average combines only with
+sample counts, and a precomputed percentile never spans several windows
+(`precomputed_percentile_not_mergeable`). A histogram measure declares its
+ordered upper `bounds` (at most 128; the last may be `+Inf`), whether its
+`bucket_counts` are `per_bin` or `le_cumulative`, its layout (wide rows with a
+count column per bound but the last, whose count is the measure column, or
+long rows whose `bound_column` labels each row with its bound; either layout
+takes either kind of count), and its `temporality`: `delta` per window
+(with `window_seconds`) or `cumulative` counters, differenced between scrapes
+with resets reported as `histogram_counter_reset`. Histogram buckets answer
+`count` and percentiles interpolated within the bin holding the rank
+(`histogram_interpolated.v1`, never an exact quantile); the point's
+`estimate_bin` is that bin, and in the first bin, whose lower edge the
+histogram does not declare, `lower_assumed` marks the lower edge as assumed.
+A rank in an unbounded last bin is `histogram_percentile_in_overflow_bin`, and
+a bucket without observations `histogram_no_observations`. Measures whose
+metric names come from a name column are queried by name like any other; the
+workspace offers their declared statistics and widens buckets to their window
+when every such measure declaring the statistic shares one.
 
 A declared summary measure names the statistic and window the source computed;
 the editor never guesses either. A bucket spanning several source windows is
@@ -182,6 +209,23 @@ and 2. An older controller that rewrites a dataset's association drops them, and
 queries of that dataset then fail; do not run controllers older than this
 release against datasets that declare summary statistics or histograms, and
 re-import a dataset that an older controller rewrote.
+
+### Analysis policies and run pins
+
+`/api/v1/analysis/policies?project_id=…` stores revisioned policies of five
+kinds: `telemetry_policy`, `telemetry_acceptance_policy`, `browser_policy`,
+`journey_policy` and `derived_operation`. Viewers list (by `kind`) and read
+them; editors create, update with the expected `revision`, and delete. At most
+one policy of each kind may set `apply_by_default`. A browser policy's
+`pinned_run` baseline must be a run of the same project. When a run starts, or
+a queued run is promoted, the project's default policy of each kind is pinned
+into the run's admission record and appears as `policy_pins` in its provenance
+and archive manifest; a later edit never changes a pinned run. Pins are
+recorded with `applied: false`: no evaluation consumes them yet. A project
+whose defaults cannot be read unambiguously refuses Start (and a queued run's
+promotion) instead of running without its pins. Only project defaults are
+pinned; system-wide telemetry defaults and scenario-level policy selection
+are not yet resolved into the snapshot.
 
 An external dataset keeps its own identity. Associate it explicitly with a run
 in the same project before comparing it with managed evidence. Comparisons

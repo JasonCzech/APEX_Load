@@ -148,6 +148,11 @@ func TestPostgresAuthoringReceiptRenewalOutlastsAWaitingRestore(t *testing.T) {
 	}
 }
 
+func TestPostgresScriptDeleteRefusedWhileInUse(t *testing.T) {
+	store, _ := newPostgresScenarioRevisionFixture(t)
+	exerciseScriptDeleteRefusedWhileInUse(t, store)
+}
+
 func TestPostgresExclusivePolicyDefaults(t *testing.T) {
 	store, _ := newPostgresScenarioRevisionFixture(t)
 	exerciseExclusivePolicyDefaults(t, store)

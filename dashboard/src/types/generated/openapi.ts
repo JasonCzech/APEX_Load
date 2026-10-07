@@ -8124,6 +8124,7 @@ export interface operations {
               "dimensions"?: Record<string, string>;
               "estimate_bin"?: ({
                 "lower": number;
+                "lower_assumed"?: boolean;
                 "upper": number;
               }) | null;
               "host"?: string;
@@ -8227,6 +8228,7 @@ export interface operations {
               "dimensions"?: Record<string, string>;
               "estimate_bin"?: ({
                 "lower": number;
+                "lower_assumed"?: boolean;
                 "upper": number;
               }) | null;
               "host"?: string;
@@ -8384,6 +8386,7 @@ export interface operations {
               "dimensions"?: Record<string, string>;
               "estimate_bin"?: ({
                 "lower": number;
+                "lower_assumed"?: boolean;
                 "upper": number;
               }) | null;
               "host"?: string;
@@ -11394,6 +11397,7 @@ export interface operations {
             "dimensions"?: Record<string, string>;
             "estimate_bin"?: ({
               "lower"?: number;
+              "lower_assumed"?: boolean;
               "upper"?: number;
             }) | null;
             "host"?: string;
@@ -27306,7 +27310,11 @@ export interface operations {
     };
   };
   "handleCreateAnalysisPolicy": {
-    parameters?: never;
+    parameters: {
+      "query": {
+        "project_id": string;
+      };
+    };
     requestBody: {
       content: {
         "application/json": {
@@ -30978,8 +30986,8 @@ export interface operations {
   };
   "handleCreateEvaluationJob": {
     parameters: {
-      "query"?: {
-        "project_id"?: string;
+      "query": {
+        "project_id": string;
       };
       "header"?: {
         "Idempotency-Key"?: Array<string>;
@@ -30995,6 +31003,9 @@ export interface operations {
     };
     responses: {
       "202": {
+        headers: {
+          "Idempotent-Replayed"?: "true";
+        };
         content: {
           "application/json": {
             "actor": string;
@@ -31020,7 +31031,11 @@ export interface operations {
       };
       "400": {
         content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+          "application/json": {
+            "code"?: "idempotency_key_invalid";
+            "error": string;
+            "ref"?: string;
+          };
         };
       };
       "401": {
@@ -31040,7 +31055,11 @@ export interface operations {
       };
       "409": {
         content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+          "application/json": {
+            "code"?: "idempotency_key_reused";
+            "error": string;
+            "ref"?: string;
+          };
         };
       };
       "413": {
@@ -31060,7 +31079,11 @@ export interface operations {
       };
       "503": {
         content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+          "application/json": {
+            "code"?: "idempotency_unavailable";
+            "error": string;
+            "ref"?: string;
+          };
         };
       };
       "default": {
@@ -31519,6 +31542,64 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleCreateFeatureAcceptanceRecord": {
+    parameters?: never;
+    requestBody: {
+      content: {
+        "application/json": {
+          "artifacts"?: Array<{
+            "name"?: string;
+            "sha256"?: string;
+          }>;
+          "binary_sha256"?: string;
+          "commit_sha"?: string;
+          "feature"?: string;
+          "notes"?: string;
+          "platform"?: string;
+          "profile"?: string;
+          "provider"?: string;
+          "requirement_id"?: string;
+          "result"?: string;
+          "suite"?: string;
+        };
+      };
+    };
+    responses: {
+      "201": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -37446,6 +37527,9 @@ export interface operations {
         };
       };
       "409": {
+        headers: {
+          "Retry-After"?: string;
+        };
         content: {
           "application/json": {
             "code"?: "idempotency_key_reused" | "idempotency_key_expired" | "idempotency_request_in_progress";
@@ -37469,8 +37553,9 @@ export interface operations {
       "503": {
         content: {
           "application/json": {
-            "code"?: "idempotency_unavailable";
+            "code"?: "idempotency_unavailable" | "scenario_save_outcome_unknown";
             "error": string;
+            "ref"?: string;
           };
         };
       };
@@ -39538,6 +39623,9 @@ export interface operations {
         };
       };
       "409": {
+        headers: {
+          "Retry-After"?: string;
+        };
         content: {
           "application/json": {
             "code"?: "idempotency_key_reused" | "idempotency_key_expired" | "idempotency_request_in_progress";
@@ -44444,7 +44532,8 @@ export interface operations {
       "path": {
         "id": string;
       };
-      "query"?: {
+      "query": {
+        "project_id": string;
         "revision"?: string;
       };
     };
@@ -45171,9 +45260,9 @@ export interface operations {
       "path": {
         "id": string;
       };
-      "query"?: {
+      "query": {
         "hide"?: string;
-        "project_id"?: string;
+        "project_id": string;
       };
     };
     requestBody?: never;
@@ -50223,6 +50312,7 @@ export interface operations {
               "dimensions"?: Record<string, string>;
               "estimate_bin"?: ({
                 "lower"?: number;
+                "lower_assumed"?: boolean;
                 "upper"?: number;
               }) | null;
               "host"?: string;
@@ -53090,137 +53180,6 @@ export interface operations {
       };
     };
   };
-  "handleFeatureAcceptanceRecords": {
-    parameters: {
-      "query"?: {
-        "feature"?: string;
-        "limit"?: number;
-        "offset"?: number;
-        "requirement"?: string;
-      };
-    };
-    requestBody?: never;
-    responses: {
-      "200": {
-        content: {
-          "application/json": Record<string, unknown>;
-        };
-      };
-      "201": {
-        content: {
-          "application/json": unknown;
-        };
-      };
-      "400": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "401": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "403": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "413": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "500": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "503": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "default": {
-        content?: never;
-      };
-    };
-  };
-  "handleFeatureAcceptanceRecords_2": {
-    parameters: {
-      "query"?: {
-        "feature"?: string;
-        "limit"?: number;
-        "offset"?: number;
-        "requirement"?: string;
-      };
-    };
-    requestBody: {
-      content: {
-        "application/json": {
-          "artifacts"?: Array<{
-            "name"?: string;
-            "sha256"?: string;
-          }>;
-          "binary_sha256"?: string;
-          "commit_sha"?: string;
-          "feature"?: string;
-          "notes"?: string;
-          "platform"?: string;
-          "profile"?: string;
-          "provider"?: string;
-          "requirement_id"?: string;
-          "result"?: string;
-          "suite"?: string;
-        };
-      };
-    };
-    responses: {
-      "200": {
-        content: {
-          "application/json": Record<string, unknown>;
-        };
-      };
-      "201": {
-        content: {
-          "application/json": unknown;
-        };
-      };
-      "400": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "401": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "403": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "413": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "500": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "503": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "default": {
-        content?: never;
-      };
-    };
-  };
   "handleFeatureAcceptanceStatus": {
     parameters: {
       "query"?: {
@@ -53237,7 +53196,52 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "statuses": Array<{
+              "feature": string;
+              "latest": ({
+                "artifacts": Array<Record<string, unknown>>;
+                "binary_sha256"?: string;
+                "commit_sha": string;
+                "feature": string;
+                "id": string;
+                "notes"?: string;
+                "platform"?: string;
+                "profile"?: string;
+                "provider"?: string;
+                "recorded_at": string;
+                "recorded_by": string;
+                "requirement_id": string;
+                "result": string;
+                "seq": number;
+                "suite": string;
+              }) | null;
+              "platform"?: string;
+              "profile"?: string;
+              "provider"?: string;
+              "reason"?: string;
+              "requirement_id": string;
+              "supported": boolean;
+              "withdrawn_by"?: ({
+                "artifacts": Array<Record<string, unknown>>;
+                "binary_sha256"?: string;
+                "commit_sha": string;
+                "feature": string;
+                "id": string;
+                "notes"?: string;
+                "platform"?: string;
+                "profile"?: string;
+                "provider"?: string;
+                "recorded_at": string;
+                "recorded_by": string;
+                "requirement_id": string;
+                "result": string;
+                "seq": number;
+                "suite": string;
+              }) | null;
+            }>;
+            "truncated": boolean;
+          };
         };
       };
       "400": {
@@ -53550,7 +53554,8 @@ export interface operations {
       "path": {
         "id": string;
       };
-      "query"?: {
+      "query": {
+        "project_id": string;
         "revision"?: string;
       };
     };
@@ -57342,8 +57347,8 @@ export interface operations {
       "path": {
         "id": string;
       };
-      "query"?: {
-        "project_id"?: string;
+      "query": {
+        "project_id": string;
       };
     };
     requestBody?: never;
@@ -57369,6 +57374,14 @@ export interface operations {
             "revision": number;
             "state": string;
             "updated_at": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": {
+            "error": string;
+            "ref"?: string;
           };
         };
       };
@@ -86657,10 +86670,11 @@ export interface operations {
   };
   "handleListAnalysisPolicies": {
     parameters: {
-      "query"?: {
-        "kind"?: string;
+      "query": {
+        "kind": string;
         "limit"?: number;
         "offset"?: number;
+        "project_id": string;
       };
     };
     requestBody?: never;
@@ -87580,11 +87594,11 @@ export interface operations {
   };
   "handleListEvaluationJobs": {
     parameters: {
-      "query"?: {
+      "query": {
         "kind"?: string;
         "limit"?: number;
         "offset"?: number;
-        "project_id"?: string;
+        "project_id": string;
       };
     };
     requestBody?: never;
@@ -87613,6 +87627,14 @@ export interface operations {
               "updated_at": string;
             }>;
             "kinds": Array<string>;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": {
+            "error": string;
+            "ref"?: string;
           };
         };
       };
@@ -87879,6 +87901,68 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleListFeatureAcceptanceRecords": {
+    parameters: {
+      "query"?: {
+        "feature"?: string;
+        "limit"?: number;
+        "offset"?: number;
+        "requirement"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "records": Array<({
+              "artifacts": Array<{
+                "name": string;
+                "sha256": string;
+              }>;
+              "binary_sha256"?: string;
+              "commit_sha": string;
+              "feature": string;
+              "id": string;
+              "notes"?: string;
+              "platform"?: string;
+              "profile"?: string;
+              "provider"?: string;
+              "recorded_at": string;
+              "recorded_by": string;
+              "requirement_id": string;
+              "result": string;
+              "seq": number;
+              "suite": string;
+            }) | null>;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -90221,6 +90305,7 @@ export interface operations {
                   "dimensions"?: Record<string, string>;
                   "estimate_bin"?: ({
                     "lower": number;
+                    "lower_assumed"?: boolean;
                     "upper": number;
                   }) | null;
                   "host"?: string;
@@ -124637,6 +124722,7 @@ export interface operations {
             "dimensions"?: Record<string, string>;
             "estimate_bin"?: ({
               "lower"?: number;
+              "lower_assumed"?: boolean;
               "upper"?: number;
             }) | null;
             "host"?: string;
@@ -145394,6 +145480,9 @@ export interface operations {
       "path": {
         "id": string;
       };
+      "query": {
+        "project_id": string;
+      };
     };
     requestBody: {
       content: {
@@ -162804,8 +162893,8 @@ export interface paths {
     "post": operations["handleDiagnoseSelectors"];
   };
   "/api/v1/system/acceptance-records": {
-    "get": operations["handleFeatureAcceptanceRecords"];
-    "post": operations["handleFeatureAcceptanceRecords_2"];
+    "get": operations["handleListFeatureAcceptanceRecords"];
+    "post": operations["handleCreateFeatureAcceptanceRecord"];
   };
   "/api/v1/system/acceptance-status": {
     "get": operations["handleFeatureAcceptanceStatus"];

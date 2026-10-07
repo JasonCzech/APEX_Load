@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -1023,5 +1024,43 @@ func TestVUserRecordResultDropsSuccessfulResponseBodyUnlessExtendedLoggingNeedsI
 	})
 	if !strings.Contains(extendedSuccess.ResponseBody, `"access_token":"[REDACTED]"`) {
 		t.Fatalf("extended success response body = %q, want retained and scrubbed", extendedSuccess.ResponseBody)
+	}
+}
+
+// A runtime secret in the host that initiated a request is withheld from the
+// request's evidence, which survives with its initiator type; a request whose
+// own origin names the secret keeps no evidence at all.
+func TestBrowserEvidenceInitiatorOriginHidesRuntimeSecrets(t *testing.T) {
+	const secret = "tenant-secret-4471"
+	config := WithSecretValueRedaction(nil, []string{secret})
+	generation := "0123456789abcdef0123456789abcdef"
+	zero, size := 0.0, int64(0)
+	evidence := func(origin, initiator string) *protocol.BrowserResourceEvidence {
+		return &protocol.BrowserResourceEvidence{Version: protocol.BrowserResourceEvidenceVersion, SourceGeneration: generation, RequestID: generation + "-request-1",
+			ObservedAt: time.Unix(1700000000, 0).UTC(), TimingSource: "playwright", State: "finished", Origin: origin,
+			Phases: []protocol.BrowserResourcePhase{{Name: "response", StartMS: &zero, EndMS: &zero}}, Bytes: protocol.BrowserResourceBytes{ResponseEncodedBody: &size},
+			InitiatorType: "parser", InitiatorOrigin: initiator}
+	}
+	initiated := evidence("https://cdn.example", "https://"+secret+".app.example")
+	if initiated.Clone() == nil {
+		t.Fatal("fixture: evidence is not valid")
+	}
+	entries := scrubSensitiveNetworkEntries([]protocol.NetworkEntry{
+		{URL: "https://cdn.example/app.js", BrowserEvidence: initiated},
+		{URL: "https://cdn.example/other.js", BrowserEvidence: evidence("https://cdn.example", "https://app.example")},
+	}, config)
+	got := entries[0].BrowserEvidence
+	if got == nil || got.InitiatorOrigin != "" || got.InitiatorType != "parser" {
+		t.Fatalf("initiating origin with a secret: %+v", got)
+	}
+	if kept := entries[1].BrowserEvidence; kept == nil || kept.InitiatorOrigin != "https://app.example" {
+		t.Fatalf("an ordinary initiating origin was withheld: %+v", kept)
+	}
+	encoded, err := json.Marshal(entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, []byte(secret)) {
+		t.Fatalf("runtime secret leaked: %s", encoded)
 	}
 }

@@ -1,6 +1,6 @@
 # Browser document evidence
 
-Status: Guide — optional resource/document evidence v2 and bounded live/archive inspection. This delivered slice is part of the [feature completion program](../FEATURE_COMPLETION_SPEC.md#6-browser-evidence-completion); it does not certify the full browser evidence, intelligence, HAR or performance program.
+Status: Guide — optional document evidence v2, request evidence v3 with request-to-document association, and bounded live/archive inspection. This delivered slice is part of the [feature completion program](../FEATURE_COMPLETION_SPEC.md#6-browser-evidence-completion); it does not certify the full browser evidence, intelligence, HAR or performance program.
 
 ## Capture and admission
 

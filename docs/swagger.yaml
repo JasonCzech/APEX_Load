@@ -20706,6 +20706,8 @@ paths:
                             lower:
                               type: number
                               format: double
+                            lower_assumed:
+                              type: boolean
                             upper:
                               type: number
                               format: double
@@ -20999,6 +21001,8 @@ paths:
                             lower:
                               type: number
                               format: double
+                            lower_assumed:
+                              type: boolean
                             upper:
                               type: number
                               format: double
@@ -22771,6 +22775,8 @@ paths:
                             lower:
                               type: number
                               format: double
+                            lower_assumed:
+                              type: boolean
                             upper:
                               type: number
                               format: double
@@ -23099,6 +23105,19 @@ paths:
                 required:
                   - jobs
                   - kinds
+        "400":
+          description: 'Bad request: a required parameter is missing or invalid.'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  ref:
+                    type: string
+                required:
+                  - error
         "401":
           description: Authentication required or invalid.
           content:
@@ -23143,8 +23162,8 @@ paths:
             format: int64
         - name: project_id
           in: query
-          description: Handler-defined query parameter.
-          required: false
+          description: Project that owns the policy or evaluation; requests without it are refused with 400.
+          required: true
           schema:
             type: string
       tags:
@@ -23224,12 +23243,30 @@ paths:
                   - revision
                   - state
                   - updated_at
+          headers:
+            Idempotent-Replayed:
+              description: true when the response returns the job an earlier request with the same Idempotency-Key created.
+              schema:
+                type: string
+                enum:
+                  - "true"
         "400":
-          description: Bad Request
+          description: Bad Request Idempotency outcomes carry a code; other failures keep the generic error body.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - idempotency_key_invalid
+                  error:
+                    type: string
+                  ref:
+                    type: string
+                required:
+                  - error
         "401":
           description: Authentication required or invalid.
           content:
@@ -23249,11 +23286,22 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
-          description: Conflict
+          description: Conflict Idempotency outcomes carry a code; other failures keep the generic error body.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - idempotency_key_reused
+                  error:
+                    type: string
+                  ref:
+                    type: string
+                required:
+                  - error
         "413":
           description: Request Entity Too Large
           content:
@@ -23273,19 +23321,30 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         "503":
-          description: Service Unavailable
+          description: Service Unavailable Idempotency outcomes carry a code; other failures keep the generic error body.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - idempotency_unavailable
+                  error:
+                    type: string
+                  ref:
+                    type: string
+                required:
+                  - error
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
       parameters:
         - name: project_id
           in: query
-          description: Handler-defined query parameter.
-          required: false
+          description: Project that owns the policy or evaluation; requests without it are refused with 400.
+          required: true
           schema:
             type: string
         - name: Idempotency-Key
@@ -23417,8 +23476,8 @@ paths:
             type: string
         - name: project_id
           in: query
-          description: Handler-defined query parameter.
-          required: false
+          description: Project that owns the policy or evaluation; requests without it are refused with 400.
+          required: true
           schema:
             type: string
       tags:
@@ -23488,6 +23547,19 @@ paths:
                   - revision
                   - state
                   - updated_at
+        "400":
+          description: 'Bad request: a required parameter is missing or invalid.'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  ref:
+                    type: string
+                required:
+                  - error
         "401":
           description: Authentication required or invalid.
           content:
@@ -23517,8 +23589,8 @@ paths:
             type: string
         - name: project_id
           in: query
-          description: Handler-defined query parameter.
-          required: false
+          description: Project that owns the policy or evaluation; requests without it are refused with 400.
+          required: true
           schema:
             type: string
       tags:
@@ -26584,8 +26656,8 @@ paths:
       parameters:
         - name: kind
           in: query
-          description: Handler-defined query parameter.
-          required: false
+          description: Policy kind to list; requests without it are refused with 400.
+          required: true
           schema:
             type: string
         - name: limit
@@ -26602,6 +26674,12 @@ paths:
           schema:
             type: integer
             format: int64
+        - name: project_id
+          in: query
+          description: Project that owns the policy or evaluation; requests without it are refused with 400.
+          required: true
+          schema:
+            type: string
       tags:
         - Analysis
       x-handler: handleListAnalysisPolicies
@@ -26710,6 +26788,13 @@ paths:
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: project_id
+          in: query
+          description: Project that owns the policy or evaluation; requests without it are refused with 400.
+          required: true
+          schema:
+            type: string
       tags:
         - Analysis
       x-handler: handleCreateAnalysisPolicy
@@ -26776,6 +26861,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: project_id
+          in: query
+          description: Project that owns the policy or evaluation; requests without it are refused with 400.
+          required: true
+          schema:
+            type: string
       tags:
         - Analysis
       x-handler: handleDeleteAnalysisPolicy
@@ -26827,6 +26918,12 @@ paths:
           in: query
           description: Handler-defined query parameter.
           required: false
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          description: Project that owns the policy or evaluation; requests without it are refused with 400.
+          required: true
           schema:
             type: string
       tags:
@@ -26940,6 +27037,12 @@ paths:
       parameters:
         - name: id
           in: path
+          required: true
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          description: Project that owns the policy or evaluation; requests without it are refused with 400.
           required: true
           schema:
             type: string
@@ -58905,6 +59008,8 @@ paths:
                               lower:
                                 type: number
                                 format: double
+                              lower_assumed:
+                                type: boolean
                               upper:
                                 type: number
                                 format: double
@@ -59476,6 +59581,8 @@ paths:
                           lower:
                             type: number
                             format: double
+                          lower_assumed:
+                            type: boolean
                           upper:
                             type: number
                             format: double
@@ -60348,6 +60455,8 @@ paths:
                           lower:
                             type: number
                             format: double
+                          lower_assumed:
+                            type: boolean
                           upper:
                             type: number
                             format: double
@@ -64096,7 +64205,7 @@ paths:
                       properties:
                         require_scenario_save_if_match:
                           type: boolean
-                          description: When true, every scenario-authored write (PUT /api/v1/scenarios/{id}, DELETE, data-pools, library-assignment, monitor-bindings and runtime/apply-to-groups) must present a strong scenario-authoring-v1 If-Match; a missing validator returns 428. The policy is re-read inside each write's transaction. Controllers without durable scenario revisions refuse those writes under this policy with 503 scenario_save_strict_policy_unavailable.
+                          description: 'When true, every scenario-authored write (PUT /api/v1/scenarios/{id}, DELETE, data-pools, library-assignment, monitor-bindings and runtime/apply-to-groups) must present a strong scenario-authoring-v1 If-Match; a missing validator returns 428. The policy is re-read inside each write''s transaction. Controllers without durable scenario revisions refuse those writes under this policy with 503 scenario_save_strict_policy_unavailable. The dashboard''s scenario editors do not send If-Match yet, so while this policy is on they cannot save, delete or rebind scenarios; enable it only for API-driven projects. On PUT an omitted authoring object keeps the current policies; send authoring: {} to clear them.'
                         require_script_save_if_match:
                           type: boolean
                       nullable: true
@@ -64616,7 +64725,7 @@ paths:
                       properties:
                         require_scenario_save_if_match:
                           type: boolean
-                          description: When true, every scenario-authored write (PUT /api/v1/scenarios/{id}, DELETE, data-pools, library-assignment, monitor-bindings and runtime/apply-to-groups) must present a strong scenario-authoring-v1 If-Match; a missing validator returns 428. The policy is re-read inside each write's transaction. Controllers without durable scenario revisions refuse those writes under this policy with 503 scenario_save_strict_policy_unavailable.
+                          description: 'When true, every scenario-authored write (PUT /api/v1/scenarios/{id}, DELETE, data-pools, library-assignment, monitor-bindings and runtime/apply-to-groups) must present a strong scenario-authoring-v1 If-Match; a missing validator returns 428. The policy is re-read inside each write''s transaction. Controllers without durable scenario revisions refuse those writes under this policy with 503 scenario_save_strict_policy_unavailable. The dashboard''s scenario editors do not send If-Match yet, so while this policy is on they cannot save, delete or rebind scenarios; enable it only for API-driven projects. On PUT an omitted authoring object keeps the current policies; send authoring: {} to clear them.'
                         require_script_save_if_match:
                           type: boolean
                       nullable: true
@@ -137939,6 +138048,11 @@ paths:
                     type: string
                 required:
                   - error
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying idempotency_request_in_progress.
+              schema:
+                type: string
         "410":
           description: Gone Idempotency outcomes carry a code; other failures keep the generic error body.
           content:
@@ -137961,7 +138075,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         "503":
-          description: Service Unavailable Idempotency outcomes carry a code; other failures keep the generic error body.
+          description: 'Service Unavailable Idempotency outcomes carry a code; other failures keep the generic error body. scenario_save_outcome_unknown means the create may already have committed: retry only with the same Idempotency-Key, which adopts it.'
           content:
             application/json:
               schema:
@@ -137971,7 +138085,10 @@ paths:
                     type: string
                     enum:
                       - idempotency_unavailable
+                      - scenario_save_outcome_unknown
                   error:
+                    type: string
+                  ref:
                     type: string
                 required:
                   - error
@@ -188767,6 +188884,11 @@ paths:
                     type: string
                 required:
                   - error
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying idempotency_request_in_progress.
+              schema:
+                type: string
         "410":
           description: Gone Idempotency outcomes carry a code; other failures keep the generic error body.
           content:
@@ -305951,9 +306073,9 @@ paths:
       x-handler: handleDiagnoseSelectors
   /api/v1/system/acceptance-records:
     get:
-      summary: Feature Acceptance Records
+      summary: List Feature Acceptance Records
       description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: system:read'
-      operationId: handleFeatureAcceptanceRecords
+      operationId: handleListFeatureAcceptanceRecords
       responses:
         "200":
           description: OK
@@ -305961,19 +306083,68 @@ paths:
             application/json:
               schema:
                 type: object
-                additionalProperties: {}
-        "201":
-          description: Created
-          content:
-            application/json:
-              schema:
-                description: Operation-specific JSON response.
-        "400":
-          description: Bad Request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                properties:
+                  records:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        artifacts:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              name:
+                                type: string
+                              sha256:
+                                type: string
+                            required:
+                              - name
+                              - sha256
+                        binary_sha256:
+                          type: string
+                        commit_sha:
+                          type: string
+                        feature:
+                          type: string
+                        id:
+                          type: string
+                        notes:
+                          type: string
+                        platform:
+                          type: string
+                        profile:
+                          type: string
+                        provider:
+                          type: string
+                        recorded_at:
+                          type: string
+                          format: date-time
+                        recorded_by:
+                          type: string
+                        requirement_id:
+                          type: string
+                        result:
+                          type: string
+                        seq:
+                          type: integer
+                          format: int64
+                        suite:
+                          type: string
+                      required:
+                        - artifacts
+                        - commit_sha
+                        - feature
+                        - id
+                        - recorded_at
+                        - recorded_by
+                        - requirement_id
+                        - result
+                        - seq
+                        - suite
+                      nullable: true
+                required:
+                  - records
         "401":
           description: Authentication required or invalid.
           content:
@@ -305982,12 +306153,6 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "413":
-          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -306036,11 +306201,11 @@ paths:
             type: string
       tags:
         - System
-      x-handler: handleFeatureAcceptanceRecords
+      x-handler: handleListFeatureAcceptanceRecords
     post:
-      summary: Feature Acceptance Records
+      summary: Create Feature Acceptance Record
       description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
-      operationId: handleFeatureAcceptanceRecords_2
+      operationId: handleCreateFeatureAcceptanceRecord
       requestBody:
         required: true
         content:
@@ -306078,13 +306243,6 @@ paths:
                 suite:
                   type: string
       responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: {}
         "201":
           description: Created
           content:
@@ -306115,12 +306273,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        "500":
-          description: Internal Server Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         "503":
           description: Service Unavailable
           content:
@@ -306130,36 +306282,9 @@ paths:
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
-      parameters:
-        - name: feature
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-        - name: limit
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: offset
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: integer
-            format: int64
-        - name: requirement
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
       tags:
         - System
-      x-handler: handleFeatureAcceptanceRecords
+      x-handler: handleCreateFeatureAcceptanceRecord
   /api/v1/system/acceptance-status:
     get:
       summary: Feature Acceptance Status
@@ -306172,7 +306297,136 @@ paths:
             application/json:
               schema:
                 type: object
-                additionalProperties: {}
+                properties:
+                  statuses:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        feature:
+                          type: string
+                        latest:
+                          type: object
+                          properties:
+                            artifacts:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            binary_sha256:
+                              type: string
+                            commit_sha:
+                              type: string
+                            feature:
+                              type: string
+                            id:
+                              type: string
+                            notes:
+                              type: string
+                            platform:
+                              type: string
+                            profile:
+                              type: string
+                            provider:
+                              type: string
+                            recorded_at:
+                              type: string
+                              format: date-time
+                            recorded_by:
+                              type: string
+                            requirement_id:
+                              type: string
+                            result:
+                              type: string
+                            seq:
+                              type: integer
+                              format: int64
+                            suite:
+                              type: string
+                          required:
+                            - artifacts
+                            - commit_sha
+                            - feature
+                            - id
+                            - recorded_at
+                            - recorded_by
+                            - requirement_id
+                            - result
+                            - seq
+                            - suite
+                          nullable: true
+                        platform:
+                          type: string
+                        profile:
+                          type: string
+                        provider:
+                          type: string
+                        reason:
+                          type: string
+                        requirement_id:
+                          type: string
+                        supported:
+                          type: boolean
+                        withdrawn_by:
+                          type: object
+                          properties:
+                            artifacts:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            binary_sha256:
+                              type: string
+                            commit_sha:
+                              type: string
+                            feature:
+                              type: string
+                            id:
+                              type: string
+                            notes:
+                              type: string
+                            platform:
+                              type: string
+                            profile:
+                              type: string
+                            provider:
+                              type: string
+                            recorded_at:
+                              type: string
+                              format: date-time
+                            recorded_by:
+                              type: string
+                            requirement_id:
+                              type: string
+                            result:
+                              type: string
+                            seq:
+                              type: integer
+                              format: int64
+                            suite:
+                              type: string
+                          required:
+                            - artifacts
+                            - commit_sha
+                            - feature
+                            - id
+                            - recorded_at
+                            - recorded_by
+                            - requirement_id
+                            - result
+                            - seq
+                            - suite
+                          nullable: true
+                      required:
+                        - feature
+                        - latest
+                        - requirement_id
+                        - supported
+                  truncated:
+                    type: boolean
+                required:
+                  - statuses
+                  - truncated
         "400":
           description: Bad Request
           content:
@@ -409205,6 +409459,8 @@ paths:
                                       lower:
                                         type: number
                                         format: double
+                                      lower_assumed:
+                                        type: boolean
                                       upper:
                                         type: number
                                         format: double

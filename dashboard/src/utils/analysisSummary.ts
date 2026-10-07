@@ -83,13 +83,34 @@ export function analysisMetricAggregations(mapping: AnalysisMapping | undefined,
   const summaries = analysisSummaryDeclarations(mapping, metric)
   if (summaries.length) return { options: summaries.map(d => d.statistic), windowSeconds: aggregation => summaries.find(d => d.statistic === aggregation)?.window_seconds }
   const named = analysisNameColumnHistograms(mapping)
-  // A fixed-name measure is never one of the name-column histograms.
+  const namedSummaries = analysisNameColumnSummaries(mapping)
+  // A fixed-name measure is never one of the name-column measures.
   const fixedName = (mapping?.measures ?? []).some(m => !m.name_column?.length && m.name === metric)
-  if (named.length && !fixedName) {
-    const windows = Array.from(new Set(named.map(h => h.window_seconds).filter((w): w is number => !!w)))
-    return { options: allAnalysisAggregations, windowSeconds: aggregation => analysisHistogramStatistics.includes(aggregation) && windows.length === 1 ? windows[0] : undefined }
+  if ((named.length || namedSummaries.length) && !fixedName) {
+    // Only name-column summaries: the metric reports one of their declared statistics. Any other
+    // name-column measure may be the metric too, so every aggregation stays available.
+    const otherNamed = (mapping?.measures ?? []).some(m => m.name_column?.length && m.kind !== 'summary')
+    const options = otherNamed ? allAnalysisAggregations : Array.from(new Set(namedSummaries.map(d => d.statistic)))
+    return {
+      options,
+      // The source window is known when every name-column measure that can answer the aggregation
+      // declares the same one.
+      windowSeconds: aggregation => {
+        const windows = new Set<number>()
+        if (analysisHistogramStatistics.includes(aggregation)) named.forEach(h => { if (h.window_seconds) windows.add(h.window_seconds) })
+        namedSummaries.filter(d => d.statistic === aggregation).forEach(d => windows.add(d.window_seconds))
+        return windows.size === 1 ? [...windows][0] : undefined
+      },
+    }
   }
   return { options: defaultAnalysisAggregations }
+}
+
+/** Declared statistics of summary measures whose metric names come from a name column. */
+export function analysisNameColumnSummaries(mapping: AnalysisMapping | undefined): AnalysisSummaryDeclaration[] {
+  return (mapping?.measures ?? [])
+    .filter(m => m.kind === 'summary' && m.name_column?.length && m.statistic && m.window_seconds)
+    .map(m => ({ statistic: m.statistic as string, window_seconds: m.window_seconds as number }))
 }
 
 export function analysisSummaryMeasureError(measure: AnalysisMeasure, statistics?: string[]): string | undefined {

@@ -17,6 +17,11 @@ var (
 	ErrScriptAuthoringUnavailable          = errors.New("script authored content revision unavailable")
 	ErrScriptAuthoringPreconditionRequired = errors.New("script authored content precondition required")
 	ErrScriptAuthoringInvalidRevision      = errors.New("invalid script authored content revision")
+	// ErrScriptAuthoringOutcomeUnknown wraps a failed commit: the change may
+	// have been applied. Every other error is a definite refusal.
+	ErrScriptAuthoringOutcomeUnknown = errors.New("script authored content commit outcome unknown")
+	// ErrScriptInUse refuses deleting a script that a scenario still uses.
+	ErrScriptInUse = errors.New("script is used by a scenario")
 )
 
 // ScriptAuthoringSnapshot pairs persisted executable content and authored
@@ -387,6 +392,9 @@ func (s *SQLiteStore) deleteScriptConditional(id string, expectedUpdatedAt time.
 	// under the parent lock; do not reapply it and self-conflict on final DELETE.
 	result, err := tx.Exec(`DELETE FROM scripts WHERE id=? AND project_id=?`, id, project)
 	if err != nil {
+		if isForeignKeyConstraintErr(err) {
+			return false, ErrScriptInUse
+		}
 		return false, err
 	}
 	count, err := result.RowsAffected()
@@ -400,7 +408,7 @@ func (s *SQLiteStore) deleteScriptConditional(id string, expectedUpdatedAt time.
 		return false, err
 	}
 	if err := tx.Commit(); err != nil {
-		return false, err
+		return false, fmt.Errorf("%w: %v", ErrScriptAuthoringOutcomeUnknown, err)
 	}
 	return true, nil
 }

@@ -974,6 +974,11 @@ func scrubSensitiveNetworkEntries(entries []protocol.NetworkEntry, config *Redac
 	for i := range entries {
 		if evidence := entries[i].BrowserEvidence.Clone(); evidence != nil {
 			evidence.Origin = scrubSensitiveTextWithConfig(evidence.Origin, config)
+			// An initiating origin that names a secret is withheld; the
+			// initiator type alone stays valid.
+			if evidence.InitiatorOrigin != "" && scrubSensitiveTextWithConfig(evidence.InitiatorOrigin, config) != evidence.InitiatorOrigin {
+				evidence.InitiatorOrigin = ""
+			}
 			entries[i].BrowserEvidence = evidence.Clone()
 		} else {
 			entries[i].BrowserEvidence = nil

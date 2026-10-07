@@ -76,6 +76,14 @@ describe('analysis summary helpers', () => {
     // A fixed-name metric beside name-column histograms keeps its own aggregations.
     const mixed = { ...named, measures: [...named.measures, { value: ['rt'], name: 'response', kind: 'observation', unit: 'ms' }] }
     expect(analysisMetricAggregations(mixed, 'response').options).not.toContain('p999')
+    // Name-column summaries answer only their declared statistics, over their declared window.
+    const summaryRow = { value: ['v'], name: '', name_column: ['metric'], kind: 'summary', unit: 'ms', statistic: 'p90', window_seconds: 60 }
+    const namedSummaries = { ...mapping, measures: [summaryRow, { ...summaryRow, value: ['a'], statistic: 'avg' }, { ...summaryRow, value: ['b'], statistic: 'avg', window_seconds: 300 }] }
+    const summaryAggregations = analysisMetricAggregations(namedSummaries, 'anything')
+    expect(summaryAggregations.options).toEqual(['p90', 'avg'])
+    expect(summaryAggregations.windowSeconds?.('p90')).toBe(60)
+    // Two declared windows for one statistic leave the window unknown.
+    expect(summaryAggregations.windowSeconds?.('avg')).toBeUndefined()
   })
 
   it('finds each metric\'s window grid from its partitions and a grid both sides share', () => {

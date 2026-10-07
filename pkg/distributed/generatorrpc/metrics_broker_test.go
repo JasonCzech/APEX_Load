@@ -337,3 +337,27 @@ func TestMetricsBrokerStampsTheProcessSourceEpoch(t *testing.T) {
 		t.Fatal("registration stamped the caller's live snapshot")
 	}
 }
+
+// A terminal restored after a restart was retained before it was published,
+// so it has no epoch of its own; it replays under this process's epoch,
+// unsequenced, rather than reading as an older generator.
+func TestRestoredTerminalReplaysUnderThisProcessEpoch(t *testing.T) {
+	broker := newMetricsBroker(10, 10, 0)
+	broker.restoreTerminal(&pb.MetricsBatch{TestId: "run", ExecutionGeneration: 4, LifecycleState: "COMPLETE", TimestampUnixMs: time.Now().UnixMilli()}, time.Now())
+	broker.restoreTerminal(&pb.MetricsBatch{TestId: "kept", ExecutionGeneration: 4, LifecycleState: "COMPLETE", SourceEpoch: "earlier-process", SourceEpochStartedUnixMs: 1, BatchSequence: 7}, time.Now())
+	id, _, initial, err := registerMetricsBrokerSubscriber(t, broker, 4, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer broker.unregister(id)
+	epochs := map[string]*pb.MetricsBatch{}
+	for _, batch := range initial {
+		epochs[batch.GetTestId()] = batch
+	}
+	if restored := epochs["run"]; restored == nil || restored.GetSourceEpoch() != processSourceEpoch.id || restored.GetBatchSequence() != 0 {
+		t.Fatalf("restored terminal %#v", restored)
+	}
+	if kept := epochs["kept"]; kept == nil || kept.GetSourceEpoch() != "earlier-process" || kept.GetBatchSequence() != 7 {
+		t.Fatalf("a terminal with its own epoch was restamped: %#v", kept)
+	}
+}

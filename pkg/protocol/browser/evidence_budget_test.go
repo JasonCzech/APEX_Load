@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -198,8 +199,65 @@ func TestProcessTreeRSSIncludesTheRootAndDescendants(t *testing.T) {
 	if total <= 0 {
 		t.Fatal("init process tree has no resident memory")
 	}
-	if missing, err := processTreeRSSBytes(context.Background(), 1<<30); err != nil || missing != 0 {
+	// A root missing from the list is a failed measurement, not an empty tree.
+	if missing, err := processTreeRSSBytes(context.Background(), 1<<30); err == nil || missing != 0 {
 		t.Fatalf("absent root %d %v", missing, err)
+	}
+}
+
+// The /proc reader Linux uses (not ps) sees this process with its parent
+// and resident memory.
+func TestProcProcessSamplesIncludeThisProcess(t *testing.T) {
+	samples, err := readProcProcessSamples(context.Background(), "/proc")
+	if err != nil {
+		t.Skipf("/proc unavailable: %v", err)
+	}
+	for _, sample := range samples {
+		if sample.PID == os.Getpid() {
+			if sample.PPID != os.Getppid() || sample.RSSKB <= 0 {
+				t.Fatalf("this process: %+v (parent %d)", sample, os.Getppid())
+			}
+			if total := processTreeRSS(samples, os.Getpid()); total < int64(sample.RSSKB*1024) {
+				t.Fatalf("tree RSS %d below the root's own", total)
+			}
+			return
+		}
+	}
+	t.Fatalf("this process is missing from %d processes read from /proc", len(samples))
+}
+
+// A stat line's command name may hold spaces and parentheses; malformed or
+// short lines, and processes gone before their file is read, are left out.
+func TestProcStatParsingAndVanishedProcesses(t *testing.T) {
+	line := "4242 (renderer (gpu) x) S 4241 4242 4242 0 -1 4194560 100 0 0 0 250 50 0 0 20 0 9 0 12345 104857600 2560 18446744073709551615"
+	sample, ok := parseProcStat(4242, line, 4)
+	if !ok || sample.PPID != 4241 || sample.RSSKB != 2560*4 || sample.CPUTimeSeconds != 3 {
+		t.Fatalf("parsed %+v %v", sample, ok)
+	}
+	for _, bad := range []string{"4242 renderer S 1", "4242 (renderer) S 1 2 3", "4242 (renderer) S x 4242 4242 0 -1 0 0 0 0 0 250 50 0 0 20 0 9 0 1 1 2560"} {
+		if _, ok := parseProcStat(4242, bad, 4); ok {
+			t.Fatalf("malformed stat line accepted: %q", bad)
+		}
+	}
+	root := t.TempDir()
+	for pid, content := range map[string]string{"10": "10 (driver) S 1 " + strings.Repeat("0 ", 9) + "100 100 0 0 0 0 0 0 0 0 256", "11": "11 (chrome) S 10 " + strings.Repeat("0 ", 9) + "50 50 0 0 0 0 0 0 0 0 512", "self": "not a process"} {
+		if err := os.MkdirAll(root+"/"+pid, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(root+"/"+pid+"/stat", []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A process whose directory exists but whose stat file is gone.
+	if err := os.MkdirAll(root+"/12", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	samples, err := readProcProcessSamples(context.Background(), root)
+	if err != nil || len(samples) != 2 {
+		t.Fatalf("samples %+v %v", samples, err)
+	}
+	if total := processTreeRSS(samples, 10); total != (256+512)*int64(os.Getpagesize()) {
+		t.Fatalf("tree RSS %d", total)
 	}
 }
 
@@ -458,6 +516,17 @@ func TestAdmittedContextThatCannotOpenFailsTheIterationSetup(t *testing.T) {
 	budget.mu.Unlock()
 	if held {
 		t.Fatal("a context that failed to open kept its admission")
+	}
+}
+
+// A session the watchdog or its HAR size cap closed ends its VUser at the
+// next iteration boundary rather than failing every action at once.
+func TestSessionClosedByAResourceLimitEndsItsVUserAtTheBoundary(t *testing.T) {
+	for _, limit := range []string{resourceLimitBrowserMemory, resourceLimitHARCapture} {
+		b := &Browser{resourceLimit: limit}
+		if err := b.BeginIteration(context.Background()); !errors.Is(err, errBrowserResourceLimit) || !strings.Contains(err.Error(), limit) {
+			t.Fatalf("%s: BeginIteration = %v", limit, err)
+		}
 	}
 }
 

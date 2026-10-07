@@ -260,3 +260,26 @@ func exerciseAuthoringReceiptTombstoneRenewal(t *testing.T, store *SQLiteStore) 
 func TestAuthoringReceiptTombstoneRenewal(t *testing.T) {
 	exerciseAuthoringReceiptTombstoneRenewal(t, newAuthoringReceiptTestStore(t))
 }
+
+// exerciseScriptDeleteRefusedWhileInUse: a script a scenario still uses is a
+// definite refusal (ErrScriptInUse), never an unknown commit outcome.
+func exerciseScriptDeleteRefusedWhileInUse(t *testing.T, store *SQLiteStore) {
+	if err := store.SaveScript(&dsl.Script{ID: "used-script", Name: "Used", Version: "1.0.0", Protocol: "http", Config: dsl.ScriptConfig{BaseURL: "https://example.test"}, Actions: []dsl.Action{{Name: "request", Type: "request", Method: "GET", Target: "/"}}}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := store.SaveScenario(&Scenario{ID: "uses-it", Name: "Uses it", Duration: "1m", CreatedAt: now, UpdatedAt: now}, []ScenarioScript{{ScenarioID: "uses-it", ScriptID: "used-script", Name: "Used", VUsers: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := store.deleteScriptConditional("used-script", time.Time{}, nil)
+	if deleted || !errors.Is(err, ErrScriptInUse) || errors.Is(err, ErrScriptAuthoringOutcomeUnknown) {
+		t.Fatalf("delete of a script in use = %v, %v", deleted, err)
+	}
+	if script, err := store.GetScript("used-script"); err != nil || script == nil {
+		t.Fatalf("the refused delete removed the script: %v", err)
+	}
+}
+
+func TestScriptDeleteRefusedWhileInUse(t *testing.T) {
+	exerciseScriptDeleteRefusedWhileInUse(t, newAuthoringReceiptTestStore(t))
+}

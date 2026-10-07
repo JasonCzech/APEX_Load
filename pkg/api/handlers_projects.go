@@ -263,6 +263,13 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		project.CategoryID = resolvedCategoryID
 	}
 	project.Name = strings.TrimSpace(req.Name)
+	// An omitted authoring policy is unchanged: a settings form that does not
+	// know the policy must not silently switch a strict save policy off. Send
+	// "authoring": {} to clear it.
+	previousAuthoring := projectAuthoringPolicyDetails(project.Settings.Authoring)
+	if req.Settings.Authoring == nil {
+		req.Settings.Authoring = project.Settings.Authoring
+	}
 	project.Settings = req.Settings
 	updater, supported := s.store.(interface {
 		UpdateProjectIfUnchanged(project *storage.Project, expectedUpdatedAt time.Time) (bool, error)
@@ -281,8 +288,28 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.runner.ReconcilePendingTests()
-	s.recordAuditEvent(r, "project.update", "success", "project", project.ID, project.ID, map[string]any{"name": project.Name, "max_concurrent_tests": project.Settings.MaxConcurrentTests, "max_vusers": project.Settings.MaxVUsers})
+	details := map[string]any{"name": project.Name, "max_concurrent_tests": project.Settings.MaxConcurrentTests, "max_vusers": project.Settings.MaxVUsers}
+	if current := projectAuthoringPolicyDetails(project.Settings.Authoring); current != previousAuthoring {
+		details["authoring_policy_before"], details["authoring_policy_after"] = previousAuthoring, current
+	}
+	s.recordAuditEvent(r, "project.update", "success", "project", project.ID, project.ID, details)
 	writeJSON(w, http.StatusOK, project)
+}
+
+// projectAuthoringPolicyDetails names the strict save policies in force, for
+// audit details.
+func projectAuthoringPolicyDetails(policy *storage.ProjectAuthoringPolicy) string {
+	var parts []string
+	if policy != nil && policy.RequireScriptSaveIfMatch {
+		parts = append(parts, "require_script_save_if_match")
+	}
+	if policy != nil && policy.RequireScenarioSaveIfMatch {
+		parts = append(parts, "require_scenario_save_if_match")
+	}
+	if len(parts) == 0 {
+		return "none"
+	}
+	return strings.Join(parts, ",")
 }
 
 // requireProjectPlacementAccess is the second authorization gate for moving an

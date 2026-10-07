@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -438,12 +440,85 @@ func measureBrowserMemoryUsage(ctx context.Context) (int64, error) {
 }
 
 // processTreeRSSBytes sums the resident memory of rootPID and its descendants.
+// A root missing from the process list is a measurement failure, never zero.
 func processTreeRSSBytes(ctx context.Context, rootPID int) (int64, error) {
-	out, err := exec.CommandContext(ctx, "ps", "-eo", "pid=,ppid=,rss=,time=").Output()
+	samples, err := listProcessSamples(ctx)
 	if err != nil {
 		return 0, err
 	}
-	return processTreeRSS(parseProcessSamples(string(out)), rootPID), nil
+	if !slices.ContainsFunc(samples, func(sample processSample) bool { return sample.PID == rootPID }) {
+		return 0, fmt.Errorf("process %d is not in the process list", rootPID)
+	}
+	return processTreeRSS(samples, rootPID), nil
+}
+
+// listProcessSamples lists processes with their parent, resident memory and
+// CPU time. Linux reads /proc directly: container images ship BusyBox ps,
+// whose RSS column is abbreviated (292m), or no ps at all.
+func listProcessSamples(ctx context.Context) ([]processSample, error) {
+	if runtime.GOOS != "linux" {
+		out, err := exec.CommandContext(ctx, "ps", "-eo", "pid=,ppid=,rss=,time=").Output()
+		if err != nil {
+			return nil, err
+		}
+		return parseProcessSamples(string(out)), nil
+	}
+	return readProcProcessSamples(ctx, "/proc")
+}
+
+// readProcProcessSamples reads each process's stat file once. A process that
+// exits, or whose file cannot be read or parsed, meanwhile is left out.
+func readProcProcessSamples(ctx context.Context, root string) ([]processSample, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, err
+	}
+	pageKB := float64(os.Getpagesize()) / 1024
+	samples := make([]processSample, 0, len(entries))
+	for _, entry := range entries {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil || pid <= 0 {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		data, err := os.ReadFile(root + "/" + entry.Name() + "/stat")
+		if err != nil {
+			continue
+		}
+		if sample, ok := parseProcStat(pid, string(data), pageKB); ok {
+			samples = append(samples, sample)
+		}
+	}
+	return samples, nil
+}
+
+// procClockTicks is USER_HZ, the unit of utime and stime in /proc/<pid>/stat;
+// Linux reports it as 100 on every supported architecture.
+const procClockTicks = 100
+
+// parseProcStat reads the parent, CPU time and resident pages of one
+// /proc/<pid>/stat line. The command name is parenthesized and may itself
+// hold spaces or parentheses, so fields are counted from its last ')'.
+func parseProcStat(pid int, line string, pageKB float64) (processSample, bool) {
+	end := strings.LastIndexByte(line, ')')
+	if end < 0 {
+		return processSample{}, false
+	}
+	// After the name: state(3) ppid(4) ... utime(14) stime(15) ... rss(24).
+	fields := strings.Fields(line[end+1:])
+	if len(fields) < 22 {
+		return processSample{}, false
+	}
+	ppid, ppidErr := strconv.Atoi(fields[1])
+	utime, utimeErr := strconv.ParseUint(fields[11], 10, 64)
+	stime, stimeErr := strconv.ParseUint(fields[12], 10, 64)
+	rss, rssErr := strconv.ParseInt(fields[21], 10, 64)
+	if ppidErr != nil || utimeErr != nil || stimeErr != nil || rssErr != nil || rss < 0 {
+		return processSample{}, false
+	}
+	return processSample{PID: pid, PPID: ppid, RSSKB: float64(rss) * pageKB, CPUTimeSeconds: float64(utime+stime) / procClockTicks}, true
 }
 
 // processTreeRSS sums the resident memory of rootPID and every descendant.

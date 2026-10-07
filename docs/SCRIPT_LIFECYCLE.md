@@ -510,8 +510,8 @@ changes made before admission. Project administrators can set
 `settings.authoring.require_script_save_if_match` to require a tag for ordinary
 script PUT. Missing tags then return 428. A store that cannot provide durable
 revisions cannot bypass this policy or accept a requested conditioned save.
-This policy does not yet make scenario, folder, source or placement operations
-require the new script header.
+This policy does not make scenario, folder, source or placement operations
+require the script header; scenarios have their own policy (below).
 
 An ambiguous persistence outcome or failed outcome audit returns a fixed 503
 response with `script_save_outcome_unknown` or
@@ -525,9 +525,55 @@ Ordinary creation is create-only. A supplied primary ID is matched exactly;
 reference aliases are accepted for reads and updates, not interpreted as a
 creation destination. An existing owned ID returns 409 and a foreign/private
 ID remains hidden. Protected import and authoring-approval workflows retain
-their existing receipt/replay contracts. Ordinary 24-hour creation idempotency,
-scenario revision parity and the complete shared-owner/lifecycle matrix remain
-open in [AUTH-1–AUTH-3](FEATURE_COMPLETION_SPEC.md#auth-1-two-shared-owners-and-revision-safety).
+their existing receipt/replay contracts.
+
+### Retry-safe creates
+
+`POST /api/v1/scripts` and `POST /api/v1/scenarios` accept an optional
+`Idempotency-Key` header (16–512 visible ASCII characters), scoped to the
+project, the caller and the kind of create. For 24 hours the same key and the
+same request return the resource the first request created, with
+`Idempotent-Replayed: true`; the body is the resource as it is now, and
+`X-APEX-Original-Content-Revision` carries the revision the original create
+produced when it is known. A changed request with the same key returns 409
+`idempotency_key_reused`, an expired key 409 `idempotency_key_expired`, and a
+request still in flight 409 `idempotency_request_in_progress` with
+`Retry-After`. Once the created resource is deleted the key returns 410
+`idempotency_resource_deleted` and never recreates it; a delete that was
+refused leaves the key replaying. A scenario create whose commit
+acknowledgement was lost returns 503 `scenario_save_outcome_unknown`: retry it
+with the same key, which adopts the scenario if it committed. Controllers
+without durable receipts refuse a key with 503 `idempotency_unavailable`.
+
+### Scenario authoring revisions
+
+`GET /api/v1/scenarios/{id}?view=authoring` returns the scenario's authoring
+projection with a strong `ETag` of the form
+`"scenario-authoring-v1:<content_revision>"`; create and save responses carry
+the tag their own transaction committed. Send it as `If-Match` on scenario PUT
+and on every other scenario writer (DELETE, data-pools, library assignment,
+monitor bindings and runtime apply-to-groups). It is compared inside the
+write's transaction: a stale tag returns 412, and malformed, weak, wildcard or
+multiple tags return 400. Without a tag the write is unconditioned; a PUT
+without one is audited as `save_mode: legacy_unconditioned`. Project administrators can set
+`settings.authoring.require_scenario_save_if_match` to require a tag on every
+scenario writer (428 without one; the policy is re-read inside each write). The
+dashboard's scenario editors do not send tags yet, so while this policy is on
+they cannot save, delete or rebind scenarios; enable it only for projects
+edited through the API until editor conflict recovery lands. A project update
+that omits `settings.authoring` keeps the current policies; send
+`"authoring": {}` to clear them. Controllers without durable scenario revisions
+refuse a tag with 503 `scenario_save_if_match_unavailable` on PUT and
+`scenario_writer_if_match_unavailable` on the other writers, and refuse every
+write under the strict policy with 503 `scenario_save_strict_policy_unavailable`.
+A save whose commit outcome is unknown returns 503
+`scenario_save_outcome_unknown`, and one whose outcome audit failed
+`scenario_save_outcome_audit_unavailable`: the save may have committed, so
+reload before retrying.
+
+Dashboard conflict recovery for scenarios, queued revise-copy idempotency and
+the complete shared-owner/lifecycle matrix remain open in
+[AUTH-1–AUTH-3](FEATURE_COMPLETION_SPEC.md#auth-1-two-shared-owners-and-revision-safety).
 
 The generated [OpenAPI contract](swagger.yaml) describes the authoring read and
 save representations and error headers. Content revisions are server-owned

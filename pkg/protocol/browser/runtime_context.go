@@ -99,13 +99,22 @@ var browserContextReadmissionBackoff = 5 * time.Second
 // waits out the backoff, so a refused VUser's iterations neither spin nor
 // flood the results; while it stays refused, each action fails at once as a
 // resource limit. A context that is admitted but cannot open fails the
-// iteration setup, as the same error fails Init.
+// iteration setup, as the same error fails Init, and so does a session a
+// resource limit closed.
 func (b *Browser) BeginIteration(ctx context.Context) error {
 	b.mu.Lock()
-	refused, retryAt, lifecycle := b.resourceLimit == resourceLimitAdmission, b.admissionRetryAt, b.evidence.lifecycleContext
+	limit, retryAt, lifecycle := b.resourceLimit, b.admissionRetryAt, b.evidence.lifecycleContext
 	b.mu.Unlock()
-	if !refused {
+	switch limit {
+	case "":
 		return nil
+	case resourceLimitAdmission:
+	default:
+		// The memory watchdog or the HAR size cap closed this session: its
+		// recording was cut short and memory may still be short. It does not
+		// reopen; the VUser ends here instead of failing every action at once
+		// for the rest of the run.
+		return fmt.Errorf("%w (%s): the browser session was closed by its resource limit; this VUser stops", errBrowserResourceLimit, limit)
 	}
 	if wait := time.Until(retryAt); wait > 0 {
 		timer := time.NewTimer(wait)

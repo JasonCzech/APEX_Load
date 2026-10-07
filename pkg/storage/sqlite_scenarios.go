@@ -507,7 +507,7 @@ func (s *SQLiteStore) deleteScenario(id string, guard *ScenarioWriterGuard) erro
 		return err
 	}
 	if count > 0 {
-		return errors.New("scenario has test results")
+		return ErrScenarioHasResults
 	}
 	if _, err := tx.Exec(`DELETE FROM scenario_scripts WHERE scenario_id = ?`, id); err != nil {
 		return err
@@ -527,7 +527,7 @@ func (s *SQLiteStore) deleteScenario(id string, guard *ScenarioWriterGuard) erro
 	if _, err := tx.Exec(`DELETE FROM scenarios WHERE id = ?`, id); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return commitScenarioWriterTx(tx)
 }
 
 // DeleteScenarioIfUnchanged removes a newly imported scenario only if no later

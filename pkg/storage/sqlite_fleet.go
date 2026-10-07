@@ -724,6 +724,11 @@ func isUniqueConstraintErr(err error) bool {
 		strings.Contains(message, "duplicate key")
 }
 
+// isForeignKeyConstraintErr matches both dialects' foreign-key violation text.
+func isForeignKeyConstraintErr(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "foreign key constraint")
+}
+
 const generatorMetadataSelect = `SELECT generator_id, COALESCE(target, ''), fleet_pool_id, COALESCE(region, ''),
 	COALESCE(provider_id, ''), COALESCE(provider_status, ''), COALESCE(cordoned, 0), COALESCE(tags_json, ''), created_at, updated_at
 	FROM generator_metadata`

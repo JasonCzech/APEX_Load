@@ -223,10 +223,14 @@ func HistogramWindowFromDerivation(steps []DerivationStep) (windowSeconds int, o
 }
 
 // EstimateBin is the histogram bin holding an interpolated percentile: the
-// true quantile lies within [Lower, Upper].
+// true quantile lies within [Lower, Upper]. In the first bin the histogram
+// declares no lower edge, so Lower is assumed (zero, or the bound itself when
+// it is not positive), LowerAssumed is set, and the quantile is only known to
+// be at most Upper.
 type EstimateBin struct {
-	Lower float64 `json:"lower"`
-	Upper float64 `json:"upper"`
+	Lower        float64 `json:"lower"`
+	Upper        float64 `json:"upper"`
+	LowerAssumed bool    `json:"lower_assumed,omitempty"`
 }
 
 // HistogramValue reduces one bucket's merged per-bin counts. Counts sum;
@@ -268,12 +272,12 @@ func HistogramValue(bounds, counts []float64, aggregation string) (value float64
 		if i > 0 {
 			lower = bounds[i-1]
 		} else if upper <= 0 {
-			return upper, &EstimateBin{Lower: upper, Upper: upper}, "", nil
+			return upper, &EstimateBin{Lower: upper, Upper: upper, LowerAssumed: true}, "", nil
 		}
 		// Rounding can push the interpolation a hair outside its bin; the
 		// estimate is defined only inside it.
 		estimate := min(max(lower+(upper-lower)*(rank-before)/count, lower), upper)
-		return estimate, &EstimateBin{Lower: lower, Upper: upper}, "", nil
+		return estimate, &EstimateBin{Lower: lower, Upper: upper, LowerAssumed: i == 0}, "", nil
 	}
 	return 0, nil, "", errors.New("histogram rank beyond its counts")
 }

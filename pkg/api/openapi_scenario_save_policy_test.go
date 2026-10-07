@@ -2,6 +2,7 @@ package api
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -91,5 +92,55 @@ func TestScenarioAuthoringOpenAPIContract(t *testing.T) {
 	}
 	if schemas := get.Responses["200"].Content["application/json"].Schema.OneOf; len(schemas) != 2 || !reflect.DeepEqual(schemas[1].Properties["projection_version"].Enum, []string{scenarioAuthoringProjectionVersion}) {
 		t.Fatal("scenario authoring projection schema is undocumented")
+	}
+}
+
+// The analysis policy and evaluation routes require project_id (and the
+// policy list its kind); a scenario create documents the outcome-unknown 503
+// and Retry-After on an in-flight duplicate.
+func TestAnalysisProjectAndCreateRetryContracts(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc oasDoc
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	required := func(operation oasOperation, name string) bool {
+		for _, parameter := range operation.Parameters {
+			if parameter.Name == name && parameter.In == "query" {
+				return parameter.Required
+			}
+		}
+		return false
+	}
+	for _, path := range []string{"/api/v1/analysis/policies", "/api/v1/analysis/policies/{id}", "/api/v1/analysis/evaluations", "/api/v1/analysis/evaluations/{id}"} {
+		if len(doc.Paths[path]) == 0 {
+			t.Fatalf("%s is not documented", path)
+		}
+		for method, operation := range doc.Paths[path] {
+			if !required(operation, "project_id") {
+				t.Fatalf("%s %s: project_id is not required", method, path)
+			}
+			if _, ok := operation.Responses["400"]; !ok {
+				t.Fatalf("%s %s: 400 undocumented", method, path)
+			}
+		}
+	}
+	if !required(doc.Paths["/api/v1/analysis/policies"]["get"], "kind") || required(doc.Paths["/api/v1/analysis/evaluations"]["get"], "kind") {
+		t.Fatal("kind is required on the policy list only")
+	}
+	if _, ok := doc.Paths["/api/v1/analysis/evaluations"]["post"].Responses["202"].Headers["Idempotent-Replayed"]; !ok {
+		t.Fatal("evaluation replay header undocumented")
+	}
+	create := doc.Paths["/api/v1/scenarios"]["post"]
+	if !slices.Contains(create.Responses["503"].Content["application/json"].Schema.Properties["code"].Enum, "scenario_save_outcome_unknown") {
+		t.Fatal("a scenario create's unknown commit outcome is undocumented")
+	}
+	for _, path := range []string{"/api/v1/scripts", "/api/v1/scenarios"} {
+		if _, ok := doc.Paths[path]["post"].Responses["409"].Headers["Retry-After"]; !ok {
+			t.Fatalf("%s 409 Retry-After undocumented", path)
+		}
 	}
 }

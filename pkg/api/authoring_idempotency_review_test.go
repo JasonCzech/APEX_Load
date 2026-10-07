@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -356,5 +358,105 @@ func TestDeleteThatLostToAConcurrentDeleteKeepsItsTombstone(t *testing.T) {
 	}
 	if _, err := store.GetScenarioAuthoringSnapshot(id); !errors.Is(err, storage.ErrScenarioAuthoringNotFound) {
 		t.Fatalf("the deleted scenario was recreated: %v", err)
+	}
+}
+
+// Storage refuses a scenario delete for results this replica has not loaded
+// (another replica started the run): a definite refusal, so the create key
+// still replays.
+func TestStorageRefusedDeleteForResultsKeepsTheCreateKeyReplaying(t *testing.T) {
+	server, store, _, _ := newScenarioPolicyAvailabilityFixture(t)
+	body := scenarioSaveRequest("Stored results", 1)
+	first := idempotentCreateRequest(t, server, "/api/v1/scenarios", body, scenarioCreateKey)
+	if first.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", first.Code, first.Body.String())
+	}
+	id := decodeScenarioID(t, first)
+	if err := store.SaveTest(&storage.TestRecord{ID: "peer-run", ProjectID: storage.DefaultProjectID, ScenarioID: id, Name: "peer", Status: "COMPLETE", StartTime: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	if response := authoringAPIRequest(t, server, http.MethodDelete, "/api/v1/scenarios/"+id, nil, ""); response.Code != http.StatusBadRequest {
+		t.Fatalf("delete of a scenario with unloaded results: %d %s", response.Code, response.Body.String())
+	}
+	replay := idempotentCreateRequest(t, server, "/api/v1/scenarios", body, scenarioCreateKey)
+	if replay.Code != http.StatusCreated || replay.Header().Get("Idempotent-Replayed") != "true" {
+		t.Fatalf("create key after a storage-refused delete: %d %s", replay.Code, replay.Body.String())
+	}
+}
+
+// A script that a scenario this replica has not loaded still uses cannot be
+// deleted (its foreign key refuses it): 409, and the create key still replays.
+func TestRefusedDeleteOfAScriptInUseKeepsTheCreateKeyReplaying(t *testing.T) {
+	server, store := newAuditTestServer(t)
+	t.Cleanup(func() { store.Close() })
+	first := idempotentCreateRequest(t, server, "/api/v1/scripts", idempotentScriptBody("In use"), scriptCreateKey)
+	if first.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", first.Code, first.Body.String())
+	}
+	var created StoredScript
+	if err := json.Unmarshal(first.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := store.SaveScenario(&storage.Scenario{ID: "peer-scenario", Name: "Peer", Duration: "1m", CreatedAt: now, UpdatedAt: now}, []storage.ScenarioScript{{ScenarioID: "peer-scenario", ScriptID: created.ID, Name: "In use", VUsers: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	if response := authoringAPIRequest(t, server, http.MethodDelete, "/api/v1/scripts/"+created.ID, nil, ""); response.Code != http.StatusConflict {
+		t.Fatalf("delete of a script in use: %d %s", response.Code, response.Body.String())
+	}
+	replay := idempotentCreateRequest(t, server, "/api/v1/scripts", idempotentScriptBody("In use"), scriptCreateKey)
+	if replay.Code != http.StatusCreated || replay.Header().Get("Idempotent-Replayed") != "true" {
+		t.Fatalf("create key after a refused script delete: %d %s", replay.Code, replay.Body.String())
+	}
+}
+
+// scenarioDeleteUnknownOutcomeStore reports a delete's commit outcome as
+// unknown, as a connection reset during COMMIT does, after the delete
+// committed or (committed false) without it.
+type scenarioDeleteUnknownOutcomeStore struct {
+	*storage.SQLiteStore
+	committed bool
+}
+
+func (s *scenarioDeleteUnknownOutcomeStore) DeleteScenario(id string) error {
+	if s.committed {
+		if err := s.SQLiteStore.DeleteScenario(id); err != nil {
+			return err
+		}
+	}
+	return fmt.Errorf("%w: connection reset during commit", storage.ErrScenarioAuthoringOutcomeUnknown)
+}
+
+func (s *scenarioDeleteUnknownOutcomeStore) DeleteScenarioGuarded(id string, guard storage.ScenarioWriterGuard) error {
+	if s.committed {
+		if err := s.SQLiteStore.DeleteScenarioGuarded(id, guard); err != nil {
+			return err
+		}
+	}
+	return fmt.Errorf("%w: connection reset during commit", storage.ErrScenarioAuthoringOutcomeUnknown)
+}
+
+// A delete whose commit outcome is unknown keeps its tombstone whether or not
+// it committed: it answers 503 and the create key answers 410, never
+// recreating (or, while the scenario still exists, replaying) it.
+func TestDeleteWithAnUnknownOutcomeKeepsItsTombstone(t *testing.T) {
+	for _, committed := range []bool{true, false} {
+		server, store, _, _ := newScenarioPolicyAvailabilityFixture(t)
+		body := scenarioSaveRequest("Unknown delete", 1)
+		first := idempotentCreateRequest(t, server, "/api/v1/scenarios", body, scenarioCreateKey)
+		if first.Code != http.StatusCreated {
+			t.Fatalf("create: %d %s", first.Code, first.Body.String())
+		}
+		id := decodeScenarioID(t, first)
+		server.runner.scenarioStore = &scenarioDeleteUnknownOutcomeStore{SQLiteStore: store, committed: committed}
+		response := authoringAPIRequest(t, server, http.MethodDelete, "/api/v1/scenarios/"+id, nil, "")
+		server.runner.scenarioStore = store
+		if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "scenario_save_outcome_unknown") {
+			t.Fatalf("committed=%v: delete with a lost commit acknowledgement: %d %s", committed, response.Code, response.Body.String())
+		}
+		replay := idempotentCreateRequest(t, server, "/api/v1/scenarios", body, scenarioCreateKey)
+		if replay.Code != http.StatusGone || idempotencyErrorCode(t, replay) != "idempotency_resource_deleted" {
+			t.Fatalf("committed=%v: create key after a delete with an unknown outcome: %d %s", committed, replay.Code, replay.Body.String())
+		}
 	}
 }

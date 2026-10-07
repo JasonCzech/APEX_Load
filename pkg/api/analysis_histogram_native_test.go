@@ -140,7 +140,7 @@ func TestAnalysisHistogramImportCommitQueryReconcile(t *testing.T) {
 	}
 	// Merged (6,2,2): the median (rank 5) lies in the first bin, 0-50ms.
 	points, code, body = series("p50", 120, 2)
-	if code != 200 || points[0].Value == nil || math.Abs(*points[0].Value-50*5.0/6) > 1e-9 || points[0].EstimateBin == nil || points[0].EstimateBin.Upper != 50 {
+	if code != 200 || points[0].Value == nil || math.Abs(*points[0].Value-50*5.0/6) > 1e-9 || points[0].EstimateBin == nil || points[0].EstimateBin.Upper != 50 || !points[0].EstimateBin.LowerAssumed {
 		t.Fatalf("interpolated median: %d %s", code, body)
 	}
 	// p99 (rank 9.9) is in the overflow bin: no estimate.

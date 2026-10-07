@@ -115,7 +115,7 @@ func (workerNativeExecutor) execute(ctx context.Context, a *workerAttempt, r wor
 			}
 		}
 	}
-	if err := workerBoundPartitionMetadata(typed.Outputs); err != nil {
+	if err := workerBoundPartitionMetadata(typed.Outputs, r.Normalize.ProjectID, r.Normalize.DatasetID, r.Normalize.Mapping.Version); err != nil {
 		return workerResult{}, err
 	}
 	out := workerResult{Status: "ok", Normalize: &typed}

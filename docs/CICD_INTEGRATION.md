@@ -292,7 +292,7 @@ visible in the test UI rather than buried in the build log:
 
 ## Feature acceptance evidence
 
-Support claims rest on append-only acceptance records: which commit and binary ran which suite for a requirement and feature, optionally per profile, provider and platform, with SHA-256 hashes of the sanitized evidence. `apexctl qa record-acceptance` hashes the binary and every `--artifact` locally and posts only the hashes; a `passed` record needs at least one artifact. Records are ordered by a database-assigned sequence, never by a controller clock.
+Support claims rest on append-only acceptance records: which commit and binary ran which suite for a requirement and feature, optionally per profile, provider and platform, with SHA-256 hashes of the sanitized evidence. `apexctl qa record-acceptance` hashes the binary and every `--artifact` locally and posts only the hashes; a `passed` record needs at least one artifact. Recording needs a system-administrator credential (a `ci_runner` key receives 403); reading records and status needs only a global viewer. Records are ordered by a database-assigned sequence, never by a controller clock. Only the `/api/v1/system/acceptance-records` and `/api/v1/system/acceptance-status` routes and `apexctl qa acceptance` read these records today; the capability ledger and the dashboard do not consult them yet.
 
 ```bash
 apexctl qa record-acceptance --api "$APEX_URL" --requirement BE-4 --feature browser-har --platform linux-amd64 --commit "$GITHUB_SHA" --binary ./apexload --suite browser-acceptance --result passed --artifact evidence/browser-matrix.json

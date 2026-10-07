@@ -476,6 +476,12 @@ func (broker *metricsBroker) restoreTerminal(batch *pb.MetricsBatch, completedAt
 		return
 	}
 	clone := proto.Clone(batch).(*pb.MetricsBatch)
+	// The terminal is retained before it is published, so a restored one has
+	// no sequence and no epoch. This process replays it under its own epoch,
+	// unsequenced; an empty epoch would read as an older generator.
+	if clone.GetSourceEpoch() == "" {
+		clone.SourceEpoch, clone.SourceEpochStartedUnixMs = processSourceEpoch.id, processSourceEpoch.startedUnixMs
+	}
 	key := terminalBatchKey{testID: clone.GetTestId(), generation: clone.GetExecutionGeneration()}
 	broker.mu.Lock()
 	broker.terminalBatches[key] = terminalMetricsTombstone{batch: clone, completedAt: completedAt}

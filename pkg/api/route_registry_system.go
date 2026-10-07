@@ -42,11 +42,11 @@ var systemObservabilityAPIRouteCatalog = apiRouteCatalog{
 			return http.HandlerFunc(s.handleGetBrowserBenchmarkEvidence)
 		}),
 		// Append-only qualification evidence; only system administrators record it.
-		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/system/acceptance-records", "handleFeatureAcceptanceRecords", viewerGlobalAccess(), func(s *Server) http.Handler {
-			return http.HandlerFunc(s.handleFeatureAcceptanceRecords)
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/system/acceptance-records", "handleListFeatureAcceptanceRecords", viewerGlobalAccess(), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleListFeatureAcceptanceRecords)
 		}),
-		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/system/acceptance-records", "handleFeatureAcceptanceRecords", systemAdminAccess(), func(s *Server) http.Handler {
-			return http.HandlerFunc(s.handleFeatureAcceptanceRecords)
+		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/system/acceptance-records", "handleCreateFeatureAcceptanceRecord", systemAdminAccess(), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleCreateFeatureAcceptanceRecord)
 		}),
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/system/acceptance-status", "handleFeatureAcceptanceStatus", viewerGlobalAccess(), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleFeatureAcceptanceStatus)

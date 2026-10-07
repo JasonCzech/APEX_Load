@@ -20,6 +20,8 @@ var (
 	// the mutation may or may not be durable, so callers must reload before
 	// retrying. Errors before the commit are definite rollbacks.
 	ErrScenarioAuthoringOutcomeUnknown = errors.New("scenario authored content commit outcome unknown")
+	// ErrScenarioHasResults refuses deleting a scenario that runs reference.
+	ErrScenarioHasResults = errors.New("scenario has test results")
 )
 
 // ScenarioAuthoringSnapshot contains saved overrides and reference identities,

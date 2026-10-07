@@ -22,6 +22,10 @@ const (
 	PartitionProducerVersion  = "apexload.normalized_partition.v1"
 	MaxPartitionManifestBytes = 1 << 20
 	MaxNormalizedPartitions   = 1024
+	// MaxPartitionObjectKeyBytes bounds a manifest partition's object key.
+	MaxPartitionObjectKeyBytes = 274
+	// maxPartitionBytes bounds one normalized object.
+	maxPartitionBytes = int64(20 << 30)
 )
 
 var ErrPartitionManifest = errors.New("normalized partition manifest invalid or excessive")
@@ -207,6 +211,23 @@ func (m NormalizedPartitionManifest) canonicalDigest() (string, error) {
 	h := sha256.Sum256(body)
 	return hex.EncodeToString(h[:]), nil
 }
+
+// PartitionStatsFitManifest reports whether a manifest holding these
+// partition stats fits its byte limit however long the object keys, hashes
+// and object sizes its writer chooses are (as long as Validate allows). The
+// native worker coarsens partition metadata until this holds, so the
+// controller's manifest, keyed by full object keys rather than the worker's
+// short handles, cannot exceed the limit the worker checked.
+func PartitionStatsFitManifest(project, dataset string, mappingVersion int, stats []NormalizedPartitionStats) bool {
+	key, hash := strings.Repeat("k", MaxPartitionObjectKeyBytes), strings.Repeat("0", 64)
+	m := NormalizedPartitionManifest{Version: PartitionManifestVersion, Producer: PartitionProducerVersion, ProjectID: project, DatasetID: dataset, MappingSHA256: hash, MappingVersion: mappingVersion, Partitions: make([]NormalizedPartition, len(stats))}
+	for i := range stats {
+		m.Partitions[i] = NormalizedPartition{ObjectKey: key, SHA256: hash, Bytes: maxPartitionBytes, Stats: stats[i]}
+	}
+	_, err := m.canonicalDigest()
+	return err == nil
+}
+
 func NewNormalizedPartitionManifest(project, dataset string, mapping ParquetMapping, parts []NormalizedPartition) (*NormalizedPartitionManifest, error) {
 	if len(parts) < 1 || len(parts) > MaxNormalizedPartitions {
 		return nil, ErrPartitionManifest
@@ -250,7 +271,7 @@ func (m *NormalizedPartitionManifest) Validate() error {
 	seen := map[string]bool{}
 	var rows, bytes int64
 	for _, p := range m.Partitions {
-		if !partitionText(p.ObjectKey, 274, true) || seen[p.ObjectKey] || !partitionHash(p.SHA256) || p.Bytes < 12 || p.Bytes > 20<<30 || p.Stats.Validate() != nil || p.Stats.IdentityVersion != m.MappingVersion || p.Stats.AcceptedRows() > math.MaxInt64-rows || p.Bytes > (20<<30)-bytes {
+		if !partitionText(p.ObjectKey, MaxPartitionObjectKeyBytes, true) || seen[p.ObjectKey] || !partitionHash(p.SHA256) || p.Bytes < 12 || p.Bytes > maxPartitionBytes || p.Stats.Validate() != nil || p.Stats.IdentityVersion != m.MappingVersion || p.Stats.AcceptedRows() > math.MaxInt64-rows || p.Bytes > (20<<30)-bytes {
 			return ErrPartitionManifest
 		}
 		if p.Stats.IdentityVersion == 1 && p.Stats.Identity != nil && p.Stats.Identity.Source != m.DatasetID {

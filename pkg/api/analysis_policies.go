@@ -659,6 +659,9 @@ func (s *Server) readAnalysisPolicySave(w http.ResponseWriter, r *http.Request, 
 		writeError(w, http.StatusBadRequest, err.Error())
 		return nil, false
 	}
+	if !s.pinnedBaselineRunInProject(w, req.Kind, req.Definition, project) {
+		return nil, false
+	}
 	definition := storage.AnalysisDefinition{ID: id, ProjectID: project, Kind: req.Kind, Name: strings.TrimSpace(req.Name), Definition: req.Definition}
 	var saved *storage.AnalysisDefinition
 	if policyStore, exclusive := store.(storage.AnalysisPolicyStore); exclusive {
@@ -686,6 +689,25 @@ func (s *Server) readAnalysisPolicySave(w http.ResponseWriter, r *http.Request, 
 	}
 	s.recordAuditEvent(r, "analysis_policy.save", "success", "analysis_policy", id, project, map[string]any{"kind": req.Kind, "revision": saved.Revision, "apply_by_default": envelope.ApplyByDefault})
 	return saved, true
+}
+
+// pinnedBaselineRunInProject refuses a browser policy whose pinned baseline is
+// not a run of the policy's project, as saved comparisons refuse foreign runs.
+// Consumers check the run again when they read it.
+func (s *Server) pinnedBaselineRunInProject(w http.ResponseWriter, kind string, data []byte, project string) bool {
+	if kind != storage.AnalysisDefinitionKindBrowserPolicy {
+		return true
+	}
+	var policy BrowserPolicyDefinition
+	if json.Unmarshal(data, &policy) != nil || policy.Baseline.Mode != "pinned_run" {
+		return true
+	}
+	run, err := s.store.GetTest(policy.Baseline.RunID)
+	if err != nil || run == nil || run.ProjectID != project {
+		writeError(w, http.StatusNotFound, "baseline run not found in project")
+		return false
+	}
+	return true
 }
 
 // writeAnalysisPolicySaveError maps a policy save failure without exposing

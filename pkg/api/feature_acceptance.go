@@ -113,20 +113,37 @@ const (
 // maxAcceptanceSubjects bounds one status response.
 var maxAcceptanceSubjects = 5000
 
-func (s *Server) handleFeatureAcceptanceRecords(w http.ResponseWriter, r *http.Request) {
+// FeatureAcceptanceListResponse pages acceptance records, newest first.
+type FeatureAcceptanceListResponse struct {
+	Records []*storage.FeatureAcceptanceRecord `json:"records"`
+}
+
+// FeatureSupportStatusResponse is the support status of every matching
+// subject; truncated means more subjects exist than one response holds.
+type FeatureSupportStatusResponse struct {
+	Statuses  []FeatureSupportStatus `json:"statuses"`
+	Truncated bool                   `json:"truncated"`
+}
+
+func (s *Server) handleListFeatureAcceptanceRecords(w http.ResponseWriter, r *http.Request) {
 	store, ok := s.store.(storage.FeatureAcceptanceStore)
 	if !ok {
 		writeError(w, http.StatusServiceUnavailable, "feature acceptance records unavailable")
 		return
 	}
-	if r.Method == http.MethodGet {
-		limit, offset := parseLimitOffsetQuery(r, 100)
-		records, err := store.ListFeatureAcceptanceRecords(r.URL.Query().Get("requirement"), r.URL.Query().Get("feature"), min(limit, 500), offset)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "cannot list feature acceptance records")
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"records": records})
+	limit, offset := parseLimitOffsetQuery(r, 100)
+	records, err := store.ListFeatureAcceptanceRecords(r.URL.Query().Get("requirement"), r.URL.Query().Get("feature"), min(limit, 500), offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "cannot list feature acceptance records")
+		return
+	}
+	writeJSON(w, http.StatusOK, FeatureAcceptanceListResponse{Records: records})
+}
+
+func (s *Server) handleCreateFeatureAcceptanceRecord(w http.ResponseWriter, r *http.Request) {
+	store, ok := s.store.(storage.FeatureAcceptanceStore)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "feature acceptance records unavailable")
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
@@ -198,7 +215,7 @@ func (s *Server) handleFeatureAcceptanceStatus(w http.ResponseWriter, r *http.Re
 			filtered = append(filtered, status)
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"statuses": filtered, "truncated": truncated})
+	writeJSON(w, http.StatusOK, FeatureSupportStatusResponse{Statuses: filtered, Truncated: truncated})
 }
 
 func dimensionMatches(filter, value string) bool {

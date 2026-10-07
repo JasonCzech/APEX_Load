@@ -25,7 +25,7 @@ export interface AnalysisProviderMeasurement {
   count?: number; sum?: number; min?: number; max?: number; settled: boolean; aggregation_eligible: boolean
   query_window?: boolean
 }
-export interface AnalysisPoint { source?: string; run_id?: string; provider?: AnalysisProviderMeasurement; kind?: string; input_kind?: string; missing_reason?: string; estimate_bin?: { lower: number; upper: number }; host?: string; service?: string; dimensions?: Record<string, string>; timestamp_utc: string; metric_name: string; value?: number; unit: string; quality: string }
+export interface AnalysisPoint { source?: string; run_id?: string; provider?: AnalysisProviderMeasurement; kind?: string; input_kind?: string; missing_reason?: string; estimate_bin?: { lower: number; upper: number; lower_assumed?: boolean }; host?: string; service?: string; dimensions?: Record<string, string>; timestamp_utc: string; metric_name: string; value?: number; unit: string; quality: string }
 export interface Preparation { allocation?: import('./testConfiguration').GeneratorShardSummary[]; capacity?: PreparationCapacityPolicy; id: string; revision: number; state: string; execution_revision: string; expires_at: string; failure?: string }
 
 export interface PreparationCapacityPolicy { selection?: 'existing' | 'ephemeral'; spot?: 'off' | 'preferred' | 'required'; on_demand_floor?: number; spot_ceiling_percent?: number }

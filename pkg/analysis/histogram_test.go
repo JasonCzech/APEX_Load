@@ -95,9 +95,9 @@ func TestHistogramValueInterpolatesInsideTheRankBin(t *testing.T) {
 		reason      string
 	}{
 		{[]float64{9, 7, 0}, "count", 16, nil, ""},
-		{[]float64{9, 7, 0}, "p50", 10 * 8.0 / 9, &EstimateBin{0, 10}, ""},
-		{[]float64{9, 7, 0}, "p90", 10 + 90*(14.4-9)/7, &EstimateBin{10, 100}, ""},
-		{[]float64{0, 4, 0}, "p50", 55, &EstimateBin{10, 100}, ""},
+		{[]float64{9, 7, 0}, "p50", 10 * 8.0 / 9, &EstimateBin{Lower: 0, Upper: 10, LowerAssumed: true}, ""},
+		{[]float64{9, 7, 0}, "p90", 10 + 90*(14.4-9)/7, &EstimateBin{Lower: 10, Upper: 100}, ""},
+		{[]float64{0, 4, 0}, "p50", 55, &EstimateBin{Lower: 10, Upper: 100}, ""},
 		{[]float64{1, 1, 8}, "p50", 0, nil, MissingHistogramOverflowBin},
 		{[]float64{0, 0, 0}, "p99", 0, nil, MissingHistogramNoObservations},
 		{[]float64{0, 0, 0}, "count", 0, nil, ""},
@@ -108,7 +108,7 @@ func TestHistogramValueInterpolatesInsideTheRankBin(t *testing.T) {
 		}
 	}
 	// A non-positive first bound has no lower edge: report the bound itself.
-	if value, bin, _, _ := HistogramValue([]float64{-1, 0}, []float64{5, 5}, "p50"); value != -1 || *bin != (EstimateBin{-1, -1}) {
+	if value, bin, _, _ := HistogramValue([]float64{-1, 0}, []float64{5, 5}, "p50"); value != -1 || *bin != (EstimateBin{Lower: -1, Upper: -1, LowerAssumed: true}) {
 		t.Fatalf("non-positive first bin %v %+v", value, bin)
 	}
 	if _, _, _, err := HistogramValue(bounds, []float64{1, -1, 0}, "count"); err == nil {
@@ -135,12 +135,12 @@ func TestHistogramLineageAndPointsCarryTheirWindowAndBin(t *testing.T) {
 		t.Fatal("delta window not recoverable")
 	}
 	value := 55.0
-	point := MetricPoint{SchemaVersion: SchemaVersion, ProjectID: "p", Source: "d", MetricName: "latency", TimestampUTC: time.Unix(1_700_000_040, 0).UTC(), Kind: KindGauge, InputKind: KindHistogram, Derivation: lineage, Unit: "ms", Quality: QualityValid, Value: &value, EstimateBin: &EstimateBin{10, 100}}
+	point := MetricPoint{SchemaVersion: SchemaVersion, ProjectID: "p", Source: "d", MetricName: "latency", TimestampUTC: time.Unix(1_700_000_040, 0).UTC(), Kind: KindGauge, InputKind: KindHistogram, Derivation: lineage, Unit: "ms", Quality: QualityValid, Value: &value, EstimateBin: &EstimateBin{Lower: 10, Upper: 100}}
 	if err := point.Validate(); err != nil {
 		t.Fatal(err)
 	}
 	outside := point
-	outside.EstimateBin = &EstimateBin{60, 100}
+	outside.EstimateBin = &EstimateBin{Lower: 60, Upper: 100}
 	if outside.Validate() == nil {
 		t.Fatal("estimate bin excluding its value admitted")
 	}

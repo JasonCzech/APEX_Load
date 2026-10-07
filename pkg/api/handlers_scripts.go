@@ -592,13 +592,17 @@ func (s *Server) handleDeleteScript(w http.ResponseWriter, r *http.Request) {
 	}
 	deleted, err := s.runner.DeleteScriptDurableInProject(id, authorizedProjectOr(r, stored.ProjectID))
 	if err != nil {
-		if errors.Is(err, errScriptConcurrentChange) || storage.IsGitHubScriptSyncBusy(err) {
+		if errors.Is(err, errScriptConcurrentChange) || storage.IsGitHubScriptSyncBusy(err) || errors.Is(err, storage.ErrScriptInUse) {
 			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
-		outcomeUnknown = true
-		// The delete may have committed: keep its tombstone current.
-		s.retombstoneAuthoringReceipts("script", stored.ID)
+		// Only a failed commit leaves the outcome unknown; any other error is
+		// a definite refusal whose tombstone the deferred restore withdraws.
+		if errors.Is(err, storage.ErrScriptAuthoringOutcomeUnknown) {
+			outcomeUnknown = true
+			// The delete may have committed: keep its tombstone current.
+			s.retombstoneAuthoringReceipts("script", stored.ID)
+		}
 		writeError(w, http.StatusInternalServerError, "failed to delete script: "+err.Error())
 		return
 	}

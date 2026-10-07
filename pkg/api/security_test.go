@@ -135,6 +135,9 @@ func TestCORSPreflightAllowsAllowListedWailsOrigin(t *testing.T) {
 	if got := allowed.Header().Get("Access-Control-Allow-Headers"); !strings.Contains(got, "X-APEXLoad-CSRF-Token") {
 		t.Fatalf("Access-Control-Allow-Headers = %q, want CSRF token header", got)
 	}
+	if got := allowed.Header().Get("Access-Control-Allow-Headers"); !strings.Contains(got, "Idempotency-Key") {
+		t.Fatalf("Access-Control-Allow-Headers = %q, want the idempotency key header", got)
+	}
 	if got := allowed.Header().Get("Access-Control-Allow-Headers"); !strings.Contains(got, desktopCapabilityHeader) {
 		t.Fatalf("Access-Control-Allow-Headers = %q, want desktop capability header", got)
 	}

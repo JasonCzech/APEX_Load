@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"math"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -286,11 +285,10 @@ type processSample struct {
 }
 
 func processTreeSnapshot(ctx context.Context, rootPID int) (browserProcessSnapshot, error) {
-	out, err := exec.CommandContext(ctx, "ps", "-eo", "pid=,ppid=,rss=,time=").Output()
+	samples, err := listProcessSamples(ctx)
 	if err != nil {
 		return browserProcessSnapshot{}, err
 	}
-	samples := parseProcessSamples(string(out))
 	childrenByParent := map[int][]processSample{}
 	byPID := map[int]processSample{}
 	for _, sample := range samples {

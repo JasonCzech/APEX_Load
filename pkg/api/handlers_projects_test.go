@@ -958,3 +958,54 @@ func TestDeleteProjectBlocksWhenApplicationCleanupMetadataUnavailable(t *testing
 		t.Fatalf("project deleted without cleanup metadata: %v", err)
 	}
 }
+
+// A settings save that omits the authoring policy leaves it in force, and
+// every change to it is audited; an explicit empty policy clears it.
+func TestProjectUpdateKeepsAnOmittedAuthoringPolicy(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store})
+	put := func(body string) storage.Project {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/projects/"+storage.DefaultProjectID, bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("update %s: %d %s", body, resp.Code, resp.Body.String())
+		}
+		var project storage.Project
+		if err := json.Unmarshal(resp.Body.Bytes(), &project); err != nil {
+			t.Fatal(err)
+		}
+		return project
+	}
+	strict := put(`{"name":"Default","settings":{"authoring":{"require_scenario_save_if_match":true}}}`)
+	if strict.Settings.Authoring == nil || !strict.Settings.Authoring.RequireScenarioSaveIfMatch {
+		t.Fatalf("policy not enabled: %#v", strict.Settings.Authoring)
+	}
+	kept := put(`{"name":"Default","settings":{"max_vusers":50}}`)
+	if kept.Settings.Authoring == nil || !kept.Settings.Authoring.RequireScenarioSaveIfMatch || kept.Settings.MaxVUsers != 50 {
+		t.Fatalf("an omitted policy was cleared: %#v", kept.Settings)
+	}
+	cleared := put(`{"name":"Default","settings":{"max_vusers":50,"authoring":{}}}`)
+	if cleared.Settings.Authoring != nil && cleared.Settings.Authoring.RequireScenarioSaveIfMatch {
+		t.Fatalf("an explicit empty policy did not clear it: %#v", cleared.Settings.Authoring)
+	}
+	events, err := store.ListAuditEvents(storage.AuditEventFilter{Action: "project.update", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	changes := 0
+	for _, event := range events {
+		if event.Details["authoring_policy_before"] != nil {
+			changes++
+		}
+	}
+	if len(events) != 3 || changes != 2 {
+		t.Fatalf("audited %d updates with %d policy changes, want 3 and 2", len(events), changes)
+	}
+}

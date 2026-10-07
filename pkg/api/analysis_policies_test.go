@@ -177,3 +177,41 @@ func TestRunPolicyPinsRefuseAmbiguousDefaultsBeforeAdmission(t *testing.T) {
 		t.Fatalf("refused Start persisted admission: %s %#v", stored.Status, stored.InitialProvenance)
 	}
 }
+
+// A browser policy may pin only a run of its own project as its baseline.
+func TestBrowserPolicyPinsOnlyARunOfItsProject(t *testing.T) {
+	server, store := newAuditTestServer(t)
+	t.Cleanup(func() { store.Close() })
+	if err := store.SaveProject(&storage.Project{ID: "other-project", Name: "Other"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, run := range []*storage.TestRecord{{ID: "own-run", ProjectID: storage.DefaultProjectID, Name: "own", Status: "COMPLETE"}, {ID: "foreign-run", ProjectID: "other-project", Name: "foreign", Status: "COMPLETE"}} {
+		if err := store.SaveTest(run); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pinned := func(run string) string {
+		return `{"version":1,"metrics":[{"metric":"lcp","good":2500,"poor":4000,"weight":1}],"baseline":{"mode":"pinned_run","run_id":"` + run + `"}}`
+	}
+	for run, want := range map[string]int{"foreign-run": http.StatusNotFound, "missing-run": http.StatusNotFound, "own-run": http.StatusCreated} {
+		response := authoringAPIRequest(t, server, http.MethodPost, policiesPath, policyRequest(storage.AnalysisDefinitionKindBrowserPolicy, "Pinned "+run, 0, pinned(run)), "")
+		if response.Code != want {
+			t.Fatalf("pinned %s: %d %s", run, response.Code, response.Body.String())
+		}
+	}
+	// An update cannot re-pin it to another project's run either.
+	list := authoringAPIRequest(t, server, http.MethodGet, policiesPath+"&kind="+storage.AnalysisDefinitionKindBrowserPolicy, nil, "")
+	var listed []storage.AnalysisDefinition
+	if err := json.Unmarshal(list.Body.Bytes(), &listed); err != nil || len(listed) != 1 {
+		t.Fatalf("list: %d %s", list.Code, list.Body.String())
+	}
+	created := listed[0]
+	updatePath := "/api/v1/analysis/policies/" + created.ID + "?project_id=" + storage.DefaultProjectID
+	update := authoringAPIRequest(t, server, http.MethodPut, updatePath, policyRequest(storage.AnalysisDefinitionKindBrowserPolicy, created.Name, created.Revision, pinned("foreign-run")), "")
+	if update.Code != http.StatusNotFound || !strings.Contains(update.Body.String(), "baseline run not found in project") {
+		t.Fatalf("update pinning a foreign run: %d %s", update.Code, update.Body.String())
+	}
+	if own := authoringAPIRequest(t, server, http.MethodPut, updatePath, policyRequest(storage.AnalysisDefinitionKindBrowserPolicy, created.Name, created.Revision, pinned("own-run")), ""); own.Code != http.StatusOK {
+		t.Fatalf("update pinning its own run: %d %s", own.Code, own.Body.String())
+	}
+}

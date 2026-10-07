@@ -443,19 +443,25 @@ func (s *Server) handleDeleteScenario(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	deleted, err := s.runner.DeleteScenarioDurable(id, guard)
-	if err != nil && !errors.Is(err, storage.ErrScenarioAuthoringOutcomeUnknown) && writeScenarioWriterError(w, err) {
+	if err != nil && !errors.Is(err, storage.ErrScenarioAuthoringOutcomeUnknown) {
+		// Only a failed commit leaves the outcome unknown; any other error is
+		// a definite refusal and withdraws the tombstone.
 		restoreReceipts()
+		if errors.Is(err, storage.ErrScenarioHasResults) {
+			writeError(w, http.StatusBadRequest, "scenario not found or has results")
+			return
+		}
+		if !writeScenarioWriterError(w, err) {
+			writeError(w, http.StatusInternalServerError, "failed to delete scenario: "+err.Error())
+		}
 		return
 	}
 	if err != nil {
 		// The delete may have committed: keep its tombstone current.
 		s.retombstoneAuthoringReceipts("scenario", id)
-	}
-	if err != nil && writeScenarioWriterError(w, err) {
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to delete scenario: "+err.Error())
+		if !writeScenarioWriterError(w, err) {
+			writeError(w, http.StatusInternalServerError, "failed to delete scenario: "+err.Error())
+		}
 		return
 	}
 	if !deleted {

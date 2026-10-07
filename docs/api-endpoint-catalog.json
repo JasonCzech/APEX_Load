@@ -5818,8 +5818,8 @@
     {
       "method": "GET",
       "path": "/api/v1/system/acceptance-records",
-      "operationId": "handleFeatureAcceptanceRecords",
-      "summary": "Feature Acceptance Records",
+      "operationId": "handleListFeatureAcceptanceRecords",
+      "summary": "List Feature Acceptance Records",
       "category": "System \u0026 Distribution",
       "public": false,
       "authenticated": true,
@@ -5828,8 +5828,8 @@
     {
       "method": "POST",
       "path": "/api/v1/system/acceptance-records",
-      "operationId": "handleFeatureAcceptanceRecords_2",
-      "summary": "Feature Acceptance Records",
+      "operationId": "handleCreateFeatureAcceptanceRecord",
+      "summary": "Create Feature Acceptance Record",
       "category": "System \u0026 Distribution",
       "public": false,
       "authenticated": true,
