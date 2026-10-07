@@ -177,6 +177,11 @@ func reportConditionalConcerns(report *RunArchiveReport) []string {
 	if t := report.Overview.Telemetry; t != nil && (t.DegradedIntervals > 0 || t.BreachedIntervals > 0) {
 		concerns = append(concerns, fmt.Sprintf("telemetry was degraded for %d interval(s)", t.DegradedIntervals+t.BreachedIntervals))
 	}
+	// Unscored telemetry is never healthy: whether it met its budget is
+	// unknown, so it cannot leave a run passing outright.
+	if t := report.Overview.Telemetry; t != nil && t.UnscoredIntervals > 0 {
+		concerns = append(concerns, fmt.Sprintf("telemetry could not be scored for %d interval(s)", t.UnscoredIntervals))
+	}
 	if report.Overview.ThroughputMissedIntervals > 0 {
 		concerns = append(concerns, fmt.Sprintf("throughput missed its target in %d interval(s)", report.Overview.ThroughputMissedIntervals))
 	}

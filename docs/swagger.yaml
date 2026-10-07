@@ -82924,8 +82924,91 @@ paths:
                                   format: int64
                                 loss:
                                   type: object
-                                  description: 'Go type: TelemetryLossAccounting'
-                                  additionalProperties: true
+                                  properties:
+                                    dropped_results:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    dropped_subscriber_batches:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    lost_publications:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    shedded_arrivals:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    websocket_dropped_events:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    websocket_dropped_messages:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
                                   nullable: true
                                 missing_metric_windows:
                                   type: integer
@@ -84631,7 +84714,91 @@ paths:
                                 format: int64
                               loss:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  dropped_results:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  dropped_subscriber_batches:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  lost_publications:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  shedded_arrivals:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  websocket_dropped_events:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  websocket_dropped_messages:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
                                 nullable: true
                               missing_metric_windows:
                                 type: integer
@@ -88471,8 +88638,91 @@ paths:
                                   format: int64
                                 loss:
                                   type: object
-                                  description: 'Go type: TelemetryLossAccounting'
-                                  additionalProperties: true
+                                  properties:
+                                    dropped_results:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    dropped_subscriber_batches:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    lost_publications:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    shedded_arrivals:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    websocket_dropped_events:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    websocket_dropped_messages:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
                                   nullable: true
                                 missing_metric_windows:
                                   type: integer
@@ -90178,7 +90428,91 @@ paths:
                                 format: int64
                               loss:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  dropped_results:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  dropped_subscriber_batches:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  lost_publications:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  shedded_arrivals:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  websocket_dropped_events:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  websocket_dropped_messages:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
                                 nullable: true
                               missing_metric_windows:
                                 type: integer
@@ -94019,8 +94353,91 @@ paths:
                                   format: int64
                                 loss:
                                   type: object
-                                  description: 'Go type: TelemetryLossAccounting'
-                                  additionalProperties: true
+                                  properties:
+                                    dropped_results:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    dropped_subscriber_batches:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    lost_publications:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    shedded_arrivals:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    websocket_dropped_events:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    websocket_dropped_messages:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
                                   nullable: true
                                 missing_metric_windows:
                                   type: integer
@@ -95726,7 +96143,91 @@ paths:
                                 format: int64
                               loss:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  dropped_results:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  dropped_subscriber_batches:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  lost_publications:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  shedded_arrivals:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  websocket_dropped_events:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  websocket_dropped_messages:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
                                 nullable: true
                               missing_metric_windows:
                                 type: integer
@@ -99579,8 +100080,91 @@ paths:
                                   format: int64
                                 loss:
                                   type: object
-                                  description: 'Go type: TelemetryLossAccounting'
-                                  additionalProperties: true
+                                  properties:
+                                    dropped_results:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    dropped_subscriber_batches:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    lost_publications:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    shedded_arrivals:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    websocket_dropped_events:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    websocket_dropped_messages:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
                                   nullable: true
                                 missing_metric_windows:
                                   type: integer
@@ -101286,7 +101870,91 @@ paths:
                                 format: int64
                               loss:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  dropped_results:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  dropped_subscriber_batches:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  lost_publications:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  shedded_arrivals:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  websocket_dropped_events:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  websocket_dropped_messages:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
                                 nullable: true
                               missing_metric_windows:
                                 type: integer
@@ -105139,8 +105807,91 @@ paths:
                                   format: int64
                                 loss:
                                   type: object
-                                  description: 'Go type: TelemetryLossAccounting'
-                                  additionalProperties: true
+                                  properties:
+                                    dropped_results:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    dropped_subscriber_batches:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    lost_publications:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    shedded_arrivals:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    websocket_dropped_events:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    websocket_dropped_messages:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
                                   nullable: true
                                 missing_metric_windows:
                                   type: integer
@@ -106846,7 +107597,91 @@ paths:
                                 format: int64
                               loss:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  dropped_results:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  dropped_subscriber_batches:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  lost_publications:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  shedded_arrivals:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  websocket_dropped_events:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  websocket_dropped_messages:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
                                 nullable: true
                               missing_metric_windows:
                                 type: integer
@@ -110699,8 +111534,91 @@ paths:
                                   format: int64
                                 loss:
                                   type: object
-                                  description: 'Go type: TelemetryLossAccounting'
-                                  additionalProperties: true
+                                  properties:
+                                    dropped_results:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    dropped_subscriber_batches:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    lost_publications:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    shedded_arrivals:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    websocket_dropped_events:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    websocket_dropped_messages:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
                                   nullable: true
                                 missing_metric_windows:
                                   type: integer
@@ -112406,7 +113324,91 @@ paths:
                                 format: int64
                               loss:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  dropped_results:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  dropped_subscriber_batches:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  lost_publications:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  shedded_arrivals:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  websocket_dropped_events:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  websocket_dropped_messages:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
                                 nullable: true
                               missing_metric_windows:
                                 type: integer
@@ -116259,8 +117261,91 @@ paths:
                                   format: int64
                                 loss:
                                   type: object
-                                  description: 'Go type: TelemetryLossAccounting'
-                                  additionalProperties: true
+                                  properties:
+                                    dropped_results:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    dropped_subscriber_batches:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    lost_publications:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    shedded_arrivals:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    websocket_dropped_events:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
+                                    websocket_dropped_messages:
+                                      type: object
+                                      properties:
+                                        reason:
+                                          type: string
+                                        state:
+                                          type: string
+                                        value:
+                                          type: integer
+                                          format: int64
+                                      required:
+                                        - state
+                                        - value
+                                      nullable: true
                                   nullable: true
                                 missing_metric_windows:
                                   type: integer
@@ -117966,7 +119051,91 @@ paths:
                                 format: int64
                               loss:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  dropped_results:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  dropped_subscriber_batches:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  lost_publications:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  shedded_arrivals:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  websocket_dropped_events:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
+                                  websocket_dropped_messages:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      state:
+                                        type: string
+                                      value:
+                                        type: integer
+                                        format: int64
+                                    required:
+                                      - state
+                                      - value
+                                    nullable: true
                                 nullable: true
                               missing_metric_windows:
                                 type: integer

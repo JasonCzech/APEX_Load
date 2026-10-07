@@ -1441,10 +1441,16 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 			compatibleFeatures = append(compatibleFeatures, FeatureJavaHostBrokerV1, FeatureJavaHostPreparedPopulationV1)
 		}
 		lastSafetyExit, safetyExits := s.safetyExitEvidenceProto()
-		// Pongs and telemetry share the published clock; a heartbeat is
-		// where it may re-anchor, so a jump shows at this probe.
+		// Pongs and telemetry share the published clock. It re-anchors only
+		// at a heartbeat while no test is assigned, so a jump shows at a
+		// probe outside any run: any controller replica's inventory or
+		// placement heartbeat can arrive between one run's clock probes, and
+		// re-anchoring then would move that run's stamps under the offset its
+		// last probe measured.
 		wallNow := time.Now()
-		generatorPublishedClock.reanchor(wallNow)
+		if len(activeTestIDs) == 0 {
+			generatorPublishedClock.reanchor(wallNow)
+		}
 		generatorNow := generatorPublishedClock.at(wallNow)
 		if err := stream.Send(&pb.HeartbeatPong{
 			GeneratorId:                    s.generatorID,

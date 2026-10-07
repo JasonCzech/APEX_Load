@@ -154,6 +154,77 @@ func testRunEvidenceReceipts(t *testing.T, s *SQLiteStore) {
 			t.Fatalf("malformed %s receipt accepted", name)
 		}
 	}
+	testRunEvidenceReceiptFences(t, s)
+}
+
+// A generation's reset forgets its own and older claims only, and an accept
+// fenced on the execution lease records nothing once its term has ended.
+func testRunEvidenceReceiptFences(t *testing.T, s *SQLiteStore) {
+	t.Helper()
+	now := time.Now().UTC()
+	if err := s.SaveTest(&TestRecord{ID: "fenced-run", Name: "fenced", Status: "COMPLETE", StartTime: now, EndTime: &now}); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []RunEvidenceReceipt{evidenceReceiptFixture("fenced-run", "source-a", "f1", 4), evidenceReceiptFixture("fenced-run", "source-b", "f2", 5)} {
+		if state, err := s.AcceptRunEvidenceReceipt(r); err != nil || state != EvidenceReceiptAccepted {
+			t.Fatalf("accept %s: %q %v", r.SourceGeneration, state, err)
+		}
+	}
+	if n, err := s.ResetAcceptedRunEvidenceReceipts("fenced-run", 4); err != nil || n != 1 {
+		t.Fatalf("generation 4 reset forgot %d: %v", n, err)
+	}
+	if receipts, _ := s.ListRunEvidenceReceipts("fenced-run"); len(receipts) != 1 || receipts[0].SourceGeneration != "f2" || receipts[0].ExecutionGeneration != 5 {
+		t.Fatalf("generation 4 reset left %+v", receipts)
+	}
+	const lease = "receipt-fence-lease"
+	ok, term, err := s.TryAcquireSchedulerLeaseTerm(lease, "controller-a", now, time.Minute)
+	if err != nil || !ok || term == nil {
+		t.Fatalf("acquire lease: %v %v", ok, err)
+	}
+	fenced := evidenceReceiptFixture("fenced-run", "source-c", "f3", term.Generation)
+	fenced.LeaseName, fenced.LeaseOwner = lease, "controller-a"
+	if term.Generation < 5 {
+		// Keep the run's newest recorded generation from refusing the term.
+		if _, err := s.ResetAcceptedRunEvidenceReceipts("fenced-run", 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if state, err := s.AcceptRunEvidenceReceipt(fenced); err != nil || state != EvidenceReceiptAccepted {
+		t.Fatalf("lease holder's accept: %q %v", state, err)
+	}
+	// Another owner, or the same owner under an ended term, records nothing.
+	for name, mutate := range map[string]func(*RunEvidenceReceipt){
+		"owner":      func(r *RunEvidenceReceipt) { r.LeaseOwner = "controller-b" },
+		"generation": func(r *RunEvidenceReceipt) { r.ExecutionGeneration = term.Generation + 1 },
+		"lease":      func(r *RunEvidenceReceipt) { r.LeaseName = "receipt-fence-other" },
+	} {
+		deposed := evidenceReceiptFixture("fenced-run", "source-d", "f4-"+name, term.Generation)
+		deposed.LeaseName, deposed.LeaseOwner = lease, "controller-a"
+		mutate(&deposed)
+		if state, err := s.AcceptRunEvidenceReceipt(deposed); err != nil || state != EvidenceReceiptTombstoned {
+			t.Fatalf("%s-fenced accept: %q %v", name, state, err)
+		}
+	}
+	if receipts, _ := s.ListRunEvidenceReceipts("fenced-run"); len(receipts) != 1 && len(receipts) != 2 {
+		t.Fatalf("fenced accepts wrote rows: %+v", receipts)
+	} else {
+		for _, r := range receipts {
+			if r.SourceIdentity == "source-d" {
+				t.Fatalf("a fenced accept wrote %+v", r)
+			}
+		}
+	}
+	for name, mutate := range map[string]func(*RunEvidenceReceipt){
+		"no owner":      func(r *RunEvidenceReceipt) { r.LeaseOwner = "" },
+		"no generation": func(r *RunEvidenceReceipt) { r.ExecutionGeneration = 0 },
+	} {
+		bad := evidenceReceiptFixture("fenced-run", "source-e", "f5", term.Generation)
+		bad.LeaseName, bad.LeaseOwner = lease, "controller-a"
+		mutate(&bad)
+		if _, err := s.AcceptRunEvidenceReceipt(bad); err == nil {
+			t.Fatalf("lease fence with %s accepted", name)
+		}
+	}
 }
 
 func TestRunEvidenceReceiptsSQLite(t *testing.T) {

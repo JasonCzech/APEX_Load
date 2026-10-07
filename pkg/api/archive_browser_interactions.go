@@ -38,15 +38,18 @@ func validDeclaredInteractions(a *RunArchiveEvidenceArtifact) bool {
 
 // fetchRemoteInteractions fetches and verifies a source's declared
 // interactions sidecar from its live generator client.
-func fetchRemoteInteractions(ctx context.Context, client archiveArtifactClient, testID, sourceIdentity, dir string, declared *RunArchiveEvidenceArtifact, records int64, transfer *remoteArchiveTransferBudget) (*stagedRemoteHAR, string) {
+func fetchRemoteInteractions(ctx context.Context, source *optionalEvidenceSource, testID, sourceIdentity, dir string, declared *RunArchiveEvidenceArtifact, records int64, transfer *remoteArchiveTransferBudget) (*stagedRemoteHAR, string) {
 	if declared == nil {
 		return nil, ""
 	}
 	if !validDeclaredInteractions(declared) || records <= 0 || records > maxRunArchiveInteractionsRecords {
 		return nil, interactionsUnavailableInvalid
 	}
-	if client == nil {
+	if source == nil || source.client == nil {
 		return nil, interactionsUnavailableSource
+	}
+	if source.stalled {
+		return nil, interactionsUnavailableTransfer
 	}
 	path := filepath.Join(dir, declared.Name)
 	// The run-wide allowance is reserved for the whole declared sidecar
@@ -55,9 +58,7 @@ func fetchRemoteInteractions(ctx context.Context, client archiveArtifactClient, 
 	if err != nil {
 		return nil, interactionsUnavailableTransfer
 	}
-	fetchCtx, cancel := context.WithTimeout(ctx, optionalEvidenceFetchTimeout(declared.Bytes))
-	copied, err := fetchRemoteArchiveArtifactFileForSource(fetchCtx, client, testID, declared.Name, sourceIdentity, path, declared.Bytes, artifact)
-	cancel()
+	copied, err := source.fetch(ctx, testID, declared.Name, sourceIdentity, path, declared.Bytes, artifact)
 	if err == nil && copied != declared.Bytes {
 		err = io.ErrUnexpectedEOF
 	}

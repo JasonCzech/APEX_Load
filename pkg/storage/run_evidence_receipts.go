@@ -40,6 +40,12 @@ type RunEvidenceReceipt struct {
 	State               string    `json:"state"`
 	CreatedAt           time.Time `json:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at"`
+	// LeaseName and LeaseOwner, when set, fence an accept on the execution
+	// lease term (owner and ExecutionGeneration) in the receipt's own
+	// transaction: a controller that lost the lease records nothing, even
+	// before it notices the loss. They are never stored.
+	LeaseName  string `json:"-"`
+	LeaseOwner string `json:"-"`
 }
 
 // RunEvidenceReceiptStore is the receipt contract the archive pipeline uses.
@@ -71,6 +77,8 @@ func validateRunEvidenceReceipt(r RunEvidenceReceipt) error {
 		return errors.New("evidence receipt needs a lowercase SHA-256")
 	case r.Bytes < 0 || r.Sequence < 0 || r.ExecutionGeneration > 1<<62:
 		return errors.New("evidence receipt has invalid counts")
+	case (r.LeaseName == "") != (r.LeaseOwner == "") || r.LeaseName != "" && r.ExecutionGeneration == 0:
+		return errors.New("evidence receipt lease fence needs a name, an owner and a generation")
 	}
 	return nil
 }
@@ -80,8 +88,9 @@ func validateRunEvidenceReceipt(r RunEvidenceReceipt) error {
 // same content is idempotent; different content for the same source
 // artifact is ErrEvidenceReceiptConflict. An artifact received after the
 // run's archive was published, after the run was deleted, or under an
-// execution generation older than one already recorded is tombstoned: the
-// caller deletes its copy.
+// execution generation older than one already recorded, or by a controller
+// whose execution lease term has ended, is tombstoned: the caller deletes
+// its copy.
 func (s *SQLiteStore) AcceptRunEvidenceReceipt(r RunEvidenceReceipt) (string, error) {
 	if err := validateRunEvidenceReceipt(r); err != nil {
 		return "", err
@@ -91,6 +100,15 @@ func (s *SQLiteStore) AcceptRunEvidenceReceipt(r RunEvidenceReceipt) (string, er
 		return "", err
 	}
 	defer tx.Rollback()
+	if r.LeaseName != "" {
+		held, err := schedulerLeaseTermHeldInTransaction(tx, s.db.dialect, r.LeaseName, r.LeaseOwner, r.ExecutionGeneration)
+		if err != nil {
+			return "", err
+		}
+		if !held {
+			return EvidenceReceiptTombstoned, nil
+		}
+	}
 	var existing RunEvidenceReceipt
 	var generation int64
 	err = tx.QueryRow(`SELECT kind, sha256, bytes, state, execution_generation FROM run_evidence_receipts

@@ -542,17 +542,17 @@ func TestOptionalEvidenceAllowanceIsRefundedOnAFailedFetch(t *testing.T) {
 	// artifact count) are shared by every source.
 	allowance := &remoteArchiveTransferBudget{remaining: 100}
 	harBudget := &remoteHARBudget{remaining: 100, artifacts: 1}
-	staged, omitted := fetchRemoteHARArtifacts(context.Background(), client, "run", "source-a", t.TempDir(), []RunArchiveEvidenceArtifact{first}, harBudget, allowance)
+	staged, omitted := fetchRemoteHARArtifacts(context.Background(), &optionalEvidenceSource{client: client}, "run", "source-a", t.TempDir(), []RunArchiveEvidenceArtifact{first}, harBudget, allowance)
 	if len(staged) != 0 || omitted[harOmittedTransfer] != 1 {
 		t.Fatalf("broken fetch staged %+v omitted %v", staged, omitted)
 	}
-	staged, omitted = fetchRemoteHARArtifacts(context.Background(), client, "run", "source-b", t.TempDir(), []RunArchiveEvidenceArtifact{second}, harBudget, allowance)
+	staged, omitted = fetchRemoteHARArtifacts(context.Background(), &optionalEvidenceSource{client: client}, "run", "source-b", t.TempDir(), []RunArchiveEvidenceArtifact{second}, harBudget, allowance)
 	if len(staged) != 1 || len(omitted) != 0 || allowance.remaining != 40 || harBudget.remaining != 40 || harBudget.artifacts != 0 {
 		t.Fatalf("a fitting source was refused after another failed: staged %+v omitted %v remaining %d/%d artifacts %d", staged, omitted, allowance.remaining, harBudget.remaining, harBudget.artifacts)
 	}
 	// A HAR the transfer allowance refuses returns its HAR budget too.
 	spare := &remoteHARBudget{remaining: 100, artifacts: 1}
-	staged, omitted = fetchRemoteHARArtifacts(context.Background(), client, "run", "source-c", t.TempDir(), []RunArchiveEvidenceArtifact{second}, spare, &remoteArchiveTransferBudget{})
+	staged, omitted = fetchRemoteHARArtifacts(context.Background(), &optionalEvidenceSource{client: client}, "run", "source-c", t.TempDir(), []RunArchiveEvidenceArtifact{second}, spare, &remoteArchiveTransferBudget{})
 	if len(staged) != 0 || omitted[harOmittedTransfer] != 1 || spare.remaining != 100 || spare.artifacts != 1 {
 		t.Fatalf("transfer refusal kept the HAR budget: staged %+v omitted %v budget %+v", staged, omitted, spare)
 	}
@@ -606,10 +606,10 @@ func TestInteractionsAllowanceRefundAndMergeAdmission(t *testing.T) {
 	broken := &partialArchiveClient{content: map[string][]byte{browserInteractionsFileName: a}, failAfter: map[string]int{browserInteractionsFileName: len(a) / 2}}
 	whole := &partialArchiveClient{content: map[string][]byte{browserInteractionsFileName: b}}
 	allowance := &remoteArchiveTransferBudget{remaining: int64(len(a) + len(b) - 1)}
-	if staged, reason := fetchRemoteInteractions(context.Background(), broken, "run", "source-a", t.TempDir(), declare(a), 1, allowance); staged != nil || reason != interactionsUnavailableTransfer {
+	if staged, reason := fetchRemoteInteractions(context.Background(), &optionalEvidenceSource{client: broken}, "run", "source-a", t.TempDir(), declare(a), 1, allowance); staged != nil || reason != interactionsUnavailableTransfer {
 		t.Fatalf("broken sidecar staged %+v reason %q", staged, reason)
 	}
-	staged, reason := fetchRemoteInteractions(context.Background(), whole, "run", "source-b", t.TempDir(), declare(b), 1, allowance)
+	staged, reason := fetchRemoteInteractions(context.Background(), &optionalEvidenceSource{client: whole}, "run", "source-b", t.TempDir(), declare(b), 1, allowance)
 	if staged == nil || reason != "" || allowance.remaining != int64(len(a)-1) {
 		t.Fatalf("a fitting sidecar was refused after another failed: %q remaining %d", reason, allowance.remaining)
 	}
@@ -630,5 +630,64 @@ func TestInteractionsAllowanceRefundAndMergeAdmission(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(working, browserInteractionsFileName)); !os.IsNotExist(err) {
 		t.Fatal("an unadmitted sidecar reached the archive", err)
+	}
+}
+
+// stallingArchiveClient never finishes a stream until its context ends.
+type stallingArchiveClient struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (c *stallingArchiveClient) GetArchiveArtifact(context.Context, generatorrpc.ArchiveArtifactRequest) ([]byte, error) {
+	return nil, os.ErrInvalid
+}
+
+func (c *stallingArchiveClient) StreamArchiveArtifact(ctx context.Context, _ generatorrpc.ArchiveArtifactRequest, _ io.Writer, _ int64) (int64, error) {
+	c.mu.Lock()
+	c.calls++
+	c.mu.Unlock()
+	<-ctx.Done()
+	return 0, ctx.Err()
+}
+
+// Once one fetch from a source runs out its own deadline, the source's other
+// HARs and its interactions sidecar are transfer_failed without a fetch, so a
+// stalled generator cannot spend the attempt one deadline at a time.
+func TestStalledSourceIsNotAskedForMoreOptionalEvidence(t *testing.T) {
+	original := optionalEvidenceFetchTimeout
+	optionalEvidenceFetchTimeout = func(int64) time.Duration { return 50 * time.Millisecond }
+	t.Cleanup(func() { optionalEvidenceFetchTimeout = original })
+	declare := func(generation string) RunArchiveEvidenceArtifact {
+		content := []byte(generation)
+		sum := sha256.Sum256(content)
+		return RunArchiveEvidenceArtifact{Name: "browser_har_" + generation + ".har", Kind: storage.EvidenceKindHARNative, Fidelity: "native", SourceGeneration: generation, Sequence: 1, Bytes: int64(len(content)), SHA256: hex.EncodeToString(sum[:])}
+	}
+	client := &stallingArchiveClient{}
+	source := &optionalEvidenceSource{client: client}
+	declared := []RunArchiveEvidenceArtifact{declare(strings.Repeat("1", 32)), declare(strings.Repeat("2", 32)), declare(strings.Repeat("3", 32))}
+	transfer := &remoteArchiveTransferBudget{remaining: 1 << 20}
+	harBudget := &remoteHARBudget{remaining: 1 << 20, artifacts: 8}
+	started := time.Now()
+	staged, omitted := fetchRemoteHARArtifacts(context.Background(), source, "run", "source-a", t.TempDir(), declared, harBudget, transfer)
+	if len(staged) != 0 || omitted[harOmittedTransfer] != 3 || client.calls != 1 || !source.stalled {
+		t.Fatalf("stalled source: staged %d omitted %v fetches %d stalled %v", len(staged), omitted, client.calls, source.stalled)
+	}
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Fatalf("a stalled source held the attempt for %s", elapsed)
+	}
+	if transfer.remaining != 1<<20 || harBudget.remaining != 1<<20 || harBudget.artifacts != 8 {
+		t.Fatalf("budgets not returned: transfer %d HAR %d/%d", transfer.remaining, harBudget.remaining, harBudget.artifacts)
+	}
+	sidecar := &RunArchiveEvidenceArtifact{Name: browserInteractionsFileName, Kind: storage.EvidenceKindInteraction, Fidelity: "native", SourceGeneration: interactionsEvidenceSource, Sequence: 1, Bytes: 10, SHA256: strings.Repeat("a", 64)}
+	if staged, reason := fetchRemoteInteractions(context.Background(), source, "run", "source-a", t.TempDir(), sidecar, 1, transfer); staged != nil || reason != interactionsUnavailableTransfer || client.calls != 1 {
+		t.Fatalf("stalled source sidecar: %v %q after %d fetches", staged, reason, client.calls)
+	}
+	// The attempt's own cancellation is not a stall.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	fresh := &optionalEvidenceSource{client: client}
+	if _, err := fresh.fetch(ctx, "run", declared[0].Name, "source-a", filepath.Join(t.TempDir(), declared[0].Name), declared[0].Bytes, transfer); err == nil || fresh.stalled {
+		t.Fatalf("a canceled attempt marked its source stalled: %v", err)
 	}
 }

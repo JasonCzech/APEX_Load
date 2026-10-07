@@ -289,3 +289,25 @@ func TestReportAcceptanceRequiresEveryConfiguredCriterion(t *testing.T) {
 		})
 	}
 }
+
+// A run whose only problem is unscored telemetry is not a pass: whether its
+// telemetry met the budget is unknown.
+func TestReportVerdictTreatsUnscoredTelemetryAsAConcern(t *testing.T) {
+	passing := func() *RunArchiveReport {
+		r := &RunArchiveReport{Manifest: &RunArchiveManifest{TerminationReason: "workload_completed"}}
+		r.Manifest.Provenance.GoalConfig = &GoalConfig{P95LatencyMs: ptr(100.0)}
+		r.ByAction = map[string]RunArchiveActionStats{"Checkout": {Transactions: 2, P95Ms: 50}}
+		r.Completeness = RunArchiveCompletenessScore{ScorePct: 100, Status: "complete"}
+		r.Overview.Telemetry = &RunArchiveTelemetrySummary{}
+		return r
+	}
+	if got := deriveReportVerdict(passing()); got.Status != reportVerdictPass {
+		t.Fatalf("baseline verdict %#v", got)
+	}
+	r := passing()
+	r.Overview.Telemetry.UnscoredIntervals = 3
+	got := deriveReportVerdict(r)
+	if got.Status != reportVerdictConditional || !strings.Contains(strings.Join(reportConditionalConcerns(r), ";"), "could not be scored for 3 interval(s)") {
+		t.Fatalf("unscored telemetry verdict %#v concerns %v", got, reportConditionalConcerns(r))
+	}
+}

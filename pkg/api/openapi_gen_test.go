@@ -8,6 +8,7 @@ import (
 	"os"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -2097,5 +2098,55 @@ func TestExecutionTargetRequestIsADiscriminatedUnion(t *testing.T) {
 		if !seen[kind] {
 			t.Fatalf("union is missing the %s variant", kind)
 		}
+	}
+}
+
+// Telemetry evidence objects are typed throughout the contract: wherever a
+// telemetry object carries loss, clock quality or coverage, each is a named
+// object with its own properties rather than an open map.
+func TestGeneratedSwaggerTypesTelemetryEvidence(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatalf("GenerateOpenAPIYAML: %v", err)
+	}
+	var spec any
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"loss": "dropped_results", "clock_quality": "status", "coverage": "sources"}
+	seen := map[string]int{}
+	var walk func(node any, path string)
+	walk = func(node any, path string) {
+		switch value := node.(type) {
+		case map[string]any:
+			if properties, ok := value["properties"].(map[string]any); ok {
+				_, telemetry := properties["coverage"]
+				_, loss := properties["loss"]
+				if telemetry && loss {
+					for name, member := range want {
+						schema, ok := properties[name].(map[string]any)
+						if !ok {
+							continue
+						}
+						seen[name]++
+						inner, _ := schema["properties"].(map[string]any)
+						if _, ok := inner[member]; !ok {
+							t.Errorf("%s.%s is not a typed object (no %s): %v", path, name, member, schema)
+						}
+					}
+				}
+			}
+			for key, child := range value {
+				walk(child, path+"."+key)
+			}
+		case []any:
+			for i, child := range value {
+				walk(child, path+"["+strconv.Itoa(i)+"]")
+			}
+		}
+	}
+	walk(spec, "")
+	if seen["loss"] == 0 {
+		t.Fatal("no telemetry object with loss and coverage found in the contract")
 	}
 }

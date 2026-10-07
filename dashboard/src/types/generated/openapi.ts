@@ -34472,7 +34472,38 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
-                  "loss"?: (Record<string, unknown>) | null;
+                  "loss"?: ({
+                    "dropped_results"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "dropped_subscriber_batches"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "lost_publications"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "shedded_arrivals"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_events"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_messages"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                  }) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -34989,7 +35020,38 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
-                  "loss"?: (Record<string, unknown>) | null;
+                  "loss"?: ({
+                    "dropped_results"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "dropped_subscriber_batches"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "lost_publications"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "shedded_arrivals"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_events"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_messages"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                  }) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -62959,7 +63021,38 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
-                  "loss"?: (Record<string, unknown>) | null;
+                  "loss"?: ({
+                    "dropped_results"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "dropped_subscriber_batches"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "lost_publications"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "shedded_arrivals"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_events"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_messages"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                  }) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -63476,7 +63569,38 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
-                  "loss"?: (Record<string, unknown>) | null;
+                  "loss"?: ({
+                    "dropped_results"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "dropped_subscriber_batches"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "lost_publications"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "shedded_arrivals"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_events"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_messages"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                  }) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -112381,7 +112505,38 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
-                  "loss"?: (Record<string, unknown>) | null;
+                  "loss"?: ({
+                    "dropped_results"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "dropped_subscriber_batches"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "lost_publications"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "shedded_arrivals"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_events"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_messages"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                  }) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -112898,7 +113053,38 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
-                  "loss"?: (Record<string, unknown>) | null;
+                  "loss"?: ({
+                    "dropped_results"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "dropped_subscriber_batches"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "lost_publications"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "shedded_arrivals"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_events"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_messages"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                  }) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -114179,7 +114365,38 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
-                  "loss"?: (Record<string, unknown>) | null;
+                  "loss"?: ({
+                    "dropped_results"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "dropped_subscriber_batches"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "lost_publications"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "shedded_arrivals"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_events"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_messages"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                  }) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -114696,7 +114913,38 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
-                  "loss"?: (Record<string, unknown>) | null;
+                  "loss"?: ({
+                    "dropped_results"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "dropped_subscriber_batches"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "lost_publications"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "shedded_arrivals"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_events"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_messages"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                  }) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -115977,7 +116225,38 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
-                  "loss"?: (Record<string, unknown>) | null;
+                  "loss"?: ({
+                    "dropped_results"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "dropped_subscriber_batches"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "lost_publications"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "shedded_arrivals"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_events"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_messages"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                  }) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -116494,7 +116773,38 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
-                  "loss"?: (Record<string, unknown>) | null;
+                  "loss"?: ({
+                    "dropped_results"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "dropped_subscriber_batches"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "lost_publications"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "shedded_arrivals"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_events"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_messages"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                  }) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -117775,7 +118085,38 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
-                  "loss"?: (Record<string, unknown>) | null;
+                  "loss"?: ({
+                    "dropped_results"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "dropped_subscriber_batches"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "lost_publications"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "shedded_arrivals"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_events"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_messages"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                  }) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -118292,7 +118633,38 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
-                  "loss"?: (Record<string, unknown>) | null;
+                  "loss"?: ({
+                    "dropped_results"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "dropped_subscriber_batches"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "lost_publications"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "shedded_arrivals"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_events"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_messages"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                  }) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -119573,7 +119945,38 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
-                  "loss"?: (Record<string, unknown>) | null;
+                  "loss"?: ({
+                    "dropped_results"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "dropped_subscriber_batches"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "lost_publications"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "shedded_arrivals"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_events"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_messages"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                  }) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;
@@ -120090,7 +120493,38 @@ export interface operations {
                   "generator_processing_lag_ms"?: number;
                   "generator_published_at"?: string;
                   "history_points"?: number;
-                  "loss"?: (Record<string, unknown>) | null;
+                  "loss"?: ({
+                    "dropped_results"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "dropped_subscriber_batches"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "lost_publications"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "shedded_arrivals"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_events"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_messages"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                  }) | null;
                   "missing_metric_windows"?: number;
                   "published_at"?: string;
                   "sample_age_ms"?: number;

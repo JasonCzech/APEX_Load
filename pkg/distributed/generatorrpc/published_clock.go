@@ -6,16 +6,19 @@ import (
 )
 
 // publishedClockTolerance is how far the published clock may drift from the
-// wall clock (slewing, or a step) before the next heartbeat re-anchors it.
+// wall clock (slewing, or a step) before an idle heartbeat re-anchors it.
 const publishedClockTolerance = time.Second
 
 // publishedClock is the clock a generator stamps on what the controller
 // times across hosts: heartbeat pongs (which the controller's offset probes
 // measure) and telemetry collection and publication times. It advances on the
 // monotonic clock from an anchor, so a wall-clock step on this host moves
-// none of those stamps between probes; it is re-anchored only while answering
-// a heartbeat, so the controller sees any jump at that probe and holds the
-// mapping unqualified until a consistent probe confirms it.
+// none of those stamps; it is re-anchored only while answering a heartbeat
+// with no test assigned, so a run's stamps stay on one anchor from start to
+// finish and the controller sees any jump at a probe outside a run, holding
+// the mapping unqualified until a consistent probe confirms it. Offsets the
+// controller measures are therefore against this clock: during a run they do
+// not follow a step of the wall clock that stamps the run's transactions.
 type publishedClock struct {
 	mu   sync.Mutex
 	wall time.Time // anchor's wall time, without a monotonic reading

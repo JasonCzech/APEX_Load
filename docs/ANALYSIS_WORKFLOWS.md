@@ -560,8 +560,8 @@ evidence.
   (`insufficient_baseline`).
 - **Statistic.** Robust z = (x − median) / max(1.4826 × MAD, 5% of the median,
   unit floor): 5 ms of latency, 0.5 points of error rate, 0.1 requests per
-  second of throughput, and for providers the unit's latency or percentage
-  floor. Two-sided CUSUM with k = 0.5 and h = 5. An onset needs three
+  second of throughput, 0.01 of layout shift score (`score_floor`), and for
+  providers the unit's latency or percentage floor. Two-sided CUSUM with k = 0.5 and h = 5. An onset needs three
   consecutive buckets beyond k while the alarm is on, so noise just before a
   change cannot complete it. The onset is the maximum-likelihood change point
   since the CUSUM last left zero. Its uncertainty spans every change point
@@ -781,7 +781,8 @@ MCP tools keep returning v1.
   capacity bounds, signature weights and the classifier, followed by the
   archive adapter's version (how the archive is read into series, levels and
   evidence; `archive.3` keys provider series by measurement identity, gives
-  every series an identity and adds joint and imported series). Changing a value makes a new analysis; a change to
+  every series an identity, adds joint, imported and browser document series,
+  and reads unscored telemetry as unknown rather than healthy). Changing a value makes a new analysis; a change to
   a stage's logic bumps the engine's base version, and a change to how the
   archive is read bumps the adapter's. A POST
   whose digest matches a queued, running or completed analysis returns it;

@@ -190,18 +190,7 @@ func (b *distributedExecutionBackend) stageRemoteArchiveUnderSourceFence(sourceC
 			evidenceTargets[bundle.interactions.entry.SourceIdentity] = bundle.target
 		}
 	}
-	acceptor := tr.acceptRemoteHARReceipt(test, evidenceTargets)
-	if sourceCtx != nil {
-		// A controller that lost the run's lease mid-merge records no
-		// further receipts.
-		accept := acceptor
-		acceptor = func(entry RunArchiveEvidenceArtifact) (string, error) {
-			if err := sourceCtx.Err(); err != nil {
-				return "", err
-			}
-			return accept(entry)
-		}
-	}
+	acceptor := fenceReceiptAcceptor(sourceCtx, tr.acceptRemoteHARReceipt(test, evidenceTargets))
 	if err := mergeRemoteHARArtifacts(workingDir, &manifest, bundles, acceptor, mergeOutput); err != nil {
 		return nil, err
 	}
@@ -291,6 +280,21 @@ func (b *distributedExecutionBackend) stageRemoteArchiveUnderSourceFence(sourceC
 	// outbox. The merged local directory is the recoverable source of truth until
 	// adjunct generation, object upload, and the catalog UPSERT all commit.
 	return record, nil
+}
+
+// fenceReceiptAcceptor stops recording receipts once the source context
+// ends: a controller that lost the run's lease mid-merge records no further
+// receipts (each accept also proves the lease term in its own transaction).
+func fenceReceiptAcceptor(sourceCtx context.Context, accept harReceiptAcceptor) harReceiptAcceptor {
+	if sourceCtx == nil {
+		return accept
+	}
+	return func(entry RunArchiveEvidenceArtifact) (string, error) {
+		if err := sourceCtx.Err(); err != nil {
+			return "", err
+		}
+		return accept(entry)
+	}
 }
 
 func writeDistributedELKEvidence(root string, manifest *RunArchiveManifest, tr *TestRunner, test *ManagedTest, completedAt time.Time, budgets ...*archiveOutputBudget) error {
@@ -689,19 +693,16 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesWithCache(ctx con
 			if cache != nil && cached == nil && err == nil && !missing {
 				err = cache.save(ctx, bundle)
 			}
+			// Optional evidence comes from the live generator, never the
+			// cache; a source that stalls one fetch is not asked for more.
+			live := &optionalEvidenceSource{}
+			if clients[target] != nil {
+				live.client = clients[target]
+			}
 			if err == nil && !missing && len(bundle.manifest.BrowserHARArtifacts) > 0 {
-				// HARs come from the live generator, never the cache.
-				var live archiveArtifactClient
-				if clients[target] != nil {
-					live = clients[target]
-				}
 				bundle.hars, bundle.harOmitted = fetchRemoteHARArtifacts(ctx, live, test.ID, sourceIdentities[target], filepath.Join(transferStageRoot, fmt.Sprintf("target-%03d", index)), bundle.manifest.BrowserHARArtifacts, harBudget, harTransfer)
 			}
 			if err == nil && !missing && bundle.manifest.BrowserInteractionsArtifact != nil {
-				var live archiveArtifactClient
-				if clients[target] != nil {
-					live = clients[target]
-				}
 				bundle.interactions, bundle.interactionsUnavailable = fetchRemoteInteractions(ctx, live, test.ID, sourceIdentities[target], filepath.Join(transferStageRoot, fmt.Sprintf("target-%03d", index)), bundle.manifest.BrowserInteractionsArtifact, bundle.manifest.BrowserInteractionRecordCount, interactionsTransfer)
 			}
 			results <- remoteArchiveFetchResult{index: index, bundle: bundle, missing: missing, err: err}

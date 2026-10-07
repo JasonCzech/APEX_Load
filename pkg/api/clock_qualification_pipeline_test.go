@@ -287,3 +287,24 @@ func TestClockPipelineStepBeforePublicationIsNotABreach(t *testing.T) {
 		t.Fatalf("a step inflated the fan-out lag: %v ms, health %+v", live.Telemetry.ControllerFanoutLagMs, health)
 	}
 }
+
+// A breach interrupted by an unscored stretch is announced once, and its end
+// is the one recovery.
+func TestTelemetryBreachAcrossAnUnscoredStretchIsAnnouncedOnce(t *testing.T) {
+	state := &telemetryDiagnosticState{}
+	now := time.Now()
+	unscored := &TelemetryDiagnostic{Severity: "healthy", Unscored: []string{"stale_sample:uncalibrated"}}
+	breached := &TelemetryDiagnostic{Severity: "danger", Conditions: []string{"transport_lag"}}
+	var previous *TelemetryRunHealth
+	var events []string
+	for i, diagnostic := range []*TelemetryDiagnostic{breached, unscored, breached, unscored, unscored, breached, nil} {
+		current := updateTelemetryRunHealth(state, diagnostic, "", now.Add(time.Duration(i)*time.Second))
+		if event := telemetryHealthEvent(previous, current); event != "" {
+			events = append(events, event)
+		}
+		state.Health, previous = current, current
+	}
+	if strings.Join(events, ",") != "telemetry_breached,telemetry_recovered" {
+		t.Fatalf("interrupted breach events %v", events)
+	}
+}

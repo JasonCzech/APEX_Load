@@ -52,6 +52,10 @@ type BrowserInteractionEvidenceSink interface {
 // handOffBrowserInteractions gives a sink the interactions a protocol
 // recorded since the last handoff, their routes scrubbed like any other run
 // evidence. Without such a sink they are dropped.
+// maxHandedOffInteractionRoute is the interaction route bound
+// (protocol.BrowserInteraction.Valid).
+const maxHandedOffInteractionRoute = 512
+
 func handOffBrowserInteractions(p protocol.Protocol, sink ResultSink, config *RedactionConfig) {
 	provider, ok := p.(protocol.BrowserInteractionEvidenceProvider)
 	if !ok {
@@ -71,8 +75,9 @@ func handOffBrowserInteractions(p protocol.Protocol, sink ResultSink, config *Re
 		}
 		for i := range record.Interactions {
 			route := scrubSensitiveTextWithConfig(record.Interactions[i].Route, config)
-			if route != "" && (!strings.HasPrefix(route, "/") || strings.ContainsAny(route, "?#")) {
-				// Scrubbing left no path (detail withheld): record none.
+			if route != "" && (!strings.HasPrefix(route, "/") || strings.ContainsAny(route, "?#") || len(route) > maxHandedOffInteractionRoute) {
+				// Scrubbing left no path (detail withheld), or lengthened it
+				// past the route bound: record none, so the record stays valid.
 				route = ""
 			}
 			record.Interactions[i].Route = route

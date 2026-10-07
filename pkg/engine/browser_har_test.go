@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -128,5 +129,46 @@ func TestBrowserInteractionRoutesAreScrubbedAtHandoff(t *testing.T) {
 	route := sink.interactions[0].Interactions[0].Route
 	if strings.Contains(route, secret) || !strings.HasPrefix(route, "/share/") {
 		t.Fatalf("route %q", route)
+	}
+}
+
+// A scrubbed route keeps the interaction valid, so the sink's validation
+// never drops the whole record: a route the scrubber would lengthen past the
+// route bound is recorded as none.
+func TestScrubbedInteractionRoutesKeepRecordsValid(t *testing.T) {
+	gen := strings.Repeat("c", 32)
+	secret := "q7Zx"
+	config := WithSecretValueRedaction(nil, []string{secret})
+	marker := scrubSensitiveTextWithConfig("/"+secret, config)
+	valid := func(route, n string) protocol.BrowserInteraction {
+		return protocol.BrowserInteraction{Version: protocol.BrowserInteractionVersion, SourceGeneration: gen, InteractionID: gen + "-i" + n, ActionID: gen + "-a" + n, DocumentID: gen + "-idoc-" + strings.Repeat("b", 32), FrameScope: "main_frame", Kind: "click", PointerType: "mouse", Points: []protocol.BrowserInteractionPoint{{X: 140, Y: 170}},
+			ViewportWidth: 1000, ViewportHeight: 700, DeviceScaleFactor: 1, LayoutRevision: "0123456789abcdef", Route: route,
+			Outcome: protocol.BrowserInteractionOutcome{Observed: protocol.InteractionOutcomeNotDeclared}, Provenance: protocol.InteractionProvenanceScripted, Success: true, CapturedAt: time.Now().UTC()}
+	}
+	short := valid("/share/"+secret, "1")
+	if !short.Valid() {
+		t.Fatal("fixture interaction is invalid")
+	}
+	// Fill the route to the bound so any lengthening crosses it.
+	long := valid("/"+strings.Repeat("a", 512-2-len(secret))+"/"+secret, "2")
+	if len(long.Route) != 512 || !long.Valid() {
+		t.Fatalf("long fixture route %d valid %v", len(long.Route), long.Valid())
+	}
+	p := &interactionUnitProtocol{evidence: []*protocol.BrowserInteractionEvidence{{Version: protocol.BrowserInteractionVersion, SourceGeneration: gen, Interactions: []protocol.BrowserInteraction{short, long}}}}
+	sink := &interactionUnitSink{}
+	handOffBrowserInteractions(p, sink, config)
+	if len(sink.interactions) != 1 || len(sink.interactions[0].Interactions) != 2 {
+		t.Fatalf("handoff %+v", sink.interactions)
+	}
+	for i, interaction := range sink.interactions[0].Interactions {
+		if strings.Contains(interaction.Route, secret) || !interaction.Valid() {
+			t.Fatalf("interaction %d route %q valid %v", i, interaction.Route, interaction.Valid())
+		}
+	}
+	if sink.interactions[0].Clone() == nil {
+		t.Fatal("the scrubbed record does not validate")
+	}
+	if got := sink.interactions[0].Interactions[1].Route; len(marker)-1 > len(secret) && got != "" {
+		t.Fatalf("a route lengthened past the bound was kept: %d bytes", len(got))
 	}
 }

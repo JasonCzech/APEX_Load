@@ -54,8 +54,10 @@ Each gesture action (`browser_click`, `browser_dblclick`, `browser_tap`,
   target, and a scroll names none. No coordinates, and never the element's
   value.
 - **Context.** Viewport size, scroll offsets, device scale, the sanitized
-  route (the path only, with numeric, UUID, long hexadecimal and
-  digit-heavy segments collapsed to `:id`) and a layout revision: a
+  route (the path only, with the run's runtime secret values redacted and
+  numeric, UUID, long hexadecimal and digit-heavy segments collapsed to
+  `:id`; a route the run's redaction would leave without a path, or lengthen
+  past 512 bytes, is recorded as none) and a layout revision: a
   fingerprint of a breadth-first skeleton of at most 1,024 elements (tag,
   a safe role token and the box quantized to 32 CSS pixels), with no text
   or other attribute values.
@@ -82,10 +84,13 @@ marks the evidence incomplete. Sessions hand their interactions to the run
 archive at every iteration boundary and at teardown, split into records of at
 most 512 KiB; a record a sink still refuses is counted as dropped. A run
 archive keeps them in its own `browser_interactions.jsonl` sidecar, at most
-64 MiB; on a generator, optional evidence (interactions and HARs together)
-stays within a quarter of the run archive limit. A write refused before any
-byte (quota, free space) loses only that record; a torn write loses the
-sidecar, and every record in it is counted as dropped.
+64 MiB. Optional evidence (interactions and HARs together) stays within one
+allowance fixed at its first write: a quarter of the run archive limit or of
+the free space above the archive volume's floor, whichever is smaller, on a
+generator and on a controller running the test itself alike; a record
+beyond it is dropped. A write refused before any byte (quota, free space)
+loses only that record; a torn write loses the sidecar, and every record in
+it is counted as dropped.
 
 A generator declares its sidecar as transferable evidence
 (`browser_interactions_artifact`). At finalization the controller fetches it

@@ -148,10 +148,13 @@ retained stays in its HAR directory under its retention, is counted in
 `duplicate`, `source_unavailable`, `receipt_refused`, and `safe_export` in a
 safe archive export, which leaves HARs out) and marks the archive
 `browser_har_incomplete`. HAR is optional evidence and never fails a run. A
-run keeps at most 128 HARs and 1 GiB of them, each at most 100 MiB; on a
-generator, optional evidence (HARs and interaction records together) is
-admitted only within a quarter of the run archive byte limit, so required
-evidence always keeps three quarters of it.
+run keeps at most 128 HARs and 1 GiB of them, each at most 100 MiB. Optional
+evidence (HARs and interaction records together) is admitted only within one
+allowance fixed at its first admission: a quarter of the run archive byte
+limit or of the free space above the archive volume's floor, whichever is
+smaller, so required evidence always keeps the rest. This holds on a
+generator and on a controller running the test itself: when space is tight,
+a HAR beyond the allowance is `archive_quota`.
 
 At finalization the controller fetches each declared HAR from the live
 generator, never from the collection cache, so a source served only from
@@ -192,13 +195,20 @@ acknowledgement leaves the copy to the generator's archive retention, as
 does a tombstoned receipt, which is never acknowledged.
 Deleting a run archive (including retention) or its project tombstones its
 receipts. Receipt rows are kept, at most one per HAR (128 per run) and one per
-source's interactions sidecar: they outlive the run so that tombstones keep
-refusing late uploads. On PostgreSQL, receipt admission is a read-then-write without a
+source's interactions sidecar: they outlive the run so that a deleted
+archive's tombstones keep refusing late uploads (a deleted run refuses them
+anyway, and still records a tombstone for each). On PostgreSQL, receipt admission is a read-then-write without a
 row lock. Two stagers of one run are excluded by the execution lease (one
 controller holds a run), and receipts are fenced by execution generation: an
 older generation's staging attempt (a deposed controller still merging)
 neither forgets nor changes a newer generation's claims, and a controller
-that has lost the lease records no further receipts.
+that has lost the lease records no further receipts: under the durable
+execution fence each accept checks, in its own transaction, that the
+controller still holds the execution lease term it staged under. The
+generator is acknowledged with an attempt per commit of the run; one that
+fails (no reachable generator, an error, a retained copy) is retried by a
+later commit only after 15 minutes, and a generator that no longer has the
+run's archive counts as acknowledged.
 
 The archive manifest's artifact inventory lists each HAR (format `har`,
 record type `browser_har_native`) with its SHA-256, so object-store

@@ -177,8 +177,10 @@ export function rcaSeriesLabel(id: string): string {
   if (s.dimension === 'browser_document') {
     // browser_document/<metric>/<tuple digest>/<statistic>: one measurement
     // tuple (engine, device profile, cohort, phase, group) of a document metric.
+    // The digest names the whole tuple, not the runtime cohort a panel's
+    // cohort filter takes, so it is labelled as a tuple.
     const [metric, digest] = s.name.split('/')
-    return `${DOCUMENT_METRIC_LABELS[metric] || metric} ${s.metric} · document cohort ${(digest || '').slice(0, 8)}`
+    return `${DOCUMENT_METRIC_LABELS[metric] || metric} ${s.metric} · tuple ${(digest || '').slice(0, 8)}`
   }
   return `${s.name} · ${METRIC_LABELS[s.metric] || s.metric.replace(/_/g, ' ')}`
 }

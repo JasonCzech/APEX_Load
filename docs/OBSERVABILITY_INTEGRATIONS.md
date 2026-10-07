@@ -396,8 +396,16 @@ silent correction: a point more than 30 s ahead of its receipt keeps its
 Measured offsets are archived after finalization in `clock_observations.jsonl`
 (`apexload.clock_observation.v1`): source, clock source, observed time, offset,
 round trip and uncertainty, at most one per source per 30 seconds and 10,000
-per run (`clock_observations_truncated`). The file is written only when the run
-measured a clock. Observations live with the controller holding the run, so a
+per run (`clock_observations_truncated`). Windows only move forward: after the
+controller's wall clock steps back, a source's observations are not recorded
+until the clock passes its last recorded window, and that gap is not marked
+truncated. The file is written only when the run measured a clock.
+A generator's offset is against the clock it stamps its pongs and telemetry
+with: its wall clock as of the last heartbeat answered while it had no test
+assigned, advanced on its monotonic clock. A wall-clock step on the
+generator during a run therefore moves neither its telemetry nor these
+offsets (it shows at the first probe after the run), but it does move the
+run's transaction timestamps, which these offsets do not track. Observations live with the controller holding the run, so a
 collector batch accepted by another replica, or a probe lost to a controller
 restart, is not archived. With HA, offsets are against the replica that
 measured them: generator observations name the execution owner in

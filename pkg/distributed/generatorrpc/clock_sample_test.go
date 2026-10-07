@@ -81,3 +81,62 @@ func TestHeartbeatStreamReportsItsClockSample(t *testing.T) {
 		t.Fatalf("same-clock offset %s exceeds its uncertainty %s", sample.Offset, sample.Uncertainty)
 	}
 }
+
+// While a test is assigned, no heartbeat re-anchors the published clock, so
+// a wall-clock step between one run's probes cannot move its stamps; an idle
+// heartbeat re-anchors it.
+func TestHeartbeatHoldsThePublishedClockWhileATestIsAssigned(t *testing.T) {
+	previous := generatorPublishedClock
+	t.Cleanup(func() { generatorPublishedClock = previous })
+	now := time.Now()
+	// The wall clock stepped 5 s back since this anchor.
+	generatorPublishedClock = &publishedClock{wall: now.Round(0).Add(5 * time.Second), mono: now}
+	listener := bufconn.Listen(1 << 20)
+	server := grpc.NewServer()
+	service := NewService("generator-clock-hold", 10)
+	service.mu.Lock()
+	service.assignments["run"] = assignedTest{}
+	service.mu.Unlock()
+	pb.RegisterGeneratorControlServer(server, service)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, err := grpc.DialContext(ctx, "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := NewClient(conn)
+	t.Cleanup(func() { _ = client.Close() })
+	heartbeat, err := client.OpenHeartbeat(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer heartbeat.CloseSend()
+	probe := func() time.Duration {
+		t.Helper()
+		if err := heartbeat.Send(Heartbeat{GeneratorID: "inventory-refresh"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := heartbeat.Receive(); err != nil {
+			t.Fatal(err)
+		}
+		sample, ok := heartbeat.ClockSample()
+		if !ok {
+			t.Fatal("no clock sample")
+		}
+		return sample.Offset
+	}
+	if offset := probe(); offset < 4*time.Second || offset > 6*time.Second {
+		t.Fatalf("a heartbeat during a run re-anchored the published clock: offset %s", offset)
+	}
+	service.mu.Lock()
+	delete(service.assignments, "run")
+	service.mu.Unlock()
+	if offset := probe(); offset < -time.Second || offset > time.Second {
+		t.Fatalf("an idle heartbeat did not re-anchor: offset %s", offset)
+	}
+}

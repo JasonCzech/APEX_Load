@@ -21,6 +21,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/protocol/browser"
 	"github.com/jasonczech/apexload/pkg/storage"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Native HAR artifacts in run archives (D5). A generator moves each
@@ -134,7 +136,7 @@ type stagedRemoteHAR struct {
 // refuses to go below the controller's free-space floor, so optional evidence
 // can never exhaust the disk the required archive needs; a HAR it refuses is
 // omitted.
-func fetchRemoteHARArtifacts(ctx context.Context, client archiveArtifactClient, testID, sourceIdentity, dir string, declared []RunArchiveEvidenceArtifact, budget *remoteHARBudget, transfer *remoteArchiveTransferBudget) ([]stagedRemoteHAR, map[string]int64) {
+func fetchRemoteHARArtifacts(ctx context.Context, source *optionalEvidenceSource, testID, sourceIdentity, dir string, declared []RunArchiveEvidenceArtifact, budget *remoteHARBudget, transfer *remoteArchiveTransferBudget) ([]stagedRemoteHAR, map[string]int64) {
 	omitted := map[string]int64{}
 	var staged []stagedRemoteHAR
 	for _, entry := range declared {
@@ -142,8 +144,12 @@ func fetchRemoteHARArtifacts(ctx context.Context, client archiveArtifactClient, 
 			omitted[harOmittedInvalid]++
 			continue
 		}
-		if client == nil {
+		if source == nil || source.client == nil {
 			omitted[harOmittedSourceUnavailable]++
+			continue
+		}
+		if source.stalled {
+			omitted[harOmittedTransfer]++
 			continue
 		}
 		if reason := budget.reserve(entry.Bytes); reason != "" {
@@ -157,9 +163,7 @@ func fetchRemoteHARArtifacts(ctx context.Context, client archiveArtifactClient, 
 			omitted[harOmittedTransfer]++
 			continue
 		}
-		fetchCtx, cancel := context.WithTimeout(ctx, optionalEvidenceFetchTimeout(entry.Bytes))
-		copied, err := fetchRemoteArchiveArtifactFileForSource(fetchCtx, client, testID, entry.Name, sourceIdentity, path, entry.Bytes, artifact)
-		cancel()
+		copied, err := source.fetch(ctx, testID, entry.Name, sourceIdentity, path, entry.Bytes, artifact)
 		if err == nil && copied != entry.Bytes {
 			err = io.ErrUnexpectedEOF
 		}
@@ -182,8 +186,28 @@ func fetchRemoteHARArtifacts(ctx context.Context, client archiveArtifactClient, 
 // optionalEvidenceFetchTimeout bounds one optional artifact's fetch by its
 // declared size (30 s plus 1 MiB/s), so a stalled stream is omitted rather
 // than holding a fetch slot until the attempt's deadline.
-func optionalEvidenceFetchTimeout(bytes int64) time.Duration {
+var optionalEvidenceFetchTimeout = func(bytes int64) time.Duration {
 	return 30*time.Second + time.Duration(max(bytes, 0)>>20)*time.Second
+}
+
+// optionalEvidenceSource is one generator's live client for its optional
+// evidence (HARs, then the interactions sidecar). Once a fetch from it runs
+// out its own deadline, the source's remaining optional artifacts are not
+// fetched (each is transfer_failed): every one would wait out another
+// deadline, and one stalled source must not use up the staging attempt.
+type optionalEvidenceSource struct {
+	client  archiveArtifactClient
+	stalled bool
+}
+
+func (s *optionalEvidenceSource) fetch(ctx context.Context, testID, name, sourceIdentity, path string, size int64, budget *remoteArchiveTransferBudget) (int64, error) {
+	fetchCtx, cancel := context.WithTimeout(ctx, optionalEvidenceFetchTimeout(size))
+	defer cancel()
+	copied, err := fetchRemoteArchiveArtifactFileForSource(fetchCtx, s.client, testID, name, sourceIdentity, path, size, budget)
+	if err != nil && ctx.Err() == nil && errors.Is(fetchCtx.Err(), context.DeadlineExceeded) {
+		s.stalled = true
+	}
+	return copied, err
 }
 
 // verifyHARFile checks a file's size and SHA-256 against its entry.
@@ -357,11 +381,19 @@ func (tr *TestRunner) acceptRemoteHARReceipt(test *ManagedTest, targets map[stri
 		return func(RunArchiveEvidenceArtifact) (string, error) { return storage.EvidenceReceiptAccepted, nil }
 	}
 	tr.mu.RLock()
-	generation := test.executionGeneration
+	generation, owner := test.executionGeneration, test.executionFence
 	tr.mu.RUnlock()
+	// Under the durable execution fence each accept proves, in its own
+	// transaction, that this controller still holds the run's lease term.
+	leaseName := ""
+	if tr.durableExecutionFence && owner != "" && generation > 0 {
+		leaseName = executionLeaseName
+	} else {
+		owner = ""
+	}
 	return func(entry RunArchiveEvidenceArtifact) (state string, err error) {
 		err = tr.trackDurableWrite(func() error {
-			state, err = store.AcceptRunEvidenceReceipt(storage.RunEvidenceReceipt{TestID: test.ID, ExecutionGeneration: generation, SourceIdentity: entry.SourceIdentity, Target: targets[entry.SourceIdentity], SourceGeneration: entry.SourceGeneration, Sequence: entry.Sequence, Kind: entry.Kind, Name: entry.Name, SHA256: entry.SHA256, Bytes: entry.Bytes})
+			state, err = store.AcceptRunEvidenceReceipt(storage.RunEvidenceReceipt{TestID: test.ID, ExecutionGeneration: generation, SourceIdentity: entry.SourceIdentity, Target: targets[entry.SourceIdentity], SourceGeneration: entry.SourceGeneration, Sequence: entry.Sequence, Kind: entry.Kind, Name: entry.Name, SHA256: entry.SHA256, Bytes: entry.Bytes, LeaseName: leaseName, LeaseOwner: owner})
 			return err
 		})
 		return state, err
@@ -407,12 +439,14 @@ func (tr *TestRunner) publishRunEvidence(testID string) {
 		slog.Warn("run evidence receipts were not read for acknowledgement", "test_id", testID, "err", err)
 		return
 	}
-	// Only evidence no generator confirmed yet in this process: a later
-	// commit of the run (a refresh, a note edit) acknowledges nothing again,
-	// while after a restart it re-drives what was never confirmed.
+	// Only evidence no generator confirmed yet in this process, and none
+	// whose last attempt failed within the retry interval: a later commit of
+	// the run (a refresh, a note edit) acknowledges nothing again, while
+	// after a restart it re-drives what was never confirmed.
+	now := time.Now()
 	bySource := map[string][]storage.RunEvidenceReceipt{}
 	for _, receipt := range receipts {
-		if receipt.State == storage.EvidenceReceiptPublished && !tr.acknowledgedEvidence.has(acknowledgedEvidenceKey(testID, receipt.SourceIdentity, receipt.Name, receipt.SHA256)) {
+		if receipt.State == storage.EvidenceReceiptPublished && tr.acknowledgedEvidence.due(acknowledgedEvidenceKey(testID, receipt.SourceIdentity, receipt.Name, receipt.SHA256), now) {
 			bySource[receipt.SourceIdentity] = append(bySource[receipt.SourceIdentity], receipt)
 		}
 	}
@@ -444,35 +478,59 @@ func acknowledgedEvidenceKey(testID, source, name, sha string) string {
 	return testID + "\x00" + source + "\x00" + name + "\x00" + sha
 }
 
-// maxAcknowledgedEvidence bounds the remembered confirmations; the oldest
-// are forgotten first (a forgotten one is at most acknowledged again).
+// maxAcknowledgedEvidence bounds the remembered confirmations and retry
+// times; the oldest are forgotten first (a forgotten one is at most
+// acknowledged again).
 const maxAcknowledgedEvidence = 1 << 16
 
-// acknowledgedEvidenceSet is a bounded set of confirmed acknowledgements.
+// evidenceAcknowledgementRetry is how long an acknowledgement that failed
+// (no reachable generator, an error, a retained copy) waits before a later
+// commit of the run tries it again.
+var evidenceAcknowledgementRetry = 15 * time.Minute
+
+// acknowledgedEvidenceSet remembers, per artifact, a confirmed
+// acknowledgement (a zero time) or the earliest retry of a failed one.
 type acknowledgedEvidenceSet struct {
 	mu    sync.Mutex
-	keys  map[string]struct{}
+	keys  map[string]time.Time
 	order []string
 }
 
+// due reports whether an artifact should be acknowledged at now.
+func (a *acknowledgedEvidenceSet) due(key string, now time.Time) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	retry, ok := a.keys[key]
+	return !ok || !retry.IsZero() && !now.Before(retry)
+}
+
+// has reports a confirmed acknowledgement.
 func (a *acknowledgedEvidenceSet) has(key string) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	_, ok := a.keys[key]
-	return ok
+	retry, ok := a.keys[key]
+	return ok && retry.IsZero()
 }
 
-func (a *acknowledgedEvidenceSet) add(key string) {
+func (a *acknowledgedEvidenceSet) add(key string) { a.set(key, time.Time{}) }
+
+// retryAfter defers a failed acknowledgement; it never undoes a confirmation.
+func (a *acknowledgedEvidenceSet) retryAfter(key string, at time.Time) {
+	if !a.has(key) {
+		a.set(key, at)
+	}
+}
+
+func (a *acknowledgedEvidenceSet) set(key string, at time.Time) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.keys == nil {
-		a.keys = map[string]struct{}{}
+		a.keys = map[string]time.Time{}
 	}
-	if _, ok := a.keys[key]; ok {
-		return
+	if _, ok := a.keys[key]; !ok {
+		a.order = append(a.order, key)
 	}
-	a.keys[key] = struct{}{}
-	a.order = append(a.order, key)
+	a.keys[key] = at
 	if len(a.order) > maxAcknowledgedEvidence {
 		delete(a.keys, a.order[0])
 		a.order = a.order[1:]
@@ -501,11 +559,17 @@ func acknowledgeRunEvidence(testID string, acks []evidenceAcknowledgementTarget,
 		}
 		if !ok {
 			slog.Warn("no generator client to acknowledge published evidence; its copy stays until retention", "test_id", testID, "target", ack.target, "source", ack.request.SourceIdentity)
-		} else if result, err := client.AcknowledgeEvidence(ctx, ack.request); err != nil || len(result.Retained) > 0 {
+			deferAcknowledgement(confirmed, testID, ack.request)
+		} else if result, err := client.AcknowledgeEvidence(ctx, ack.request); status.Code(err) == codes.NotFound {
+			// The generator no longer has the run's archive (its retention
+			// swept it): nothing is left to delete.
+			confirmAcknowledged(confirmed, testID, ack.request, acknowledgedNames(ack.request))
+		} else if err != nil || len(result.Retained) > 0 {
 			slog.Warn("generator kept acknowledged evidence", "test_id", testID, "source", ack.request.SourceIdentity, "retained", len(result.Retained), "err", err)
 			if err == nil {
 				confirmAcknowledged(confirmed, testID, ack.request, result.Deleted)
 			}
+			deferAcknowledgement(confirmed, testID, ack.request)
 		} else {
 			confirmAcknowledged(confirmed, testID, ack.request, result.Deleted)
 		}
@@ -531,6 +595,26 @@ func confirmAcknowledged(confirmed *acknowledgedEvidenceSet, testID string, requ
 			confirmed.add(acknowledgedEvidenceKey(testID, request.SourceIdentity, artifact.Name, artifact.SHA256))
 		}
 	}
+}
+
+// deferAcknowledgement schedules the retry of a request's unconfirmed
+// artifacts.
+func deferAcknowledgement(confirmed *acknowledgedEvidenceSet, testID string, request generatorrpc.EvidenceAcknowledgement) {
+	if confirmed == nil {
+		return
+	}
+	retry := time.Now().Add(evidenceAcknowledgementRetry)
+	for _, artifact := range request.Artifacts {
+		confirmed.retryAfter(acknowledgedEvidenceKey(testID, request.SourceIdentity, artifact.Name, artifact.SHA256), retry)
+	}
+}
+
+func acknowledgedNames(request generatorrpc.EvidenceAcknowledgement) []string {
+	names := make([]string, 0, len(request.Artifacts))
+	for _, artifact := range request.Artifacts {
+		names = append(names, artifact.Name)
+	}
+	return names
 }
 
 // waitEvidenceAcknowledgements waits for the background acknowledgements
