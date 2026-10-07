@@ -429,6 +429,14 @@ func TestMetricsBrokerMarksAStateOnlySequencePrefix(t *testing.T) {
 	if len(initial) != 1 || initial[0].GetBatchSequence() != 3 || initial[0].GetSequencePrefixStateOnly() {
 		t.Fatalf("snapshot after a metric window: %#v", initial)
 	}
+	// A run removed without a terminal publication leaves no per-test state.
+	broker.deleteTerminalsForTest("run")
+	broker.publishMu.Lock()
+	resident := len(broker.batchSequences) + len(broker.windowPublished)
+	broker.publishMu.Unlock()
+	if resident != 0 {
+		t.Fatalf("per-test publication state outlived the run: %d entries", resident)
+	}
 }
 
 // Opening a metrics stream returns only once the generator has installed the

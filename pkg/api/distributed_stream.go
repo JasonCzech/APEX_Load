@@ -677,6 +677,9 @@ func qualifyRemoteMetricsReceipt(tr *TestRunner, test *ManagedTest, target strin
 	tr.mu.RUnlock()
 	offset, clockQuality := calibrations.quality(target, receivedAt)
 	qualifyCrossHostTelemetry(batch.Telemetry, offset, clockQuality)
+	if batch.Telemetry != nil {
+		batch.Telemetry.ReceivedAt, batch.Telemetry.ReceivedMonotonic = receivedAt.Round(0), receivedAt.Sub(clockProcessStart)
+	}
 }
 
 func (b *distributedExecutionBackend) consumeMetrics(ctx context.Context, tr *TestRunner, test *ManagedTest, target string, stream *generatorrpc.MetricsStream) {

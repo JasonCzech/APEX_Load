@@ -26,9 +26,11 @@ const (
 	// intervals after its last observation.
 	clockCalibrationMissedProbes = 3
 	// clockStepTolerance is the largest disagreement between the
-	// controller's wall and monotonic clocks across two probes that is not
-	// a wall-clock step.
-	clockStepTolerance = time.Second
+	// controller's wall and monotonic clocks that is not a wall-clock step.
+	// It stays well below the smallest cross-host budget (500 ms transport
+	// lag), so a step that could cross a budget is caught; slewing moves the
+	// wall clock at most 500 ppm, 45 ms over three probe intervals.
+	clockStepTolerance = 100 * time.Millisecond
 )
 
 // Reasons a cross-host duration is not qualified.
@@ -286,6 +288,17 @@ func clockBudgetUnscored(value float64, threshold *float64, quality *generatorrp
 		return "uncertainty_crosses_threshold"
 	}
 	return ""
+}
+
+// wallClockSteppedSince says whether the controller's wall clock stepped
+// between a reading (wall time and monotonic reading since
+// clockProcessStart) and now: their wall and monotonic distances disagree by
+// more than clockStepTolerance. No reading shows no step.
+func wallClockSteppedSince(wall time.Time, monotonic time.Duration, now time.Time) bool {
+	if wall.IsZero() {
+		return false
+	}
+	return (now.Round(0).Sub(wall) - (now.Sub(clockProcessStart) - monotonic)).Abs() > clockStepTolerance
 }
 
 // clockScoredValue is the figure a budget decision reports: the proven lower

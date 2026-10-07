@@ -149,6 +149,60 @@ func TestNativeLiveEvidenceDerivation(t *testing.T) {
 	}
 }
 
+// A merged live bucket nobody published into, or a count bucket only partly
+// covered by publications, is not an observed count: it never becomes a
+// measured zero (or an undercount) in a derivation.
+func TestMergedLiveCountsNeedPublicationsAndCoverage(t *testing.T) {
+	start := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	interval := func(at time.Duration, window float64, count int64) *LiveMetrics {
+		d := engine.NewTDigest(200)
+		for i := int64(0); i < count; i++ {
+			d.Add(float64(10 * time.Millisecond))
+		}
+		snapshot := d.Snapshot()
+		return &LiveMetrics{Timestamp: start.Add(at), NativeEvidence: &storage.NativeIntervalEvidence{Version: 2, WindowSeconds: window,
+			Dimensions: map[string]map[string]storage.NativeIntervalMetric{"action": {"Checkout": {Count: count, Avg: 10, DurationDigest: &snapshot}}}}}
+	}
+	history := []*LiveMetrics{interval(2*time.Second, 2, 4), interval(4*time.Second, 2, 4), interval(5*time.Second, 1, 2)}
+	q := storage.AnalyticsQuery{EvidenceMode: "live", LiveBucketMode: "merged", Population: "action", Metric: "observation_count", Aggregation: "count", BucketSeconds: 2, EndSeconds: 10, MaxSeries: 1,
+		Filters: map[string]string{"action": "Checkout"}, Derivation: &analysis.QueryDerivation{Operation: "moving_mean", WindowBuckets: 2, MinimumCoverage: 1}}
+	if err := storage.ValidateNativeEvidenceQuery(q); err != nil {
+		t.Fatal(err)
+	}
+	out, err := buildMergedNativeLiveEvidence(context.Background(), start, history, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := out.Series[0].Points
+	if len(raw) != 5 || !raw[0].complete || !raw[1].complete || raw[2].complete || raw[3].complete || raw[4].complete {
+		t.Fatalf("merged count completeness %+v", raw)
+	}
+	if err := applyNativeEvidenceDerivation("p", q, &out); err != nil {
+		t.Fatal(err)
+	}
+	points := out.Series[0].Points
+	if points[1].Value == nil || *points[1].Value != 4 {
+		t.Fatalf("observed moving mean %+v", points[1])
+	}
+	for _, p := range points[2:] {
+		if p.Value != nil {
+			t.Fatalf("an unobserved or partial count bucket was scored: %+v", points)
+		}
+	}
+	// A latency bucket may be partly covered (a sample of the bucket), but
+	// one nobody published into is not complete either.
+	latency := q
+	latency.Metric, latency.Aggregation, latency.Derivation = "response_time", "avg", nil
+	out, err = buildMergedNativeLiveEvidence(context.Background(), start, history, latency)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = out.Series[0].Points
+	if !raw[2].complete || raw[3].complete || raw[4].complete {
+		t.Fatalf("merged latency completeness %+v", raw)
+	}
+}
+
 // Merged live buckets score a ratio from publications that do not line up
 // with bucket edges (receipt-timed, jittered): every expected source
 // published into the bucket with valid evidence, so the bucket is complete.
@@ -302,6 +356,70 @@ func TestImportedCounterDerivationsAreResetAware(t *testing.T) {
 	empty, err := importedDerivation(in, gauge, nil, analysis.QueryDerivation{Operation: "moving_mean", WindowBuckets: 2, MinimumCoverage: 1})
 	if err != nil || len(empty.Buckets) != 3 || empty.Buckets[0].Reason != "evidence_unavailable" || empty.Buckets[0].Value != nil {
 		t.Fatalf("empty window %+v %v", empty, err)
+	}
+
+	// A bucket the worker read as missing because a reading fell inside it
+	// says so; it never reads its pre-reset peak.
+	query.Aggregation, query.CounterReadings = "max", true
+	reset := point(10, 0)
+	reset.Value, reset.Quality, reset.MissingReason = nil, analysis.QualityMissing, analysis.MissingCounterReset
+	delta, err := importedDerivation(in, query, []analysis.MetricPoint{point(0, 100), reset, point(20, 140), point(30, 150)}, analysis.QueryDerivation{Operation: "delta"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reasons := make([]string, len(delta.Buckets))
+	for i, b := range delta.Buckets {
+		reasons[i] = b.Reason
+	}
+	if strings.Join(reasons, " ") != "no_prior_sample counter_reset missing_counter_sample  missing_counter_sample" || delta.Buckets[3].Value == nil || *delta.Buckets[3].Value != 10 {
+		t.Fatalf("reset bucket reasons %q %+v", strings.Join(reasons, " "), delta.Buckets)
+	}
+}
+
+// Moving statistics derive the bucketed series itself: a counter's rate, a
+// histogram's percentile or a dataset gauge named like a native metric.
+func TestImportedMovingStatisticsDeriveTheBucketedSeries(t *testing.T) {
+	start := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	in := &storage.AnalysisImport{ID: "ds", ProjectID: "p", Revision: 1}
+	series := func(metric, inputKind string, values ...float64) []analysis.MetricPoint {
+		points := make([]analysis.MetricPoint, len(values))
+		for i := range values {
+			points[i] = analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: "p", Source: "src", MetricName: metric, Kind: analysis.KindGauge, InputKind: inputKind, Unit: "count/s",
+				TimestampUTC: start.Add(time.Duration(i*10) * time.Second), Quality: analysis.QualityValid, Value: &values[i]}
+		}
+		return points
+	}
+	moving := analysis.QueryDerivation{Operation: "moving_mean", WindowBuckets: 2, MinimumCoverage: 1}
+	for _, tc := range []struct{ metric, inputKind, aggregation string }{
+		{"requests_total", analysis.KindCounter, "rate"},
+		{"latency", analysis.KindHistogram, "p95"},
+		{"latency_summary", analysis.KindSummary, "p95"},
+		{"bytes_sent", "", "avg"},
+	} {
+		query := analytics.SeriesQuery{Metric: tc.metric, From: start, To: start.Add(30 * time.Second), BucketSeconds: 10, Aggregation: tc.aggregation}
+		out, err := importedDerivation(in, query, series(tc.metric, tc.inputKind, 2, 4, 6), moving)
+		if err != nil || len(out.Buckets) != 3 || out.Buckets[1].Value == nil || *out.Buckets[1].Value != 3 {
+			t.Fatalf("%s moving mean %+v %v", tc.metric, out, err)
+		}
+	}
+	// A counter derivation still needs counter readings.
+	query := analytics.SeriesQuery{Metric: "requests_total", From: start, To: start.Add(30 * time.Second), BucketSeconds: 10, Aggregation: "rate"}
+	if _, err := importedDerivation(in, query, series("requests_total", analysis.KindCounter, 2, 4, 6), analysis.QueryDerivation{Operation: "delta"}); err == nil || !strings.Contains(err.Error(), "aggregation max") {
+		t.Fatalf("counter delta over rates: %v", err)
+	}
+}
+
+// A counter sample the typed function refuses is invalid_counter_sample, not
+// a measured value.
+func TestCounterDerivationInvalidSample(t *testing.T) {
+	start := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	value := func(v float64) *float64 { return &v }
+	series := analysis.DerivationSeries{ProjectID: "p", Source: "src", MetricName: "requests_total", Kind: analysis.KindCounter, Unit: "count", CounterEpoch: "epoch",
+		Buckets: []analysis.DerivationBucket{{From: start, To: start.Add(10 * time.Second), Value: value(1), Complete: true}, {From: start.Add(10 * time.Second), To: start.Add(20 * time.Second), Value: value(5), Complete: true}}}
+	series.Source = ""
+	out, err := analysis.ApplyQueryDerivation(series, analysis.QueryDerivation{Operation: "delta"}, nil)
+	if err != nil || out.Buckets[1].Value != nil || out.Buckets[1].Reason != "invalid_counter_sample" {
+		t.Fatalf("invalid sample %+v %v", out, err)
 	}
 }
 

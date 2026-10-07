@@ -504,8 +504,13 @@ func queryAnalysisDataset(ctx context.Context, in *storage.AnalysisImport, query
 			return nil, err
 		}
 		ctx, pipeline, dir, err = beginNativeAnalysisPipeline(ctx, 12, 12)
-		if err != nil {
+		if errors.Is(err, analytics.ErrBusy) {
 			return nil, errAnalyticalAdmissionUnavailable
+		}
+		if err != nil {
+			// Unavailable builds, resource limits and configuration are not
+			// a busy slot: retrying does not help.
+			return nil, fmt.Errorf("analytical admission unavailable: %w", err)
 		}
 		defer closeNativeAnalysisPipeline(pipeline, dir)
 		selected, total, err = selectAnalysisDatasetParts(ctx, in, query)

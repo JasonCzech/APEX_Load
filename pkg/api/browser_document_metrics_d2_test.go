@@ -352,12 +352,21 @@ func TestRCABaselineEvidenceCarriesBrowserDocumentSeries(t *testing.T) {
 	if evidence == nil {
 		t.Fatalf("no baseline evidence: %+v", coverage)
 	}
+	// The baseline's tuple pairs with the run's by series ID.
+	summaries, err := readAllArchiveSummariesContext(context.Background(), server.runner.archives[current.ID])
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentSeries, _, err := rcaBrowserDocumentSeries(context.Background(), server.runner.archives[current.ID], manifest, summaries, -1, 0)
+	if err != nil || len(currentSeries) != 1 {
+		t.Fatalf("current document series %+v %v", currentSeries, err)
+	}
 	found := false
 	for _, s := range evidence.Series {
-		found = found || strings.HasPrefix(s.ID, "browser_document/lcp/")
+		found = found || s.ID == currentSeries[0].ID
 	}
 	if !found {
-		t.Fatal("the baseline's browser document series were not read")
+		t.Fatal("the baseline's browser document series were not read under the run's series ID")
 	}
 }
 

@@ -245,6 +245,12 @@ type MetricsTelemetry struct {
 	// sample was certainly collected (corrected time plus uncertainty); the
 	// fleet's sample age is at least now minus it. Controller-internal.
 	CollectedAtBoundUnixMs float64 `json:"-"`
+	// ReceivedAt and ReceivedMonotonic are the controller's wall time and
+	// monotonic reading at receipt: a controller wall-clock step after them
+	// voids the receipt-time qualification of CollectedAt for later
+	// publications. Controller-internal.
+	ReceivedAt        time.Time     `json:"-"`
+	ReceivedMonotonic time.Duration `json:"-"`
 	// MissingMetricWindows is controller-computed from gaps in BatchSequence.
 	// It is cumulative for the target stream and remains zero for older
 	// generators that do not publish a sequence.

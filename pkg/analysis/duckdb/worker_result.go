@@ -157,7 +157,8 @@ func workerSeriesLineage(point analysis.MetricPoint, q SeriesQuery) ([]analysis.
 		return analysis.HistogramBucketDerivation(window, q.BucketSeconds, q.Aggregation)
 	}
 	if point.InputKind != analysis.KindSummary {
-		if point.MissingReason != "" {
+		// Only counter readings name why a bucket is missing.
+		if point.MissingReason != "" && !q.CounterReadings {
 			return nil, errWorkerProtocol
 		}
 		if q.CounterReadings {

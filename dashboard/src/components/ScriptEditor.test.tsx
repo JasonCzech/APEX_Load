@@ -7117,6 +7117,36 @@ describe('ScriptEditor', () => {
     expect(debugEvidenceItem?.textContent).toContain('stale')
   })
 
+  it('keeps an imported script\'s debug evidence when a recheck only adds derived metadata', async () => {
+    const importedScript = { ...initialScript, metadata: { ...(initialScript.metadata || {}), import: { source: 'openapi' } } } as ScriptDefinition
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={importedScript} initiallyDirty projectId="project-1" />)
+    })
+    await act(async () => {
+      findOpenDebuggerButton(container)?.click()
+    })
+    await act(async () => {
+      findDebuggerRunButton(container)?.click()
+      await Promise.resolve()
+    })
+    await flushReact()
+    await act(async () => {
+      findButtonByTitle(container, 'Recheck script readiness')?.click()
+      await Promise.resolve()
+    })
+    await flushReact()
+    await act(async () => {
+      findWorkspaceTab(container, 'Author')?.click()
+    })
+    await act(async () => {
+      findCenterTab(container, 'Runtime Settings')?.click()
+    })
+    const debugEvidenceItem = Array.from(container.querySelectorAll<HTMLElement>('.utility-checklist-item'))
+      .find(item => item.textContent?.includes('Debug Evidence'))
+    expect(debugEvidenceItem?.textContent).toContain('passed')
+    expect(debugEvidenceItem?.textContent).not.toContain('stale')
+  })
+
   it('requires a new replay after actions change even when the edited draft revalidates', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} initiallyDirty projectId="project-1" />)

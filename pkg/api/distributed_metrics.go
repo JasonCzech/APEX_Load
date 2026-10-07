@@ -37,6 +37,7 @@ const distributedAggregateGeneratorID = "distributed"
 // representative window, so these rates are computed here, before concatenation.
 func aggregateDistributedMetricsBatches(testID string, batches map[string]generatorrpc.MetricsBatch) (generatorrpc.MetricsBatch, float64, map[string]float64) {
 	combined := generatorrpc.MetricsBatch{TestID: testID, GeneratorID: distributedAggregateGeneratorID}
+	publishedAt := time.Now()
 	targets := make([]string, 0, len(batches))
 	hasCollectedAt := false
 	oldestCollectedMs := 0.0
@@ -245,16 +246,21 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 				// contributing generator's, and the qualified ones bound the
 				// fleet's age from below.
 				collected := float64(batch.Telemetry.CollectedAtUnixMs)
-				quality := batch.Telemetry.CollectedAtQuality
+				quality, offset := batch.Telemetry.CollectedAtQuality, batch.Telemetry.CollectedAtOffsetMs
+				if wallClockSteppedSince(batch.Telemetry.ReceivedAt, batch.Telemetry.ReceivedMonotonic, publishedAt) {
+					// Qualified on receipt, but the controller's clock has
+					// stepped since: its age now would include the step.
+					quality, offset = &generatorrpc.ClockQuality{Reason: clockReasonStep}, 0
+				}
 				if quality != nil && quality.Qualified {
-					collected -= batch.Telemetry.CollectedAtOffsetMs
+					collected -= offset
 					if bound := collected + quality.UncertaintyMs; combined.Telemetry.CollectedAtBoundUnixMs == 0 || bound < combined.Telemetry.CollectedAtBoundUnixMs {
 						combined.Telemetry.CollectedAtBoundUnixMs = bound
 					}
 				}
 				if !hasCollectedAt || collected < oldestCollectedMs {
 					oldestCollectedMs = collected
-					combined.Telemetry.CollectedAtUnixMs, combined.Telemetry.CollectedAtOffsetMs = batch.Telemetry.CollectedAtUnixMs, batch.Telemetry.CollectedAtOffsetMs
+					combined.Telemetry.CollectedAtUnixMs, combined.Telemetry.CollectedAtOffsetMs = batch.Telemetry.CollectedAtUnixMs, offset
 				}
 				combined.Telemetry.CollectedAtQuality = combineClockQuality(combined.Telemetry.CollectedAtQuality, quality, 0)
 				hasCollectedAt = true
@@ -652,10 +658,12 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	if live.Telemetry.CollectedAt.IsZero() {
 		live.Telemetry.CollectedAt = timestamp
 		if batch.TimestampUnixMs != 0 {
-			// The batch time is a generator's clock, never corrected: its
-			// age is not qualified.
+			// No generator reported a sample (every generator stamps the
+			// samples it publishes): the batch time is a generator's clock,
+			// and there is no sample whose age a budget could judge.
 			live.Telemetry.collectedAtQuality = &generatorrpc.ClockQuality{Reason: clockReasonUncalibrated}
 			live.Telemetry.collectedAtOffsetMs, live.Telemetry.collectedAtBoundUnixMs = 0, 0
+			live.Telemetry.sampleAgeUnavailable = true
 		}
 	}
 	defer func() {

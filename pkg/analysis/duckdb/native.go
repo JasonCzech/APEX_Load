@@ -564,7 +564,7 @@ func (e *Engine) childNativeSeriesBounds(ctx context.Context, files []string, q 
 			var value sql.NullFloat64
 			var reason string
 			targets := []any{&at, &value}
-			if kind == analysis.KindSummary {
+			if kind == analysis.KindSummary || q.CounterReadings {
 				targets = append(targets, &reason)
 			}
 			if err := rows.Scan(targets...); err != nil {

@@ -210,6 +210,10 @@ func requiredMessagingFeaturesForGroup(group TestGroup) []string {
 	return dsl.RequiredMessagingRuntimeFeatures(group.script)
 }
 
+// localRuntimeResourceTarget names the controller's own process in a local
+// run's runtime-resource placement; it is never a generator.
+const localRuntimeResourceTarget = "local"
+
 // Local allocation distinguishes the execution's current load from the frozen
 // resource peak, just as a distributed shard does. Both remain audit snapshots.
 func localRuntimeResourceAllocations(peaks []TestGroup, demands map[string]protocol.RuntimeResourceDemand, currentVUsers map[string]int) []GeneratorShardSummary {
@@ -220,7 +224,7 @@ func localRuntimeResourceAllocations(peaks []TestGroup, demands map[string]proto
 			continue
 		}
 		claim := &pb.RuntimeResourceClaim{Contract: generatorrpc.FeatureRuntimeResourceReservationsV1, Protocol: "eventhubs", PeakVusers: int32(group.VUsers), Requested: generatorrpc.RuntimeResourceDemandToProto(demand)}
-		allocation = append(allocation, GeneratorShardSummary{Group: group.Name, Target: "local", VUsers: currentVUsers[group.Name], RuntimeResourceClaim: claim, RuntimeResourceAdmission: &pb.RuntimeResourceAdmission{Claim: generatorrpc.CloneRuntimeResourceClaim(claim), Admitted: generatorrpc.RuntimeResourceDemandToProto(demand), Current: true}})
+		allocation = append(allocation, GeneratorShardSummary{Group: group.Name, Target: localRuntimeResourceTarget, VUsers: currentVUsers[group.Name], RuntimeResourceClaim: claim, RuntimeResourceAdmission: &pb.RuntimeResourceAdmission{Claim: generatorrpc.CloneRuntimeResourceClaim(claim), Admitted: generatorrpc.RuntimeResourceDemandToProto(demand), Current: true}})
 	}
 	return allocation
 }

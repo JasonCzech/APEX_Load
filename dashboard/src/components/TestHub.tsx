@@ -1107,6 +1107,9 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const deleteScenarioDialogRef = useRef<HTMLDivElement | null>(null)
   const deleteScenarioInitialFocusRef = useRef<HTMLButtonElement | null>(null)
   const editingBaselineFormRef = useRef('')
+  // The tag a resumed edit recorded, kept until a baseline is adopted or the
+  // edit is replaced, so a re-checkpoint while blocked still carries it.
+  const resumedBaselineTagRef = useRef('')
   const closedRampDownEnabledOnceRef = useRef<Set<string>>(new Set())
   const goalGuardrailsEditedRef = useRef(false)
   const resetScenarioBuilderRef = useRef<() => void>(() => undefined)
@@ -1178,6 +1181,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     // project's scenario from the new project workspace.
     setEditingId(null)
     editingBaselineFormRef.current = ''
+    resumedBaselineTagRef.current = ''
     setScenarioBaseline(null)
     setScenarioConflict(null)
     setForm(emptyScenarioForm())
@@ -1812,6 +1816,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     goalGuardrailsEditedRef.current = false
     setEditingId(null)
     editingBaselineFormRef.current = ''
+    resumedBaselineTagRef.current = ''
     scenarioOpenGenerationRef.current += 1
     setOpeningScenarioId('')
     setScenarioBaseline(null)
@@ -1934,6 +1939,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       : [])
     setEditingId(scenario.id)
     editingBaselineFormRef.current = JSON.stringify(nextForm)
+    resumedBaselineTagRef.current = ''
     setScenarioBaseline(baseline)
     setForm(nextForm)
     setStageGroupIndex(0)
@@ -1993,6 +1999,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     openEditFrom(scenario, null)
     setEditingId(null)
     editingBaselineFormRef.current = ''
+    resumedBaselineTagRef.current = ''
     setForm(prev => ({
       ...prev,
       name: `${scenario.name} (Copy)`,
@@ -2062,6 +2069,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       : [])
     setEditingId(null)
     editingBaselineFormRef.current = ''
+    resumedBaselineTagRef.current = ''
     setForm(current => scriptChoice === 'keep'
       ? mergeCloneWithScriptSelections(current, clonedForm)
       : { ...clonedForm, name: current.name.trim() ? current.name : clonedForm.name })
@@ -3061,9 +3069,10 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   // listed update time).
   const recordedScenarioBaseline = (): Pick<ScenarioAuthoringDraft, 'baselineTag' | 'baselineForm' | 'baselineShapeId'> => {
     const baselineForm = parseScenarioForm(editingBaselineFormRef.current)
-    if (!editingId || !scenarioBaseline || !baselineForm) return {}
+    const baselineTag = scenarioBaseline?.etag || resumedBaselineTagRef.current
+    if (!editingId || !baselineTag || !baselineForm) return {}
     try { assertDraftHasNoInlineCredentials(baselineForm) } catch { return {} }
-    return { baselineTag: scenarioBaseline.etag, baselineForm, baselineShapeId: originalShapeIdRef.current }
+    return { baselineTag, baselineForm, baselineShapeId: originalShapeIdRef.current }
   }
   const saveBrowserProgress = () => {
     if (!canManageTests) return false
@@ -3107,6 +3116,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     if (!saved) return false
     setEditingId(saved.id)
     editingBaselineFormRef.current = JSON.stringify(form)
+    resumedBaselineTagRef.current = ''
     checkpointBaselineRef.current = checkpointFingerprint
     clearScenarioBuilderDraft()
     try { clearResolvedCheckpoint() } catch { /* Server save succeeded; a local checkpoint may remain. */ }
@@ -3127,8 +3137,10 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       if (generation !== scenarioDraftGenerationRef.current || currentProjectIdRef.current !== scopeProjectId) return
       const baseline = fresh?.id === id ? scenarioBaselineFromRead(fresh, scopeProjectId || undefined) : null
       const unchanged = baseline && (draft.baselineTag ? baseline.etag === draft.baselineTag : fresh.updated_at === draft.editingUpdatedAt)
-      if (baseline && unchanged) setScenarioBaseline(baseline)
-      else if (draft.baselineTag) setScenarioConflict(conflict => conflict || { reason: 'The scenario changed after this draft was saved. Load the current baseline, review the differences, then reapply your draft.', loading: false, current: null })
+      if (baseline && unchanged) {
+        resumedBaselineTagRef.current = ''
+        setScenarioBaseline(baseline)
+      } else if (draft.baselineTag) setScenarioConflict(conflict => conflict || { reason: 'The scenario changed after this draft was saved. Load the current baseline, review the differences, then reapply your draft.', loading: false, current: null })
     } catch { /* The next save asks for a reviewed baseline. */ }
   }
 
@@ -3168,6 +3180,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     if (selectedShapeId === originalShapeIdRef.current) setSelectedShapeId(latestShapeId)
     originalShapeIdRef.current = latestShapeId
     editingBaselineFormRef.current = JSON.stringify(current.form)
+    resumedBaselineTagRef.current = ''
     setForm(merged)
     setScenarioBaseline(current.baseline)
     setScenarioConflict(null)
@@ -3239,6 +3252,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     setEditingId(canResumeEdit ? draft.editingId : null)
     editingBaselineFormRef.current = !canResumeEdit || !existing ? '' : JSON.stringify(recorded ? draft.baselineForm : scenarioFormStateFromStoredScenario(existing, '', false))
     originalShapeIdRef.current = !canResumeEdit || !existing ? '' : recorded ? draft.baselineShapeId || '' : scenarioShapeId(existing)
+    resumedBaselineTagRef.current = recorded ? draft.baselineTag || '' : ''
     if (canResumeEdit && draft.editingId) void bindResumedScenarioBaseline(draft.editingId, draft)
     setScenarioSourceMode(draft.source); setScenarioStartChoice(draft.startChoice); setModelFamilyChoice('')
     setScenarioStartPath(draft.source === 'existing' && draft.cloneId && !draft.editingId ? 'copy' : 'new')

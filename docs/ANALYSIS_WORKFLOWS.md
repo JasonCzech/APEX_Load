@@ -479,7 +479,8 @@ evidence.
   archived monitor points, one per measurement series identity
   (`analysis.MeasurementSeriesIdentity`, `apexload.series_identity.v1`) on the
   observation mode and grid the provider declares. Entity IDs are not part of
-  the identity; a series collects them as graph nodes. A point recorded
+  the identity, except a provider's own series discriminator (Prometheus's
+  label-set hash); a series collects them as graph nodes. A point recorded
   without a project belongs to the run's, and a point whose identity fields
   are incomplete keeps the earlier provider/source/metric/query/statistic/
   dimension key with no identity. Interval and snapshot providers are compared
@@ -510,16 +511,24 @@ evidence.
   quarter of the analysis's wall-time budget and 128 native queries, so the
   run's own evidence is always judged (what they leave out is
   `detection_evidence_cut`). A read the single native-analysis slot refuses
-  is retried with backoff; a slot still busy at the read budget fails the
-  analysis, which an identical request retries, rather than completing it with
-  less evidence. A dataset is checked again after its reads and dropped
+  is retried with backoff, and concurrent analyses queue their reads in
+  arrival order. A slot still busy at the read budget before any imported
+  series was read fails the analysis, which an identical request retries,
+  rather than completing it without that evidence; once some were read, what
+  the budget leaves (including a read still running at it) is
+  `detection_evidence_cut`. Other admission failures (a build without native
+  analysis, resource limits, an invalid resource configuration) are
+  `imported_dataset_unavailable`. A dataset is checked again after its reads and dropped
   (`imported_dataset_changed`) if it changed or lost its association
   meanwhile. Joint slices rank last within the series budget: imported and
   document series take the room they hold, and under the anomaly cap their
   anomalies never displace those of a series that can be a symptom or cause.
 - **Provider series IDs** pair a run's series with a baseline run's. They
   leave out the scenario the run was launched from (the series' identity keeps
-  it), so a copied scenario or an ad-hoc run still pairs; a provider's own
+  it), so a copied scenario or an ad-hoc run still pairs. They keep the host
+  that collected the series, so a provider source moved between collector and
+  direct collection, or to another collector, starts new series that do not
+  pair with the baseline's; a provider's own
   series discriminator (Prometheus's label-set hash) is part of both, so
   series that the allowed labels alone would merge stay apart.
 - **Browser document series.** Each measurement tuple of the run's final
@@ -780,7 +789,9 @@ MCP tools keep returning v1.
   monitor sources with their outcomes, the project's mapping decisions and the
   associated analysis datasets (at most eight, by ID; `imported_datasets_truncated`
   beyond that, or when the project's dataset listing exceeds the 2,000 rows
-  scanned), each with its revision, mapping SHA-256 and partition-manifest
+  scanned; the listing pages by offset, so a dataset can be missed by a
+  capture during which another of the project's datasets is deleted, and is
+  picked up by the next), each with its revision, mapping SHA-256 and partition-manifest
   digest. An analysis reads a dataset only while all three still match; one
   that changed or lost its association afterwards is
   `imported_dataset_changed` and is not read. A POST captures a revision when
@@ -1059,7 +1070,7 @@ A native query (live or archive evidence, the archive panel and the imported dat
 | `acknowledgement_ratio`, `settlement_ratio` | the `message` population | — (every bucket is `evidence_unavailable`: the engine records no acknowledgement or settlement counters yet) |
 | `baseline_delta`, `baseline_percent_delta` | archive panels with `comparison_run_id` | — |
 | `moving_mean`, `moving_stddev` | scalar series on an aligned grid (archive, merged live, imported) | `window_buckets` 2–1,000, `minimum_coverage` in (0, 1] |
-| `delta`, `rate` | imported counter series queried with `aggregation: max` (the controller then reads each bucket's highest counter reading; a display query still converts counters to rates) | — |
+| `delta`, `rate` | imported counter series queried with `aggregation: max` (the controller then reads each bucket's closing counter reading; a display query still converts counters to rates) | — |
 
 Only a baseline derivation takes a `comparison_run_id`; any other derivation
 with one is refused, so a comparison panel never mixes a derived current
@@ -1077,9 +1088,9 @@ rolling upgrade a saved derivation can be dropped by an older peer that
 re-saves the dashboard, and a derived query answered by one returns raw
 values without a `derivation` echo.
 
-Each derived bucket carries its value or a `reason`: `zero_denominator`, `incomplete_evidence`, `numerator_not_subset`, `missing_bucket`, `missing_baseline_bucket`, `baseline_not_comparable`, `insufficient_window`, `insufficient_valid_buckets`, `insufficient_coverage`, `no_prior_sample`, `missing_counter_sample`, `counter_reset`, `counter_epoch_changed_or_unknown`, `evidence_unavailable` and the rest of the typed functions' reasons. A complete window with no events is a measured zero for counts and rates but an unscored zero denominator for a ratio; a bucket past run completion, with legacy population or missing property evidence, is incomplete. A baseline derivation compares only a comparable baseline run (the same comparison fingerprint and complete evidence); otherwise every bucket is `baseline_not_comparable`. Responses name the applied `derivation` and the derived unit (`ratio`, `percent` or the series' canonical unit); a query without a derivation renders exactly as before.
+Each derived bucket carries its value or a `reason`: `zero_denominator`, `incomplete_evidence`, `numerator_not_subset`, `missing_bucket`, `missing_baseline_bucket`, `baseline_not_comparable`, `insufficient_window`, `insufficient_valid_buckets`, `insufficient_coverage`, `no_prior_sample`, `missing_counter_sample`, `counter_reset`, `duplicate_counter_instant`, `invalid_counter_sample`, `counter_epoch_changed_or_unknown`, `evidence_unavailable` and the rest of the typed functions' reasons. A complete window with no events is a measured zero for counts and rates but an unscored zero denominator for a ratio (a merged live bucket is complete only when some source published into it, and a count bucket only when publications cover its whole window); a bucket past run completion, with legacy population or missing property evidence, is incomplete. A baseline derivation compares only a comparable baseline run (the same comparison fingerprint and complete evidence); otherwise every bucket is `baseline_not_comparable`. Responses name the applied `derivation` and the derived unit (`ratio`, `percent` or the series' canonical unit); a query without a derivation renders exactly as before.
 
-The archive `message` population reads received messages from messaging v2 evidence (`message_count`, optionally filtered by `source`). A message ratio divides the messages its counter counted by the messages that counter observed, and a bucket is complete only when every selected dimension carried complete v2 evidence and the counter observed every eligible message; a bucket described only by v1 summaries stays missing. Duplicate ratios are lower bounds within each consumer's local sequence window. Imported counters use one epoch per dataset revision and identity; a falling reading is a `counter_reset`. Moving derivations on live per-source intervals, whose windows are not aligned, are refused.
+The archive `message` population reads received messages from messaging v2 evidence (`message_count`, optionally filtered by `source`). A message ratio divides the messages its counter counted by the messages that counter observed, and a bucket is complete only when every selected dimension carried complete v2 evidence and the counter observed every eligible message; a bucket described only by v1 summaries stays missing. Duplicate ratios are lower bounds within each consumer's local sequence window. Imported counters use one epoch per dataset revision and identity; a bucket in which a reading falls below the previous one (inside it or across from an earlier bucket) is a `counter_reset`, and one instant with two different readings is a `duplicate_counter_instant`; the bucket after a missing one has no prior sample. Moving statistics over an imported series derive the bucketed series itself (a counter's rate, a histogram or summary percentile), and imported metric names are the dataset's own, never matched against the native catalog. Moving derivations on live per-source intervals, whose windows are not aligned, are refused.
 
 Saved dashboards validate through the catalog: catalog metrics and aggregations, the retained grouping and filter dimensions, and an alias table that keeps saved names meaning what they did (`tps` is `observation_rate`, `transaction_duration` is `response_time`, and live display cards such as `active_vusers`, `throughput`, `regional_activity`, `resource_cpu` and `resource_memory` keep rendering but are not catalog measurements and take no derivation; `stddev` remains a display aggregation). The catalog also declares `message_count` (population `message`; it takes moving statistics, and saved message panels may filter by `source`) and `bytes_sent`/`bytes_received` (population `byte`); bytes have no native query and declare no derivation yet. Browser document metrics `document_fcp`, `document_lcp`, `document_cls` (unit `score`) and `document_inp` (population `browser_document`, aggregations `p50`, `p75`, `p90`, `p95` and `p99`; each bucket's `count` is its final documents) read one measurement tuple's final document distribution; their filters (`engine`, `device_profile`, `frame_scope`, `lifecycle_phase`, `group`, `region`, `cohort`) apply to these metrics only, and a selection spanning more than one tuple is refused. See [Browser document evidence](guides/BROWSER_DOCUMENT_EVIDENCE.md#comparison-and-native-analysis).
 

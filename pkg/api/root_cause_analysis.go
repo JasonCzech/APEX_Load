@@ -328,6 +328,9 @@ func telemetrySeverity(status string) string {
 		return "critical"
 	case "degraded":
 		return "warning"
+	case "unscored":
+		// A decision that could not be scored is unknown, never healthy.
+		return "unknown"
 	default:
 		return "healthy"
 	}
@@ -339,6 +342,8 @@ func telemetryScore(status string) float64 {
 		return 80
 	case "degraded":
 		return 50
+	case "unscored":
+		return 0
 	default:
 		return 5
 	}

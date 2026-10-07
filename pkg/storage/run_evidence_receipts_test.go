@@ -152,3 +152,25 @@ func TestRunEvidenceReceiptsSQLite(t *testing.T) {
 	defer s.Close()
 	testRunEvidenceReceipts(t, s)
 }
+
+// Completing an archive finalization publishes the receipts accepted for it
+// in the same transaction, without a separate publish call.
+func TestArchiveFinalizationCompletionPublishesAcceptedReceipts(t *testing.T) {
+	s := newHAFencingStore(t)
+	f := seedArchiveFailureRun(t, s)
+	if state, err := s.AcceptRunEvidenceReceipt(evidenceReceiptFixture(f.TestID, "source-a", "g1", 1)); err != nil || state != EvidenceReceiptAccepted {
+		t.Fatalf("accept: %q %v", state, err)
+	}
+	record := RunArchiveRecord{TestID: f.TestID, ArchivePath: "/archive/run", ManifestPath: "/archive/run/manifest.json", CreatedAt: f.StartTime, CompletedAt: f.EndTime}
+	job := &ArchiveFinalizationJob{TestID: f.TestID, ProjectID: f.ProjectID, ArchiveRecord: record}
+	if err := s.SaveArchiveFinalizationJob(job); err != nil {
+		t.Fatal(err)
+	}
+	if done, err := s.CompleteArchiveFinalization(f.TestID, job.IntentToken, "", &record); err != nil || !done {
+		t.Fatalf("complete: %v %v", done, err)
+	}
+	receipts, err := s.ListRunEvidenceReceipts(f.TestID)
+	if err != nil || len(receipts) != 1 || receipts[0].State != EvidenceReceiptPublished {
+		t.Fatalf("receipts after completion %+v %v", receipts, err)
+	}
+}

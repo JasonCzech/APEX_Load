@@ -2,6 +2,7 @@ package api
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -132,5 +133,98 @@ func TestClockPipelineFallbackCollectionTimeIsUnqualified(t *testing.T) {
 	live := publishClockPipeline(t, runner, backend, run, map[string]generatorrpc.MetricsBatch{"gen-a": batch})
 	if live.Telemetry.SampleAgeQuality == nil || live.Telemetry.SampleAgeQuality.Qualified || slices.Contains(run.TelemetryHealth.Conditions, "stale_sample") {
 		t.Fatalf("generator batch time scored as a sample age: %+v %+v", live.Telemetry, run.TelemetryHealth)
+	}
+}
+
+// A batch qualified on receipt is no longer qualified once the controller's
+// wall clock has stepped before it is published: its age measured now would
+// include the step, so the stored batch neither scores a breach nor proves
+// one.
+func TestClockPipelineStepAfterReceiptIsNotABreach(t *testing.T) {
+	runner, backend, run := clockPipelineRun(t, func(c *clockCalibrations, now time.Time) {
+		c.observe("gen-a", 0, time.Millisecond, now)
+		c.observe("gen-b", 0, time.Millisecond, now)
+	})
+	now := time.Now()
+	batch := generatorTelemetry(now, 0, 100, 500)
+	qualifyRemoteMetricsReceipt(runner, run, "gen-a", &batch, time.Now())
+	if batch.Telemetry.CollectedAtQuality == nil || !batch.Telemetry.CollectedAtQuality.Qualified {
+		t.Fatalf("receipt not qualified: %+v", batch.Telemetry.CollectedAtQuality)
+	}
+	// The wall clock stepped 3 s forward after the receipt: every wall time
+	// recorded before the step now reads 3 s earlier than the clock.
+	const step = 3000
+	batch.TimestampUnixMs -= step
+	batch.Telemetry.CollectedAtUnixMs -= step
+	batch.Telemetry.PublishedAtUnixMs -= step
+	batch.Telemetry.ControllerReceivedAtUnixMs -= step
+	batch.Telemetry.ReceivedAt = batch.Telemetry.ReceivedAt.Add(-step * time.Millisecond)
+	live, _, _ := backend.applyRemoteMetricsBatch(runner, run, "gen-a", batch)
+	if live == nil || !runner.publishLiveMetrics(run, live, nil) {
+		t.Fatal("publication rejected")
+	}
+	health := run.TelemetryHealth
+	if health == nil || slices.Contains(health.Conditions, "stale_sample") || !slices.Contains(health.Unscored, "stale_sample:"+clockReasonStep) {
+		t.Fatalf("a step after receipt scored the stored batch: health %+v telemetry %+v", health, live.Telemetry)
+	}
+	if live.Telemetry.SampleAgeQuality == nil || live.Telemetry.SampleAgeQuality.LowerBoundMs != nil {
+		t.Fatalf("a stepped batch still proves a bound: %+v", live.Telemetry.SampleAgeQuality)
+	}
+	if wallClockSteppedSince(time.Now().Round(0), time.Now().Sub(clockProcessStart), time.Now()) {
+		t.Fatal("no step reported as one")
+	}
+}
+
+// With no sample reported (state-only publications at run start) there is
+// no age to judge: no stale-sample decision, scored or unscored.
+func TestClockPipelineNoSampleMakesNoAgeDecision(t *testing.T) {
+	runner, backend, run := clockPipelineRun(t, func(c *clockCalibrations, now time.Time) {
+		c.observe("gen-a", 0, time.Millisecond, now)
+	})
+	batch := generatorTelemetry(time.Now(), 0, 100, 0)
+	batch.Telemetry.CollectedAtUnixMs = 0
+	publishClockPipeline(t, runner, backend, run, map[string]generatorrpc.MetricsBatch{"gen-a": batch})
+	health := run.TelemetryHealth
+	if health == nil || health.Status != "healthy" || slices.ContainsFunc(health.Unscored, func(entry string) bool { return strings.HasPrefix(entry, "stale_sample") }) {
+		t.Fatalf("a missing sample was judged: %+v", health)
+	}
+}
+
+// Leaving an unscored stretch is not a recovery; the end of an announced
+// degradation is, even with an unscored stretch in between.
+func TestTelemetryRecoveryFollowsOnlyAnAnnouncedDegradation(t *testing.T) {
+	state := &telemetryDiagnosticState{}
+	now := time.Now()
+	unscored := &TelemetryDiagnostic{Severity: "healthy", Unscored: []string{"stale_sample:uncalibrated"}}
+	degraded := &TelemetryDiagnostic{Severity: "warning", Conditions: []string{"transport_lag"}}
+	var previous *TelemetryRunHealth
+	var events []string
+	for i, diagnostic := range []*TelemetryDiagnostic{unscored, nil, degraded, unscored, nil, nil, unscored, nil} {
+		current := updateTelemetryRunHealth(state, diagnostic, "", now.Add(time.Duration(i)*time.Second))
+		if event := telemetryHealthEvent(previous, current); event != "" {
+			events = append(events, event)
+		}
+		state.Health, previous = current, current
+	}
+	if strings.Join(events, ",") != "telemetry_degraded,telemetry_recovered" {
+		t.Fatalf("events %v", events)
+	}
+}
+
+// A sub-second step is still a step: below the smallest cross-host budget.
+func TestClockStepToleranceBelowTheTransportBudget(t *testing.T) {
+	now := time.Now()
+	if !wallClockSteppedSince(now.Round(0).Add(-600*time.Millisecond), now.Sub(clockProcessStart), now) {
+		t.Fatal("a 600 ms wall-clock step went unnoticed")
+	}
+	if wallClockSteppedSince(now.Round(0).Add(-20*time.Millisecond), now.Sub(clockProcessStart), now) {
+		t.Fatal("slew-sized drift reported as a step")
+	}
+}
+
+// An archive whose telemetry was unscored is unknown to RCA, never healthy.
+func TestRootCauseTelemetryUnscoredIsUnknown(t *testing.T) {
+	if telemetrySeverity("unscored") != "unknown" || telemetryScore("unscored") != 0 || telemetrySeverity("healthy") != "healthy" {
+		t.Fatalf("unscored telemetry: %s %v", telemetrySeverity("unscored"), telemetryScore("unscored"))
 	}
 }

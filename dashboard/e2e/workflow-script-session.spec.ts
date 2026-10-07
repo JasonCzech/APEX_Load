@@ -16,8 +16,13 @@ test('a validation that returns after an edit is ignored and the next one binds 
   // rejection is observable rather than masked by a recomputed summary.
   const id = idOf(await json(await request.post('/api/v1/scripts', { data: {
     project_id: workspace.projectId,
-    script: { name, version: '1.0.0', protocol: 'http', config: { base_url: 'http://127.0.0.1:1' }, actions: [{ name: 'orders', type: 'request', method: 'GET', target: '/orders' }], metadata: { import: { source_format: 'openapi' } } },
+    script: { name, version: '1.0.0', protocol: 'http', config: { base_url: 'http://127.0.0.1:1' }, actions: [{ name: 'orders', type: 'request', method: 'GET', target: '/orders' }], metadata: { import: { source: 'openapi' } } },
   } })))
+  // The stored script must keep its import metadata, or the check below
+  // could not fail.
+  type StoredImport = { metadata?: { import?: { source?: string } } }
+  const stored = await json(await request.get(`/api/v1/scripts/${id}`)) as StoredImport & { script?: StoredImport }
+  expect(stored.metadata?.import?.source ?? stored.script?.metadata?.import?.source).toBe('openapi')
   await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   const scriptName = page.locator('.side-panel-script-name input')

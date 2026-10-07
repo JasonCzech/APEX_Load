@@ -50,7 +50,9 @@ func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics, thresholds T
 			signatureParts = append(signatureParts, "websocket_drops")
 			severity = maxDiagnosticSeverity(severity, "danger")
 		}
-		if reason := clockBudgetUnscored(live.Telemetry.SampleAgeMs, thresholds.MaxTelemetrySampleAgeMs, live.Telemetry.SampleAgeQuality); reason != "" {
+		if live.Telemetry.sampleAgeUnavailable {
+			// No sample was reported: there is no age to judge.
+		} else if reason := clockBudgetUnscored(live.Telemetry.SampleAgeMs, thresholds.MaxTelemetrySampleAgeMs, live.Telemetry.SampleAgeQuality); reason != "" {
 			unscored = append(unscored, "stale_sample:"+reason)
 		} else {
 			appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "stale_sample", "sample age", clockScoredValue(live.Telemetry.SampleAgeMs, live.Telemetry.SampleAgeQuality), thresholds.MaxTelemetrySampleAgeMs)
@@ -579,6 +581,13 @@ func updateTelemetryRunHealth(state *telemetryDiagnosticState, diagnostic *Telem
 		}
 	}
 
+	recovered := status == "healthy" && state.alerting
+	switch status {
+	case "degraded", "breached":
+		state.alerting = true
+	case "healthy":
+		state.alerting = false
+	}
 	lastTransitionAt := now
 	if state.Health != nil && state.Health.Status == status && !state.Health.LastTransitionAt.IsZero() {
 		lastTransitionAt = state.Health.LastTransitionAt
@@ -595,6 +604,7 @@ func updateTelemetryRunHealth(state *telemetryDiagnosticState, diagnostic *Telem
 		BreachDurationSec: breachDurationSec,
 		LastObservedAt:    now,
 		LastTransitionAt:  lastTransitionAt,
+		recovered:         recovered,
 	}
 	if state.BreachStartedAt != nil {
 		startedAt := *state.BreachStartedAt
@@ -952,30 +962,33 @@ func shouldStopForGoalStatus(live *LiveMetrics) bool {
 	return live.GoalStatus != nil && live.GoalStatus.StopTriggered
 }
 
+// telemetryHealthEvent is the notification a run-health transition raises,
+// if any. Only the end of an announced degradation is a recovery: leaving an
+// unscored stretch (run start, a clock expiry or step) is not, and an
+// unscored status raises nothing.
+func telemetryHealthEvent(previous, current *TelemetryRunHealth) string {
+	if current == nil || previous != nil && previous.Status == current.Status {
+		return ""
+	}
+	switch current.Status {
+	case "degraded":
+		return "telemetry_degraded"
+	case "breached":
+		return "telemetry_breached"
+	case "healthy":
+		if current.recovered {
+			return "telemetry_recovered"
+		}
+	}
+	return ""
+}
+
 func (tr *TestRunner) broadcastTelemetryHealthTransition(test *ManagedTest, previous *TelemetryRunHealth, current *TelemetryRunHealth, now time.Time) {
 	if tr == nil || test == nil || current == nil {
 		return
 	}
-	previousStatus := ""
-	if previous != nil {
-		previousStatus = previous.Status
-	}
-	if previousStatus == current.Status {
-		return
-	}
-
-	eventType := ""
-	switch current.Status {
-	case "degraded":
-		eventType = "telemetry_degraded"
-	case "breached":
-		eventType = "telemetry_breached"
-	case "healthy":
-		if previousStatus == "" || previousStatus == "healthy" {
-			return
-		}
-		eventType = "telemetry_recovered"
-	default:
+	eventType := telemetryHealthEvent(previous, current)
+	if eventType == "" {
 		return
 	}
 

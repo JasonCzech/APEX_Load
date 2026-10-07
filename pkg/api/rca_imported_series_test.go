@@ -146,8 +146,16 @@ func TestRCAImportedSeriesReportsWhatItCannotRead(t *testing.T) {
 	if err != nil || len(series) != 0 || limitationCodes(limitations) != limitationImportedDatasetUnavailable {
 		t.Fatalf("%+v %+v %v", series, limitations, err)
 	}
-	// A frozen dataset that no longer matches is reported, never read.
+	// A build without native analysis reads nothing, and says so.
 	t.Setenv("APEXLOAD_ANALYSIS_PROJECTS", storage.DefaultProjectID)
+	available := rcaNativeAnalysisAvailable
+	t.Cleanup(func() { rcaNativeAnalysisAvailable = available })
+	rcaNativeAnalysisAvailable = func() bool { return false }
+	if _, limitations, err := server.rcaImportedSeries(context.Background(), storage.DefaultProjectID, "rca-run", frozen, summaries, -1, budgeter, 0); err != nil || limitationCodes(limitations) != limitationImportedDatasetUnavailable {
+		t.Fatalf("unavailable build: %+v %v", limitations, err)
+	}
+	rcaNativeAnalysisAvailable = func() bool { return true }
+	// A frozen dataset that no longer matches is reported, never read.
 	series, limitations, err = server.rcaImportedSeries(context.Background(), storage.DefaultProjectID, "rca-run", frozen, summaries, -1, budgeter, 0)
 	if err != nil || len(series) != 0 || limitationCodes(limitations) != limitationImportedDatasetChanged {
 		t.Fatalf("%+v %+v %v", series, limitations, err)
@@ -299,17 +307,18 @@ func TestRCAImportedReadRetriesABusyAnalysisSlot(t *testing.T) {
 		}
 		return want, nil
 	}
-	got, attempts, err := rcaReadWithAdmission(context.Background(), time.Now().Add(time.Second), time.Millisecond, read)
-	if err != nil || got != want || attempts != 3 {
-		t.Fatalf("got %v attempts %d err %v", got, attempts, err)
+	got, err := rcaReadWithAdmission(context.Background(), time.Now().Add(time.Second), time.Millisecond, read)
+	if err != nil || got != want || calls != 3 {
+		t.Fatalf("got %v attempts %d err %v", got, calls, err)
 	}
 	busy := func() (*rca.Series, error) { return nil, errAnalyticalAdmissionUnavailable }
-	if _, _, err := rcaReadWithAdmission(context.Background(), time.Now().Add(20*time.Millisecond), 5*time.Millisecond, busy); !errors.Is(err, errRCAImportedEvidenceBusy) {
+	if _, err := rcaReadWithAdmission(context.Background(), time.Now().Add(20*time.Millisecond), 5*time.Millisecond, busy); !errors.Is(err, errRCAImportedEvidenceBusy) {
 		t.Fatalf("persistently busy slot: %v", err)
 	}
-	failing := func() (*rca.Series, error) { return nil, errors.New("query failed") }
-	if _, attempts, err := rcaReadWithAdmission(context.Background(), time.Time{}, time.Millisecond, failing); err == nil || attempts != 1 {
-		t.Fatalf("other errors are not retried: %d %v", attempts, err)
+	calls = 0
+	failing := func() (*rca.Series, error) { calls++; return nil, errors.New("query failed") }
+	if _, err := rcaReadWithAdmission(context.Background(), time.Time{}, time.Millisecond, failing); err == nil || calls != 1 {
+		t.Fatalf("other errors are not retried: %d %v", calls, err)
 	}
 }
 

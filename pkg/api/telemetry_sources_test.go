@@ -488,7 +488,27 @@ func TestTelemetryLostPublicationsClampOnOverflow(t *testing.T) {
 	}
 	summary, totals := ledger.rollup()
 	lost := totals[TelemetryCounterLostPublications]
-	if lost.Value != 1<<62 || lost.State != TelemetryCounterLowerBound || lost.Reason != "overflow" || summary.LostPublications < 0 {
+	if lost.Value != 1<<62 || lost.State != TelemetryCounterLowerBound || lost.Reason != "overflow" || summary.LostPublications < 0 || summary.LossExact {
 		t.Fatalf("lost %+v summary %+v", lost, summary)
+	}
+	// One epoch whose own gap is clamped is a lower bound too.
+	single := newTelemetrySourceLedger()
+	single.observe("gen-a", generatorrpc.MetricsBatch{SourceEpoch: "e1", BatchSequence: 1}, at)
+	single.observe("gen-a", generatorrpc.MetricsBatch{SourceEpoch: "e1", BatchSequence: 1<<62 + 10, LifecycleState: "COMPLETE"}, at)
+	summary, totals = single.rollup()
+	lost = totals[TelemetryCounterLostPublications]
+	if lost.Value != 1<<62 || lost.State != TelemetryCounterLowerBound || lost.Reason != "overflow" || summary.LossExact {
+		t.Fatalf("clamped epoch: lost %+v summary %+v", lost, summary)
+	}
+	// Exact epochs whose counts sum past the summary's range saturate it,
+	// and a saturated sum is not exact.
+	saturated := newTelemetrySourceLedger()
+	for _, epoch := range []string{"e1", "e2"} {
+		saturated.observe("gen-a", generatorrpc.MetricsBatch{SourceEpoch: epoch, BatchSequence: 1}, at)
+		saturated.observe("gen-a", generatorrpc.MetricsBatch{SourceEpoch: epoch, BatchSequence: 1<<62 + 2, LifecycleState: "COMPLETE"}, at)
+	}
+	summary, _ = saturated.rollup()
+	if summary.LostPublications != math.MaxInt64 || summary.LossExact {
+		t.Fatalf("saturated summary %+v", summary)
 	}
 }

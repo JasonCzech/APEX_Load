@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -276,5 +277,77 @@ func TestRCAEndToEndImportedResourcePressure(t *testing.T) {
 	}
 	if !attributed {
 		t.Fatal("no resource_pressure hypothesis cites the imported CPU rise")
+	}
+}
+
+// Only a busy native-analysis slot fails the analysis, and only when nothing
+// imported was read yet: other admission failures (configuration, an
+// unavailable build, resource limits) are limitations, and a busy slot or a
+// slow read after some series were read is a budget cut.
+func TestRCAImportedReadsFailOnlyWhenBusyAndUnread(t *testing.T) {
+	t.Setenv("APEXLOAD_ANALYSIS_PROJECTS", "proj-a")
+	server, store := newTimeslotServer(t)
+	start := time.Unix(1700000000, 0).UTC()
+	if err := store.SaveTest(&storage.TestRecord{ID: "rca-imported", ProjectID: "proj-a", Name: "rca-imported", Status: "COMPLETE", StartTime: start}); err != nil {
+		t.Fatal(err)
+	}
+	cpu := func(time.Time) float64 { return 40 }
+	importRCACPUDataset(t, server, store, "proj-a", "rca-imported", "10.0.0.7", start, start.Add(2*time.Minute), 5*time.Second, cpu)
+	importRCACPUDataset(t, server, store, "proj-a", "rca-imported", "10.0.0.8", start, start.Add(2*time.Minute), 5*time.Second, cpu)
+	frozen, _, err := loadRCADatasets(store, "proj-a", "rca-imported")
+	if err != nil || len(frozen) != 2 {
+		t.Fatalf("frozen %+v %v", frozen, err)
+	}
+	var summaries []IntervalSummaryRecord
+	for i := 1; i <= 12; i++ {
+		summaries = append(summaries, IntervalSummaryRecord{Timestamp: start.Add(time.Duration(i) * 10 * time.Second)})
+	}
+	read := func(budget time.Duration) ([]rca.Series, []rca.Limitation, error) {
+		return server.rcaImportedSeries(context.Background(), "proj-a", "rca-imported", frozen, summaries, -1, rca.NewBudgeter(rca.DefaultBudget, nil, nil), budget)
+	}
+
+	// A bad resource configuration is not a busy slot.
+	t.Setenv("APEXLOAD_ANALYSIS_MEMORY_LIMIT", "not-a-size")
+	series, limitations, err := read(time.Second)
+	if err != nil || len(series) != 0 || !strings.Contains(limitationCodes(limitations), limitationImportedDatasetUnavailable) {
+		t.Fatalf("misconfigured: %+v %+v %v", series, limitations, err)
+	}
+	t.Setenv("APEXLOAD_ANALYSIS_MEMORY_LIMIT", "")
+
+	original := rcaQueryImportedDataset
+	t.Cleanup(func() { rcaQueryImportedDataset = original })
+	rcaQueryImportedDataset = func(context.Context, *storage.AnalysisImport, analytics.SeriesQuery) ([]analysis.MetricPoint, error) {
+		return nil, errAnalyticalAdmissionUnavailable
+	}
+	if _, _, err := read(100 * time.Millisecond); !errors.Is(err, errRCAImportedEvidenceBusy) {
+		t.Fatalf("busy before any read: %v", err)
+	}
+
+	calls := 0
+	rcaQueryImportedDataset = func(ctx context.Context, in *storage.AnalysisImport, query analytics.SeriesQuery) ([]analysis.MetricPoint, error) {
+		calls++
+		if calls == 1 {
+			return original(ctx, in, query)
+		}
+		return nil, errAnalyticalAdmissionUnavailable
+	}
+	series, limitations, err = read(5 * time.Second)
+	if err != nil || len(series) != 1 || !strings.Contains(limitationCodes(limitations), limitationDetectionEvidenceCut) {
+		t.Fatalf("busy after a read: %+v %+v %v", series, limitations, err)
+	}
+
+	calls = 0
+	rcaQueryImportedDataset = func(ctx context.Context, in *storage.AnalysisImport, query analytics.SeriesQuery) ([]analysis.MetricPoint, error) {
+		calls++
+		if calls == 1 {
+			return original(ctx, in, query)
+		}
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	began := time.Now()
+	series, limitations, err = read(5 * time.Second)
+	if err != nil || len(series) != 1 || !strings.Contains(limitationCodes(limitations), limitationDetectionEvidenceCut) || time.Since(began) > 15*time.Second {
+		t.Fatalf("slow read: %+v %+v %v after %s", series, limitations, err, time.Since(began))
 	}
 }

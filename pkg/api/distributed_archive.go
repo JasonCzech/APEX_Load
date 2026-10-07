@@ -185,7 +185,7 @@ func (b *distributedExecutionBackend) stageRemoteArchiveUnderSourceFence(sourceC
 		}
 	}
 	acceptor := tr.acceptRemoteHARReceipt(test, evidenceTargets)
-	if err := mergeRemoteHARArtifacts(workingDir, &manifest, bundles, acceptor); err != nil {
+	if err := mergeRemoteHARArtifacts(workingDir, &manifest, bundles, acceptor, mergeOutput); err != nil {
 		return nil, err
 	}
 	if err := mergeRemoteInteractions(workingDir, &manifest, bundles, acceptor); err != nil {
@@ -491,8 +491,23 @@ func (b *remoteArchiveTransferBudget) reserve(size int64) error {
 	return nil
 }
 
+// reserveOptional takes size from an optional-evidence allowance before its
+// artifact streams and returns a per-artifact budget that still charges each
+// chunk to the reservation's disk lease. Reserving the declared size up
+// front means concurrent sources never strand each other's allowance part
+// way; the caller releases it when the artifact is not kept.
+func (b *remoteArchiveTransferBudget) reserveOptional(size int64) (*remoteArchiveTransferBudget, error) {
+	if b == nil {
+		return nil, nil
+	}
+	if err := b.reserve(size); err != nil {
+		return nil, err
+	}
+	return &remoteArchiveTransferBudget{remaining: size, lease: b.lease}, nil
+}
+
 func (b *remoteArchiveTransferBudget) release(size int64) {
-	if size <= 0 {
+	if b == nil || size <= 0 {
 		return
 	}
 	b.mu.Lock()

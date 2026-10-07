@@ -49,7 +49,13 @@ func fetchRemoteInteractions(ctx context.Context, client archiveArtifactClient, 
 		return nil, interactionsUnavailableSource
 	}
 	path := filepath.Join(dir, declared.Name)
-	copied, err := fetchRemoteArchiveArtifactFileForSource(ctx, client, testID, declared.Name, sourceIdentity, path, declared.Bytes, transfer)
+	// The run-wide allowance is reserved for the whole declared sidecar
+	// before it streams and returned if it is not kept.
+	artifact, err := transfer.reserveOptional(declared.Bytes)
+	if err != nil {
+		return nil, interactionsUnavailableTransfer
+	}
+	copied, err := fetchRemoteArchiveArtifactFileForSource(ctx, client, testID, declared.Name, sourceIdentity, path, declared.Bytes, artifact)
 	if err == nil && copied != declared.Bytes {
 		err = io.ErrUnexpectedEOF
 	}
@@ -65,6 +71,7 @@ func fetchRemoteInteractions(ctx context.Context, client archiveArtifactClient, 
 	}
 	if err != nil {
 		_ = os.Remove(path)
+		transfer.release(declared.Bytes)
 		return nil, interactionsUnavailableTransfer
 	}
 	entry := *declared

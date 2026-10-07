@@ -175,3 +175,26 @@ func TestScenarioReadRefreshesAStaleCacheWithoutHA(t *testing.T) {
 		t.Fatalf("stale replica read: %d etag=%q %s", response.Code, response.Header().Get("ETag"), response.Body.String())
 	}
 }
+
+// A replica that serves its cached copy without read revalidation (no
+// direct-import publication) still answers with the durable body when the
+// durable clock moved, never a validator for the stale copy.
+func TestScenarioReadRefreshesWhenTheDurableClockMoved(t *testing.T) {
+	server, store, _, scenario := newScenarioPolicyAvailabilityFixture(t)
+	server.runner.importPublicationMu.Lock()
+	server.runner.importPublicationSnapshot = nil
+	server.runner.importPublicationMu.Unlock()
+	external, children, err := store.GetScenario(scenario.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	external.Name = "Saved by another replica"
+	external.UpdatedAt = external.UpdatedAt.Add(time.Second)
+	if err := store.SaveScenario(external, children); err != nil {
+		t.Fatal(err)
+	}
+	response := authoringAPIRequest(t, server, http.MethodGet, "/api/v1/scenarios/"+scenario.ID, nil, "")
+	if response.Code != http.StatusOK || response.Header().Get("ETag") == "" || !strings.Contains(response.Body.String(), "Saved by another replica") {
+		t.Fatalf("durable clock moved: %d etag=%q %s", response.Code, response.Header().Get("ETag"), response.Body.String())
+	}
+}

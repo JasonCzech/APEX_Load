@@ -416,6 +416,7 @@ func (broker *metricsBroker) assignBatchSequenceLocked(batch *pb.MetricsBatch) {
 	if batch.GetBatchSequence() != 0 {
 		if isGeneratorTerminalLifecycle(batch.GetLifecycleState()) {
 			delete(broker.batchSequences, key)
+			delete(broker.windowPublished, key)
 		}
 		return
 	}
@@ -580,6 +581,11 @@ func (broker *metricsBroker) deleteTerminalsForTest(testID string) {
 	for key := range broker.batchSequences {
 		if key.testID == testID {
 			delete(broker.batchSequences, key)
+		}
+	}
+	for key := range broker.windowPublished {
+		if key.testID == testID {
+			delete(broker.windowPublished, key)
 		}
 	}
 }

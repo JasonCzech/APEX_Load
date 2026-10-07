@@ -1074,8 +1074,11 @@ type runArchiveWriter struct {
 	lookupBuf     *bufio.Writer
 	lookupEncoder *json.Encoder
 	// harMu serializes HAR moves with Finalize; it is taken before mu.
-	harMu              sync.Mutex
-	harBytes           int64
+	harMu    sync.Mutex
+	harBytes int64
+	// harSources are the HAR-directory copies of archived HARs, retired once
+	// the archive is finalized.
+	harSources         []runArchiveHARSource
 	interactionsFile   *os.File
 	interactionBytes   int64
 	interactionsBroken bool

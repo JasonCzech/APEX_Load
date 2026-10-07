@@ -398,8 +398,42 @@ func TestNativeCounterReadingsForDerivations(t *testing.T) {
 		t.Fatalf("counter readings=%+v error=%v", points, err)
 	}
 	for _, point := range points {
-		if point.Kind != analysis.KindGauge || point.InputKind != analysis.KindCounter || point.Unit != "count" || point.Derivation[len(point.Derivation)-1].Algorithm != "counter_bucket_reading.v1" {
+		if point.Kind != analysis.KindGauge || point.InputKind != analysis.KindCounter || point.Unit != "count" || point.Derivation[len(point.Derivation)-1].Algorithm != "counter_bucket_reading.v2" {
 			t.Fatalf("counter reading point %+v", point)
+		}
+	}
+}
+
+// A counter reading that falls (a reset inside a bucket, or across from the
+// previous bucket) makes its bucket missing rather than reading the
+// pre-reset peak; one instant with two readings is a duplicate.
+func TestNativeCounterReadingsMarkResetsAndDuplicates(t *testing.T) {
+	e, path := nativeFixture(t, "SELECT 1700000000000 AS ts, 990::DOUBLE AS value UNION ALL SELECT 1700000001000, 1000::DOUBLE UNION ALL SELECT 1700000001300, 1050::DOUBLE UNION ALL SELECT 1700000001500, 3::DOUBLE UNION ALL SELECT 1700000001700, 20::DOUBLE UNION ALL SELECT 1700000002000, 1200::DOUBLE UNION ALL SELECT 1700000003000, 1300::DOUBLE UNION ALL SELECT 1700000003000, 1310::DOUBLE UNION ALL SELECT 1700000004000, 5::DOUBLE UNION ALL SELECT 1700000005000, 9::DOUBLE")
+	mapping := Mapping{Version: 1, Timestamp: Column{"ts"}, TimestampEncoding: "unix_ms", Timezone: "UTC", Measures: []Measure{{Value: Column{"value"}, Name: "requests", Kind: analysis.KindCounter, Unit: "count"}}}
+	normalized, err := e.Normalize(context.Background(), NormalizeRequest{ProjectID: "p", DatasetID: "d", Files: []string{path}, Mapping: mapping})
+	if err != nil {
+		t.Fatal(err)
+	}
+	normalized = retainNativeFixtureOutputs(t, e, normalized)
+	q := SeriesQuery{ProjectID: "p", DatasetID: "d", Metric: "requests", From: time.UnixMilli(1700000000000), To: time.UnixMilli(1700000006000), BucketSeconds: 1, Aggregation: "max", CounterReadings: true}
+	points, err := e.Series(context.Background(), normalized.Files, q)
+	if err != nil || len(points) != 6 {
+		t.Fatalf("counter readings=%+v error=%v", points, err)
+	}
+	want := []struct {
+		value  float64
+		reason string
+	}{{990, ""}, {0, analysis.MissingCounterReset}, {1200, ""}, {0, analysis.MissingDuplicateCounterInstant}, {0, analysis.MissingCounterReset}, {9, ""}}
+	for i, expected := range want {
+		point := points[i]
+		if expected.reason != "" {
+			if point.Value != nil || point.MissingReason != expected.reason {
+				t.Fatalf("bucket %d = %+v, want missing %s", i, point, expected.reason)
+			}
+			continue
+		}
+		if point.Value == nil || *point.Value != expected.value || point.MissingReason != "" {
+			t.Fatalf("bucket %d = %+v, want %v", i, point, expected.value)
 		}
 	}
 }

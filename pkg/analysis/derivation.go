@@ -37,9 +37,18 @@ func validateDerivation(steps []DerivationStep, qualified bool) error {
 	return nil
 }
 
+// Missing reasons of a counter's bucket readings: a reading fell (from the
+// series' previous reading, possibly in an earlier bucket), or one instant
+// carries two different readings.
+const (
+	MissingCounterReset            = "counter_reset"
+	MissingDuplicateCounterInstant = "duplicate_counter_instant"
+)
+
 // CounterReadingBucketDerivation is the lineage of a counter read as each
-// bucket's highest reading (its closing reading when no reset happened inside
-// the bucket), for a controller-side reset-aware delta or rate. Only a
+// bucket's closing reading, for a controller-side reset-aware delta or rate.
+// A bucket is read only when no reading in it fell, so its highest reading
+// is its closing one; a bucket with a fall is missing (counter_reset). Only a
 // counter derivation reads a counter this way; display queries still convert
 // counters to rates.
 func CounterReadingBucketDerivation(point MetricPoint, bucketSeconds int) ([]DerivationStep, error) {
@@ -50,7 +59,7 @@ func CounterReadingBucketDerivation(point MetricPoint, bucketSeconds int) ([]Der
 		return nil, errors.New("invalid scalar bucket size")
 	}
 	steps := slices.Clone(point.Derivation)
-	steps = append(steps, DerivationStep{Operation: "max", Algorithm: "counter_bucket_reading.v1", BucketSeconds: bucketSeconds})
+	steps = append(steps, DerivationStep{Operation: "max", Algorithm: "counter_bucket_reading.v2", BucketSeconds: bucketSeconds})
 	return steps, validateDerivation(steps, false)
 }
 

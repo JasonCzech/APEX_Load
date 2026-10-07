@@ -94,7 +94,11 @@ path, records that writer. An identity is the machine, the kernel boot, the
 PID namespace, the PID and the process start time: on Linux the boot ID,
 `/proc/self/ns/pid`, `/etc/machine-id` paired with the host name (a
 machine-id alone is shared by container images and cloned VMs) and
-`/proc/<pid>/stat`; on macOS the boot session UUID and the kernel process
+`/proc/<pid>/stat`. Hosts that share one HAR directory must differ in that
+pair: a VM cloned from a template must have its `/etc/machine-id` regenerated
+or a host name of its own, and a host that still reports `localhost` must not
+share the directory, or one host's reboot could be taken as proof that the
+other's live writer exited; on macOS the boot session UUID and the kernel process
 table, with no machine identity (macOS offers none without IOKit, and
 `kern.uuid` names the kernel build), so an earlier boot never proves an exit
 there. A writer record is completed before the path is handed out: one that
@@ -136,7 +140,8 @@ generation, sequence, SHA-256 and bytes) and retires the published file from
 the HAR directory only when that archive is finalized; an archive that fails
 and is discarded leaves its HARs in the HAR directory under its retention. A
 controller running the test itself copies it straight into the run archive
-and retires the published file. A HAR that cannot be
+and retires the published file once that archive is finalized; a copy that
+fails part-way is removed from the archive. A HAR that cannot be
 retained stays in its HAR directory under its retention, is counted in
 `browser_har_omitted` by reason (`artifact_limit`, `artifact_too_large`,
 `run_byte_limit`, `archive_quota`, `transfer_failed`, `invalid_artifact`,
@@ -151,18 +156,23 @@ At finalization the controller fetches each declared HAR from the live
 generator, never from the collection cache, so a source served only from
 the cache (its generator gone) has its HARs `source_unavailable`. The fetch is
 charged to the run's transfer reservation, whose writer refuses to go below
-the controller's free-space floor, with its own allowance, so optional
-evidence never exhausts the disk or the allowance the required archive
-needs (a refused HAR is `transfer_failed`). It checks size and SHA-256,
-moves the verified file into the run archive (a copy, checked again, only
-across filesystems), lists it in the manifest with its source identity and
-records an accepted receipt in `run_evidence_receipts` (schema release 49):
+the controller's free-space floor, with its own allowance (a refused HAR is
+`transfer_failed`); HAR fetches share that floor with the other sources'
+concurrent fetches. It checks size and SHA-256 and moves the verified file
+into the run archive. Across filesystems (the shipped compose and
+Kubernetes layouts keep transfers on another volume) it is copied and
+checked again, within the archive merge budget and at most a quarter of the
+archive volume's free space above its floor, so the required archive's
+remaining steps keep the rest; a refused copy is `archive_quota`. The
+archived HAR is listed in the manifest with its source identity, and the
+controller records an accepted receipt in `run_evidence_receipts` (schema release 49):
 run, execution generation, source identity and generation, sequence, kind,
 SHA-256, bytes and state. All of this happens before the manifest is
 written, so nothing is in flight when it is. Each staging attempt first
 forgets an earlier attempt's accepted receipts, so a HAR that attempt held
 but this one could not fetch is never published or acknowledged. Receipts are idempotent by source artifact: refetching
-the same HAR after a controller restart keeps one receipt, and different
+the same HAR after a controller restart (including one mid-transfer, whose
+partial fetch is discarded with its staging attempt) keeps one receipt, and different
 content for the same artifact is refused. A HAR received after the run's
 archive was published, after the run was deleted, or under an older
 execution generation than one already recorded is tombstoned and its copy
@@ -174,7 +184,8 @@ by name and SHA-256, at most 128 HARs plus the interactions sidecar), through
 a retained client or a fresh dial, since the run's clients are closed by
 then; only then does it delete its copy. A changed or unknown artifact is
 retained, a repeated acknowledgement is harmless, and a failed
-acknowledgement leaves the copy to the generator's archive retention.
+acknowledgement leaves the copy to the generator's archive retention, as
+does a tombstoned receipt, which is never acknowledged.
 Deleting a run archive (including retention) or its project tombstones its
 receipts. On PostgreSQL, receipt admission is a read-then-write without a
 row lock; two stagers of one run are already excluded by the source fence.

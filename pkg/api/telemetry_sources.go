@@ -402,6 +402,10 @@ func (r *TelemetrySourceEpoch) settle() {
 	}
 }
 
+// telemetryLostPublicationsCap bounds one count of lost publications, so
+// sums of them cannot wrap.
+const telemetryLostPublicationsCap = uint64(1 << 62)
+
 func (r *TelemetrySourceEpoch) settleLoss() {
 	r.LostPublications, r.LossExact = 0, false
 	if r.LastSequence == 0 {
@@ -412,13 +416,20 @@ func (r *TelemetrySourceEpoch) settleLoss() {
 		held += span[1] - span[0] + 1
 	}
 	span := r.LastSequence - r.FirstSequence + 1
+	clamped := false
 	if span > held {
-		r.LostPublications = int64(min(span-held, uint64(1<<62)))
+		lost := span - held
+		if lost > telemetryLostPublicationsCap {
+			// Only a malformed generator numbers this far: the count is a
+			// lower bound.
+			lost, clamped = telemetryLostPublicationsCap, true
+		}
+		r.LostPublications = int64(lost)
 	}
 	// Publications before the first one received are unknown unless the
 	// first one received is the epoch's first, and those after the last one
 	// received are unknown unless the epoch's terminal publication arrived.
-	r.LossExact = r.Epoch != "" && r.FirstSequence == 1 && r.TerminalSequence != 0 && r.TerminalSequence == r.LastSequence && !r.RangesTruncated
+	r.LossExact = r.Epoch != "" && r.FirstSequence == 1 && r.TerminalSequence != 0 && r.TerminalSequence == r.LastSequence && !r.RangesTruncated && !clamped
 }
 
 // snapshot returns settled copies, ordered by source, generation and first
@@ -504,7 +515,12 @@ func telemetrySourceSummaryOf(epochs []TelemetrySourceEpoch, truncated bool) *Te
 		if epoch.Epoch == "" {
 			summary.LegacyEpochs++
 		}
-		summary.LostPublications = min(summary.LostPublications, math.MaxInt64-epoch.LostPublications) + epoch.LostPublications
+		if epoch.LostPublications > math.MaxInt64-summary.LostPublications {
+			// A saturated sum is a lower bound.
+			summary.LostPublications, summary.LossExact = math.MaxInt64, false
+		} else {
+			summary.LostPublications += epoch.LostPublications
+		}
 	}
 	summary.Sources = len(sources)
 	return summary
@@ -585,7 +601,9 @@ func telemetryLossTotalsOf(epochs []TelemetrySourceEpoch, truncated bool) map[st
 			continue
 		}
 		legacy = legacy || epoch.Epoch == ""
-		const lostCap = int64(1 << 62)
+		const lostCap = int64(telemetryLostPublicationsCap)
+		// An epoch whose own count was clamped is already a lower bound.
+		overflowed = overflowed || epoch.LostPublications >= lostCap
 		if epoch.LostPublications > lostCap-lost.Value {
 			// Clamp before adding: the sum cannot wrap.
 			lost.Value, overflowed = lostCap, true

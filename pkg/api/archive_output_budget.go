@@ -139,6 +139,39 @@ func (w *archiveOutputFile) Create(string) (source.ParquetFile, error) {
 	return nil, errors.New("archive output cannot create another file")
 }
 
+// admitOptional charges n bytes of optional evidence written into the
+// archive root (a HAR copied across filesystems) when they fit the byte
+// allowance and at most a quarter of the free space above the floor, so the
+// required archive keeps the rest. A refusal is not latched: optional
+// evidence is omitted, never fatal to the archive.
+func (b *archiveOutputBudget) admitOptional(n int64) bool {
+	if b == nil {
+		return true
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.err != nil || n < 0 || n > b.remaining {
+		return false
+	}
+	parent := b.ctx
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+	defer cancel()
+	release, err := lockArchiveNamespaceAt(ctx, b.root, "_capture_locks", "capacity.lock")
+	if err != nil {
+		return false
+	}
+	defer release()
+	available, err := diskspace.AvailablePath(b.root)
+	if err != nil || available < b.minFree || n > (available-b.minFree)/4 {
+		return false
+	}
+	b.remaining -= n
+	return true
+}
+
 func (b *archiveOutputBudget) close() {
 	if b == nil {
 		return

@@ -200,6 +200,59 @@ func TestBrowserActualInteractionOutcomesTargetsAndNavigation(t *testing.T) {
 	}
 }
 
+// A keyboard gesture whose target is gone afterwards is unresolved at once,
+// never after a read timeout; one that navigates resolves no target in the
+// new document; a scroll names no target.
+func TestBrowserActualKeyboardTargetsAfterTheGesture(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		if r.URL.Path == "/next" {
+			_, _ = fmt.Fprint(w, `<!doctype html><title>next</title><form><input id="q" aria-label="Elsewhere"></form>`)
+			return
+		}
+		_, _ = fmt.Fprint(w, `<!doctype html><title>start</title>
+<input id="gone" aria-label="Gone" oninput="this.remove()">
+<form action="/next"><input id="q" name="q" aria-label="Query"></form><div style="height:3000px"></div>`)
+	}))
+	t.Cleanup(server.Close)
+	b, ctx := interactionFixtureBrowser(t, "chromium", server.URL, true)
+	if _, err := b.Execute(ctx, &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	began := time.Now()
+	if result, err := b.Execute(ctx, &protocol.Action{Name: "gone", Type: "browser_fill", Selector: "#gone", Value: "x"}); err != nil || !result.Success {
+		t.Fatalf("fill %v %+v", err, result)
+	}
+	if elapsed := time.Since(began); elapsed > 1500*time.Millisecond {
+		t.Fatalf("a removed target stalled the gesture for %s", elapsed)
+	}
+	if result, err := b.Execute(ctx, &protocol.Action{Name: "scroll", Type: "browser_scroll", Params: map[string]any{"delta_y": 300}}); err != nil || !result.Success {
+		t.Fatalf("scroll %v %+v", err, result)
+	}
+	if result, err := b.Execute(ctx, &protocol.Action{Name: "submit", Type: "browser_press_key", Selector: "#q", Value: "Enter", Sync: &protocol.BrowserSyncPolicy{Type: "load", TimeoutMs: 5000}}); err != nil || !result.Success {
+		t.Fatalf("submit %v %+v", err, result)
+	}
+	taken := b.TakeBrowserInteractionEvidence()
+	byName := map[string]protocol.BrowserInteraction{}
+	for _, record := range taken {
+		for _, interaction := range record.Interactions {
+			if !interaction.Valid() {
+				t.Fatalf("invalid interaction %+v", interaction)
+			}
+			byName[interaction.ActionName] = interaction
+		}
+	}
+	if gone := byName["gone"]; gone.Target != nil || gone.UnavailableReason != protocol.InteractionUnavailableTarget {
+		t.Fatalf("removed target %+v", gone)
+	}
+	if scroll := byName["scroll"]; scroll.Target != nil || scroll.UnavailableReason != "" {
+		t.Fatalf("scroll %+v", scroll)
+	}
+	if submit := byName["submit"]; submit.Target != nil || submit.UnavailableReason != protocol.InteractionUnavailableDocumentChanged || submit.Route != "/" {
+		t.Fatalf("navigating key press %+v", submit)
+	}
+}
+
 // A touch session's gestures are dispatched as synthetic events, which the
 // observer ignores: they are recorded without points, saying so.
 func TestBrowserActualTouchGesturesSaySyntheticDispatch(t *testing.T) {

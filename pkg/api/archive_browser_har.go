@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/internal/archivequota"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/protocol/browser"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -142,7 +143,12 @@ func fetchRemoteHARArtifacts(ctx context.Context, client archiveArtifactClient, 
 			continue
 		}
 		path := filepath.Join(dir, entry.Name)
-		copied, err := fetchRemoteArchiveArtifactFileForSource(ctx, client, testID, entry.Name, sourceIdentity, path, entry.Bytes, transfer)
+		artifact, err := transfer.reserveOptional(entry.Bytes)
+		if err != nil {
+			omitted[harOmittedTransfer]++
+			continue
+		}
+		copied, err := fetchRemoteArchiveArtifactFileForSource(ctx, client, testID, entry.Name, sourceIdentity, path, entry.Bytes, artifact)
 		if err == nil && copied != entry.Bytes {
 			err = io.ErrUnexpectedEOF
 		}
@@ -151,6 +157,7 @@ func fetchRemoteHARArtifacts(ctx context.Context, client archiveArtifactClient, 
 		}
 		if err != nil {
 			_ = os.Remove(path)
+			transfer.release(entry.Bytes)
 			omitted[harOmittedTransfer]++
 			continue
 		}
@@ -187,7 +194,7 @@ type harReceiptAcceptor func(RunArchiveEvidenceArtifact) (string, error)
 // mergeRemoteHARArtifacts places the sources' staged HARs in the run archive
 // working directory and lists them in the manifest. Each is durably written
 // before its receipt is accepted; a refused receipt removes it.
-func mergeRemoteHARArtifacts(workingDir string, manifest *RunArchiveManifest, bundles []remoteArchiveBundle, accept harReceiptAcceptor) error {
+func mergeRemoteHARArtifacts(workingDir string, manifest *RunArchiveManifest, bundles []remoteArchiveBundle, accept harReceiptAcceptor, budget *archiveOutputBudget) error {
 	omitted := map[string]int64{}
 	seen := map[string]bool{}
 	incomplete := false
@@ -207,8 +214,12 @@ func mergeRemoteHARArtifacts(workingDir string, manifest *RunArchiveManifest, bu
 				continue
 			}
 			seen[staged.entry.Name] = true
-			if err := copyStagedHAR(staged, workingDir); err != nil {
-				omitted[harOmittedTransfer]++
+			if err := copyStagedHAR(staged, workingDir, budget); err != nil {
+				if errors.Is(err, errHARArchiveQuota) {
+					omitted[harOmittedArchiveQuota]++
+				} else {
+					omitted[harOmittedTransfer]++
+				}
 				continue
 			}
 			state, err := accept(staged.entry)
@@ -232,16 +243,54 @@ func mergeRemoteHARArtifacts(workingDir string, manifest *RunArchiveManifest, bu
 	return syncArchiveDirectory(workingDir)
 }
 
+// renameStagedHAR moves a staged HAR into the archive (tests replace it to
+// cross filesystems).
+var renameStagedHAR = os.Rename
+
+// errHARArchiveQuota: the archive's merge budget left no room for an
+// optional HAR copy.
+var errHARArchiveQuota = errors.New("archive merge budget has no room for the HAR")
+
+// runArchiveHARSource is a HAR-directory copy of a HAR a local run archive
+// holds.
+type runArchiveHARSource struct {
+	path     string
+	identity os.FileInfo
+}
+
+// retireArchivedHARSourcesLocked retires the HAR-directory copies once the
+// local archive is finalized; one that cannot be retired stays under its
+// directory's retention. The caller holds harMu.
+func (w *runArchiveWriter) retireArchivedHARSourcesLocked() {
+	for _, source := range w.harSources {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if err := browser.RetireRuntimeHARArtifact(ctx, source.path, source.identity); err != nil && !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("archived HAR left in its HAR directory until retention", "path", source.path, "error", err)
+		}
+		cancel()
+	}
+	w.harSources = nil
+}
+
 // copyStagedHAR durably copies a verified staged HAR into the archive.
-func copyStagedHAR(staged stagedRemoteHAR, workingDir string) (err error) {
+func copyStagedHAR(staged stagedRemoteHAR, workingDir string, budget *archiveOutputBudget) (err error) {
 	// The staged file was verified as fetched and is private to this
 	// staging attempt: move it rather than hold two copies on disk. Only
-	// across filesystems is it copied (and verified again).
+	// across filesystems (the shipped layouts keep transfers on another
+	// volume) is it copied, within the merge budget, and verified again.
 	destination := filepath.Join(workingDir, staged.entry.Name)
 	if _, statErr := os.Lstat(destination); errors.Is(statErr, os.ErrNotExist) {
-		if os.Rename(staged.path, destination) == nil {
-			return syncArchiveDirectory(workingDir)
+		if renameStagedHAR(staged.path, destination) == nil {
+			if err := syncArchiveDirectory(workingDir); err != nil {
+				// Not durably in the archive: keep it out of it.
+				_ = os.Remove(destination)
+				return err
+			}
+			return nil
 		}
+	}
+	if !budget.admitOptional(staged.entry.Bytes) {
+		return errHARArchiveQuota
 	}
 	return copyStagedHARBytes(staged, workingDir)
 }
@@ -477,7 +526,11 @@ func (w *runArchiveWriter) RecordBrowserHARArtifact(artifact protocol.BrowserHAR
 	var size int64
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	err := browser.TakeRuntimeHARArtifact(ctx, artifact.Path, func(r io.Reader, length int64) (err error) {
+	// Read, then retire only after the archive is final: a failure after the
+	// copy (retirement, a namespace error) must neither lose the HAR nor
+	// leave an undeclared copy in the archive.
+	created := false
+	identity, err := browser.ReadRuntimeHARArtifact(ctx, artifact.Path, func(r io.Reader, length int64) (err error) {
 		switch {
 		case length > maxRunArchiveHARBytes:
 			reason = harOmittedTooLarge
@@ -490,6 +543,7 @@ func (w *runArchiveWriter) RecordBrowserHARArtifact(artifact protocol.BrowserHAR
 		if err != nil {
 			return err
 		}
+		created = true
 		keep := false
 		defer func() {
 			err = errors.Join(err, file.Close())
@@ -510,7 +564,7 @@ func (w *runArchiveWriter) RecordBrowserHARArtifact(artifact protocol.BrowserHAR
 			err = file.Sync()
 		}
 		if err != nil {
-			if errors.Is(err, errArchiveCaptureLimit) || errors.Is(err, errArchiveCaptureFreeSpace) {
+			if errors.Is(err, errArchiveCaptureLimit) || errors.Is(err, errArchiveCaptureFreeSpace) || errors.Is(err, archivequota.ErrCapacity) {
 				reason = harOmittedArchiveQuota
 			}
 			return err
@@ -519,10 +573,14 @@ func (w *runArchiveWriter) RecordBrowserHARArtifact(artifact protocol.BrowserHAR
 		return nil
 	})
 	if err != nil {
+		if created {
+			_ = os.Remove(filepath.Join(rootDir, name))
+		}
 		return errors.Join(omit(reason), err)
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	w.harSources = append(w.harSources, runArchiveHARSource{path: artifact.Path, identity: identity})
 	w.harBytes += size
 	w.manifest.BrowserHARArtifacts = append(w.manifest.BrowserHARArtifacts, RunArchiveEvidenceArtifact{Name: name, Kind: storage.EvidenceKindHARNative, Fidelity: "native", SourceGeneration: artifact.Generation, Sequence: int64(len(w.manifest.BrowserHARArtifacts) + 1), SHA256: sum, Bytes: size})
 	return nil

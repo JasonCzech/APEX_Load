@@ -54,6 +54,9 @@ func nativeSeriesAggregationSQL(table string, q SeriesQuery, kind string) (strin
 	agg := map[string]string{"avg": "avg(value)", "min": "min(value)", "max": "max(value)", "sum": "sum(value)", "count": "count(value)", "p50": "quantile_cont(value,0.5)", "p95": "quantile_cont(value,0.95)", "p99": "quantile_cont(value,0.99)"}[q.Aggregation]
 	filter := nativeSeriesSelectionFilter(q)
 	from := table + " WHERE " + filter
+	if q.CounterReadings {
+		return nativeCounterReadingsSQL(table, filter, bucket), nil
+	}
 	if q.Aggregation == "rate" {
 		// Preserve existing in-window-only counter semantics: duplicate instants,
 		// resets and missing samples break the chain. No predecessor outside From.
@@ -114,9 +117,21 @@ func nativeSummaryAggregationSQL(table string, q SeriesQuery, statistic string, 
 	return "SELECT bucket, CASE WHEN nv<n OR nt<n OR partial THEN NULL ELSE " + value + " END, CASE WHEN nv<n THEN '' WHEN nt<n THEN " + literal(analysis.MissingDuplicateSummaryWindow) + " WHEN partial THEN " + literal(analysis.MissingPartialSummaryWindow) + " ELSE " + reason + " END FROM (" + grouped + ") ORDER BY bucket LIMIT 10001", nil
 }
 
+// nativeCounterReadingsSQL reads a counter as each bucket's closing reading,
+// with a missing reason as its third column. One instant with two different
+// readings is a duplicate; a reading below the series' previous known reading
+// (in this bucket or an earlier one, past missing readings) is a reset, and
+// either makes its bucket missing. Without a fall the closing reading is the
+// bucket's highest.
+func nativeCounterReadingsSQL(table, filter, bucket string) string {
+	instants := "SELECT timestamp_utc, CASE WHEN count(*)=count(value) AND min(value)=max(value) THEN min(value) ELSE NULL END AS value, min(value) AS low, max(value) AS high, coalesce(min(value)<>max(value),false) AS dup FROM " + table + " WHERE " + filter + " GROUP BY timestamp_utc"
+	readings := "SELECT " + bucket + " AS bucket, value, dup, coalesce(low < lag(high IGNORE NULLS) OVER (ORDER BY timestamp_utc),false) AS fell FROM (" + instants + ")"
+	return "SELECT bucket, CASE WHEN count(value)<count(*) OR bool_or(fell) THEN NULL ELSE max(value) END, CASE WHEN bool_or(dup) THEN " + literal(analysis.MissingDuplicateCounterInstant) + " WHEN count(value)<count(*) THEN '' WHEN bool_or(fell) THEN " + literal(analysis.MissingCounterReset) + " ELSE '' END FROM (" + readings + ") GROUP BY bucket ORDER BY bucket LIMIT 10001"
+}
+
 // validateNativeScalarAggregation is the scalar aggregation contract, with
 // one exception: a counter read for a controller-side counter derivation
-// (CounterReadings) is its bucket's highest reading.
+// (CounterReadings) is its bucket's closing reading (aggregation max).
 func validateNativeScalarAggregation(kind string, q SeriesQuery) error {
 	if q.CounterReadings {
 		if kind != analysis.KindCounter || q.Aggregation != "max" {

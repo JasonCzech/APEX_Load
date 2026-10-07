@@ -8,6 +8,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/storage"
 	"math"
+	"slices"
 	"sort"
 	"time"
 )
@@ -251,11 +252,15 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 					coverage = math.Min(coverage, math.Min(1, float64(covered)/float64(to.Sub(from))))
 				}
 			}
+			// A count (or a rate of one) also needs the bucket's whole window
+			// covered by publications that do not straddle its edges: a
+			// partly collected bucket undercounts.
+			counted := slices.Contains(nativeCountMetrics, q.Metric)
 			p := NativeEvidencePoint{From: from, To: to, OffsetSeconds: from.Sub(start).Seconds(), Coverage: &coverage, failures: b.errors,
-				// Every expected source published into the bucket with valid
-				// evidence. Only a rate also needs the bucket's whole window
-				// covered by publications that do not straddle its edges.
-				complete: !invalid[i] && !b.invalid && (!storage.IsNativeObservationRate(q.Metric) || coverage >= 1 && !rateUnsafe[i])}
+				// Some source published into the bucket, and every expected
+				// source did so with valid evidence. A bucket nobody published
+				// into is not an observed zero.
+				complete: len(expected[i]) > 0 && !invalid[i] && !b.invalid && (!counted || coverage >= 1 && !rateUnsafe[i])}
 			if b.count > 0 && !invalid[i] && !b.invalid && (!storage.IsNativeObservationRate(q.Metric) || coverage >= 1 && !rateUnsafe[i]) {
 				value := b.sum / float64(b.count)
 				switch q.Metric {
@@ -282,7 +287,7 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 				p.Value = &value
 				p.Count = b.count
 			}
-			if coverage < 1 || invalid[i] || b.invalid || storage.IsNativeObservationRate(q.Metric) && rateUnsafe[i] {
+			if coverage < 1 || invalid[i] || b.invalid || counted && rateUnsafe[i] {
 				partial = true
 			}
 			series.Points = append(series.Points, p)

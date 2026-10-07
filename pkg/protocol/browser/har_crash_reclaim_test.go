@@ -5,6 +5,7 @@ package browser
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -468,6 +469,29 @@ func TestHARBeginWriterFailureEntersNoWriter(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(generationDir, "writer-entered.json")); !os.IsNotExist(err) {
 		t.Fatalf("writer record left behind: %v", err)
+	}
+}
+
+// A writer record written but not made durable is removed again, and the
+// owner then closes and retires its generation as one no writer entered.
+func TestHARBeginWriterRemovesARecordItCouldNotSync(t *testing.T) {
+	o := fixtureHAROwner(t, t.TempDir())
+	generationDir := filepath.Dir(o.path)
+	original := syncHARWriterRecord
+	t.Cleanup(func() { syncHARWriterRecord = original })
+	syncHARWriterRecord = func(*os.Root) error { return errors.New("injected sync failure") }
+	if err := o.beginWriter(); err == nil {
+		t.Fatal("an unsynced writer record counted")
+	}
+	syncHARWriterRecord = original
+	if _, err := os.Stat(filepath.Join(generationDir, "writer-entered.json")); !os.IsNotExist(err) {
+		t.Fatalf("the record this call created was left behind: %v", err)
+	}
+	o.mu.Lock()
+	entered := o.writerEntered
+	o.mu.Unlock()
+	if entered {
+		t.Fatal("a writer counted as entered without a durable record")
 	}
 }
 

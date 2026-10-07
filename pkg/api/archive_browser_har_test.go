@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -189,7 +190,7 @@ func TestDistributedArchiveTransfersHARsWithReceipts(t *testing.T) {
 	working := t.TempDir()
 	var lateManifest RunArchiveManifest
 	bundles := []remoteArchiveBundle{{target: "a", hars: []stagedRemoteHAR{{entry: entry, path: staged}}}}
-	if err := mergeRemoteHARArtifacts(working, &lateManifest, bundles, restarted.acceptRemoteHARReceipt(restored, map[string]string{identity: "a"})); err != nil {
+	if err := mergeRemoteHARArtifacts(working, &lateManifest, bundles, restarted.acceptRemoteHARReceipt(restored, map[string]string{identity: "a"}), nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(lateManifest.BrowserHARArtifacts) != 0 || lateManifest.BrowserHAROmitted[harOmittedReceipt] != 1 {
@@ -255,8 +256,9 @@ func TestLocalRunArchiveRetainsBrowserHARs(t *testing.T) {
 		if err := writer.RecordBrowserHARArtifact(protocolHAR(path, generation)); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := os.Stat(path); !os.IsNotExist(err) {
-			t.Fatal("the HAR directory kept a moved artifact", err)
+		// The HAR directory keeps its copy until the archive is final.
+		if _, err := os.Stat(path); err != nil {
+			t.Fatal("the HAR directory lost an artifact before its archive was final", err)
 		}
 		name := "browser_har_" + generation + ".har"
 		if tamper {
@@ -269,10 +271,16 @@ func TestLocalRunArchiveRetainsBrowserHARs(t *testing.T) {
 			if err == nil {
 				t.Fatal("a HAR that differs from its record was archived")
 			}
+			if _, err := os.Stat(path); err != nil {
+				t.Fatal("a failed archive retired its HAR's other copy", err)
+			}
 			continue
 		}
 		if err != nil {
 			t.Fatal(err)
+		}
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatal("the HAR directory kept a finalized archive's artifact", err)
 		}
 		manifest, err := loadRunArchiveManifestFromRecord(record)
 		if err != nil || len(manifest.BrowserHARArtifacts) != 1 || manifest.BrowserHARArtifacts[0].Name != name || manifest.BrowserHARArtifacts[0].SourceIdentity != "" {
@@ -452,5 +460,81 @@ func TestLocalRunArchiveWritesInteractionEvidence(t *testing.T) {
 	}
 	if count, err := forEachBrowserInteractionRecord(filepath.Join(record.ArchivePath, browserInteractionsFileName), func(*protocol.BrowserInteractionEvidence) error { return nil }); err != nil || count != 2 {
 		t.Fatalf("records %d: %v", count, err)
+	}
+}
+
+// A staged HAR on another filesystem is copied only within the archive merge
+// budget; a refusal omits it as archive_quota without latching the budget.
+func TestStagedHARCrossFilesystemCopyStaysWithinTheMergeBudget(t *testing.T) {
+	staging, working := t.TempDir(), t.TempDir()
+	content := []byte(`{"log":{"version":"1.2","entries":[]}}`)
+	path := filepath.Join(staging, "staged.har")
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(content)
+	name := "browser_har_" + strings.Repeat("e", 32) + ".har"
+	staged := stagedRemoteHAR{entry: RunArchiveEvidenceArtifact{Name: name, Bytes: int64(len(content)), SHA256: hex.EncodeToString(sum[:])}, path: path}
+	original := renameStagedHAR
+	t.Cleanup(func() { renameStagedHAR = original })
+	renameStagedHAR = func(string, string) error { return &os.LinkError{Op: "rename", Err: os.ErrInvalid} }
+
+	tight := &archiveOutputBudget{root: working, remaining: 4}
+	if err := copyStagedHAR(staged, working, tight); err == nil || err != errHARArchiveQuota {
+		t.Fatalf("a HAR past the merge budget: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(working, name)); !os.IsNotExist(err) {
+		t.Fatal("a refused HAR reached the archive", err)
+	}
+	if tight.failure() != nil {
+		t.Fatal("an optional refusal latched the merge budget")
+	}
+	roomy := &archiveOutputBudget{root: working, remaining: 1 << 20}
+	if err := copyStagedHAR(staged, working, roomy); err != nil {
+		t.Fatal(err)
+	}
+	if copied, err := os.ReadFile(filepath.Join(working, name)); err != nil || string(copied) != string(content) || roomy.remaining != 1<<20-int64(len(content)) {
+		t.Fatalf("copied %q remaining %d %v", copied, roomy.remaining, err)
+	}
+}
+
+// partialArchiveClient streams declared artifacts, breaking some part-way.
+type partialArchiveClient struct {
+	content   map[string][]byte
+	failAfter map[string]int
+}
+
+func (c *partialArchiveClient) GetArchiveArtifact(context.Context, generatorrpc.ArchiveArtifactRequest) ([]byte, error) {
+	return nil, os.ErrInvalid
+}
+
+func (c *partialArchiveClient) StreamArchiveArtifact(_ context.Context, request generatorrpc.ArchiveArtifactRequest, destination io.Writer, _ int64) (int64, error) {
+	data := c.content[request.Name]
+	if n, broken := c.failAfter[request.Name]; broken {
+		written, _ := destination.Write(data[:n])
+		return int64(written), io.ErrUnexpectedEOF
+	}
+	written, err := destination.Write(data)
+	return int64(written), err
+}
+
+// A source whose optional evidence breaks part-way returns the allowance it
+// reserved, so a later source that fits is still fetched.
+func TestOptionalEvidenceAllowanceIsRefundedOnAFailedFetch(t *testing.T) {
+	declare := func(generation string, content []byte) RunArchiveEvidenceArtifact {
+		sum := sha256.Sum256(content)
+		return RunArchiveEvidenceArtifact{Name: "browser_har_" + generation + ".har", Kind: storage.EvidenceKindHARNative, Fidelity: "native", SourceGeneration: generation, Sequence: 1, Bytes: int64(len(content)), SHA256: hex.EncodeToString(sum[:])}
+	}
+	broken, whole := []byte(strings.Repeat("a", 80)), []byte(strings.Repeat("b", 60))
+	first, second := declare(strings.Repeat("1", 32), broken), declare(strings.Repeat("2", 32), whole)
+	client := &partialArchiveClient{content: map[string][]byte{first.Name: broken, second.Name: whole}, failAfter: map[string]int{first.Name: 70}}
+	allowance := &remoteArchiveTransferBudget{remaining: 100}
+	staged, omitted := fetchRemoteHARArtifacts(context.Background(), client, "run", "source-a", t.TempDir(), []RunArchiveEvidenceArtifact{first}, newRemoteHARBudget(), allowance)
+	if len(staged) != 0 || omitted[harOmittedTransfer] != 1 {
+		t.Fatalf("broken fetch staged %+v omitted %v", staged, omitted)
+	}
+	staged, omitted = fetchRemoteHARArtifacts(context.Background(), client, "run", "source-b", t.TempDir(), []RunArchiveEvidenceArtifact{second}, newRemoteHARBudget(), allowance)
+	if len(staged) != 1 || len(omitted) != 0 || allowance.remaining != 40 {
+		t.Fatalf("a fitting source was refused after another failed: staged %+v omitted %v remaining %d", staged, omitted, allowance.remaining)
 	}
 }

@@ -1485,13 +1485,11 @@ func (w *archiveRecorder) Finalize(status string, completedAt time.Time, errStr 
 			// result, and the descriptor is no longer usable after Close.
 			w.closed = true
 			cleanupOnError = false
-			w.retireArchivedHARSources()
 			return record, nil
 		}
 	}
 	w.closed = true
 	cleanupOnError = false
-	w.retireArchivedHARSources()
 	return record, nil
 }
 

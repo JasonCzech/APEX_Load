@@ -268,7 +268,7 @@ func Detect(input DetectionInput, params DetectParams, budgeter *Budgeter) ([]An
 	}
 	anomalies, cut := keepAnomalies(out.anomalies, params.MaxAnomalies)
 	if cut > 0 {
-		limitations = append(limitations, Limitation{Code: LimitationAnomaliesTruncated, Detail: fmt.Sprintf("kept the %d largest of %d anomalies", len(anomalies), len(anomalies)+cut)})
+		limitations = append(limitations, Limitation{Code: LimitationAnomaliesTruncated, Detail: fmt.Sprintf("kept %d of %d anomalies, the largest first and joint action-dimension slices last", len(anomalies), len(anomalies)+cut)})
 	}
 	sort.SliceStable(anomalies, func(i, j int) bool {
 		if !anomalies[i].Onset.Equal(anomalies[j].Onset) {
@@ -368,7 +368,6 @@ func sortedPoints(points []SeriesPoint) []SeriesPoint {
 	return out
 }
 
-// strongest keeps the n items with the largest score, ties broken by key.
 // keepAnomalies keeps at most n anomalies, the largest first. Anomalies of
 // series that can be a symptom or a cause come first: joint action-dimension
 // slices (which no hypothesis uses) fill only the room left, so they never
@@ -395,6 +394,7 @@ func keepAnomalies(anomalies []Anomaly, n int) ([]Anomaly, int) {
 	return kept, len(anomalies) - len(kept)
 }
 
+// strongest keeps the n items with the largest score, ties broken by key.
 func strongest[T any](items []T, n int, score func(T) float64, key func(T) string) ([]T, int) {
 	if n <= 0 || len(items) <= n {
 		return items, 0

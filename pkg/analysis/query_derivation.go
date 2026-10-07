@@ -32,6 +32,9 @@ type DerivationBucket struct {
 	Count    int64
 	Subset   int64
 	Complete bool
+	// Reason says why a bucket without a value is missing when its input
+	// existed (a counter reading that fell inside it).
+	Reason string
 }
 
 // DerivationSeries is a bucketed series with the measurement it carries.
@@ -207,6 +210,10 @@ func ApplyQueryDerivation(series DerivationSeries, d QueryDerivation, baseline *
 				continue
 			}
 			before, after := series.Buckets[i-1], series.Buckets[i]
+			if after.Value == nil && after.Reason != "" {
+				out.Buckets[i].Reason = after.Reason
+				continue
+			}
 			if before.Value == nil || after.Value == nil {
 				out.Buckets[i].Reason = "missing_counter_sample"
 				continue

@@ -295,6 +295,18 @@ type archivedHARSource struct {
 	identity os.FileInfo
 }
 
+// retireRegisteredHARSources retires the HAR directory copies once the
+// finalized archive is registered: until then a failed registration (which
+// deletes the archive) must leave them.
+func (w *archiveRecorder) retireRegisteredHARSources() {
+	if w == nil {
+		return
+	}
+	w.harMu.Lock()
+	defer w.harMu.Unlock()
+	w.retireArchivedHARSources()
+}
+
 // retireArchivedHARSources retires the HAR directory copies of a finalized
 // archive's HARs. A copy that cannot be retired stays under its directory's
 // retention. The caller holds harMu.

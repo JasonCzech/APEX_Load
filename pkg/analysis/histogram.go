@@ -289,6 +289,8 @@ func validPointMissingReason(inputKind, reason string) bool {
 		return validMissingReason(reason)
 	case KindHistogram:
 		return slices.Contains(histogramMissingReasons, reason)
+	case KindCounter:
+		return reason == MissingCounterReset || reason == MissingDuplicateCounterInstant
 	}
 	return false
 }

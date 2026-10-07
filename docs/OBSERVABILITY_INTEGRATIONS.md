@@ -383,8 +383,8 @@ silent correction: a point more than 30 s ahead of its receipt keeps its
   timestamp were timed by another clock and carry no collector timing. Older controllers
   send no stamps and older agents send no timing; both keep working.
 - **Generators** are re-measured every 30 seconds while a distributed run is
-  live (`APEXLOAD_CLOCK_PROBE_INTERVAL`, a Go duration, shorter only; 30 s is
-  the maximum), by the same heartbeat exchange the start barrier uses,
+  live (`APEXLOAD_CLOCK_PROBE_INTERVAL`, a Go duration, can only lengthen
+  that; 30 s is the minimum), by the same heartbeat exchange the start barrier uses,
   including after HA adoption.
 - **Providers** (AppDynamics, Dynatrace, Prometheus queries, Elasticsearch
   query buckets) never exchange clocks with the controller, so their points say
@@ -414,8 +414,9 @@ Without a current calibration the stages stay as measured and say why:
 `uncalibrated`, `calibration_expired` (three probe intervals passed on the
 controller's monotonic clock), `clock_jump` (an offset that moved more than
 twice its uncertainty, until a consistent probe confirms it) or `clock_step`
-(the controller's wall clock stepped, detected between probes and at every
-receipt since the last probe); an unqualified negative duration, or a
+(the controller's wall clock stepped by more than 100 ms, detected between
+probes, at every receipt since the last probe, and between a stored batch's
+receipt and its publication); an unqualified negative duration, or a
 corrected one below zero by more than its uncertainty (`implausible`), is
 unavailable. Probes run every 30 seconds; `APEXLOAD_CLOCK_PROBE_INTERVAL` can
 only lengthen that.

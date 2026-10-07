@@ -1092,6 +1092,9 @@ type TelemetryHealth struct {
 	// collectedAtBoundUnixMs is the controller-clock instant the qualified
 	// generators' oldest samples were certainly collected by (0 = none).
 	collectedAtBoundUnixMs float64
+	// sampleAgeUnavailable: no generator reported a sample, so no sample-age
+	// budget decision is made.
+	sampleAgeUnavailable bool
 }
 
 type TelemetryRunHealth struct {
@@ -1109,6 +1112,9 @@ type TelemetryRunHealth struct {
 	BreachStartedAt   *time.Time `json:"breach_started_at,omitempty"`
 	LastObservedAt    time.Time  `json:"last_observed_at"`
 	LastTransitionAt  time.Time  `json:"last_transition_at,omitempty"`
+	// recovered: this healthy status ends a degraded or breached spell that
+	// was announced (an unscored stretch in between does not end it).
+	recovered bool
 }
 
 type NetworkLatency struct {
@@ -1230,6 +1236,9 @@ type telemetryDiagnosticState struct {
 	LastPublishedAt time.Time
 	Health          *TelemetryRunHealth
 	BreachStartedAt *time.Time
+	// alerting: a degraded or breached status was announced and no healthy
+	// status has ended it yet.
+	alerting bool
 }
 
 type goalControllerUpdate struct {

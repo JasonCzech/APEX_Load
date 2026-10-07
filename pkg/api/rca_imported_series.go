@@ -42,9 +42,20 @@ const (
 	rcaImportedReadShare  = 4
 	rcaMaxImportedQueries = 128
 	// rcaImportedAdmissionRetry is the first wait before retrying a read the
-	// single native-analysis slot refused; it doubles up to the read budget.
-	rcaImportedAdmissionRetry = 250 * time.Millisecond
+	// single native-analysis slot refused (another kind of analytics job holds
+	// it); it doubles up to rcaImportedAdmissionMaxWait.
+	rcaImportedAdmissionRetry   = 250 * time.Millisecond
+	rcaImportedAdmissionMaxWait = 2 * time.Second
 )
+
+// rcaNativeAnalysisAvailable says whether this build reads datasets at all
+// (tests replace it).
+var rcaNativeAnalysisAvailable = analytics.Available
+
+// rcaImportedReadGate queues the imported reads of concurrent analyses for
+// the native-analysis slot one query at a time, in arrival order, so one
+// analysis reading back to back never starves another polling for the slot.
+var rcaImportedReadGate = make(chan struct{}, 1)
 
 // rcaQueryImportedDataset runs one native series query (tests replace it).
 var rcaQueryImportedDataset = queryAnalysisDataset
@@ -202,7 +213,7 @@ func (s *Server) rcaImportedSeries(ctx context.Context, project, testID string, 
 	case !ok:
 		note(limitationImportedDatasetUnavailable, "the run recorded no intervals to align associated datasets with")
 		return nil, limitations, nil
-	case !stored || ensureAnalysisBackend(s.store) != nil || !analysisProjectEnabled(project):
+	case !stored || !rcaNativeAnalysisAvailable() || ensureAnalysisBackend(s.store) != nil || !analysisProjectEnabled(project):
 		note(limitationImportedDatasetUnavailable, fmt.Sprintf("native analysis is unavailable, so %d associated datasets were not judged", len(frozen)))
 		return nil, limitations, nil
 	}
@@ -251,15 +262,37 @@ func (s *Server) rcaImportedSeries(ctx context.Context, project, testID string, 
 				dropped++
 				continue
 			}
-			built, attempts, err := rcaReadWithAdmission(ctx, deadline, rcaImportedAdmissionRetry, func() (*rca.Series, error) {
-				return s.readImportedSeries(ctx, snapshot, key, from, to, bucket)
-			})
-			queries += attempts
-			if errors.Is(err, errRCAImportedEvidenceBusy) {
-				return nil, nil, err
+			readCtx, cancel := ctx, context.CancelFunc(func() {})
+			if !deadline.IsZero() {
+				readCtx, cancel = context.WithDeadline(ctx, deadline)
 			}
+			built, err := rcaReadWithAdmission(readCtx, deadline, rcaImportedAdmissionRetry, func() (*rca.Series, error) {
+				select {
+				case rcaImportedReadGate <- struct{}{}:
+				case <-readCtx.Done():
+					return nil, errRCAImportedEvidenceBusy
+				}
+				defer func() { <-rcaImportedReadGate }()
+				return s.readImportedSeries(readCtx, snapshot, key, from, to, bucket)
+			})
+			expired := readCtx.Err() != nil
+			cancel()
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, nil, ctxErr
+			}
+			// Only an admitted read is a query; refused attempts cost nothing.
+			if !errors.Is(err, errRCAImportedEvidenceBusy) {
+				queries++
+			}
+			if errors.Is(err, errRCAImportedEvidenceBusy) || expired {
+				// The read budget ran out waiting for the slot or inside a
+				// read. With nothing imported read yet the analysis fails
+				// and can be retried; otherwise the rest is a budget cut.
+				if len(series) == 0 && len(datasetSeries) == 0 && errors.Is(err, errRCAImportedEvidenceBusy) {
+					return nil, nil, errRCAImportedEvidenceBusy
+				}
+				dropped++
+				continue
 			}
 			if err != nil {
 				note(limitationImportedDatasetUnavailable, fmt.Sprintf("a series of dataset %s could not be read: %v", want.DatasetID, err))
@@ -291,22 +324,22 @@ func (s *Server) rcaImportedSeries(ctx context.Context, project, testID string, 
 }
 
 // rcaReadWithAdmission runs read, retrying while the single native-analysis
-// slot is held by another job, waiting from wait and doubling, until
-// deadline (zero: until ctx ends). It returns the attempts made; a slot still
-// busy at the deadline is errRCAImportedEvidenceBusy.
-func rcaReadWithAdmission(ctx context.Context, deadline time.Time, wait time.Duration, read func() (*rca.Series, error)) (*rca.Series, int, error) {
+// slot is held by another job, waiting from wait and doubling (at most
+// rcaImportedAdmissionMaxWait between attempts), until deadline (zero: until
+// ctx ends). A slot still busy at the deadline is errRCAImportedEvidenceBusy.
+func rcaReadWithAdmission(ctx context.Context, deadline time.Time, wait time.Duration, read func() (*rca.Series, error)) (*rca.Series, error) {
 	for attempt := 1; ; attempt++ {
 		built, err := read()
 		if !errors.Is(err, errAnalyticalAdmissionUnavailable) {
-			return built, attempt, err
+			return built, err
 		}
-		pause := wait << min(attempt-1, 5)
+		pause := min(wait<<min(attempt-1, 5), rcaImportedAdmissionMaxWait)
 		if !deadline.IsZero() && time.Now().Add(pause).After(deadline) {
-			return nil, attempt, errRCAImportedEvidenceBusy
+			return nil, errRCAImportedEvidenceBusy
 		}
 		select {
 		case <-ctx.Done():
-			return nil, attempt, ctx.Err()
+			return nil, ctx.Err()
 		case <-time.After(pause):
 		}
 	}

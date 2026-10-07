@@ -842,27 +842,33 @@ func (s *Server) handleAnalysisDatasetSeries(w http.ResponseWriter, r *http.Requ
 
 // importedDerivation evaluates a derivation over an imported series on its
 // query grid: a counter's reset-aware delta or rate (the query reads each
-// bucket's highest reading; a dataset revision is one counter epoch per
-// identity), or moving statistics of a scalar series. Missing buckets stay
-// missing.
+// bucket's closing reading, missing where a reading fell; a dataset revision
+// is one counter epoch per identity), or moving statistics of a scalar
+// series. Missing buckets stay missing.
 func importedDerivation(in *storage.AnalysisImport, query analytics.SeriesQuery, points []analysis.MetricPoint, derivation analysis.QueryDerivation) (analysis.DerivedSeries, error) {
 	step := time.Duration(query.BucketSeconds) * time.Second
 	// The worker's points carry the measured kind as their input kind (a
-	// bucketed series is a gauge of it).
+	// bucketed series is a gauge of it). Only a counter derivation reads the
+	// measured kind; moving statistics derive the bucketed series itself
+	// (a counter's rate, a histogram's percentile), which is a gauge.
+	counterDerivation := slices.Contains([]string{"delta", "rate"}, analysis.CanonicalDerivation(derivation.Operation))
 	kind, unit := analysis.KindGauge, ""
 	if len(points) > 0 {
 		kind, unit = points[0].Kind, points[0].Unit
-		if points[0].InputKind != "" {
+		if points[0].InputKind != "" && counterDerivation {
 			kind = points[0].InputKind
 		}
 	} else if query.CounterReadings {
 		kind = analysis.KindCounter
 	}
-	if err := analysis.ValidateQueryDerivation(query.Metric, points0Population(points), kind, derivation, false); err != nil {
+	// Imported metric names are the dataset's own, not the native catalog's:
+	// a dataset gauge named like a native metric keeps the operations its
+	// kind allows.
+	if err := analysis.ValidateQueryDerivation("", points0Population(points), kind, derivation, false); err != nil {
 		return analysis.DerivedSeries{}, err
 	}
 	if kind == analysis.KindCounter && !query.CounterReadings {
-		return analysis.DerivedSeries{}, errors.New("counter derivations read each bucket's highest reading; query with aggregation max")
+		return analysis.DerivedSeries{}, errors.New("counter derivations read each bucket's closing reading; query with aggregation max")
 	}
 	if len(points) == 0 {
 		// Nothing in the window: every bucket is unscored, as missing.
@@ -884,6 +890,8 @@ func importedDerivation(in *storage.AnalysisImport, query analytics.SeriesQuery,
 		if p, ok := byStart[at]; ok && p.Value != nil && p.Quality == analysis.QualityValid {
 			value := *p.Value
 			bucket.Value, bucket.Complete = &value, true
+		} else if ok {
+			bucket.Reason = p.MissingReason
 		}
 		series.Buckets = append(series.Buckets, bucket)
 	}

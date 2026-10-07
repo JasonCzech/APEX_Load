@@ -42,6 +42,21 @@ describe('explicit scenario authoring checkpoints', () => {
       expect(readScenarioAuthoringDraft('project-a')).toBeNull()
     }
   })
+  it('keeps a well-formed recorded baseline and drops a malformed one', () => {
+    const recorded = { ...draft(), editingId: 'scenario-1', baselineTag: '"tag-a"', baselineForm: draft().form, baselineShapeId: 'constant' }
+    saveScenarioAuthoringDraft(recorded)
+    expect(readScenarioAuthoringDraft('project-a')).toMatchObject({ baselineTag: '"tag-a"', baselineShapeId: 'constant', baselineForm: { name: '' } })
+    const storageKey = localStorage.key(0)!
+    for (const malformed of [{ baselineTag: '' }, { baselineTag: 7 }, { baselineForm: { name: 1, groups: [] } }, { baselineForm: { name: '' } }, { baselineShapeId: undefined }]) {
+      localStorage.setItem(storageKey, JSON.stringify({ ...recorded, ...malformed }))
+      const read = readScenarioAuthoringDraft('project-a')
+      expect(read, JSON.stringify(malformed)).not.toBeNull()
+      expect(read).not.toHaveProperty('baselineTag')
+      expect(read).not.toHaveProperty('baselineForm')
+      expect(read).not.toHaveProperty('baselineShapeId')
+      expect(read!.editingId).toBe('scenario-1')
+    }
+  })
 })
 
 it('upgrades legacy first-binding overlays and preserves canonical-only arrays', () => {

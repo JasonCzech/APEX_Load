@@ -271,6 +271,10 @@ func allowedHARWorkingName(name string) bool {
 // fails leaves no writer (the caller never opens the context) and removes
 // what it wrote, so neither this owner nor a later cleaner waits for a writer
 // that never received the path.
+// syncHARWriterRecord makes the writer record's directory entry durable
+// (tests replace it to fail after the record exists).
+var syncHARWriterRecord = syncHARRoot
+
 func (o *harCaptureOwner) beginWriter() error {
 	if o.root == nil {
 		// An owner without a generation has nowhere to record its writer.
@@ -286,7 +290,7 @@ func (o *harCaptureOwner) beginWriter() error {
 	data, _ := json.Marshal(manifest)
 	err := writeHARPrivateDurable(o.root, "writer-entered.json", data)
 	if err == nil {
-		err = syncHARRoot(o.root)
+		err = syncHARWriterRecord(o.root)
 	}
 	if err != nil {
 		// Remove only a record this call created (an existing one is not

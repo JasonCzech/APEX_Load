@@ -200,7 +200,7 @@ import {
   useScriptJsonNavigationController,
 } from './useScriptJsonAuthoringController'
 import { useScriptAuthoringSession, type ResolvedScriptDraft } from './useScriptAuthoringSession'
-import { validationContextKey } from './scriptAuthoringSession'
+import { draftFingerprint, validationContextKey } from './scriptAuthoringSession'
 import {
   buildBrowserHTTPConversionReview,
   replayEvidenceIndex,
@@ -3061,7 +3061,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         ai_guardrails: res.ai_guardrails,
         authoring_health: res.authoring_health,
       })
-      adoptValidated(request, formatScriptJson(validationScript))
+      const validatedDocumentKey = formatScriptJson(validationScript)
+      adoptValidated(request, validatedDocumentKey)
+      // Validation can only add derived metadata (an import's runtime
+      // settings parity): debug evidence for the document it validated still
+      // describes the committed one.
+      setReplayDocumentFingerprint(current => current === draft.fingerprint ? draftFingerprint(validatedDocumentKey) : current)
       if (jsonDirty || currentScript.metadata?.import || validationScript !== currentScript) {
         commitJsonDraft(validationScript)
       }

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -98,8 +99,10 @@ func browserInteractionObserver(name string) string {
   if (!label) label = el.getAttribute('placeholder') || el.getAttribute('name') || el.getAttribute('title') || '';
   return {role: /^[a-z]{1,24}$/.test(explicit) ? explicit : implicitRole(el), label: label.toLowerCase().replace(/[0-9]/g, '#').replace(/\s+/g, ' ').trim().slice(0, 64)};
  };
- Object.defineProperty(globalThis, name, {configurable: false, enumerable: false, value: {drain() {
-  const out = {doc: token, events, move, vw: innerWidth, vh: innerHeight, sx: scrollX, sy: scrollY, dpr: devicePixelRatio, path: location.pathname, layout: layout(), focus: focus()};
+ Object.defineProperty(globalThis, name, {configurable: false, enumerable: false, value: {drain(light) {
+  // A gesture's start reads no layout: it forces a reflow inside the
+  // measured action.
+  const out = {doc: token, events, move, vw: innerWidth, vh: innerHeight, sx: scrollX, sy: scrollY, dpr: devicePixelRatio, path: location.pathname, layout: light ? '' : layout(), focus: focus()};
   events = []; move = null;
   return out;
  }}});
@@ -213,19 +216,25 @@ func (b *Browser) beginBrowserInteraction(ctx context.Context, action *protocol.
 		return nil
 	}
 	start := &browserInteractionStart{}
-	start.read = b.drainBrowserInteractionPage(ctx, generation, &start.page) == nil && start.page.Doc != ""
+	start.read = b.drainBrowserInteractionPageAs(ctx, generation, true, &start.page) == nil && start.page.Doc != ""
 	return start
 }
 
 // drainBrowserInteractionPage drains the observer within the read timeout:
 // a page whose main thread stays busy never stalls the VUser past it.
 func (b *Browser) drainBrowserInteractionPage(ctx context.Context, generation string, page *browserInteractionPage) error {
+	return b.drainBrowserInteractionPageAs(ctx, generation, false, page)
+}
+
+// drainBrowserInteractionPageAs drains the observer; a light read (at a
+// gesture's start) skips the layout fingerprint.
+func (b *Browser) drainBrowserInteractionPageAs(ctx context.Context, generation string, light bool, page *browserInteractionPage) error {
 	readCtx, cancel := context.WithTimeout(ctx, interactionReadTimeout)
 	defer cancel()
 	done := make(chan error, 1)
 	var read browserInteractionPage
 	go func() {
-		done <- b.evaluatePageExpression(readCtx, fmt.Sprintf(`(() => { const o = globalThis[%q]; return o ? o.drain() : null })()`, browserInteractionGlobal(generation)), &read)
+		done <- b.evaluatePageExpression(readCtx, fmt.Sprintf(`(() => { const o = globalThis[%q]; return o ? o.drain(%t) : null })()`, browserInteractionGlobal(generation), light), &read)
 	}()
 	select {
 	case err := <-done:
@@ -305,12 +314,14 @@ func (b *Browser) captureBrowserInteraction(ctx context.Context, action *protoco
 			}
 		}
 	}
-	if !protocol.BrowserInteractionPointerKind(kind) || kind == "check" {
+	// Keyboard-style gestures (and a check) name their target; a scroll
+	// names none.
+	if kind != "scroll" && !protocol.BrowserInteractionPointerKind(kind) || kind == "check" {
 		switch {
 		case framed:
 			interaction.UnavailableReason = protocol.InteractionUnavailableChildFrame
 		default:
-			target, reason := b.browserInteractionTarget(ctx, action, start)
+			target, reason := b.browserInteractionTarget(ctx, action, start, navigated)
 			interaction.Target = target
 			if interaction.UnavailableReason == "" {
 				interaction.UnavailableReason = reason
@@ -344,8 +355,10 @@ const browserInteractionTargetScript = `el => {
 
 // browserInteractionTarget is the element a keyboard gesture acted on: the
 // one its selector resolves to, or without a selector the element focused
-// when it began. An element that cannot be resolved is unavailable.
-func (b *Browser) browserInteractionTarget(ctx context.Context, action *protocol.Action, start *browserInteractionStart) (*protocol.BrowserInteractionTarget, string) {
+// when it began. An element that cannot be resolved is unavailable at once
+// (never waited for), and after a navigation the selector would describe
+// another document's element, so it is not resolved.
+func (b *Browser) browserInteractionTarget(ctx context.Context, action *protocol.Action, start *browserInteractionStart, navigated bool) (*protocol.BrowserInteractionTarget, string) {
 	describe := func(role, label string) *protocol.BrowserInteractionTarget {
 		target := &protocol.BrowserInteractionTarget{Role: role}
 		if label != "" {
@@ -361,6 +374,9 @@ func (b *Browser) browserInteractionTarget(ctx context.Context, action *protocol
 		}
 		return nil, protocol.InteractionUnavailableTarget
 	}
+	if navigated {
+		return nil, protocol.InteractionUnavailableDocumentChanged
+	}
 	page := b.currentPage()
 	if page == nil || ctx.Err() != nil {
 		return nil, protocol.InteractionUnavailableTarget
@@ -373,7 +389,14 @@ func (b *Browser) browserInteractionTarget(ctx context.Context, action *protocol
 	}
 	done := make(chan described, 1)
 	go func() {
-		value, err := page.Locator(selector).First().Evaluate(browserInteractionTargetScript, nil, playwright.LocatorEvaluateOptions{Timeout: playwright.Float(float64(interactionReadTimeout / time.Millisecond))})
+		// Count does not wait: a target the gesture removed (a submitted
+		// form, a closed dialog) is unresolved now, not after a timeout.
+		locator := page.Locator(selector)
+		if count, err := locator.Count(); err != nil || count == 0 {
+			done <- described{nil, errors.Join(err, errors.New("target is not attached"))}
+			return
+		}
+		value, err := locator.First().Evaluate(browserInteractionTargetScript, nil, playwright.LocatorEvaluateOptions{Timeout: playwright.Float(float64(interactionReadTimeout / time.Millisecond))})
 		done <- described{value, err}
 	}()
 	var out described

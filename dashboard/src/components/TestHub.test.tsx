@@ -3851,6 +3851,26 @@ describe('TestHub', () => {
       expect(localSection.textContent).not.toContain('duration')
     })
 
+    it('keeps the recorded baseline when a blocked resumed edit is checkpointed again', async () => {
+      const { key, draft } = await checkpointBlockedEdit()
+      const changed = { ...conflictScenario, duration: '10m', updated_at: '2026-05-13T00:00:00Z' }
+      window.localStorage.setItem(key, JSON.stringify(draft))
+      await resumeAfter(changed, 'b')
+      expect(panel()?.textContent).toContain('changed after this draft was saved')
+      await act(async () => setInputValue(nameInput(), 'Later name'))
+      await clickButton('Save draft')
+      expect(container.textContent).toContain('Draft progress saved in this browser')
+      expect(apiMock.updateScenario).not.toHaveBeenCalled()
+      const again = JSON.parse(window.localStorage.getItem(key)!)
+      expect(again.form.name).toBe('Later name')
+      expect(again.baselineTag).toBe(tagFor('a'))
+      expect(again.baselineForm.name).toBe('Checkout')
+      // Resuming that checkpoint still reconciles against the recorded revision.
+      await resumeAfter(changed, 'b')
+      expect(nameInput().value).toBe('Later name')
+      expect(panel()?.textContent).toContain('changed after this draft was saved')
+    })
+
     it('adopts the durable baseline for a resumed edit whose revision is unchanged', async () => {
       const { key, draft } = await checkpointBlockedEdit()
       // The listed time moved (an unauthored change) but the revision did not.

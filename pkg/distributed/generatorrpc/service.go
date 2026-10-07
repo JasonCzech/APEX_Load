@@ -3029,6 +3029,9 @@ func (s *Service) finalizeArchiveWriter(writer *archiveRecorder, status string, 
 	if err == nil && record != nil {
 		err = s.storeArchiveRecordWithIdentity(record, writer.runIdentity)
 	}
+	if err == nil {
+		writer.retireRegisteredHARSources()
+	}
 	if err != nil {
 		discardErr := writer.Discard()
 		removeErr := writer.removeFinalizedRun()

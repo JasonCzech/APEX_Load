@@ -42,7 +42,8 @@ const (
 // archive.3: provider series are keyed by their measurement series identity,
 // every series carries one, joint (version 3) interval evidence becomes series
 // on its exact action-dimension tuple, and associated analysis datasets
-// contribute imported series.
+// contribute imported series (joint slices ranking last for series and
+// anomalies). It has not been released, so its review fixes keep the name.
 const rcaArchiveAdapterVersion = "archive.3"
 
 // rcaEngineVersion changes whenever the engine's output for the same frozen
@@ -959,15 +960,22 @@ func (s *Server) rcaBaselineEvidence(ctx context.Context, manifest *RunArchiveMa
 			}
 			// The baseline's browser document tuples, so a document series
 			// is judged against the same tuple of the baseline run.
+			// As for the run itself, joint slices give way to them.
 			documentLimit := -1
 			if budget.MaxSeries > 0 {
-				documentLimit = max(0, budget.MaxSeries-len(evidence.Series))
+				documentLimit = max(0, budget.MaxSeries-rcaNonJointSeries(evidence.Series))
 			}
 			if documents, limitations, docErr := rcaBrowserDocumentSeries(ctx, record, baselineManifest, summaries, documentLimit, budget.MaxSeriesPoints); docErr == nil {
 				evidence.Series = append(evidence.Series, documents...)
 				evidence.Limitations = append(evidence.Limitations, limitations...)
 			} else if ctx.Err() == nil {
 				evidence.Limitations = append(evidence.Limitations, rca.Limitation{Code: limitationDetectionEvidenceCut, Detail: "the baseline's browser document evidence could not be read: " + docErr.Error()})
+			}
+			if budget.MaxSeries > 0 {
+				var gaveWay int
+				if evidence.Series, gaveWay = trimRCAJointSeries(evidence.Series, budget.MaxSeries); gaveWay > 0 {
+					evidence.Limitations = append(evidence.Limitations, rca.Limitation{Code: limitationDetectionEvidenceCut, Detail: fmt.Sprintf("%d of the baseline's joint action-dimension series gave way to its document series within the series budget", gaveWay)})
+				}
 			}
 			// What limited the baseline's own evidence limits every
 			// comparison with it.

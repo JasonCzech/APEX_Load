@@ -492,8 +492,17 @@ func assignedTelemetrySourcesLocked(test *ManagedTest) []string {
 	for target := range test.remoteClientsByTarget {
 		out = append(out, target)
 	}
-	for _, shard := range test.GeneratorShards {
-		out = append(out, shard.Target)
+	return appendShardTelemetrySources(out, test.GeneratorShards)
+}
+
+// appendShardTelemetrySources adds the generators a shard placement names. A
+// local run's runtime-resource placement names the controller's own process,
+// which is no generator: that run stays one executed in this process.
+func appendShardTelemetrySources(out []string, shards []GeneratorShardSummary) []string {
+	for _, shard := range shards {
+		if shard.Target != "" && shard.Target != localRuntimeResourceTarget {
+			out = append(out, shard.Target)
+		}
 	}
 	return out
 }
@@ -540,9 +549,7 @@ func (tr *TestRunner) persistTelemetryCoverage(ctx context.Context, test *Manage
 	if !ok {
 		return nil
 	}
-	for _, shard := range manifest.Provenance.GeneratorShards {
-		assigned = append(assigned, shard.Target)
-	}
+	assigned = appendShardTelemetrySources(assigned, manifest.Provenance.GeneratorShards)
 	var rows []IntervalSummaryRecord
 	err := forEachArchiveRecordContext(ctx, record, func(manifest *RunArchiveManifest) string { return manifest.IntervalSummariesFile }, func(row *coverageIntervalRow) error {
 		summary := IntervalSummaryRecord{Timestamp: row.Timestamp, SampleWindowSeconds: row.SampleWindowSeconds}

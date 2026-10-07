@@ -318,7 +318,13 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 	}
 	b.applyActionTraceparent(actionCtx, result)
 
+	preRead := time.Now()
 	interactionStart := b.beginBrowserInteraction(actionCtx, action)
+	if interactionStart != nil {
+		// The gesture begins after the evidence read: its duration and start
+		// leave the read out.
+		result.StartTime = result.StartTime.Add(time.Since(preRead))
+	}
 	actionErr, terminal := b.dispatchAction(actionCtx, action, result)
 	if terminal {
 		result.Duration = time.Since(result.StartTime)

@@ -255,3 +255,31 @@ func TestOptionalEvidenceKeepsThreeQuartersForRequiredEvidence(t *testing.T) {
 		t.Fatal("optional evidence admitted past the limit")
 	}
 }
+
+// A finalized archive whose registration fails is deleted, so its HARs'
+// HAR-directory copies must stay: they are retired only once the archive is
+// registered.
+func TestArchiveHARsStayWhenRegistrationFails(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	service := NewService("har-generator", 10)
+	writer, err := newArchiveRecorder("har-generator", "har-unregistered", "har")
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact := publishedHAR(t, t.TempDir(), strings.Repeat("d", 32), `{"log":{"version":"1.2","entries":[]}}`)
+	if err := writer.RecordBrowserHARArtifact(artifact); err != nil {
+		t.Fatal(err)
+	}
+	// The run directory registration expects is not the one finalized.
+	other, err := os.Stat(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer.runIdentity = other
+	if err := service.finalizeArchiveWriter(writer, "COMPLETE", time.Now().UTC(), ""); err == nil {
+		t.Fatal("a replaced run directory was registered")
+	}
+	if _, err := os.Stat(artifact.Path); err != nil {
+		t.Fatal("an unregistered archive retired its HAR's only other copy", err)
+	}
+}

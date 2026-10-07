@@ -817,6 +817,7 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 	}
 	manifestSHA256 := sha256BytesHex(data)
 	backend := currentArchiveBackend()
+	w.retireArchivedHARSourcesLocked()
 	return &storage.RunArchiveRecord{
 		TestID:               w.manifest.TestID,
 		SchemaVersion:        w.manifest.SchemaVersion,

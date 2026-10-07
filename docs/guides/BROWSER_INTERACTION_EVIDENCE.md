@@ -39,17 +39,20 @@ Each gesture action (`browser_click`, `browser_dblclick`, `browser_tap`,
   by the runtime as synthetic events, which the page cannot tell from
   script, so they are recorded without points (`synthetic_dispatch`). A
   gesture that navigates takes its document's events with it: it is recorded
-  for the document it started in, with that document's context and no points
-  (`document_changed`). Pointer input left by actions that are not gestures
+  for the document it started in, with that document's context (no layout
+  revision) and no points (`document_changed`). Pointer input left by actions that are not gestures
   (a download's click) is discarded when the next gesture starts.
 - **Keyboard targets.** For key, fill, select, set-files and check
   gestures, the role and the SHA-256 of the sanitized label (aria-label,
   associated label, placeholder, name or title, lowercased, digits replaced
   by `#`, whitespace collapsed, at most 64 characters) of the element the
   gesture's own selector resolves to, or, for a key press without one, of
-  the element focused when it began. An element that cannot be resolved is
-  `target_unresolved`; inside a child frame there is no target. No
-  coordinates, and never the element's value.
+  the element focused when it began. An element that cannot be resolved, including
+  one the gesture removed, is `target_unresolved` at once (never waited
+  for); after a gesture that navigated, a selector's target is not resolved
+  in the new document (`document_changed`); inside a child frame there is no
+  target, and a scroll names none. No coordinates, and never the element's
+  value.
 - **Context.** Viewport size, scroll offsets, device scale, the sanitized
   route (the path only, with numeric, UUID, long hexadecimal and
   digit-heavy segments collapsed to `:id`) and a layout revision: a
@@ -63,8 +66,9 @@ Each gesture action (`browser_click`, `browser_dblclick`, `browser_tap`,
   `not_declared`.
 
 The page state is read by a script installed in every document of the
-context: once as the gesture starts (its document and focus), and once after
-it and its wait. Each read is bounded to two seconds, so a busy page never
+context: once as the gesture starts (its document, focus, viewport and
+route, without the layout fingerprint, and outside the action's measured
+duration), and once after it and its wait. Each read is bounded to two seconds, so a busy page never
 stalls the VUser. A record the page could not supply is kept with
 `page_state_unavailable`.
 
@@ -85,7 +89,9 @@ sidecar, and every record in it is counted as dropped.
 A generator declares its sidecar as transferable evidence
 (`browser_interactions_artifact`). At finalization the controller fetches it
 from the live generator within one 64 MiB allowance for the whole run (so the
-merged sidecar stays readable) charged to the transfer reservation, verifies
+merged sidecar stays readable; each source's whole declared sidecar is
+reserved before it streams and returned if it is not kept) charged to the
+transfer reservation, verifies
 its size, SHA-256 and every record, and records an `interaction_evidence`
 receipt. A controller running the test itself writes the sidecar
 directly. It then merges all sources into
