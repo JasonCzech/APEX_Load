@@ -79,20 +79,15 @@ type AnalyticsQuery struct {
 	BucketSeconds int               `json:"bucket_seconds,omitempty"`
 	MaxSeries     int               `json:"max_series,omitempty"`
 	Overlay       bool              `json:"overlay,omitempty"`
+	// Derivation asks for one catalog operation over the query's series
+	// (ratios, baseline deltas, moving statistics); it is validated by the
+	// catalog and evaluated by pkg/analysis.
+	Derivation *analysis.QueryDerivation `json:"derivation,omitempty"`
 }
 
-var dashboardMetrics = map[string]struct{}{
-	"tps": {}, "response_time": {}, "error_rate": {}, "active_vusers": {},
-	"throughput": {}, "bytes_sent": {}, "bytes_received": {}, "regional_activity": {},
-	"observation_rate": {}, "error_observation_rate": {}, "success_observation_rate": {},
-	"observation_count": {}, "transaction_duration": {}, "resource_cpu": {}, "resource_memory": {},
-}
-var dashboardAggregations = map[string]struct{}{
-	"avg": {}, "sum": {}, "min": {}, "max": {}, "p50": {}, "p90": {}, "p95": {}, "p99": {}, "stddev": {}, "count": {}, "rate": {},
-}
-var dashboardDimensions = map[string]struct{}{
-	"action": {}, "transaction": {}, "region": {}, "property": {}, "dependency": {}, "network_profile": {}, "phase": {}, "page": {}, "hierarchy": {},
-}
+// Dashboard metrics, aggregations and dimensions are validated by the
+// analysis catalog (analysis.ValidateDashboardQuery), whose alias table keeps
+// saved display names meaning what they did.
 var dashboardPanelKinds = map[string]struct{}{
 	"line": {}, "stat": {}, "table": {}, "map": {}, "workspace_card": {},
 }
@@ -177,24 +172,17 @@ func validateDashboardDefinition(d *DashboardDefinition) error {
 			} else if q.PropertyName != "" || q.PropertyValue != "" || q.ComparisonRunID != "" || q.StartSeconds != 0 || q.EndSeconds != 0 {
 				return errors.New("archive query fields require an explicit population")
 			}
-			if _, ok := dashboardMetrics[q.Metric]; !ok {
-				return fmt.Errorf("dashboard panel %q uses unsupported metric %q", panel.ID, q.Metric)
+			if err := analysis.ValidateDashboardQuery(q.Metric, q.Aggregation, q.Dimensions, q.Filters); err != nil {
+				return fmt.Errorf("dashboard panel %q: %w", panel.ID, err)
 			}
-			if _, ok := dashboardAggregations[q.Aggregation]; !ok {
-				return fmt.Errorf("dashboard panel %q uses unsupported aggregation %q", panel.ID, q.Aggregation)
-			}
-			if len(q.Dimensions) > 3 || len(q.Filters) > 46 {
-				return fmt.Errorf("dashboard panel %q query exceeds dimension/filter limits", panel.ID)
-			}
-			for _, dimension := range q.Dimensions {
-				if _, ok := dashboardDimensions[dimension]; !ok {
-					return fmt.Errorf("dashboard panel %q uses unsupported dimension %q", panel.ID, dimension)
+			if q.Derivation != nil {
+				// Only a qualified evidence query takes a derivation; the
+				// evidence validators checked it against the catalog.
+				if q.EvidenceMode == "" && q.Population == "" {
+					return fmt.Errorf("dashboard panel %q: derivations need an evidence or archive query", panel.ID)
 				}
 			}
 			for name, value := range q.Filters {
-				if _, ok := dashboardDimensions[name]; !ok {
-					return fmt.Errorf("dashboard panel %q uses unsupported filter %q", panel.ID, name)
-				}
 				if len(value) > 256 {
 					return fmt.Errorf("dashboard panel %q filter %q exceeds its size limit", panel.ID, name)
 				}
@@ -342,6 +330,9 @@ func ValidateNativeArchiveQuery(q AnalyticsQuery) error {
 	if q.EvidenceMode != "" || q.OverlaySelection != nil || q.LiveBucketMode != "" {
 		return errors.New("use the native evidence query for live/grouped overlays")
 	}
+	if q.Population == analysis.PopulationMessage {
+		return validateNativeMessageQuery(q)
+	}
 	if q.Population != "action" && q.Population != "transaction" {
 		return errors.New("select action or transaction population")
 	}
@@ -362,8 +353,35 @@ func ValidateNativeArchiveQuery(q AnalyticsQuery) error {
 	if q.StartSeconds < 0 || q.EndSeconds <= q.StartSeconds || q.EndSeconds > 86400 || q.BucketSeconds < 1 || q.BucketSeconds > 3600 || (q.EndSeconds-q.StartSeconds+q.BucketSeconds-1)/q.BucketSeconds > 1000 {
 		return errors.New("select a window within 24 hours and at most 1000 buckets")
 	}
-	if analysis.ValidateMetricAggregation(q.Metric, q.Population, q.Aggregation) == nil {
-		return nil
+	if analysis.ValidateMetricAggregation(q.Metric, q.Population, q.Aggregation) != nil {
+		return errors.New("unsupported archive measurement or aggregation")
 	}
-	return errors.New("unsupported archive measurement or aggregation")
+	if q.Derivation != nil {
+		return analysis.ValidateQueryDerivation(q.Metric, q.Population, analysis.KindObservation, *q.Derivation, q.ComparisonRunID != "")
+	}
+	return nil
+}
+
+// validateNativeMessageQuery admits an archive message query: received
+// messages from messaging v2 evidence, counted per bucket or as a message
+// ratio derivation, with no grouping and at most a source filter.
+func validateNativeMessageQuery(q AnalyticsQuery) error {
+	if len(q.Dimensions) != 0 || q.Overlay || q.PropertyName != "" || q.PropertyValue != "" || q.ComparisonRunID != "" || q.MaxSeries > 1 || q.MaxSeries < 0 {
+		return errors.New("message queries take no grouping, property or comparison")
+	}
+	for k, v := range q.Filters {
+		if k != "source" || v == "" || len(v) > 256 {
+			return errors.New("message queries filter only by source")
+		}
+	}
+	if q.StartSeconds < 0 || q.EndSeconds <= q.StartSeconds || q.EndSeconds > 86400 || q.BucketSeconds < 1 || q.BucketSeconds > 3600 || (q.EndSeconds-q.StartSeconds+q.BucketSeconds-1)/q.BucketSeconds > 1000 {
+		return errors.New("select a window within 24 hours and at most 1000 buckets")
+	}
+	if err := analysis.ValidateMetricAggregation(q.Metric, q.Population, q.Aggregation); err != nil {
+		return err
+	}
+	if q.Derivation != nil {
+		return analysis.ValidateQueryDerivation(q.Metric, q.Population, analysis.KindObservation, *q.Derivation, false)
+	}
+	return nil
 }

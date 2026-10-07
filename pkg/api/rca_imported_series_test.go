@@ -97,10 +97,10 @@ func TestImportedSeriesKeysAndWindow(t *testing.T) {
 	manifest := &analysis.NormalizedPartitionManifest{Partitions: []analysis.NormalizedPartition{
 		{Stats: analysis.NormalizedPartitionStats{Kind: analysis.KindGauge, Metric: &metric, Identity: identity("h2"), MinTime: at(0), MaxTime: at(50)}},
 		{Stats: analysis.NormalizedPartitionStats{Kind: analysis.KindGauge, Metric: &metric, Identity: identity("h1"), MinTime: at(0), MaxTime: at(50)}},
-		{Stats: analysis.NormalizedPartitionStats{Kind: analysis.KindGauge, Metric: &metric, Identity: identity("h1"), MinTime: at(60), MaxTime: at(90)}}, // same series
+		{Stats: analysis.NormalizedPartitionStats{Kind: analysis.KindGauge, Metric: &metric, Identity: identity("h1"), MinTime: at(60), MaxTime: at(90)}},    // same series
 		{Stats: analysis.NormalizedPartitionStats{Kind: analysis.KindCounter, Metric: &other, Identity: identity("h1"), MinTime: at(500), MaxTime: at(600)}}, // outside
-		{Stats: analysis.NormalizedPartitionStats{Kind: analysis.KindGauge, Identity: identity("h3"), MinTime: at(0), MaxTime: at(10)}},                   // mixed metrics
-		{Stats: analysis.NormalizedPartitionStats{Kind: analysis.KindGauge, Metric: &metric, MinTime: at(0), MaxTime: at(10)}},                           // mixed identities
+		{Stats: analysis.NormalizedPartitionStats{Kind: analysis.KindGauge, Identity: identity("h3"), MinTime: at(0), MaxTime: at(10)}},                      // mixed metrics
+		{Stats: analysis.NormalizedPartitionStats{Kind: analysis.KindGauge, Metric: &metric, MinTime: at(0), MaxTime: at(10)}},                               // mixed identities
 	}}
 	keys, mixed := importedSeriesKeys(manifest, *at(0), *at(100))
 	if mixed != 2 || len(keys) != 2 || keys[0].identity.Host != "h1" || keys[1].identity.Host != "h2" || keys[0].metric != "cpu" || keys[0].kind != analysis.KindGauge {

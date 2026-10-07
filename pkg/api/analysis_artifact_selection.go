@@ -93,6 +93,8 @@ type AnalysisDatasetSeriesResponse struct {
 	DatasetID          string                      `json:"dataset_id"`
 	RejectedRows       int64                       `json:"rejected_rows"`
 	ArtifactSelections []AnalysisArtifactSelection `json:"artifact_selections,omitempty"`
+	// Derived is the requested derivation over the points, on the query grid.
+	Derived *analysis.DerivedSeries `json:"derived,omitempty"`
 }
 type AnalysisComparisonResponse struct {
 	TimeWindow         *AnalysisTimeWindow         `json:"time_window,omitempty"`

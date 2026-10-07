@@ -68,7 +68,7 @@ func (s *Server) verifyNativeQuerySnapshots(ctx context.Context, project string,
 	return nil
 }
 
-func (s *Server) writeNativeDatasetSeries(w http.ResponseWriter, r *http.Request, captured *storage.AnalysisImport, points []analysis.MetricPoint) bool {
+func (s *Server) writeNativeDatasetSeries(w http.ResponseWriter, r *http.Request, captured *storage.AnalysisImport, points []analysis.MetricPoint, derived ...*analysis.DerivedSeries) bool {
 	if captured == nil {
 		writeError(w, 409, "analytical query snapshot mismatch")
 		return false
@@ -88,6 +88,9 @@ func (s *Server) writeNativeDatasetSeries(w http.ResponseWriter, r *http.Request
 		return false
 	}
 	response := AnalysisDatasetSeriesResponse{TimeWindow: completedAnalysisTimeWindow(r.Context()), Points: points, DatasetID: captured.ID, RejectedRows: captured.Rejected, ArtifactSelections: completedAnalysisArtifactSelections(r.Context())}
+	if len(derived) > 0 {
+		response.Derived = derived[0]
+	}
 	writeJSON(w, 200, response)
 	return true
 }

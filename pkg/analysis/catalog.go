@@ -114,6 +114,22 @@ func buildCatalog() MetricCatalog {
 		metrics[i].ResetRule = ResetNotApplicable
 		metrics[i].Baseline, metrics[i].Correlation, metrics[i].SLA = true, true, true
 	}
+	// Message and byte metrics where the engine records evidence: received
+	// messages from messaging v2 evidence, and bytes from interval totals.
+	for _, extra := range []MetricDefinition{
+		{Name: "message_count", Unit: "count", NativeWireUnit: "count", Aggregations: []string{"count"}, Populations: []string{PopulationMessage}, RequiredEvidence: []string{"messaging_evidence.v2_received_messages"}},
+		{Name: "bytes_sent", Unit: "bytes", NativeWireUnit: "bytes", Aggregations: []string{"sum"}, Populations: []string{PopulationByte}, RequiredEvidence: []string{"interval_byte_totals"}},
+		{Name: "bytes_received", Unit: "bytes", NativeWireUnit: "bytes", Aggregations: []string{"sum"}, Populations: []string{PopulationByte}, RequiredEvidence: []string{"interval_byte_totals"}},
+	} {
+		extra.Version = CatalogVersion
+		extra.InputKinds = []string{KindObservation}
+		// No native query profile executes them yet; derivations do.
+		extra.QueryProfiles = []string{}
+		extra.Derivations = []string{"baseline_delta", "baseline_percent_delta", "moving_mean", "moving_stddev"}
+		extra.MissingRule, extra.ResetRule = MissingUnscored, ResetNotApplicable
+		extra.Baseline, extra.Correlation = true, true
+		metrics = append(metrics, extra)
+	}
 	operations := []OperationDefinition{}
 	for _, name := range []string{"avg", "min", "max", "sum", "count"} {
 		unit := "preserve"
@@ -331,4 +347,78 @@ func CompatibleMeasurements(left, right MeasurementSemantics) error {
 		return errors.New("incompatible metric kinds, units, populations or versions")
 	}
 	return nil
+}
+
+// dashboardMetricAliases maps a saved dashboard metric name to the catalog
+// metric it displays. A name mapped to "" is a live display card the catalog
+// does not qualify: it keeps rendering as before and never becomes an
+// analytical measurement or takes a derivation.
+var dashboardMetricAliases = map[string]string{
+	"tps": "observation_rate", "transaction_duration": "response_time",
+	"throughput": "", "active_vusers": "", "regional_activity": "", "resource_cpu": "", "resource_memory": "",
+}
+
+// dashboardAggregationAliases are saved display aggregations the catalog has
+// no typed operation for; they render as before.
+var dashboardAggregationAliases = map[string]bool{"stddev": true}
+
+// dashboardDimensions are the grouping and filter dimensions retained
+// evidence carries (the native query profiles' groupings and filters, plus
+// the transaction and page identities of live cards).
+var dashboardDimensions = []string{"action", "transaction", "region", "property", "dependency", "network_profile", "phase", "page", "hierarchy"}
+
+// DashboardMetric resolves a saved dashboard metric: its catalog metric, and
+// whether it is a qualified catalog measurement (false for a live display
+// card). ok is false for a name neither the catalog nor the alias table knows.
+func DashboardMetric(name string) (canonical string, qualified bool, ok bool) {
+	if _, found := LookupMetric(name); found {
+		return name, true, true
+	}
+	if alias, found := dashboardMetricAliases[name]; found {
+		return alias, alias != "", true
+	}
+	return "", false, false
+}
+
+// ValidateDashboardQuery checks a saved dashboard query against the catalog:
+// a known metric (directly or through its alias), a catalog aggregation (or
+// a preserved display aggregation), and retained dimensions within the
+// catalog's bounds.
+func ValidateDashboardQuery(metric, aggregation string, dimensions []string, filters map[string]string) error {
+	if _, _, ok := DashboardMetric(metric); !ok {
+		return fmt.Errorf("unsupported metric %q", metric)
+	}
+	// Saved panels pair any known metric with any known aggregation; the
+	// evidence query validators qualify the combinations they execute.
+	if !dashboardAggregationAliases[aggregation] && !catalogAggregation(aggregation) {
+		return fmt.Errorf("unsupported aggregation %q", aggregation)
+	}
+	if len(dimensions) > MaxGroupingDimensions || len(filters) > 46 {
+		return errors.New("query exceeds dimension/filter limits")
+	}
+	for _, dimension := range dimensions {
+		if !slices.Contains(dashboardDimensions, dimension) {
+			return fmt.Errorf("unsupported dimension %q", dimension)
+		}
+	}
+	for name := range filters {
+		if !slices.Contains(dashboardDimensions, name) {
+			return fmt.Errorf("unsupported filter %q", name)
+		}
+	}
+	return nil
+}
+
+// catalogAggregation reports whether name is a raw-scalar catalog operation
+// or an aggregation some catalog metric declares.
+func catalogAggregation(name string) bool {
+	if operation, known := lookupOperation(name); known && operation.RawScalar {
+		return true
+	}
+	for _, metric := range canonicalCatalog.Metrics {
+		if slices.Contains(metric.Aggregations, name) {
+			return true
+		}
+	}
+	return false
 }

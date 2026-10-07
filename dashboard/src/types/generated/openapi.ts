@@ -8362,6 +8362,11 @@ export interface operations {
           "aggregation"?: string;
           "bucket_seconds"?: number;
           "dataset_id"?: string;
+          "derivation"?: {
+            "minimum_coverage"?: number;
+            "operation"?: string;
+            "window_buckets"?: number;
+          };
           "dimensions"?: Record<string, string>;
           "from"?: string;
           "host"?: string;
@@ -8392,6 +8397,16 @@ export interface operations {
               "total_objects": number;
             }>;
             "dataset_id": string;
+            "derived"?: ({
+              "buckets": Array<{
+                "from": string;
+                "reason"?: string;
+                "to": string;
+                "value": (number) | null;
+              }>;
+              "operation": string;
+              "unit": string;
+            }) | null;
             "points": Array<{
               "active_runtime_ms"?: (number) | null;
               "dataset_id"?: string;
@@ -92033,6 +92048,11 @@ export interface operations {
           "aggregation"?: string;
           "bucket_seconds"?: number;
           "comparison_run_id"?: string;
+          "derivation"?: ({
+            "minimum_coverage"?: number;
+            "operation"?: string;
+            "window_buckets"?: number;
+          }) | null;
           "dimensions"?: Array<string>;
           "end_seconds"?: number;
           "evidence_mode"?: string;
@@ -92067,11 +92087,13 @@ export interface operations {
                 "count": number;
                 "from": string;
                 "offset_seconds": number;
+                "reason"?: string;
                 "to": string;
                 "value": (number) | null;
               }>;
               "identities": Array<string>;
               "run_id": string;
+              "unit"?: string;
               "warnings": Array<string>;
             }) | null;
             "comparable": boolean;
@@ -92080,13 +92102,20 @@ export interface operations {
                 "count": number;
                 "from": string;
                 "offset_seconds": number;
+                "reason"?: string;
                 "to": string;
                 "value": (number) | null;
               }>;
               "identities": Array<string>;
               "run_id": string;
+              "unit"?: string;
               "warnings": Array<string>;
             };
+            "derivation"?: ({
+              "minimum_coverage"?: number;
+              "operation": string;
+              "window_buckets"?: number;
+            }) | null;
             "removed": Array<string>;
             "warnings": Array<string>;
           };
@@ -92139,6 +92168,11 @@ export interface operations {
           "aggregation"?: string;
           "bucket_seconds"?: number;
           "comparison_run_id"?: string;
+          "derivation"?: ({
+            "minimum_coverage"?: number;
+            "operation"?: string;
+            "window_buckets"?: number;
+          }) | null;
           "dimensions"?: Array<string>;
           "end_seconds"?: number;
           "evidence_mode"?: string;
@@ -92904,6 +92938,7 @@ export interface operations {
                 "aggregation"?: string;
                 "bucket_seconds"?: number;
                 "comparison_run_id"?: string;
+                "derivation"?: (Record<string, unknown>) | null;
                 "dimensions"?: Array<string>;
                 "end_seconds"?: number;
                 "evidence_mode"?: string;

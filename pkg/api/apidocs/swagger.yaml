@@ -22707,6 +22707,18 @@ paths:
                   format: int64
                 dataset_id:
                   type: string
+                derivation:
+                  type: object
+                  properties:
+                    minimum_coverage:
+                      type: number
+                      format: double
+                    operation:
+                      type: string
+                    window_buckets:
+                      type: integer
+                      format: int64
+                  additionalProperties: false
                 dimensions:
                   type: object
                   additionalProperties:
@@ -22787,6 +22799,39 @@ paths:
                         - total_objects
                   dataset_id:
                     type: string
+                  derived:
+                    type: object
+                    properties:
+                      buckets:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            from:
+                              type: string
+                              format: date-time
+                            reason:
+                              type: string
+                            to:
+                              type: string
+                              format: date-time
+                            value:
+                              type: number
+                              format: double
+                              nullable: true
+                          required:
+                            - from
+                            - to
+                            - value
+                      operation:
+                        type: string
+                      unit:
+                        type: string
+                    required:
+                      - buckets
+                      - operation
+                      - unit
+                    nullable: true
                   points:
                     type: array
                     items:
@@ -61507,6 +61552,10 @@ paths:
                                   format: int64
                                 comparison_run_id:
                                   type: string
+                                derivation:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 dimensions:
                                   type: array
                                   items:
@@ -348923,6 +348972,18 @@ paths:
                   format: int64
                 comparison_run_id:
                   type: string
+                derivation:
+                  type: object
+                  properties:
+                    minimum_coverage:
+                      type: number
+                      format: double
+                    operation:
+                      type: string
+                    window_buckets:
+                      type: integer
+                      format: int64
+                  nullable: true
                 dimensions:
                   type: array
                   items:
@@ -349004,6 +349065,8 @@ paths:
                             offset_seconds:
                               type: integer
                               format: int64
+                            reason:
+                              type: string
                             to:
                               type: string
                               format: date-time
@@ -349022,6 +349085,8 @@ paths:
                         items:
                           type: string
                       run_id:
+                        type: string
+                      unit:
                         type: string
                       warnings:
                         type: array
@@ -349052,6 +349117,8 @@ paths:
                             offset_seconds:
                               type: integer
                               format: int64
+                            reason:
+                              type: string
                             to:
                               type: string
                               format: date-time
@@ -349071,6 +349138,8 @@ paths:
                           type: string
                       run_id:
                         type: string
+                      unit:
+                        type: string
                       warnings:
                         type: array
                         items:
@@ -349080,6 +349149,20 @@ paths:
                       - identities
                       - run_id
                       - warnings
+                  derivation:
+                    type: object
+                    properties:
+                      minimum_coverage:
+                        type: number
+                        format: double
+                      operation:
+                        type: string
+                      window_buckets:
+                        type: integer
+                        format: int64
+                    required:
+                      - operation
+                    nullable: true
                   removed:
                     type: array
                     items:
@@ -411250,6 +411333,18 @@ paths:
                   format: int64
                 comparison_run_id:
                   type: string
+                derivation:
+                  type: object
+                  properties:
+                    minimum_coverage:
+                      type: number
+                      format: double
+                    operation:
+                      type: string
+                    window_buckets:
+                      type: integer
+                      format: int64
+                  nullable: true
                 dimensions:
                   type: array
                   items:

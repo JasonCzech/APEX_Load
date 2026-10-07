@@ -19,6 +19,11 @@ type NativeEvidencePoint struct {
 	OffsetSeconds float64   `json:"offset_seconds"`
 	Count         int64     `json:"count"`
 	Value         *float64  `json:"value"`
+	// Reason says why a derived value is unscored.
+	Reason string `json:"reason,omitempty"`
+	// failures and complete are the bucket's derivation inputs.
+	failures int64
+	complete bool
 }
 type NativeEvidenceSeries struct {
 	Name   string                `json:"name"`
@@ -34,9 +39,12 @@ type NativeEvidenceResponse struct {
 	Warnings       []string                               `json:"warnings"`
 	Overlay        []analysis.MetricPoint                 `json:"overlay,omitempty"`
 	Correlation    map[string][]analysis.CorrelationScore `json:"correlation,omitempty"`
-	Start          time.Time                              `json:"start"`
-	From           time.Time                              `json:"from"`
-	To             time.Time                              `json:"to"`
+	// Derivation names the catalog operation the series values are, when the
+	// query asked for one.
+	Derivation *analysis.QueryDerivation `json:"derivation,omitempty"`
+	Start      time.Time                 `json:"start"`
+	From       time.Time                 `json:"from"`
+	To         time.Time                 `json:"to"`
 }
 
 func nativeMetricUnit(q storage.AnalyticsQuery) string {
@@ -47,6 +55,10 @@ func nativeMetricUnit(q storage.AnalyticsQuery) string {
 		return "ms"
 	case "error_rate":
 		return "%"
+	case "message_count":
+		return "count"
+	case "bytes_sent", "bytes_received":
+		return "bytes"
 	default:
 		return "observations"
 	}
@@ -92,6 +104,9 @@ func (s *Server) handleNativeEvidenceSeries(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		result, err = buildNativeGroupedArchive(ctx, record, q)
+	}
+	if err == nil && q.Derivation != nil {
+		err = applyNativeEvidenceDerivation(run.ProjectID, q, &result)
 	}
 	if err == nil && q.OverlaySelection != nil {
 		err = s.attachNativeOverlay(ctx, run.ProjectID, run.ID, q, &result)
@@ -214,6 +229,8 @@ func buildNativeLiveEvidence(ctx context.Context, start time.Time, history []*Li
 			e := h.NativeEvidence
 			if e != nil && (e.Version >= 1 && e.Version <= 3) && e.WindowSeconds > 0 && !e.Incomplete {
 				p.From = h.Timestamp.Add(-time.Duration(e.WindowSeconds * float64(time.Second)))
+				// A complete interval that did not see the selection saw none of it.
+				p.complete = true
 				if m, ok := e.Dimensions[dimension][name]; ok && m.Count > 0 {
 					if m.Errors < 0 || m.Errors > m.Count {
 						return out, errors.New("invalid retained interval counts")
@@ -247,6 +264,7 @@ func buildNativeLiveEvidence(ctx context.Context, start time.Time, history []*Li
 					}
 					p.Value = &value
 					p.Count = m.Count
+					p.failures = m.Errors
 				}
 			} else {
 				unavailable = true
@@ -373,7 +391,8 @@ func buildNativeGroupedArchive(ctx context.Context, record *storage.RunArchiveRe
 			if to.After(out.To) {
 				to = out.To
 			}
-			p := NativeEvidencePoint{From: from, To: to, OffsetSeconds: from.Sub(out.Start).Seconds(), Count: int64(len(b.values))}
+			p := NativeEvidencePoint{From: from, To: to, OffsetSeconds: from.Sub(out.Start).Seconds(), Count: int64(len(b.values)), failures: int64(b.errors),
+				complete: !missing && !to.After(manifest.CompletedAt)}
 			if len(b.values) > 0 {
 				sort.Float64s(b.values)
 				value := 0.0

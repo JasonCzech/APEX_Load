@@ -3,11 +3,14 @@ package api
 import (
 	"context"
 	"errors"
+	"maps"
 	"math"
 	"net/http"
+	"slices"
 	"sort"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -17,21 +20,31 @@ type NativeArchiveBucket struct {
 	OffsetSeconds int       `json:"offset_seconds"`
 	Count         int       `json:"count"`
 	Value         *float64  `json:"value"`
+	// Reason says why a derived value is unscored.
+	Reason string `json:"reason,omitempty"`
+	// subset (failures, or the messages a message ratio counts) and
+	// complete are the bucket's derivation inputs.
+	subset   int64
+	complete bool
 }
 type NativeArchiveSeries struct {
-	RunID       string                `json:"run_id"`
+	RunID string `json:"run_id"`
+	// Unit is set when a derivation changed the series' unit.
+	Unit        string                `json:"unit,omitempty"`
 	Buckets     []NativeArchiveBucket `json:"buckets"`
 	Identities  []string              `json:"identities"`
 	Warnings    []string              `json:"warnings"`
 	Fingerprint string                `json:"-"`
 }
 type NativeArchiveResponse struct {
-	Current    NativeArchiveSeries  `json:"current"`
-	Baseline   *NativeArchiveSeries `json:"baseline,omitempty"`
-	Comparable bool                 `json:"comparable"`
-	Warnings   []string             `json:"warnings"`
-	Added      []string             `json:"added"`
-	Removed    []string             `json:"removed"`
+	// Derivation names the catalog operation the current series values are.
+	Derivation *analysis.QueryDerivation `json:"derivation,omitempty"`
+	Current    NativeArchiveSeries       `json:"current"`
+	Baseline   *NativeArchiveSeries      `json:"baseline,omitempty"`
+	Comparable bool                      `json:"comparable"`
+	Warnings   []string                  `json:"warnings"`
+	Added      []string                  `json:"added"`
+	Removed    []string                  `json:"removed"`
 }
 
 func (s *Server) handleNativeArchiveSeries(w http.ResponseWriter, r *http.Request) {
@@ -91,6 +104,10 @@ func (s *Server) handleNativeArchiveSeries(w http.ResponseWriter, r *http.Reques
 		response.Added = nativeIdentityDifference(series.Identities, baseline.Identities)
 		response.Removed = nativeIdentityDifference(baseline.Identities, series.Identities)
 	}
+	if err := applyNativeArchiveDerivation(current.ProjectID, q, &response); err != nil {
+		writeError(w, 422, err.Error())
+		return
+	}
 	writeJSON(w, 200, response)
 }
 func nativeIdentityDifference(left, right []string) []string {
@@ -137,6 +154,9 @@ func buildNativeArchiveSeries(ctx context.Context, record *storage.RunArchiveRec
 			until = to
 		}
 		result.Buckets = append(result.Buckets, NativeArchiveBucket{From: at, To: until, OffsetSeconds: q.StartSeconds + i*q.BucketSeconds})
+	}
+	if q.Population == analysis.PopulationMessage {
+		return buildNativeMessageSeries(ctx, record, manifest, q, result, from, to, n)
 	}
 	identities := map[string]bool{}
 	missingProperty, unknownPopulation, selected := 0, 0, 0
@@ -192,6 +212,8 @@ func buildNativeArchiveSeries(ctx context.Context, record *storage.RunArchiveRec
 	}
 	for i, v := range values {
 		result.Buckets[i].Count = len(v)
+		result.Buckets[i].subset = int64(failures[i])
+		result.Buckets[i].complete = missingProperty == 0 && unknownPopulation == 0 && !result.Buckets[i].To.After(manifest.CompletedAt)
 		if len(v) == 0 {
 			continue
 		}
@@ -239,6 +261,97 @@ func buildNativeArchiveSeries(ctx context.Context, record *storage.RunArchiveRec
 	}
 	if manifest.SourceCoverage != nil {
 		result.Warnings = append(result.Warnings, "Review archive source coverage before interpreting this selection.")
+	}
+	return result, nil
+}
+
+// buildNativeMessageSeries reads received messages from the archive's
+// messaging v2 evidence, per bucket: the received messages a client observed
+// and, for a message ratio derivation, the messages its counter counted among
+// the observed ones. A bucket is complete only when every selected dimension
+// carried complete v2 evidence and the counter observed every eligible
+// message; nothing missing becomes zero.
+func buildNativeMessageSeries(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, q storage.AnalyticsQuery, result NativeArchiveSeries, from, to time.Time, n int) (NativeArchiveSeries, error) {
+	counter := ""
+	if q.Derivation != nil {
+		counter, _ = analysis.MessageRatioCounter(q.Derivation.Operation)
+	}
+	summaries, err := readAllArchiveSummariesContext(ctx, record)
+	if err != nil {
+		return result, err
+	}
+	evidenced, incomplete, counted := make([]bool, n), make([]bool, n), make([]bool, n)
+	received, observed, subset := make([]int64, n), make([]int64, n), make([]int64, n)
+	sources := map[string]bool{}
+	for _, summary := range summaries {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
+		if summary.Timestamp.Before(from) || !summary.Timestamp.Before(to) {
+			continue
+		}
+		i := int(summary.Timestamp.Sub(from)/time.Second) / q.BucketSeconds
+		for _, name := range slices.Sorted(maps.Keys(summary.Messaging)) {
+			messaging := summary.Messaging[name]
+			if messaging == nil {
+				continue
+			}
+			if messaging.Incomplete {
+				incomplete[i] = true
+			}
+			for _, d := range messaging.Dimensions {
+				if source := q.Filters["source"]; source != "" && d.Source != source {
+					continue
+				}
+				sources[d.Source] = true
+				if d.Evidence == nil {
+					// Messaging v1 summaries count operations only.
+					incomplete[i] = true
+					continue
+				}
+				evidenced[i] = true
+				incomplete[i] = incomplete[i] || d.Evidence.Incomplete
+				received[i] += d.Received
+				for _, c := range d.Evidence.Counters {
+					if counter == "" || c.Metric != counter || c.Population != "received_message" {
+						continue
+					}
+					counted[i] = true
+					incomplete[i] = incomplete[i] || c.Observed != c.Eligible
+					observed[i] += c.Observed
+					subset[i] += c.Count
+				}
+			}
+		}
+	}
+	any := false
+	for i := range result.Buckets {
+		b := &result.Buckets[i]
+		b.complete = evidenced[i] && !incomplete[i] && (counter == "" || counted[i]) && !b.To.After(manifest.CompletedAt)
+		if !evidenced[i] {
+			continue
+		}
+		any = true
+		count := received[i]
+		if counter != "" {
+			count = observed[i]
+		}
+		b.Count, b.subset = int(count), subset[i]
+		value := float64(received[i])
+		b.Value = &value
+	}
+	for source := range sources {
+		result.Identities = append(result.Identities, source)
+	}
+	sort.Strings(result.Identities)
+	if !any {
+		result.Warnings = append(result.Warnings, "No messaging v2 evidence in the window; missing evidence is not zero.")
+	}
+	if counter == "duplicate" {
+		result.Warnings = append(result.Warnings, "Duplicates are counted within each consumer's local sequence window, so the ratio is a lower bound.")
+	}
+	if to.After(manifest.CompletedAt) {
+		result.Warnings = append(result.Warnings, "The requested window extends past run completion.")
 	}
 	return result, nil
 }

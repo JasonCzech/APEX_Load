@@ -68,6 +68,9 @@ type SeriesQuery struct {
 	To                    time.Time         `json:"to"`
 	BucketSeconds         int               `json:"bucket_seconds"`
 	Aggregation           string            `json:"aggregation"`
+	// Derivation is evaluated by the controller over the worker's points
+	// with the same pkg/analysis functions; it never reaches the worker.
+	Derivation *analysis.QueryDerivation `json:"derivation,omitempty"`
 }
 type Preview struct {
 	Schema  analysis.ParquetSchemaPreview `json:"schema"`

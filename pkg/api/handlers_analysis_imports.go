@@ -806,6 +806,8 @@ func (s *Server) handleAnalysisDatasetSeries(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	query.ProjectID, query.DatasetID = in.ProjectID, in.ID
+	derivation := query.Derivation
+	query.Derivation = nil
 	query, err := bindImportedNativeSeriesQuery(in, query)
 	if err != nil {
 		writeError(w, 422, err.Error())
@@ -823,5 +825,55 @@ func (s *Server) handleAnalysisDatasetSeries(w http.ResponseWriter, r *http.Requ
 		writeError(w, 422, err.Error())
 		return
 	}
-	s.writeNativeDatasetSeries(w, r, in, points)
+	var derived *analysis.DerivedSeries
+	if derivation != nil {
+		series, err := importedDerivation(in, query, points, *derivation)
+		if err != nil {
+			writeError(w, 422, err.Error())
+			return
+		}
+		derived = &series
+	}
+	s.writeNativeDatasetSeries(w, r, in, points, derived)
+}
+
+// importedDerivation evaluates a derivation over an imported series on its
+// query grid: a counter's reset-aware delta or rate (the query reads each
+// bucket's highest reading; a dataset revision is one counter epoch per
+// identity), or moving statistics of a scalar series. Missing buckets stay
+// missing.
+func importedDerivation(in *storage.AnalysisImport, query analytics.SeriesQuery, points []analysis.MetricPoint, derivation analysis.QueryDerivation) (analysis.DerivedSeries, error) {
+	kind, unit := analysis.KindGauge, ""
+	if len(points) > 0 {
+		kind, unit = points[0].Kind, points[0].Unit
+	}
+	if err := analysis.ValidateQueryDerivation(query.Metric, points0Population(points), kind, derivation, false); err != nil {
+		return analysis.DerivedSeries{}, err
+	}
+	if kind == analysis.KindCounter && query.Aggregation != "max" {
+		return analysis.DerivedSeries{}, errors.New("counter derivations read each bucket's highest reading; query with aggregation max")
+	}
+	step := time.Duration(query.BucketSeconds) * time.Second
+	series := analysis.DerivationSeries{ProjectID: in.ProjectID, Source: "dataset:" + in.ID, MetricName: query.Metric, Population: points0Population(points), Kind: kind, Unit: unit,
+		CounterEpoch: fmt.Sprintf("dataset:%s@%d", in.ID, in.Revision)}
+	byStart := map[time.Time]analysis.MetricPoint{}
+	for _, p := range points {
+		byStart[p.TimestampUTC.UTC()] = p
+	}
+	for at := query.From.UTC().Truncate(step); at.Before(query.To); at = at.Add(step) {
+		bucket := analysis.DerivationBucket{From: at, To: at.Add(step)}
+		if p, ok := byStart[at]; ok && p.Value != nil && p.Quality == analysis.QualityValid {
+			value := *p.Value
+			bucket.Value, bucket.Complete = &value, true
+		}
+		series.Buckets = append(series.Buckets, bucket)
+	}
+	return analysis.ApplyQueryDerivation(series, derivation, nil)
+}
+
+func points0Population(points []analysis.MetricPoint) string {
+	if len(points) > 0 {
+		return points[0].Population
+	}
+	return ""
 }

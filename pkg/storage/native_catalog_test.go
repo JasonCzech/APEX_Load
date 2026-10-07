@@ -8,6 +8,16 @@ import (
 
 func TestNativeQueryUsesCanonicalMetricCatalog(t *testing.T) {
 	for _, metric := range analysis.Catalog().Metrics {
+		// Message and byte metrics have no native query profile: received
+		// messages are read by the archive message query, bytes by no native
+		// query yet.
+		if len(metric.QueryProfiles) == 0 {
+			q := AnalyticsQuery{Population: metric.Populations[0], Metric: metric.Name, Aggregation: metric.Aggregations[0], EndSeconds: 60, BucketSeconds: 1, MaxSeries: 1}
+			if err := ValidateNativeArchiveQuery(q); (metric.Name == "message_count") != (err == nil) {
+				t.Fatalf("native archive query for %s: %v", metric.Name, err)
+			}
+			continue
+		}
 		for _, population := range metric.Populations {
 			for _, aggregation := range metric.Aggregations {
 				t.Run(metric.Name+"/"+population+"/"+aggregation, func(t *testing.T) {
@@ -34,6 +44,9 @@ func TestNativeQueryUsesCanonicalMetricCatalog(t *testing.T) {
 func TestCatalogQueryProfilesMatchNativeValidators(t *testing.T) {
 	for _, metric := range analysis.Catalog().Metrics {
 		for _, profile := range analysis.Catalog().QueryProfiles {
+			if !slices.Contains(metric.QueryProfiles, profile.ID) {
+				continue
+			}
 			for _, aggregation := range metric.Aggregations {
 				if !slices.Contains(profile.AllowedAggregations, aggregation) {
 					continue

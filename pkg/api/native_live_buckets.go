@@ -251,7 +251,8 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 					coverage = math.Min(coverage, math.Min(1, float64(covered)/float64(to.Sub(from))))
 				}
 			}
-			p := NativeEvidencePoint{From: from, To: to, OffsetSeconds: from.Sub(start).Seconds(), Coverage: &coverage}
+			p := NativeEvidencePoint{From: from, To: to, OffsetSeconds: from.Sub(start).Seconds(), Coverage: &coverage, failures: b.errors,
+				complete: coverage >= 1 && !invalid[i] && !b.invalid && !rateUnsafe[i]}
 			if b.count > 0 && !invalid[i] && !b.invalid && (!storage.IsNativeObservationRate(q.Metric) || coverage >= 1 && !rateUnsafe[i]) {
 				value := b.sum / float64(b.count)
 				switch q.Metric {
