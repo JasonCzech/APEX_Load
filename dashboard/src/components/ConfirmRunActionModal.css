@@ -15,8 +15,8 @@
 .confirm-run-action-target span {
   font-size: 11px;
   color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.05em);
   font-weight: 700;
 }
 

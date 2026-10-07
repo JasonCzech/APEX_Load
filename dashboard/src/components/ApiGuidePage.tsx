@@ -74,7 +74,8 @@ function HelpArticleContent({ article, section, isAdmin }: { article: HelpArticl
   const source = state.source && article.id === 'api-overview' && validURL ? state.source.split('http://localhost:8080/api/v1').join(controllerURL.replace(/\/$/, '')) : state.source || ''
   const blocks = useMemo(() => articleBlocks(displayArticle, source), [displayArticle, source])
   return <>
-    <header className="help-article-header"><div><p className="api-guide-kicker">{displayArticle.group || 'Guide'}</p><h2>{displayArticle.title}</h2></div>
+    {/* The section list marks the open article, so its title is for screen readers only. */}
+    <header className="help-article-header"><h2 className="sr-only">{displayArticle.title}</h2>
       <button type="button" className="btn btn-secondary btn-sm" onClick={async () => {
         const url = `${window.location.href.split('#')[0]}${helpArticleHash(displayArticle, section)}`
         setCopied(await copyTextToClipboard(url) ? 'Link copied' : 'Copy unavailable. Copy the address from your browser.')

@@ -26,16 +26,20 @@ function ruleReceipt(tree: Root) {
   return rules
 }
 
-const consumers = ['AccessPage', 'AccessNavigation', 'AccessIssuedKeyModal', 'AccessUsagePanel', 'AuditEventTable', 'CapacityCommitments']
+const consumers = ['AccessPage', 'AccessNavigation', 'AccessIssuedKeyModal', 'AccessUsagePanel', 'AuditEventTable', 'CapacityCommitments', 'FeatureAccessPanel']
 
 describe('access stylesheet ownership and preservation', () => {
   it('preserves the original scoped declarations, media contexts and rule order', async () => {
     const css = await stylesheet('./Access.css')
     // This fingerprint was frozen from the pre-split Pages.css AST, including
-    // the access-only clone of the unchanged mixed 980px responsive rule.
+    // the access-only clone of the unchanged mixed 980px responsive rule. It was
+    // re-frozen for the shared-theme pass: label case/tracking became the
+    // --label-case/--label-tracking tokens, the pill-style .access-navigation
+    // rules gave way to the shared section list, and .access-load-older styles
+    // the end of server-batched event tables.
     // @ts-expect-error Style contracts run in Node; application sources omit Node types.
     const { createHash } = await import('node:crypto')
-    expect(createHash('sha256').update(JSON.stringify(ruleReceipt(css))).digest('hex')).toBe('5d272f68a439f703ebad1eb97e30031d71162af9451ea114c74443a98fdc01ea')
+    expect(createHash('sha256').update(JSON.stringify(ruleReceipt(css))).digest('hex')).toBe('0531294262b16a93c2f9f731d2c17aac502ae6e988312162d8cae55bc9678beb')
     css.walkRules(rule => { expect(rule.selectors.every(selector => /^\.access-[a-z0-9-]+(?:$|[^a-z0-9-])/i.test(selector))).toBe(true) })
   })
 

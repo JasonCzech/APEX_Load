@@ -72,7 +72,7 @@ test('the repository view renders a freshly created project', async ({ page, req
   // Assert on the project's own name rather than on chrome: a shell that renders
   // while the data call fails would satisfy a chrome-only assertion.
   await expect(
-    page.getByText(`${workspace.label} project`, { exact: false }).first(),
+    page.locator('main').getByText(`${workspace.label} project`, { exact: false }).filter({ visible: true }).first(),
     'the repository view must show the project that was just created',
   ).toBeVisible({ timeout: 15_000 })
 })
@@ -176,7 +176,7 @@ test('the UI creates and scopes the complete workspace hierarchy', async ({ page
   await expect.poll(() => routeScope(page.url()).get('releaseId')).toBe(releaseId)
 
   await page.getByRole('button', { name: 'Repository', exact: true }).click()
-  await expect(page.getByRole('heading', { level: 1, name: 'Application Repository' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('heading', { level: 1, name: 'Repository' })).toBeVisible({ timeout: 15_000 })
 
   const repositoryTabs = page.getByRole('tablist', { name: 'Repository asset types' })
   await repositoryTabs.getByRole('tab', { name: /Projects/ }).click()

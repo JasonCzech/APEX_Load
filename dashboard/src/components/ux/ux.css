@@ -148,4 +148,4 @@
 
 .library-filter:has(select) { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
 
-.library-filter > span { color: var(--text-muted); font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.library-filter > span { color: var(--text-muted); font-size: 11px; font-weight: 700; letter-spacing: var(--label-tracking, .05em); text-transform: var(--label-case, uppercase); }

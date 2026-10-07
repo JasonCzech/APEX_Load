@@ -46,6 +46,8 @@ export function useAccessWorkspace(
   )
   const setActivitySubTab = useCallback((tab: ActivitySubTab) => change(tab), [change])
   return {
+    view: current,
+    setView: change,
     activeTab,
     userSubTab,
     serviceAccountSubTab,

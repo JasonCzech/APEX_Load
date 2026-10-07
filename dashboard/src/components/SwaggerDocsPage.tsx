@@ -131,7 +131,7 @@ export default function SwaggerDocsPage({
     <div className="page swagger-docs-page help-page">
       {!hasTopbar && <ApiGuideTopbarToggle active="swagger" includeAdminGuide={isAdmin} />}
       <HelpWorkspace area="general" activeArticle="api-reference" isAdmin={isAdmin}>
-      <header className="help-article-header"><h2>API Reference (OpenAPI)</h2></header>
+      <h2 className="sr-only">API Reference (OpenAPI)</h2>
       {!docsState && (
         <section className="api-guide-callout">
           <h3>{loadError ? 'API Docs Unavailable' : 'Loading API Docs'}</h3>
@@ -144,7 +144,6 @@ export default function SwaggerDocsPage({
         <>
       <section className="swagger-docs-hero" aria-labelledby="swagger-docs-title">
         <div>
-          <span className="api-guide-kicker">OpenAPI</span>
           <h3 id="swagger-docs-title">{document.title}</h3>
           <p>{document.serverUrl || 'http://localhost:8080'} · API schema version {document.version || '1.0.0'} (separate from the application build)</p>
         </div>
@@ -183,7 +182,7 @@ export default function SwaggerDocsPage({
 
       <section className="swagger-docs-results" aria-live="polite">
         <div className="api-guide-section-header">
-          <h3>API Reference</h3>
+          <h3 className="sr-only">API Reference</h3>
           <p>{filteredOperations.length} endpoint{filteredOperations.length === 1 ? '' : 's'} shown. All registered routes are included by default. Query/header names and types, request media/top-level fields, declared response statuses/media, and access requirements are generated from route and handler code; detailed validation rules remain handler-defined.</p>
         </div>
         {filteredOperations.length === 0 ? (

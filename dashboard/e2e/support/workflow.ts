@@ -124,7 +124,7 @@ export async function createWorkspaceUI(page: Page, request: APIRequestContext, 
   await expect.poll(() => routeScope(page.url()).get('releaseId')).toBe(releaseId)
 
   await page.getByRole('button', { name: 'Repository', exact: true }).click()
-  await expect(page.getByRole('heading', { level: 1, name: 'Application Repository' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('heading', { level: 1, name: 'Repository' })).toBeVisible({ timeout: 15_000 })
 
   const repositoryTabs = page.getByRole('tablist', { name: 'Repository asset types' })
   await repositoryTabs.getByRole('tab', { name: /Projects/ }).click()
@@ -158,6 +158,15 @@ export async function login(page: Page, username = 'admin') {
   await page.getByLabel('Password').fill(username)
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
+}
+/** The collapsed sidebar keeps the account card, with Sign out, behind its avatar; open it. */
+export async function showAccountCard(page: Page) {
+  const account = page.getByRole('button', { name: /Open account details$/ })
+  if (await account.isVisible()) await account.click()
+}
+export async function signOut(page: Page) {
+  await showAccountCard(page)
+  await page.getByRole('button', { name: 'Sign out' }).click()
 }
 export async function seedScript(request: APIRequestContext, workspace: Workspace, name = 'Workflow_HTTP', baseURL = 'http://127.0.0.1:1', path = '/orders') {
   return idOf(await json(await request.post('/api/v1/scripts', { data: {

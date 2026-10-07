@@ -7,7 +7,12 @@ function hasLabel(children: ReactNode): boolean {
 }
 
 /** A native button with theme-aware help available to both pointer and keyboard users. */
-const TooltipButton = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement>>(function TooltipButton({ title, children, disabled, 'aria-describedby': describedBy, ...props }, ref) {
+type TooltipButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+  /** Where the popup opens: centred below the button (default) or beside it on the right. */
+  tooltipPlacement?: 'below' | 'right'
+}
+
+const TooltipButton = forwardRef<HTMLButtonElement, TooltipButtonProps>(function TooltipButton({ title, children, disabled, tooltipPlacement = 'below', 'aria-describedby': describedBy, ...props }, ref) {
   const id = useId()
   const anchor = useRef<HTMLButtonElement | null>(null)
   const popup = useRef<HTMLDivElement>(null)
@@ -24,6 +29,10 @@ const TooltipButton = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLBut
       const box = anchor.current?.getBoundingClientRect()
       const tip = popup.current?.getBoundingClientRect()
       if (!box || !tip) return
+      if (tooltipPlacement === 'right') {
+        setPosition({ left: Math.min(box.right + 8, window.innerWidth - tip.width - 8), top: Math.max(8, Math.min(box.top + (box.height - tip.height) / 2, window.innerHeight - tip.height - 8)) })
+        return
+      }
       setPosition({ left: Math.max(8, Math.min(box.left + (box.width - tip.width) / 2, window.innerWidth - tip.width - 8)), top: box.bottom + tip.height + 8 < window.innerHeight ? box.bottom + 8 : Math.max(8, box.top - tip.height - 8) })
     }
     const dismiss = (event: KeyboardEvent) => { if (event.key === 'Escape') { clearTimeout(timer.current); setOpen(false) } }
@@ -32,7 +41,7 @@ const TooltipButton = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLBut
     window.addEventListener('scroll', place, true)
     document.addEventListener('keydown', dismiss)
     return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); document.removeEventListener('keydown', dismiss) }
-  }, [open, title])
+  }, [open, title, tooltipPlacement])
   const description = [describedBy, open && title ? id : undefined].filter(Boolean).join(' ') || undefined
   const button = <button {...props} ref={node => { anchor.current = node; if (typeof ref === 'function') ref(node); else if (ref) ref.current = node }} disabled={disabled}
     data-tooltip={title} aria-describedby={description} aria-label={props['aria-label'] || (hasLabel(children) ? undefined : title)}

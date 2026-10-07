@@ -313,8 +313,9 @@ describe('AppShell hook-order stability across navigation', () => {
   }
 
   async function clickNav(label: string) {
+    // Match the accessible name: the collapsed rail shows icons only.
     const button = Array.from(container.querySelectorAll<HTMLButtonElement>('.sidebar-nav button')).find(
-      (el) => el.textContent?.trim() === label,
+      (el) => el.getAttribute('aria-label') === label,
     )
     expect(button, `expected a sidebar nav button labelled "${label}"`).toBeTruthy()
     await act(async () => {
@@ -809,7 +810,7 @@ describe('AppShell hook-order stability across navigation', () => {
     })
     await flush()
 
-    const activeNavLabel = () => container.querySelector('.sidebar-nav [aria-current="page"]')?.textContent?.trim()
+    const activeNavLabel = () => container.querySelector('.sidebar-nav [aria-current="page"]')?.getAttribute('aria-label')
     const workspaceTab = (label: string) => Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
       .find(button => button.textContent?.includes(label))
 
@@ -862,7 +863,7 @@ describe('AppShell hook-order stability across navigation', () => {
     const activeNav = container.querySelector('.sidebar-nav [aria-current="page"]')
     expect(selectedTab?.textContent).toContain('Load Impact')
     expect(window.location.hash).toBe(`#/test/run-b?tab=load-impact&${projectBWorkspaceQuery}`)
-    expect(activeNav?.textContent).toContain('Results')
+    expect(activeNav?.getAttribute('aria-label')).toContain('Results')
     expect(readAppHistoryIndex(window.history.state)).toBe(0)
   })
 
@@ -903,8 +904,8 @@ describe('AppShell hook-order stability across navigation', () => {
     await clickNav('Scenarios')
     expect(currentPage()).toBe('page-tests')
     expect(readAppHistoryIndex(window.history.state)).toBe(1)
-    expect(container.querySelector('main h1')?.textContent).toContain('Scenario Library')
-    expect(document.title).toBe('Scenario Library | APEX Load')
+    expect(container.querySelector('main h1')?.textContent).toContain('Scenarios')
+    expect(document.title).toBe('Scenarios | APEX Load')
     expect(document.activeElement).toBe(container.querySelector('main'))
 
     const oldURL = window.location.href

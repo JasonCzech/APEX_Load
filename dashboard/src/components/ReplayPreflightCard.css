@@ -7,11 +7,11 @@
 }
 
 .replay-preflight-card.ready {
-  border-color: rgba(34, 197, 94, 0.28);
+  border-color: rgba(var(--success-rgb), 0.28);
 }
 
 .replay-preflight-card.attention {
-  border-color: rgba(245, 158, 11, 0.38);
+  border-color: rgba(var(--warning-rgb), 0.38);
 }
 
 .replay-preflight-header,
@@ -55,7 +55,7 @@
 }
 
 .replay-preflight-alerts span {
-  border-color: rgba(245, 158, 11, 0.42);
+  border-color: rgba(var(--warning-rgb), 0.42);
   color: var(--warning);
 }
 
@@ -82,15 +82,15 @@
 }
 
 .replay-preflight-check.pass {
-  border-color: rgba(34, 197, 94, 0.24);
+  border-color: rgba(var(--success-rgb), 0.24);
 }
 
 .replay-preflight-check.warn {
-  border-color: rgba(245, 158, 11, 0.32);
+  border-color: rgba(var(--warning-rgb), 0.32);
 }
 
 .replay-preflight-check.fail {
-  border-color: rgba(239, 68, 68, 0.32);
+  border-color: rgba(var(--danger-rgb), 0.32);
 }
 
 .replay-preflight-check span {
@@ -114,8 +114,8 @@
 .replay-preflight-card .replay-detail-label {
   color: var(--text-muted);
   font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.05em);
 }
 @media (max-width: 600px) { .replay-preflight-header { flex-direction: column; } }
 

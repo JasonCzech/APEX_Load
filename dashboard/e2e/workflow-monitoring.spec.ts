@@ -1,4 +1,4 @@
-import { test, expect, json, login, seedScript, seedScenario } from './support/workflow'
+import { test, expect, json, login, seedScript, seedScenario, showAccountCard } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 import { abortLiveRun, startLiveRun } from './support/liveRun'
 
@@ -407,7 +407,7 @@ test('Monitoring preserves repeated keyboard navigation and calendar context', a
   await expect(controlPlane).not.toContainText('0.0.0.0:8080')
   const tabs = page.getByRole('tablist', { name: 'Monitor categories' })
   await tabs.getByRole('tab', { name: 'Overview', exact: true }).focus()
-  for (const name of ['Fleet', 'Telemetry', 'Alerts', 'Analysis', 'Schedules']) {
+  for (const name of ['Fleet', 'Telemetry', 'Alerts', 'Schedules']) {
     await page.keyboard.press('ArrowRight')
     await expect(tabs.getByRole('tab', { name, exact: true })).toBeFocused()
   }
@@ -696,6 +696,7 @@ test('Service Bus authoring preserves explicit queue and subscription approval, 
   await page.setViewportSize({ width: 375, height: 900 })
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') {
+    await showAccountCard(page)
     const identity = page.locator('.sidebar-identity')
     await expect(identity).toBeVisible()
     await expect.poll(() => identity.evaluate(element => {
@@ -710,6 +711,7 @@ test('Service Bus authoring preserves explicit queue and subscription approval, 
       const action = element.getBoundingClientRect()
       return action.left >= rail.left && action.right <= rail.right + 1
     })).toBe(true)
+    await page.keyboard.press('Escape')
   }
   const approval = sources.getByRole('group', { name: 'Service Bus management approval', exact: true })
   await expect.poll(() => approval.evaluate(element => element.getBoundingClientRect().right <= window.innerWidth + 1)).toBe(true)
@@ -806,6 +808,7 @@ test('Solace authoring preserves explicit VPN queue and topic-endpoint approval,
   await page.setViewportSize({ width: 375, height: 900 })
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') {
+    await showAccountCard(page)
     const identity = page.locator('.sidebar-identity')
     await expect(identity).toBeVisible()
     await expect.poll(() => identity.evaluate(element => {
@@ -820,6 +823,7 @@ test('Solace authoring preserves explicit VPN queue and topic-endpoint approval,
       const action = element.getBoundingClientRect()
       return action.left >= rail.left && action.right <= rail.right + 1
     })).toBe(true)
+    await page.keyboard.press('Escape')
   }
   const approval = sources.getByRole('group', { name: 'Solace management approval', exact: true })
   await expect.poll(() => approval.evaluate(element => element.getBoundingClientRect().right <= window.innerWidth + 1)).toBe(true)

@@ -1,3 +1,35 @@
+@font-face {
+  font-family: 'ATT Aleck Sans';
+  src: url('/fonts/att/ATTAleckSans_W_Rg.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'ATT Aleck Sans';
+  src: url('/fonts/att/ATTAleckSans_W_Md.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'ATT Aleck Sans';
+  src: url('/fonts/att/ATTAleckSans_W_Bd.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'ATT Aleck Sans';
+  src: url('/fonts/att/ATTAleckSans_W_Blk.woff2') format('woff2');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   /* Premium Dark Theme (OLED / Deep Space) */
   --bg-primary: #050508;
@@ -21,6 +53,10 @@
   --text: var(--text-primary);
   --warning-soft: var(--warning-bg);
   --radius-sm: 8px;
+  /* Shared style for every theme: themes only change colour. */
+  --font-sans: 'ATT Aleck Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --label-case: none;
+  --label-tracking: normal;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
   
   --text-primary: #f8fafc;
@@ -66,8 +102,12 @@
   --theme-toggle-active-bg: #ffffff;
   --theme-toggle-active-text: #0f1117;
   
-  --glow-sm: 0 0 12px rgba(139, 92, 246, 0.15);
-  --glow-md: 0 4px 24px rgba(139, 92, 246, 0.25);
+  --glow-sm: 0 0 0 3px rgba(var(--accent-rgb), 0.15);
+  --glow-md: 0 6px 20px rgba(var(--accent-rgb), 0.12);
+  --brand-highlight: var(--accent);
+  --tab-link: var(--info-text);
+  --tag-bg: var(--info-bg);
+  --tag-text: var(--info-text);
   --shadow-sm: 0 8px 24px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 16px 48px rgba(0, 0, 0, 0.6);
   --modal-backdrop: rgba(0, 0, 0, 0.75);
@@ -99,88 +139,93 @@
   --run-calendar-ad-hoc-border: color-mix(in srgb, var(--chart-3) 48%, var(--border));
   --run-calendar-ad-hoc-text: var(--chart-3);
 
-  --radius: 12px;
+  --radius: 16px;
   --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-spring: 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   color-scheme: dark;
 }
 
 :root[data-theme='light'] {
-  /* Sleek Light Theme (Pearl / Glass) */
-  --bg-primary: #f8fafc;
-  --bg-secondary: #f1f5f9;
-  --bg-card: rgba(255, 255, 255, 0.85);
-  --bg-surface: rgba(255, 255, 255, 0.95);
+  /* AT&T-inspired Light Theme (palette sampled from att.com) */
+  /* AT&T colour roles: AT&T blue highlight, link-blue tabs, cyan tags. */
+  --brand-highlight: #009fdb;
+  --tab-link: #0072b2;
+  --tag-bg: #baeefc;
+  --tag-text: #1d2329;
+  --bg-primary: #f3f4f6;
+  --bg-secondary: #ffffff;
+  --bg-card: rgba(255, 255, 255, 1);
+  --bg-surface: rgba(255, 255, 255, 1);
   --bg-elevated: #ffffff;
-  --bg-hover: rgba(0, 0, 0, 0.03);
-  --border: rgba(0, 0, 0, 0.08);
-  --border-subtle: rgba(0, 0, 0, 0.04);
-  --subtle-fill: rgba(15, 23, 42, 0.035);
-  --subtle-fill-strong: rgba(15, 23, 42, 0.07);
-  
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #5f6f85;
-  
-  /* Electric Indigo Accent */
-  --accent: #4f46e5;
-  --accent-rgb: 79, 70, 229;
-  --accent-soft: rgba(79, 70, 229, 0.08);
-  --accent-border: rgba(79, 70, 229, 0.25);
+  --bg-hover: rgba(0, 114, 178, 0.06);
+  --border: #dcdfe3;
+  --border-subtle: #eceef1;
+  --subtle-fill: rgba(29, 35, 41, 0.035);
+  --subtle-fill-strong: rgba(29, 35, 41, 0.07);
+
+  --text-primary: #1d2329;
+  --text-secondary: #454b52;
+  --text-muted: #5a6068;
+
+  /* AT&T Cobalt Accent (primary CTA) */
+  --accent: #00388f;
+  --accent-rgb: 0, 56, 143;
+  --accent-soft: rgba(0, 114, 178, 0.09);
+  --accent-border: rgba(0, 56, 143, 0.3);
   --accent-contrast: #ffffff;
-  --accent-hover: #4338ca;
+  --accent-hover: #002a6b;
 
   /* State Colors */
-  --success: #059669;
-  --success-rgb: 5, 150, 105;
-  --warning: #d97706;
-  --warning-rgb: 217, 119, 6;
-  --danger: #dc2626;
-  --danger-rgb: 220, 38, 38;
-  --info: #2563eb;
-  --info-rgb: 37, 99, 235;
+  --success: #2d7e24;
+  --success-rgb: 45, 126, 36;
+  --warning: #b35900;
+  --warning-rgb: 179, 89, 0;
+  --danger: #c70032;
+  --danger-rgb: 199, 0, 50;
+  --info: #0072b2;
+  --info-rgb: 0, 114, 178;
 
-  /* Chart Colors */
-  --chart-1: #4f46e5;
-  --chart-2: #059669;
-  --chart-3: #d97706;
-  --chart-4: #dc2626;
-  --chart-5: #2563eb;
-  --chart-6: #db2777;
+  /* Chart Colors (AT&T brand family) */
+  --chart-1: #00388f;
+  --chart-2: #2d7e24;
+  --chart-3: #ea7400;
+  --chart-4: #c70032;
+  --chart-5: #009fdb;
+  --chart-6: #af29bb;
 
-  /* Premium Effects */
-  --app-sheen: rgba(79, 70, 229, 0.03);
-  --topbar-bg: rgba(248, 250, 252, 0.75);
-  --control-bg: rgba(0, 0, 0, 0.03);
-  --control-hover: rgba(0, 0, 0, 0.06);
-  --theme-toggle-active-bg: #0f172a;
+  /* Effects */
+  --app-sheen: transparent;
+  --topbar-bg: #ffffff;
+  --control-bg: #ffffff;
+  --control-hover: #f2fafd;
+  --theme-toggle-active-bg: #00388f;
   --theme-toggle-active-text: #ffffff;
-  
-  --glow-sm: 0 0 16px rgba(79, 70, 229, 0.1);
-  --glow-md: 0 8px 32px rgba(79, 70, 229, 0.15);
-  --shadow-sm: 0 4px 16px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 12px 36px rgba(0, 0, 0, 0.12);
-  --modal-backdrop: rgba(15, 23, 42, 0.4);
-  --focus-ring: rgba(99, 102, 241, 0.6);
-  
-  --code-bg: #f1f5f9;
-  --code-text: #1e293b;
 
-  --success-bg: rgba(16, 185, 129, 0.1);
-  --success-border: rgba(16, 185, 129, 0.2);
-  --success-text: #047857;
-  
-  --warning-bg: rgba(245, 158, 11, 0.1);
-  --warning-border: rgba(245, 158, 11, 0.2);
-  --warning-text: #b45309;
-  
-  --danger-bg: rgba(239, 68, 68, 0.1);
-  --danger-border: rgba(239, 68, 68, 0.2);
-  --danger-text: #b91c1c;
-  
-  --info-bg: rgba(59, 130, 246, 0.1);
-  --info-border: rgba(59, 130, 246, 0.2);
-  --info-text: #1d4ed8;
+  --glow-sm: 0 0 0 3px rgba(0, 159, 219, 0.15);
+  --glow-md: 0 6px 20px rgba(0, 56, 143, 0.12);
+  --shadow-sm: 0 2px 8px rgba(29, 35, 41, 0.08);
+  --shadow-md: 0 10px 28px rgba(29, 35, 41, 0.14);
+  --modal-backdrop: rgba(29, 35, 41, 0.5);
+  --focus-ring: rgba(0, 87, 184, 0.7);
+
+  --code-bg: #f2fafd;
+  --code-text: #1d2329;
+
+  --success-bg: rgba(45, 126, 36, 0.09);
+  --success-border: rgba(45, 126, 36, 0.28);
+  --success-text: #23651c;
+
+  --warning-bg: rgba(234, 116, 0, 0.1);
+  --warning-border: rgba(234, 116, 0, 0.32);
+  --warning-text: #994c00;
+
+  --danger-bg: rgba(199, 0, 50, 0.07);
+  --danger-border: rgba(199, 0, 50, 0.28);
+  --danger-text: #a8002a;
+
+  --info-bg: rgba(0, 159, 219, 0.1);
+  --info-border: rgba(0, 114, 178, 0.28);
+  --info-text: #005a8c;
   color-scheme: light;
 }
 
@@ -199,7 +244,7 @@
   
   --text-primary: #fdf6e3;
   --text-secondary: #eee8d5;
-  --text-muted: #93a1a1;
+  --text-muted: #a3b1b1;
   
   --accent: #67b7e1;
   --accent-rgb: 103, 183, 225;
@@ -231,8 +276,6 @@
   --theme-toggle-active-bg: #839496;
   --theme-toggle-active-text: #002b36;
   
-  --glow-sm: 0 0 16px rgba(38, 139, 210, 0.1);
-  --glow-md: 0 8px 32px rgba(38, 139, 210, 0.15);
   --shadow-sm: 0 4px 16px rgba(0, 43, 54, 0.5);
   --shadow-md: 0 12px 36px rgba(0, 43, 54, 0.8);
   --modal-backdrop: rgba(0, 43, 54, 0.8);
@@ -313,8 +356,6 @@
   --theme-toggle-active-bg: #657b83;
   --theme-toggle-active-text: #fdf6e3;
   
-  --glow-sm: 0 0 16px rgba(133, 153, 0, 0.1);
-  --glow-md: 0 8px 32px rgba(133, 153, 0, 0.15);
   --shadow-sm: 0 4px 16px rgba(238, 232, 213, 0.5);
   --shadow-md: 0 12px 36px rgba(238, 232, 213, 0.8);
   --modal-backdrop: rgba(253, 246, 227, 0.8);
@@ -356,7 +397,7 @@
   
   --text-primary: #f8f8f2;
   --text-secondary: #ccccc6;
-  --text-muted: #8f908a;
+  --text-muted: #a4a59f;
   
   /* Vibrant Monokai Magenta */
   --accent: #ff6188;
@@ -391,8 +432,6 @@
   --theme-toggle-active-bg: #f8f8f2;
   --theme-toggle-active-text: #1e1f1c;
   
-  --glow-sm: 0 0 16px rgba(255, 97, 136, 0.1);
-  --glow-md: 0 8px 32px rgba(255, 97, 136, 0.15);
   --shadow-sm: 0 4px 16px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 12px 36px rgba(0, 0, 0, 0.6);
   --modal-backdrop: rgba(0, 0, 0, 0.6);
@@ -434,7 +473,7 @@ body,
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family: var(--font-sans);
   background: var(--bg-primary);
   color: var(--text-primary);
   line-height: 1.5;
@@ -735,7 +774,7 @@ select option:checked {
 }
 
 .btn-danger:hover {
-  background: #dc2626;
+  background: var(--danger);
   box-shadow: 0 4px 12px rgba(var(--danger-rgb), 0.25);
   transform: translateY(-1px);
 }
@@ -752,7 +791,7 @@ select option:checked {
 }
 
 .btn-success:hover {
-  background: #16a34a;
+  background: var(--success);
   box-shadow: 0 4px 12px rgba(var(--success-rgb), 0.25);
   transform: translateY(-1px);
 }
@@ -790,3 +829,17 @@ select option:checked {
 :where(input, textarea):disabled { cursor: not-allowed; opacity: .65; }
 :where(a[href]), :where(a[href]:visited) { color: var(--accent); }
 :where(a[href]:hover) { text-decoration: underline; text-underline-offset: 3px; }
+
+/* Screen-reader-only text. Defined globally: it used to live only in the Run
+   Results stylesheet, so hidden captions showed until that page had loaded. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

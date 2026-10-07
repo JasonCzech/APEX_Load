@@ -9,7 +9,7 @@ import TabList from './ux/TabList'
 import { confirmAction } from './ux/confirmAction'
 import PanelToggle from "./ux/PanelToggle"
 import { handleTabKey } from './tabKeyboard'
-import { AuditEventTable } from './AuditEventTable'
+import { AuditEventTable, LoadOlderEvents } from './AuditEventTable'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import { useApi } from '../hooks/useApi'
@@ -44,7 +44,7 @@ import {
   userBindingDraftFromBinding, bindingSignature, draftSignature, normalizedUserBindingDrafts, userStatusBadge,
   accountBadges, accountStatusKeys, bindingLabel, userRoleList, userAccessLabels, userMatchesDomain,
   userMatchesProject, accountRoleList, accountAccessLabels, accountMatchesDomain, accountMatchesProject,
-  usageSummary, usageForUser, eventScopeLabel, eventResourceLabel, detailsSummary,
+  usageSummary, usageForUser, eventScopeLabel, eventResourceLabel, detailsSummary, appendNewEvents,
 } from './accessUtils'
 
 const USER_PAGE_SIZE_OPTIONS = [25, 50, 100]
@@ -210,7 +210,7 @@ export default function AccessPage({
   const settingsHrefForAuth = settingsHref('authentication')
   const { runGuarded } = useNavigationGuardRunner()
   const canUseUsers = canManageUserLifecycle || canManageUserBindings
-  const { activeTab, userSubTab, serviceAccountSubTab, activitySubTab, setActiveTab, setUserSubTab, setServiceAccountSubTab, setActivitySubTab } = useAccessWorkspace(preferredTab(canUseUsers, canManageServiceAccounts, canViewUserActivity), accessView, onViewChange)
+  const { view: currentAccessView, setView: setAccessView, activeTab, userSubTab, serviceAccountSubTab, activitySubTab, setActiveTab, setUserSubTab, setServiceAccountSubTab, setActivitySubTab } = useAccessWorkspace(preferredTab(canUseUsers, canManageServiceAccounts, canViewUserActivity), accessView, onViewChange)
   const [accounts, setAccounts] = useState<DashboardServiceAccount[]>([])
   const [users, setUsers] = useState<DashboardUser[]>([])
   const [usersTotal, setUsersTotal] = useState(0)
@@ -258,8 +258,9 @@ export default function AccessPage({
     createdBefore: '',
   })
   const [appliedActivityFilter, setAppliedActivityFilter] = useState(activityFilter)
-  const [activityPage, setActivityPage] = useState(0)
   const [activityHasMore, setActivityHasMore] = useState(false)
+  const [activityOlderLoading, setActivityOlderLoading] = useState(false)
+  const [activityOlderError, setActivityOlderError] = useState('')
   const [activitySnapshot, setActivitySnapshot] = useState(() => new Date().toISOString())
   const activityValidation = activityDateError(activityFilter.createdAfter, activityFilter.createdBefore)
   const activityWorkspaceRef = useRef(`${activeDomain?.id || ''}:${activeProject?.id || ''}`)
@@ -268,7 +269,7 @@ export default function AccessPage({
     if (activityWorkspaceRef.current === workspace) return
     activityWorkspaceRef.current = workspace
     const next = { actorSubject: '', domainID: activeDomain?.id || '', projectID: activeProject?.id || '', action: '', status: '', createdAfter: '', createdBefore: '' }
-    setActivityFilter(next); setAppliedActivityFilter(next); setActivityPage(0); setActivitySnapshot(new Date().toISOString())
+    setActivityFilter(next); setAppliedActivityFilter(next); setActivitySnapshot(new Date().toISOString())
   }, [activeDomain?.id, activeProject?.id])
   const [activityEvents, setActivityEvents] = useState<DashboardAuditEvent[]>([])
   const [activityUsage, setActivityUsage] = useState<Awaited<ReturnType<typeof api.getAuthUserActivity>>['usage'] | null>(null)
@@ -390,37 +391,11 @@ export default function AccessPage({
     return () => { cancelled = true }
   }, [activeTab, activitySubTab, simulatorPrincipal.type, canManageUserLifecycle, api, simulatorQuery, simulatorPage, simulatorDirectoryRevision])
 
-  const accessTabControls = useMemo(() => (
-    accessWorkspaceAvailable ? (
-      <TabList className="access-tab-row topbar-page-section-toggle" role="tablist" aria-label="Access workspace sections" onKeyDown={handleTabKey}>
-        {canUseUsers && (
-          <button type="button" role="tab" aria-selected={activeTab === 'users'} className={`access-tab ${activeTab === 'users' ? 'active' : ''}`} onClick={() => runGuarded(() => setActiveTab('users'))} tabIndex={(activeTab === 'users') ? 0 : -1}>
-            Users <strong>{usersTotal > users.length ? `${users.length} of ${usersTotal}` : users.length}</strong>
-          </button>
-        )}
-        {canManageServiceAccounts && (
-          <button type="button" role="tab" aria-selected={activeTab === 'service_accounts'} className={`access-tab ${activeTab === 'service_accounts' ? 'active' : ''}`} onClick={() => runGuarded(() => setActiveTab('service_accounts'))} tabIndex={(activeTab === 'service_accounts') ? 0 : -1}>
-            Service Accounts <strong>{accounts.length}</strong>
-          </button>
-        )}
-        {canViewUserActivity && (
-          <button type="button" role="tab" aria-selected={activeTab === 'activity'} className={`access-tab ${activeTab === 'activity' ? 'active' : ''}`} onClick={() => runGuarded(() => setActiveTab('activity'))} tabIndex={(activeTab === 'activity') ? 0 : -1}>
-            Activity <strong>{activityEvents.length}</strong>
-            {accessReviewAttention && (
-              <span className="access-attention-badge" title={`${accessReviewAttention.total} item(s) need review`}>{accessReviewAttention.total}</span>
-            )}
-          </button>
-        )}
-      </TabList>
-    ) : null
-  ), [accessReviewAttention, accessWorkspaceAvailable, accounts.length, activeTab, activityEvents.length, canManageServiceAccounts, canUseUsers, canViewUserActivity, runGuarded, setActiveTab, users.length, usersTotal])
-
   const accessTopbarContribution = useMemo(() => ({
     id: 'access-page',
     title: 'Access',
-    controls: accessTabControls,
     priority: 10,
-  }), [accessTabControls])
+  }), [])
 
   useTopbarContribution(accessTopbarContribution)
 
@@ -665,8 +640,11 @@ export default function AccessPage({
       return
     }
     setActivityLoading(true)
+    // A new first batch supersedes any older-events load still in flight.
+    setActivityOlderLoading(false)
+    setActivityOlderError('')
     try {
-      const response = await api.getAuthUserActivity({ ...buildActivityFilter(appliedActivityFilter), created_before: activitySnapshotBefore(appliedActivityFilter.createdBefore, activitySnapshot), offset: activityPage * 50 })
+      const response = await api.getAuthUserActivity({ ...buildActivityFilter(appliedActivityFilter), created_before: activitySnapshotBefore(appliedActivityFilter.createdBefore, activitySnapshot), offset: 0 })
       if (!isCurrentRequest()) return
       setActivityEvents(response.events || [])
       setActivityHasMore(response.has_more ?? (response.events || []).length === 50)
@@ -680,7 +658,27 @@ export default function AccessPage({
     } finally {
       if (isCurrentRequest()) setActivityLoading(false)
     }
-  }, [appliedActivityFilter, activityPage, activitySnapshot, api, canViewUserActivity])
+  }, [appliedActivityFilter, activitySnapshot, api, canViewUserActivity])
+
+  // Older events append to the loaded rows. The next offset is the number of
+  // rows already loaded, so a failed load retries the same batch.
+  const loadOlderActivity = useCallback(async () => {
+    const requestGeneration = activityLoadGenerationRef.current
+    const isCurrentRequest = () => activityLoadGenerationRef.current === requestGeneration
+    setActivityOlderLoading(true)
+    setActivityOlderError('')
+    try {
+      const response = await api.getAuthUserActivity({ ...buildActivityFilter(appliedActivityFilter), created_before: activitySnapshotBefore(appliedActivityFilter.createdBefore, activitySnapshot), offset: activityEvents.length })
+      if (!isCurrentRequest()) return
+      const older = response.events || []
+      setActivityEvents(current => appendNewEvents(current, older))
+      setActivityHasMore(response.has_more ?? older.length === 50)
+    } catch (error: unknown) {
+      if (isCurrentRequest()) setActivityOlderError(getErrorMessage(error, 'Unable to load older events'))
+    } finally {
+      if (isCurrentRequest()) setActivityOlderLoading(false)
+    }
+  }, [appliedActivityFilter, activityEvents.length, activitySnapshot, api])
 
   const loadAccessReview = useCallback(async () => {
     const requestGeneration = ++accessReviewLoadGenerationRef.current
@@ -2178,8 +2176,18 @@ export default function AccessPage({
   }
 
   return (
-    <div className="page access-page">
-      <AccessNavigation />
+    <div className="page access-page section-layout">
+      <AccessNavigation
+        currentView={currentAccessView}
+        onSelectView={view => runGuarded(() => setAccessView(view))}
+        counts={{
+          users: canUseUsers ? (usersTotal > users.length ? `${users.length} of ${usersTotal}` : users.length) : undefined,
+          accounts: canManageServiceAccounts ? accounts.length : undefined,
+          activity: canViewUserActivity ? activityEvents.length : undefined,
+          reviewAttention: accessReviewAttention?.total,
+        }}
+      />
+      <div className="section-layout-main">
       <div className="page-header">
         <div>
           <h2>Access</h2>
@@ -2193,8 +2201,6 @@ export default function AccessPage({
           </div>
         )}
       </div>
-
-      {!hasTopbarContributionProvider && accessTabControls}
 
       {activeTab === 'users' && (
         <section className={`access-workspace ${userSubTab === 'onboard' || userInspectorCollapsed || !selectedUser ? 'access-workspace-full' : ''}`} role="tabpanel" aria-label="Users access workspace">
@@ -2621,7 +2627,7 @@ export default function AccessPage({
             <div className="access-panel-header">
               <div>
                 <h3>{activitySubTab === 'events' ? 'Audit events' : activitySubTab === 'usage' ? 'Usage By User' : 'Access Review'}</h3>
-                <p>{activitySubTab === 'events' ? activityLoading ? 'Loading events…' : `${activityEvents.length} events on this page${activityHasMore ? ' · more history available' : ''}` : activitySubTab === 'usage' ? 'Usage by user and matching runs' : 'Review flagged identities and their assigned roles'}</p>
+                <p>{activitySubTab === 'events' ? activityLoading ? 'Loading events…' : `${activityEvents.length} events loaded${activityHasMore ? ' · older events available' : ''}` : activitySubTab === 'usage' ? 'Usage by user and matching runs' : 'Review flagged identities and their assigned roles'}</p>
               </div>
               <div className="access-account-actions">
                 {activitySubTab === 'events' && selectedActivity && activityInspectorCollapsed && (
@@ -2688,7 +2694,7 @@ export default function AccessPage({
                     <span>Created Before</span>
                     <input type="datetime-local" value={activityFilter.createdBefore} onChange={event => setActivityFilter(prev => ({ ...prev, createdBefore: event.target.value }))} />
                   </label>
-                  <button className="btn btn-primary btn-sm" type="button" onClick={() => { setAppliedActivityFilter(activityFilter); setActivityPage(0); setActivitySnapshot(new Date().toISOString()) }} disabled={!canViewUserActivity || activityLoading || !!activityValidation}>
+                  <button className="btn btn-primary btn-sm" type="button" onClick={() => { setAppliedActivityFilter(activityFilter); setActivitySnapshot(new Date().toISOString()) }} disabled={!canViewUserActivity || activityLoading || !!activityValidation}>
                     {activityLoading ? 'Applying...' : 'Apply Filters'}
                   </button>
                 </div>
@@ -2712,13 +2718,8 @@ export default function AccessPage({
                 )}
 
                 {activityValidation && <p role="alert">{activityValidation}</p>}
-                <p className="access-query-summary">History snapshot: {formatTimestamp(activitySnapshot)}. Filters apply when you choose Apply Filters. Table search and sorting affect this page only; export includes all events matching the applied filters.</p>
-                <nav className="access-pagination" aria-label="Event history pagination">
-                  <button className="btn btn-secondary" disabled={activityLoading || activityPage === 0} onClick={() => setActivityPage(value => value - 1)}>Previous events</button>
-                  <span>Page {activityPage + 1} · {activityEvents.length ? `${activityPage * 50 + 1}–${activityPage * 50 + activityEvents.length}` : 'No'} events loaded</span>
-                  <button className="btn btn-secondary" disabled={activityLoading || activityLoadFailed || !activityHasMore} onClick={() => setActivityPage(value => value + 1)}>Next events</button>
-                </nav>
-                <AuditEventTable paginated events={filteredActivityEvents} selectedId={activityInspectorCollapsed ? undefined : selectedActivityID} onSelect={selectActivity} scopeLabel={event => eventScopeLabel(event, projects, domains)} header={<>
+                <p className="access-query-summary">History snapshot: {formatTimestamp(activitySnapshot)}. Filters apply when you choose Apply Filters. Table search and sorting cover the loaded events; export includes all events matching the applied filters.</p>
+                <AuditEventTable paginated events={filteredActivityEvents} footer={<LoadOlderEvents loaded={activityEvents.length} hasMore={activityHasMore && !activityLoadFailed} loading={activityLoading || activityOlderLoading} error={activityOlderError} onLoad={() => { void loadOlderActivity() }} />} selectedId={activityInspectorCollapsed ? undefined : selectedActivityID} onSelect={selectActivity} scopeLabel={event => eventScopeLabel(event, projects, domains)} header={<>
                         <SortHeader label="Time" field="time" sort={activitySort} onSort={field => setActivitySort(prev => nextSort(prev, field, activitySortDefaults))} />
                         <SortHeader label="Actor" field="actor" sort={activitySort} onSort={field => setActivitySort(prev => nextSort(prev, field, activitySortDefaults))} />
                         <SortHeader label="Action" field="action" sort={activitySort} onSort={field => setActivitySort(prev => nextSort(prev, field, activitySortDefaults))} />
@@ -2757,6 +2758,7 @@ export default function AccessPage({
           }}
         />
       )}
+      </div>
     </div>
   )
 }

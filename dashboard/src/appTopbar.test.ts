@@ -16,21 +16,30 @@ describe('app topbar helpers', () => {
     expect(pageTitleForView({ page: 'dashboard' })).toBe('Dashboard')
     expect(pageTitleForView({ page: 'docs' })).toBe('Help & documentation')
     expect(pageTitleForView({ page: 'command-center' })).toBe('Command Center')
-    expect(pageTitleForView({ page: 'tests' })).toBe('Scenario Library')
-    expect(pageTitleForView({ page: 'tests', scenarioView: 'builder' })).toBe('Scenario Builder')
     expect(pageTitleForView({ page: 'scripts', mode: 'create' })).toBe('Create Script')
     expect(pageTitleForView({ page: 'report', testId: 'run-1' })).toBe('Run Results')
     expect(pageTitleForView({ page: 'activity' })).toBe('Activity')
-    expect(pageTitleForView({ page: 'results' })).toBe('Results Library')
-    expect(pageTitleForView({ page: 'fleet' })).toBe('Fleet')
-    expect(pageTitleForView({ page: 'monitoring', category: 'telemetry' })).toBe('Telemetry')
-    expect(pageTitleForView({ page: 'repository' }, { repositoryName: 'Payments Repository' })).toBe('Payments Repository')
     expect(pageTitleForView({ page: 'test', testId: 'run-1' }, { testName: 'Checkout Peak' })).toBe('Checkout Peak')
   })
 
+  it('titles each sidebar destination with its sidebar name whichever tab is selected', () => {
+    expect(pageTitleForView({ page: 'scripts' })).toBe('Scripts')
+    expect(pageTitleForView({ page: 'tests' })).toBe('Scenarios')
+    expect(pageTitleForView({ page: 'tests', scenarioView: 'builder' })).toBe('Scenarios')
+    expect(pageTitleForView({ page: 'results' })).toBe('Results')
+    expect(pageTitleForView({ page: 'repository' })).toBe('Repository')
+    for (const category of ['overview', 'telemetry', 'alerts'] as const) {
+      expect(pageTitleForView({ page: 'monitoring', category }), category).toBe('Monitoring')
+    }
+    expect(pageTitleForView({ page: 'fleet' })).toBe('Monitoring')
+    expect(pageTitleForView({ page: 'schedules' })).toBe('Monitoring')
+    expect(pageTitleForView({ page: 'access' })).toBe('Access')
+    expect(pageTitleForView({ page: 'settings' })).toBe('Settings')
+  })
+
   it('maps script authoring substates to topbar page titles', () => {
-    expect(pageTitleForScriptSubView('list')).toBe('Script Library')
-    expect(pageTitleForScriptSubView('create-options')).toBe('Script Builder')
+    expect(pageTitleForScriptSubView('list')).toBe('Scripts')
+    expect(pageTitleForScriptSubView('create-options')).toBe('Scripts')
     expect(pageTitleForScriptSubView('create')).toBe('Create Script')
     expect(pageTitleForScriptSubView('edit')).toBe('Edit Script')
     expect(pageTitleForScriptSubView('openapi-import')).toBe('Import OpenAPI')
@@ -38,7 +47,7 @@ describe('app topbar helpers', () => {
     expect(pageTitleForScriptSubView('raml-import')).toBe('Import RAML')
     expect(pageTitleForScriptSubView('protocol-import')).toBe('Import From Source')
     expect(pageTitleForScriptSubView('oracle-review')).toBe('Oracle E-Business Review')
-    expect(pageTitleForScriptSubView('salesforce-import')).toBe('Script Library')
+    expect(pageTitleForScriptSubView('salesforce-import')).toBe('Scripts')
     expect(pageTitleForScriptSubView('recorder')).toBe('Record Browser')
   })
 

@@ -121,7 +121,7 @@ test('Parquet upload, mapping, query and deletion remain in project scope', asyn
     if (method === 'DELETE') { deleted = true; return route.fulfill({ status: 204 }) }
     return send(record())
   })
-  await page.goto(`/#/monitoring?category=analysis&${scopeQuery(workspace)}`); await page.reload()
+  await page.goto(`/#/monitoring?${scopeQuery(workspace)}`); await page.reload()
   const area = page.getByRole('region', { name: 'Analysis workspace' })
   await expect(area).toBeVisible()
   await area.getByRole('button', { name: 'New import', exact: true }).click()
@@ -549,7 +549,7 @@ test('imported comparison preserves both exact identity selectors across save an
     return route.fulfill({ status: 404, json: { error: 'unexpected bounded workflow request' } })
   })
   const openDataset = async () => {
-    await page.goto(`/#/monitoring?category=analysis&${scopeQuery(workspace)}`); await page.reload()
+    await page.goto(`/#/monitoring?${scopeQuery(workspace)}`); await page.reload()
     const area = page.getByRole('region', { name: 'Analysis workspace', exact: true })
     await area.getByRole('button', { name: 'Identity A · ready', exact: true }).click()
     return area.getByRole('region', { name: 'Dataset comparison', exact: true })
@@ -619,7 +619,7 @@ test('older analytical peers keep v1 imports usable and refuse v2 identity work 
     if (path.endsWith('/series')) { expect(path).toContain(legacyId); expect(request.postDataJSON()).not.toHaveProperty('source_id'); queries++; return send({ points: [] }) }
     return route.fulfill({ status: 404, json: { error: 'unexpected old-peer operation' } })
   })
-  await page.goto(`/#/monitoring?category=analysis&${scopeQuery(workspace)}`); await page.reload()
+  await page.goto(`/#/monitoring?${scopeQuery(workspace)}`); await page.reload()
   const area = page.getByRole('region', { name: 'Analysis workspace', exact: true })
   await area.getByRole('button', { name: 'Legacy measurements · uploading', exact: true }).click()
   await expect(area.getByRole('group', { name: 'Imported measurement identities', exact: true })).toHaveCount(0)

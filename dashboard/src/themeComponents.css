@@ -1,0 +1,92 @@
+/*
+ * Shared component styling (patterns sampled from att.com), applied in every
+ * theme. Themes only change colour: corner radius, label case, the brand
+ * highlight, tab and tag colours are tokens in index.css. Every selector starts
+ * with `:root[data-theme] body` so it outranks the component stylesheets that
+ * lazy-loaded pages inject after this file.
+ */
+
+/* Flat surfaces: no ambient mesh gradient or frosted top bar. */
+:root[data-theme] body .main-content {
+  background: var(--bg-primary);
+}
+
+:root[data-theme] body .main-topbar {
+  /* --bg-secondary is opaque in every theme, so content never shows through. */
+  background: var(--bg-secondary);
+  border-bottom-color: var(--border);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Buttons: pill shape; secondary actions are cobalt outlines. The inset ring
+ * adds the second pixel of a 2px outline without changing button height. */
+:root[data-theme] body .btn {
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+:root[data-theme] body .btn-secondary {
+  border: 1px solid var(--accent);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--accent);
+}
+
+:root[data-theme] body .btn-secondary:hover:not(:disabled) {
+  border-color: var(--accent-hover);
+  background: var(--control-hover);
+  box-shadow: inset 0 0 0 1px var(--accent-hover);
+  color: var(--accent-hover);
+}
+
+/* Tags: small square-cornered labels, as on att.com. Neutral tags use the
+ * AT&T tag tint; status badges keep their semantic colours. */
+:root[data-theme] body .status-badge,
+:root[data-theme] body .script-health-token {
+  border-radius: 4px;
+}
+
+/* `protocol-badge` alone is a protocol tag; with a health class it is an
+ * authoring-health badge that keeps its semantic colour. */
+:root[data-theme] body .protocol-badge {
+  border-radius: 4px;
+}
+
+:root[data-theme] body [class='protocol-badge'] {
+  background: var(--tag-bg);
+  color: var(--tag-text);
+  font-weight: 700;
+}
+
+/* Status codes arrive upper-case (COMPLETE, RUNNING). With labels in sentence
+ * case, show them the same way without changing the rendered text content. */
+:root[data-theme] body .status-badge-label {
+  display: inline-block;
+  text-transform: lowercase;
+}
+
+:root[data-theme] body .status-badge-label::first-letter {
+  text-transform: uppercase;
+}
+
+/* Sidebar: brand-highlight marker on the current page (AT&T blue in Light). */
+:root[data-theme] body .sidebar .nav-item.active:not(.nav-item-primary) {
+  box-shadow: inset 3px 0 0 var(--brand-highlight);
+}
+
+/* Tags that show machine values rather than written labels. Protocols are
+ * acronyms and stay upper-case; status and health values read as initial
+ * capitals instead of falling back to their lower-case source text. */
+:root[data-theme] body [class='protocol-badge'] {
+  text-transform: uppercase;
+}
+
+:root[data-theme] body .script-health-token,
+:root[data-theme] body .pp-pill,
+:root[data-theme] body .access-status-badge,
+:root[data-theme] body .monitor-header-badge,
+:root[data-theme] body .status-badge.monitor-service-status {
+  text-transform: capitalize;
+}

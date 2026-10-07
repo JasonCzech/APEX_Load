@@ -8,6 +8,9 @@ describe('app shell layout', () => {
     const appCss = readFileSync(`${cwd}/src/App.css`, 'utf8') as string
 
     expect(cssRule(appCss, '.main-topbar')).toContain('margin: -20px -36px 24px;')
+    // The sticky offset must cancel .main-content's top padding or a strip of
+    // scrolling content shows above the bar.
+    expect(cssRule(appCss, '.main-topbar')).toContain('top: -20px;')
     expect(cssRule(appCss, '.main-topbar')).toContain('padding: 10px 36px;')
     expect(cssRule(appCss, '.main-topbar-feedback')).toContain('position: relative;')
     expect(cssRule(appCss, '.main-topbar-feedback')).toContain('margin: 0 0 20px;')

@@ -21,6 +21,29 @@
   flex-basis: 64px;
 }
 
+/* The shell reserves the 64px icon rail in the page layout. The sidebar itself
+ * is positioned inside it, so expanding to 240px overlays the page rather than
+ * pushing the main content right. */
+.sidebar-shell {
+  position: relative;
+  flex: 0 0 64px;
+  width: 64px;
+  height: 100%;
+  min-height: 0;
+  z-index: 100;
+}
+
+.sidebar-shell > .sidebar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+}
+
+.sidebar-shell.overlay-open > .sidebar {
+  box-shadow: 8px 0 28px rgba(0, 0, 0, 0.16), 1px 0 0 var(--border);
+}
+
 /* Brand */
 .sidebar-brand {
   display: flex;
@@ -120,8 +143,8 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
   color: var(--text-muted);
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: var(--label-tracking, 0.08em);
+  text-transform: var(--label-case, uppercase);
 }
 
 .workspace-summary-label {
@@ -295,16 +318,30 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
   -webkit-user-select: none;
 }
 
+/* New Test is the primary action: an accent outline rather than a solid fill.
+   The inset ring keeps the button the same size as the other nav items. */
 .nav-item-primary {
-  background: var(--accent);
-  color: var(--accent-contrast);
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--accent);
+  color: var(--accent);
   font-weight: 700;
 }
 
-.nav-item-primary:hover,
-.nav-item-primary.active {
-  background: var(--accent-hover);
-  color: var(--accent-contrast);
+.nav-item-primary .nav-icon {
+  color: inherit;
+}
+
+.nav-item-primary:hover {
+  background: var(--bg-hover);
+  box-shadow: inset 0 0 0 2px var(--accent-hover);
+  color: var(--accent-hover);
+}
+
+.nav-item-primary.active,
+.nav-item-primary.active:hover {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--accent);
+  color: var(--accent);
 }
 
 .sidebar.collapsed .nav-item {
@@ -323,37 +360,6 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
 .sidebar.collapsed .nav-item {
   position: relative;
   min-height: 44px;
-}
-
-.sidebar.collapsed .workspace-summary::after {
-  position: absolute;
-  left: calc(100% + 8px);
-  z-index: 30;
-  width: max-content;
-  max-width: 260px;
-  padding: 7px 9px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--dropdown-menu-bg);
-  box-shadow: var(--shadow-sm);
-  color: var(--text-primary);
-  font-size: 12px;
-  font-weight: 600;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateX(-4px);
-  transition: opacity 0.12s ease, transform 0.12s ease;
-}
-
-.sidebar.collapsed .workspace-summary::after {
-  content: attr(data-workspace-label);
-  top: 8px;
-}
-
-.sidebar.collapsed .workspace-summary:hover::after,
-.sidebar.collapsed .workspace-summary:focus-visible::after {
-  opacity: 1;
-  transform: translateX(0);
 }
 
 .nav-item:hover {
@@ -472,6 +478,59 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
   font-size: 12px;
 }
 
+.sidebar-rail-avatar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(220, 179, 89, 0.25), rgba(75, 135, 198, 0.28));
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.sidebar-rail-avatar:hover {
+  border-color: var(--accent-border);
+}
+
+.sidebar-rail-avatar:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.sidebar-rail-avatar.session-warning {
+  border-color: var(--warning);
+  box-shadow: 0 0 0 2px var(--warning-bg);
+}
+
+.sidebar-rail-avatar.session-expired {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 2px var(--danger-bg);
+}
+
+.sidebar-rail-avatar-alert {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--bg-secondary);
+  border-radius: 50%;
+  background: var(--warning);
+}
+
+.sidebar-rail-avatar.session-expired .sidebar-rail-avatar-alert {
+  background: var(--danger);
+}
+
 .sidebar-identity-session {
   color: var(--warning);
   font-size: 12px;
@@ -521,8 +580,8 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
   cursor: pointer;
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  letter-spacing: var(--label-tracking, 0.04em);
+  text-transform: var(--label-case, uppercase);
 }
 
 .dev-view-toggle:hover,
@@ -555,7 +614,7 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 700;
-  text-transform: uppercase;
+  text-transform: var(--label-case, uppercase);
 }
 
 .dev-view-badge {

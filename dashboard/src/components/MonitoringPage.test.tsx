@@ -546,7 +546,8 @@ describe('MonitoringPage', () => {
     const topbar = container.querySelector('[data-testid="topbar-contribution"]')
     expect(topbar?.textContent).toContain('Monitoring')
     expect(topbar?.querySelector('[aria-label="Monitor categories"]')?.classList.contains('topbar-page-section-toggle')).toBe(true)
-    expect(topbar?.querySelectorAll('[aria-label="Monitor categories"] [role="tab"]')).toHaveLength(6)
+    // Analysis is no longer a tab; its workspace appears on Overview when enabled.
+    expect(Array.from(topbar?.querySelectorAll('[aria-label="Monitor categories"] [role="tab"]') || []).map(tab => tab.textContent?.trim())).toEqual(['Overview', 'Fleet', 'Telemetry', 'Alerts', 'Schedules'])
     expect(topbar?.textContent).toContain('1 advisory warning')
     expect(topbar?.querySelector('.monitoring-topbar-controls .warning')?.textContent).toBe('1 advisory warning')
     const topbarText = topbar?.textContent ?? ''

@@ -28,6 +28,8 @@ import { useTestApi } from '../hooks/api/useTestApi'
 import { useNavigationGuard, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { readStoredString, writeStoredString } from '../utils/browserStorage'
 import StatusBadge from './StatusBadge'
+import RepositorySectionTabs from './RepositorySectionTabs'
+import { useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { SortHeader } from './SortHeader'
 import {
   RepositoryAssetKind,
@@ -326,6 +328,14 @@ export default function ApplicationRepositoryPage({
   releaseCreationDraftsRef.current = releaseCreationDrafts
   const activeDomainIdRef = useRef(activeDomain?.id)
   activeDomainIdRef.current = activeDomain?.id
+
+  const repositoryTopbarContribution = useMemo(() => ({
+    id: 'repository-page',
+    title: 'Repository',
+    controls: <RepositorySectionTabs current="catalog" />,
+    priority: 10,
+  }), [])
+  useTopbarContribution(repositoryTopbarContribution)
 
   const scopedProjects = useMemo(() => {
     const domainId = activeDomain?.id || 'default'
@@ -1128,7 +1138,7 @@ export default function ApplicationRepositoryPage({
 
   return (
     <div className="page repository-page" ref={pageRef}>
-      <nav className="settings-inline-actions" aria-label="Related administration"><a className="btn btn-secondary btn-sm" href={settingsHref('test-data')}>Shared test data</a><a className="btn btn-secondary btn-sm" href={settingsHref('projects')}>Manage workspaces</a></nav>
+      <nav className="related-links" aria-label="Related administration"><a className="related-link" href={settingsHref('projects')}>Manage workspaces in Settings</a></nav>
       <div className="page-header">
         <div>
           <p className="page-kicker">Repository</p>
@@ -1169,8 +1179,10 @@ export default function ApplicationRepositoryPage({
 
       <section className="repository-catalog-shell">
         <div className="settings-inline-actions" aria-label="Repository scope">
-          <button type="button" className="btn btn-secondary" disabled={!activeProject} aria-pressed={!!activeProject && filters.projectId === activeProject.id} onClick={() => setFilters(prev => ({ ...prev, projectId: activeProject?.id || 'all', releaseId: 'all' }))}>Current workspace</button>
-          <button type="button" className="btn btn-secondary" aria-pressed={filters.projectId === 'all'} onClick={() => setFilters(prev => ({ ...prev, projectId: 'all', releaseId: 'all' }))}>All accessible projects</button>
+          <div className="repository-scope-toggle" role="group" aria-label="Catalog scope">
+            <button type="button" className="btn btn-secondary" disabled={!activeProject} aria-pressed={!!activeProject && filters.projectId === activeProject.id} onClick={() => setFilters(prev => ({ ...prev, projectId: activeProject?.id || 'all', releaseId: 'all' }))}>Current workspace</button>
+            <button type="button" className="btn btn-secondary" aria-pressed={filters.projectId === 'all'} onClick={() => setFilters(prev => ({ ...prev, projectId: 'all', releaseId: 'all' }))}>All accessible projects</button>
+          </div>
           <span>Catalog: {activeDomain?.name || 'Selected domain'} · {filters.projectId === 'all' ? 'All accessible projects' : scopedProjects.find(project => project.id === filters.projectId)?.name || filters.projectId} · {activeApplication ? `Application ${activeApplication.name} for releases, scripts, scenarios and runs; projects and data pools are project-wide.` : 'All applications'}</span>
         </div>
         <LibraryToolbar filtersActive={Boolean(filterActive)} label="Repository controls" search={<label className="library-search repository-search">

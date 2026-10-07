@@ -163,8 +163,8 @@
 .sample-import-field span {
   font-size: 12px;
   color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.04em);
 }
 
 .sample-import-field input,
@@ -279,11 +279,11 @@
 }
 
 .recorder-step-degraded td:first-child {
-  border-left: 3px solid #eab308;
+  border-left: 3px solid var(--warning);
 }
 
 .recorder-step-unsupported td:first-child {
-  border-left: 3px solid var(--danger, #ef4444);
+  border-left: 3px solid var(--danger, var(--danger));
 }
 
 .sample-import-muted {
@@ -434,8 +434,8 @@
   color: var(--text-secondary);
   font-size: 13px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.04em);
 }
 
 .sample-import-assets-header p {
@@ -521,8 +521,8 @@
   margin: 0;
   color: var(--success);
   font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.04em);
 }
 
 .source-import-protocol-card,
@@ -556,8 +556,8 @@
 .source-import-coverage-label {
   color: var(--text-muted);
   font-size: 11px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  letter-spacing: var(--label-tracking, 0.04em);
+  text-transform: var(--label-case, uppercase);
 }
 
 .source-import-coverage-card strong {

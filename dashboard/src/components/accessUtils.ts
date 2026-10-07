@@ -553,3 +553,9 @@ export function detailsSummary(details?: Record<string, unknown>): string {
   if (entries.length === 0) return 'None'
   return entries.slice(0, 3).map(([key, value]) => `${key}: ${String(value)}`).join(' · ')
 }
+
+/** Keeps the loaded rows and appends events that are not already present. */
+export function appendNewEvents(current: DashboardAuditEvent[], older: DashboardAuditEvent[]): DashboardAuditEvent[] {
+  const seen = new Set(current.map(event => event.id))
+  return [...current, ...older.filter(event => !seen.has(event.id))]
+}

@@ -67,8 +67,8 @@
 }
 .command-palette-item-group {
   font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.04em);
   color: var(--text-muted);
 }
 .command-palette-item kbd {

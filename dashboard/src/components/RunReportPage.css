@@ -39,7 +39,7 @@
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 700;
-  text-transform: uppercase;
+  text-transform: var(--label-case, uppercase);
 }
 
 .run-report-toolbar-actions,
@@ -155,7 +155,7 @@
   padding: 7px 10px;
   font-size: 12px;
   font-weight: 800;
-  text-transform: uppercase;
+  text-transform: var(--label-case, uppercase);
 }
 
 .run-report-verdict-pass .run-report-verdict-badge,

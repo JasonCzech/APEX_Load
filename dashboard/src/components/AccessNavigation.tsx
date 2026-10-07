@@ -1,40 +1,79 @@
 import './Access.css'
 import { settingsHref } from './settingsNavigation'
-import { accessHref } from './accessDestinations'
+import { accessHref, type AccessView } from './accessDestinations'
 
-/** Persistent navigation shared by identities and their policy destinations. */
-export default function AccessNavigation({ currentSetting }: { currentSetting?: string }) {
+export interface AccessNavigationCounts {
+  users?: number | string
+  accounts?: number
+  activity?: number
+  reviewAttention?: number
+}
+
+// Access review is a sub-tab of Activity, so it is not repeated here.
+const PEOPLE_ITEMS: ReadonlyArray<{ id: 'users' | 'accounts' | 'activity'; label: string; view: AccessView }> = [
+  { id: 'users', label: 'Users', view: 'users' },
+  { id: 'accounts', label: 'Service accounts', view: 'accounts' },
+  { id: 'activity', label: 'Activity', view: 'events' },
+]
+
+const POLICY_ITEMS = [
+  ['authentication', 'Authentication'],
+  ['features', 'Feature policy'],
+  ['imports', 'Import policy'],
+  ['redaction', 'Redaction'],
+  ['secrets', 'Project secrets'],
+  ['audit', 'Governance audit'],
+] as const
+
+function peopleItemFor(view: AccessView | undefined): (typeof PEOPLE_ITEMS)[number]['id'] {
+  if (view === 'accounts' || view === 'create-account') return 'accounts'
+  if (view === 'events' || view === 'usage' || view === 'review') return 'activity'
+  return 'users'
+}
+
+/**
+ * Section list for the Access page, shared by its identity views and the
+ * security-policy settings it owns. Entries and their order never change; the
+ * current one is marked, the same way the Settings section list works.
+ */
+export default function AccessNavigation({ currentSetting, currentView, counts = {}, onSelectView }: {
+  currentSetting?: string
+  currentView?: AccessView
+  counts?: AccessNavigationCounts
+  /** On the Access page the identity views switch in place (keeping the unsaved-changes guard). */
+  onSelectView?: (view: AccessView) => void
+}) {
+  const currentPeople = currentSetting ? undefined : peopleItemFor(currentView)
+  const countFor = (id: (typeof PEOPLE_ITEMS)[number]['id']) => id === 'users' ? counts.users : id === 'accounts' ? counts.accounts : counts.activity
   return (
-    <nav className="access-navigation" aria-label="Access administration">
-      {currentSetting && (
-        <a className="btn btn-secondary btn-sm" href={accessHref()}>
-          Users & service accounts
-        </a>
-      )}
-      {(
-        [
-          ['authentication', 'Authentication'],
-          ['features', 'Feature policy'],
-          ['imports', 'Import policy'],
-          ['redaction', 'Redaction'],
-          ['secrets', 'Project secrets'],
-          ['audit', 'Governance audit'],
-        ] as const
-      ).map(([id, label]) => (
-        <a
-          key={id}
-          className="btn btn-secondary btn-sm"
-          aria-current={currentSetting === id ? 'page' : undefined}
-          href={settingsHref(id)}
-        >
-          {label}
-        </a>
-      ))}
-      {currentSetting && (
-        <a className="btn btn-secondary btn-sm" href={accessHref('review')}>
-          Access Review
-        </a>
-      )}
+    <nav className="section-nav access-navigation" aria-label="Access administration">
+      <div>
+        <h3>People</h3>
+        {PEOPLE_ITEMS.map(item => {
+          const count = countFor(item.id)
+          const content = (
+            <>
+              <span>{item.label}</span>
+              {count !== undefined && <strong>{count}</strong>}
+              {item.id === 'activity' && Boolean(counts.reviewAttention) && (
+                <span className="access-attention-badge" title={`${counts.reviewAttention} item(s) need review`}>{counts.reviewAttention}</span>
+              )}
+            </>
+          )
+          const current = currentPeople === item.id ? 'page' : undefined
+          return onSelectView
+            ? <button key={item.id} type="button" aria-current={current} onClick={() => onSelectView(item.view)}>{content}</button>
+            : <a key={item.id} href={accessHref(item.view)} aria-current={current}>{content}</a>
+        })}
+      </div>
+      <div>
+        <h3>Security policy</h3>
+        {POLICY_ITEMS.map(([id, label]) => (
+          <a key={id} href={settingsHref(id)} aria-current={currentSetting === id ? 'page' : undefined}>
+            <span>{label}</span>
+          </a>
+        ))}
+      </div>
     </nav>
   )
 }

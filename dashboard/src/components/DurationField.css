@@ -8,8 +8,8 @@
 .duration-field-label {
   font-size: 11px;
   color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: var(--label-case, uppercase);
+  letter-spacing: var(--label-tracking, 0.05em);
   font-weight: 600;
 }
 
@@ -36,12 +36,12 @@
 .duration-field-number:focus,
 .duration-field-unit:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.18);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.18);
 }
 
 .duration-field.invalid .duration-field-number,
 .duration-field.invalid .duration-field-unit {
-  border-color: var(--danger, #ef4444);
+  border-color: var(--danger, var(--danger));
 }
 
 .duration-field.compact {
@@ -91,7 +91,7 @@
 }
 
 .duration-field-error {
-  color: var(--danger, #ef4444);
+  color: var(--danger, var(--danger));
   font-size: 11px;
   line-height: 1.3;
 }

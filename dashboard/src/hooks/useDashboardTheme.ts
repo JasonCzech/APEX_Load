@@ -13,6 +13,8 @@ const DASHBOARD_THEMES = new Set<DashboardTheme>(['dark', 'light', 'solarized-da
 const THEME_PREFERENCES = new Set<DashboardThemePreference>([...DASHBOARD_THEMES, 'system'])
 const DARK_BROWSER_CONTROL_THEMES = new Set<DashboardTheme>(['dark', 'solarized-dark', 'monokai-dimmed'])
 const SYSTEM_DARK_QUERY = '(prefers-color-scheme: dark)'
+// New browsers (no stored preference) start in the Light theme.
+const DEFAULT_THEME: DashboardThemePreference = 'light'
 
 function isThemePreference(value: string | null): value is DashboardThemePreference {
   return value !== null && THEME_PREFERENCES.has(value as DashboardThemePreference)
@@ -20,10 +22,10 @@ function isThemePreference(value: string | null): value is DashboardThemePrefere
 
 function readStoredTheme(): DashboardThemePreference {
   if (typeof window === 'undefined') {
-    return 'dark'
+    return DEFAULT_THEME
   }
   const stored = readStoredString(THEME_STORAGE_KEY)
-  return isThemePreference(stored) ? stored : 'dark'
+  return isThemePreference(stored) ? stored : DEFAULT_THEME
 }
 
 function prefersDark(): boolean {
@@ -47,6 +49,12 @@ function applyTheme(resolved: DashboardTheme) {
   }
   document.documentElement.dataset.theme = resolved
   document.documentElement.style.colorScheme = DARK_BROWSER_CONTROL_THEMES.has(resolved) ? 'dark' : 'light'
+}
+
+// Apply the stored (or default) theme before React's first render so the page
+// never paints in the wrong theme while the app loads.
+export function applyInitialTheme() {
+  applyTheme(resolveTheme(readStoredTheme()))
 }
 
 export function useDashboardTheme() {

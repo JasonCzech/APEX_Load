@@ -3,7 +3,6 @@ import type { TestStatus, TestSummary } from './types'
 import { isPendingTestStatus, normalizeTestStatus, resolveTestStatus } from './utils/testStatusUtils'
 
 export type TopbarPageTitleOptions = {
-  repositoryName?: string
   testName?: string
 }
 
@@ -31,27 +30,25 @@ export function pageTitleForView(view: AppView, options: TopbarPageTitleOptions 
     case 'report':
       return 'Run Results'
     case 'repository':
-      return options.repositoryName || 'Application Repository'
+      return 'Repository'
     case 'tests':
-      return view.scenarioView === 'builder' ? 'Scenario Builder' : 'Scenario Library'
+      return 'Scenarios'
     case 'new-test':
       return 'New Test'
     case 'scripts':
       if (view.mode === 'create') return 'Create Script'
       if (view.mode === 'edit') return 'Edit Script'
       if (view.mode === 'import') return 'Import Script'
-      return 'Script Library'
+      return 'Scripts'
     case 'activity':
       return 'Activity'
     case 'results':
-      return 'Results Library'
+      return 'Results'
+    // Fleet and Schedules are Monitoring tabs, so they keep the Monitoring title.
     case 'monitoring':
-      if (view.category === 'analysis') return 'Analysis'
-      return view.category === 'telemetry' ? 'Telemetry' : 'Monitoring'
     case 'fleet':
-      return 'Fleet'
     case 'schedules':
-      return 'Schedules'
+      return 'Monitoring'
     case 'docs':
       return 'Help & documentation'
     case 'swagger':
@@ -73,10 +70,10 @@ export function pageTitleForView(view: AppView, options: TopbarPageTitleOptions 
 
 export function pageTitleForScriptSubView(subView?: string): string {
   switch (subView) {
+    // Library and Builder are tabs of the Scripts page.
     case 'list':
-      return 'Script Library'
     case 'create-options':
-      return 'Script Builder'
+      return 'Scripts'
     case 'create':
       return 'Create Script'
     case 'edit':
@@ -112,7 +109,7 @@ export function pageTitleForScriptSubView(subView?: string): string {
     case 'asyncapi-import':
       return 'Import AsyncAPI'
     default:
-      return 'Script Library'
+      return 'Scripts'
   }
 }
 

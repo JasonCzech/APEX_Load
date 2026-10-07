@@ -346,14 +346,25 @@ describe('AccessPage', () => {
     vi.clearAllMocks()
   })
 
-  it('pages event history and exports the complete applied filter, not draft changes', async () => {
+  it('loads older event history into the same table and exports the complete applied filter, not draft changes', async () => {
     const base = await apiMock.getAuthUserActivity()
     apiMock.getAuthUserActivity.mockResolvedValue({ ...base, has_more: true })
     await act(async () => root.render(<AccessPage projects={projects} domains={domains} canManageUserLifecycle={false} canManageUserBindings={false} canManageServiceAccounts={false} canViewUserActivity />))
     await flushPromises()
     const firstQuery = apiMock.getAuthUserActivity.mock.lastCall?.[0]
-    await clickButton(container, 'Next events')
-    expect(apiMock.getAuthUserActivity).toHaveBeenLastCalledWith(expect.objectContaining({offset:50,created_before:firstQuery.created_before}))
+    expect(firstQuery.offset).toBe(0)
+    expect(Array.from(container.querySelectorAll('button')).map(button => button.textContent)).not.toContain('Next events')
+
+    // The older batch overlaps the loaded rows by one event (recorded since the
+    // first load); it is appended once, after the rows already shown.
+    const older = { ...base.events[0], id: 'event-older', actor_subject: 'zed', actor_display_name: 'Zed Older', created_at: '2026-05-01T05:00:00Z' }
+    apiMock.getAuthUserActivity.mockResolvedValueOnce({ ...base, events: [base.events[base.events.length - 1], older], has_more: false })
+    await clickButton(container, 'Load older events')
+    await flushPromises()
+    expect(apiMock.getAuthUserActivity).toHaveBeenLastCalledWith(expect.objectContaining({offset:base.events.length,created_before:firstQuery.created_before}))
+    expect(container.querySelectorAll('.access-data-table tbody tr')).toHaveLength(base.events.length + 1)
+    expect(tablePrimaryTexts(container)).toContain('Zed Older')
+    expect(container.querySelector('.access-table-wrap .access-load-older')?.textContent).toBe(`All ${base.events.length + 1} matching events loaded`)
     expect(container.querySelector('[data-table-pagination="off"]')).not.toBeNull()
     changeInput(inputByPlaceholder(container,'actor subject')!, 'unapplied-user')
     await clickButton(container, 'Export all matching events CSV')
@@ -445,7 +456,7 @@ describe('AccessPage', () => {
     await clickButton(container,'Onboard Users')
     expect(container.querySelector('aside')).toBeNull()
     expect(container.textContent).toContain('does not create a new local login')
-    await clickButton(container,'Service Accounts',true)
+    await clickButton(container,'Service accounts',true)
     await clickButton(container,'Create service account')
     expect(container.querySelector('aside')).toBeNull()
     expect(container.querySelectorAll('button[aria-pressed]').length).toBeGreaterThan(0)
@@ -704,7 +715,7 @@ describe('AccessPage', () => {
     expect(badge?.textContent).toBe('3')
 
     // The banner lives in the service-accounts workspace.
-    await clickButton(container, 'Service Accounts', true)
+    await clickButton(container, 'Service accounts', true)
     await flushPromises()
     expect(container.textContent).toContain('have review findings')
     expect(container.textContent).toContain('recent access denial')
@@ -717,7 +728,7 @@ describe('AccessPage', () => {
     await act(async () => root.render(renderAccess(true)))
     await flushPromises()
     await clickButton(container, 'Onboard Users')
-    await clickButton(container, 'Service Accounts', true)
+    await clickButton(container, 'Service accounts', true)
     expect(container.querySelector('[role="dialog"]')).toBeNull()
     expect(container.querySelector('section[aria-label="Service accounts access workspace"]')).not.toBeNull()
   })
@@ -738,12 +749,12 @@ describe('AccessPage', () => {
     if (!subjectInput) return
     changeInput(subjectInput, 'draft-user')
 
-    await clickButton(container, 'Service Accounts', true)
+    await clickButton(container, 'Service accounts', true)
     expect(container.querySelector('[role="dialog"]')?.textContent).toContain('User onboarding form has unsaved changes')
     await clickButton(container, 'Keep editing')
     expect(inputByPlaceholder(container, 'oidc-subject-or-upstream-user')?.value).toBe('draft-user')
 
-    await clickButton(container, 'Service Accounts', true)
+    await clickButton(container, 'Service accounts', true)
     await clickButton(container, 'Discard changes')
     expect(container.querySelector('section[aria-label="Service accounts access workspace"]')).not.toBeNull()
 
@@ -751,7 +762,7 @@ describe('AccessPage', () => {
     // The preset itself is the baseline and should not produce a false-positive guard.
     await clickButton(container, 'Users', true)
     expect(container.querySelector('[role="dialog"]')).toBeNull()
-    await clickButton(container, 'Service Accounts', true)
+    await clickButton(container, 'Service accounts', true)
     await clickButton(container, 'Create service account')
     const accountNameInput = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Service Account Name'))?.querySelector('input') as HTMLInputElement | undefined
     expect(accountNameInput).toBeDefined()
@@ -813,7 +824,7 @@ describe('AccessPage', () => {
     })
     expect(container.querySelector('aside[aria-label="Selected user details"]')?.textContent).toContain('Bob Viewer')
 
-    await clickButton(container, 'Service Accounts', true)
+    await clickButton(container, 'Service accounts', true)
     const accountInspector = container.querySelector('aside[aria-label="Selected service account details"]') as HTMLElement | null
     expect(accountInspector).not.toBeNull()
     if (!accountInspector) return
@@ -847,7 +858,7 @@ describe('AccessPage', () => {
     changeInput(subjectInput, 'invalid-email-user')
     changeInput(emailInput, 'not-an-email')
 
-    await clickButton(container, 'Service Accounts', true)
+    await clickButton(container, 'Service accounts', true)
     await clickButton(container, 'Save changes')
     await flushPromises()
 

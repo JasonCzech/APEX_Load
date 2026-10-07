@@ -6,25 +6,17 @@ import './HelpWorkspace.css'
 
 export default function HelpWorkspace({ area, activeArticle, isAdmin, children }: { area: HelpAreaID; activeArticle: string; isAdmin: boolean; children: ReactNode }) {
   const hash = useHelpHash()
-  const [navigationOpen, setNavigationOpen] = useState(() => !window.matchMedia?.('(max-width: 1000px)').matches)
-  useEffect(() => {
-    const media = window.matchMedia?.('(max-width: 1000px)')
-    const update = () => setNavigationOpen(!media?.matches)
-    update()
-    media?.addEventListener('change', update)
-    return () => media?.removeEventListener('change', update)
-  }, [hash])
   const articles = helpArticles.filter(article => article.area === area && (isAdmin || article.area !== 'admin-guide'))
   const groups = Array.from(new Set(articles.map(article => article.group || 'Articles')))
   // Keying the search form to navigation clears stale searches after opening a result.
   return <div className="help-workspace">
     <HelpSearch key={hash} isAdmin={isAdmin} />
     <div className="help-columns">
-      <aside className="help-sidebar">
-        <details className="help-browse" open={navigationOpen} onToggle={event => setNavigationOpen(event.currentTarget.open)}>
-          <summary>Browse articles</summary>
+      {/* The same always-visible section list as Settings and Access. */}
+      <aside className="section-nav help-sidebar">
         <nav aria-label="Help articles">
-          <h2>In this area</h2>
+          {/* Named groups label the list visually; the area heading stays for screen readers. */}
+          <h2 className={groups.length > 1 ? 'sr-only' : undefined}>In this area</h2>
           {groups.map(group => <div className="help-article-group" key={group}>
             {groups.length > 1 && <h3>{group}</h3>}
             <ul>{articles.filter(article => (article.group || 'Articles') === group).map(article => <li key={article.id}>
@@ -34,11 +26,11 @@ export default function HelpWorkspace({ area, activeArticle, isAdmin, children }
           {area === 'general' && <a href="#/swagger" aria-current={activeArticle === 'api-reference' ? 'page' : undefined}>API Reference (OpenAPI)</a>}
         </nav>
         <nav aria-label="Help utilities" className="help-utilities">
+          <h3>More help</h3>
           <a href="#/docs?guide=user-guide&article=capabilities">Capabilities & limitations</a>
           <a href="#/docs?article=changes">Changes & version</a>
           <a href="#/docs?guide=troubleshooting&article=support">Contact support</a>
         </nav>
-        </details>
       </aside>
       <div className="help-reading-pane">{children}</div>
     </div>

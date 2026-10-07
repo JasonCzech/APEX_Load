@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import type { Locator, Page, TestInfo } from '@playwright/test'
 import type { ScriptActionDefinition, ScriptDefinition } from '../src/types/scripts'
 import type { ScriptDebugRuntimeState } from '../src/types/replay'
-import { test, expect, idOf, json, login, mutation } from './support/workflow'
+import { test, expect, idOf, json, login, mutation, showAccountCard } from './support/workflow'
 import { createWorkspace, scopeQuery, type Workspace } from './support/workspace'
 
 // A real loopback barrier, independent of engine timing: both siblings must
@@ -100,6 +100,7 @@ async function capturePanel(page: Page, panel: Locator, info: TestInfo, name: st
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1)
   expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
   if (page.viewportSize()!.width <= 768 && process.env.APEXLOAD_E2E_PROFILE === 'local-auth') {
+    await showAccountCard(page)
     const sidebar = page.locator('aside.sidebar')
     const identity = sidebar.locator('.sidebar-identity')
     await expect(identity).toBeVisible()
@@ -116,6 +117,7 @@ async function capturePanel(page: Page, panel: Locator, info: TestInfo, name: st
     expect(await identity.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
     const logoutBounds = await logout.boundingBox()
     expect(logoutBounds!.y + logoutBounds!.height).toBeLessThanOrEqual(page.viewportSize()!.height + 1)
+    await page.keyboard.press('Escape')
   }
   await page.screenshot({ path: info.outputPath(name) })
 }

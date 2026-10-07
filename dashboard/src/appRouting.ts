@@ -44,7 +44,7 @@ const NAV_PAGES: NavPage[] = [
 const SCRIPT_MODES = ['list', 'create', 'edit', 'import'] as const
 const SCENARIO_VIEWS = ['library', 'builder', 'plans'] as const
 const TEST_WORKSPACE_TABS = ['overview', 'diagnostics', 'configuration', 'infrastructure', 'control', 'graphs', 'archive', 'action-summary', 'load-impact', 'transaction-drilldown'] as const
-const MONITORING_CATEGORIES = ['overview', 'telemetry', 'alerts', 'analysis'] as const
+const MONITORING_CATEGORIES = ['overview', 'telemetry', 'alerts'] as const
 // RootCauseRouteState is a root-cause investigation's shareable state: the
 // analysis and its revision, the hypothesis being investigated and the time
 // window in focus (two RFC 3339 times joined by "~").

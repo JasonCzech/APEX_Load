@@ -34,7 +34,7 @@
 }
 
 .desktop-home-action:hover {
-  border-color: var(--accent, #3b82f6);
+  border-color: var(--accent, var(--info));
 }
 
 .desktop-home-action:active {
@@ -159,7 +159,7 @@
 }
 
 .desktop-home-pin.is-pinned {
-  color: var(--accent, #3b82f6);
+  color: var(--accent, var(--info));
 }
 
 .desktop-home-recent-meta {
@@ -175,7 +175,7 @@
 
 .desktop-home-recent-kind {
   font-size: 11px;
-  text-transform: uppercase;
+  text-transform: var(--label-case, uppercase);
   color: var(--text-muted);
 }
 
@@ -197,8 +197,8 @@
   text-align: left;
   padding: 12px 14px;
   border-radius: var(--radius);
-  border: 1px solid var(--accent, #3b82f6);
-  background: color-mix(in srgb, var(--accent, #3b82f6) 8%, var(--bg-surface));
+  border: 1px solid var(--accent, var(--info));
+  background: color-mix(in srgb, var(--accent, var(--info)) 8%, var(--bg-surface));
   color: var(--text-primary);
   cursor: pointer;
 }

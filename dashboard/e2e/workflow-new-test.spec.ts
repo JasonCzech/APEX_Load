@@ -1,4 +1,4 @@
-import { test, expect, seedScript, seedScenario, login, json, idOf } from './support/workflow'
+import { test, expect, seedScript, seedScenario, login, json, idOf, signOut } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
 // Queued-run creation updates these read-context fields without editing the scenario.
@@ -727,7 +727,7 @@ test('queued-copy submit refuses a source started concurrently and viewers canno
     const users = (await json(await request.get('/api/v1/auth/users'))).users as Array<{ id: string; subject: string }>
     const viewer = users.find(user => user.subject === 'local:user')!
     await json(await request.post(`/api/v1/auth/users/${viewer.id}/bindings`, { data: { scope_type: 'domain', scope_id: workspace.domainId, role: 'viewer' } }))
-    await page.getByRole('button', { name: 'Sign out' }).click()
+    await signOut(page)
     await login(page, 'user')
     try {
       await page.goto(`/#/command-center/${viewerSource}?${scopeQuery(workspace)}`)
@@ -737,7 +737,7 @@ test('queued-copy submit refuses a source started concurrently and viewers canno
       await expect(page.getByRole('list', { name: 'Configured group runtime settings', exact: true })).toHaveCount(0)
       expect((await request.post('/api/v1/tests', { data: { project_id: workspace.projectId, revision_source_test_id: viewerSource, name: 'Forbidden viewer copy', duration: '1m', groups: [{ name: 'orders', script_id: script, vusers: 1, revision_source_group_index: 0 }] } })).status()).toBe(403)
     } finally {
-      await page.getByRole('button', { name: 'Sign out' }).click()
+      await signOut(page)
       await login(page)
     }
   }

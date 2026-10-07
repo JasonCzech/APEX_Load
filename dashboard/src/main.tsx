@@ -5,10 +5,16 @@ import { initializeDesktopApiOrigin } from './hooks/apiClient'
 import { ApiProvider } from './hooks/ApiProvider'
 import { getDesktopBridge } from './desktop/desktopBridge'
 import DesktopStartupFailure from './components/DesktopStartupFailure'
+import { applyInitialTheme } from './hooks/useDashboardTheme'
 import './index.css'
 import './components/Modal.css'
+import './topbarNavigation.css'
+import './themeComponents.css'
+import './sectionNavigation.css'
+import './typography.css'
 
 async function bootstrap() {
+  applyInitialTheme()
   const root = ReactDOM.createRoot(document.getElementById('root')!)
   if (getDesktopBridge()) {
     root.render(

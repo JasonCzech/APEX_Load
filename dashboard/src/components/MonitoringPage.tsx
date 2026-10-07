@@ -1,5 +1,6 @@
 import MonitoringEvidenceCard from './MonitoringEvidenceCard'
 import AnalysisWorkspace from './AnalysisWorkspace'
+import { request } from '../hooks/apiClient'
 import { RunMonitorSources } from './RunMonitoring'
 import ThresholdIncidentPanel from './ThresholdIncidentPanel'
 import type { IncidentHealth } from './thresholdIncidentModel'
@@ -56,13 +57,14 @@ const EMPTY_SERVICES: SystemServicesResponse['services'] = []
 const EMPTY_FLEET_ALERTS: FleetAlert[] = []
 
 const MONITOR_CATEGORIES = [
-  { id: 'overview', label: 'Overview', cardIds: ['production-readiness', 'threshold-alerts', 'system-health'] },
+  // The Parquet analysis workspace sits on Overview, shown only where it is enabled
+  // (a separate Analysis tab duplicated Overview for every other project).
+  { id: 'overview', label: 'Overview', cardIds: ['production-readiness', 'threshold-alerts', 'system-health', 'parquet-analysis'] },
   // Cloud connections and execution targets are the normalized path; the
   // cluster registry remains available unchanged for Kubernetes deployments.
   { id: 'fleet', label: 'Fleet', cardIds: ['capacity', 'generators', 'fleet-alerts', 'fleet-audit'] },
   { id: 'telemetry', label: 'Telemetry', cardIds: ['run-monitor-sources', 'telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors', 'elk-connections', 'dynatrace-connections'] },
   { id: 'alerts', label: 'Alerts', cardIds: ['production-readiness', 'threshold-alerts', 'fleet-alerts', 'telemetry-diagnostics'] },
-  { id: 'analysis', label: 'Analysis', cardIds: ['parquet-analysis'] },
   { id: 'schedules', label: 'Schedules', cardIds: ['run-calendar'] },
 ] as const
 
@@ -482,6 +484,16 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [isGeneratorsModalOpen, setIsGeneratorsModalOpen] = useState(false)
   const [internalCategoryId, setInternalCategoryId] = useState<MonitorCategoryId>(initialCategoryId)
   const activeCategoryId = controlledCategoryId ?? internalCategoryId
+  const [nativeAnalysisAvailable, setNativeAnalysisAvailable] = useState(false)
+  useEffect(() => {
+    setNativeAnalysisAvailable(false)
+    if (!activeProjectId) return undefined
+    const controller = new AbortController()
+    request<{ enabled?: boolean; native_parquet?: boolean }>(`/analysis/capabilities?project_id=${encodeURIComponent(activeProjectId)}`, { signal: controller.signal })
+      .then(caps => { if (!controller.signal.aborted) setNativeAnalysisAvailable(Boolean(caps?.enabled && caps?.native_parquet)) })
+      .catch(() => undefined)
+    return () => controller.abort()
+  }, [activeProjectId])
   const [cardOrder, setCardOrder] = useState<string[]>(() => readStoredStringArray('apexload.monitoring.cardOrder'))
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
   const [staleCardIds, setStaleCardIds] = useState<string[]>([])
@@ -1699,7 +1711,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   }, [cards, cardOrder])
 
   const activeCategory = MONITOR_CATEGORIES.find(category => category.id === activeCategoryId) ?? MONITOR_CATEGORIES[0]
-  const activeCategoryCardIds = new Set<string>(activeCategory.cardIds)
+  const activeCategoryCardIds = new Set<string>(activeCategory.cardIds.filter(id => id !== 'parquet-analysis' || nativeAnalysisAvailable))
   const activeVisibleCards = orderedCards.filter(card => activeCategoryCardIds.has(card.id)).sort((a, b) => (a.id === 'production-readiness' ? -1 : b.id === 'production-readiness' ? 1 : 0))
 
   const selectCategory = useCallback((id: MonitorCategoryId) => {
@@ -1872,7 +1884,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
 
       <div className="monitor-context-actions settings-inline-actions">
         <span>{activeCategoryId === 'fleet' ? 'Distributed fleet status. Local execution is separate from generator inventory.' : `Project: ${activeProject?.name || 'No project selected'} · Control-plane health is deployment-wide.`}</span>
-        {canManageSystem && (activeCategoryId === 'fleet' ? [['pools', 'Configure pools'], ['clusters', 'Connect cluster'], ['cloud', 'Connections & targets'], ['capacity', 'Capacity source'], ['allocations', 'Standing allocations']] : activeCategoryId === 'alerts' ? [['thresholds', 'Alert & stop policies'], ['notifications', 'Notification routes']] : activeCategoryId === 'telemetry' ? [['prometheus', 'APEX platform graphs'], ['grafana', 'Grafana'], ['dashboards', 'Import dashboards']] : activeCategoryId === 'schedules' ? [['scheduling', 'Schedule defaults'], ['allocations', 'Standing allocations']] : [['platform', 'Controller settings'], ['authentication', 'Authentication']]).map(([id, label]) => <a className="btn btn-secondary btn-sm" key={id} href={settingsHref(id)}>{label}</a>)}
+        {canManageSystem && (activeCategoryId === 'fleet' ? [['pools', 'Configure pools'], ['clusters', 'Connect cluster'], ['cloud', 'Connections & targets'], ['capacity', 'Capacity source'], ['allocations', 'Standing allocations']] : activeCategoryId === 'alerts' ? [['thresholds', 'Alert & stop policies'], ['notifications', 'Notification routes']] : activeCategoryId === 'telemetry' ? [['prometheus', 'APEX platform graphs'], ['grafana', 'Grafana'], ['dashboards', 'Import dashboards']] : activeCategoryId === 'schedules' ? [['scheduling', 'Schedule defaults'], ['allocations', 'Standing allocations']] : [['platform', 'Controller settings'], ['authentication', 'Authentication']]).map(([id, label]) => <a className="related-link" key={id} href={settingsHref(id)}>{label}</a>)}
       </div>
       {activeCategoryId === 'telemetry' && <p className="monitor-context-actions">APM profiles describe outbound events and trace delivery. Test capture reads external data into an opted-in run. {(canManageSystem || canManageProjects) && <><a href={settingsHref('elk-capture')}>Elastic capture settings</a> · <a href={settingsHref('dynatrace-capture')}>Dynatrace capture settings</a> · <a href={settingsHref('prometheus-capture')}>Prometheus test monitoring settings</a></>}</p>}
       {activeCategoryId === 'telemetry' && <MonitoringEvidenceCard canManage={canManageSystem} />}

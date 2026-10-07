@@ -20,7 +20,7 @@
 .cloudtest-parity-summary-card.active {
   color: var(--text-primary);
   border-color: var(--accent);
-  background: rgba(99, 102, 241, 0.1);
+  background: rgba(var(--accent-rgb), 0.1);
 }
 
 .cloudtest-parity-summary-card strong {

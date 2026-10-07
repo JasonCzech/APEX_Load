@@ -67,24 +67,6 @@ test('missing-script detour preserves the scenario draft on cancellation',async(
   await expect(page.getByRole('button',{name:'Choose script for Group 1'})).toBeVisible()
 })
 
-test('guided setup creates the full hierarchy across scope changes', async({page,request})=>{
-  const workspace=await createWorkspace(request)
-  await page.goto(`/#/settings?setting=domains&${scopeQuery(workspace)}`)
-  await page.getByText('Guided workspace setup',{exact:true}).click()
-  await page.getByLabel('New domain name',{exact:true}).fill(`Guided domain ${Date.now()}`)
-  await page.getByRole('button',{name:'Create domain and continue'}).click()
-  await page.getByLabel('New project name',{exact:true}).fill('Guided project')
-  await page.getByRole('button',{name:'Create project and continue'}).click()
-  const name=`Guided storefront ${Date.now()}`
-  await page.getByLabel('New application name',{exact:true}).fill(name)
-  await page.getByRole('button',{name:'Create application and continue'}).click()
-  await page.getByLabel('New release name',{exact:true}).fill('Acceptance release')
-  await page.getByRole('button',{name:'Create release and continue'}).click()
-  await expect(page.getByText('Workspace ready.',{exact:false})).toBeVisible()
-  await expect(page.getByRole('button',{name:new RegExp(`Workspace context\\..*${name}`)})).toBeVisible()
-  await expect(page.getByRole('button',{name:/Workspace context\..*Acceptance release/})).toBeVisible()
-})
-
 test('OpenAPI prerequisite import returns the saved script to the original group',async({page,request,target})=>{
   const workspace=await createWorkspace(request)
   await page.goto(`/#/new-test?${scopeQuery(workspace)}`)

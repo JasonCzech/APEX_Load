@@ -127,7 +127,7 @@ test('[U21] the imported script editor preserves tab state and saved changes acr
   expect(record(storedScript.config, 'saved script config').base_url).toBe(editedBaseURL)
 
   await page.getByRole('button', { name: 'Close script editor' }).click()
-  await expect(page.getByRole('heading', { level: 1, name: 'Script Library' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('heading', { level: 1, name: 'Scripts' })).toBeVisible({ timeout: 15_000 })
   await page.getByRole('searchbox', {name:'Search scripts',exact:true}).fill('Tier_0_Orders_API')
   const scriptRow = page.getByRole('row').filter({ hasText: 'Tier_0_Orders_API' })
   await scriptRow.getByRole('button', { name: 'Edit', exact: true }).click()

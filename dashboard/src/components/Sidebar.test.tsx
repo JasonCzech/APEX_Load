@@ -60,6 +60,15 @@ describe('Sidebar', () => {
     })
   }
 
+  // The sidebar starts as the collapsed icon rail; tests that assert on the
+  // expanded content (labels, identity card, workspace names) open it first.
+  const expandSidebar = async () => {
+    if (!container.querySelector('.sidebar.collapsed')) return
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.collapse-btn')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+  }
+
   const openDevView = async () => {
     if (container.querySelector('#sidebar-dev-view-panel')) return
     const devToggle = container.querySelector<HTMLButtonElement>('[aria-controls="sidebar-dev-view-panel"]')
@@ -104,6 +113,7 @@ describe('Sidebar', () => {
         />,
       )
     })
+    await expandSidebar()
 
     expect(container.textContent).toContain('Alice Admin')
     expect(container.querySelector('.sidebar-identity-meta')?.textContent).toBe('System Admin')
@@ -138,6 +148,7 @@ describe('Sidebar', () => {
         />,
       )
     })
+    await expandSidebar()
 
     expect(container.querySelector('.sidebar-identity-meta')?.textContent).toBe('Project Admin')
   })
@@ -170,6 +181,7 @@ describe('Sidebar', () => {
         />,
       )
     })
+    await expandSidebar()
     expect(container.querySelector('.sidebar-identity-meta')?.textContent).toBe('Editor')
 
     await act(async () => {
@@ -212,6 +224,7 @@ describe('Sidebar', () => {
         />,
       )
     })
+    await expandSidebar()
 
     const logoutButton = container.querySelector('.sidebar-identity-action-button') as HTMLButtonElement | null
     expect(logoutButton?.textContent).toBe('Sign out')
@@ -247,6 +260,7 @@ describe('Sidebar', () => {
         />,
       )
     })
+    await expandSidebar()
     expect(container.textContent).toContain('Local Developer')
     expect(container.textContent).not.toContain('Dev View')
     const logoutButton = container.querySelector('.sidebar-identity-action-button') as HTMLButtonElement
@@ -282,6 +296,7 @@ describe('Sidebar', () => {
         />,
       )
     })
+    await expandSidebar()
 
     expect(container.textContent).toContain('Alice Admin')
     expect(container.textContent).toContain('System Admin')
@@ -310,6 +325,7 @@ describe('Sidebar', () => {
         />,
       )
     })
+    await expandSidebar()
 
     expect(container.textContent).toContain('Session expires in 2 min')
   })
@@ -339,6 +355,7 @@ describe('Sidebar', () => {
         />,
       )
     })
+    await expandSidebar()
 
     expect(container.textContent).toContain('Session expires in 4 min')
     await act(async () => {
@@ -365,6 +382,7 @@ describe('Sidebar', () => {
         />,
       )
     })
+    await expandSidebar()
 
     expect(container.textContent).toContain('Checkout')
 
@@ -500,6 +518,7 @@ describe('Sidebar', () => {
         />,
       )
     })
+    await expandSidebar()
 
     const guideButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Help & documentation'))
     expect(guideButton).toBeDefined()
@@ -540,6 +559,7 @@ describe('Sidebar', () => {
         />,
       )
     })
+    await expandSidebar()
 
     const labels = Array.from(container.querySelectorAll('.sidebar-nav .nav-label')).map(label => label.textContent)
 
@@ -556,6 +576,7 @@ describe('Sidebar', () => {
         />,
       )
     })
+    await expandSidebar()
 
     const buttons = Array.from(container.querySelectorAll('.sidebar-nav button'))
     const dashboardButton = buttons.find(button => button.textContent?.includes('Dashboard'))
@@ -581,22 +602,15 @@ describe('Sidebar', () => {
       await Promise.resolve()
     })
 
-    expect(container.querySelector('.sidebar-footer .sidebar-status')).not.toBeNull()
-    expect(container.querySelector('.sidebar-footer .build-badge')).not.toBeNull()
-
-    const collapseButton = container.querySelector('.collapse-btn') as HTMLButtonElement | null
-    expect(collapseButton).not.toBeNull()
-    if (!collapseButton) {
-      return
-    }
-
-    await act(async () => {
-      collapseButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
     expect(container.querySelector('.sidebar.collapsed')).not.toBeNull()
     expect(container.querySelector('.sidebar.collapsed .sidebar-footer .sidebar-status')).not.toBeNull()
     expect(container.querySelector('.sidebar.collapsed .sidebar-footer .build-badge')).not.toBeNull()
+
+    await expandSidebar()
+
+    expect(container.querySelector('.sidebar.collapsed')).toBeNull()
+    expect(container.querySelector('.sidebar-footer .sidebar-status')).not.toBeNull()
+    expect(container.querySelector('.sidebar-footer .build-badge')).not.toBeNull()
   })
 
   it('does not render raw SHA build versions as the badge label', async () => {
@@ -638,6 +652,7 @@ describe('Sidebar', () => {
         />,
       )
     })
+    await expandSidebar()
 
     const accessButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Access'))
     expect(accessButton).toBeDefined()
@@ -718,6 +733,7 @@ describe('Sidebar', () => {
         </DevViewProvider>,
       )
     })
+    await expandSidebar()
 
     expect(container.textContent).toContain('Preview permissions')
     await openDevView()
@@ -1105,9 +1121,6 @@ describe('Sidebar', () => {
       )
     })
 
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>('.collapse-btn')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
     expect(container.querySelector('.sidebar.collapsed')).not.toBeNull()
 
     await openWorkspaceContext()
@@ -1162,5 +1175,178 @@ describe('Sidebar', () => {
     await openMenu('[aria-controls="sidebar-release-options"]')
     expect(menuButton('sidebar-release-options', 'Open Repository')).toBeUndefined()
     expect(menuButton('sidebar-release-options', 'New Release')).toBeDefined()
+  })
+  const navButton = (label: string) => container.querySelector<HTMLButtonElement>(`.sidebar-nav button[aria-label="${label}"]`)
+  const tooltipText = () => document.querySelector('[role="tooltip"]')?.textContent ?? null
+
+  it('starts as the collapsed icon rail and opens over the page instead of pushing it', async () => {
+    await act(async () => {
+      root.render(<Sidebar active="dashboard" onNavigate={vi.fn()} connectionState="connected" />)
+    })
+
+    expect(container.querySelector('.sidebar.collapsed')).not.toBeNull()
+    expect(container.querySelector('.sidebar-nav .nav-label')).toBeNull()
+    expect(container.querySelector('.sidebar-shell')?.classList.contains('overlay-open')).toBe(false)
+
+    await expandSidebar()
+
+    expect(container.querySelector('.sidebar.collapsed')).toBeNull()
+    expect(container.querySelector('.sidebar-shell')?.classList.contains('overlay-open')).toBe(true)
+    // The shell, not the sidebar, owns the layout slot, so the page keeps its position.
+    expect(container.querySelector('.sidebar-shell > aside.sidebar')).not.toBeNull()
+  })
+
+  it('closes the expanded overlay on an outside click, Escape, and navigation', async () => {
+    const onNavigate = vi.fn()
+    await act(async () => {
+      root.render(<Sidebar active="dashboard" onNavigate={onNavigate} connectionState="connected" />)
+    })
+
+    await expandSidebar()
+    await act(async () => {
+      document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    })
+    expect(container.querySelector('.sidebar.collapsed')).not.toBeNull()
+
+    await expandSidebar()
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    })
+    expect(container.querySelector('.sidebar.collapsed')).not.toBeNull()
+
+    await expandSidebar()
+    await act(async () => {
+      navButton('Scripts')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(onNavigate).toHaveBeenCalledWith('scripts')
+    expect(container.querySelector('.sidebar.collapsed')).not.toBeNull()
+  })
+
+  it('closes an open workspace menu before the expanded overlay on Escape', async () => {
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+          domains={[mobilityDomain]}
+          activeDomain={mobilityDomain}
+          projects={[mobilityProject]}
+          activeProject={mobilityProject}
+        />,
+      )
+    })
+
+    await openMenu('[aria-controls="sidebar-project-options"]')
+    expect(container.querySelector('#sidebar-project-options')).not.toBeNull()
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    })
+    expect(container.querySelector('#sidebar-project-options')).toBeNull()
+    expect(container.querySelector('.sidebar.collapsed')).toBeNull()
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    })
+    expect(container.querySelector('.sidebar.collapsed')).not.toBeNull()
+  })
+
+  it('shows hover popups only while the sidebar is collapsed, including the workspace pickers', async () => {
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+          domains={[mobilityDomain]}
+          activeDomain={mobilityDomain}
+          projects={[mobilityProject]}
+          activeProject={mobilityProject}
+        />,
+      )
+    })
+
+    await act(async () => navButton('Scripts')?.focus())
+    expect(tooltipText()).toBe('Scripts')
+    await act(async () => container.querySelector<HTMLButtonElement>('.workspace-summary')?.focus())
+    expect(tooltipText()).toBe('Mobility / Mobility Web / Application / Release')
+    await act(async () => container.querySelector<HTMLButtonElement>('.collapse-btn')?.focus())
+    expect(tooltipText()).toBe('Expand sidebar')
+
+    await expandSidebar()
+    await act(async () => navButton('Scripts')?.focus())
+    expect(tooltipText()).toBeNull()
+    await act(async () => container.querySelector<HTMLButtonElement>('.collapse-btn')?.focus())
+    expect(tooltipText()).toBeNull()
+
+    await openWorkspaceContext()
+    for (const selector of ['sidebar-domain-options', 'sidebar-project-options', 'sidebar-application-options', 'sidebar-release-options']) {
+      await act(async () => container.querySelector<HTMLButtonElement>(`[aria-controls="${selector}"]`)?.focus())
+      expect(tooltipText(), selector).toBeNull()
+    }
+  })
+
+  it('keeps the signed-in user and an imminent session expiry visible on the collapsed rail', async () => {
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+          authStatus={{
+            enabled: true,
+            mode: 'local',
+            authenticated: true,
+            session_status: 'active',
+            session_ttl_seconds: 89,
+            user: {
+              subject: 'local:user',
+              display_name: 'Local Viewer',
+              global_roles: ['viewer'],
+            },
+          }}
+        />,
+      )
+    })
+
+    const avatar = container.querySelector<HTMLButtonElement>('.sidebar.collapsed .sidebar-rail-avatar')
+    expect(avatar).not.toBeNull()
+    expect(avatar?.classList.contains('session-warning')).toBe(true)
+    expect(avatar?.querySelector('.sidebar-rail-avatar-alert')).not.toBeNull()
+    expect(avatar?.getAttribute('aria-label')).toContain('Local Viewer')
+    expect(avatar?.getAttribute('aria-label')).toContain('Session expires in 2 min')
+    await act(async () => avatar?.focus())
+    expect(tooltipText()).toContain('Session expires in 2 min')
+
+    await act(async () => {
+      avatar?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('.sidebar.collapsed')).toBeNull()
+    expect(container.querySelector('.sidebar-rail-avatar')).toBeNull()
+    expect(container.querySelector('.sidebar-identity-session')?.textContent).toBe('Session expires in 2 min')
+  })
+
+  it('shows a calm rail avatar when the session is not about to expire', async () => {
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+          authStatus={{
+            enabled: true,
+            mode: 'trusted_headers',
+            authenticated: true,
+            user: { subject: 'alice', display_name: 'Alice Admin', global_roles: ['system_admin'] },
+          }}
+        />,
+      )
+    })
+
+    const avatar = container.querySelector<HTMLButtonElement>('.sidebar-rail-avatar')
+    expect(avatar?.textContent).toBe('AA')
+    expect(avatar?.classList.contains('session-warning')).toBe(false)
+    expect(avatar?.querySelector('.sidebar-rail-avatar-alert')).toBeNull()
   })
 })
