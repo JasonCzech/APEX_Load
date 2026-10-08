@@ -1514,6 +1514,18 @@ export interface operations {
                 "summary"?: (Record<string, unknown>) | null;
                 "warnings"?: Array<string>;
               }>;
+              "telemetry_comparisons"?: Array<{
+                "baseline"?: Record<string, unknown>;
+                "baseline_run_id"?: string;
+                "breached_interval_pct_delta"?: (number) | null;
+                "breached_known_fraction_delta"?: (number) | null;
+                "comparable"?: boolean;
+                "current"?: Record<string, unknown>;
+                "health_coverage_pct_delta"?: (number) | null;
+                "notes"?: Array<string>;
+                "reasons"?: Array<string>;
+                "scope"?: string;
+              }>;
               "transactions"?: Array<{
                 "baselines"?: Record<string, Record<string, unknown>>;
                 "current"?: (Record<string, unknown>) | null;
@@ -29246,6 +29258,64 @@ export interface operations {
               }) | null;
               "warnings": Array<string>;
             }>;
+            "telemetry_comparisons"?: Array<{
+              "baseline": {
+                "budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_ms"?: number;
+                "cadence_scope"?: string;
+                "policy_availability": string;
+                "policy_hash"?: string;
+                "policy_pin"?: ({
+                  "applied": boolean;
+                  "id": string;
+                  "kind": string;
+                  "name": string;
+                  "revision": number;
+                  "sha256": string;
+                  "source": string;
+                }) | null;
+                "run_id": string;
+                "source_capabilities": Array<string>;
+                "sustained_breach_window_ms"?: number;
+                "workload_version"?: number;
+              };
+              "baseline_run_id": string;
+              "breached_interval_pct_delta"?: (number) | null;
+              "breached_known_fraction_delta"?: (number) | null;
+              "comparable": boolean;
+              "current": {
+                "budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_ms"?: number;
+                "cadence_scope"?: string;
+                "policy_availability": string;
+                "policy_hash"?: string;
+                "policy_pin"?: ({
+                  "applied": boolean;
+                  "id": string;
+                  "kind": string;
+                  "name": string;
+                  "revision": number;
+                  "sha256": string;
+                  "source": string;
+                }) | null;
+                "run_id": string;
+                "source_capabilities": Array<string>;
+                "sustained_breach_window_ms"?: number;
+                "workload_version"?: number;
+              };
+              "health_coverage_pct_delta"?: (number) | null;
+              "notes"?: Array<string>;
+              "reasons": Array<string>;
+              "scope": string;
+            }>;
             "transactions": Array<{
               "baselines": Record<string, {
                 "approximate": boolean;
@@ -55707,6 +55777,64 @@ export interface operations {
               }) | null;
               "warnings": Array<string>;
             }>;
+            "telemetry_comparisons"?: Array<{
+              "baseline": {
+                "budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_ms"?: number;
+                "cadence_scope"?: string;
+                "policy_availability": string;
+                "policy_hash"?: string;
+                "policy_pin"?: ({
+                  "applied": boolean;
+                  "id": string;
+                  "kind": string;
+                  "name": string;
+                  "revision": number;
+                  "sha256": string;
+                  "source": string;
+                }) | null;
+                "run_id": string;
+                "source_capabilities": Array<string>;
+                "sustained_breach_window_ms"?: number;
+                "workload_version"?: number;
+              };
+              "baseline_run_id": string;
+              "breached_interval_pct_delta"?: (number) | null;
+              "breached_known_fraction_delta"?: (number) | null;
+              "comparable": boolean;
+              "current": {
+                "budgets"?: Array<{
+                  "enabled": boolean;
+                  "limit_ms": number;
+                  "stage": string;
+                }>;
+                "cadence_ms"?: number;
+                "cadence_scope"?: string;
+                "policy_availability": string;
+                "policy_hash"?: string;
+                "policy_pin"?: ({
+                  "applied": boolean;
+                  "id": string;
+                  "kind": string;
+                  "name": string;
+                  "revision": number;
+                  "sha256": string;
+                  "source": string;
+                }) | null;
+                "run_id": string;
+                "source_capabilities": Array<string>;
+                "sustained_breach_window_ms"?: number;
+                "workload_version"?: number;
+              };
+              "health_coverage_pct_delta"?: (number) | null;
+              "notes"?: Array<string>;
+              "reasons": Array<string>;
+              "scope": string;
+            }>;
             "transactions": Array<{
               "baselines": Record<string, {
                 "approximate": boolean;
@@ -66993,6 +67121,48 @@ export interface operations {
                   "websocket_dropped_messages"?: number;
                 }) | null;
                 "warnings": Array<string>;
+              }>;
+              "telemetry_comparisons"?: Array<{
+                "baseline": {
+                  "budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_ms"?: number;
+                  "cadence_scope"?: string;
+                  "policy_availability": string;
+                  "policy_hash"?: string;
+                  "policy_pin"?: (Record<string, unknown>) | null;
+                  "run_id": string;
+                  "source_capabilities": Array<string>;
+                  "sustained_breach_window_ms"?: number;
+                  "workload_version"?: number;
+                };
+                "baseline_run_id": string;
+                "breached_interval_pct_delta"?: (number) | null;
+                "breached_known_fraction_delta"?: (number) | null;
+                "comparable": boolean;
+                "current": {
+                  "budgets"?: Array<{
+                    "enabled": boolean;
+                    "limit_ms": number;
+                    "stage": string;
+                  }>;
+                  "cadence_ms"?: number;
+                  "cadence_scope"?: string;
+                  "policy_availability": string;
+                  "policy_hash"?: string;
+                  "policy_pin"?: (Record<string, unknown>) | null;
+                  "run_id": string;
+                  "source_capabilities": Array<string>;
+                  "sustained_breach_window_ms"?: number;
+                  "workload_version"?: number;
+                };
+                "health_coverage_pct_delta"?: (number) | null;
+                "notes"?: Array<string>;
+                "reasons": Array<string>;
+                "scope": string;
               }>;
               "transactions": Array<{
                 "baselines": Record<string, Record<string, unknown>>;

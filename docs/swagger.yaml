@@ -4254,6 +4254,45 @@ paths:
                                 type: array
                                 items:
                                   type: string
+                        telemetry_comparisons:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              baseline:
+                                type: object
+                                description: 'Go type: TelemetryRunProfile'
+                                additionalProperties: true
+                              baseline_run_id:
+                                type: string
+                              breached_interval_pct_delta:
+                                type: number
+                                format: double
+                                nullable: true
+                              breached_known_fraction_delta:
+                                type: number
+                                format: double
+                                nullable: true
+                              comparable:
+                                type: boolean
+                              current:
+                                type: object
+                                description: 'Go type: TelemetryRunProfile'
+                                additionalProperties: true
+                              health_coverage_pct_delta:
+                                type: number
+                                format: double
+                                nullable: true
+                              notes:
+                                type: array
+                                items:
+                                  type: string
+                              reasons:
+                                type: array
+                                items:
+                                  type: string
+                              scope:
+                                type: string
                         transactions:
                           type: array
                           items:
@@ -356575,6 +356614,142 @@ paths:
                             - retained_intervals
                             - run_id
                             - warnings
+                      telemetry_comparisons:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            baseline:
+                              type: object
+                              properties:
+                                budgets:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      enabled:
+                                        type: boolean
+                                      limit_ms:
+                                        type: number
+                                        format: double
+                                      stage:
+                                        type: string
+                                    required:
+                                      - enabled
+                                      - limit_ms
+                                      - stage
+                                cadence_ms:
+                                  type: integer
+                                  format: int64
+                                cadence_scope:
+                                  type: string
+                                policy_availability:
+                                  type: string
+                                policy_hash:
+                                  type: string
+                                policy_pin:
+                                  type: object
+                                  description: 'Go type: RunPolicyPin'
+                                  additionalProperties: true
+                                  nullable: true
+                                run_id:
+                                  type: string
+                                source_capabilities:
+                                  type: array
+                                  items:
+                                    type: string
+                                sustained_breach_window_ms:
+                                  type: integer
+                                  format: int64
+                                workload_version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - policy_availability
+                                - run_id
+                                - source_capabilities
+                            baseline_run_id:
+                              type: string
+                            breached_interval_pct_delta:
+                              type: number
+                              format: double
+                              nullable: true
+                            breached_known_fraction_delta:
+                              type: number
+                              format: double
+                              nullable: true
+                            comparable:
+                              type: boolean
+                            current:
+                              type: object
+                              properties:
+                                budgets:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      enabled:
+                                        type: boolean
+                                      limit_ms:
+                                        type: number
+                                        format: double
+                                      stage:
+                                        type: string
+                                    required:
+                                      - enabled
+                                      - limit_ms
+                                      - stage
+                                cadence_ms:
+                                  type: integer
+                                  format: int64
+                                cadence_scope:
+                                  type: string
+                                policy_availability:
+                                  type: string
+                                policy_hash:
+                                  type: string
+                                policy_pin:
+                                  type: object
+                                  description: 'Go type: RunPolicyPin'
+                                  additionalProperties: true
+                                  nullable: true
+                                run_id:
+                                  type: string
+                                source_capabilities:
+                                  type: array
+                                  items:
+                                    type: string
+                                sustained_breach_window_ms:
+                                  type: integer
+                                  format: int64
+                                workload_version:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - policy_availability
+                                - run_id
+                                - source_capabilities
+                            health_coverage_pct_delta:
+                              type: number
+                              format: double
+                              nullable: true
+                            notes:
+                              type: array
+                              items:
+                                type: string
+                            reasons:
+                              type: array
+                              items:
+                                type: string
+                            scope:
+                              type: string
+                          required:
+                            - baseline
+                            - baseline_run_id
+                            - comparable
+                            - current
+                            - reasons
+                            - scope
                       transactions:
                         type: array
                         items:
@@ -371310,6 +371485,186 @@ paths:
                         - retained_intervals
                         - run_id
                         - warnings
+                  telemetry_comparisons:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        baseline:
+                          type: object
+                          properties:
+                            budgets:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  enabled:
+                                    type: boolean
+                                  limit_ms:
+                                    type: number
+                                    format: double
+                                  stage:
+                                    type: string
+                                required:
+                                  - enabled
+                                  - limit_ms
+                                  - stage
+                            cadence_ms:
+                              type: integer
+                              format: int64
+                            cadence_scope:
+                              type: string
+                            policy_availability:
+                              type: string
+                            policy_hash:
+                              type: string
+                            policy_pin:
+                              type: object
+                              properties:
+                                applied:
+                                  type: boolean
+                                id:
+                                  type: string
+                                kind:
+                                  type: string
+                                name:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                sha256:
+                                  type: string
+                                source:
+                                  type: string
+                              required:
+                                - applied
+                                - id
+                                - kind
+                                - name
+                                - revision
+                                - sha256
+                                - source
+                              nullable: true
+                            run_id:
+                              type: string
+                            source_capabilities:
+                              type: array
+                              items:
+                                type: string
+                            sustained_breach_window_ms:
+                              type: integer
+                              format: int64
+                            workload_version:
+                              type: integer
+                              format: int64
+                          required:
+                            - policy_availability
+                            - run_id
+                            - source_capabilities
+                        baseline_run_id:
+                          type: string
+                        breached_interval_pct_delta:
+                          type: number
+                          format: double
+                          nullable: true
+                        breached_known_fraction_delta:
+                          type: number
+                          format: double
+                          nullable: true
+                        comparable:
+                          type: boolean
+                        current:
+                          type: object
+                          properties:
+                            budgets:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  enabled:
+                                    type: boolean
+                                  limit_ms:
+                                    type: number
+                                    format: double
+                                  stage:
+                                    type: string
+                                required:
+                                  - enabled
+                                  - limit_ms
+                                  - stage
+                            cadence_ms:
+                              type: integer
+                              format: int64
+                            cadence_scope:
+                              type: string
+                            policy_availability:
+                              type: string
+                            policy_hash:
+                              type: string
+                            policy_pin:
+                              type: object
+                              properties:
+                                applied:
+                                  type: boolean
+                                id:
+                                  type: string
+                                kind:
+                                  type: string
+                                name:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                sha256:
+                                  type: string
+                                source:
+                                  type: string
+                              required:
+                                - applied
+                                - id
+                                - kind
+                                - name
+                                - revision
+                                - sha256
+                                - source
+                              nullable: true
+                            run_id:
+                              type: string
+                            source_capabilities:
+                              type: array
+                              items:
+                                type: string
+                            sustained_breach_window_ms:
+                              type: integer
+                              format: int64
+                            workload_version:
+                              type: integer
+                              format: int64
+                          required:
+                            - policy_availability
+                            - run_id
+                            - source_capabilities
+                        health_coverage_pct_delta:
+                          type: number
+                          format: double
+                          nullable: true
+                        notes:
+                          type: array
+                          items:
+                            type: string
+                        reasons:
+                          type: array
+                          items:
+                            type: string
+                        scope:
+                          type: string
+                      required:
+                        - baseline
+                        - baseline_run_id
+                        - comparable
+                        - current
+                        - reasons
+                        - scope
                   transactions:
                     type: array
                     items:
@@ -373304,6 +373659,186 @@ paths:
                         - retained_intervals
                         - run_id
                         - warnings
+                  telemetry_comparisons:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        baseline:
+                          type: object
+                          properties:
+                            budgets:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  enabled:
+                                    type: boolean
+                                  limit_ms:
+                                    type: number
+                                    format: double
+                                  stage:
+                                    type: string
+                                required:
+                                  - enabled
+                                  - limit_ms
+                                  - stage
+                            cadence_ms:
+                              type: integer
+                              format: int64
+                            cadence_scope:
+                              type: string
+                            policy_availability:
+                              type: string
+                            policy_hash:
+                              type: string
+                            policy_pin:
+                              type: object
+                              properties:
+                                applied:
+                                  type: boolean
+                                id:
+                                  type: string
+                                kind:
+                                  type: string
+                                name:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                sha256:
+                                  type: string
+                                source:
+                                  type: string
+                              required:
+                                - applied
+                                - id
+                                - kind
+                                - name
+                                - revision
+                                - sha256
+                                - source
+                              nullable: true
+                            run_id:
+                              type: string
+                            source_capabilities:
+                              type: array
+                              items:
+                                type: string
+                            sustained_breach_window_ms:
+                              type: integer
+                              format: int64
+                            workload_version:
+                              type: integer
+                              format: int64
+                          required:
+                            - policy_availability
+                            - run_id
+                            - source_capabilities
+                        baseline_run_id:
+                          type: string
+                        breached_interval_pct_delta:
+                          type: number
+                          format: double
+                          nullable: true
+                        breached_known_fraction_delta:
+                          type: number
+                          format: double
+                          nullable: true
+                        comparable:
+                          type: boolean
+                        current:
+                          type: object
+                          properties:
+                            budgets:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  enabled:
+                                    type: boolean
+                                  limit_ms:
+                                    type: number
+                                    format: double
+                                  stage:
+                                    type: string
+                                required:
+                                  - enabled
+                                  - limit_ms
+                                  - stage
+                            cadence_ms:
+                              type: integer
+                              format: int64
+                            cadence_scope:
+                              type: string
+                            policy_availability:
+                              type: string
+                            policy_hash:
+                              type: string
+                            policy_pin:
+                              type: object
+                              properties:
+                                applied:
+                                  type: boolean
+                                id:
+                                  type: string
+                                kind:
+                                  type: string
+                                name:
+                                  type: string
+                                revision:
+                                  type: integer
+                                  format: int64
+                                sha256:
+                                  type: string
+                                source:
+                                  type: string
+                              required:
+                                - applied
+                                - id
+                                - kind
+                                - name
+                                - revision
+                                - sha256
+                                - source
+                              nullable: true
+                            run_id:
+                              type: string
+                            source_capabilities:
+                              type: array
+                              items:
+                                type: string
+                            sustained_breach_window_ms:
+                              type: integer
+                              format: int64
+                            workload_version:
+                              type: integer
+                              format: int64
+                          required:
+                            - policy_availability
+                            - run_id
+                            - source_capabilities
+                        health_coverage_pct_delta:
+                          type: number
+                          format: double
+                          nullable: true
+                        notes:
+                          type: array
+                          items:
+                            type: string
+                        reasons:
+                          type: array
+                          items:
+                            type: string
+                        scope:
+                          type: string
+                      required:
+                        - baseline
+                        - baseline_run_id
+                        - comparable
+                        - current
+                        - reasons
+                        - scope
                   transactions:
                     type: array
                     items:

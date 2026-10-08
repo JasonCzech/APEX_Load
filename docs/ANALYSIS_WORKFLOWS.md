@@ -227,6 +227,12 @@ promotion) instead of running without its pins. Only project defaults are
 pinned; system-wide telemetry defaults and scenario-level policy selection
 are not yet resolved into the snapshot.
 
+A `telemetry_policy` revision can also be named explicitly in a
+`telemetry_acceptance` evaluation (`POST /api/v1/analysis/evaluations`), which
+re-classifies up to ten runs' retained interval lag evidence under that one
+revision as a derived, hashed result without changing the runs; see the
+[telemetry guide](guides/TELEMETRY_POLICY_RECEIPTS.md#comparing-runs-and-re-evaluating-under-a-common-policy).
+
 An external dataset keeps its own identity. Associate it explicitly with a run
 in the same project before comparing it with managed evidence. Comparisons
 select datasets, bound monitor evidence, or archived transaction durations and

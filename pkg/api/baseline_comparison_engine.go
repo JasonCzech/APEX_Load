@@ -316,6 +316,7 @@ func compareBaselineRuns(current *baselineComparisonRun, baselines []*baselineCo
 		workload := rca.QualifyBaseline(currentWorkload, comparisonWorkloadKey(b, p.GroupMappings, request.Population))
 		workload.AchievedThroughput = &rca.AchievedThroughput{CurrentTPS: current.achievedTPS, BaselineTPS: b.achievedTPS}
 		out.Workload.Baselines[b.identity.ID] = workload
+		out.TelemetryComparisons = append(out.TelemetryComparisons, compareBaselineTelemetry(current, b, workload))
 		differences := baselineSetupDifferences(current, b)
 		out.Setup = append(out.Setup, differences...)
 		for _, d := range differences {

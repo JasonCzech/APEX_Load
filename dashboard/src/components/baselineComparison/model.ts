@@ -55,8 +55,24 @@ export interface BrowserDocumentComparison {
  comparable: boolean; reason?: string; current_final: number; baseline_final: number
  current_p75?: number; baseline_p75?: number; delta_p75?: number
 }
+// What decided how a run's telemetry was classified (C6).
+export interface TelemetryRunProfile {
+ run_id: string; policy_availability: 'available' | 'unavailable' | string; policy_hash?: string
+ budgets?: { stage: string; enabled: boolean; limit_ms: number }[]; sustained_breach_window_ms?: number
+ cadence_ms?: number; cadence_scope?: string
+ policy_pin?: { kind: string; id: string; name: string; revision: number; sha256: string }
+ source_capabilities: string[]; workload_version?: number
+}
+// Whether one baseline's whole-run telemetry health compares with the
+// current run's, and the deltas (current minus baseline) when it does.
+export interface TelemetryComparison {
+ baseline_run_id: string; scope: 'whole_run' | string; comparable: boolean; reasons: string[]; notes?: string[]
+ current: TelemetryRunProfile; baseline: TelemetryRunProfile
+ breached_interval_pct_delta?: number; health_coverage_pct_delta?: number; breached_known_fraction_delta?: number
+}
 export interface ComparisonSnapshot {
  telemetry?: TelemetryEvidence[]
+ telemetry_comparisons?: TelemetryComparison[]
  browser_documents?: BrowserDocumentComparison[]
  browser_soft_navigation?: 'unsupported'
   verdict?: { status: 'passed' | 'regressed' | 'not_evaluated'; evaluated: number; unavailable: number; metrics: string[]; evidence: { row_id: string; baseline_id: string; metric: string; status: string; reason?: string }[] }

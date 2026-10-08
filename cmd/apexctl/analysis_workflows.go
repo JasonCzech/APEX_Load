@@ -53,6 +53,9 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	if kind == "analysis" && action == "browser-har" {
 		return executeBrowserHARCommand(ctx, args[1:], out)
 	}
+	if kind == "analysis" && action == "telemetry-reevaluate" {
+		return executeTelemetryReevaluateCommand(ctx, args[1:], out)
+	}
 	flags := flag.NewFlagSet(kind+" "+action, flag.ContinueOnError)
 	flags.SetOutput(out)
 	endpoint := flags.String("api", "http://127.0.0.1:8080", "controller URL")
@@ -457,7 +460,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 					return errors.New("--file JSON query is required")
 				}
 			default:
-				return errors.New("analysis actions: telemetry-policy, browser-documents, browser-resources, progress, baseline, capabilities, list, create, show, upload, preview, map, commit, cancel, query, associate, compare, mappings, save-mapping, comparisons, save-comparison")
+				return errors.New("analysis actions: telemetry-policy, telemetry-reevaluate, browser-documents, browser-resources, browser-har, progress, baseline, capabilities, list, create, show, upload, preview, map, commit, cancel, query, associate, compare, mappings, save-mapping, comparisons, save-comparison")
 			}
 		}
 	default:
