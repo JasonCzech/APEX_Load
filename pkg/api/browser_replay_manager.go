@@ -90,6 +90,8 @@ type BrowserReplayManager struct {
 	closeOnce     sync.Once
 	closeDone     chan struct{}
 	closeTimeout  time.Duration
+	// har holds the replays' native HAR copies.
+	har replayHARStore
 }
 
 func NewBrowserReplayManager(hub *Hub) *BrowserReplayManager {
@@ -204,6 +206,7 @@ func (m *BrowserReplayManager) Close() {
 			waitFor = append(waitFor, cleanup.session.workerDone)
 		}
 		waitForReplaySessionWorkers(waitFor, m.closeTimeout)
+		m.har.close()
 		close(m.closeDone)
 	})
 	if m.closeDone != nil {
@@ -386,10 +389,16 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 			RedactionRules:  req.RedactionRules,
 			SecretResolver:  req.SecretResolver,
 			IgnoreThinkTime: ignoreThinkTime,
+			RecordHAR:       req.RecordHAR == nil || *req.RecordHAR,
 			OnProgress: func(event engine.ReplayProgressEvent) {
 				m.handleReplayProgress(ctx, session, event)
 			},
 		})
+		if report != nil {
+			// The browser has closed: keep its native HAR before the session
+			// becomes terminal, so a terminal session's HAR is final.
+			m.retainReplayHAR(sessionID, report.TakeHARArtifacts())
+		}
 
 		completedAt := m.retention.clock()
 		messageType := "browser_replay_completed"
@@ -553,6 +562,7 @@ func (m *BrowserReplayManager) PruneExpired() int {
 	removed, releases := m.pruneExpiredLocked(now)
 	m.mu.Unlock()
 	releaseRetainedReplaySessionSignals(releases)
+	m.sweepReplayHARs()
 	return removed
 }
 

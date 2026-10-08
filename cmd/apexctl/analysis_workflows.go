@@ -50,6 +50,9 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	if kind == "analysis" && action == "browser-documents" {
 		return executeBrowserDocumentCommand(ctx, args[1:], out)
 	}
+	if kind == "analysis" && action == "browser-har" {
+		return executeBrowserHARCommand(ctx, args[1:], out)
+	}
 	flags := flag.NewFlagSet(kind+" "+action, flag.ContinueOnError)
 	flags.SetOutput(out)
 	endpoint := flags.String("api", "http://127.0.0.1:8080", "controller URL")

@@ -215,8 +215,9 @@ run's archive counts as acknowledged.
 The archive manifest's artifact inventory lists each HAR (format `har`,
 record type `browser_har_native`) with its SHA-256, so object-store
 publication and materialization carry it, and the inventory refuses a HAR
-whose bytes differ from its manifest entry. Safe archive exports omit HARs
-until HARs have their own download and export contract. The transfer is
+whose bytes differ from its manifest entry. The default safe archive
+export omits HARs (`safe_export`); an editor's `?include=har` export keeps
+them (see [Downloads and exports](#downloads-and-exports)). The transfer is
 pulled by the controller, as the run's other archive artifacts are, rather
 than pushed by the generator: generators host the gRPC server in both
 connectivity modes. The transfer advertises no capability of its own, so
@@ -260,7 +261,59 @@ retained entries are a bounded sample of what the browser issued, or
 out), entry count, omitted entries by reason, omitted fields, algorithm and
 schema version and body policy; each entry's `_apexload` names its action,
 page, request, resource type, failure kind and where its start and time came
-from. Downloads and exports arrive with D7.
+from.
+
+## Downloads and exports
+
+Only archived HARs, and HARs derived from archived evidence, are served: a
+HAR directory's working, published or retired files are never reachable,
+and names are matched against the archive's manifest, never used as paths.
+Because native HARs embed scrubbed response content, anyone who can view a
+run lists its HARs, and downloading one needs editor (or project
+administrator) access to the project.
+
+- `GET /api/v1/tests/{id}/archive/browser/har` lists the run's native HARs
+  (name, fidelity `native`, source identity and generation,
+  `evidence_generation`, SHA-256 and bytes) and its synthetic HAR (fidelity
+  `synthetic`, derived on download; unavailable without a transaction
+  source), whether native HARs were omitted and why, the role a download
+  needs and whether the caller has it.
+- `GET /api/v1/tests/{id}/archive/browser/har/{artifact}` downloads one. A
+  native HAR is checked against its manifest SHA-256 and size first (a
+  mismatch is 409); `browser_har_synthetic.har` is derived from the archive
+  then (`X-APEXLoad-HAR-Completeness`). `X-APEXLoad-HAR-Fidelity` names the
+  fidelity.
+- `GET /api/v1/tests/{id}/archive?include=har` is the safe archive export
+  with the native HARs kept in the archive inventory and manifest; viewers
+  are refused (403). The default export, and library bundles, still omit
+  them.
+- A browser replay records a native HAR by default (`record_har: false`
+  turns it off). When the replay's browser closes, the controller copies the
+  published HAR into a private directory and retires the original, so the
+  HAR directory keeps nothing for replays; the copy is dropped when the
+  session is pruned. `GET /api/v1/browser-replay/sessions/{id}/har` serves
+  it, or a synthetic HAR from the replay's network entries when there is
+  none (`capture_mode: replay_network_entries`), once the replay has ended
+  (409 while it runs). `GET /api/v1/browser-replay/sessions/{id}/evidence`
+  is a ZIP of the session (`report.json`), the HAR (`replay.har`) and what
+  the HAR is (`har.json`: fidelity, capture mode, completeness, entries,
+  SHA-256, bytes). Both need editor access to the replay's project.
+
+The dashboard lists a run's HARs above the retained resource inspector, with
+a download per HAR and an archive download with its native HARs; each
+retained resource row offers the HAR holding it (the native HAR whose
+evidence generation matches the row's source generation, else the
+synthetic one). The browser replay cockpit offers the replay's HAR and
+evidence ZIP once a replay ends. From the command line:
+
+```bash
+apexctl analysis browser-har list --id RUN_ID
+apexctl analysis browser-har download --id RUN_ID --artifact browser_har_synthetic.har --out run.har
+apexctl analysis browser-har download --replay SESSION_ID --evidence --out replay-evidence.zip
+```
+
+Downloads go to a new file (an existing one is never overwritten, and a
+failed download leaves none) or to standard output with `--out -`.
 
 ## Bounds and compatibility
 

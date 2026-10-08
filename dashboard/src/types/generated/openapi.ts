@@ -50004,6 +50004,66 @@ export interface operations {
       };
     };
   };
+  "handleDownloadBrowserReplayEvidence": {
+    parameters: {
+      "path": {
+        "session_id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+          "application/zip": string;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleDownloadBrowserReplayHAR": {
+    parameters: {
+      "path": {
+        "session_id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content?: never;
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleDownloadDesktopApp": {
     parameters?: never;
     requestBody?: never;
@@ -50077,6 +50137,9 @@ export interface operations {
       "path": {
         "id": string;
       };
+      "query"?: {
+        "include"?: string;
+      };
     };
     requestBody?: never;
     responses: {
@@ -50084,6 +50147,11 @@ export interface operations {
         content: {
           "application/json": unknown;
           "application/zip": string;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       "401": {
@@ -50180,6 +50248,50 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleDownloadRunArchiveBrowserHAR": {
+    parameters: {
+      "path": {
+        "artifact": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "2XX": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -89738,6 +89850,62 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleListRunArchiveBrowserHARs": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "artifacts": Array<{
+              "available": boolean;
+              "bytes"?: (number) | null;
+              "capture_mode"?: string;
+              "derived"?: boolean;
+              "evidence_generation"?: string;
+              "fidelity": string;
+              "kind": string;
+              "name": string;
+              "sequence"?: number;
+              "sha256"?: string;
+              "source_generation"?: string;
+              "source_identity"?: string;
+              "unavailable_reason"?: string;
+            }>;
+            "can_download": boolean;
+            "download_role": string;
+            "incomplete": boolean;
+            "omitted"?: Record<string, number>;
+            "project_id"?: string;
+            "test_id": string;
+            "version": number;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -131026,6 +131194,7 @@ export interface operations {
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
           "project_id"?: string;
+          "record_har"?: (boolean) | null;
           "redaction_rules"?: Array<{
             "name"?: string;
             "pattern"?: string;
@@ -132463,6 +132632,7 @@ export interface operations {
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
           "project_id"?: string;
+          "record_har"?: (boolean) | null;
           "redaction_rules"?: Array<{
             "name"?: string;
             "pattern"?: string;
@@ -164573,6 +164743,12 @@ export interface paths {
   "/api/v1/browser-replay/sessions/{session_id}": {
     "get": operations["handleGetBrowserReplaySession"];
   };
+  "/api/v1/browser-replay/sessions/{session_id}/evidence": {
+    "get": operations["handleDownloadBrowserReplayEvidence"];
+  };
+  "/api/v1/browser-replay/sessions/{session_id}/har": {
+    "get": operations["handleDownloadBrowserReplayHAR"];
+  };
   "/api/v1/browser-replay/sessions/{session_id}/pause": {
     "post": operations["handlePauseBrowserReplaySession"];
   };
@@ -165916,6 +166092,12 @@ export interface paths {
   };
   "/api/v1/tests/{id}/archive/browser-resources": {
     "get": operations["handleGetRunArchiveBrowserResources"];
+  };
+  "/api/v1/tests/{id}/archive/browser/har": {
+    "get": operations["handleListRunArchiveBrowserHARs"];
+  };
+  "/api/v1/tests/{id}/archive/browser/har/{artifact}": {
+    "get": operations["handleDownloadRunArchiveBrowserHAR"];
   };
   "/api/v1/tests/{id}/archive/business-keys/lookup": {
     "post": operations["handleBusinessKeyLookup"];

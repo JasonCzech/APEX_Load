@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -26,6 +27,11 @@ type ReplayOptions struct {
 	RedactionRules  []RedactionRule
 	SecretResolver  SecretResolver
 	IgnoreThinkTime bool
+	// RecordHAR records a native HAR of a browser replay through the
+	// browser's own capture (owner, scrub and publication path); the report
+	// hands the published HAR over (TakeHARArtifacts) once the browser has
+	// closed.
+	RecordHAR bool
 	// Seed, when set, makes random data selection and {{fn.random}}/{{fake.*}}
 	// reproducible across replays. Nil uses defaultReplaySeed.
 	Seed            *int64
@@ -158,6 +164,9 @@ type ReplayReport struct {
 	Snapshots                   []*protocol.ErrorSnapshot `json:"snapshots,omitempty"`
 
 	messageDetailBudget     *replaySnapshotBudget
+	// harArtifacts are the native HARs a replay recorded (RecordHAR); never
+	// serialized, since they name local files.
+	harArtifacts []protocol.BrowserHARArtifact
 	totalEventCount         int
 	retainedEventJSONBytes  int
 	eventJSONBytes          []int
@@ -352,18 +361,31 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	if captureCorrelationEvidence {
 		protoConfig[protocol.CorrelationEvidenceCaptureConfigKey] = true
 	}
+	_, recordsHAR := proto.(protocol.BrowserHARArtifactProvider)
+	recordsHAR = recordsHAR && opts.RecordHAR
+	if recordsHAR {
+		protoConfig["browser_har_capture"] = "always"
+	}
 	bindProtocolRuntimeRedaction(proto, func() *RedactionConfig { return redactionConfig })
 	if err := callProtocolInit(ctx, proto, protoConfig, redactionConfig); err != nil {
 		runProtocolTeardown(proto, func() *RedactionConfig { return redactionConfig })
 		return nil, fmt.Errorf("protocol init: %s", err)
 	}
 	var vu *VUser
-	defer runProtocolTeardown(proto, func() *RedactionConfig {
-		if vu != nil {
-			return vu.resultPublicationRedactionConfig()
-		}
-		return redactionConfig
-	})
+	// The browser closes once: at the end of a replay, so that a recorded HAR
+	// is published before the report is returned, or on an early return.
+	var teardownOnce sync.Once
+	teardownProtocol := func() {
+		teardownOnce.Do(func() {
+			runProtocolTeardown(proto, func() *RedactionConfig {
+				if vu != nil {
+					return vu.resultPublicationRedactionConfig()
+				}
+				return redactionConfig
+			})
+		})
+	}
+	defer teardownProtocol()
 
 	dataProvider, err := NewDataProvider(script.DataSources)
 	if err != nil {
@@ -503,8 +525,24 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		EventIndex: -1,
 		Report:     cloneReplayReport(report),
 	})
+	if recordsHAR {
+		teardownProtocol()
+		if provider, ok := proto.(protocol.BrowserHARArtifactProvider); ok {
+			report.harArtifacts = takeBrowserHARArtifacts(provider)
+		}
+	}
 
 	return report, nil
+}
+
+// TakeHARArtifacts hands over the native HARs a replay recorded, once.
+func (r *ReplayReport) TakeHARArtifacts() []protocol.BrowserHARArtifact {
+	if r == nil {
+		return nil
+	}
+	out := r.harArtifacts
+	r.harArtifacts = nil
+	return out
 }
 
 // appendReplaySourceTransactionFinalizations exposes the same failed logical

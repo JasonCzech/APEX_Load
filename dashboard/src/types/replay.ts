@@ -228,6 +228,9 @@ export interface BrowserReplayStartRequest {
   breakpoints?: number[]
   browser?: BrowserConfig
   ignore_think_time?: boolean
+  /** Record a native HAR of the replay (default true); false leaves the
+   * synthetic HAR built from the report's network entries. */
+  record_har?: boolean
   script?: ScriptDefinition
 }
 

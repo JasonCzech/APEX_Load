@@ -1315,6 +1315,26 @@
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
     },
     {
+      "method": "GET",
+      "path": "/api/v1/browser-replay/sessions/{session_id}/evidence",
+      "operationId": "handleDownloadBrowserReplayEvidence",
+      "summary": "Download Browser Replay Evidence",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/browser-replay/sessions/{session_id}/har",
+      "operationId": "handleDownloadBrowserReplayHAR",
+      "summary": "Download Browser Replay HAR",
+      "category": "Recording \u0026 Replay",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
       "method": "POST",
       "path": "/api/v1/browser-replay/sessions/{session_id}/pause",
       "operationId": "handlePauseBrowserReplaySession",
@@ -6474,6 +6494,26 @@
       "public": false,
       "authenticated": true,
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/browser/har",
+      "operationId": "handleListRunArchiveBrowserHARs",
+      "summary": "List Run Archive Browser HA Rs",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/browser/har/{artifact}",
+      "operationId": "handleDownloadRunArchiveBrowserHAR",
+      "summary": "Download Run Archive Browser HAR",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin"
     },
     {
       "method": "POST",

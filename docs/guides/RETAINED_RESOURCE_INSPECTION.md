@@ -53,4 +53,4 @@ Pass the returned `next_cursor` as `--cursor` with the same query to read anothe
 
 ## Scope
 
-This archive reader does not implement a live resource census, source clock synchronization, complete capture coverage, HAR export, dependency inference, baseline intelligence or browser density qualification. Native acquisition and archive/UI transport tests establish different facts and must retain separate evidence.
+This archive reader does not implement a live resource census, source clock synchronization, complete capture coverage, dependency inference, baseline intelligence or browser density qualification. HAR downloads, including the HAR holding a row, are described in [the HAR guide](BROWSER_HAR_WORKING_OWNERSHIP.md#downloads-and-exports). Native acquisition and archive/UI transport tests establish different facts and must retain separate evidence.

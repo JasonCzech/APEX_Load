@@ -38347,6 +38347,84 @@ paths:
       tags:
         - Browser Replay
       x-handler: handleGetBrowserReplaySession
+  /api/v1/browser-replay/sessions/{session_id}/evidence:
+    get:
+      summary: Download Browser Replay Evidence
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read'
+      operationId: handleDownloadBrowserReplayEvidence
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                description: Operation-specific JSON response.
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Browser Replay
+      x-handler: handleDownloadBrowserReplayEvidence
+  /api/v1/browser-replay/sessions/{session_id}/har:
+    get:
+      summary: Download Browser Replay HAR
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read'
+      operationId: handleDownloadBrowserReplayHAR
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Browser Replay
+      x-handler: handleDownloadBrowserReplayHAR
   /api/v1/browser-replay/sessions/{session_id}/pause:
     post:
       summary: Pause Browser Replay Session
@@ -206983,6 +207061,9 @@ paths:
                   nullable: true
                 project_id:
                   type: string
+                record_har:
+                  type: boolean
+                  nullable: true
                 redaction_rules:
                   type: array
                   items:
@@ -240430,6 +240511,9 @@ paths:
                   nullable: true
                 project_id:
                   type: string
+                record_har:
+                  type: boolean
+                  nullable: true
                 redaction_rules:
                   type: array
                   items:
@@ -347324,6 +347408,12 @@ paths:
               schema:
                 type: string
                 format: binary
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           description: Authentication required or invalid.
           content:
@@ -347355,6 +347445,12 @@ paths:
         - name: id
           in: path
           required: true
+          schema:
+            type: string
+        - name: include
+          in: query
+          description: Handler-defined query parameter.
+          required: false
           schema:
             type: string
       tags:
@@ -348468,6 +348564,172 @@ paths:
       tags:
         - Tests
       x-handler: handleGetRunArchiveBrowserResources
+  /api/v1/tests/{id}/archive/browser/har:
+    get:
+      summary: List Run Archive Browser HA Rs
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      operationId: handleListRunArchiveBrowserHARs
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  artifacts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        available:
+                          type: boolean
+                        bytes:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        capture_mode:
+                          type: string
+                        derived:
+                          type: boolean
+                        evidence_generation:
+                          type: string
+                        fidelity:
+                          type: string
+                        kind:
+                          type: string
+                        name:
+                          type: string
+                        sequence:
+                          type: integer
+                          format: int64
+                        sha256:
+                          type: string
+                        source_generation:
+                          type: string
+                        source_identity:
+                          type: string
+                        unavailable_reason:
+                          type: string
+                      required:
+                        - available
+                        - fidelity
+                        - kind
+                        - name
+                  can_download:
+                    type: boolean
+                  download_role:
+                    type: string
+                  incomplete:
+                    type: boolean
+                  omitted:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                      format: int64
+                  project_id:
+                    type: string
+                  test_id:
+                    type: string
+                  version:
+                    type: integer
+                    format: int64
+                required:
+                  - artifacts
+                  - can_download
+                  - download_role
+                  - incomplete
+                  - test_id
+                  - version
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleListRunArchiveBrowserHARs
+  /api/v1/tests/{id}/archive/browser/har/{artifact}:
+    get:
+      summary: Download Run Archive Browser HAR
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
+      operationId: handleDownloadRunArchiveBrowserHAR
+      responses:
+        2XX:
+          description: Successful response; exact status is selected by the handler.
+          content:
+            application/json:
+              schema:
+                description: Operation-specific JSON response.
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: artifact
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleDownloadRunArchiveBrowserHAR
   /api/v1/tests/{id}/archive/business-keys/lookup:
     post:
       summary: Business Key Lookup

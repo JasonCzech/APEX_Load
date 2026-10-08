@@ -19,6 +19,9 @@ type BrowserReplayStartRequest struct {
 	Breakpoints     []int                  `json:"breakpoints,omitempty"`
 	Browser         *dsl.BrowserConfig     `json:"browser,omitempty"`
 	IgnoreThinkTime *bool                  `json:"ignore_think_time,omitempty"`
+	// RecordHAR records a native HAR of the replay (default true); false
+	// leaves only the synthetic HAR from the report's network entries.
+	RecordHAR *bool `json:"record_har,omitempty"`
 	Script          *dsl.Script            `json:"script,omitempty"`
 	Preflight       *ReplayPreflight       `json:"-"`
 	SecretResolver  engine.SecretResolver  `json:"-"`

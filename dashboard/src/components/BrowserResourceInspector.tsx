@@ -5,9 +5,12 @@ import { readArchiveBrowserResourcePage } from '../hooks/api/useBrowserResourceA
 import { useBrowserResourcePage, type BrowserResourcePageLoader } from './useBrowserResourcePage'
 import { browserDocumentWaterfall, browserResourceRowKey } from './browserResourceEvidenceModel'
 import BrowserNativeRequestEvidence from './BrowserNativeRequestEvidence'
+import BrowserHARDownloads from './BrowserHARDownloads'
+import { useBrowserHARList } from '../hooks/useBrowserHARList'
+import { downloadArchiveBrowserHAR, harForResourceRow, listArchiveBrowserHARs } from '../hooks/api/useBrowserHARApi'
 import './BrowserResourceInspector.css'
 
-interface Props { testID: string; projectID: string; sourceIdentity: string; loadPage?: BrowserResourcePageLoader }
+interface Props { testID: string; projectID: string; sourceIdentity: string; loadPage?: BrowserResourcePageLoader; loadHARList?: typeof listArchiveBrowserHARs }
 const textFilters = [
   ['action_name', 'Capturing action', 256], ['group', 'Group', 256], ['region', 'Region', 256], ['resource_type', 'Resource type', 64],
   ['source_generation', 'Source generation', 32], ['request_id', 'Native request identity', 128], ['redirect_chain_id', 'Redirect chain identity', 128],
@@ -21,7 +24,7 @@ const number = (value: number | undefined, suffix: string) => value === undefine
 export default function BrowserResourceInspector(props: Props) {
   return <ResourceInspectorBody key={JSON.stringify([props.testID, props.projectID, props.sourceIdentity])} {...props} />
 }
-function ResourceInspectorBody({ testID, projectID, sourceIdentity, loadPage = readArchiveBrowserResourcePage }: Props) {
+function ResourceInspectorBody({ testID, projectID, sourceIdentity, loadPage = readArchiveBrowserResourcePage, loadHARList }: Props) {
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [sort, setSort] = useState<BrowserResourcePageQuery['sort_by']>('capture_order')
   const [direction, setDirection] = useState<BrowserResourcePageQuery['sort_dir']>('asc')
@@ -31,6 +34,13 @@ function ResourceInspectorBody({ testID, projectID, sourceIdentity, loadPage = r
   const [pageNumber, setPageNumber] = useState(1)
   const { page, loading, error } = useBrowserResourcePage({ testID, projectID, sourceIdentity, query, loadPage, refreshRevision })
   const ready = Boolean(testID && projectID && sourceIdentity)
+  const har = useBrowserHARList(ready ? testID : '', loadHARList)
+  const [harBusy, setHARBusy] = useState('')
+  const [harError, setHARError] = useState('')
+  const downloadRowHAR = async (name: string) => {
+    setHARBusy(name); setHARError('')
+    try { await downloadArchiveBrowserHAR(testID, name) } catch (reason) { setHARError(reason instanceof Error ? reason.message : 'HAR download failed.') } finally { setHARBusy('') }
+  }
   const apply = (event: FormEvent) => {
     event.preventDefault()
     const filters = Object.fromEntries(Object.entries(draft).filter(([, value]) => value !== ''))
@@ -55,6 +65,8 @@ function ResourceInspectorBody({ testID, projectID, sourceIdentity, loadPage = r
       <p className="archive-section-copy">Filter and inspect retained network-entry observations in bounded archive pages.</p></div></div>
     <p>Legacy captures can include HTTP document resources. Native browser request details appear only when explicitly retained. Retained observations are not a complete network census. Action capture timestamps and native request clocks remain distinct; clock alignment and capture coverage are unavailable.</p>
     {!ready ? <p role="status">Run and project context is unavailable.</p> : <>
+      <BrowserHARDownloads testID={testID} list={har.list} listError={har.error} />
+      {harError && <p role="alert">{harError}</p>}
       <form onSubmit={apply} className="browser-resource-filter-form" aria-label="Archive resource filters">
         <div className="browser-resource-filter-row">
           <label>Capturing action<input value={draft.action_name || ''} maxLength={256} onChange={event => setDraft(value => ({ ...value, action_name: event.target.value }))} /></label>
@@ -101,6 +113,10 @@ function ResourceInspectorBody({ testID, projectID, sourceIdentity, loadPage = r
             <dl className="browser-resource-details"><dt>Capture locator</dt><dd>Transaction {row.locator.transaction_ordinal}, resource {row.locator.resource_ordinal}, {row.locator.branch}</dd>
               <dt>Captured by action at (UTC)</dt><dd>{row.timestamp || 'Unavailable'} · {row.timestamp_precision}</dd><dt>Page URL</dt><dd>{row.page_url || 'Unavailable'}</dd><dt>Method</dt><dd>{row.method || 'Unavailable'}</dd></dl>
             {row.browser_evidence ? <BrowserNativeRequestEvidence evidence={row.browser_evidence} onSelectDocument={selectDocument} /> : <p>Native request evidence: {row.evidence_state}. Request identity and phases remain unavailable.</p>}
+            {har.list?.can_download && (() => {
+              const item = harForResourceRow(har.list, row.browser_evidence?.source_generation)
+              return item && <button type="button" className="btn btn-secondary btn-sm" disabled={harBusy !== ''} onClick={() => void downloadRowHAR(item.name)}>{harBusy === item.name ? 'Downloading…' : `Download the ${item.fidelity} HAR holding this request`}</button>
+            })()}
           </details></td>
         </tr>)}</tbody></table></div> : <p>{page.population.availability === 'unavailable' ? 'No resource projection was retained.' : 'No retained observations match these filters.'}</p>}
       </>}
