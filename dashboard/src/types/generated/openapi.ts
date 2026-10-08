@@ -8174,7 +8174,36 @@ export interface operations {
               "expected_buckets": number;
               "lag_seconds": number;
               "pairs": number;
+              "unavailable"?: string;
             }>;
+            "correlation_semantics"?: ({
+              "lag_convention": string;
+              "left": {
+                "conversion"?: string;
+                "excluded"?: Record<string, number>;
+                "input_kind"?: string;
+                "kind"?: string;
+                "metric": string;
+                "points": number;
+                "population"?: string;
+                "statistic": string;
+                "unit"?: string;
+                "valid": number;
+              };
+              "right": {
+                "conversion"?: string;
+                "excluded"?: Record<string, number>;
+                "input_kind"?: string;
+                "kind"?: string;
+                "metric": string;
+                "points": number;
+                "population"?: string;
+                "statistic": string;
+                "unit"?: string;
+                "valid": number;
+              };
+              "same_units": boolean;
+            }) | null;
             "interpretation": string;
             "left": Array<{
               "active_runtime_ms"?: (number) | null;

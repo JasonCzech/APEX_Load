@@ -9,7 +9,7 @@ import type { InspectorSelection } from './bucketInspectorModel'
 import { nativeEvidencePlotPoints, type NativeEvidencePoint as Point } from './nativeEvidenceModel'
 interface Series { name: string; unit: string; points: Point[] }
 interface OverlayPoint { timestamp_utc: string; value: number | null; unit: string; quality: string; metric_name: string }
-interface Correlation { lag_seconds: number; pairs: number; coverage: number; coefficient?: number }
+interface Correlation { lag_seconds: number; pairs: number; coverage: number; coefficient?: number; unavailable?: string }
 interface Result { annotations?: { id: string; timestamp: string; label: string }[]; live_bucket_mode?: string; mode: string; start: string; from: string; to: string; series: Series[]; warnings: string[]; overlay?: OverlayPoint[]; correlation?: Record<string, Correlation[]> }
 const colors = ['#38bdf8', '#a78bfa', '#34d399', '#fb7185', '#fbbf24']
 
@@ -71,6 +71,6 @@ export default function NativeEvidencePanel({ panel, testId }: { panel: Dashboar
     </ExportableChart>
     {!live && panel.query && <details><summary>Inspect grouped archive buckets</summary>{result.series.map(series => <section key={series.name}><h4>{series.name}</h4>{series.points.map(point => <button key={point.from} disabled={!point.count} onClick={() => setSelection({ run: testId, from: point.from, to: point.to, group: panel.query?.dimensions?.[0], name: series.name })}>Inspect {series.name} bucket {point.offset_seconds}s ({point.count})</button>)}</section>)}</details>}
     {selection && panel.query && <TransactionBucketInspector key={`${selection.run}-${selection.from}-${selection.name}`} query={panel.query} selection={selection} onClose={() => setSelection(null)} />}
-    {result.correlation && <details><summary>Lag correlation and coverage</summary><p>Positive lag means overlay evidence follows the selected series. Association does not prove causation.</p>{Object.entries(result.correlation).map(([name, scores]) => <section key={name}><h4>{name}</h4><table><thead><tr><th>Lag seconds</th><th>Coefficient</th><th>Pairs</th><th>Coverage</th></tr></thead><tbody>{scores.map(score => <tr key={score.lag_seconds}><td>{score.lag_seconds}</td><td>{score.coefficient?.toFixed(3) ?? 'Unscored'}</td><td>{score.pairs}</td><td>{(score.coverage * 100).toFixed(1)}%</td></tr>)}</tbody></table></section>)}</details>}
+    {result.correlation && <details><summary>Lag correlation and coverage</summary><p>Positive lag means overlay evidence follows the selected series. Association does not prove causation.</p>{Object.entries(result.correlation).map(([name, scores]) => <section key={name}><h4>{name}</h4><table><thead><tr><th>Lag seconds</th><th>Coefficient</th><th>Pairs</th><th>Coverage</th></tr></thead><tbody>{scores.map(score => <tr key={score.lag_seconds}><td>{score.lag_seconds}</td><td>{score.coefficient?.toFixed(3) ?? (score.unavailable === 'constant_series' ? 'Unscored: a series did not vary' : score.unavailable === 'insufficient_pairs' ? 'Unscored: fewer than three pairs' : 'Unscored')}</td><td>{score.pairs}</td><td>{(score.coverage * 100).toFixed(1)}%</td></tr>)}</tbody></table></section>)}</details>}
   </section>
 }

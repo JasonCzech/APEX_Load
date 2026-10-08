@@ -16,6 +16,9 @@ type CorrelationScore struct {
 	ExpectedBuckets int      `json:"expected_buckets"`
 	Coverage        float64  `json:"coverage"`
 	Coefficient     *float64 `json:"coefficient,omitempty"`
+	// Unavailable says why Coefficient is absent: insufficient_pairs or
+	// constant_series.
+	Unavailable string `json:"unavailable,omitempty"`
 }
 
 // LaggedCorrelation uses exact, equally spaced UTC buckets. The caller must
@@ -72,6 +75,8 @@ func LaggedCorrelation(left, right []MetricPoint, from, to time.Time, bucketSeco
 		}
 		if value, valid := Pearson(pairs); valid {
 			score.Coefficient = &value
+		} else {
+			score.Unavailable = correlationUnavailable(pairs)
 		}
 		result = append(result, score)
 	}

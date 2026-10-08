@@ -42,6 +42,9 @@ type NativeEvidenceResponse struct {
 	Warnings       []string                               `json:"warnings"`
 	Overlay        []analysis.MetricPoint                 `json:"overlay,omitempty"`
 	Correlation    map[string][]analysis.CorrelationScore `json:"correlation,omitempty"`
+	// CorrelationSemantics describes, per correlated series, both sides'
+	// semantics and excluded evidence.
+	CorrelationSemantics map[string]analysis.CorrelationSemantics `json:"correlation_semantics,omitempty"`
 	// Derivation names the catalog operation the series values are, when the
 	// query asked for one.
 	Derivation *analysis.QueryDerivation `json:"derivation,omitempty"`
@@ -491,6 +494,7 @@ func (s *Server) attachNativeOverlay(ctx context.Context, project, runID string,
 		return nil
 	}
 	out.Correlation = map[string][]analysis.CorrelationScore{}
+	out.CorrelationSemantics = map[string]analysis.CorrelationSemantics{}
 	// Shared correlation validates alignment and excludes missing/invalid quality.
 	right := append([]analysis.MetricPoint(nil), points...)
 	for i := range right {
@@ -506,13 +510,14 @@ func (s *Server) attachNativeOverlay(ctx context.Context, project, runID string,
 			if p.Value == nil {
 				quality = analysis.QualityMissing
 			}
-			left = append(left, analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, Source: "native-panel", ProjectID: project, TimestampUTC: p.From.UTC(), MetricName: q.Metric, Unit: series.Unit, Kind: analysis.KindGauge, Value: p.Value, Quality: quality})
+			left = append(left, analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, Source: "native-panel", ProjectID: project, TimestampUTC: p.From.UTC(), MetricName: q.Metric, Population: q.Population, Unit: series.Unit, Kind: analysis.KindGauge, Value: p.Value, Quality: quality})
 		}
 		scores, err := analysis.LaggedCorrelation(left, right, out.From, out.To, q.BucketSeconds, o.MaxLagSeconds)
 		if err != nil {
 			return err
 		}
 		out.Correlation[series.Name] = scores
+		out.CorrelationSemantics[series.Name] = analysis.DescribeCorrelation(q.Metric, q.Aggregation, left, o.Metric, o.Aggregation, points)
 	}
 	return nil
 }

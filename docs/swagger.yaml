@@ -20799,11 +20799,92 @@ paths:
                         pairs:
                           type: integer
                           format: int64
+                        unavailable:
+                          type: string
                       required:
                         - coverage
                         - expected_buckets
                         - lag_seconds
                         - pairs
+                  correlation_semantics:
+                    type: object
+                    properties:
+                      lag_convention:
+                        type: string
+                      left:
+                        type: object
+                        properties:
+                          conversion:
+                            type: string
+                          excluded:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          input_kind:
+                            type: string
+                          kind:
+                            type: string
+                          metric:
+                            type: string
+                          points:
+                            type: integer
+                            format: int64
+                          population:
+                            type: string
+                          statistic:
+                            type: string
+                          unit:
+                            type: string
+                          valid:
+                            type: integer
+                            format: int64
+                        required:
+                          - metric
+                          - points
+                          - statistic
+                          - valid
+                      right:
+                        type: object
+                        properties:
+                          conversion:
+                            type: string
+                          excluded:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          input_kind:
+                            type: string
+                          kind:
+                            type: string
+                          metric:
+                            type: string
+                          points:
+                            type: integer
+                            format: int64
+                          population:
+                            type: string
+                          statistic:
+                            type: string
+                          unit:
+                            type: string
+                          valid:
+                            type: integer
+                            format: int64
+                        required:
+                          - metric
+                          - points
+                          - statistic
+                          - valid
+                      same_units:
+                        type: boolean
+                    required:
+                      - lag_convention
+                      - left
+                      - right
+                      - same_units
+                    nullable: true
                   interpretation:
                     type: string
                   left:

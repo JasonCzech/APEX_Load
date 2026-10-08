@@ -136,6 +136,15 @@ func TestRunMonitoringAPIArtifactsAndRetry(t *testing.T) {
 	if len(out.Overlay) != 2 || len(out.Correlation["Checkout"]) != 1 || out.Correlation["Checkout"][0].Pairs != 1 {
 		t.Fatalf("overlay coverage: %+v", out)
 	}
+	// One pair cannot be scored, and says so; each side keeps its own
+	// semantics, the panel's empty bucket counted as missing.
+	if out.Correlation["Checkout"][0].Unavailable != analysis.CorrelationInsufficientPairs {
+		t.Fatalf("unavailability %+v", out.Correlation["Checkout"][0])
+	}
+	semantics, ok := out.CorrelationSemantics["Checkout"]
+	if !ok || semantics.Left.Unit != "ms" || semantics.Left.Statistic != q.Aggregation || semantics.Left.Population != q.Population || semantics.Left.Excluded[analysis.QualityMissing] != 1 || semantics.Right.Metric != "goroutines" || semantics.Right.Statistic != "avg" || semantics.SameUnits {
+		t.Fatalf("overlay semantics %+v", semantics)
+	}
 	q.EvidenceMode = "live"
 	q.LiveBucketMode = "merged"
 	out.Correlation = nil

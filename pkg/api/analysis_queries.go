@@ -210,6 +210,8 @@ func (s *Server) handleAnalysisComparison(w http.ResponseWriter, r *http.Request
 			return
 		}
 		response.Correlation = scores
+		semantics := analysis.DescribeCorrelation(q.Left.Metric, q.Left.Aggregation, left, q.Right.Metric, q.Right.Aggregation, right)
+		response.CorrelationSemantics = &semantics
 	}
 	if err := s.verifyNativeAnalysisComparison(ctx, project); err != nil {
 		writeError(w, 409, err.Error())

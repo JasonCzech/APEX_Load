@@ -237,7 +237,15 @@ An external dataset keeps its own identity. Associate it explicitly with a run
 in the same project before comparing it with managed evidence. Comparisons
 select datasets, bound monitor evidence, or archived transaction durations and
 align UTC buckets. Lagged correlation reports paired bucket count, coverage and
-an optional coefficient; constant or insufficient evidence stays unscored.
+an optional coefficient; constant or insufficient evidence stays unscored and
+says which (`constant_series`, `insufficient_pairs`). A positive lag pairs each
+left bucket with the right series that much later. `correlation_semantics`
+keeps each side's own unit, kind and source kind, population, statistic and
+scalar conversion (a counter's per-second rate, a summary's declared
+statistic, a percentile of raw observations), with its valid buckets and the
+buckets kept out by reason (stale, clock skew, dropped, missing, counter
+reset). Series in different units are associated, never compared value for
+value: the comparison view gives each its own labelled axis.
 Correlation is association, never proof of causation. Saved comparison
 definitions are revisioned and recheck ownership when used.
 
