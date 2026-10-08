@@ -168,9 +168,13 @@ database dump in the opposite direction if writes happened on AKS.
 - **Controller replicas**: the AKS base keeps one controller. Use the HA
   overlay only with shared PostgreSQL and Redis. The overlay creates a
   selectorless `apexload-controller-active` Service whose EndpointSlice is
-  fenced by the durable execution-lease owner and generation. CI run mutations
-  and execution-readiness route through that Service; OIDC exchange,
-  dashboard, and read traffic remain on the all-replica controller Service.
+  fenced by the durable execution-lease owner and generation. CI run mutations,
+  execution-readiness and every other leader-only route (test, script, fleet,
+  project, archive-retention and restart controls) go through that Service;
+  `deployments/k8s/leader_routes_test.go` derives the leader-only set from the
+  controller source and checks each ingress covers it. OIDC exchange,
+  dashboard assets, and other read traffic remain on the all-replica
+  controller Service.
   The leader does not publish itself until its HTTP listener has bound.
 - **mTLS certificates**: use cert-manager with
   `certificates.cert-manager.yaml`, or sync `apexload-controller-grpc-tls` and

@@ -133,6 +133,54 @@ spec:
                 name: apexload-controller-active
                 port:
                   name: http
+          # Leader-only controls outside the execution paths above: fleet and
+          # capacity operations, project deletion and monitoring-connection
+          # operations, archive retention, generator drain, restart controls and
+          # the reverse-generator gateway. Followers refuse them with HTTP 503;
+          # deployments/k8s/leader_routes_test.go derives the leader-only set
+          # from the controller source and requires each one to be routed here.
+          - path: /api/v1/fleet
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/projects
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/archives
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/system/generators
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/system/restarts
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/generator-gateway
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
           # Replay/debug progress is broadcast from the owning controller's
           # process-local WebSocket hub. Keep the global stream on that same
           # active endpoint. Per-test streams are covered by /api/v1/tests.
