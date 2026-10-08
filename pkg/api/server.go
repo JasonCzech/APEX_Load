@@ -731,7 +731,7 @@ func NewServer(cfg ServerConfig) *Server {
 		domainTargets: s.domainTargets,
 	}
 	s.capacityBackends = &capacityBackendResolver{
-		enabled: cfg.PaaSComputeEnabled, targets: s.executionTargetStore, clouds: s.cloudStore, controllerID: s.controllerID, server: s,
+		enabled: cfg.PaaSComputeEnabled, targets: s.executionTargetStore, clouds: s.cloudStore, controllerID: capacityOwnerIdentity(cfg.Store, s.controllerID), server: s,
 	}
 	s.reverseGenerators = generatorrpc.DefaultReverseRegistry
 	s.reverseTargetSessions = make(map[string]map[string]struct{})

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"os"
 	"sort"
@@ -253,6 +254,38 @@ func (s *Server) enrichGeneratorRestartability(ctx context.Context, entries []Ge
 		entries[i].Restartable, entries[i].RestartBlockedReason = generatorRestartability(entries[i], pod)
 	}
 	return pods, limit, true
+}
+
+// capacityOwnerSettingKey stores the installation-wide cloud capacity owner.
+const capacityOwnerSettingKey = "controller.capacity_owner_id"
+
+type capacityOwnerSettingStore interface {
+	EnsureSetting(key string, candidate string) (string, error)
+}
+
+// capacityOwnerIdentity returns the identity that tags and claims cloud
+// capacity. It must be shared by every controller replica of an installation
+// and survive restarts: provider discovery and adoption only trust instances
+// carrying it, so a per-process identity hid a predecessor's instances from an
+// HA successor (or a restarted controller) and left them running. An explicit
+// APEXLOAD_CONTROLLER_ID keeps the identity it already tagged instances with;
+// otherwise the first replica stores a random identity in the shared database.
+// The per-process instance identity remains only as a fallback when the store
+// cannot hold the setting.
+func capacityOwnerIdentity(store any, fallback string) string {
+	if configured := strings.TrimSpace(os.Getenv("APEXLOAD_CONTROLLER_ID")); configured != "" {
+		return configured
+	}
+	settings, ok := store.(capacityOwnerSettingStore)
+	if !ok || settings == nil {
+		return fallback
+	}
+	owner, err := settings.EnsureSetting(capacityOwnerSettingKey, "apexload-"+uuid.NewString())
+	if err != nil || strings.TrimSpace(owner) == "" {
+		slog.Warn("cloud capacity owner identity is unavailable; using this controller process's identity", "error", err)
+		return fallback
+	}
+	return strings.TrimSpace(owner)
 }
 
 func controllerInstanceID() string {

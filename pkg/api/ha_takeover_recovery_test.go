@@ -572,3 +572,39 @@ func TestExecutionLeadershipDoesNotStartAfterShutdownBegins(t *testing.T) {
 		t.Fatal("a shutting-down replica must not hold the execution lease")
 	}
 }
+
+// Cloud capacity is tagged and discovered by owner identity. It must be shared
+// by every replica and survive restarts, or an HA successor (or a restarted
+// controller) cannot see, adopt or clean up its predecessor's instances.
+func TestCapacityOwnerIdentityIsSharedAcrossReplicas(t *testing.T) {
+	t.Setenv("APEXLOAD_CONTROLLER_ID", "")
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	owner := func(server *Server) string {
+		resolver, ok := server.capacityBackends.(*capacityBackendResolver)
+		if !ok {
+			t.Fatalf("capacity backends = %T", server.capacityBackends)
+		}
+		return resolver.controllerID
+	}
+	first := NewServer(ServerConfig{Store: store, HAExecutionLeadership: true})
+	second := NewServer(ServerConfig{Store: store, HAExecutionLeadership: true})
+	if first.controllerID == second.controllerID {
+		t.Fatal("test setup: replicas must have distinct process identities")
+	}
+	if owner(first) == "" || owner(first) != owner(second) {
+		t.Fatalf("capacity owners = %q and %q, want one shared identity", owner(first), owner(second))
+	}
+	if owner(first) == first.controllerID {
+		t.Fatal("capacity owner must not be the per-process controller identity")
+	}
+
+	t.Setenv("APEXLOAD_CONTROLLER_ID", "operator-configured")
+	configured := NewServer(ServerConfig{Store: store})
+	if got := owner(configured); got != "operator-configured" {
+		t.Fatalf("configured capacity owner = %q, want the explicit APEXLOAD_CONTROLLER_ID", got)
+	}
+}
