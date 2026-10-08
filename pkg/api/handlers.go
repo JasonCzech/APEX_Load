@@ -2040,9 +2040,11 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	safeMessage := scrub.Value(msg, scrub.Policy{})
 	// Never leak internal error detail (DB errors, file paths, stack context) to
 	// clients on 5xx responses. Log a credential-scrubbed detail under a
-	// correlation ID and return a generic message referencing that ID.
+	// correlation ID and return a generic message referencing that ID. Inside
+	// the access logger the ID is the request ID, so the reported ref also
+	// finds the request's access line.
 	if status >= http.StatusInternalServerError {
-		ref := newErrorReference()
+		ref := errorReferenceFor(w)
 		slog.Error("internal server error", "ref", ref, "status", status, "detail", safeMessage)
 		writeJSON(w, status, map[string]string{
 			"error": "internal server error",

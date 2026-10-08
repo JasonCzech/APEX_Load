@@ -48,7 +48,7 @@ export interface ScriptRecordingStatus {
 }
 import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type ApplySecretBindingsRequest, type ApplySecretBindingsResponse, type ApplySharedValuesRequest, type ApplySharedValuesResponse, type AuthoringCapabilitiesResponse, type Parameterization, type AsyncAPIImportResult, type AsyncAPISupportMatrixResponse, type BrokerConfigImportResult, type BrokerConfigSupportMatrixResponse, type BrowserRecordingImportResult, type CloudTestImportResult, type CloudTestSupportMatrixResponse, type CommitAsyncAPIImportBatchRequest, type CommitAsyncAPIImportBatchResponse, type CommitAsyncAPIImportRequest, type CommitAsyncAPIImportResponse, type CommitGenericImportBatchRequest, type CommitGenericImportBatchResponse, type CommitOpenAPIImportRequest, type CommitOpenAPIImportResponse, type DevWebImportResult, type DevWebSupportMatrixResponse, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixResponse, type HARImportResult, type ImportAssetUploadResponse, type JavaClasspathAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type K6ImportResult, type K6SupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type OpenAPISupportMatrixResponse, type OracleEBusinessReviewRequest, type OracleEBusinessReviewResponse, type OracleEBusinessSupportMatrixResponse, type PostmanImportResult, type PostmanSupportMatrixResponse, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveEnterpriseArchiveImportRequest, type SaveEnterpriseArchiveImportResponse, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
 import { type JsonRequestBody } from '../../types/generated/openapi'
-import { ApiError, apiFetch, request, requestWithResponse } from '../apiClient'
+import { ApiError, REQUEST_ID_HEADER, apiFetch, request, requestWithResponse } from '../apiClient'
 import { type ApiCallOptions, withCallOptions } from './requestOptions'
 
 import { admitScriptAuthoringBaseline, baselineFromSavedScript, ScriptSaveOutcomeUnknown, withoutScriptAuthoringReadContext } from '../../utils/scriptAuthoringRevision'
@@ -1372,7 +1372,7 @@ export function useScriptApi() {
       if (!response.ok) {
         const payload = await response.json().catch(() => ({ error: response.statusText }))
         const message = typeof payload?.error === 'string' ? payload.error : response.statusText
-        throw new ApiError(message, response.status, payload)
+        throw new ApiError(message, response.status, payload, response.headers.get(REQUEST_ID_HEADER))
       }
       return response.json() as Promise<BrunoInspectResponse>
     },
@@ -1386,7 +1386,7 @@ export function useScriptApi() {
       if (!response.ok) {
         const payload = await response.json().catch(() => ({ error: response.statusText }))
         const message = typeof payload?.error === 'string' ? payload.error : response.statusText
-        throw new ApiError(message, response.status, payload)
+        throw new ApiError(message, response.status, payload, response.headers.get(REQUEST_ID_HEADER))
       }
       return response.text()
     },
@@ -1403,7 +1403,7 @@ export function useScriptApi() {
       if (!response.ok) {
         const errorPayload = await response.json().catch(() => ({ error: response.statusText }))
         const message = typeof errorPayload?.error === 'string' ? errorPayload.error : response.statusText
-        throw new ApiError(message, response.status, errorPayload)
+        throw new ApiError(message, response.status, errorPayload, response.headers.get(REQUEST_ID_HEADER))
       }
       const result = await response.json() as CommitBrunoImportResponse
       if (!result || typeof result !== 'object') {

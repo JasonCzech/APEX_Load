@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  ApiError,
   DEV_VIEW_STORAGE_KEY,
   DESKTOP_CAPABILITY_SESSION_KEY,
   API_ORIGIN,
@@ -609,5 +610,43 @@ describe('bounded paired response envelopes', () => {
     const assertion = expect(pending).rejects.toThrow('Request timed out after 100ms')
     await vi.advanceTimersByTimeAsync(100)
     await assertion
+  })
+})
+
+describe('server error references', () => {
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('shows the 5xx ref so a user can find the controller log line', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"error":"internal server error","ref":"3f9a2c1d4b5e6f70"}', { status: 500, headers: { 'Content-Type': 'application/json', 'X-Request-ID': '3f9a2c1d4b5e6f70' } }))
+    const error = await request('/tests').catch((caught: unknown) => caught)
+    expect(error).toBeInstanceOf(ApiError)
+    expect((error as ApiError).message).toBe('internal server error (ref 3f9a2c1d4b5e6f70)')
+    expect((error as ApiError).ref).toBe('3f9a2c1d4b5e6f70')
+    expect((error as ApiError).requestId).toBe('3f9a2c1d4b5e6f70')
+  })
+
+  it('falls back to the request ID for a 5xx body without a ref', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"error":"scenario store unavailable"}', { status: 503, headers: { 'Content-Type': 'application/json', 'X-Request-ID': 'req-42' } }))
+    const error = await request('/scenarios').catch((caught: unknown) => caught) as ApiError
+    expect(error.message).toBe('scenario store unavailable (ref req-42)')
+  })
+
+  it('keeps 4xx messages unchanged while retaining the request ID', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"error":"script name already exists"}', { status: 409, headers: { 'Content-Type': 'application/json', 'X-Request-ID': 'req-43' } }))
+    const error = await request('/scripts', { method: 'POST', body: '{}' }).catch((caught: unknown) => caught) as ApiError
+    expect(error.message).toBe('script name already exists')
+    expect(error.ref).toBeUndefined()
+    expect(error.requestId).toBe('req-43')
+  })
+
+  it('ignores malformed references instead of echoing them', () => {
+    const error = new ApiError('internal server error', 500, { ref: 'x) <img src=x>' }, 'not a valid id')
+    expect(error.message).toBe('internal server error')
+    expect(error.ref).toBeUndefined()
+    expect(error.requestId).toBeUndefined()
+  })
+
+  it('does not repeat a ref the message already names', () => {
+    expect(new ApiError('failed (ref abc)', 500, { ref: 'abc' }).message).toBe('failed (ref abc)')
   })
 })

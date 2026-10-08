@@ -396,11 +396,9 @@ func enforceIdempotencyKey(w http.ResponseWriter, r *http.Request, store Idempot
 	if rawKey == "" {
 		return nil, true
 	}
-	actor := "anonymous"
-	if resolution.ServiceAccount != nil {
-		actor = "service-account:" + resolution.ServiceAccount.ID
-	} else if resolution.User != nil && strings.TrimSpace(resolution.User.Subject) != "" {
-		actor = "user:" + strings.TrimSpace(resolution.User.Subject)
+	actor := authResolutionActor(resolution)
+	if actor == "" {
+		actor = "anonymous"
 	}
 	scope := strings.Join([]string{actor, r.Method, r.URL.Path, rawKey}, "|")
 	ownerToken := uuid.NewString()
@@ -726,7 +724,7 @@ func applyCORSOriginHeadersWithAuth(w http.ResponseWriter, r *http.Request, allo
 	if !decision.allowed {
 		return decision
 	}
-	w.Header().Set("Access-Control-Expose-Headers", "X-APEXLOAD-Audit-Status, ETag, X-APEX-Script-Save-Mode, X-APEX-Scenario-Save-Mode, X-APEX-Original-Content-Revision, Idempotent-Replayed")
+	w.Header().Set("Access-Control-Expose-Headers", "X-APEXLOAD-Audit-Status, ETag, X-APEX-Script-Save-Mode, X-APEX-Scenario-Save-Mode, X-APEX-Original-Content-Revision, Idempotent-Replayed, X-Request-ID")
 	if decision.wildcard {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Del("Access-Control-Allow-Credentials")
@@ -898,23 +896,6 @@ func securityHeadersMiddleware(next http.Handler) http.Handler {
 			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}
 		next.ServeHTTP(w, r)
-	})
-}
-
-func loggingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
-
-		next.ServeHTTP(rw, r)
-
-		slog.Info("http request",
-			"method", r.Method,
-			"path", r.URL.Path,
-			"status", rw.status,
-			"duration_ms", time.Since(start).Milliseconds(),
-			"remote", r.RemoteAddr,
-		)
 	})
 }
 

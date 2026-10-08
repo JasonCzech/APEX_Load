@@ -348,22 +348,50 @@ async function parseJsonResponse(res: Response, maxBytes?: number): Promise<unkn
   throw new ApiError(message, res.status, {
     content_type: contentType,
     body: snippet,
-  });
+  }, res.headers.get(REQUEST_ID_HEADER));
+}
+
+// The controller stamps every API response with this header and uses the same
+// value as the "ref" of 5xx error bodies; both locate the request's log lines.
+export const REQUEST_ID_HEADER = "X-Request-ID";
+const ERROR_REFERENCE_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
+
+function errorReference(value: unknown): string | undefined {
+  return typeof value === "string" && ERROR_REFERENCE_PATTERN.test(value)
+    ? value
+    : undefined;
 }
 
 export class ApiError extends Error {
   status: number;
   code?: string;
+  // ref is the server log reference shown to the user; requestId is this
+  // response's X-Request-ID, kept for every status.
+  ref?: string;
+  requestId?: string;
   payload?: unknown;
 
-  constructor(message: string, status: number, payload?: unknown) {
-    super(message);
+  constructor(
+    message: string,
+    status: number,
+    payload?: unknown,
+    requestId?: string | null,
+  ) {
+    const validRequestId = errorReference(requestId);
+    // Server failures always get a reference so the user has something to
+    // report; 4xx messages already state the reason the server logged.
+    const ref =
+      (isApiErrorPayload(payload) ? errorReference(payload.ref) : undefined) ??
+      (status >= 500 ? validRequestId : undefined);
+    super(ref && !message.includes(ref) ? `${message} (ref ${ref})` : message);
     this.name = "ApiError";
     this.status = status;
     this.code =
       isApiErrorPayload(payload) && typeof payload.code === "string"
         ? payload.code
         : undefined;
+    this.ref = ref;
+    this.requestId = validRequestId;
     this.payload = payload;
   }
 }
@@ -498,6 +526,7 @@ export async function requestApiNavigation(pathOrURL: string): Promise<string> {
         "Authentication navigation failed",
       response.status,
       payload,
+      response.headers.get(REQUEST_ID_HEADER),
     );
   }
   const rawRedirect = payload?.redirect_url?.trim() || "";
@@ -609,7 +638,7 @@ async function requestEnvelopeFromOrigin<T>(
         isApiErrorPayload(body) && typeof body.error === "string" && body.error
           ? body.error
           : res.statusText;
-      throw new ApiError(message, res.status, body);
+      throw new ApiError(message, res.status, body, res.headers.get(REQUEST_ID_HEADER));
     }
     return { body: (await parseJsonResponse(res, maxResponseBytes)) as T, headers: new Headers(res.headers), status: res.status };
   })();
