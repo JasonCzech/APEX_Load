@@ -486,6 +486,14 @@ func editorProjectAccess(lookup projectScopedLookup) accessRequirement {
 
 // editorProjectAccessWithBodyLimit grants normal editor access while applying
 // a route-specific JSON body limit to non-upload mutation endpoints.
+// viewerProjectAccessWithBodyLimit is viewerProjectAccess with a request
+// body-size limit, for read-side evidence a viewer submits.
+func viewerProjectAccessWithBodyLimit(lookup projectScopedLookup, maxBody int64) accessRequirement {
+	req := viewerProjectAccess(lookup)
+	req.MaxBodyBytes = maxBody
+	return req
+}
+
 func editorProjectAccessWithBodyLimit(lookup projectScopedLookup, maxBody int64) accessRequirement {
 	req := editorProjectAccess(lookup)
 	req.MaxBodyBytes = maxBody

@@ -9684,6 +9684,69 @@ paths:
                           type: string
                         telemetry_sources_truncated:
                           type: boolean
+                        telemetry_stage_digests:
+                          type: object
+                          additionalProperties:
+                            type: object
+                            properties:
+                              centroids:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TDigestCentroidSnapshot'
+                                  additionalProperties: true
+                              compression:
+                                type: number
+                                format: double
+                              count:
+                                type: integer
+                                format: int64
+                              max:
+                                type: number
+                                format: double
+                              min:
+                                type: number
+                                format: double
+                              total_weight:
+                                type: number
+                                format: double
+                        telemetry_stage_distributions:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              advisory:
+                                type: boolean
+                              availability:
+                                type: string
+                              excluded:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              max_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              p50_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              p95_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              p99_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              samples:
+                                type: integer
+                                format: int64
+                              stage:
+                                type: string
+                              unit:
+                                type: string
                         termination_reason:
                           type: string
                         test_id:
@@ -65327,6 +65390,12 @@ paths:
                             type: string
                           replacement:
                             type: string
+                    telemetry:
+                      type: object
+                      properties:
+                        client_render_evidence:
+                          type: boolean
+                      nullable: true
       responses:
         "201":
           description: Created
@@ -65631,6 +65700,12 @@ paths:
                               type: string
                           required:
                             - pattern
+                      telemetry:
+                        type: object
+                        properties:
+                          client_render_evidence:
+                            type: boolean
+                        nullable: true
                   updated_at:
                     type: string
                     format: date-time
@@ -65847,6 +65922,12 @@ paths:
                             type: string
                           replacement:
                             type: string
+                    telemetry:
+                      type: object
+                      properties:
+                        client_render_evidence:
+                          type: boolean
+                      nullable: true
       responses:
         "200":
           description: OK
@@ -66025,6 +66106,12 @@ paths:
                               type: string
                           required:
                             - pattern
+                      telemetry:
+                        type: object
+                        properties:
+                          client_render_evidence:
+                            type: boolean
+                        nullable: true
                   updated_at:
                     type: string
                     format: date-time
@@ -77351,6 +77438,280 @@ paths:
       tags:
         - Projects
       x-handler: handleProjectSecretStatus
+  /api/v1/projects/{id}/telemetry-policy:
+    put:
+      summary: Update Project Telemetry Policy
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
+      operationId: handleUpdateProjectTelemetryPolicy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                client_render_evidence:
+                  type: boolean
+                  nullable: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  category_id:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+                  domain_id:
+                    type: string
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  settings:
+                    type: object
+                    properties:
+                      authoring:
+                        type: object
+                        properties:
+                          require_scenario_save_if_match:
+                            type: boolean
+                          require_script_save_if_match:
+                            type: boolean
+                        nullable: true
+                      features:
+                        type: object
+                        properties:
+                          control_parallel:
+                            type: boolean
+                          media_stream:
+                            type: boolean
+                          native_elastic_capacity:
+                            type: boolean
+                          privileged_monitors:
+                            type: boolean
+                          successful_message_detail:
+                            type: boolean
+                      github:
+                        type: object
+                        properties:
+                          actions:
+                            type: object
+                            properties:
+                              allowed_environments:
+                                type: array
+                                items:
+                                  type: string
+                              allowed_protocols:
+                                type: array
+                                items:
+                                  type: string
+                              allowed_refs:
+                                type: array
+                                items:
+                                  type: string
+                              allowed_repositories:
+                                type: array
+                                items:
+                                  type: string
+                              allowed_repository_ids:
+                                type: array
+                                items:
+                                  type: string
+                              allowed_target_hosts:
+                                type: array
+                                items:
+                                  type: string
+                              allowed_workflow_refs:
+                                type: array
+                                items:
+                                  type: string
+                              audience:
+                                type: string
+                              checks_enabled:
+                                type: boolean
+                              enabled:
+                                type: boolean
+                              issuer:
+                                type: string
+                              max_duration_minutes:
+                                type: integer
+                                format: int64
+                              max_vusers:
+                                type: integer
+                                format: int64
+                              required_runner_environment:
+                                type: string
+                              revision:
+                                type: integer
+                                format: int64
+                              server_url:
+                                type: string
+                              updated_at:
+                                type: string
+                                format: date-time
+                              updated_by:
+                                type: string
+                              validity_gate:
+                                type: string
+                          allow_direct_commit:
+                            type: boolean
+                          allow_import:
+                            type: boolean
+                          allow_push:
+                            type: boolean
+                          allowed_branches:
+                            type: array
+                            items:
+                              type: string
+                          allowed_repos:
+                            type: array
+                            items:
+                              type: string
+                          app_installation_id:
+                            type: integer
+                            format: int64
+                          auto_sync_enabled:
+                            type: boolean
+                          automation_identity:
+                            type: string
+                          bulk_sync_enabled:
+                            type: boolean
+                          checks_enabled:
+                            type: boolean
+                          default_branch:
+                            type: string
+                          default_repo:
+                            type: string
+                          default_sync_directory:
+                            type: string
+                          enabled:
+                            type: boolean
+                          path_template:
+                            type: string
+                          require_pull_request:
+                            type: boolean
+                      max_concurrent_tests:
+                        type: integer
+                        format: int64
+                      max_test_duration_minutes:
+                        type: integer
+                        format: int64
+                      max_vusers:
+                        type: integer
+                        format: int64
+                      max_vusers_per_test:
+                        type: integer
+                        format: int64
+                      pool_quotas:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            max_concurrent_tests:
+                              type: integer
+                              format: int64
+                            max_vusers:
+                              type: integer
+                              format: int64
+                      redaction_rules:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            pattern:
+                              type: string
+                            replacement:
+                              type: string
+                          required:
+                            - pattern
+                      telemetry:
+                        type: object
+                        properties:
+                          client_render_evidence:
+                            type: boolean
+                        nullable: true
+                  updated_at:
+                    type: string
+                    format: date-time
+                required:
+                  - created_at
+                  - id
+                  - name
+                  - updated_at
+                nullable: true
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "501":
+          description: Not Implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleUpdateProjectTelemetryPolicy
   /api/v1/projects/{pid}/folders:
     get:
       summary: List Folders
@@ -85024,6 +85385,12 @@ paths:
                                     - lost_publications
                                     - sources
                                   nullable: true
+                                stage_distributions:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: TelemetryStageDistribution'
+                                    additionalProperties: true
                                 transport_lag_ms:
                                   type: number
                                   format: double
@@ -86814,6 +87181,12 @@ paths:
                                   - lost_publications
                                   - sources
                                 nullable: true
+                              stage_distributions:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TelemetryStageDistribution'
+                                  additionalProperties: true
                               transport_lag_ms:
                                 type: number
                                 format: double
@@ -90742,6 +91115,12 @@ paths:
                                     - lost_publications
                                     - sources
                                   nullable: true
+                                stage_distributions:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: TelemetryStageDistribution'
+                                    additionalProperties: true
                                 transport_lag_ms:
                                   type: number
                                   format: double
@@ -92532,6 +92911,12 @@ paths:
                                   - lost_publications
                                   - sources
                                 nullable: true
+                              stage_distributions:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TelemetryStageDistribution'
+                                  additionalProperties: true
                               transport_lag_ms:
                                 type: number
                                 format: double
@@ -96461,6 +96846,12 @@ paths:
                                     - lost_publications
                                     - sources
                                   nullable: true
+                                stage_distributions:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: TelemetryStageDistribution'
+                                    additionalProperties: true
                                 transport_lag_ms:
                                   type: number
                                   format: double
@@ -98251,6 +98642,12 @@ paths:
                                   - lost_publications
                                   - sources
                                 nullable: true
+                              stage_distributions:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TelemetryStageDistribution'
+                                  additionalProperties: true
                               transport_lag_ms:
                                 type: number
                                 format: double
@@ -102192,6 +102589,12 @@ paths:
                                     - lost_publications
                                     - sources
                                   nullable: true
+                                stage_distributions:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: TelemetryStageDistribution'
+                                    additionalProperties: true
                                 transport_lag_ms:
                                   type: number
                                   format: double
@@ -103982,6 +104385,12 @@ paths:
                                   - lost_publications
                                   - sources
                                 nullable: true
+                              stage_distributions:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TelemetryStageDistribution'
+                                  additionalProperties: true
                               transport_lag_ms:
                                 type: number
                                 format: double
@@ -107923,6 +108332,12 @@ paths:
                                     - lost_publications
                                     - sources
                                   nullable: true
+                                stage_distributions:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: TelemetryStageDistribution'
+                                    additionalProperties: true
                                 transport_lag_ms:
                                   type: number
                                   format: double
@@ -109713,6 +110128,12 @@ paths:
                                   - lost_publications
                                   - sources
                                 nullable: true
+                              stage_distributions:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TelemetryStageDistribution'
+                                  additionalProperties: true
                               transport_lag_ms:
                                 type: number
                                 format: double
@@ -113654,6 +114075,12 @@ paths:
                                     - lost_publications
                                     - sources
                                   nullable: true
+                                stage_distributions:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: TelemetryStageDistribution'
+                                    additionalProperties: true
                                 transport_lag_ms:
                                   type: number
                                   format: double
@@ -115444,6 +115871,12 @@ paths:
                                   - lost_publications
                                   - sources
                                 nullable: true
+                              stage_distributions:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TelemetryStageDistribution'
+                                  additionalProperties: true
                               transport_lag_ms:
                                 type: number
                                 format: double
@@ -119385,6 +119818,12 @@ paths:
                                     - lost_publications
                                     - sources
                                   nullable: true
+                                stage_distributions:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: TelemetryStageDistribution'
+                                    additionalProperties: true
                                 transport_lag_ms:
                                   type: number
                                   format: double
@@ -121175,6 +121614,12 @@ paths:
                                   - lost_publications
                                   - sources
                                 nullable: true
+                              stage_distributions:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: TelemetryStageDistribution'
+                                  additionalProperties: true
                               transport_lag_ms:
                                 type: number
                                 format: double
@@ -326757,6 +327202,11 @@ paths:
                                 - lost_publications
                                 - sources
                               nullable: true
+                            stage_distributions:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             transport_lag_ms:
                               type: number
                               format: double
@@ -332219,6 +332669,48 @@ paths:
                               - lost_publications
                               - sources
                             nullable: true
+                          stage_distributions:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                advisory:
+                                  type: boolean
+                                availability:
+                                  type: string
+                                excluded:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                max_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                p50_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                p95_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                p99_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                samples:
+                                  type: integer
+                                  format: int64
+                                stage:
+                                  type: string
+                                unit:
+                                  type: string
+                              required:
+                                - availability
+                                - samples
+                                - stage
+                                - unit
                           transport_lag_ms:
                             type: number
                             format: double
@@ -339374,6 +339866,11 @@ paths:
                                 - lost_publications
                                 - sources
                               nullable: true
+                            stage_distributions:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             transport_lag_ms:
                               type: number
                               format: double
@@ -344836,6 +345333,48 @@ paths:
                               - lost_publications
                               - sources
                             nullable: true
+                          stage_distributions:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                advisory:
+                                  type: boolean
+                                availability:
+                                  type: string
+                                excluded:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                max_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                p50_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                p95_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                p99_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                samples:
+                                  type: integer
+                                  format: int64
+                                stage:
+                                  type: string
+                                unit:
+                                  type: string
+                              required:
+                                - availability
+                                - samples
+                                - stage
+                                - unit
                           transport_lag_ms:
                             type: number
                             format: double
@@ -354378,6 +354917,89 @@ paths:
                     type: string
                   telemetry_sources_truncated:
                     type: boolean
+                  telemetry_stage_digests:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        centroids:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              mean:
+                                type: number
+                                format: double
+                              weight:
+                                type: number
+                                format: double
+                            required:
+                              - mean
+                              - weight
+                        compression:
+                          type: number
+                          format: double
+                        count:
+                          type: integer
+                          format: int64
+                        max:
+                          type: number
+                          format: double
+                        min:
+                          type: number
+                          format: double
+                        total_weight:
+                          type: number
+                          format: double
+                      required:
+                        - centroids
+                        - compression
+                        - count
+                        - max
+                        - min
+                        - total_weight
+                  telemetry_stage_distributions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        advisory:
+                          type: boolean
+                        availability:
+                          type: string
+                        excluded:
+                          type: object
+                          additionalProperties:
+                            type: integer
+                            format: int64
+                        max_ms:
+                          type: number
+                          format: double
+                          nullable: true
+                        p50_ms:
+                          type: number
+                          format: double
+                          nullable: true
+                        p95_ms:
+                          type: number
+                          format: double
+                          nullable: true
+                        p99_ms:
+                          type: number
+                          format: double
+                          nullable: true
+                        samples:
+                          type: integer
+                          format: int64
+                        stage:
+                          type: string
+                        unit:
+                          type: string
+                      required:
+                        - availability
+                        - samples
+                        - stage
+                        - unit
                   termination_reason:
                     type: string
                   test_id:
@@ -365292,6 +365914,80 @@ paths:
                         type: string
                       telemetry_sources_truncated:
                         type: boolean
+                      telemetry_stage_digests:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            centroids:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            compression:
+                              type: number
+                              format: double
+                            count:
+                              type: integer
+                              format: int64
+                            max:
+                              type: number
+                              format: double
+                            min:
+                              type: number
+                              format: double
+                            total_weight:
+                              type: number
+                              format: double
+                          required:
+                            - centroids
+                            - compression
+                            - count
+                            - max
+                            - min
+                            - total_weight
+                      telemetry_stage_distributions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            advisory:
+                              type: boolean
+                            availability:
+                              type: string
+                            excluded:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            max_ms:
+                              type: number
+                              format: double
+                              nullable: true
+                            p50_ms:
+                              type: number
+                              format: double
+                              nullable: true
+                            p95_ms:
+                              type: number
+                              format: double
+                              nullable: true
+                            p99_ms:
+                              type: number
+                              format: double
+                              nullable: true
+                            samples:
+                              type: integer
+                              format: int64
+                            stage:
+                              type: string
+                            unit:
+                              type: string
+                          required:
+                            - availability
+                            - samples
+                            - stage
+                            - unit
                       termination_reason:
                         type: string
                       test_id:
@@ -378185,6 +378881,11 @@ paths:
                                 - lost_publications
                                 - sources
                               nullable: true
+                            stage_distributions:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             transport_lag_ms:
                               type: number
                               format: double
@@ -383647,6 +384348,48 @@ paths:
                               - lost_publications
                               - sources
                             nullable: true
+                          stage_distributions:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                advisory:
+                                  type: boolean
+                                availability:
+                                  type: string
+                                excluded:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                max_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                p50_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                p95_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                p99_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                samples:
+                                  type: integer
+                                  format: int64
+                                stage:
+                                  type: string
+                                unit:
+                                  type: string
+                              required:
+                                - availability
+                                - samples
+                                - stage
+                                - unit
                           transport_lag_ms:
                             type: number
                             format: double
@@ -390746,6 +391489,11 @@ paths:
                                 - lost_publications
                                 - sources
                               nullable: true
+                            stage_distributions:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             transport_lag_ms:
                               type: number
                               format: double
@@ -396208,6 +396956,48 @@ paths:
                               - lost_publications
                               - sources
                             nullable: true
+                          stage_distributions:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                advisory:
+                                  type: boolean
+                                availability:
+                                  type: string
+                                excluded:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                max_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                p50_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                p95_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                p99_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                samples:
+                                  type: integer
+                                  format: int64
+                                stage:
+                                  type: string
+                                unit:
+                                  type: string
+                              required:
+                                - availability
+                                - samples
+                                - stage
+                                - unit
                           transport_lag_ms:
                             type: number
                             format: double
@@ -410473,6 +411263,11 @@ paths:
                                 - lost_publications
                                 - sources
                               nullable: true
+                            stage_distributions:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             transport_lag_ms:
                               type: number
                               format: double
@@ -415936,6 +416731,48 @@ paths:
                               - lost_publications
                               - sources
                             nullable: true
+                          stage_distributions:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                advisory:
+                                  type: boolean
+                                availability:
+                                  type: string
+                                excluded:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                max_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                p50_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                p95_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                p99_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                samples:
+                                  type: integer
+                                  format: int64
+                                stage:
+                                  type: string
+                                unit:
+                                  type: string
+                              required:
+                                - availability
+                                - samples
+                                - stage
+                                - unit
                           transport_lag_ms:
                             type: number
                             format: double
@@ -423406,6 +424243,105 @@ paths:
       tags:
         - Tests
       x-handler: handleTestStream
+  /api/v1/tests/{id}/telemetry/client-render:
+    post:
+      summary: Report Client Render
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: tests:run'
+      operationId: handleReportClientRender
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                client_id:
+                  type: string
+                samples:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      observed_at:
+                        type: string
+                        format: date-time
+                      receive_to_render_ms:
+                        type: number
+                        format: double
+                      state:
+                        type: string
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted:
+                    type: integer
+                    format: int64
+                  excluded:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                      format: int64
+                required:
+                  - accepted
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: tests:run'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleReportClientRender
   /api/v1/tests/{id}/transactions/live/{event_id}:
     get:
       summary: Get Live Transaction Detail

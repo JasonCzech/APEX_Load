@@ -387,6 +387,14 @@ export interface ProjectSettings {
   // fleet-pool id). Additive to the project-wide limits above.
   pool_quotas?: Record<string, PoolProjectQuota>
 	features?: ProjectFeatureFlags
+  telemetry?: ProjectTelemetryPolicy
+}
+
+// Opt-in telemetry evidence a project's viewers contribute (C5).
+export interface ProjectTelemetryPolicy {
+  // Dashboard tabs viewing a live run report receive-to-render times, which
+  // feed the run's advisory browser_render stage.
+  client_render_evidence?: boolean
 }
 
 export interface ProjectFeatureFlags {
@@ -2243,6 +2251,26 @@ export interface TelemetryHealth {
   delivery_lag_ms?: number
   end_to_end_age_ms?: number
   sample_age_ms?: number
+  // Run-cumulative stage distributions (C5); the live snapshot only.
+  stage_distributions?: TelemetryStageDistribution[]
+}
+
+export type TelemetryStageName = 'generator_processing' | 'transport' | 'controller_fanout' | 'sample_age' | 'browser_render'
+
+// One telemetry stage's sampled distribution so far. Percentiles exist only
+// for a measured stage, and stage percentiles are never added together.
+export interface TelemetryStageDistribution {
+  stage: TelemetryStageName | string
+  unit: string
+  availability: 'measured' | 'unavailable' | string
+  samples: number
+  excluded?: Record<string, number>
+  p50_ms?: number
+  p95_ms?: number
+  p99_ms?: number
+  max_ms?: number
+  // Advisory stages (browser render) never affect run health.
+  advisory?: boolean
 }
 
 export interface TelemetryRunHealth {

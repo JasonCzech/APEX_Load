@@ -64,7 +64,8 @@ func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics, thresholds T
 			appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "transport_lag", "transport lag", clockScoredValue(live.Telemetry.TransportLagMs, live.Telemetry.TransportLagQuality), thresholds.MaxTelemetryTransportLagMs)
 		}
 		appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "controller_fanout_lag", "controller fan-out lag", live.Telemetry.ControllerFanoutLagMs, thresholds.MaxTelemetryControllerFanoutMs)
-		appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "browser_render_lag", "browser render lag", live.Telemetry.BrowserRenderLagMs, thresholds.MaxTelemetryBrowserRenderLagMs)
+		// Browser render lag is advisory (a viewer's tab is not the system
+		// under test): it is reported, never scored into run health.
 	}
 
 	samples, sampleConditions, sampleSummaries, sampleSeverity, sampleSignature := sampleTransactionDiagnostics(test, live)
@@ -651,7 +652,8 @@ func cloneTelemetryRunHealth(in *TelemetryRunHealth) *TelemetryRunHealth {
 func archivedTelemetryHealth(in *TelemetryHealth) *TelemetryHealth {
 	out := cloneTelemetryHealth(in)
 	if out != nil {
-		out.Coverage = nil
+		// Run-cumulative records are in the manifest, not on every row.
+		out.Coverage, out.StageDistributions = nil, nil
 	}
 	return out
 }
@@ -666,6 +668,7 @@ func cloneTelemetryHealth(in *TelemetryHealth) *TelemetryHealth {
 		out.Sources = &sources
 	}
 	out.Loss = in.Loss.clone()
+	out.StageDistributions = cloneTelemetryStageDistributions(in.StageDistributions)
 	if in.Coverage != nil {
 		coverage := *in.Coverage
 		coverage.Sources = append([]TelemetrySourceCoverage(nil), in.Coverage.Sources...)

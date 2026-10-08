@@ -551,6 +551,7 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 			return false
 		}
 	}
+	sampleTelemetryStagesLocked(test, live)
 	live.ActiveRuntimeSeconds = activeRuntimeSecondsLocked(test, now)
 	live.LoadLevels = activeLoadLevelsLocked(test)
 	tests := make([]*ManagedTest, 0, len(tr.tests))

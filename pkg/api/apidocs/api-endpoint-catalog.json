@@ -3756,6 +3756,16 @@
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
     },
     {
+      "method": "PUT",
+      "path": "/api/v1/projects/{id}/telemetry-policy",
+      "operationId": "handleUpdateProjectTelemetryPolicy",
+      "summary": "Update Project Telemetry Policy",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/projects/{pid}/folders",
       "operationId": "handleListFolders",
@@ -7164,6 +7174,16 @@
       "public": false,
       "authenticated": true,
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/telemetry/client-render",
+      "operationId": "handleReportClientRender",
+      "summary": "Report Client Render",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: tests:run"
     },
     {
       "method": "GET",

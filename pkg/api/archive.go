@@ -164,6 +164,11 @@ type RunArchiveManifest struct {
 	// and unknown time per source, and healthy, degraded, breached and
 	// unknown time with explicit denominators.
 	TelemetryCoverage *TelemetryCoverageRecord `json:"telemetry_coverage,omitempty"`
+	// TelemetryStageDistributions are the run's per-stage latency
+	// distributions as this controller sampled them, and
+	// TelemetryStageDigests the mergeable digests behind them.
+	TelemetryStageDistributions []TelemetryStageDistribution      `json:"telemetry_stage_distributions,omitempty"`
+	TelemetryStageDigests       map[string]engine.TDigestSnapshot `json:"telemetry_stage_digests,omitempty"`
 	// PhaseEventsFile holds generated load-phase transitions and their sink
 	// outcomes (apexload.phase_event.v1), apart from analyst annotations.
 	PhaseEventsFile      string `json:"phase_events_file,omitempty"`

@@ -537,6 +537,7 @@ type ManagedTest struct {
 	dynatraceArtifacts    *runArtifacts
 	clockObservations     *clockObservationLog                     // measured source clocks; created on first observation
 	telemetrySources      *telemetrySourceLedger                   // source-epoch publication coverage; created on first publication
+	telemetryStages       *telemetryStageRecorder                  // per-stage latency distributions; created on first sample
 	clockCalibrations     *clockCalibrations                       // current generator clock offsets; created on first probe
 	TotalVUsers           int                                      `json:"total_vusers"`
 	GeneratorShards       []GeneratorShardSummary                  `json:"generator_shards,omitempty"`
@@ -1073,6 +1074,9 @@ type TelemetryHealth struct {
 	ControllerFanoutLagMs    float64   `json:"controller_fanout_lag_ms,omitempty"`
 	BrowserRenderLagMs       float64   `json:"browser_render_lag_ms,omitempty"`
 	SampleAgeMs              float64   `json:"sample_age_ms,omitempty"`
+	// StageDistributions are the run's per-stage latency distributions so
+	// far (C5), one entry per stage; percentiles only where sampled.
+	StageDistributions []TelemetryStageDistribution `json:"stage_distributions,omitempty"`
 	// Sources rolls up per-generator source epochs: publications lost
 	// between received sequence numbers, exact or a lower bound.
 	Sources *TelemetrySourceSummary `json:"sources,omitempty"`

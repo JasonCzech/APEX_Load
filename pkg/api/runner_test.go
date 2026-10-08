@@ -3120,11 +3120,13 @@ func TestPublishLiveMetricsUsesConfiguredTelemetryBudgets(t *testing.T) {
 	if diagnosticPayload.Data == nil || diagnosticPayload.Data.Severity != "warning" {
 		t.Fatalf("expected warning diagnostic, got %#v", diagnosticPayload.Data)
 	}
-	expectedConditions := []string{"stale_sample", "generator_lag", "transport_lag", "controller_fanout_lag", "browser_render_lag"}
+	// Browser render is advisory (C5): a viewer's tab over its budget is not
+	// a run-health condition.
+	expectedConditions := []string{"stale_sample", "generator_lag", "transport_lag", "controller_fanout_lag"}
 	if strings.Join(diagnosticPayload.Data.Conditions, ",") != strings.Join(expectedConditions, ",") {
 		t.Fatalf("conditions = %#v, want %#v", diagnosticPayload.Data.Conditions, expectedConditions)
 	}
-	if !strings.Contains(diagnosticPayload.Data.Summary, "sample age") || !strings.Contains(diagnosticPayload.Data.Summary, "browser render lag") {
+	if !strings.Contains(diagnosticPayload.Data.Summary, "sample age") || strings.Contains(diagnosticPayload.Data.Summary, "browser render lag") {
 		t.Fatalf("unexpected diagnostic summary: %s", diagnosticPayload.Data.Summary)
 	}
 	if testRun.TelemetryHealth == nil || testRun.TelemetryHealth.Status != "degraded" || !testRun.TelemetryHealth.BreachActive {

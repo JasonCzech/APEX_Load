@@ -3458,6 +3458,26 @@ export interface operations {
               "telemetry_source_epoch_count"?: number;
               "telemetry_sources_file"?: string;
               "telemetry_sources_truncated"?: boolean;
+              "telemetry_stage_digests"?: Record<string, {
+                "centroids"?: Array<Record<string, unknown>>;
+                "compression"?: number;
+                "count"?: number;
+                "max"?: number;
+                "min"?: number;
+                "total_weight"?: number;
+              }>;
+              "telemetry_stage_distributions"?: Array<{
+                "advisory"?: boolean;
+                "availability"?: string;
+                "excluded"?: Record<string, number>;
+                "max_ms"?: (number) | null;
+                "p50_ms"?: (number) | null;
+                "p95_ms"?: (number) | null;
+                "p99_ms"?: (number) | null;
+                "samples"?: number;
+                "stage"?: string;
+                "unit"?: string;
+              }>;
               "termination_reason"?: string;
               "test_id"?: string;
               "test_manifest_file"?: string;
@@ -32101,6 +32121,9 @@ export interface operations {
               "pattern"?: string;
               "replacement"?: string;
             }>;
+            "telemetry"?: ({
+              "client_render_evidence"?: boolean;
+            }) | null;
           };
         };
       };
@@ -34430,6 +34453,7 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -34978,6 +35002,7 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -42187,6 +42212,7 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_distributions"?: Array<Record<string, unknown>>;
                 "transport_lag_ms"?: number;
                 "transport_lag_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -43784,6 +43810,18 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_distributions"?: Array<{
+                  "advisory"?: boolean;
+                  "availability": string;
+                  "excluded"?: Record<string, number>;
+                  "max_ms"?: (number) | null;
+                  "p50_ms"?: (number) | null;
+                  "p95_ms"?: (number) | null;
+                  "p99_ms"?: (number) | null;
+                  "samples": number;
+                  "stage": string;
+                  "unit": string;
+                }>;
                 "transport_lag_ms"?: number;
                 "transport_lag_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -59348,6 +59386,7 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_distributions"?: Array<Record<string, unknown>>;
                 "transport_lag_ms"?: number;
                 "transport_lag_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -60945,6 +60984,18 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_distributions"?: Array<{
+                  "advisory"?: boolean;
+                  "availability": string;
+                  "excluded"?: Record<string, number>;
+                  "max_ms"?: (number) | null;
+                  "p50_ms"?: (number) | null;
+                  "p95_ms"?: (number) | null;
+                  "p99_ms"?: (number) | null;
+                  "samples": number;
+                  "stage": string;
+                  "unit": string;
+                }>;
                 "transport_lag_ms"?: number;
                 "transport_lag_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -61547,6 +61598,9 @@ export interface operations {
                 "pattern": string;
                 "replacement"?: string;
               }>;
+              "telemetry"?: ({
+                "client_render_evidence"?: boolean;
+              }) | null;
             };
             "updated_at": string;
           }) | null;
@@ -63135,6 +63189,7 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -63683,6 +63738,7 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -66511,6 +66567,29 @@ export interface operations {
             "telemetry_source_epoch_count"?: number;
             "telemetry_sources_file"?: string;
             "telemetry_sources_truncated"?: boolean;
+            "telemetry_stage_digests"?: Record<string, {
+              "centroids": Array<{
+                "mean": number;
+                "weight": number;
+              }>;
+              "compression": number;
+              "count": number;
+              "max": number;
+              "min": number;
+              "total_weight": number;
+            }>;
+            "telemetry_stage_distributions"?: Array<{
+              "advisory"?: boolean;
+              "availability": string;
+              "excluded"?: Record<string, number>;
+              "max_ms"?: (number) | null;
+              "p50_ms"?: (number) | null;
+              "p95_ms"?: (number) | null;
+              "p99_ms"?: (number) | null;
+              "samples": number;
+              "stage": string;
+              "unit": string;
+            }>;
             "termination_reason"?: string;
             "test_id": string;
             "test_manifest_file"?: string;
@@ -69627,6 +69706,26 @@ export interface operations {
               "telemetry_source_epoch_count"?: number;
               "telemetry_sources_file"?: string;
               "telemetry_sources_truncated"?: boolean;
+              "telemetry_stage_digests"?: Record<string, {
+                "centroids": Array<Record<string, unknown>>;
+                "compression": number;
+                "count": number;
+                "max": number;
+                "min": number;
+                "total_weight": number;
+              }>;
+              "telemetry_stage_distributions"?: Array<{
+                "advisory"?: boolean;
+                "availability": string;
+                "excluded"?: Record<string, number>;
+                "max_ms"?: (number) | null;
+                "p50_ms"?: (number) | null;
+                "p95_ms"?: (number) | null;
+                "p99_ms"?: (number) | null;
+                "samples": number;
+                "stage": string;
+                "unit": string;
+              }>;
               "termination_reason"?: string;
               "test_id": string;
               "test_manifest_file"?: string;
@@ -77487,6 +77586,7 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_distributions"?: Array<Record<string, unknown>>;
                 "transport_lag_ms"?: number;
                 "transport_lag_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -79084,6 +79184,18 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_distributions"?: Array<{
+                  "advisory"?: boolean;
+                  "availability": string;
+                  "excluded"?: Record<string, number>;
+                  "max_ms"?: (number) | null;
+                  "p50_ms"?: (number) | null;
+                  "p95_ms"?: (number) | null;
+                  "p99_ms"?: (number) | null;
+                  "samples": number;
+                  "stage": string;
+                  "unit": string;
+                }>;
                 "transport_lag_ms"?: number;
                 "transport_lag_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -98299,6 +98411,7 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_distributions"?: Array<Record<string, unknown>>;
                 "transport_lag_ms"?: number;
                 "transport_lag_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -99896,6 +100009,18 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_distributions"?: Array<{
+                  "advisory"?: boolean;
+                  "availability": string;
+                  "excluded"?: Record<string, number>;
+                  "max_ms"?: (number) | null;
+                  "p50_ms"?: (number) | null;
+                  "p95_ms"?: (number) | null;
+                  "p99_ms"?: (number) | null;
+                  "samples": number;
+                  "stage": string;
+                  "unit": string;
+                }>;
                 "transport_lag_ms"?: number;
                 "transport_lag_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -113612,6 +113737,7 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -114160,6 +114286,7 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -115473,6 +115600,7 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -116021,6 +116149,7 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -117334,6 +117463,7 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -117882,6 +118012,7 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -119195,6 +119326,7 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -119743,6 +119875,7 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -121056,6 +121189,7 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -121604,6 +121738,7 @@ export interface operations {
                     "truncated"?: boolean;
                     "unobserved_generations"?: number;
                   }) | null;
+                  "stage_distributions"?: Array<Record<string, unknown>>;
                   "transport_lag_ms"?: number;
                   "transport_lag_quality"?: ({
                     "lower_bound_ms"?: (number) | null;
@@ -123708,6 +123843,73 @@ export interface operations {
         };
       };
       "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleReportClientRender": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "client_id"?: string;
+          "samples"?: Array<{
+            "observed_at"?: string;
+            "receive_to_render_ms"?: number;
+            "state"?: string;
+          }>;
+        };
+      };
+    };
+    responses: {
+      "202": {
+        content: {
+          "application/json": {
+            "accepted": number;
+            "excluded"?: Record<string, number>;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "429": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -146105,6 +146307,7 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_distributions"?: Array<Record<string, unknown>>;
                 "transport_lag_ms"?: number;
                 "transport_lag_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -147702,6 +147905,18 @@ export interface operations {
                   "truncated"?: boolean;
                   "unobserved_generations"?: number;
                 }) | null;
+                "stage_distributions"?: Array<{
+                  "advisory"?: boolean;
+                  "availability": string;
+                  "excluded"?: Record<string, number>;
+                  "max_ms"?: (number) | null;
+                  "p50_ms"?: (number) | null;
+                  "p95_ms"?: (number) | null;
+                  "p99_ms"?: (number) | null;
+                  "samples": number;
+                  "stage": string;
+                  "unit": string;
+                }>;
                 "transport_lag_ms"?: number;
                 "transport_lag_quality"?: ({
                   "lower_bound_ms"?: (number) | null;
@@ -152412,6 +152627,9 @@ export interface operations {
               "pattern"?: string;
               "replacement"?: string;
             }>;
+            "telemetry"?: ({
+              "client_render_evidence"?: boolean;
+            }) | null;
           };
         };
       };
@@ -152489,6 +152707,9 @@ export interface operations {
                 "pattern": string;
                 "replacement"?: string;
               }>;
+              "telemetry"?: ({
+                "client_render_evidence"?: boolean;
+              }) | null;
             };
             "updated_at": string;
           }) | null;
@@ -152630,6 +152851,150 @@ export interface operations {
         };
       };
       "501": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleUpdateProjectTelemetryPolicy": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "client_render_evidence"?: (boolean) | null;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": ({
+            "category_id"?: string;
+            "created_at": string;
+            "domain_id"?: string;
+            "id": string;
+            "name": string;
+            "settings"?: {
+              "authoring"?: ({
+                "require_scenario_save_if_match"?: boolean;
+                "require_script_save_if_match"?: boolean;
+              }) | null;
+              "features"?: {
+                "control_parallel"?: boolean;
+                "media_stream"?: boolean;
+                "native_elastic_capacity"?: boolean;
+                "privileged_monitors"?: boolean;
+                "successful_message_detail"?: boolean;
+              };
+              "github"?: {
+                "actions"?: {
+                  "allowed_environments"?: Array<string>;
+                  "allowed_protocols"?: Array<string>;
+                  "allowed_refs"?: Array<string>;
+                  "allowed_repositories"?: Array<string>;
+                  "allowed_repository_ids"?: Array<string>;
+                  "allowed_target_hosts"?: Array<string>;
+                  "allowed_workflow_refs"?: Array<string>;
+                  "audience"?: string;
+                  "checks_enabled"?: boolean;
+                  "enabled"?: boolean;
+                  "issuer"?: string;
+                  "max_duration_minutes"?: number;
+                  "max_vusers"?: number;
+                  "required_runner_environment"?: string;
+                  "revision"?: number;
+                  "server_url"?: string;
+                  "updated_at"?: string;
+                  "updated_by"?: string;
+                  "validity_gate"?: string;
+                };
+                "allow_direct_commit"?: boolean;
+                "allow_import"?: boolean;
+                "allow_push"?: boolean;
+                "allowed_branches"?: Array<string>;
+                "allowed_repos"?: Array<string>;
+                "app_installation_id"?: number;
+                "auto_sync_enabled"?: boolean;
+                "automation_identity"?: string;
+                "bulk_sync_enabled"?: boolean;
+                "checks_enabled"?: boolean;
+                "default_branch"?: string;
+                "default_repo"?: string;
+                "default_sync_directory"?: string;
+                "enabled"?: boolean;
+                "path_template"?: string;
+                "require_pull_request"?: boolean;
+              };
+              "max_concurrent_tests"?: number;
+              "max_test_duration_minutes"?: number;
+              "max_vusers"?: number;
+              "max_vusers_per_test"?: number;
+              "pool_quotas"?: Record<string, {
+                "max_concurrent_tests"?: number;
+                "max_vusers"?: number;
+              }>;
+              "redaction_rules"?: Array<{
+                "name"?: string;
+                "pattern": string;
+                "replacement"?: string;
+              }>;
+              "telemetry"?: ({
+                "client_render_evidence"?: boolean;
+              }) | null;
+            };
+            "updated_at": string;
+          }) | null;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -165343,6 +165708,9 @@ export interface paths {
   "/api/v1/projects/{id}/secrets/{name}/usage": {
     "get": operations["handleProjectSecretUsage"];
   };
+  "/api/v1/projects/{id}/telemetry-policy": {
+    "put": operations["handleUpdateProjectTelemetryPolicy"];
+  };
   "/api/v1/projects/{pid}/folders": {
     "get": operations["handleListFolders"];
     "post": operations["handleCreateFolder"];
@@ -166271,6 +166639,9 @@ export interface paths {
   };
   "/api/v1/tests/{id}/stream": {
     "get": operations["handleTestStream"];
+  };
+  "/api/v1/tests/{id}/telemetry/client-render": {
+    "post": operations["handleReportClientRender"];
   };
   "/api/v1/tests/{id}/transactions/live/{event_id}": {
     "get": operations["handleGetLiveTransactionDetail"];

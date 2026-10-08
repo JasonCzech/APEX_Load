@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -205,7 +206,7 @@ func TestArchiveSnapshotPreservesIndependentCounterEvidence(t *testing.T) {
 			if row.Telemetry.DroppedResultsAvailable != tc.available || row.Telemetry.DroppedResults != tc.drops {
 				t.Fatalf("evidence changed %+v", row.Telemetry)
 			}
-			if tc.raw != rawBefore || tc.snapshot != snapshotBefore {
+			if !reflect.DeepEqual(tc.raw, rawBefore) || !reflect.DeepEqual(tc.snapshot, snapshotBefore) {
 				t.Fatal("snapshot reconciliation mutated source evidence")
 			}
 		})

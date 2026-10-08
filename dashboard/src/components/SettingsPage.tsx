@@ -61,6 +61,7 @@ import DomainDeploymentTargetCard from './DomainDeploymentTargetCard'
 import EntitlementsPanel from './EntitlementsPanel'
 import EntitlementHeadroom from './EntitlementHeadroom'
 import ProjectPoolQuotasCard, { type ProjectPoolQuotasDraftController } from './ProjectPoolQuotasCard'
+import ProjectTelemetryEvidenceCard from './ProjectTelemetryEvidenceCard'
 import ProjectSecretsPanel from './ProjectSecretsPanel'
 import { listAllFleetPools } from './fleetCatalogModel'
 import {
@@ -5668,6 +5669,15 @@ export default function SettingsPage({
                       canManage={canManageProjects}
                       onUpdate={updateProject}
                       onDirtyChange={setPoolQuotaDraftDirty}
+                      onUpdated={updated => {
+                        commitSettingsProject(updated)
+                      }}
+                    />
+                  )}
+                  {selectedProject && (
+                    <ProjectTelemetryEvidenceCard
+                      project={selectedProject}
+                      canEdit={capabilityAllowed('manage_tests')}
                       onUpdated={updated => {
                         commitSettingsProject(updated)
                       }}

@@ -1781,6 +1781,9 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 	// is deliberately deferred until this publication wins guarded admission.
 	aggregated, fleetTPS, groupTPS := aggregateDistributedMetricsBatches(test.ID, batches)
 	tr.mu.Lock()
+	// Each generator's stages are sampled from its arriving batch only: the
+	// aggregate re-reads every resident batch on each publication.
+	stageRecorderLocked(test).observeGeneratorBatch(target, batch)
 	live := buildLiveMetricsFromDistributedBatch(test, aggregated, fleetTPS, groupTPS)
 	if live.Telemetry != nil {
 		live.Telemetry.Sources, live.Telemetry.Loss = telemetrySourceRollupLocked(test)

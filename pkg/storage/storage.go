@@ -1115,8 +1115,17 @@ type ProjectAuthoringPolicy struct {
 	RequireScenarioSaveIfMatch bool `json:"require_scenario_save_if_match,omitempty"`
 }
 
+// ProjectTelemetryPolicy holds a project's telemetry evidence opt-ins.
+type ProjectTelemetryPolicy struct {
+	// ClientRenderEvidence lets dashboard tabs viewing the project's live
+	// runs report how long a publication took from receipt to render
+	// (advisory; it never affects run health).
+	ClientRenderEvidence bool `json:"client_render_evidence,omitempty"`
+}
+
 type ProjectSettings struct {
 	Authoring          *ProjectAuthoringPolicy `json:"authoring,omitempty"`
+	Telemetry          *ProjectTelemetryPolicy `json:"telemetry,omitempty"`
 	RedactionRules     []engine.RedactionRule  `json:"redaction_rules,omitempty"`
 	MaxConcurrentTests int                     `json:"max_concurrent_tests,omitempty"`
 	MaxVUsers          int                     `json:"max_vusers,omitempty"`

@@ -82,6 +82,9 @@ type Server struct {
 	// elasticHTTPClient replaces the allowlisted Elasticsearch query client in tests.
 	elasticHTTPClient *http.Client
 
+	// clientRenderReports rate-limits client render evidence per tab (C5).
+	clientRenderReports clientRenderLimiter
+
 	httpServer *http.Server
 	hub        *Hub
 	runner     *TestRunner

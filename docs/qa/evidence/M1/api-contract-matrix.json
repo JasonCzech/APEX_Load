@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 722,
+    "routes": 724,
     "public": 31,
-    "protected": 691,
-    "rbac": 686,
+    "protected": 693,
+    "rbac": 688,
     "handler_authenticated": 5,
     "role_metadata_missing": 0,
-    "green": 722,
+    "green": 724,
     "partial": 0,
     "missing": 0
   },
@@ -8528,6 +8528,31 @@
       "service_account_scope": "read"
     },
     {
+      "method": "PUT",
+      "path": "/api/v1/projects/{id}/telemetry-policy",
+      "operation_id": "handleUpdateProjectTelemetryPolicy",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/projects/{pid}/folders",
       "operation_id": "handleListFolders",
@@ -16879,6 +16904,33 @@
       },
       "denied_role": "qa_contract_unlisted",
       "service_account_scope": "results:read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/telemetry/client-render",
+      "operation_id": "handleReportClientRender",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: tests:run",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "tests:run"
     },
     {
       "method": "GET",

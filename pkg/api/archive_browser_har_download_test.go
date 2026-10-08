@@ -49,7 +49,7 @@ func harDownloadFixture(t *testing.T) (*Server, string, *storage.RunArchiveRecor
 	sum := sha256.Sum256(native)
 	manifest := RunArchiveManifest{SchemaVersion: archiveSchemaVersion, TestID: id, TestName: id, Status: "COMPLETE", CreatedAt: start, CompletedAt: end, Provenance: RunArchiveProvenance{StartedAt: &start}, TransactionsFile: "transactions.jsonl", TransactionCount: 5,
 		BrowserHARArtifacts: []RunArchiveEvidenceArtifact{{Name: harName, Kind: storage.EvidenceKindHARNative, Fidelity: "native", SourceGeneration: generation, Sequence: 1, SHA256: hex.EncodeToString(sum[:]), Bytes: int64(len(native)), EvidenceGeneration: syntheticCoveredGeneration}},
-		Artifacts: []RunArchiveArtifact{{Name: "transactions.jsonl", Kind: "dataset", Format: "jsonl", RecordType: "transactions", Count: 5}, {Name: harName, Kind: "evidence", Format: "har", RecordType: runArchiveHARRecordType, SizeBytes: int64(len(native)), SHA256: hex.EncodeToString(sum[:])}}}
+		Artifacts:           []RunArchiveArtifact{{Name: "transactions.jsonl", Kind: "dataset", Format: "jsonl", RecordType: "transactions", Count: 5}, {Name: harName, Kind: "evidence", Format: "har", RecordType: runArchiveHARRecordType, SizeBytes: int64(len(native)), SHA256: hex.EncodeToString(sum[:])}}}
 	data, err := json.Marshal(manifest)
 	if err != nil {
 		t.Fatal(err)

@@ -270,6 +270,10 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	if req.Settings.Authoring == nil {
 		req.Settings.Authoring = project.Settings.Authoring
 	}
+	// The same holds for the telemetry opt-ins.
+	if req.Settings.Telemetry == nil {
+		req.Settings.Telemetry = project.Settings.Telemetry
+	}
 	project.Settings = req.Settings
 	updater, supported := s.store.(interface {
 		UpdateProjectIfUnchanged(project *storage.Project, expectedUpdatedAt time.Time) (bool, error)
