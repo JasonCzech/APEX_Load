@@ -27,6 +27,7 @@ import {
   wsUrl,
   writeStoredDevViewMode,
 } from "./apiClient";
+import { type ClientErrorReport, installClientErrorReporting } from "../utils/clientErrorReporting";
 
 describe("resolveApiOrigin", () => {
   it("uses an explicit API origin when configured", () => {
@@ -648,5 +649,52 @@ describe('server error references', () => {
 
   it('does not repeat a ref the message already names', () => {
     expect(new ApiError('failed (ref abc)', 500, { ref: 'abc' }).message).toBe('failed (ref abc)')
+  })
+})
+
+describe('browser-side failure reporting', () => {
+  let reports: ClientErrorReport[] = []
+  let uninstall: (() => void) | undefined
+
+  beforeEach(() => {
+    reports = []
+    uninstall = installClientErrorReporting(async report => { reports.push(report); return 204 }, { target: new EventTarget() as unknown as Window })
+  })
+  afterEach(() => {
+    uninstall?.()
+    vi.restoreAllMocks()
+  })
+
+  it('reports a 5xx that never reached the controller', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('<html>504 Gateway Time-out</html>', { status: 504, statusText: 'Gateway Time-out', headers: { 'Content-Type': 'text/html' } }))
+    await request('/tests').catch(() => undefined)
+    expect(reports).toHaveLength(1)
+    expect(reports[0]).toMatchObject({ kind: 'gateway', request_method: 'GET', request_path: '/api/v1/tests', request_status: 504 })
+  })
+
+  it('leaves controller 5xx responses to the controller log', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"error":"internal server error","ref":"r1"}', { status: 500, headers: { 'Content-Type': 'application/json', 'X-Request-ID': 'r1' } }))
+    await request('/tests').catch(() => undefined)
+    expect(reports).toEqual([])
+  })
+
+  it('reports network failures but not caller aborts', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await expect(request('/scripts', { method: 'POST', body: '{}' })).rejects.toThrow('Failed to fetch')
+    expect(reports).toHaveLength(1)
+    expect(reports[0]).toMatchObject({ kind: 'network', message: 'Failed to fetch', request_method: 'POST', request_path: '/api/v1/scripts' })
+
+    vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new DOMException('The operation was aborted.', 'AbortError'))
+    await request('/scenarios').catch(() => undefined)
+    expect(reports).toHaveLength(1)
+  })
+
+  it('reports client-side timeouts', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((_input, init) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')))
+    }))
+    await expect(apiFetch('/tests/slow', { timeoutMs: 5 })).rejects.toThrow('Request timed out after 5ms')
+    expect(reports).toHaveLength(1)
+    expect(reports[0]).toMatchObject({ kind: 'network', message: 'Request timed out after 5ms', request_path: '/api/v1/tests/slow' })
   })
 })

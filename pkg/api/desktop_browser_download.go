@@ -124,7 +124,8 @@ func (s *Server) handleDesktopBrowserDownload(w http.ResponseWriter, r *http.Req
 	}
 	target, err := url.ParseRequestURI(grant.resourcePath)
 	if err != nil {
-		http.Error(w, "desktop browser download target is invalid", http.StatusInternalServerError)
+		ref := logServerError(w, http.StatusInternalServerError, err)
+		http.Error(w, "desktop browser download target is invalid (ref "+ref+")", http.StatusInternalServerError)
 		return
 	}
 

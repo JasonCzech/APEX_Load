@@ -316,6 +316,11 @@ func TestSystemRestartRecordsFailedAudit(t *testing.T) {
 	if result.Status != "failed" {
 		t.Fatalf("result status = %q", result.Status)
 	}
+	// The Kubernetes error is an internal detail: the audit and the log keep
+	// it, the response carries a ref to it.
+	if strings.Contains(resp.Body.String(), "api server unavailable") || result.Error != "restart request failed" || result.Ref == "" {
+		t.Fatalf("failed restart response = %s", resp.Body.String())
+	}
 	assertLastRestartAudit(t, store, "failed", restartTargetGenerator, target)
 }
 

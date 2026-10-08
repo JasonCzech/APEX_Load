@@ -1,5 +1,6 @@
 import { isWailsLocation } from "../desktop/desktopBridge";
 import { readStoredString, writeStoredString } from "../utils/browserStorage";
+import { reportClientError } from "../utils/clientErrorReporting";
 
 const DEFAULT_LOCAL_API_ORIGIN = "http://127.0.0.1:8080";
 export const DEV_VIEW_STORAGE_KEY = "apexload.devViewMode";
@@ -396,6 +397,34 @@ export class ApiError extends Error {
   }
 }
 
+function apiRequestPath(target: string): string {
+  try {
+    return new URL(target).pathname;
+  } catch {
+    return "";
+  }
+}
+
+// A 5xx without the controller's request ID was produced before the request
+// reached the API (an ingress or proxy timeout, a gateway error page), so the
+// controller has no record of it; report it from the browser instead.
+function observeApiResponse(target: string, method: string | undefined, response: Response): void {
+  if (response.status >= 500 && !response.headers.get(REQUEST_ID_HEADER)) {
+    reportClientError(
+      "gateway",
+      `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""} without a controller request ID`,
+      { request_method: method || "GET", request_path: apiRequestPath(target), request_status: response.status },
+    );
+  }
+}
+
+// Network failures (fetch rejects with TypeError) and client-side timeouts
+// never reach the controller. Caller-initiated aborts are not failures.
+function observeApiTransportFailure(target: string, method: string | undefined, error: unknown, timedOut: boolean): void {
+  if (!timedOut && !(error instanceof TypeError)) return;
+  reportClientError("network", error, { request_method: method || "GET", request_path: apiRequestPath(target) });
+}
+
 function mergeAbortSignals(
   primary?: AbortSignal | null,
   secondary?: AbortSignal | null,
@@ -492,10 +521,16 @@ export function apiFetch(
   });
   return (timeout.deadline
     ? Promise.race([pendingFetch, timeout.deadline])
-    : pendingFetch).then(response => isDesktopController ? notifyActivityResponse(response, init.method) : response).catch((error: unknown) => {
+    : pendingFetch).then(response => {
+    observeApiResponse(target, init.method, response);
+    return isDesktopController ? notifyActivityResponse(response, init.method) : response;
+  }).catch((error: unknown) => {
     if (isTimeoutAbort(error, timeout.timedOut())) {
-      throw new Error(`Request timed out after ${timeoutMs}ms`);
+      const timedOut = new Error(`Request timed out after ${timeoutMs}ms`);
+      observeApiTransportFailure(target, init.method, timedOut, true);
+      throw timedOut;
     }
+    observeApiTransportFailure(target, init.method, error, false);
     throw error;
   }).finally(() => {
     timeout.clear();
@@ -568,10 +603,16 @@ export function apiFetchFromOrigin(
   });
   return (timeout.deadline
     ? Promise.race([pendingFetch, timeout.deadline])
-    : pendingFetch).then(response => isDesktopController ? notifyActivityResponse(response, init.method) : response).catch((error: unknown) => {
+    : pendingFetch).then(response => {
+    observeApiResponse(target, init.method, response);
+    return isDesktopController ? notifyActivityResponse(response, init.method) : response;
+  }).catch((error: unknown) => {
     if (isTimeoutAbort(error, timeout.timedOut())) {
-      throw new Error(`Request timed out after ${timeoutMs}ms`);
+      const timedOut = new Error(`Request timed out after ${timeoutMs}ms`);
+      observeApiTransportFailure(target, init.method, timedOut, true);
+      throw timedOut;
     }
+    observeApiTransportFailure(target, init.method, error, false);
     throw error;
   }).finally(() => {
     timeout.clear();

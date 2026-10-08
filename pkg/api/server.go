@@ -2046,7 +2046,8 @@ func (s *Server) handleDesktopBrowserBootstrap(w http.ResponseWriter, r *http.Re
 	// desktop capability header/WebSocket query parameter.
 	scriptNonce, err := generateDesktopSecret()
 	if err != nil {
-		http.Error(w, "desktop browser bootstrap failed", http.StatusInternalServerError)
+		ref := logServerError(w, http.StatusInternalServerError, err)
+		http.Error(w, "desktop browser bootstrap failed (ref "+ref+")", http.StatusInternalServerError)
 		return
 	}
 	s.desktopBootstrapMu.Lock()

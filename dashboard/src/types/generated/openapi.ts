@@ -7527,6 +7527,7 @@ export interface operations {
               "owner_id"?: string;
               "updated_at"?: string;
             }) | null;
+            "ref"?: string;
             "status": string;
           };
         };
@@ -57223,6 +57224,7 @@ export interface operations {
               "owner_id"?: string;
               "updated_at"?: string;
             }) | null;
+            "ref"?: string;
             "status": string;
           };
         };
@@ -112660,6 +112662,7 @@ export interface operations {
               "owner_id"?: string;
               "updated_at"?: string;
             }) | null;
+            "ref"?: string;
             "status": string;
           };
         };
@@ -122084,6 +122087,7 @@ export interface operations {
               "owner_id"?: string;
               "updated_at"?: string;
             }) | null;
+            "ref"?: string;
             "status": string;
           };
         };
@@ -123648,6 +123652,65 @@ export interface operations {
         };
       };
       "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleReportClientError": {
+    parameters?: never;
+    requestBody: {
+      content: {
+        "application/json": {
+          "app_version"?: string;
+          "component_stack"?: string;
+          "kind"?: string;
+          "message"?: string;
+          "name"?: string;
+          "page"?: string;
+          "request_id"?: string;
+          "request_method"?: string;
+          "request_path"?: string;
+          "request_status"?: number;
+          "source"?: string;
+          "stack"?: string;
+        };
+      };
+    };
+    responses: {
+      "204": {
+        content?: never;
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "429": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -143967,11 +144030,13 @@ export interface operations {
             "active_run_count"?: number;
             "active_vusers"?: number;
             "disabled_reason"?: string;
+            "error"?: string;
             "forced"?: boolean;
             "message": string;
             "namespace"?: string;
             "pod_name"?: string;
             "reachable"?: (boolean) | null;
+            "ref"?: string;
             "scope": string;
             "status": string;
             "target": string;
@@ -165862,6 +165927,9 @@ export interface paths {
   };
   "/api/v1/system/browser-benchmarks": {
     "get": operations["handleGetBrowserBenchmarkEvidence"];
+  };
+  "/api/v1/system/client-errors": {
+    "post": operations["handleReportClientError"];
   };
   "/api/v1/system/cloud-connections": {
     "get": operations["handleListCloudConnections"];

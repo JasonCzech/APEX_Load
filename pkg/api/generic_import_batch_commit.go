@@ -438,6 +438,7 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 					"code":      importSourceRetentionPendingCode,
 					"committed": true,
 					"retryable": true,
+					"ref":       errorReferenceFor(w),
 				})
 				return
 			}
@@ -493,6 +494,7 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 			"code":      importSourceRetentionPendingCode,
 			"committed": true,
 			"retryable": true,
+			"ref":       errorReferenceFor(w),
 		})
 		return
 	}

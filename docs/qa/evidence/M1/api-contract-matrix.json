@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 718,
+    "routes": 719,
     "public": 31,
-    "protected": 687,
-    "rbac": 682,
+    "protected": 688,
+    "rbac": 683,
     "handler_authenticated": 5,
     "role_metadata_missing": 0,
-    "green": 718,
+    "green": 719,
     "partial": 0,
     "missing": 0
   },
@@ -13604,6 +13604,20 @@
         ]
       },
       "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "system:read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/system/client-errors",
+      "operation_id": "handleReportClientError",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; service-account scope: system:read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "any authenticated identity allowed",
+      "allowed_roles": {},
       "service_account_scope": "system:read"
     },
     {

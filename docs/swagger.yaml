@@ -312083,6 +312083,88 @@ paths:
       tags:
         - System
       x-handler: handleGetBrowserBenchmarkEvidence
+  /api/v1/system/client-errors:
+    post:
+      summary: Report Client Error
+      description: '**Access Control:** Requires authentication; service-account scope: system:read'
+      operationId: handleReportClientError
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                app_version:
+                  type: string
+                component_stack:
+                  type: string
+                kind:
+                  type: string
+                message:
+                  type: string
+                name:
+                  type: string
+                page:
+                  type: string
+                request_id:
+                  type: string
+                request_method:
+                  type: string
+                request_path:
+                  type: string
+                request_status:
+                  type: integer
+                  format: int64
+                source:
+                  type: string
+                stack:
+                  type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; service-account scope: system:read'
+      tags:
+        - System
+      x-handler: handleReportClientError
   /api/v1/system/cloud-connections:
     get:
       summary: List Cloud Connections
@@ -313660,6 +313742,8 @@ paths:
                       - active
                       - name
                     nullable: true
+                  ref:
+                    type: string
                   status:
                     type: string
                 required:
@@ -313782,6 +313866,8 @@ paths:
                       - active
                       - name
                     nullable: true
+                  ref:
+                    type: string
                   status:
                     type: string
                 required:
@@ -313916,6 +314002,8 @@ paths:
                       - active
                       - name
                     nullable: true
+                  ref:
+                    type: string
                   status:
                     type: string
                 required:
@@ -314044,6 +314132,8 @@ paths:
                       - active
                       - name
                     nullable: true
+                  ref:
+                    type: string
                   status:
                     type: string
                 required:
@@ -317543,6 +317633,8 @@ paths:
                     format: int64
                   disabled_reason:
                     type: string
+                  error:
+                    type: string
                   forced:
                     type: boolean
                   message:
@@ -317554,6 +317646,8 @@ paths:
                   reachable:
                     type: boolean
                     nullable: true
+                  ref:
+                    type: string
                   scope:
                     type: string
                   status:

@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { reportClientError } from '../utils/clientErrorReporting'
 
 interface Props {
   children: ReactNode
@@ -22,6 +23,7 @@ export default class LazyLoadBoundary extends Component<Props, State> {
     // Keep the application mounted and leave a useful diagnostic in developer
     // tooling without exposing chunk URLs or stack details in the UI.
     console.error('Lazy dashboard surface failed to load', error, info)
+    reportClientError('render', error, { component_stack: info.componentStack ?? undefined })
   }
 
   private retry = () => {

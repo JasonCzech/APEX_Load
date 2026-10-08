@@ -333,10 +333,19 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, errStartAdmissionEvidenceStale) || retryableStartSecretRequirement(err) {
 			w.Header().Set("Retry-After", "1")
+			// The client gets the retry guidance; the provider failure behind a
+			// secret requirement is logged under the ref.
+			cause := err
+			var requirementErr *startSecretRequirementError
+			if errors.As(err, &requirementErr) && requirementErr.cause != nil {
+				cause = requirementErr.cause
+			}
+			ref := logServerError(w, http.StatusServiceUnavailable, cause, "code", "start_admission_temporarily_unavailable", "test_id", id)
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 				"error":   err.Error(),
 				"code":    "start_admission_temporarily_unavailable",
 				"test_id": id,
+				"ref":     ref,
 			})
 			return
 		}
@@ -2053,6 +2062,20 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 		return
 	}
 	writeJSON(w, status, map[string]string{"error": safeMessage})
+}
+
+// logServerError records the internal cause of a 5xx answered with a
+// structured body rather than writeError's generic envelope, under the same
+// message and ref writeError uses, and returns the ref for the body. The cause
+// is credential-scrubbed and never sent to the client.
+func logServerError(w http.ResponseWriter, status int, cause error, attrs ...any) string {
+	ref := errorReferenceFor(w)
+	args := append([]any{"ref", ref, "status", status}, attrs...)
+	if cause != nil {
+		args = append(args, "detail", scrub.Value(cause.Error(), scrub.Policy{}))
+	}
+	slog.Error("internal server error", args...)
+	return ref
 }
 
 // newErrorReference returns a short opaque ID correlating a client-visible 5xx

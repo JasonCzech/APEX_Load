@@ -41,8 +41,17 @@ response header carries the same request ID, and an ingress-supplied `X-Request-
    ```
 3. A handler panic logs `"msg":"http handler panic"` with a stack and returns a 500 with a ref.
 4. Use `--prefix` with the label selector so HA replicas are all searched, and `--previous` if the pod restarted.
-5. If nothing matches, the failure happened before the controller (for example, an ingress 502/504 or a
-   browser-side timeout). Check the request in the browser DevTools Network tab.
+5. Failures the controller never saw are reported by the dashboard and logged at `WARN` as
+   `"msg":"dashboard client error"`. The `kind` field is `render` (a page crashed), `error` or
+   `unhandledrejection` (an uncaught browser error), `network` (a request failed or timed out in the
+   browser), or `gateway` (a 5xx from an ingress or proxy, with no controller request ID). Each line carries
+   the page, stack and failed request path; query strings are dropped. Reports are deduplicated and
+   rate-limited, so a burst of identical errors appears once.
+   ```bash
+   kubectl logs -n <namespace> -l app.kubernetes.io/name=apexload-controller --prefix --since=1h | grep 'dashboard client error'
+   ```
+6. If nothing matches, the ingress or network was down, so the report could not be delivered either.
+   Check the request in the browser DevTools Network tab and the ingress logs.
 
 #### Dashboard appears but real-time metrics not updating
 **Symptom:** Charts show no data; WebSocket connection shows as "Disconnected"

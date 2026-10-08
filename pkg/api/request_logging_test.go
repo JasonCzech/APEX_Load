@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -346,5 +347,32 @@ func TestAPIRoutesStampRequestIDAndLogErrorReason(t *testing.T) {
 	_ = json.Unmarshal(resp.Body.Bytes(), &body)
 	if line["route"] != "/api/v1/scripts/{id}" || line["status"] != float64(resp.Code) || line["error"] != body["error"] {
 		t.Fatalf("route access line = %v, response %d %v", line, resp.Code, body)
+	}
+}
+
+func TestLogServerErrorLogsScrubbedCauseUnderStampedRef(t *testing.T) {
+	logs := &lockedBuffer{}
+	original := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(original) })
+
+	const jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+	w := httptest.NewRecorder()
+	w.Header().Set(requestIDHeader, "req-log-server-error")
+	ref := logServerError(w, http.StatusServiceUnavailable, errors.New("provider rejected bearer "+jwt), "code", "provider_error")
+	if ref != "req-log-server-error" {
+		t.Fatalf("ref = %q, want the stamped request ID", ref)
+	}
+	var line map[string]any
+	for _, record := range logRecords(t, logs) {
+		if record["ref"] == ref {
+			line = record
+		}
+	}
+	if line == nil || line["level"] != "ERROR" || line["msg"] != "internal server error" || line["code"] != "provider_error" || line["status"] != float64(http.StatusServiceUnavailable) {
+		t.Fatalf("server error line = %v", line)
+	}
+	if detail, _ := line["detail"].(string); !strings.HasPrefix(detail, "provider rejected bearer") || strings.Contains(logs.String(), jwt) {
+		t.Fatalf("detail not logged or not scrubbed: %v", line["detail"])
 	}
 }
