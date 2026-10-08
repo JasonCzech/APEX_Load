@@ -180,6 +180,45 @@ export interface RcaAssessment {
   graph?: RcaGraph
   capacity?: RcaCapacity[]
   littles_law?: RcaLittlesLaw[]
+  // Browser document cohorts against the baseline run (browser_baseline.v1).
+  browser_baseline?: RcaBrowserBaseline
+}
+
+export interface RcaBrowserBaselineResult {
+  id: string
+  series: string
+  metric: string
+  unit: string
+  level: string
+  state: 'anomaly' | 'within_range' | 'unscored' | string
+  reason?: string
+  detail?: string
+  direction?: 'increase' | 'decrease' | string
+  current: number
+  current_buckets: number
+  current_samples: number
+  baseline_mean?: number
+  baseline_stddev?: number
+  baseline_buckets: number
+  baseline_samples: number
+  expected_low?: number
+  expected_high?: number
+  z?: number
+  effect?: number
+  effect_floor?: number
+  caveats?: string[]
+  baseline: { test_id?: string; qualification?: string }
+  evidence: { id?: string; kind: string; locator: string }[]
+}
+
+export interface RcaBrowserBaseline {
+  version: string
+  status: string
+  params: { min_baseline_buckets: number; sigma: number; timing_floor_ms: number; timing_floor_fraction: number; cls_floor: number; level_tolerance: number; max_results: number }
+  baseline: { test_id?: string; qualification?: string }
+  results: RcaBrowserBaselineResult[]
+  excluded?: Record<string, number>
+  limitations: RcaLimitation[]
 }
 
 export interface RcaAnalysisResponse {

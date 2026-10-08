@@ -402,3 +402,52 @@ func TestBaselineComparisonMapsDocumentGroups(t *testing.T) {
 		t.Fatalf("mapped group not compared: %+v", snapshot)
 	}
 }
+
+// Browser baseline input (E2): each document bucket says how many documents
+// it summarizes, a republished measurement counts once, and the series names
+// its cohort so a changed runtime cohort can be explained.
+func TestRCABrowserDocumentSeriesCountDocumentsOnceAndNameTheirCohort(t *testing.T) {
+	server, store := baselineTestServer(t)
+	current := comparisonArchiveFixture(t, server, store, "current", 200, 150)
+	record := server.runner.archives[current.ID]
+	start := *current.StartedAt
+	first := d2Document{id: 1, metric: "lcp", cohort: d2Cohort("141.0"), at: start.Add(31 * time.Second), value: 1200, progress: 3, final: true}
+	second := d2Document{id: 2, metric: "lcp", cohort: d2Cohort("141.0"), at: start.Add(31*time.Second + 200*time.Millisecond), value: 1400, final: true}
+	// The first document's evidence is published twice, as a retried
+	// publication would deliver it.
+	attachD2Documents(t, record, first, first, second)
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summaries, err := readAllArchiveSummariesContext(context.Background(), record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	series, _, err := rcaBrowserDocumentSeries(context.Background(), record, manifest, summaries, -1, 0)
+	if err != nil || len(series) != 1 {
+		t.Fatalf("series %d %v", len(series), err)
+	}
+	var counts int64
+	for _, p := range series[0].Points {
+		if p.Valid {
+			counts += p.Count
+		} else if p.Count != 0 {
+			t.Fatalf("a gap carries a count: %+v", p)
+		}
+	}
+	if counts != 2 {
+		t.Fatalf("documents counted %d times, want 2", counts)
+	}
+	document := series[0].Document
+	if document == nil || document.Metric != "lcp" || document.Family == "" || document.Fields["browser_version"] != "141.0" || document.Fields["shaping_applied"] != "true" || document.Incomplete {
+		t.Fatalf("document cohort = %+v", document)
+	}
+	// Another runtime cohort of the same measurement shares the family but
+	// not the series.
+	other := rcaDocumentCohort(protocol.BrowserDocumentObservationTuple(protocol.BrowserDocumentObservation{Metric: "lcp", Algorithm: protocol.BrowserVitalsAlgorithm, AlgorithmSHA256: protocol.BrowserVitalsAlgorithmSHA256,
+		Unit: "ms", Engine: "chromium", DeviceProfile: "desktop", Cohort: d2Cohort("142.0"), FrameScope: "main_frame", LifecyclePhase: "navigation"}), false)
+	if other.Family != document.Family || other.Fields["browser_version"] != "142.0" {
+		t.Fatalf("cohorts of one measurement: %+v vs %+v", other, document)
+	}
+}

@@ -80,6 +80,9 @@ type SeriesPoint struct {
 	At    time.Time
 	Value float64
 	Valid bool
+	// Count is how many observations a valid value summarizes, when known
+	// (browser document buckets); 0 otherwise.
+	Count int64
 }
 
 // Series is one measured quantity of the run, in time order.
@@ -106,6 +109,9 @@ type Series struct {
 	// Equal identities name the same measurement; they never by themselves
 	// authorize a baseline comparison.
 	Identity string
+	// Document describes a browser document series' cohort (browser
+	// baseline, browser_baseline.v1); nil for every other series.
+	Document *DocumentCohort
 }
 
 // External reports whether a series measures the system under test from

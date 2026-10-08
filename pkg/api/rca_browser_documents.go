@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
@@ -75,11 +76,14 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 		metric := t.tuple.Metric + "_p75"
 		s := rca.Series{ID: "browser_document/" + t.tuple.Metric + "/" + digest[:12] + "/p75", Kind: rca.SeriesBrowserDocument, Unit: t.tuple.Unit, Observation: rca.ObservationInterval, Bucket: bucket,
 			Evidence: rca.EvidenceRef{Kind: "browser_document", Locator: browserDocumentsFileName + "#" + label},
-			Identity: rcaRunSeriesIdentity(scope, "browser_document", digest, metric, t.tuple.Unit, analysis.KindObservation, bucket)}
+			Identity: rcaRunSeriesIdentity(scope, "browser_document", digest, metric, t.tuple.Unit, analysis.KindObservation, bucket),
+			Document: rcaDocumentCohort(t.tuple, accumulator.incomplete)}
 		for i := 0; i < n; i++ {
 			point := rca.SeriesPoint{At: from.Add(time.Duration(i) * bucket)}
 			if d := t.buckets[i]; d != nil {
-				point.Value, point.Valid = d.Quantile(0.75)
+				if point.Value, point.Valid = d.Quantile(0.75); point.Valid {
+					point.Count = d.Count
+				}
 			}
 			s.Points = append(s.Points, point)
 		}
@@ -92,4 +96,35 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 		series = series[:limit]
 	}
 	return series, limitations, nil
+}
+
+// rcaDocumentCohort describes a document series for the browser baseline:
+// its metric, its measurement tuple without the runtime cohort (the family
+// a changed cohort is found in) and the runtime cohort's fields.
+func rcaDocumentCohort(tuple protocol.BrowserDocumentMetricSummary, incomplete bool) *rca.DocumentCohort {
+	family := tuple
+	family.Cohort = nil
+	return &rca.DocumentCohort{Metric: tuple.Metric, Family: browserDocumentTupleDigest(protocol.BrowserDocumentMetricKey(family)), Fields: browserCohortFields(tuple.Cohort), Incomplete: incomplete}
+}
+
+// browserCohortFields are a runtime cohort's fields as text, so two cohorts'
+// differences can be named; an unavailable cohort has one field.
+func browserCohortFields(c *protocol.BrowserRuntimeCohort) map[string]string {
+	if c == nil {
+		return map[string]string{"cohort": "unavailable"}
+	}
+	optional := func(value *bool) string {
+		if value == nil {
+			return "unrecorded"
+		}
+		return strconv.FormatBool(*value)
+	}
+	return map[string]string{
+		"browser_version": c.BrowserVersion, "platform": c.Platform, "viewport": fmt.Sprintf("%dx%d", c.ViewportWidth, c.ViewportHeight),
+		"headless": optional(c.Headless), "mobile": optional(c.Mobile), "touch": optional(c.Touch),
+		"device_scale_factor": strconv.FormatFloat(c.DeviceScaleFactor, 'g', -1, 64), "cpu_throttle_rate": strconv.FormatFloat(c.CPUThrottleRate, 'g', -1, 64),
+		"network_latency_ms": strconv.Itoa(c.NetworkLatencyMS), "network_bandwidth_kbps": strconv.Itoa(c.NetworkBandwidthKbps), "shaping_applied": strconv.FormatBool(c.ShapingApplied),
+		"cache_enabled": optional(c.CacheEnabled), "cache_content_urls": optional(c.CacheContentURLs), "check_newer_versions": optional(c.CheckNewerVersions),
+		"new_user_policy": c.NewUserPolicy, "new_user_policy_applied": strconv.FormatBool(c.NewUserPolicyApplied), "unavailable_reason": c.UnavailableReason,
+	}
 }

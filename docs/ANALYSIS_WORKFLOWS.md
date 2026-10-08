@@ -617,6 +617,54 @@ steps (about 2% at either setting).
 The fault corpus (WP3.9) calibrates these values; until then they are the
 plan's starting values.
 
+## Browser baseline anomalies
+
+An assessment of a run with browser document evidence also carries
+`browser_baseline` (`pkg/rca/browser_baseline.go`, version
+`browser_baseline.v1`). It compares each browser document cohort with the same
+cohort of the workload-qualified baseline run, at the same steady load.
+
+- **Cohorts.** A cohort is one exact measurement tuple: metric and algorithm
+  version, engine, device profile, scenario group and region, frame scope,
+  lifecycle phase and the actual runtime cohort. The runtime cohort covers
+  browser version, platform, viewport, device emulation, CPU and network
+  shaping, and cache and new-user policy. Document, navigation and measurement
+  IDs are lineage only, never matching keys. Each document counts once, at its
+  latest retained measurement, so a republished observation adds nothing.
+  Documents become per-bucket p75 values before any comparison.
+- **Scoring.** The run's value at a level is the median of its bucket p75
+  values there. It is scored with the three-sigma scorer of
+  `pkg/analysis/anomaly.go` (`ThreeSigmaScore`) against the baseline's valid
+  buckets at every steady level with the same load. A cohort needs at least
+  30 such buckets. An anomaly needs |z| ≥ 3 and a practical effect: at least
+  max(50 ms, 10% of the baseline mean) for a timing, 0.02 for layout shift,
+  or a catalog floor for any other metric.
+- **Results.** Each result is `anomaly` (with its direction), `within_range`
+  or `unscored`. An unscored result has a reason:
+  - `insufficient_baseline`: fewer than 30 buckets;
+  - `zero_variance`;
+  - `no_same_load_window`;
+  - `no_baseline_cohort`;
+  - `cohort_changed`: the baseline measured the same measurement under another
+    runtime cohort, and the result's detail names the differing fields, such
+    as `shaping_applied`.
+
+  Every result carries:
+  - the expected range (baseline mean ± 3σ, never below zero);
+  - current and baseline bucket and document counts;
+  - the baseline run and its qualification;
+  - both evidence references;
+  - `source_loss` or `baseline_source_loss` when that run's document evidence
+    dropped observations.
+
+  Buckets outside every steady level (ramp, pause, settle) are counted under
+  `excluded.outside_steady_load`. Without a qualified baseline run, or without
+  steady levels, the section is `unavailable` with that limitation. At most 200
+  results are kept, anomalies first.
+- **Advisory.** Browser baseline results never affect hypotheses, CI outcomes
+  or stop decisions; application SLAs own those. The RCA panel lists them
+  under **Browser baseline**.
+
 ## Root-cause graph
 
 Each assessment carries the run's typed graph (`graph`, schema

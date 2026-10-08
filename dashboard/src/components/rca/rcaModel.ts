@@ -44,6 +44,7 @@ export function normalizeRcaAssessment(a: RcaAssessment): RcaAssessment {
     graph: a.graph ? { ...a.graph, nodes: list(a.graph.nodes), edges: list(a.graph.edges), cycles: list(a.graph.cycles) } : undefined,
     capacity: list(a.capacity),
     littles_law: list(a.littles_law),
+    browser_baseline: a.browser_baseline ? { ...a.browser_baseline, results: list(a.browser_baseline.results).map(r => ({ ...r, evidence: list(r.evidence), caveats: list(r.caveats) })), limitations: list(a.browser_baseline.limitations) } : undefined,
   }
 }
 
