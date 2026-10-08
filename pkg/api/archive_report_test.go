@@ -1597,3 +1597,95 @@ func TestRunArchiveReportSummarizesOracleDBExternalMetrics(t *testing.T) {
 		t.Fatalf("root cause findings = %#v, want oracle_db finding", root.TopFindings)
 	}
 }
+
+func TestBuildRunArchiveReportCountsErrorPatternsOncePerFailureAndPerStatus(t *testing.T) {
+	archiveDir := t.TempDir()
+	manifestPath := filepath.Join(archiveDir, "manifest.json")
+	manifestBytes, _ := json.Marshal(RunArchiveManifest{SchemaVersion: archiveSchemaVersion, TestID: "test-1", TestName: "Checkout", TransactionsFile: "transactions.jsonl", ResourceSamplesFile: "resources.jsonl", IntervalSummariesFile: "interval_summaries.jsonl"})
+	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, time.October, 8, 10, 0, 0, 0, time.UTC)
+	var lines []byte
+	for _, tx := range []TransactionEvent{
+		// A failed request and the named transaction that wraps it are both archived.
+		{Timestamp: at, ActionName: "GET /cart", Population: "action", Success: false, StatusCode: 404, ErrorMessage: "expected status 200, got 404"},
+		{Timestamp: at, ActionName: "Add_To_Cart", Population: "transaction", Success: false, ErrorMessage: "expected status 200, got 404"},
+		{Timestamp: at.Add(time.Second), ActionName: "GET /cart", Population: "action", Success: false, StatusCode: 404, ErrorMessage: "expected status 200, got 404"},
+		{Timestamp: at.Add(time.Second), ActionName: "Add_To_Cart", Population: "transaction", Success: false, ErrorMessage: "expected status 200, got 404"},
+		{Timestamp: at.Add(2 * time.Second), ActionName: "GET /checkout", Population: "action", Success: false, StatusCode: 503, ErrorMessage: "expected status 200, got 503"},
+		{Timestamp: at.Add(2 * time.Second), ActionName: "Checkout", Population: "transaction", Success: false, ErrorMessage: "expected status 200, got 503"},
+	} {
+		tx.TestID, tx.TestName = "test-1", "Checkout"
+		encoded, _ := json.Marshal(tx)
+		lines = append(append(lines, encoded...), '\n')
+	}
+	if err := os.WriteFile(filepath.Join(archiveDir, "transactions.jsonl"), lines, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"resources.jsonl", "interval_summaries.jsonl"} {
+		if err := os.WriteFile(filepath.Join(archiveDir, name), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	report, err := buildRunArchiveReport(&storage.RunArchiveRecord{ArchivePath: archiveDir, ManifestPath: manifestPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := map[string]int64{}
+	for _, pattern := range report.ErrorPatterns {
+		counts[pattern.Sample] = pattern.Count
+	}
+	if len(report.ErrorPatterns) != 2 || counts["expected status 200, got 404"] != 2 || counts["expected status 200, got 503"] != 1 {
+		t.Fatalf("patterns = %#v, want 404 ×2 and 503 ×1 as separate rows", report.ErrorPatterns)
+	}
+}
+
+func TestErrorStatusCodeUsesTheReceivedStatus(t *testing.T) {
+	for source, want := range map[string]int{
+		"expected status 200, got 404":         404,
+		"expected status 200, got timeout":     0,
+		"request failed with status 503":       503,
+		"server returned 500 Internal Error":   500,
+		"received status code 429 from origin": 429,
+		"connection reset by peer":             0,
+	} {
+		if got := errorStatusCode(0, source); got != want {
+			t.Errorf("errorStatusCode(%q) = %d, want %d", source, got, want)
+		}
+	}
+	if got := errorStatusCode(502, "expected status 200, got 404"); got != 502 {
+		t.Errorf("recorded status should win, got %d", got)
+	}
+}
+
+func TestRecurringErrorPatternSeverityUsesItsOwnPopulation(t *testing.T) {
+	// 15 of 1000 requests failed (1.5%); each failure is also archived on its
+	// enclosing named transaction, so the mixed overview holds 2000 records.
+	report := &RunArchiveReport{
+		Overview: RunArchiveOverview{Transactions: 2000, Errors: 30},
+		MetricPopulations: map[string]ArchiveMetricPopulation{
+			"action":      {RunArchiveActionStats: RunArchiveActionStats{Transactions: 1000, Errors: 15}},
+			"transaction": {RunArchiveActionStats: RunArchiveActionStats{Transactions: 1000, Errors: 15}},
+		},
+		ErrorPatterns: []RunArchiveErrorPattern{{Signature: "got # · http 503", Sample: "got 503", Count: 15, CountsByPopulation: map[string]int64{"action": 15, "transaction": 15}}},
+	}
+	if rate := archiveErrorPatternFailureRate(report, report.ErrorPatterns[0]); rate != 0.015 {
+		t.Fatalf("failure rate = %v, want 0.015", rate)
+	}
+	var severity string
+	for _, finding := range deriveReportFindings(report) {
+		if finding.Title == "Recurring error pattern" {
+			severity = finding.Severity
+		}
+	}
+	if severity != "major" {
+		t.Fatalf("severity = %q, want major for 1.5%% of requests", severity)
+	}
+
+	// Reports cached before per-population counts keep the overview ratio.
+	legacy := RunArchiveErrorPattern{Count: 30}
+	if rate := archiveErrorPatternFailureRate(report, legacy); rate != 0.015 {
+		t.Fatalf("legacy failure rate = %v, want 0.015", rate)
+	}
+}

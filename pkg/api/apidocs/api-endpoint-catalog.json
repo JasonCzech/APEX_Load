@@ -6686,6 +6686,16 @@
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
     },
     {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/baseline-comparisons",
+      "operationId": "handleListBaselineComparisons",
+      "summary": "List Baseline Comparisons",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
       "method": "POST",
       "path": "/api/v1/tests/{id}/baseline-comparisons",
       "operationId": "handleCreateBaselineComparison",

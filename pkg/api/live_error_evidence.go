@@ -39,6 +39,8 @@ func updateLiveErrorPatterns(existing map[string]*LiveErrorPattern, live *LiveMe
 	for _, action := range actions {
 		tx := live.Transactions[action]
 		source := liveErrorPatternSource(tx)
+		// Live windows keep only each action's last error and status, so live
+		// patterns cannot be split by status code the way archive records are.
 		signature := normalizeArchiveErrorSignature(source)
 		observedAt := tx.LastErrorAt
 		if observedAt.IsZero() {
@@ -61,12 +63,34 @@ func updateLiveErrorPatterns(existing map[string]*LiveErrorPattern, live *LiveMe
 		if pattern.StatusCode == 0 {
 			pattern.StatusCode = tx.LastStatusCode
 		}
-		pattern.ErrorPct = txErrorPct(tx)
 		pattern.Actions = appendUniqueSorted(pattern.Actions, action)
 		pattern.AffectedGroups = mergeStringSets(pattern.AffectedGroups, affectedGroups)
 		pattern.SnapshotURL = liveErrorPatternSnapshotURL(testID, pattern.Actions)
 	}
+	applyLiveErrorPatternShares(existing)
 	return existing
+}
+
+// applyLiveErrorPatternShares gives every pattern one rate definition: its
+// share of the errors counted across the run's tracked signatures. (It used to take the last processed
+// action's one-second error rate, which jumped between polls.)
+func applyLiveErrorPatternShares(patterns map[string]*LiveErrorPattern) {
+	var total int64
+	for _, pattern := range patterns {
+		if pattern != nil {
+			total += pattern.Count
+		}
+	}
+	for _, pattern := range patterns {
+		if pattern == nil {
+			continue
+		}
+		pattern.ErrorPct = 0
+		pattern.ShareOfErrorsPct = 0
+		if total > 0 {
+			pattern.ShareOfErrorsPct = float64(pattern.Count) / float64(total) * 100
+		}
+	}
 }
 
 // trimLiveErrorPatternsLocked bounds the per-run error-pattern map so a long run
@@ -103,6 +127,8 @@ func trimLiveErrorPatternsLocked(patterns map[string]*LiveErrorPattern) {
 	for i := 0; len(patterns) > maxLiveErrorPatternsPerRun && i < len(signatures); i++ {
 		delete(patterns, signatures[i])
 	}
+	// Shares describe the listed signatures, so they still add up to 100%.
+	applyLiveErrorPatternShares(patterns)
 }
 
 func liveErrorPatternSource(tx *TxMetrics) string {

@@ -4,6 +4,7 @@ import {
   useCallback,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -14,7 +15,8 @@ import {
   resolveApiResourceUrl,
   type DevViewMode,
 } from "../hooks/apiClient";
-import { AuthStatusState } from "../hooks/useAuthStatus";
+import { AuthStatusState, requestAuthStatusRefresh } from "../hooks/useAuthStatus";
+import { SessionCheckFailedNotice, SessionExpiredDialog, SessionExpiryNotice } from "./SessionRecovery";
 import { getDesktopBridge, isDesktopSurface } from "../desktop/desktopBridge";
 import type { DesktopShellEventHandlers } from "../desktop/useDesktopShellEvents";
 import { useAuthApi } from "../hooks/api/useAuthApi";
@@ -75,8 +77,39 @@ export default function AuthGate({
   const [desktopOpenError, setDesktopOpenError] = useState("");
   const [desktopIntentError, setDesktopIntentError] = useState("");
   const desktopSurface = isDesktopSurface();
-  const { login } = useAuthApi();
+  const { login, getAuthStatus } = useAuthApi();
   const reloadAuthentication = onAuthenticationChanged ?? (() => window.location.reload());
+  // Once the app has loaded for a signed-in user, losing the session (expiry,
+  // revocation) or a failed re-check must not unmount it: unsaved work would be
+  // lost. Keep it mounted and recover in place instead.
+  const signedInSubjectRef = useRef<string | null>(null);
+  if (state.status === "ready" && state.auth.enabled && state.auth.authenticated) {
+    signedInSubjectRef.current = state.auth.user?.subject || "";
+  }
+  const appWasSignedIn = signedInSubjectRef.current !== null;
+  // Resume the kept page once signed in again, unless a different identity
+  // signed in: it must not inherit the previous user's page state.
+  const resumeSignedInSession = (current: { user?: { subject?: string } } | null) => {
+    if (current && (current.user?.subject || "") !== signedInSubjectRef.current) {
+      window.location.reload();
+      return;
+    }
+    requestAuthStatusRefresh();
+  };
+  const signInAgainLocally = async (nextUsername: string, nextPassword: string) => {
+    const response = await login(nextUsername, nextPassword);
+    if (!response.authenticated) throw new Error("Authentication did not complete.");
+    // Signed in: from here on, never report failure. If the identity check
+    // fails, the in-place refresh re-checks and retries on its own.
+    resumeSignedInSession(await getAuthStatus().catch(() => null));
+  };
+  const checkSessionAgain = async () => {
+    const current = await getAuthStatus();
+    if (current.enabled && !current.authenticated) {
+      throw new Error("Still signed out. Finish signing in, then check again.");
+    }
+    resumeSignedInSession(current);
+  };
   const providerLabel =
     state.status === "ready" && state.auth.provider_name?.trim()
       ? state.auth.provider_name.trim()
@@ -300,6 +333,10 @@ export default function AuthGate({
     );
   }
 
+  if (state.status === "error" && appWasSignedIn) {
+    return <>{children}<SessionCheckFailedNotice message={state.message} onRetry={requestAuthStatusRefresh} /></>;
+  }
+
   if (state.status === "error") {
     return (
       <div className="auth-gate-shell">
@@ -310,6 +347,10 @@ export default function AuthGate({
           </div>
           <h1>Authentication check failed</h1>
           <ErrorDiagnostic diagnostic={state.diagnostic} compact />
+          <p>
+            <button className="auth-gate-action" type="button" onClick={requestAuthStatusRefresh}>Retry now</button>
+          </p>
+          <p className="auth-gate-note">APEX Load also retries automatically every minute.</p>
           {desktopSurface && (
             <p>
               <button
@@ -364,6 +405,21 @@ export default function AuthGate({
           </div>
         </section>
       </div>
+    );
+  }
+
+  if (state.auth.enabled && !state.auth.authenticated && appWasSignedIn && !desktopSurface) {
+    const auth = state.auth;
+    const continueToProvider = auth.mode === "oidc" && auth.login_url
+      ? () => { void beginOIDCLogin(); }
+      : auth.login_url
+        ? () => window.location.assign(resolveApiResourceUrl(auth.login_url!))
+        : undefined;
+    return (
+      <>
+        {children}
+        <SessionExpiredDialog mode={auth.mode} providerLabel={providerLabel} onLocalSignIn={signInAgainLocally} onContinueToProvider={continueToProvider} onCheckAgain={checkSessionAgain} providerPending={loginPending} providerError={loginError} />
+      </>
     );
   }
 
@@ -509,5 +565,10 @@ export default function AuthGate({
     );
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      {state.auth.enabled && state.auth.authenticated && <SessionExpiryNotice expiresAt={state.auth.session_expires_at} />}
+    </>
+  );
 }

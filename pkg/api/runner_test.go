@@ -2510,7 +2510,8 @@ func TestUpdateLiveErrorPatternsTracksFirstLatestAndSnapshotQuery(t *testing.T) 
 	if pattern.Count != 3 || !pattern.FirstSeen.Equal(firstSeen) || !pattern.LatestSeen.Equal(latestSeen) {
 		t.Fatalf("pattern timeline/count = %#v", pattern)
 	}
-	if pattern.StatusCode != 503 || pattern.ErrorPct != 20 {
+	// One rate definition: the signature's share of all live errors.
+	if pattern.StatusCode != 503 || pattern.ShareOfErrorsPct != 100 || pattern.ErrorPct != 0 {
 		t.Fatalf("pattern status/error pct = %#v", pattern)
 	}
 	if strings.Join(pattern.Actions, ",") != "GET /orders/123,GET /orders/456" {

@@ -220,6 +220,8 @@ const scenarioWizardSteps: Array<{ id: ScenarioWizardStep, label: string }> = [
   { id: 'review', label: 'Review' },
 ]
 
+const SCENARIO_AUTOSAVE_DELAY_MS = 1500
+
 const RUN_SETTINGS_STEP_INDEX = scenarioWizardSteps.findIndex(step => step.id === 'run')
 
 const runSettingsTabs: Array<{ id: RunSettingsTab, label: string }> = [
@@ -1038,6 +1040,13 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const [authoringDraft, setAuthoringDraft] = useState<ScenarioAuthoringDraft | null>(() => readScenarioAuthoringDraft(activeProjectId || ''))
   const checkpointBaselineRef = useRef('')
   const activeCheckpointSavedAtRef = useRef('')
+  // Set when the current browser checkpoint was written by autosave rather
+  // than by an explicit Save draft, so Discard can undo only autosaves.
+  const autosaveSavedAtRef = useRef('')
+  // The checkpoint the first autosave replaced (a resumed or explicitly saved
+  // draft of this same work), restored when the builder work is discarded.
+  const autosaveReplacedRef = useRef<ScenarioAuthoringDraft | null>(null)
+  const buildBrowserDraftRef = useRef<(() => ScenarioAuthoringDraft) | null>(null)
   const saveAuthoringRef = useRef<() => Promise<boolean>>(async () => false)
   const [form, setForm] = useState<ScenarioFormState>(() => emptyScenarioForm())
   const currentDraftRef = useRef({ form, activeProjectId, showForm })
@@ -1813,6 +1822,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   // showForm/view or the persisted draft — callers decide those.
   const resetBuilderToBlank = useCallback(() => {
     activeCheckpointSavedAtRef.current = ''
+    autosaveSavedAtRef.current = ''
+    autosaveReplacedRef.current = null
     scenarioDraftGenerationRef.current += 1
     setGoalSizingError('')
     setGoalBaselineLoadingId('')
@@ -1866,11 +1877,31 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   }, [canManageTests, onScenarioViewChange, resetBuilderToBlank])
 
   // Discard the in-progress draft and start a fresh blank scenario (stays in the builder).
+  // Discarding builder work also undoes its autosaves, or it would come back as
+  // "Resume draft": the checkpoint autosave replaced (an explicit Save draft
+  // or a resumed draft) is put back, otherwise the autosave is removed.
+  const discardAutosavedCheckpoint = useCallback(() => {
+    const project = currentProjectIdRef.current || ''
+    const saved = autosaveSavedAtRef.current
+    const replaced = autosaveReplacedRef.current
+    autosaveSavedAtRef.current = ''
+    autosaveReplacedRef.current = null
+    if (!saved) return
+    const latest = readScenarioAuthoringDraft(project)
+    if (!latest || latest.savedAt !== saved) return
+    try {
+      if (replaced) saveScenarioAuthoringDraft(replaced)
+      else clearScenarioAuthoringDraft(project)
+      setAuthoringDraft(replaced)
+    } catch { /* best effort */ }
+  }, [])
+
   const startBlankScenario = useCallback(async () => {
     if (!(await confirmAction('Discard this in-progress scenario draft and start over with a blank builder?'))) return
     clearScenarioBuilderDraft()
+    discardAutosavedCheckpoint()
     resetBuilderToBlank()
-  }, [resetBuilderToBlank])
+  }, [discardAutosavedCheckpoint, resetBuilderToBlank])
 
   const openScenarioLibrary = useCallback(() => {
     resetBuilderToBlank()
@@ -3085,19 +3116,23 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     try { assertDraftHasNoInlineCredentials(baselineForm) } catch { return {} }
     return { baselineTag, baselineForm, baselineShapeId: originalShapeIdRef.current }
   }
+  const buildBrowserDraft = (): ScenarioAuthoringDraft => ({
+    version: 2, projectId: activeProjectId || '', savedAt: new Date().toISOString(),
+    editingId, editingUpdatedAt: editingBaselineUpdatedAtRef.current || scenarios.find(item => item.id === editingId)?.updated_at || '',
+    ...recordedScenarioBaseline(),
+    form, source: scenarioSourceMode, startChoice: scenarioStartChoice,
+    shapeId: selectedShapeId, templateId: selectedLoadModelTemplateId, cloneId: selectedCloneScenarioId,
+    step: wizardStep, visited: maxVisitedWizardIndex,
+  })
+  buildBrowserDraftRef.current = buildBrowserDraft
   const saveBrowserProgress = () => {
     if (!canManageTests) return false
     if (monitorEditorError) { setError(monitorEditorError); return false }
     try {
-      const draft: ScenarioAuthoringDraft = {
-        version: 2, projectId: activeProjectId || '', savedAt: new Date().toISOString(),
-        editingId, editingUpdatedAt: editingBaselineUpdatedAtRef.current || scenarios.find(item => item.id === editingId)?.updated_at || '',
-        ...recordedScenarioBaseline(),
-        form, source: scenarioSourceMode, startChoice: scenarioStartChoice,
-        shapeId: selectedShapeId, templateId: selectedLoadModelTemplateId, cloneId: selectedCloneScenarioId,
-        step: wizardStep, visited: maxVisitedWizardIndex,
-      }
+      const draft = buildBrowserDraft()
       saveScenarioAuthoringDraft(draft)
+      autosaveSavedAtRef.current = ''
+      autosaveReplacedRef.current = null
       setAuthoringDraft(draft)
       activeCheckpointSavedAtRef.current = draft.savedAt
       checkpointBaselineRef.current = checkpointFingerprint
@@ -3113,6 +3148,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     // Saving another scenario must not erase a different checkpoint, including
     // a newer draft saved by another tab during this request.
     const latest = readScenarioAuthoringDraft(activeProjectId || '')
+    autosaveSavedAtRef.current = ''
+    autosaveReplacedRef.current = null
     if (latest && latest.savedAt === activeCheckpointSavedAtRef.current) {
       clearScenarioAuthoringDraft(activeProjectId || '')
       setAuthoringDraft(null)
@@ -3412,10 +3449,33 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     },
     discard: () => {
       clearScenarioBuilderDraft()
+      discardAutosavedCheckpoint()
       resetScenarioBuilderRef.current()
     },
-  }), [])
+  }), [discardAutosavedCheckpoint])
   useNavigationGuard(showForm ? scenarioBuilderGuard : null, scenarioBuilderDirty)
+  // Checkpoint unsaved builder progress in this browser (debounced), so a
+  // reload or restart offers "Resume draft" instead of losing the work. This
+  // does not move the dirty baseline: leaving still asks to save or discard.
+  // The browser keeps one checkpoint per project, so autosave never replaces
+  // a checkpoint of other work (an unresumed draft, another tab's save).
+  useEffect(() => {
+    if (!showForm || !canManageTests || !activeProjectId || !scenarioBuilderDirty || monitorEditorError) return undefined
+    const timer = window.setTimeout(() => {
+      const build = buildBrowserDraftRef.current
+      if (!build) return
+      try {
+        const latest = readScenarioAuthoringDraft(activeProjectId)
+        if (latest && latest.savedAt !== activeCheckpointSavedAtRef.current) return
+        if (!autosaveSavedAtRef.current) autosaveReplacedRef.current = latest
+        const draft = build()
+        saveScenarioAuthoringDraft(draft)
+        activeCheckpointSavedAtRef.current = draft.savedAt
+        autosaveSavedAtRef.current = draft.savedAt
+      } catch { /* best effort; an explicit Save draft reports errors */ }
+    }, SCENARIO_AUTOSAVE_DELAY_MS)
+    return () => window.clearTimeout(timer)
+  }, [activeProjectId, canManageTests, checkpointFingerprint, maxVisitedWizardIndex, monitorEditorError, scenarioBuilderDirty, showForm, wizardStep])
   // Script-local navigation retains the scenario mounted underneath it. Global
   // navigation outside this provider must still resolve both dirty editors.
   const prerequisiteNavigationRunner = useMemo(() => ({
@@ -5225,6 +5285,9 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                       <ObjectArchiveControls resourceType="scenario" resourceId={scenario.id} archivedAt={scenario.archived_at} updatedAt={scenario.updated_at} canManage={canManageTests} onChanged={refresh} />
                       {canManageTests ? (
                         <>
+                          {onCreateTestFromScenario && (
+                            <button className="btn btn-sm btn-secondary" disabled={!!scenario.archived_at} aria-label={`New test from ${scenario.name}`} onClick={(event) => { event.stopPropagation(); onCreateTestFromScenario(scenario.id) }}>New test</button>
+                          )}
                           <button className="btn btn-sm btn-ghost" disabled={!!scenario.archived_at || openingScenarioId === scenario.id} onClick={(event) => { event.stopPropagation(); if (!assigningScenarioIds.has(scenario.id)) void openEdit(scenario) }}>{openingScenarioId === scenario.id ? 'Opening…' : 'Edit'}</button>
                           <RowActions className="scenario-more-actions"><button className="btn btn-sm btn-ghost" disabled={!!scenario.archived_at || deletingScenarioIds.has(scenario.id) || assigningScenarioIds.has(scenario.id)} onClick={() => setAssignmentScenarios([scenario])}>Change application/releases…</button><button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); duplicateScenario(scenario) }}>Duplicate</button>
                           <button className="btn btn-sm btn-ghost" disabled={!!scenario.archived_at} onClick={(event) => { event.stopPropagation(); addScenarioToPlan(scenario.id) }} title="Seed a new execution plan with this scenario">Add to plan</button>

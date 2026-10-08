@@ -11,7 +11,7 @@
 .command-overview caption { text-align: left; color: var(--text-secondary); padding: 12px 0; line-height: 1.5; }
 .command-overview th, .command-overview td { padding: 12px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
 .command-overview small { display: block; margin-top: 6px; color: var(--text-secondary); line-height: 1.5; }
-.command-overview-run { padding: 0; background: transparent; border: 0; color: var(--accent); text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.command-overview-run { padding: 0; background: transparent; border: 0; color: var(--accent-text); text-align: left; cursor: pointer; overflow-wrap: anywhere; }
 .command-overview-run strong { display: block; font-size: 14px; }
 .command-overview .command-overview-warning { color: var(--warning); }
 .command-overview-results { margin-top: 20px; }

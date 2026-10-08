@@ -1,3 +1,4 @@
+import { useUnsavedWorkGuard } from '../hooks/NavigationGuardProvider'
 import JMeterBatchRepairs from './JMeterBatchRepairs'
 import { importActionEntries } from './importReviewIssues'
 import JMeterMessagingPreview from './JMeterMessagingPreview'
@@ -101,6 +102,8 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
   } = useImportReviewGeneration()
   const reviewScope = `${reviewGeneration}:${projectId || ''}`
   const { savedResult, publish: publishSaved, openSaved } = useImportSaveOutcome(reviewScope, onImported)
+  // The converted draft lives only in this review until it is saved.
+  useUnsavedWorkGuard('JMeterImport', 'JMeter import review', Boolean(result) && !savedResult, () => undefined)
   const reviewProjectIdRef = useRef(projectId)
   reviewProjectIdRef.current = projectId
   const [parameterizationApplyingByScript, setParameterizationApplyingByScript] = useState<Record<string, boolean>>({})

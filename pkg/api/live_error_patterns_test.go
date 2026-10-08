@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"math"
 	"testing"
 	"time"
 )
@@ -41,6 +42,14 @@ func TestTrimLiveErrorPatternsLockedCapsCardinality(t *testing.T) {
 		if _, ok := patterns[sig]; !ok {
 			t.Errorf("expected high-count pattern %q to survive", sig)
 		}
+	}
+	// The surviving signatures' shares are recomputed and add up to 100%.
+	var shares float64
+	for _, pattern := range patterns {
+		shares += pattern.ShareOfErrorsPct
+	}
+	if math.Abs(shares-100) > 1e-6 {
+		t.Fatalf("shares after trim add up to %.6f, want 100", shares)
 	}
 }
 
@@ -107,5 +116,16 @@ func TestNormalizeArchiveErrorSignatureKeepsMixedAlnumDistinct(t *testing.T) {
 	d := normalizeArchiveErrorSignature("order 456 not found")
 	if c != d {
 		t.Fatalf("expected pure-digit ids to collapse, got %q vs %q", c, d)
+	}
+}
+
+func TestLiveErrorPatternRateIsShareOfAllErrors(t *testing.T) {
+	patterns := map[string]*LiveErrorPattern{
+		"a": {Signature: "a", Count: 3, ErrorPct: 50},
+		"b": {Signature: "b", Count: 1},
+	}
+	applyLiveErrorPatternShares(patterns)
+	if patterns["a"].ShareOfErrorsPct != 75 || patterns["b"].ShareOfErrorsPct != 25 || patterns["a"].ErrorPct != 0 {
+		t.Fatalf("shares = %v / %v (error_pct %v), want 75 / 25 and no windowed rate", patterns["a"].ShareOfErrorsPct, patterns["b"].ShareOfErrorsPct, patterns["a"].ErrorPct)
 	}
 }

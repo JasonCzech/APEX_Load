@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 718,
+    "routes": 719,
     "public": 31,
-    "protected": 687,
-    "rbac": 682,
+    "protected": 688,
+    "rbac": 683,
     "handler_authenticated": 5,
     "role_metadata_missing": 0,
-    "green": 718,
+    "green": 719,
     "partial": 0,
     "missing": 0
   },
@@ -15611,6 +15611,33 @@
       "method": "GET",
       "path": "/api/v1/tests/{id}/baseline-candidates",
       "operation_id": "handleBaselineComparisonCandidates",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "results:read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/baseline-comparisons",
+      "operation_id": "handleListBaselineComparisons",
       "public": false,
       "authenticated": true,
       "state": "GREEN",

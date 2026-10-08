@@ -202,6 +202,7 @@ const ApplicationRepositoryPage = lazy(
 );
 const AccessPage = lazy(() => import("./components/AccessPage"));
 const UserSettingsPage = lazy(() => import("./components/UserSettingsPage"));
+const SharedTestDataReadOnly = lazy(() => import("./components/SharedTestDataReadOnly"));
 const SettingsPage = lazy(() => import("./components/SettingsPage"));
 const BrowserRecorderControlPanel = lazy(
   () => import("./components/BrowserRecorderControlPanel"),
@@ -3659,7 +3660,12 @@ function AppShell({
                   onDomainChange={handleSidebarDomainChange}
                   onDomainsRefresh={refreshDomains}
                   onProjectUpdate={updateOuterProject}
-                /> : <UserSettingsPage destinationId={view.setting} onDestinationChange={setting => setGuardedView({ page: "settings", setting })} theme={theme} onThemeChange={setTheme} authStatus={authStatus} />
+                /> : view.page === "repository" && view.setting === "test-data"
+                  ? (isDevUserPreview || effectiveAccessLoaded || effectiveAccessError
+                    ? <SharedTestDataReadOnly projectId={activeProject?.id} projectName={activeProject?.name} />
+                    // Until access is known, do not tell an admin they lack the role.
+                    : <p className="page" role="status">Checking access…</p>)
+                  : <UserSettingsPage destinationId={view.setting} onDestinationChange={setting => setGuardedView({ page: "settings", setting })} theme={theme} onThemeChange={setTheme} authStatus={authStatus} />
               )}
             </Suspense>
           </LazyLoadBoundary>

@@ -4,6 +4,8 @@ import { useModalDialog } from '../hooks/useModalDialog'
 
 interface Props {
   label: string
+  /** False hides Save: the work can only be kept (stay) or discarded. */
+  canSave?: boolean
   saving?: boolean
   error?: string | null
   onSave: () => void
@@ -13,6 +15,7 @@ interface Props {
 
 export default function UnsavedChangesModal({
   label,
+  canSave = true,
   saving = false,
   error,
   onSave,
@@ -52,7 +55,7 @@ export default function UnsavedChangesModal({
           <div>
             <h3 id={titleId}>Unsaved Changes</h3>
             <p id={descriptionId} className="page-subtitle">
-              {label} has unsaved changes. Save them before leaving, discard them, or keep editing.
+              {canSave ? `${label} has unsaved changes. Save them before leaving, discard them, or keep editing.` : `${label} has work that is not saved yet. Leaving discards it; keep editing to finish it first.`}
             </p>
           </div>
           <button type="button" className="btn btn-secondary btn-sm" aria-label="Close unsaved changes dialog" onClick={requestCancel} disabled={saving}>Close</button>
@@ -67,9 +70,9 @@ export default function UnsavedChangesModal({
           <button type="button" className="btn btn-danger-outline" onClick={onDiscard} disabled={saving}>
             Discard changes
           </button>
-          <button type="button" className="btn btn-primary" onClick={onSave} disabled={saving}>
+          {canSave && <button type="button" className="btn btn-primary" onClick={onSave} disabled={saving}>
             {saving ? 'Saving...' : 'Save changes'}
-          </button>
+          </button>}
         </div>
       </div>
     </div></DialogLayer>

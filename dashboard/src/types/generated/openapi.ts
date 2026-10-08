@@ -3055,6 +3055,7 @@ export interface operations {
             "error_patterns"?: Array<{
               "actions"?: Array<string>;
               "count"?: number;
+              "counts_by_population"?: Record<string, number>;
               "first_seen"?: string;
               "latest_seen"?: string;
               "sample"?: string;
@@ -34675,6 +34676,7 @@ export interface operations {
                   "latest_evidence_id"?: string;
                   "latest_seen": string;
                   "sample": string;
+                  "share_of_errors_pct"?: number;
                   "signature": string;
                   "snapshot_url"?: string;
                   "status_code"?: number;
@@ -41880,6 +41882,7 @@ export interface operations {
                 "latest_evidence_id"?: string;
                 "latest_seen": string;
                 "sample": string;
+                "share_of_errors_pct"?: number;
                 "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
@@ -42864,6 +42867,7 @@ export interface operations {
                 "latest_evidence_id"?: string;
                 "latest_seen": string;
                 "sample": string;
+                "share_of_errors_pct"?: number;
                 "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
@@ -58941,6 +58945,7 @@ export interface operations {
                 "latest_evidence_id"?: string;
                 "latest_seen": string;
                 "sample": string;
+                "share_of_errors_pct"?: number;
                 "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
@@ -59925,6 +59930,7 @@ export interface operations {
                 "latest_evidence_id"?: string;
                 "latest_seen": string;
                 "sample": string;
+                "share_of_errors_pct"?: number;
                 "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
@@ -63301,6 +63307,7 @@ export interface operations {
                   "latest_evidence_id"?: string;
                   "latest_seen": string;
                   "sample": string;
+                  "share_of_errors_pct"?: number;
                   "signature": string;
                   "snapshot_url"?: string;
                   "status_code"?: number;
@@ -68621,6 +68628,7 @@ export interface operations {
             "error_patterns"?: Array<{
               "actions"?: Array<string>;
               "count": number;
+              "counts_by_population"?: Record<string, number>;
               "first_seen": string;
               "latest_seen": string;
               "sample": string;
@@ -77100,6 +77108,7 @@ export interface operations {
                 "latest_evidence_id"?: string;
                 "latest_seen": string;
                 "sample": string;
+                "share_of_errors_pct"?: number;
                 "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
@@ -78084,6 +78093,7 @@ export interface operations {
                 "latest_evidence_id"?: string;
                 "latest_seen": string;
                 "sample": string;
+                "share_of_errors_pct"?: number;
                 "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
@@ -87869,6 +87879,58 @@ export interface operations {
       "200": {
         content: {
           "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleListBaselineComparisons": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "comparisons": Array<{
+              "baselines": Array<{
+                "archive_available": boolean;
+                "completed_at"?: (string) | null;
+                "id": string;
+                "name": string;
+                "peak_vusers": number;
+                "pinned": boolean;
+                "release_id": string;
+                "release_name": string;
+                "scenario_id": string;
+                "status": string;
+                "vusers": number;
+              }>;
+              "created_at": string;
+              "id": string;
+              "verdict"?: string;
+            }>;
+          };
         };
       };
       "401": {
@@ -97868,6 +97930,7 @@ export interface operations {
                 "latest_evidence_id"?: string;
                 "latest_seen": string;
                 "sample": string;
+                "share_of_errors_pct"?: number;
                 "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
@@ -98852,6 +98915,7 @@ export interface operations {
                 "latest_evidence_id"?: string;
                 "latest_seen": string;
                 "sample": string;
+                "share_of_errors_pct"?: number;
                 "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
@@ -113754,6 +113818,7 @@ export interface operations {
                   "latest_evidence_id"?: string;
                   "latest_seen": string;
                   "sample": string;
+                  "share_of_errors_pct"?: number;
                   "signature": string;
                   "snapshot_url"?: string;
                   "status_code"?: number;
@@ -115624,6 +115689,7 @@ export interface operations {
                   "latest_evidence_id"?: string;
                   "latest_seen": string;
                   "sample": string;
+                  "share_of_errors_pct"?: number;
                   "signature": string;
                   "snapshot_url"?: string;
                   "status_code"?: number;
@@ -117494,6 +117560,7 @@ export interface operations {
                   "latest_evidence_id"?: string;
                   "latest_seen": string;
                   "sample": string;
+                  "share_of_errors_pct"?: number;
                   "signature": string;
                   "snapshot_url"?: string;
                   "status_code"?: number;
@@ -119364,6 +119431,7 @@ export interface operations {
                   "latest_evidence_id"?: string;
                   "latest_seen": string;
                   "sample": string;
+                  "share_of_errors_pct"?: number;
                   "signature": string;
                   "snapshot_url"?: string;
                   "status_code"?: number;
@@ -121234,6 +121302,7 @@ export interface operations {
                   "latest_evidence_id"?: string;
                   "latest_seen": string;
                   "sample": string;
+                  "share_of_errors_pct"?: number;
                   "signature": string;
                   "snapshot_url"?: string;
                   "status_code"?: number;
@@ -145733,6 +145802,7 @@ export interface operations {
                 "latest_evidence_id"?: string;
                 "latest_seen": string;
                 "sample": string;
+                "share_of_errors_pct"?: number;
                 "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
@@ -146717,6 +146787,7 @@ export interface operations {
                 "latest_evidence_id"?: string;
                 "latest_seen": string;
                 "sample": string;
+                "share_of_errors_pct"?: number;
                 "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
@@ -166103,6 +166174,7 @@ export interface paths {
     "get": operations["handleBaselineComparisonCandidates"];
   };
   "/api/v1/tests/{id}/baseline-comparisons": {
+    "get": operations["handleListBaselineComparisons"];
     "post": operations["handleCreateBaselineComparison"];
   };
   "/api/v1/tests/{id}/baseline-comparisons/{comparison_id}": {

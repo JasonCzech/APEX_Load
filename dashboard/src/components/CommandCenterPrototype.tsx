@@ -411,8 +411,11 @@ function buildLiveGroups(test: TestSummary, targetDrafts: Record<string, number>
 }
 
 function buildLiveErrorPatterns(metrics?: LiveMetrics): ErrorPattern[] {
-  return (metrics?.error_patterns || []).map((pattern, index) => {
-    const rate = pattern.error_pct ?? (metrics?.total_transactions ? pattern.count / metrics.total_transactions * 100 : 0)
+  const patterns = metrics?.error_patterns || []
+  const totalErrors = patterns.reduce((sum, pattern) => sum + (pattern.count || 0), 0)
+  return patterns.map((pattern, index) => {
+    // One rate per signature everywhere on this page: its share of all errors.
+    const rate = pattern.share_of_errors_pct ?? (totalErrors > 0 ? pattern.count / totalErrors * 100 : 0)
     const group = pattern.affected_groups?.join(', ') || 'Multiple groups'
     // Fall back to the pattern's identifying evidence when the backend supplied
     // no signature, and to the index when there is no evidence either. The
@@ -435,7 +438,7 @@ function buildLiveErrorPatterns(metrics?: LiveMetrics): ErrorPattern[] {
       rate,
       firstSeen: formatTimeValue(pattern.first_seen),
       latestSeen: formatTimeValue(pattern.latest_seen),
-      severity: rate >= 1 || pattern.status_code && pattern.status_code >= 500 ? 'danger' : 'warning',
+      severity: rate >= 50 || pattern.status_code && pattern.status_code >= 500 ? 'danger' : 'warning',
       sample: pattern.sample || 'No sample captured yet.',
       statusCode: pattern.status_code,
       actions: pattern.actions || [],
@@ -1355,7 +1358,17 @@ export default function CommandCenterPrototype({
         }))
       } catch (error: unknown) {
         if (currentRunRef.current !== testId) return
-        setState(prev => ({ ...prev, feedback: getErrorMessage(error, targetMode === 'tps' ? 'Unable to update goal target' : 'Unable to scale VUsers') }))
+        // The controller rejected the change: drop the staged value so the
+        // hero, row and chart show the committed target again, and say so.
+        const drafts = { ...(viewMemory.values.get('targetDrafts') as Record<string, number> || {}) }
+        delete drafts[groupName]
+        viewMemory.values.set('targetDrafts', drafts)
+        const reason = getErrorMessage(error, targetMode === 'tps' ? 'Unable to update goal target' : 'Unable to scale VUsers')
+        setState(prev => {
+          const vuserTargets = { ...prev.vuserTargets }
+          delete vuserTargets[groupName]
+          return { ...prev, vuserTargets, feedback: `Not applied: ${groupName} keeps its current ${targetMode === 'tps' ? 'TPS target' : 'VUser target'}. ${reason}` }
+        })
       }
       return
     }
@@ -2640,11 +2653,12 @@ function ScenarioRunTable({
   onSort: (key: string) => void
 }) {
   const essentialColumns = [0, 1, 4, 5, 6, 11, 15]
-  const labels = ['Name', 'Group', 'Type', 'Protocol', 'Current VU', 'Target VU', 'TPS', 'Target TPS', 'Gap', 'Tx', 'Errors', 'Error %', 'ART', 'p50', 'p90', 'p95', 'p99']
+  const labels = ['Name', 'Group', 'Type', 'Protocol', 'Current VU', 'Target VU', 'TPS', 'Target TPS', 'Gap', 'Attempts', 'Errors', 'Error %', 'ART', 'p50', 'p90', 'p95', 'p99']
   const [columns, setColumns] = useCommandViewState('scenarioColumns', essentialColumns)
   const fullMetrics = columns.length === labels.length
   return (
-    <div className="command-data-table-wrap" role="tabpanel" aria-label="Scenario run metrics">
+    <div className="command-data-table-wrap" role="tabpanel" aria-label="Scenario run metrics" tabIndex={0}>
+      <p className="command-table-caption">Rates and counts cover the last sample window; Group Load shows run-to-date error rates.</p>
       <label className="command-column-preset"><input type="checkbox" checked={fullMetrics} onChange={event => setColumns(event.target.checked ? labels.map((_, index) => index) : essentialColumns)} /> Show all 17 metrics</label>
       <details className="command-column-picker"><summary>Choose columns</summary>
         <div>{labels.map((label, index) => <label key={label}><input type="checkbox" checked={columns.includes(index)} disabled={index < 2} onChange={event => setColumns(previous => event.target.checked ? [...previous, index] : previous.filter(column => column !== index))} />{label}</label>)}</div>
@@ -2661,7 +2675,7 @@ function ScenarioRunTable({
             <SortableHeader hidden={!columns.includes(6)} label="TPS" sortKey="tps" sort={sort} onSort={onSort} align="right" />
             <SortableHeader hidden={!columns.includes(7)} label="Target TPS" sortKey="targetTps" sort={sort} onSort={onSort} align="right" />
             <SortableHeader hidden={!columns.includes(8)} label="Gap" sortKey="throughputGap" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(9)} label="Tx" sortKey="transactions" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(9)} label="Attempts" sortKey="transactions" sort={sort} onSort={onSort} align="right" />
             <SortableHeader hidden={!columns.includes(10)} label="Errors" sortKey="errors" sort={sort} onSort={onSort} align="right" />
             <SortableHeader hidden={!columns.includes(11)} label="Error %" sortKey="errorPct" sort={sort} onSort={onSort} align="right" />
             <SortableHeader hidden={!columns.includes(12)} label="ART" sortKey="art" sort={sort} onSort={onSort} align="right" />
@@ -2735,7 +2749,7 @@ function ErrorDetailsTable({
             <tr>
               <SortableHeader label="Signature" sortKey="title" sort={sort} onSort={onSort} />
               <SortableHeader label="Count" sortKey="count" sort={sort} onSort={onSort} align="right" />
-              <SortableHeader label="Rate" sortKey="rate" sort={sort} onSort={onSort} align="right" />
+              <SortableHeader label="Share of errors" sortKey="rate" sort={sort} onSort={onSort} align="right" />
               <SortableHeader label="Status" sortKey="statusCode" sort={sort} onSort={onSort} align="right" />
               <SortableHeader label="Affected Groups" sortKey="group" sort={sort} onSort={onSort} />
               <SortableHeader label="Actions" sortKey="transaction" sort={sort} onSort={onSort} />
@@ -2756,7 +2770,7 @@ function ErrorDetailsTable({
               >
                 <td><strong>{row.title}</strong><span className="command-table-subtext">{row.sample}</span></td>
                 <td className="numeric">{formatNumber(row.count)}</td>
-                <td className={`numeric ${metricTone(row.rate, 0.75, 1.5)}`}>{formatPercent(row.rate)}</td>
+                <td className="numeric">{formatPercent(row.rate)}</td>
                 <td className="numeric">{row.statusCode || '--'}</td>
                 <td>{row.affectedGroups.join(', ') || row.group}</td>
                 <td>{row.actions.join(', ') || row.transaction}</td>
@@ -3683,7 +3697,7 @@ function LoadModelPanel({
       </details>
       <div className="command-load-model-chart" aria-hidden="true">
         <ResponsiveContainer width="100%" height={132} minWidth={240}>
-          <AreaChart data={profile} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+          <AreaChart data={profile} margin={{ top: 8, right: 8, left: -18, bottom: 0 }} accessibilityLayer={false}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
             <XAxis
               dataKey="pct"
@@ -4149,7 +4163,7 @@ function ErrorDrilldown({
           >
             <span>{pattern.title}</span>
             <strong>{pattern.count}</strong>
-            <small>{pattern.group} / {formatPercent(pattern.rate)}</small>
+            <small>{pattern.group} / {formatPercent(pattern.rate)} of errors</small>
           </button>
         ))}
       </div>
@@ -4167,7 +4181,7 @@ function ErrorDrilldown({
               <dd>{selectedError.firstSeen}</dd>
             </div>
             <div>
-              <dt>Error rate</dt>
+              <dt>Share of errors</dt>
               <dd>{formatPercent(selectedError.rate)}</dd>
             </div>
           </dl>

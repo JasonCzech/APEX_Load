@@ -1,6 +1,6 @@
 .total-vusers {
   font-size: 14px;
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--info-bg);
   padding: 4px 12px;
   border-radius: 20px;
@@ -38,7 +38,7 @@
 
 .mode-chip.active {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .modal-form label {
@@ -346,7 +346,7 @@
   border-radius: 999px;
   background: var(--accent-soft);
   border: 1px solid var(--accent-border);
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 12px;
   font-weight: 600;
 }

@@ -8598,6 +8598,11 @@ paths:
                           count:
                             type: integer
                             format: int64
+                          counts_by_population:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
                           first_seen:
                             type: string
                             format: date-time
@@ -85774,6 +85779,9 @@ paths:
                                   format: date-time
                                 sample:
                                   type: string
+                                share_of_errors_pct:
+                                  type: number
+                                  format: double
                                 signature:
                                   type: string
                                 snapshot_url:
@@ -91528,6 +91536,9 @@ paths:
                                   format: date-time
                                 sample:
                                   type: string
+                                share_of_errors_pct:
+                                  type: number
+                                  format: double
                                 signature:
                                   type: string
                                 snapshot_url:
@@ -97283,6 +97294,9 @@ paths:
                                   format: date-time
                                 sample:
                                   type: string
+                                share_of_errors_pct:
+                                  type: number
+                                  format: double
                                 signature:
                                   type: string
                                 snapshot_url:
@@ -103050,6 +103064,9 @@ paths:
                                   format: date-time
                                 sample:
                                   type: string
+                                share_of_errors_pct:
+                                  type: number
+                                  format: double
                                 signature:
                                   type: string
                                 snapshot_url:
@@ -108817,6 +108834,9 @@ paths:
                                   format: date-time
                                 sample:
                                   type: string
+                                share_of_errors_pct:
+                                  type: number
+                                  format: double
                                 signature:
                                   type: string
                                 snapshot_url:
@@ -114584,6 +114604,9 @@ paths:
                                   format: date-time
                                 sample:
                                   type: string
+                                share_of_errors_pct:
+                                  type: number
+                                  format: double
                                 signature:
                                   type: string
                                 snapshot_url:
@@ -120351,6 +120374,9 @@ paths:
                                   format: date-time
                                 sample:
                                   type: string
+                                share_of_errors_pct:
+                                  type: number
+                                  format: double
                                 signature:
                                   type: string
                                 snapshot_url:
@@ -325916,6 +325942,9 @@ paths:
                                 format: date-time
                               sample:
                                 type: string
+                              share_of_errors_pct:
+                                type: number
+                                format: double
                               signature:
                                 type: string
                               snapshot_url:
@@ -329199,6 +329228,9 @@ paths:
                               format: date-time
                             sample:
                               type: string
+                            share_of_errors_pct:
+                              type: number
+                              format: double
                             signature:
                               type: string
                             snapshot_url:
@@ -338581,6 +338613,9 @@ paths:
                                 format: date-time
                               sample:
                                 type: string
+                              share_of_errors_pct:
+                                type: number
+                                format: double
                               signature:
                                 type: string
                               snapshot_url:
@@ -341864,6 +341899,9 @@ paths:
                               format: date-time
                             sample:
                               type: string
+                            share_of_errors_pct:
+                              type: number
+                              format: double
                             signature:
                               type: string
                             snapshot_url:
@@ -362432,6 +362470,11 @@ paths:
                         count:
                           type: integer
                           format: int64
+                        counts_by_population:
+                          type: object
+                          additionalProperties:
+                            type: integer
+                            format: int64
                         first_seen:
                           type: string
                           format: date-time
@@ -369409,6 +369452,108 @@ paths:
         - Tests
       x-handler: handleBaselineComparisonCandidates
   /api/v1/tests/{id}/baseline-comparisons:
+    get:
+      summary: List Baseline Comparisons
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      operationId: handleListBaselineComparisons
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  comparisons:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        baselines:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              archive_available:
+                                type: boolean
+                              completed_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              id:
+                                type: string
+                              name:
+                                type: string
+                              peak_vusers:
+                                type: integer
+                                format: int64
+                              pinned:
+                                type: boolean
+                              release_id:
+                                type: string
+                              release_name:
+                                type: string
+                              scenario_id:
+                                type: string
+                              status:
+                                type: string
+                              vusers:
+                                type: integer
+                                format: int64
+                            required:
+                              - archive_available
+                              - id
+                              - name
+                              - peak_vusers
+                              - pinned
+                              - release_id
+                              - release_name
+                              - scenario_id
+                              - status
+                              - vusers
+                        created_at:
+                          type: string
+                          format: date-time
+                        id:
+                          type: string
+                        verdict:
+                          type: string
+                      required:
+                        - baselines
+                        - created_at
+                        - id
+                required:
+                  - comparisons
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleListBaselineComparisons
     post:
       summary: Create Baseline Comparison
       description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
@@ -377254,6 +377399,9 @@ paths:
                                 format: date-time
                               sample:
                                 type: string
+                              share_of_errors_pct:
+                                type: number
+                                format: double
                               signature:
                                 type: string
                               snapshot_url:
@@ -380537,6 +380685,9 @@ paths:
                               format: date-time
                             sample:
                               type: string
+                            share_of_errors_pct:
+                              type: number
+                              format: double
                             signature:
                               type: string
                             snapshot_url:
@@ -389863,6 +390014,9 @@ paths:
                                 format: date-time
                               sample:
                                 type: string
+                              share_of_errors_pct:
+                                type: number
+                                format: double
                               signature:
                                 type: string
                               snapshot_url:
@@ -393146,6 +393300,9 @@ paths:
                               format: date-time
                             sample:
                               type: string
+                            share_of_errors_pct:
+                              type: number
+                              format: double
                             signature:
                               type: string
                             snapshot_url:
@@ -409638,6 +409795,9 @@ paths:
                                 format: date-time
                               sample:
                                 type: string
+                              share_of_errors_pct:
+                                type: number
+                                format: double
                               signature:
                                 type: string
                               snapshot_url:
@@ -412922,6 +413082,9 @@ paths:
                               format: date-time
                             sample:
                               type: string
+                            share_of_errors_pct:
+                              type: number
+                              format: double
                             signature:
                               type: string
                             snapshot_url:

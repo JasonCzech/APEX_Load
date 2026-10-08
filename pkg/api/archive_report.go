@@ -160,7 +160,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		overallQuantiles.Add(tx.DurationMs)
 		if !tx.Success {
 			report.Overview.Errors++
-			signature := normalizeArchiveErrorSignature(archiveErrorPatternSource(tx))
+			signature := archiveErrorPatternSignature(tx)
 			if _, exists := errorPatterns[signature]; !exists && len(errorPatterns) >= maxArchiveAnalysisDimensions {
 				return fmt.Errorf("archive report exceeds %d distinct error patterns", maxArchiveAnalysisDimensions)
 			}
@@ -342,6 +342,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 			if pattern == nil {
 				continue
 			}
+			finalizeArchiveErrorPatterns(pattern)
 			if actions := errorPatternActions[signature]; len(actions) > 0 {
 				pattern.Actions = make([]string, 0, len(actions))
 				for action := range actions {

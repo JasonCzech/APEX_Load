@@ -349,7 +349,7 @@
 .access-chip.active {
   background: var(--accent-soft);
   border-color: var(--accent-border);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .access-project-role-list {
@@ -726,7 +726,7 @@
 .access-subtab.active {
   border-color: var(--accent-border);
   background: color-mix(in srgb, var(--accent) 10%, var(--bg-card));
-  color: var(--accent);
+  color: var(--accent-text);
   box-shadow: var(--glow-sm);
 }
 
@@ -926,7 +926,7 @@
 
 .access-row-primary:hover,
 .access-row-primary:focus-visible {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .access-row-primary:focus-visible {

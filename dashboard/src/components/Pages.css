@@ -91,7 +91,7 @@
 
 .page-view-toggle .mode-chip.active {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   box-shadow: var(--glow-sm);
 }
 
@@ -173,7 +173,7 @@
 }
 
 .results-compare-hint {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 12px;
   font-weight: 700;
   text-transform: var(--label-case, uppercase);
@@ -913,7 +913,7 @@
   border: 0;
   cursor: pointer;
   padding: 0;
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 13px;
   font-weight: 700;
   text-decoration: none;
@@ -1311,7 +1311,7 @@
 .swagger-method-get { border-color: var(--info-border); background: var(--info-bg); color: var(--info-text); }
 .swagger-method-post { border-color: var(--success-border); background: var(--success-bg); color: var(--success-text); }
 .swagger-method-put { border-color: var(--warning-border); background: var(--warning-bg); color: var(--warning-text); }
-.swagger-method-patch { border-color: var(--border); background: var(--accent-soft); color: var(--accent); }
+.swagger-method-patch { border-color: var(--border); background: var(--accent-soft); color: var(--accent-text); }
 .swagger-method-delete { border-color: var(--danger-border); background: var(--danger-bg); color: var(--danger-text); }
 .swagger-method-head,
 .swagger-method-options { border-color: var(--border); background: var(--subtle-fill-strong); color: var(--text-secondary); }
@@ -1434,7 +1434,7 @@
   background: none;
   border: none;
   padding: 2px 0;
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 13px;
   text-align: left;
   cursor: pointer;
@@ -1494,7 +1494,7 @@
 }
 
 .markdown-body a {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .markdown-body code {
@@ -1989,7 +1989,7 @@
   align-items: center;
   justify-content: center;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 800;
   font-size: 12px;
 }
@@ -2117,7 +2117,7 @@
 
 .script-create-category-tabs button.active strong {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .script-create-table-list {
@@ -2244,7 +2244,7 @@
 .script-create-existing-reset:hover,
 .script-create-existing-action:hover {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .script-create-existing-summary {
@@ -2301,7 +2301,7 @@
 }
 
 .script-create-existing-table th button:hover {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .script-create-existing-table th:nth-child(1),
@@ -2363,7 +2363,7 @@
 }
 
 .script-create-existing-name:hover {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .script-create-option {
@@ -2454,7 +2454,7 @@
 
 .tag-chip.use-case {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent-border);
 }
 
@@ -2473,7 +2473,7 @@
   border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   border-radius: 999px;
   padding: 3px 7px;
-  color: var(--accent);
+  color: var(--accent-text);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
   font-size: 10px;
   font-weight: 800;
@@ -2581,7 +2581,7 @@
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
   border-radius: 999px;
   padding: 3px 8px;
-  color: var(--accent);
+  color: var(--accent-text);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
   font-size: 10px;
   font-weight: 800;
@@ -2907,7 +2907,7 @@
 .script-row-toggle:focus-visible,
 .script-run-link:hover,
 .script-run-link:focus-visible {
-  color: var(--accent);
+  color: var(--accent-text);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -2922,7 +2922,7 @@
 
 .sort-icon.active {
   opacity: 1;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .data-table td {
@@ -3037,7 +3037,7 @@
 
 .reference-key-copy:hover:not(:disabled),
 .reference-key-copy:focus-visible:not(:disabled) {
-  color: var(--accent);
+  color: var(--accent-text);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
   outline: none;
 }
@@ -3235,7 +3235,7 @@
 .script-health-filter:hover,
 .script-health-filter.active {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
@@ -4074,7 +4074,7 @@
 }
 
 .telemetry-summary-cta {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 12px;
   font-weight: 600;
 }
@@ -4999,7 +4999,7 @@
   height: 28px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--accent) 16%, transparent);
-  color: var(--accent);
+  color: var(--accent-text);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -5303,7 +5303,7 @@
   padding: 2px 7px;
   border-radius: 4px;
   background: color-mix(in srgb, var(--accent) 12%, transparent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .new-test-scenario-card-mode.goal {
@@ -5545,7 +5545,7 @@
 }
 
 .new-test-field-changed > span {
-  color: var(--accent) !important;
+  color: var(--accent-text) !important;
 }
 
 .new-test-changed-pill {
@@ -5556,7 +5556,7 @@
   border-radius: 999px;
   border: 1px solid var(--accent-border);
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 9px;
   font-style: normal;
   font-weight: 800;
@@ -6277,13 +6277,13 @@
 }
 
 .btn-danger {
-  background: var(--danger);
-  color: var(--accent-contrast);
-  border: 1px solid var(--danger);
+  background: var(--danger-fill);
+  color: var(--danger-fill-text);
+  border: 1px solid var(--danger-fill);
 }
 
 .btn-danger:hover {
-  background: var(--danger);
+  background: var(--danger-fill);
 }
 
 .btn-danger-outline {
@@ -7075,7 +7075,7 @@ col.results-actions-col {
   font-weight: 700;
   text-transform: var(--label-case, uppercase);
   letter-spacing: var(--label-tracking, 0.06em);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .settings-subgroup-desc {
@@ -7250,7 +7250,7 @@ col.results-actions-col {
   padding: 2px 8px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--accent);
+  color: var(--accent-text);
   white-space: nowrap;
 }
 .imported-dashboards-badge.badge-single_value {
@@ -7458,7 +7458,7 @@ col.results-actions-col {
   border: 1px solid var(--accent-border);
   border-radius: 999px;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 700;
 }
 
@@ -7801,7 +7801,7 @@ col.results-actions-col {
 .repository-reset-filter:hover:not(:disabled),
 .repository-row-action:hover:not(:disabled) {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .repository-reset-filter:disabled,
@@ -7859,7 +7859,7 @@ col.results-actions-col {
 .repository-tab:hover,
 .repository-tab.active {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
@@ -8165,7 +8165,7 @@ col.results-actions-col {
 /* Must out-rank `.repository-project-title span`, which paints every span in
    the title row muted. */
 .repository-project-title .repository-project-actions .repository-project-active {
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
 }
 
@@ -8299,7 +8299,7 @@ col.results-actions-col {
 .schedule-day-toggle.active {
   background: color-mix(in srgb, var(--accent) 18%, var(--bg-secondary));
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
 }
 .schedule-day-toggle:disabled {
@@ -8549,7 +8549,7 @@ col.results-actions-col {
 
 .transaction-sla-select:hover,
 .transaction-sla-select:focus-visible {
-  color: var(--accent);
+  color: var(--accent-text);
   text-decoration-color: currentColor;
 }
 

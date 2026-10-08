@@ -82,6 +82,7 @@ import {
   buildScriptRepairSuggestions,
   collectAuthoringIssues,
   groupIssuesByPhaseAction,
+  scriptBaseURLError,
   summarizeDataSources,
   summarizeParameters,
   type MigrationAssistantSuggestion,
@@ -413,6 +414,13 @@ function CenterTabbedPane({
 
   const handleTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
     if (tabs.length === 0) return
+    if (event.key === 'Delete' && tabs[index]?.closeable) {
+      // The visible × is mouse-only; keyboard and screen-reader users close
+      // the focused tab with Delete (advertised via aria-keyshortcuts).
+      event.preventDefault()
+      onCloseTab(tabs[index].id)
+      return
+    }
     let nextIndex = index
     if (event.key === 'ArrowRight') {
       nextIndex = (index + 1) % tabs.length
@@ -437,13 +445,14 @@ function CenterTabbedPane({
           const tabButtonId = `center-tab-${tab.id}`
           const panelId = `center-tab-panel-${tab.id}`
           return (
-            <div key={tab.id} className={`center-tab-item ${selected ? 'active' : ''} ${!tab.closeable ? 'pinned' : ''}`}>
+            <div key={tab.id} role="presentation" className={`center-tab-item ${selected ? 'active' : ''} ${!tab.closeable ? 'pinned' : ''}`}>
               <TooltipButton
                 type="button"
                 id={tabButtonId}
                 role="tab"
                 aria-controls={panelId}
                 aria-selected={selected}
+                aria-keyshortcuts={tab.closeable ? 'Delete' : undefined}
                 className="center-tab-button"
                 tabIndex={selected ? 0 : -1}
                 title={tab.title}
@@ -454,15 +463,16 @@ function CenterTabbedPane({
                 <span className="center-tab-label">{tab.label}</span>
               </TooltipButton>
               {tab.closeable && (
-                <TooltipButton
+                <button
                   type="button"
                   className="center-tab-close"
-                  aria-label={`Close ${tab.label}`}
+                  aria-hidden="true"
+                  tabIndex={-1}
                   title={`Close ${tab.label}`}
                   onClick={() => onCloseTab(tab.id)}
                 >
                   ×
-                </TooltipButton>
+                </button>
               )}
             </div>
           )
@@ -2844,7 +2854,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     }
   }, [api, currentDraftScript.name, exportGeneratedTextFile, jsonText, script, scriptEditorDirty, scriptId, setError])
 
-  const saveScriptDisabled = (Boolean(scriptId) && (authoringRevisionState !== 'ready' || !authoringBaseline)) || saving || secretBindingsOpen || validating || !scriptEditorDirty || !currentDraftScript.name || Boolean(jsonParseMessage)
+  const draftBaseURLError = scriptBaseURLError(currentDraftScript)
+  const saveScriptDisabled = (Boolean(scriptId) && (authoringRevisionState !== 'ready' || !authoringBaseline)) || saving || secretBindingsOpen || validating || !scriptEditorDirty || !currentDraftScript.name || Boolean(jsonParseMessage) || Boolean(draftBaseURLError)
   const saveScriptTitle = scriptId && authoringRevisionState !== 'ready'
     ? 'Load and review a protected authoring baseline before saving'
     : saving
@@ -2857,7 +2868,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           ? 'No unsaved changes to save'
           : !currentDraftScript.name
             ? 'Enter a script name before saving'
-            : 'Save script'
+            : draftBaseURLError
+              ? draftBaseURLError
+              : 'Save script'
   const validateScriptDisabled = saving || replaying || validating || !currentDraftScript.name
   const validateScriptTitle = validating
     ? 'Checking script readiness'

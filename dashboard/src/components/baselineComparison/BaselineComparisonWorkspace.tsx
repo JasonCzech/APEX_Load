@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { TestSummary } from '../../types'
 import { downloadBlob } from '../../utils/fileUtils'
-import { comparisonColors, comparisonMagnitude, comparisonApi, comparisonRequestSignature, defaultPolicy, difference, measurementValue, metricOptions, number, resourceProviderLabel, type ComparisonPolicy, type ComparisonRequest, type ComparisonRow, type ComparisonSnapshot, type MeasurementWindow, type Metric, type ResourceMapping, type RunIdentity } from './model'
+import { comparisonColors, comparisonMagnitude, comparisonApi, comparisonVerdictLabel, type SavedComparisonSummary, comparisonRequestSignature, defaultPolicy, difference, measurementValue, metricOptions, number, resourceProviderLabel, type ComparisonPolicy, type ComparisonRequest, type ComparisonRow, type ComparisonSnapshot, type MeasurementWindow, type Metric, type ResourceMapping, type RunIdentity } from './model'
 import { ComparisonDetail } from './ComparisonDetail'
 import './BaselineComparisonWorkspace.css'
 
@@ -97,6 +97,13 @@ export default function BaselineComparisonWorkspace({ test, initialBaseline, com
     return () => controller.abort()
   }, [test.id, comparisonId, snapshot?.id])
 
+  const [savedComparisons, setSavedComparisons] = useState<SavedComparisonSummary[] | null>(null)
+  useEffect(() => {
+    const controller = new AbortController()
+    comparisonApi.saved(test.id, controller.signal).then(result => { if (!controller.signal.aborted) setSavedComparisons(result.comparisons || []) }).catch(() => { if (!controller.signal.aborted) setSavedComparisons([]) })
+    return () => controller.abort()
+  }, [test.id, snapshot?.id])
+
   const runNames = new Map([...candidates, ...(snapshot?.baselines || [])].map(run => [run.id, `${run.release_name || 'No release'} · ${run.name}`]))
   const rows = useMemo(() => {
     const source = view === 'resources' ? snapshot?.resources : snapshot?.transactions
@@ -157,11 +164,18 @@ export default function BaselineComparisonWorkspace({ test, initialBaseline, com
       {dirty && <p className="bc-draft" role="status">Settings changed. Results and exports below still describe the saved comparison; apply to evaluate the draft.</p>}
       {notice && <p role="status">{notice}</p>}{error && <p role="alert" className="run-report-error">{error}</p>}
     </section>
+    {!!savedComparisons?.length && <section className="run-report-panel bc-saved" aria-label="Saved assessments">
+      <h3>Saved assessments for this run</h3>
+      <ul>{savedComparisons.map(item => <li key={item.id}>
+        <span><strong>{comparisonVerdictLabel(item.verdict)}</strong> · {new Date(item.created_at).toLocaleString()} · against {item.baselines.map(run => run.name || run.id).join(', ') || 'no baselines'}</span>
+        {item.id === snapshot?.id ? <span className="bc-saved-current">Showing</span> : <button type="button" className="btn btn-secondary btn-sm" onClick={() => onSnapshot(item.id)}>Open</button>}
+      </li>)}</ul>
+    </section>}
     {!snapshot && <section className="run-report-panel bc-empty"><h3>Compare the same workload across releases</h3><p>Select up to five pinned runs, then compare. You’ll see transaction changes, monitored resource differences, and setup inconsistencies together.</p></section>}
     {snapshot && <>
       <BaselineTelemetryEvidence evidence={snapshot.telemetry} />
       <BaselineBrowserDocuments rows={snapshot.browser_documents} baselines={snapshot.baselines} softNavigation={snapshot.browser_soft_navigation} />
-      <section className="run-report-panel" aria-label="Regression verdict"><h2>Regression verdict: {snapshot.verdict?.status || 'Unavailable'}</h2>{snapshot.verdict && <><p>{snapshot.verdict.evaluated} evaluated · {snapshot.verdict.unavailable} unavailable</p><details><summary>Acceptance evidence</summary><ul>{snapshot.verdict.evidence.map((e, i) => <li key={i}>{e.metric}: {e.status} · {e.baseline_id} / {e.row_id} {e.reason}</li>)}</ul></details></>}</section>
+      <section className="run-report-panel" aria-label="Regression verdict"><h2>Regression verdict: {snapshot.verdict ? comparisonVerdictLabel(snapshot.verdict.status) : 'Unavailable'}</h2>{snapshot.verdict && <><p>{snapshot.verdict.evaluated} evaluated · {snapshot.verdict.unavailable} unavailable</p><details><summary>Acceptance evidence</summary><ul>{snapshot.verdict.evidence.map((e, i) => <li key={i}>{e.metric}: {e.status} · {e.baseline_id} / {e.row_id} {e.reason}</li>)}</ul></details></>}</section>
       <section className="run-report-panel" aria-label="Comparison findings"><header><div><p className="bc-eyebrow">Saved {new Date(snapshot.created_at).toLocaleString()}</p><h2>Findings to review</h2></div><div className="bc-findings-count"><strong>{snapshot.findings.filter(f => f.status === 'changed').length}</strong> threshold changes <span>· {snapshot.findings.filter(f => f.status !== 'changed').length} qualifications</span></div></header>
         <div className="bc-findings">{findings.map((finding, index) => <button type="button" className={`bc-finding bc-${finding.status}`} key={`${finding.row_id}/${finding.baseline_id}/${index}`} onClick={() => { if (finding.category === 'setup') setView('setup'); else { const row = [...snapshot.transactions, ...snapshot.resources].find(item => item.id === finding.row_id); if (row) setDetail(row) } }}><span>{finding.status === 'changed' ? 'Change detected' : finding.status === 'review' ? 'Setup review' : 'Unverified'} · {finding.category}</span><strong>{finding.message}</strong><small>{runNames.get(finding.baseline_id) || finding.baseline_id} → View evidence</small></button>)}</div>
         {!findings.length && <p>No configured change threshold exceeded. This is not an acceptance verdict.</p>}{snapshot.findings.length > 8 && <button type="button" className="btn btn-ghost" onClick={() => setAllFindings(v => !v)}>{allFindings ? 'Show priority findings' : `Show all ${snapshot.findings.length} findings`}</button>}

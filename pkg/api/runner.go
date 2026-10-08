@@ -1302,19 +1302,23 @@ type TxMetrics struct {
 }
 
 type LiveErrorPattern struct {
-	Signature        string    `json:"signature"`
-	Sample           string    `json:"sample"`
-	Count            int64     `json:"count"`
-	FirstSeen        time.Time `json:"first_seen"`
-	LatestSeen       time.Time `json:"latest_seen"`
-	Actions          []string  `json:"actions,omitempty"`
-	AffectedGroups   []string  `json:"affected_groups,omitempty"`
-	StatusCode       int       `json:"status_code,omitempty"`
-	ErrorPct         float64   `json:"error_pct,omitempty"`
-	SnapshotURL      string    `json:"snapshot_url,omitempty"`
-	EvidenceURL      string    `json:"evidence_url,omitempty"`
-	EvidenceCount    int       `json:"evidence_count,omitempty"`
-	LatestEvidenceID string    `json:"latest_evidence_id,omitempty"`
+	Signature      string    `json:"signature"`
+	Sample         string    `json:"sample"`
+	Count          int64     `json:"count"`
+	FirstSeen      time.Time `json:"first_seen"`
+	LatestSeen     time.Time `json:"latest_seen"`
+	Actions        []string  `json:"actions,omitempty"`
+	AffectedGroups []string  `json:"affected_groups,omitempty"`
+	StatusCode     int       `json:"status_code,omitempty"`
+	// Deprecated: no longer set (it was one action's one-second error rate).
+	ErrorPct float64 `json:"error_pct,omitempty"`
+	// ShareOfErrorsPct is this signature's share of the errors counted across
+	// the run's tracked signatures (they add up to 100).
+	ShareOfErrorsPct float64 `json:"share_of_errors_pct,omitempty"`
+	SnapshotURL      string  `json:"snapshot_url,omitempty"`
+	EvidenceURL      string  `json:"evidence_url,omitempty"`
+	EvidenceCount    int     `json:"evidence_count,omitempty"`
+	LatestEvidenceID string  `json:"latest_evidence_id,omitempty"`
 }
 
 type LiveErrorEvidence struct {

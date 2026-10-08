@@ -58,10 +58,10 @@ export function AnalysisSavedViews({ storageKey, values, onRestore }: Props) {
   }
   return (
     <details className="analysis-settings">
-      <summary>Saved comparisons</summary>
+      <summary>Saved views (this browser)</summary>
       <div className="analysis-controls">
         <label>
-          Comparison name
+          View name
           <input
             value={name}
             maxLength={80}
@@ -83,15 +83,15 @@ export function AnalysisSavedViews({ storageKey, values, onRestore }: Props) {
             ])
           }
         >
-          Save current comparison
+          Save current view
         </button>
         <label>
-          Saved comparison
+          Saved view
           <select
             value={selected}
             onChange={(event) => setSelected(event.target.value)}
           >
-            <option value="">Choose a saved comparison</option>
+            <option value="">Choose a saved view</option>
             {views.map((view) => (
               <option key={view.name} value={view.name}>
                 {view.name}
@@ -108,12 +108,12 @@ export function AnalysisSavedViews({ storageKey, values, onRestore }: Props) {
             if (view) {
               onRestore(view.values)
               setMessage(
-                'Comparison restored. Archived evidence is reloaded using the current analysis rules.',
+                'View restored. Archived evidence is reloaded using the current analysis rules.',
               )
             }
           }}
         >
-          Restore comparison
+          Restore view
         </button>
         <button
           type="button"
@@ -124,7 +124,7 @@ export function AnalysisSavedViews({ storageKey, values, onRestore }: Props) {
             setSelected('')
           }}
         >
-          Delete saved comparison
+          Delete saved view
         </button>
       </div>
       <p className="dashboard-context-note">

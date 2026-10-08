@@ -89,7 +89,7 @@ const editorTheme = EditorView.theme({
     color: 'var(--warning)',
   },
   '.apex-embedded-xml-tag': {
-    color: 'var(--accent)',
+    color: 'var(--accent-text)',
     fontWeight: '650',
   },
   '.apex-source-template-token': {
@@ -144,13 +144,13 @@ const editorTheme = EditorView.theme({
 })
 
 const highlightStyle = HighlightStyle.define([
-  { tag: [t.keyword, t.modifier, t.controlKeyword, t.operatorKeyword], color: 'var(--accent)' },
+  { tag: [t.keyword, t.modifier, t.controlKeyword, t.operatorKeyword], color: 'var(--accent-text)' },
   { tag: [t.string, t.special(t.string)], color: 'var(--success)' },
   { tag: [t.number, t.bool, t.null, t.atom], color: 'var(--warning)' },
   { tag: [t.propertyName, t.definition(t.propertyName)], color: 'var(--text-primary)' },
   { tag: [t.comment, t.lineComment, t.blockComment], color: 'var(--text-muted)', fontStyle: 'italic' },
-  { tag: [t.function(t.variableName), t.function(t.propertyName)], color: 'var(--accent)' },
-  { tag: [t.typeName, t.className, t.tagName], color: 'var(--accent)' },
+  { tag: [t.function(t.variableName), t.function(t.propertyName)], color: 'var(--accent-text)' },
+  { tag: [t.typeName, t.className, t.tagName], color: 'var(--accent-text)' },
   { tag: [t.processingInstruction, t.meta], color: 'var(--text-muted)' },
   { tag: [t.operator, t.punctuation, t.separator, t.bracket], color: 'var(--text-secondary)' },
 ])

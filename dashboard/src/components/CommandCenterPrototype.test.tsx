@@ -419,6 +419,24 @@ describe('CommandCenterPrototype', () => {
     expect(inputByLabel('Live Checkout target VUsers').value).toBe('65')
   })
 
+  it('reverts a rejected VUser target and says it was not applied', async () => {
+    const run = buildLiveVuserTest()
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
+      const url = requestUrl(input)
+      if (url.includes('/vusers')) return Promise.resolve(new Response(JSON.stringify({ error: 'capacity advisory recommends 13 load generators but only 12 are available' }), { status: 400, headers: { 'Content-Type': 'application/json' } }))
+      if (url.endsWith(`/tests/${run.id}`)) return Promise.resolve(jsonResponse(run))
+      return Promise.resolve(jsonResponse({}))
+    })
+    await act(async () => { root.render(<CommandCenterPrototype testId={run.id} initialTest={run} />) })
+    await flush()
+    await changeNumberInput(inputByLabel('Live Checkout target VUsers'), '99999')
+    const apply = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Apply' && button.classList.contains('btn-accent'))!
+    await click(apply)
+    await flush()
+    expect(inputByLabel('Live Checkout target VUsers').value).toBe('50')
+    expect(container.textContent).toContain('Not applied: Live Checkout keeps its current VUser target')
+  })
+
   it('keeps the selected run status consistent with acknowledged controls when the catalog is stale', async () => {
     const run = buildLiveVuserTest()
     const other = { ...run, id: 'other-run', name: 'Other run' }
@@ -1909,6 +1927,8 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).toContain('Live Checkout Ramp')
     expect(container.textContent).toContain('Live Checkout')
     expect(container.textContent).toContain('HTTP 500 checkout spike')
+    // One per-signature rate definition, named as such (not a windowed "Error rate").
+    expect(container.textContent).toContain('Share of errors')
     expect(container.textContent).not.toContain('In-flight Run Command Center')
   })
 

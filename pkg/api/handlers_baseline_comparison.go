@@ -330,6 +330,79 @@ func (s *Server) loadBaselineComparison(w http.ResponseWriter, r *http.Request, 
 	}
 	return &result, true
 }
+
+// BaselineComparisonSummary lists a saved comparison without its full payload.
+type BaselineComparisonSummary struct {
+	ID        string                `json:"id"`
+	CreatedAt time.Time             `json:"created_at"`
+	Baselines []BaselineRunIdentity `json:"baselines"`
+	Verdict   string                `json:"verdict,omitempty"`
+}
+
+type baselineComparisonListResponse struct {
+	Comparisons []BaselineComparisonSummary `json:"comparisons"`
+}
+
+// handleListBaselineComparisons lists a run's saved comparisons, newest first,
+// so the report can reopen them instead of re-running the comparison.
+func (s *Server) handleListBaselineComparisons(w http.ResponseWriter, r *http.Request) {
+	store, ok := s.comparisonStore(w)
+	if !ok {
+		return
+	}
+	current, ok := s.comparisonTest(w, r)
+	if !ok {
+		return
+	}
+	// Decode while the rows are open, but resolve baseline runs only after the
+	// cursor closes: the lookups may hit the same single-connection store.
+	var summaries []BaselineComparisonSummary
+	err := store.VisitBaselineComparisons(current.ProjectID, current.ID, 20, func(record storage.BaselineComparisonRecord) error {
+		// Decode only what the list shows, not the full comparison rows.
+		var snapshot struct {
+			CreatedAt time.Time             `json:"created_at"`
+			Baselines []BaselineRunIdentity `json:"baselines"`
+			Verdict   *struct {
+				Status string `json:"status"`
+			} `json:"verdict"`
+		}
+		if json.Unmarshal(record.Payload, &snapshot) != nil {
+			return nil
+		}
+		summary := BaselineComparisonSummary{ID: record.ID, CreatedAt: record.CreatedAt, Baselines: snapshot.Baselines}
+		if !snapshot.CreatedAt.IsZero() {
+			summary.CreatedAt = snapshot.CreatedAt
+		}
+		if snapshot.Verdict != nil {
+			summary.Verdict = snapshot.Verdict.Status
+		}
+		summaries = append(summaries, summary)
+		return nil
+	})
+	if err != nil {
+		writeError(w, 500, "comparisons could not be listed")
+		return
+	}
+	response := baselineComparisonListResponse{Comparisons: []BaselineComparisonSummary{}}
+	for _, summary := range summaries {
+		// List only comparisons that can still be opened: every baseline must
+		// remain visible in this run's application and project (the rule
+		// loadBaselineComparison enforces), so no out-of-scope run name leaks.
+		inScope := true
+		for _, baseline := range summary.Baselines {
+			test, found := s.archiveDomainService().GetTest(baseline.ID)
+			if !found || !baselineSameScope(current, test) {
+				inScope = false
+				break
+			}
+		}
+		if inScope {
+			response.Comparisons = append(response.Comparisons, summary)
+		}
+	}
+	writeJSON(w, 200, response)
+}
+
 func (s *Server) handleGetBaselineComparison(w http.ResponseWriter, r *http.Request) {
 	result, ok := s.loadBaselineComparison(w, r, r.PathValue("comparison_id"))
 	if !ok {

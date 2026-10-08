@@ -42,3 +42,21 @@ describe('buildScenarioRunRows throughput gap', () => {
     expect(groupRow?.throughputGap).toBeCloseTo(20, 6)
   })
 })
+
+describe('buildScenarioRunRows column definitions', () => {
+  it('uses one definition per column for group and transaction rows', () => {
+    const rows = buildScenarioRunRows([commandGroup()], {
+      groups: { Checkout: { name: 'Checkout', vusers: 2, transactions: 6, errors: 2, tps: 6, avg_response_ms: 100, p50_ms: 1, p90_ms: 1, p99_ms: 1 } },
+      transactions: { Add_To_Cart: { name: 'Add_To_Cart', tps: 1, count: 2, errors: 1, avg_ms: 10, p50_ms: 1, p90_ms: 1, p99_ms: 1 } },
+    } as never)
+    const group = rows.find(row => row.type === 'Group')!
+    const tx = rows.find(row => row.type === 'Transaction')!
+    // Group metrics count successes and errors separately: 6 + 2 attempts.
+    expect(group.transactions).toBe(8)
+    expect(group.errorPct).toBe(25)
+    // Transaction count already includes errors; TPS is the reported rate.
+    expect(tx.tps).toBe(1)
+    expect(tx.transactions).toBe(2)
+    expect(tx.errorPct).toBe(50)
+  })
+})

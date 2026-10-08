@@ -293,7 +293,7 @@
 }
 
 .load-impact-table th.load-impact-axis-highlighted {
-  color: var(--accent);
+  color: var(--accent-text);
   background:
     linear-gradient(90deg, color-mix(in srgb, var(--accent) 18%, transparent), transparent 76%),
     color-mix(in srgb, var(--bg-surface) 86%, var(--accent-soft));
@@ -304,7 +304,7 @@
 
 .load-impact-table th.load-impact-axis-highlighted small,
 .load-impact-table th.load-impact-axis-highlighted .load-impact-sort-icon {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .load-impact-table thead th:first-child,
@@ -341,7 +341,7 @@
 
 .load-impact-sort-header:hover,
 .load-impact-sort-header:focus-visible {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .load-impact-sort-header:focus-visible {
@@ -606,7 +606,7 @@
 
 .load-impact-detail-sort-header:hover,
 .load-impact-detail-sort-header:focus-visible {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .load-impact-detail-sort-header:focus-visible {

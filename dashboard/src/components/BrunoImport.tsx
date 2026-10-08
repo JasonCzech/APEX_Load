@@ -5,6 +5,7 @@ import TabList from './ux/TabList';
 import { handleTabKey } from './tabKeyboard';
 import DialogLayer from './ux/DialogLayer';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useUnsavedWorkGuard } from '../hooks/NavigationGuardProvider';
 import { createPortal } from 'react-dom';
 import { type Folder, type StoredScript } from '../types';
 import { type ScriptDefinition } from '../types/scripts';
@@ -451,6 +452,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     const secretBindingsRef = useRef<Record<string, string>>({});
     const credentialReviewRef = useRef<SecretBindingReviewHandle | null>(null);
     const [committed, setCommitted] = useState<CommitBrunoImportResponse | null>(null);
+    // An inspected collection and its review choices live only here until committed.
+    useUnsavedWorkGuard('bruno-import', 'Bruno import review', Boolean(inspection) && !committed, () => undefined);
     // Bruno artifacts never leave the server, so collection values are collected
     // here and applied server-side by the native commit rather than through the
     // generic shared-values apply endpoint.

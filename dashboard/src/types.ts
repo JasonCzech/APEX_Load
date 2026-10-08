@@ -2412,7 +2412,10 @@ export interface LiveErrorPattern {
   actions?: string[]
   affected_groups?: string[]
   status_code?: number
+  /** @deprecated No longer sent; it was one action's one-second error rate. */
   error_pct?: number
+  /** This signature's share of all live errors so far. */
+  share_of_errors_pct?: number
   snapshot_url?: string
   evidence_url?: string
   evidence_count?: number

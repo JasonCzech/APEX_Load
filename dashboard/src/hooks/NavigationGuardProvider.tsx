@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef } from 'react'
 
 export interface NavigationGuard {
   id: string
@@ -6,6 +6,8 @@ export interface NavigationGuard {
   isDirty: () => boolean
   save: () => Promise<boolean> | boolean
   discard: () => void
+  /** False when the work cannot be saved from the leave prompt (e.g. an import review awaiting decisions). */
+  canSave?: boolean
 }
 
 export interface RegisteredNavigationGuard extends NavigationGuard {
@@ -56,4 +58,24 @@ export function useNavigationGuard(guard: NavigationGuard | null | undefined, di
 
 export function useNavigationGuardRunner() {
   return useContext(NavigationGuardRunnerContext)
+}
+
+/**
+ * Guards work that only lives in this page (an import queue, review decisions)
+ * and cannot be saved from the leave prompt: leaving asks to discard it.
+ */
+export function useUnsavedWorkGuard(id: string, label: string, dirty: boolean, discard: () => void) {
+  const discardRef = useRef(discard)
+  discardRef.current = discard
+  const dirtyRef = useRef(dirty)
+  dirtyRef.current = dirty
+  const guard = useMemo<NavigationGuard>(() => ({
+    id,
+    label,
+    canSave: false,
+    isDirty: () => dirtyRef.current,
+    save: () => false,
+    discard: () => discardRef.current(),
+  }), [id, label])
+  useNavigationGuard(guard, dirty)
 }

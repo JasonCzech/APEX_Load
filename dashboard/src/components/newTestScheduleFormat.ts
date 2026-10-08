@@ -18,6 +18,11 @@ export function formatScheduleTimestampInZone(value: string, timeZone?: string) 
   }
 }
 
+/** A schedule instant in the schedule's own timezone, so it matches the zone shown beside it. */
+export function formatScheduleInstant(value: string | undefined, timeZone?: string) {
+  return value ? formatScheduleTimestampInZone(value, timeZone) : 'Not scheduled'
+}
+
 export function formatLaunchTimestamp(value?: string) {
   return value ? new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Pending'
 }

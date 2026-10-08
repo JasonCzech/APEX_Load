@@ -69,6 +69,10 @@
   --accent-soft: rgba(139, 92, 246, 0.15);
   --accent-border: rgba(139, 92, 246, 0.4);
   --accent-contrast: #050508;
+  /* Text-safe accent and filled-danger tokens (≥4.5:1). */
+  --accent-text: #a78bfa;
+  --danger-fill: #dc2626;
+  --danger-fill-text: #ffffff;
   --accent-hover: #a78bfa;
 
   /* State Colors */
@@ -175,6 +179,10 @@
   --accent-soft: rgba(0, 114, 178, 0.09);
   --accent-border: rgba(0, 56, 143, 0.3);
   --accent-contrast: #ffffff;
+  /* Text-safe accent and filled-danger tokens (≥4.5:1). */
+  --accent-text: var(--accent);
+  --danger-fill: #c70032;
+  --danger-fill-text: #ffffff;
   --accent-hover: #002a6b;
 
   /* State Colors */
@@ -255,6 +263,10 @@
   --accent-soft: rgba(103, 183, 225, 0.1);
   --accent-border: rgba(103, 183, 225, 0.38);
   --accent-contrast: #002b36;
+  /* Text-safe accent and filled-danger tokens (≥4.5:1). */
+  --accent-text: var(--accent);
+  --danger-fill: #c0261f;
+  --danger-fill-text: #ffffff;
   --accent-hover: #7dd3c7;
 
   --success: #859900;
@@ -337,6 +349,10 @@
   --accent-soft: rgba(95, 111, 0, 0.11);
   --accent-border: rgba(95, 111, 0, 0.36);
   --accent-contrast: #fdf6e3;
+  /* Text-safe accent and filled-danger tokens (≥4.5:1). */
+  --accent-text: var(--accent);
+  --danger-fill: #c0261f;
+  --danger-fill-text: #ffffff;
   --accent-hover: #4d5b00;
 
   --success: #859900;
@@ -413,6 +429,10 @@
   --accent-soft: rgba(255, 97, 136, 0.12);
   --accent-border: rgba(255, 97, 136, 0.3);
   --accent-contrast: #1e1f1c;
+  /* Text-safe accent and filled-danger tokens (≥4.5:1). */
+  --accent-text: var(--accent);
+  --danger-fill: #c2410c;
+  --danger-fill-text: #ffffff;
   --accent-hover: #ff8eaa;
 
   /* Vibrant Monokai State Colors */
@@ -732,7 +752,7 @@ select option:checked {
 
 .btn-secondary {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   border: 1px solid var(--accent-border);
 }
 
@@ -778,13 +798,13 @@ select option:checked {
 }
 
 .btn-danger {
-  background: var(--danger);
-  color: white;
+  background: var(--danger-fill);
+  color: var(--danger-fill-text);
   box-shadow: 0 2px 8px rgba(var(--danger-rgb), 0.15);
 }
 
 .btn-danger:hover {
-  background: var(--danger);
+  background: var(--danger-fill);
   box-shadow: 0 4px 12px rgba(var(--danger-rgb), 0.25);
   transform: translateY(-1px);
 }
@@ -837,7 +857,7 @@ select option:checked {
 }
 :where(input, textarea)::placeholder { color: var(--text-muted); opacity: 1; }
 :where(input, textarea):disabled { cursor: not-allowed; opacity: .65; }
-:where(a[href]), :where(a[href]:visited) { color: var(--accent); }
+:where(a[href]), :where(a[href]:visited) { color: var(--accent-text); }
 :where(a[href]:hover) { text-decoration: underline; text-underline-offset: 3px; }
 
 /* Screen-reader-only text. Defined globally: it used to live only in the Run

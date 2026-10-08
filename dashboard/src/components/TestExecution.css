@@ -742,7 +742,7 @@
 }
 
 .scenario-script-toggle {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 12px;
   font-weight: 700;
   text-transform: var(--label-case, uppercase);
@@ -1196,7 +1196,7 @@
 
 .graph-group-tab.active {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .graph-group-tab small {
@@ -1676,7 +1676,7 @@
 
 .chart-drag-handle:hover,
 .chart-drag-handle:focus-visible {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
   outline: none;
 }
@@ -1778,8 +1778,8 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--bg-primary) 72%, transparent);
-  max-height: 112px;
-  overflow: auto;
+  /* Not a scroll box: the item count is capped with a "+N more" note, and a
+     scrolling region would need its own keyboard focus. */
 }
 
 .chart-series-legend-group {
@@ -2651,7 +2651,7 @@
   padding: 8px 12px;
   border-radius: 999px;
   background: rgba(0, 163, 255, 0.12);
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
@@ -2662,7 +2662,7 @@
   padding: 2px 8px;
   border-radius: 999px;
   background: rgba(0, 163, 255, 0.12);
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 11px;
   font-weight: 600;
   vertical-align: middle;
@@ -3014,7 +3014,7 @@
 
 .group-count {
   font-weight: 600;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* Per-group live metric cards */
@@ -3847,7 +3847,7 @@
   padding: 5px 9px;
   border-radius: 999px;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: var(--label-tracking, 0.04em);
@@ -4204,7 +4204,7 @@
 }
 
 .execution-load-levels td:nth-child(3) {
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 800;
 }
 

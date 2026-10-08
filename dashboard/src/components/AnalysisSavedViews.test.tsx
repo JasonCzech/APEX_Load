@@ -41,7 +41,7 @@ it('restores an exact saved baseline, filters and rules after remount', async ()
   })
   act(() =>
     Array.from(container.querySelectorAll('button'))
-      .find((button) => button.textContent === 'Save current comparison')!
+      .find((button) => button.textContent === 'Save current view')!
       .click(),
   )
   act(() => root.render(null))
@@ -53,7 +53,7 @@ it('restores an exact saved baseline, filters and rules after remount', async ()
   })
   act(() =>
     Array.from(container.querySelectorAll('button'))
-      .find((button) => button.textContent === 'Restore comparison')!
+      .find((button) => button.textContent === 'Restore view')!
       .click(),
   )
   expect(onRestore).toHaveBeenCalledWith(values)
@@ -81,5 +81,5 @@ it('ignores corrupt saved data and survives disabled storage', async () => {
       <AnalysisSavedViews storageKey="other" values={{}} onRestore={vi.fn()} />,
     ),
   )
-  expect(container.textContent).toContain('Saved comparisons')
+  expect(container.textContent).toContain('Saved views (this browser)')
 })

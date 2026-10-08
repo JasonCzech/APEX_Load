@@ -1,3 +1,4 @@
+import { useUnsavedWorkGuard } from '../hooks/NavigationGuardProvider'
 import { ImportConversionDetails, ImportEvidenceFacts } from './ImportConversionDetails'
 import ImportWorkflowGuide from './ImportWorkflowGuide'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
@@ -755,6 +756,8 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   }, [reviewGenerationRef])
   const reviewScope = `${reviewGeneration}:${projectId || ''}`
   const { savedResult, publish: publishSaved, openSaved } = useImportSaveOutcome(reviewScope, onImported)
+  // The converted draft lives only in this review until it is saved.
+  useUnsavedWorkGuard('ProtocolAssetImport', 'Import review', Boolean(result) && !savedResult, () => undefined)
   const reviewProjectIdRef = useRef(projectId)
   reviewProjectIdRef.current = projectId
   const [selectedScriptIndex, setSelectedScriptIndex] = useState(0)

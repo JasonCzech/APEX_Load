@@ -213,19 +213,19 @@ test('analysis preserves evidence gaps, saved baselines, filtered deltas and rep
   await panel
     .getByRole('combobox', { name: 'Candidate', exact: true })
     .selectOption(ids[1])
-  await panel.getByText('Saved comparisons', { exact: true }).click()
+  await panel.getByText('Saved views (this browser)', { exact: true }).click()
   await panel
-    .getByLabel('Comparison name', { exact: true })
+    .getByLabel('View name', { exact: true })
     .fill('Checkout steady state')
-  await panel.getByRole('button', { name: 'Save current comparison' }).click()
+  await panel.getByRole('button', { name: 'Save current view' }).click()
   await panel.getByRole('button', { name: 'Groups', exact: true }).click()
   await expect(panel).toContainText(
     '77 errors; matching attempt count unavailable',
   )
   await panel
-    .getByRole('combobox', { name: 'Saved comparison', exact: true })
+    .getByRole('combobox', { name: 'Saved view', exact: true })
     .selectOption('Checkout steady state')
-  await panel.getByRole('button', { name: 'Restore comparison' }).click()
+  await panel.getByRole('button', { name: 'Restore view' }).click()
   await expect(
     panel.getByRole('combobox', { name: 'Metric population' }),
   ).toHaveValue('action')

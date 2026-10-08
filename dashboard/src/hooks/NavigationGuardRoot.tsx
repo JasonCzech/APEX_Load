@@ -104,7 +104,7 @@ export function NavigationGuardProvider({ children }: { children: ReactNode }) {
     <NavigationGuardRegisterContext.Provider value={registerGuard}>
       <NavigationGuardRunnerContext.Provider value={runner}>
         {children}
-        {pending && <UnsavedChangesModal label={pending.guard.label} saving={saving} error={error} onSave={() => { void handleSave() }} onDiscard={handleDiscard} onCancel={handleCancel} />}
+        {pending && <UnsavedChangesModal label={pending.guard.label} canSave={pending.guard.canSave !== false} saving={saving} error={error} onSave={() => { void handleSave() }} onDiscard={handleDiscard} onCancel={handleCancel} />}
       </NavigationGuardRunnerContext.Provider>
     </NavigationGuardRegisterContext.Provider>
   )

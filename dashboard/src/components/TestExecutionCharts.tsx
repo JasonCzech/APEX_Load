@@ -2910,7 +2910,9 @@ export default function TestExecutionCharts({
                 </div>
 				<div
 					className="chart-visual"
-					role={isStatTileChart(chart) || Boolean(chart.importedError) ? undefined : 'img'}
+					// A group, not an img: the Recharts surface inside is keyboard-focusable
+					// (tooltip navigation), and role=img may not contain interactive content.
+					role={isStatTileChart(chart) || Boolean(chart.importedError) ? undefined : 'group'}
 					aria-label={isStatTileChart(chart) || chart.importedError ? undefined : chartAriaLabel}
 					aria-describedby={!isStatTileChart(chart) && !chart.importedError && visibleRowsForA11y.length > 0 ? accessibleTableId : undefined}
 				>
