@@ -5625,6 +5625,7 @@ func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.Result
 	preBaseline += testexec.StartDelayWindow(test.StartDelay)
 	return engine.NewMultiGroup(engine.MultiGroupConfig{
 		TerminationMode: test.TerminationMode,
+		JointProjection: runJointProjection(test),
 		Groups:          groups,
 		Duration:        test.Duration,
 		PreBaseline:     preBaseline,

@@ -9146,6 +9146,10 @@ paths:
                                 type: object
                                 description: 'Go type: TestGroup'
                                 additionalProperties: true
+                            joint_evidence:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             policy_pins:
                               type: array
                               items:
@@ -9267,6 +9271,15 @@ paths:
                         interval_summary_count:
                           type: integer
                           format: int64
+                        joint_interval_count:
+                          type: integer
+                          format: int64
+                        joint_intervals_file:
+                          type: string
+                        joint_intervals_parquet_file:
+                          type: string
+                        joint_intervals_truncated:
+                          type: boolean
                         message_detail_capture:
                           type: object
                           properties:
@@ -9494,6 +9507,10 @@ paths:
                                 type: object
                                 description: 'Go type: TestGroup'
                                 additionalProperties: true
+                            joint_evidence:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             policy_pins:
                               type: array
                               items:
@@ -56810,6 +56827,10 @@ paths:
                                     nullable: true
                                 id:
                                   type: string
+                                joint_evidence:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 live_metrics:
                                   type: object
                                   description: 'Go type: LiveMetrics'
@@ -62627,6 +62648,8 @@ paths:
                                   type: object
                                   additionalProperties:
                                     type: string
+                                joint_evidence:
+                                  type: boolean
                                 live_bucket_mode:
                                   type: string
                                 max_series:
@@ -81097,6 +81120,16 @@ paths:
                       vusers:
                         type: integer
                         format: int64
+                joint_evidence:
+                  type: object
+                  properties:
+                    dimensions:
+                      type: array
+                      items:
+                        type: string
+                    population:
+                      type: string
+                  nullable: true
                 monitor_bindings:
                   type: array
                   items:
@@ -82116,6 +82149,16 @@ paths:
                           vusers:
                             type: integer
                             format: int64
+                    joint_evidence:
+                      type: object
+                      properties:
+                        dimensions:
+                          type: array
+                          items:
+                            type: string
+                        population:
+                          type: string
+                      nullable: true
                     monitor_bindings:
                       type: array
                       items:
@@ -85072,6 +85115,11 @@ paths:
                                       additionalProperties: true
                                 incomplete:
                                   type: boolean
+                                joint:
+                                  type: object
+                                  description: 'Go type: NativeJointEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                                 publication:
                                   type: object
                                   description: 'Go type: NativePublicationEvidence'
@@ -85698,6 +85746,19 @@ paths:
                           nullable: true
                       id:
                         type: string
+                      joint_evidence:
+                        type: object
+                        properties:
+                          dimensions:
+                            type: array
+                            items:
+                              type: string
+                          population:
+                            type: string
+                        required:
+                          - dimensions
+                          - population
+                        nullable: true
                       live_metrics:
                         type: object
                         properties:
@@ -86625,6 +86686,10 @@ paths:
                                     additionalProperties: true
                               incomplete:
                                 type: boolean
+                              joint:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               publication:
                                 type: object
                                 additionalProperties: true
@@ -90802,6 +90867,11 @@ paths:
                                       additionalProperties: true
                                 incomplete:
                                   type: boolean
+                                joint:
+                                  type: object
+                                  description: 'Go type: NativeJointEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                                 publication:
                                   type: object
                                   description: 'Go type: NativePublicationEvidence'
@@ -91428,6 +91498,19 @@ paths:
                           nullable: true
                       id:
                         type: string
+                      joint_evidence:
+                        type: object
+                        properties:
+                          dimensions:
+                            type: array
+                            items:
+                              type: string
+                          population:
+                            type: string
+                        required:
+                          - dimensions
+                          - population
+                        nullable: true
                       live_metrics:
                         type: object
                         properties:
@@ -92355,6 +92438,10 @@ paths:
                                     additionalProperties: true
                               incomplete:
                                 type: boolean
+                              joint:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               publication:
                                 type: object
                                 additionalProperties: true
@@ -96533,6 +96620,11 @@ paths:
                                       additionalProperties: true
                                 incomplete:
                                   type: boolean
+                                joint:
+                                  type: object
+                                  description: 'Go type: NativeJointEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                                 publication:
                                   type: object
                                   description: 'Go type: NativePublicationEvidence'
@@ -97159,6 +97251,19 @@ paths:
                           nullable: true
                       id:
                         type: string
+                      joint_evidence:
+                        type: object
+                        properties:
+                          dimensions:
+                            type: array
+                            items:
+                              type: string
+                          population:
+                            type: string
+                        required:
+                          - dimensions
+                          - population
+                        nullable: true
                       live_metrics:
                         type: object
                         properties:
@@ -98086,6 +98191,10 @@ paths:
                                     additionalProperties: true
                               incomplete:
                                 type: boolean
+                              joint:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               publication:
                                 type: object
                                 additionalProperties: true
@@ -102276,6 +102385,11 @@ paths:
                                       additionalProperties: true
                                 incomplete:
                                   type: boolean
+                                joint:
+                                  type: object
+                                  description: 'Go type: NativeJointEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                                 publication:
                                   type: object
                                   description: 'Go type: NativePublicationEvidence'
@@ -102902,6 +103016,19 @@ paths:
                           nullable: true
                       id:
                         type: string
+                      joint_evidence:
+                        type: object
+                        properties:
+                          dimensions:
+                            type: array
+                            items:
+                              type: string
+                          population:
+                            type: string
+                        required:
+                          - dimensions
+                          - population
+                        nullable: true
                       live_metrics:
                         type: object
                         properties:
@@ -103829,6 +103956,10 @@ paths:
                                     additionalProperties: true
                               incomplete:
                                 type: boolean
+                              joint:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               publication:
                                 type: object
                                 additionalProperties: true
@@ -108019,6 +108150,11 @@ paths:
                                       additionalProperties: true
                                 incomplete:
                                   type: boolean
+                                joint:
+                                  type: object
+                                  description: 'Go type: NativeJointEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                                 publication:
                                   type: object
                                   description: 'Go type: NativePublicationEvidence'
@@ -108645,6 +108781,19 @@ paths:
                           nullable: true
                       id:
                         type: string
+                      joint_evidence:
+                        type: object
+                        properties:
+                          dimensions:
+                            type: array
+                            items:
+                              type: string
+                          population:
+                            type: string
+                        required:
+                          - dimensions
+                          - population
+                        nullable: true
                       live_metrics:
                         type: object
                         properties:
@@ -109572,6 +109721,10 @@ paths:
                                     additionalProperties: true
                               incomplete:
                                 type: boolean
+                              joint:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               publication:
                                 type: object
                                 additionalProperties: true
@@ -113762,6 +113915,11 @@ paths:
                                       additionalProperties: true
                                 incomplete:
                                   type: boolean
+                                joint:
+                                  type: object
+                                  description: 'Go type: NativeJointEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                                 publication:
                                   type: object
                                   description: 'Go type: NativePublicationEvidence'
@@ -114388,6 +114546,19 @@ paths:
                           nullable: true
                       id:
                         type: string
+                      joint_evidence:
+                        type: object
+                        properties:
+                          dimensions:
+                            type: array
+                            items:
+                              type: string
+                          population:
+                            type: string
+                        required:
+                          - dimensions
+                          - population
+                        nullable: true
                       live_metrics:
                         type: object
                         properties:
@@ -115315,6 +115486,10 @@ paths:
                                     additionalProperties: true
                               incomplete:
                                 type: boolean
+                              joint:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               publication:
                                 type: object
                                 additionalProperties: true
@@ -119505,6 +119680,11 @@ paths:
                                       additionalProperties: true
                                 incomplete:
                                   type: boolean
+                                joint:
+                                  type: object
+                                  description: 'Go type: NativeJointEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                                 publication:
                                   type: object
                                   description: 'Go type: NativePublicationEvidence'
@@ -120131,6 +120311,19 @@ paths:
                           nullable: true
                       id:
                         type: string
+                      joint_evidence:
+                        type: object
+                        properties:
+                          dimensions:
+                            type: array
+                            items:
+                              type: string
+                          population:
+                            type: string
+                        required:
+                          - dimensions
+                          - population
+                        nullable: true
                       live_metrics:
                         type: object
                         properties:
@@ -121058,6 +121251,10 @@ paths:
                                     additionalProperties: true
                               incomplete:
                                 type: boolean
+                              joint:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               publication:
                                 type: object
                                 additionalProperties: true
@@ -321540,6 +321737,16 @@ paths:
                       vusers:
                         type: integer
                         format: int64
+                joint_evidence:
+                  type: object
+                  properties:
+                    dimensions:
+                      type: array
+                      items:
+                        type: string
+                    population:
+                      type: string
+                  nullable: true
                 monitor_bindings:
                   type: array
                   items:
@@ -326609,6 +326816,37 @@ paths:
                                   additionalProperties: true
                             incomplete:
                               type: boolean
+                            joint:
+                              type: object
+                              properties:
+                                availability:
+                                  type: string
+                                dimensions:
+                                  type: array
+                                  items:
+                                    type: string
+                                incomplete:
+                                  type: boolean
+                                omitted_tuples:
+                                  type: integer
+                                  format: int64
+                                other:
+                                  type: object
+                                  description: 'Go type: NativeIntervalMetric'
+                                  additionalProperties: true
+                                  nullable: true
+                                population:
+                                  type: string
+                                reason:
+                                  type: string
+                                unavailable_sources:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - availability
+                                - dimensions
+                                - population
+                              nullable: true
                             publication:
                               type: object
                               properties:
@@ -326629,6 +326867,11 @@ paths:
                                     type: string
                                 incomplete:
                                   type: boolean
+                                joint:
+                                  type: object
+                                  description: 'Go type: NativeJointEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                                 sequence:
                                   type: integer
                                   format: int64
@@ -327631,6 +327874,19 @@ paths:
                       nullable: true
                   id:
                     type: string
+                  joint_evidence:
+                    type: object
+                    properties:
+                      dimensions:
+                        type: array
+                        items:
+                          type: string
+                      population:
+                        type: string
+                    required:
+                      - dimensions
+                      - population
+                    nullable: true
                   live_metrics:
                     type: object
                     properties:
@@ -330225,6 +330481,36 @@ paths:
                                 additionalProperties: true
                           incomplete:
                             type: boolean
+                          joint:
+                            type: object
+                            properties:
+                              availability:
+                                type: string
+                              dimensions:
+                                type: array
+                                items:
+                                  type: string
+                              incomplete:
+                                type: boolean
+                              omitted_tuples:
+                                type: integer
+                                format: int64
+                              other:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              population:
+                                type: string
+                              reason:
+                                type: string
+                              unavailable_sources:
+                                type: integer
+                                format: int64
+                            required:
+                              - availability
+                              - dimensions
+                              - population
+                            nullable: true
                           publication:
                             type: object
                             properties:
@@ -330245,6 +330531,10 @@ paths:
                                   type: string
                               incomplete:
                                 type: boolean
+                              joint:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               sequence:
                                 type: integer
                                 format: int64
@@ -339273,6 +339563,37 @@ paths:
                                   additionalProperties: true
                             incomplete:
                               type: boolean
+                            joint:
+                              type: object
+                              properties:
+                                availability:
+                                  type: string
+                                dimensions:
+                                  type: array
+                                  items:
+                                    type: string
+                                incomplete:
+                                  type: boolean
+                                omitted_tuples:
+                                  type: integer
+                                  format: int64
+                                other:
+                                  type: object
+                                  description: 'Go type: NativeIntervalMetric'
+                                  additionalProperties: true
+                                  nullable: true
+                                population:
+                                  type: string
+                                reason:
+                                  type: string
+                                unavailable_sources:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - availability
+                                - dimensions
+                                - population
+                              nullable: true
                             publication:
                               type: object
                               properties:
@@ -339293,6 +339614,11 @@ paths:
                                     type: string
                                 incomplete:
                                   type: boolean
+                                joint:
+                                  type: object
+                                  description: 'Go type: NativeJointEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                                 sequence:
                                   type: integer
                                   format: int64
@@ -340295,6 +340621,19 @@ paths:
                       nullable: true
                   id:
                     type: string
+                  joint_evidence:
+                    type: object
+                    properties:
+                      dimensions:
+                        type: array
+                        items:
+                          type: string
+                      population:
+                        type: string
+                    required:
+                      - dimensions
+                      - population
+                    nullable: true
                   live_metrics:
                     type: object
                     properties:
@@ -342889,6 +343228,36 @@ paths:
                                 additionalProperties: true
                           incomplete:
                             type: boolean
+                          joint:
+                            type: object
+                            properties:
+                              availability:
+                                type: string
+                              dimensions:
+                                type: array
+                                items:
+                                  type: string
+                              incomplete:
+                                type: boolean
+                              omitted_tuples:
+                                type: integer
+                                format: int64
+                              other:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              population:
+                                type: string
+                              reason:
+                                type: string
+                              unavailable_sources:
+                                type: integer
+                                format: int64
+                            required:
+                              - availability
+                              - dimensions
+                              - population
+                            nullable: true
                           publication:
                             type: object
                             properties:
@@ -342909,6 +343278,10 @@ paths:
                                   type: string
                               incomplete:
                                 type: boolean
+                              joint:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               sequence:
                                 type: integer
                                 format: int64
@@ -351367,6 +351740,19 @@ paths:
                             - script_id
                             - script_name
                             - vusers
+                      joint_evidence:
+                        type: object
+                        properties:
+                          dimensions:
+                            type: array
+                            items:
+                              type: string
+                          population:
+                            type: string
+                        required:
+                          - dimensions
+                          - population
+                        nullable: true
                       policy_pins:
                         type: array
                         items:
@@ -352298,6 +352684,15 @@ paths:
                   interval_summary_count:
                     type: integer
                     format: int64
+                  joint_interval_count:
+                    type: integer
+                    format: int64
+                  joint_intervals_file:
+                    type: string
+                  joint_intervals_parquet_file:
+                    type: string
+                  joint_intervals_truncated:
+                    type: boolean
                   message_detail_capture:
                     type: object
                     properties:
@@ -353965,6 +354360,19 @@ paths:
                             - script_id
                             - script_name
                             - vusers
+                      joint_evidence:
+                        type: object
+                        properties:
+                          dimensions:
+                            type: array
+                            items:
+                              type: string
+                          population:
+                            type: string
+                        required:
+                          - dimensions
+                          - population
+                        nullable: true
                       policy_pins:
                         type: array
                         items:
@@ -355323,6 +355731,8 @@ paths:
                   type: object
                   additionalProperties:
                     type: string
+                joint_evidence:
+                  type: boolean
                 live_bucket_mode:
                   type: string
                 max_series:
@@ -364397,6 +364807,19 @@ paths:
                                 - script_id
                                 - script_name
                                 - vusers
+                          joint_evidence:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: array
+                                items:
+                                  type: string
+                              population:
+                                type: string
+                            required:
+                              - dimensions
+                              - population
+                            nullable: true
                           policy_pins:
                             type: array
                             items:
@@ -364709,6 +365132,15 @@ paths:
                       interval_summary_count:
                         type: integer
                         format: int64
+                      joint_interval_count:
+                        type: integer
+                        format: int64
+                      joint_intervals_file:
+                        type: string
+                      joint_intervals_parquet_file:
+                        type: string
+                      joint_intervals_truncated:
+                        type: boolean
                       message_detail_capture:
                         type: object
                         properties:
@@ -365717,6 +366149,19 @@ paths:
                                 - script_id
                                 - script_name
                                 - vusers
+                          joint_evidence:
+                            type: object
+                            properties:
+                              dimensions:
+                                type: array
+                                items:
+                                  type: string
+                              population:
+                                type: string
+                            required:
+                              - dimensions
+                              - population
+                            nullable: true
                           policy_pins:
                             type: array
                             items:
@@ -378784,6 +379229,37 @@ paths:
                                   additionalProperties: true
                             incomplete:
                               type: boolean
+                            joint:
+                              type: object
+                              properties:
+                                availability:
+                                  type: string
+                                dimensions:
+                                  type: array
+                                  items:
+                                    type: string
+                                incomplete:
+                                  type: boolean
+                                omitted_tuples:
+                                  type: integer
+                                  format: int64
+                                other:
+                                  type: object
+                                  description: 'Go type: NativeIntervalMetric'
+                                  additionalProperties: true
+                                  nullable: true
+                                population:
+                                  type: string
+                                reason:
+                                  type: string
+                                unavailable_sources:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - availability
+                                - dimensions
+                                - population
+                              nullable: true
                             publication:
                               type: object
                               properties:
@@ -378804,6 +379280,11 @@ paths:
                                     type: string
                                 incomplete:
                                   type: boolean
+                                joint:
+                                  type: object
+                                  description: 'Go type: NativeJointEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                                 sequence:
                                   type: integer
                                   format: int64
@@ -379806,6 +380287,19 @@ paths:
                       nullable: true
                   id:
                     type: string
+                  joint_evidence:
+                    type: object
+                    properties:
+                      dimensions:
+                        type: array
+                        items:
+                          type: string
+                      population:
+                        type: string
+                    required:
+                      - dimensions
+                      - population
+                    nullable: true
                   live_metrics:
                     type: object
                     properties:
@@ -382400,6 +382894,36 @@ paths:
                                 additionalProperties: true
                           incomplete:
                             type: boolean
+                          joint:
+                            type: object
+                            properties:
+                              availability:
+                                type: string
+                              dimensions:
+                                type: array
+                                items:
+                                  type: string
+                              incomplete:
+                                type: boolean
+                              omitted_tuples:
+                                type: integer
+                                format: int64
+                              other:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              population:
+                                type: string
+                              reason:
+                                type: string
+                              unavailable_sources:
+                                type: integer
+                                format: int64
+                            required:
+                              - availability
+                              - dimensions
+                              - population
+                            nullable: true
                           publication:
                             type: object
                             properties:
@@ -382420,6 +382944,10 @@ paths:
                                   type: string
                               incomplete:
                                 type: boolean
+                              joint:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               sequence:
                                 type: integer
                                 format: int64
@@ -391392,6 +391920,37 @@ paths:
                                   additionalProperties: true
                             incomplete:
                               type: boolean
+                            joint:
+                              type: object
+                              properties:
+                                availability:
+                                  type: string
+                                dimensions:
+                                  type: array
+                                  items:
+                                    type: string
+                                incomplete:
+                                  type: boolean
+                                omitted_tuples:
+                                  type: integer
+                                  format: int64
+                                other:
+                                  type: object
+                                  description: 'Go type: NativeIntervalMetric'
+                                  additionalProperties: true
+                                  nullable: true
+                                population:
+                                  type: string
+                                reason:
+                                  type: string
+                                unavailable_sources:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - availability
+                                - dimensions
+                                - population
+                              nullable: true
                             publication:
                               type: object
                               properties:
@@ -391412,6 +391971,11 @@ paths:
                                     type: string
                                 incomplete:
                                   type: boolean
+                                joint:
+                                  type: object
+                                  description: 'Go type: NativeJointEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                                 sequence:
                                   type: integer
                                   format: int64
@@ -392414,6 +392978,19 @@ paths:
                       nullable: true
                   id:
                     type: string
+                  joint_evidence:
+                    type: object
+                    properties:
+                      dimensions:
+                        type: array
+                        items:
+                          type: string
+                      population:
+                        type: string
+                    required:
+                      - dimensions
+                      - population
+                    nullable: true
                   live_metrics:
                     type: object
                     properties:
@@ -395008,6 +395585,36 @@ paths:
                                 additionalProperties: true
                           incomplete:
                             type: boolean
+                          joint:
+                            type: object
+                            properties:
+                              availability:
+                                type: string
+                              dimensions:
+                                type: array
+                                items:
+                                  type: string
+                              incomplete:
+                                type: boolean
+                              omitted_tuples:
+                                type: integer
+                                format: int64
+                              other:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              population:
+                                type: string
+                              reason:
+                                type: string
+                              unavailable_sources:
+                                type: integer
+                                format: int64
+                            required:
+                              - availability
+                              - dimensions
+                              - population
+                            nullable: true
                           publication:
                             type: object
                             properties:
@@ -395028,6 +395635,10 @@ paths:
                                   type: string
                               incomplete:
                                 type: boolean
+                              joint:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               sequence:
                                 type: integer
                                 format: int64
@@ -411166,6 +411777,37 @@ paths:
                                   additionalProperties: true
                             incomplete:
                               type: boolean
+                            joint:
+                              type: object
+                              properties:
+                                availability:
+                                  type: string
+                                dimensions:
+                                  type: array
+                                  items:
+                                    type: string
+                                incomplete:
+                                  type: boolean
+                                omitted_tuples:
+                                  type: integer
+                                  format: int64
+                                other:
+                                  type: object
+                                  description: 'Go type: NativeIntervalMetric'
+                                  additionalProperties: true
+                                  nullable: true
+                                population:
+                                  type: string
+                                reason:
+                                  type: string
+                                unavailable_sources:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - availability
+                                - dimensions
+                                - population
+                              nullable: true
                             publication:
                               type: object
                               properties:
@@ -411186,6 +411828,11 @@ paths:
                                     type: string
                                 incomplete:
                                   type: boolean
+                                joint:
+                                  type: object
+                                  description: 'Go type: NativeJointEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                                 sequence:
                                   type: integer
                                   format: int64
@@ -414783,6 +415430,36 @@ paths:
                                 additionalProperties: true
                           incomplete:
                             type: boolean
+                          joint:
+                            type: object
+                            properties:
+                              availability:
+                                type: string
+                              dimensions:
+                                type: array
+                                items:
+                                  type: string
+                              incomplete:
+                                type: boolean
+                              omitted_tuples:
+                                type: integer
+                                format: int64
+                              other:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              population:
+                                type: string
+                              reason:
+                                type: string
+                              unavailable_sources:
+                                type: integer
+                                format: int64
+                            required:
+                              - availability
+                              - dimensions
+                              - population
+                            nullable: true
                           publication:
                             type: object
                             properties:
@@ -414803,6 +415480,10 @@ paths:
                                   type: string
                               incomplete:
                                 type: boolean
+                              joint:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               sequence:
                                 type: integer
                                 format: int64
@@ -419450,6 +420131,8 @@ paths:
                   type: object
                   additionalProperties:
                     type: string
+                joint_evidence:
+                  type: boolean
                 live_bucket_mode:
                   type: string
                 max_series:
@@ -426373,6 +427056,16 @@ paths:
                       vusers:
                         type: integer
                         format: int64
+                joint_evidence:
+                  type: object
+                  properties:
+                    dimensions:
+                      type: array
+                      items:
+                        type: string
+                    population:
+                      type: string
+                  nullable: true
                 monitor_bindings:
                   type: array
                   items:
@@ -429293,6 +429986,16 @@ paths:
                         format: int64
                 intent:
                   type: string
+                joint_evidence:
+                  type: object
+                  properties:
+                    dimensions:
+                      type: array
+                      items:
+                        type: string
+                    population:
+                      type: string
+                  nullable: true
                 monitor_bindings:
                   type: array
                   items:

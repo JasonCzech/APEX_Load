@@ -160,6 +160,12 @@ type RunArchiveManifest struct {
 	TelemetrySourcesFile      string `json:"telemetry_sources_file,omitempty"`
 	TelemetrySourceEpochCount int64  `json:"telemetry_source_epoch_count,omitempty"`
 	TelemetrySourcesTruncated bool   `json:"telemetry_sources_truncated,omitempty"`
+	// JointIntervalsFile holds the run's joint evidence v4 rows (one per
+	// measured tuple of each retained source publication), also as Parquet.
+	JointIntervalsFile        string `json:"joint_intervals_file,omitempty"`
+	JointIntervalsParquetFile string `json:"joint_intervals_parquet_file,omitempty"`
+	JointIntervalCount        int64  `json:"joint_interval_count,omitempty"`
+	JointIntervalsTruncated   bool   `json:"joint_intervals_truncated,omitempty"`
 	// TelemetryCoverage is the run's wall-time telemetry account: observed
 	// and unknown time per source, and healthy, degraded, breached and
 	// unknown time with explicit denominators.
@@ -251,6 +257,8 @@ type RunArchiveProvenance struct {
 	GeneratorShards       []GeneratorShardSummary             `json:"generator_shards,omitempty"`
 	GoalConfig            *GoalConfig                         `json:"goal_config,omitempty"`
 	TrafficProfile        *TrafficProfile                     `json:"traffic_profile,omitempty"`
+	// JointEvidence is the run's joint evidence v4 projection, frozen at Start.
+	JointEvidence         *engine.JointProjection             `json:"joint_evidence,omitempty"`
 	RuntimeSettings       *RuntimeSettingsOverride            `json:"runtime_settings,omitempty"`
 	ELKCapture            *ELKCaptureConfig                   `json:"elk_capture,omitempty"`
 	DynatraceCapture      *DynatraceCaptureConfig             `json:"dynatrace_capture,omitempty"`

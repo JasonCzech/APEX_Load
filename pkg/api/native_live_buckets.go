@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/storage"
+	"maps"
 	"math"
 	"slices"
 	"sort"
@@ -50,7 +51,54 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 	if jointDimensions {
 		dimension = "action_dimensions"
 	}
+	// Joint evidence v4 (B5): tuples under the run's projection, grouped by
+	// up to three projected dimensions. Series are named by the JSON array
+	// of the selected values, so distinct tuples never share a label.
+	jointV4 := q.JointEvidence
+	var projected []string
+	if jointV4 {
+		dimension, joint, jointDimensions = storage.NativeJointDimension, false, false
+	}
+	adoptProjection := func(evidence *storage.NativeJointEvidence) (bool, error) {
+		if projected == nil {
+			if evidence.Population != q.Population {
+				return false, fmt.Errorf("the run's joint evidence counts the %s population", evidence.Population)
+			}
+			for _, name := range append(append([]string(nil), q.Dimensions...), slices.Sorted(maps.Keys(q.Filters))...) {
+				if !slices.Contains(evidence.Dimensions, name) {
+					return false, fmt.Errorf("the run's joint evidence does not project %q", name)
+				}
+			}
+			projected = append([]string(nil), evidence.Dimensions...)
+			return true, nil
+		}
+		return evidence.Population == q.Population && slices.Equal(evidence.Dimensions, projected), nil
+	}
 	nameFor := func(key string) (string, bool, error) {
+		if jointV4 {
+			values, ok := engine.JointTupleValues(key, len(projected))
+			if !ok {
+				return "", false, errors.New("invalid joint evidence tuple")
+			}
+			byDimension := make(map[string]string, len(projected))
+			for i, name := range projected {
+				byDimension[name] = values[i]
+			}
+			for name, value := range q.Filters {
+				if byDimension[name] != value {
+					return "", false, nil
+				}
+			}
+			if len(q.Dimensions) == 0 {
+				return "Selection", true, nil
+			}
+			selected := make([]string, len(q.Dimensions))
+			for i, name := range q.Dimensions {
+				selected[i] = byDimension[name]
+			}
+			label, _ := engine.JointTupleKey(selected)
+			return label, true, nil
+		}
 		name := key
 		if jointDimensions {
 			var labels []string
@@ -121,7 +169,7 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 			stamp = fmt.Sprintf("%s/%d/%d", source, p.ExecutionGeneration, p.Sequence)
 			sources = p.ExpectedSources
 			distributed = true
-			e = &storage.NativeIntervalEvidence{Version: p.Version, WindowSeconds: p.WindowSeconds, Dimensions: p.Dimensions, Incomplete: p.Incomplete}
+			e = &storage.NativeIntervalEvidence{Version: p.Version, WindowSeconds: p.WindowSeconds, Dimensions: p.Dimensions, Incomplete: p.Incomplete, Joint: p.Joint}
 		}
 		if !timestamp.After(out.From) || timestamp.After(out.To) {
 			continue
@@ -145,7 +193,21 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 			}
 			expected[i][id] = true
 		}
-		if e == nil || (e.Version < 2 || e.Version > 3) || jointDimensions && e.Version != 3 || e.Incomplete || math.IsNaN(e.WindowSeconds) || math.IsInf(e.WindowSeconds, 0) || e.WindowSeconds <= 0 || e.WindowSeconds > 3600 {
+		versionInvalid := !jointV4 && e != nil && (e.Version < 2 || e.Version > 3 || jointDimensions && e.Version != 3)
+		// A window whose joint evidence is unavailable, incomplete (tuples
+		// past the bound) or under another projection is a gap, never a
+		// partial total.
+		jointInvalid := false
+		if jointV4 && e != nil {
+			if e.Joint == nil || e.Joint.Availability != "measured" || e.Joint.Incomplete || e.Joint.UnavailableSources > 0 {
+				jointInvalid = true
+			} else if matches, err := adoptProjection(e.Joint); err != nil {
+				return out, err
+			} else {
+				jointInvalid = !matches
+			}
+		}
+		if e == nil || versionInvalid || jointInvalid || e.Incomplete || math.IsNaN(e.WindowSeconds) || math.IsInf(e.WindowSeconds, 0) || e.WindowSeconds <= 0 || e.WindowSeconds > 3600 {
 			invalid[i] = true
 			continue
 		}
@@ -202,6 +264,9 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 		}
 	}
 	if publications > 0 && !supported {
+		if jointV4 {
+			return out, errors.New("merged live joint queries require measured joint evidence v4 (a run projection and capable generators)")
+		}
 		return out, errors.New("merged live queries require native evidence v2, or v3 for dimension intersections, from every contributing runtime")
 	}
 	names := make([]string, 0, len(groups))

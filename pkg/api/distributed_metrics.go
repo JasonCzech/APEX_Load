@@ -60,6 +60,7 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 		actionsVersion = 0
 	}
 	dimensionMetrics := make([]generatorrpc.MetricAggregate, 0)
+	jointV4Parts, jointV4Infos, jointV4Unavailable := [][]generatorrpc.MetricAggregate{}, []*generatorrpc.JointMetricsInfo{}, 0
 	jointMetrics := make([]generatorrpc.MetricAggregate, 0)
 	propertyMetrics := make([]generatorrpc.MetricAggregate, 0)
 	regionMetrics := make([]generatorrpc.MetricAggregate, 0)
@@ -159,6 +160,12 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 		actionMetrics = append(actionMetrics, batch.ActionMetrics...)
 		propertyMetrics = append(propertyMetrics, batch.PropertyMetrics...)
 		regionMetrics = append(regionMetrics, batch.RegionMetrics...)
+		if batch.JointInfo != nil {
+			jointV4Parts = append(jointV4Parts, batch.JointMetrics)
+			jointV4Infos = append(jointV4Infos, batch.JointInfo)
+		} else {
+			jointV4Unavailable++
+		}
 		if batch.Browser != nil {
 			browserMetrics = append(browserMetrics, batch.Browser)
 		}
@@ -294,6 +301,15 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 			}
 			combined.Telemetry.DroppedSubscriberBatches += batch.Telemetry.DroppedSubscriberBatches
 			combined.Telemetry.MissingMetricWindows += batch.Telemetry.MissingMetricWindows
+		}
+	}
+	// Joint evidence v4 merges by exact tuple across generators; a generator
+	// without it leaves the fleet window incomplete, never zero.
+	if len(jointV4Infos) > 0 {
+		if merged, info, err := generatorrpc.MergeJointEvidence(jointV4Parts, jointV4Infos); err == nil && info != nil {
+			info.UnavailableSources = jointV4Unavailable
+			info.Incomplete = info.Incomplete || jointV4Unavailable > 0
+			combined.JointMetrics, combined.JointInfo = merged, info
 		}
 	}
 	if combined.Telemetry != nil {
@@ -699,6 +715,15 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 					}
 				}
 				addNativeJointEvidence(live.NativeEvidence, joint)
+			}
+			if batch.JointInfo != nil {
+				published, tuples, other, omitted, incomplete := jointEvidenceFromBatch(batch)
+				setNativeJointEvidence(live.NativeEvidence, runJointProjection(test), published, tuples, other, omitted, incomplete)
+				if live.NativeEvidence.Joint != nil {
+					live.NativeEvidence.Joint.UnavailableSources = batch.JointInfo.UnavailableSources
+				}
+			} else if projection := runJointProjection(test); projection != nil {
+				setNativeJointEvidence(live.NativeEvidence, projection, nil, nil, nil, 0, false)
 			}
 		}
 	}()

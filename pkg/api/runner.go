@@ -528,8 +528,11 @@ type ManagedTest struct {
 	GoalTargets           map[string]GoalTargetStatus       `json:"goal_targets,omitempty"`
 	// Continuity is the HA run-continuity state (docs/HA_RUN_CONTINUITY_PLAN.md);
 	// derived on read, never persisted from this field.
-	Continuity            *RunContinuityStatus     `json:"continuity,omitempty"`
-	TrafficProfile        *TrafficProfile          `json:"traffic_profile,omitempty"`
+	Continuity     *RunContinuityStatus `json:"continuity,omitempty"`
+	TrafficProfile *TrafficProfile      `json:"traffic_profile,omitempty"`
+	// JointEvidence is the run's joint evidence v4 projection (B5), frozen
+	// into provenance at Start.
+	JointEvidence         *engine.JointProjection  `json:"joint_evidence,omitempty"`
 	RuntimeSettings       *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
 	ELKCapture            *ELKCaptureConfig        `json:"elk_capture,omitempty"`
 	elkArtifacts          *runArtifacts
@@ -538,6 +541,7 @@ type ManagedTest struct {
 	clockObservations     *clockObservationLog                     // measured source clocks; created on first observation
 	telemetrySources      *telemetrySourceLedger                   // source-epoch publication coverage; created on first publication
 	telemetryStages       *telemetryStageRecorder                  // per-stage latency distributions; created on first sample
+	historyTrimmed        int64                                    // history points dropped by the in-memory bounds
 	clockCalibrations     *clockCalibrations                       // current generator clock offsets; created on first probe
 	TotalVUsers           int                                      `json:"total_vusers"`
 	GeneratorShards       []GeneratorShardSummary                  `json:"generator_shards,omitempty"`
@@ -2034,15 +2038,17 @@ type CreateTestRequest struct {
 	ScheduledStartAt     *time.Time `json:"scheduled_start_at,omitempty"`
 	// TimeslotID, when set, binds the run to an approved capacity timeslot as part
 	// of creation; if the timeslot can't be bound the create fails (strict).
-	TimeslotID       *string                           `json:"timeslot_id,omitempty"`
-	ScenarioMode     string                            `json:"scenario_mode,omitempty"`
-	ScriptShakeout   bool                              `json:"script_shakeout,omitempty"`
-	ResourceBaseline bool                              `json:"resource_baseline,omitempty"`
-	Assignment       *GeneratorAssignmentSettings      `json:"assignment,omitempty"`
-	GoalConfig       *GoalConfig                       `json:"goal_config,omitempty"`
-	TrafficProfile   *TrafficProfile                   `json:"traffic_profile,omitempty"`
-	Groups           []CreateGroupEntry                `json:"groups,omitempty"`
-	DataPools        []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
+	TimeslotID       *string                      `json:"timeslot_id,omitempty"`
+	ScenarioMode     string                       `json:"scenario_mode,omitempty"`
+	ScriptShakeout   bool                         `json:"script_shakeout,omitempty"`
+	ResourceBaseline bool                         `json:"resource_baseline,omitempty"`
+	Assignment       *GeneratorAssignmentSettings `json:"assignment,omitempty"`
+	GoalConfig       *GoalConfig                  `json:"goal_config,omitempty"`
+	TrafficProfile   *TrafficProfile              `json:"traffic_profile,omitempty"`
+	// JointEvidence chooses the run's joint evidence v4 projection.
+	JointEvidence *engine.JointProjection           `json:"joint_evidence,omitempty"`
+	Groups        []CreateGroupEntry                `json:"groups,omitempty"`
+	DataPools     []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
 	// Single-script shorthand (backwards compatible)
 	ScriptID string `json:"script_id,omitempty"`
 	VUsers   int    `json:"vusers,omitempty"`

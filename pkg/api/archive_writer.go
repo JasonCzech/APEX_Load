@@ -1071,6 +1071,8 @@ func updateRunArchiveArtifactIntegrity(root string, manifest *RunArchiveManifest
 		{Name: manifest.ExemplarsFile, Kind: "evidence", Format: "jsonl", RecordType: exemplarRecordType, Count: manifest.ExemplarCount},
 		{Name: manifest.ClockObservationsFile, Kind: "evidence", Format: "jsonl", RecordType: clockObservationRecordType, Count: manifest.ClockObservationCount},
 		{Name: manifest.TelemetrySourcesFile, Kind: "evidence", Format: "jsonl", RecordType: telemetrySourcesRecordType, Count: manifest.TelemetrySourceEpochCount},
+		{Name: manifest.JointIntervalsFile, Kind: "evidence", Format: "jsonl", RecordType: jointIntervalRecordType, Count: manifest.JointIntervalCount},
+		{Name: manifest.JointIntervalsParquetFile, Kind: "evidence", Format: "parquet", RecordType: jointIntervalRecordType, Count: manifest.JointIntervalCount},
 		{Name: manifest.PhaseEventsFile, Kind: "evidence", Format: "jsonl", RecordType: phaseEventRecordType, Count: manifest.PhaseEventCount},
 	}
 	for _, har := range manifest.BrowserHARArtifacts {

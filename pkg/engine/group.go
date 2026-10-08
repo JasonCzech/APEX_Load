@@ -100,6 +100,9 @@ type TransactionSink interface {
 type MultiGroupConfig struct {
 	TerminationMode string
 	Groups          []GroupConfig
+	// JointProjection, when set, publishes joint evidence v4 under the run's
+	// frozen projection.
+	JointProjection *JointProjection
 	Duration        time.Duration
 	PreBaseline     time.Duration
 	PostBaseline    time.Duration
@@ -523,6 +526,15 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 		}
 	}
 	mge.metrics.SetTransactionResponseTimeSLAThresholds(slaThresholds)
+	if cfg.JointProjection != nil {
+		protocols := make(map[string]string, len(cfg.Groups))
+		for _, group := range cfg.Groups {
+			if group.Script != nil {
+				protocols[group.Name] = group.Script.Protocol
+			}
+		}
+		mge.metrics.SetJointProjection(cfg.JointProjection, protocols)
+	}
 	return mge, nil
 }
 

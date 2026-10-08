@@ -176,6 +176,9 @@ func validateAssignmentMetadataBounds(assignment *pb.WorkAssignment) error {
 	if err := validateGeneratorFieldBytes(assignment.GetCorrelationTestName(), "correlation_test_name", 256); err != nil {
 		return err
 	}
+	if _, err := jointProjectionFromProto(assignment.GetJointEvidenceProjection()); err != nil {
+		return status.Error(codes.InvalidArgument, "joint_evidence_projection: "+err.Error())
+	}
 	if err := validateJavaHostSelection(assignment); err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -291,6 +294,8 @@ type metricsAggregateSet struct {
 	NetworkProfiles   []MetricAggregate
 	Actions           []MetricAggregate
 	ActionDimensions  []MetricAggregate
+	Joint             []MetricAggregate
+	JointInfo         *JointMetricsInfo
 	ActionProperties  []MetricAggregate
 	Properties        []MetricAggregate
 	Regions           []MetricAggregate
@@ -1434,7 +1439,7 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 			map[string]string{"java_vuser": javaOccupancyMode},
 		)
 		activeTestIDs := s.activeTestIDs()
-		compatibleFeatures = append(compatibleFeatures, FeaturePodCapacityV1, FeaturePodCapacityStandbyV1, FeatureIterationTerminationV1, FeatureSourcePlanV1, FeatureRunCorrelationV1, FeatureCorrelationPolicyV2, FeatureExemplarsV1, FeatureMessagingTraceCarrierV1)
+		compatibleFeatures = append(compatibleFeatures, FeaturePodCapacityV1, FeaturePodCapacityStandbyV1, FeatureIterationTerminationV1, FeatureSourcePlanV1, FeatureRunCorrelationV1, FeatureCorrelationPolicyV2, FeatureExemplarsV1, FeatureMessagingTraceCarrierV1, FeatureJointEvidenceV4)
 		javaHosts := s.javaHostCapabilities()
 		if javaHosts != nil {
 			compatibleFeatures = append(compatibleFeatures, FeatureJavaHostBrokerV1, FeatureJavaHostPreparedPopulationV1)
@@ -2419,6 +2424,8 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 		NetworkProfileMetrics:         metricAggregatesToProto(aggregates.NetworkProfiles),
 		ActionMetrics:                 metricAggregatesToProto(aggregates.Actions),
 		ActionDimensionMetrics:        metricAggregatesToProto(aggregates.ActionDimensions),
+		JointMetricsV4:                metricAggregatesToProto(aggregates.Joint),
+		JointMetricsInfo:              jointInfoToProto(aggregates.JointInfo),
 		ActionPropertyMetrics:         metricAggregatesToProto(aggregates.ActionProperties),
 		ActionMetricsVersion:          aggregates.NativeVersion,
 		PropertyMetrics:               metricAggregatesToProto(aggregates.Properties),
@@ -3065,6 +3072,7 @@ func mergeSnapshotSideChannelAggregates(out *metricsAggregateSet, snapshot engin
 		out.NativeVersion = 3
 	}
 	out.ActionDimensions = engineActionMetricsToAggregates(snapshot.ByDimensions)
+	out.Joint, out.JointInfo = jointAggregatesFromEngine(snapshot.Joint)
 	out.ActionProperties = engineActionMetricsToAggregates(snapshot.ByActionProperty)
 	out.Properties = engineActionMetricsToAggregates(snapshot.ByProperty)
 	out.Regions = engineActionMetricsToAggregates(snapshot.ByRegion)
@@ -3188,7 +3196,11 @@ func mergeMetricsAggregateSets(values map[string]metricsAggregateSet) metricsAgg
 	groupMetrics := make([]GroupMetric, 0)
 	browsers := make([]*BrowserMetrics, 0)
 	browserDevices := make([]BrowserDeviceMetrics, 0)
+	jointParts := make([][]MetricAggregate, 0, len(values))
+	jointInfos := make([]*JointMetricsInfo, 0, len(values))
 	for _, value := range values {
+		jointParts = append(jointParts, value.Joint)
+		jointInfos = append(jointInfos, value.JointInfo)
 		protocol.MergeBrowserDocumentSummaries(&out.BrowserDocuments, value.BrowserDocuments)
 		if value.MessagingProgress != nil {
 			protocol.MergeMessagingProgress(&out.MessagingProgress, value.MessagingProgress)
@@ -3230,6 +3242,11 @@ func mergeMetricsAggregateSets(values map[string]metricsAggregateSet) metricsAgg
 	}
 	out.Properties = mergeMetricAggregateSeries(propertyMetrics)
 	out.Regions = mergeMetricAggregateSeries(regionMetrics)
+	if joint, info, err := mergeJointEvidence(jointParts, jointInfos); err == nil {
+		// Groups counted under different projections publish no joint
+		// evidence for the window: unavailable, never mixed.
+		out.Joint, out.JointInfo = joint, info
+	}
 	out.Groups = mergeGroupMetricSeries(groupMetrics)
 	out.Browser = mergeBrowserMetricSeries(browsers)
 	out.BrowserByDevice = mergeBrowserDeviceMetricSeries(browserDevices)

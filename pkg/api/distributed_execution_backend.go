@@ -1407,6 +1407,9 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			failStartup(planErr.Error())
 			return
 		}
+		for i := range plans {
+			plans[i].jointEvidence = stringSliceContainsEqualFold(loadByTarget[plans[i].target].CompatibleFeatures, generatorrpc.FeatureJointEvidenceV4)
+		}
 		if !distributedRunStartable(tr, test) {
 			cleanup(true)
 			return
@@ -1441,6 +1444,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 				RunCorrelationOrigins:      correlation.Origins,
 				CorrelationCarriers:        correlation.Carriers,
 				CorrelationTestName:        correlation.TestName,
+				JointEvidenceProjection:    runJointProjection(test),
 				RequireTestExecutionLease:  requireTestExecutionLease,
 				GroupName:                  group.Name,
 				ParameterPopulation:        uint32(allocationByGroup[group.Name].Population),
@@ -1642,6 +1646,9 @@ type distributedTargetAssignmentPlan struct {
 	client              generatorClient
 	shards              []GeneratorShardSummary
 	distributeScript    bool
+	// jointEvidence says the target advertises native_joint_evidence_v4 and
+	// receives the run's joint evidence projection.
+	jointEvidence bool
 }
 
 // distributedTargetAssignmentOutcome carries a plan's result back to the
@@ -1741,6 +1748,13 @@ func (b *distributedExecutionBackend) assignDistributedGroupTargets(ctx context.
 			}
 			assignment := template
 			assignment.ArchiveSourceTarget = plan.archiveSourceTarget
+			// Only a target with the capability gets the projection: an older
+			// generator would ignore it and disagree on the assignment
+			// fingerprint. Its windows' joint evidence stays unavailable.
+			assignment.JointEvidenceProjection = nil
+			if plan.jointEvidence {
+				assignment.JointEvidenceProjection = template.JointEvidenceProjection.Clone()
+			}
 			assignment.JavaHost = shard.JavaHost.selection()
 			assignment.RuntimeResourceClaim = shardRuntimeResourceClaim(shard)
 			assignment.Region = b.regionForTarget(plan.target)

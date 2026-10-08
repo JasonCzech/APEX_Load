@@ -401,6 +401,7 @@ func buildRunArchiveProvenanceFromSnapshot(snapshot *ManagedTest) RunArchiveProv
 	provenance.GeneratorShards = cloneGeneratorShardSummaries(snapshot.GeneratorShards)
 	provenance.GoalConfig = cloneGoalConfig(snapshot.GoalConfig)
 	provenance.TrafficProfile = cloneTrafficProfile(snapshot.TrafficProfile)
+	provenance.JointEvidence = snapshot.JointEvidence.Clone()
 	provenance.RuntimeSettings = maskRuntimeSettings(snapshot.RuntimeSettings)
 	provenance.ELKCapture = cloneELKCaptureConfig(snapshot.ELKCapture)
 	provenance.DynatraceCapture = cloneDynatraceCaptureConfig(snapshot.DynatraceCapture)

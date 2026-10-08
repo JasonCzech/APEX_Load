@@ -80,6 +80,9 @@ type AnalyticsQuery struct {
 	BucketSeconds int               `json:"bucket_seconds,omitempty"`
 	MaxSeries     int               `json:"max_series,omitempty"`
 	Overlay       bool              `json:"overlay,omitempty"`
+	// JointEvidence reads the run's joint evidence v4 (B5): Dimensions (up
+	// to three) and Filters name projected dimensions. Merged live only.
+	JointEvidence bool `json:"joint_evidence,omitempty"`
 	// Derivation asks for one catalog operation over the query's series
 	// (ratios, baseline deltas, moving statistics); it is validated by the
 	// catalog and evaluated by pkg/analysis.

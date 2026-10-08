@@ -38,6 +38,23 @@ type MetricsCollector struct {
 	transactionResponseTimeSLAThresholds map[string]float64
 	transactionResponseTimeSLACumulative map[string]*TransactionResponseTimeSLACompliance
 	groupRunTotals                       sync.Map // map[string]*groupRunCounters; lock-free hot-path attribution
+	// jointProjection, when set, counts every sample of its population
+	// under its exact dimension tuple (joint evidence v4); groupProtocols
+	// names each group's protocol for the protocol dimension.
+	jointProjection *JointProjection
+	groupProtocols  map[string]string
+}
+
+// SetJointProjection sets (or, with nil, clears) the run's joint evidence
+// projection; it is frozen at Start and applies from the next window.
+func (mc *MetricsCollector) SetJointProjection(projection *JointProjection, groupProtocols map[string]string) {
+	mc.targetsMu.Lock()
+	defer mc.targetsMu.Unlock()
+	mc.jointProjection = projection.Clone()
+	mc.groupProtocols = make(map[string]string, len(groupProtocols))
+	for group, name := range groupProtocols {
+		mc.groupProtocols[strings.TrimSpace(group)] = name
+	}
 }
 
 // ResultTiming excludes request, response, parameter, and credential values.
@@ -92,13 +109,15 @@ type MetricsSnapshot struct {
 	AvgWaitMs    float64 `json:"avg_wait_ms,omitempty"`
 	// ErrorsByClass counts failed business transactions by taxonomy class
 	// (timeout/connection/http_4xx/http_5xx/assertion/other).
-	ErrorsByClass              map[string]int64 `json:"errors_by_class,omitempty"`
-	ByAction                   map[string]*ActionMetrics
-	ByTransaction              map[string]*ActionMetrics
-	ByDependencyTarget         map[string]*ActionMetrics `json:"by_dependency_target,omitempty"`
-	BySOAPOperation            map[string]*ActionMetrics `json:"by_soap_operation,omitempty"`
-	ByNetworkProfile           map[string]*ActionMetrics `json:"by_network_profile,omitempty"`
-	ByDimensions               map[string]*ActionMetrics `json:"by_dimensions,omitempty"`
+	ErrorsByClass      map[string]int64 `json:"errors_by_class,omitempty"`
+	ByAction           map[string]*ActionMetrics
+	ByTransaction      map[string]*ActionMetrics
+	ByDependencyTarget map[string]*ActionMetrics `json:"by_dependency_target,omitempty"`
+	BySOAPOperation    map[string]*ActionMetrics `json:"by_soap_operation,omitempty"`
+	ByNetworkProfile   map[string]*ActionMetrics `json:"by_network_profile,omitempty"`
+	ByDimensions       map[string]*ActionMetrics `json:"by_dimensions,omitempty"`
+	// Joint is the window's joint evidence v4 under the run's projection.
+	Joint                      *JointMetricsSnapshot     `json:"joint,omitempty"`
 	ByActionProperty           map[string]*ActionMetrics `json:"by_action_property,omitempty"`
 	ByProperty                 map[string]*ActionMetrics `json:"by_property,omitempty"`
 	ByRegion                   map[string]*ActionMetrics `json:"by_region,omitempty"`
@@ -706,7 +725,12 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	groupDigests := make(map[string]*TDigest)
 	groupDurationSum := make(map[string]time.Duration)
 
+	mc.targetsMu.RLock()
+	jointProjection, groupProtocols := mc.jointProjection, mc.groupProtocols
+	mc.targetsMu.RUnlock()
+	joint := newJointAccumulator(jointProjection)
 	for _, r := range results {
+		joint.add(jointProjection, r, groupProtocols)
 		if r.BusinessTransaction {
 			group := strings.TrimSpace(r.Group)
 			transaction := strings.TrimSpace(r.ActionName)
@@ -1036,6 +1060,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	if len(snap.BrowserByDevice) == 0 {
 		snap.BrowserByDevice = nil
 	}
+	snap.Joint = joint.finish()
 
 	return snap
 }

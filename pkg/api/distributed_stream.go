@@ -1804,7 +1804,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 		}
 	}
 	if live.NativeEvidence != nil {
-		live.NativeEvidence.Publication = nativePublicationEvidence(target, batch, batches)
+		live.NativeEvidence.Publication = nativePublicationEvidence(target, batch, batches, runJointProjection(test))
 		// Include assigned peers before their first metric batch, so cold or lost
 		// sources cannot make a partial fleet appear completely covered.
 		expected := make([]string, 0, len(test.remoteClientsByTarget))
