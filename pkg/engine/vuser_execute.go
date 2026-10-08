@@ -254,6 +254,7 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 	boundResultEvidence(tx)
 	tx.PropertyDimensions = promotedPropertyDimensions(vu.Script, tx.Extractions)
 	tx.Interrupted = !tx.Success && vu.interruptedFailure()
+	tx.EndsIteration = vu.endingIteration && !tx.Interrupted
 	if vu.Metrics != nil {
 		vu.Metrics.RecordTransactionResult(vu.metricResultWithDeclaredIdentity(tx, name))
 	}

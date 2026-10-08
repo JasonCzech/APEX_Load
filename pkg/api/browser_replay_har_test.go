@@ -173,12 +173,12 @@ type replayHARProtocol struct {
 	replayAPIProtocol
 	mu        sync.Mutex
 	artifacts []protocol.BrowserHARArtifact
-	onInit    func(map[string]any)
+	onInit    func(map[string]any) error
 }
 
 func (p *replayHARProtocol) Init(_ context.Context, config map[string]any) error {
 	if p.onInit != nil {
-		p.onInit(config)
+		return p.onInit(config)
 	}
 	return nil
 }
@@ -202,7 +202,7 @@ func publishFakeReplayHAR(t *testing.T, dir, name, page string) string {
 	return path
 }
 
-func registerReplayHARProtocol(t *testing.T, harDir string, publish func() []string, onInit func(map[string]any)) string {
+func registerReplayHARProtocol(t *testing.T, harDir string, publish func() []string, onInit func(map[string]any) error) string {
 	t.Helper()
 	name := "replay-har-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-") + "-" + strconv.FormatUint(replayAPIProtocolCounter.Add(1), 10)
 	protocol.Register(name, func() protocol.Protocol {
@@ -233,10 +233,11 @@ func TestBrowserReplayHARCopiesBelongToTheirRecord(t *testing.T) {
 			return nil
 		}
 		return []string{published}
-	}, func(config map[string]any) {
+	}, func(config map[string]any) error {
 		captureMu.Lock()
 		defer captureMu.Unlock()
 		captures["browser_har_capture"], captures["browser_har_capture_policy"] = config["browser_har_capture"], config["browser_har_capture_policy"]
+		return nil
 	})
 	script := &dsl.Script{Name: "Replay HAR copy", Protocol: protocolName, Version: "1.0.0", ProjectID: storage.DefaultProjectID, Actions: []dsl.Action{{Name: "open", Type: "browser_navigate", Target: "/"}}}
 	published = publishFakeReplayHAR(t, harDir, "first", "first-attempt")
@@ -331,4 +332,134 @@ func TestReplayHARStoreKeepsOnlyFencedCopies(t *testing.T) {
 	if _, err := manager.har.write(record, strings.NewReader("{}"), 2); !errors.Is(err, errReplayHARStoreClosed) {
 		t.Fatalf("a closed store accepted a write: %v", err)
 	}
+}
+
+// A pruned record's copy is removed by the janitor's prune; a replay whose
+// protocol fails to start retires its recording; downloads are bounded and
+// release their slot.
+func TestBrowserReplayHARPruneInitFailureAndDownloadSlots(t *testing.T) {
+	server, _ := baselineTestServer(t)
+	enableTrustedHeaderAuth(t, server)
+	harDir := t.TempDir()
+	published := ""
+	failInit := false
+	protocolName := registerReplayHARProtocol(t, harDir, func() []string {
+		if published == "" {
+			return nil
+		}
+		return []string{published}
+	}, func(map[string]any) error {
+		if failInit {
+			return errors.New("browser did not start")
+		}
+		return nil
+	})
+	script := &dsl.Script{Name: "Replay HAR prune", Protocol: protocolName, Version: "1.0.0", ProjectID: storage.DefaultProjectID, Actions: []dsl.Action{{Name: "open", Type: "browser_navigate", Target: "/"}}}
+	published = publishFakeReplayHAR(t, harDir, "prune", "pruned")
+	if _, err := server.browserReplay.Start("", script, BrowserReplayStartRequest{ReplaySessionID: "replay-har-prune"}); err != nil {
+		t.Fatal(err)
+	}
+	waitBrowserReplayTerminal(t, server.browserReplay, "replay-har-prune", 5*time.Second)
+	base := "/api/v1/browser-replay/sessions/replay-har-prune"
+
+	// Every download slot is taken: the next download waits its turn.
+	for i := 0; i < replayHARMaxDownloads; i++ {
+		server.browserReplay.harDownloads <- struct{}{}
+	}
+	busy := harDownloadRequest(t, server, base+"/har", "replay-editor", harEditor)
+	if busy.Code != http.StatusServiceUnavailable || busy.Header().Get("Retry-After") == "" {
+		t.Fatalf("a download beyond the slots: %d %v", busy.Code, busy.Header())
+	}
+	for i := 0; i < replayHARMaxDownloads; i++ {
+		<-server.browserReplay.harDownloads
+	}
+	for _, path := range []string{base + "/har", base + "/evidence", "/api/v1/browser-replay/sessions/missing/har"} {
+		harDownloadRequest(t, server, path, "replay-editor", harEditor)
+	}
+	if held := len(server.browserReplay.harDownloads); held != 0 {
+		t.Fatalf("%d download slots were not released", held)
+	}
+
+	server.browserReplay.mu.RLock()
+	copied := server.browserReplay.sessions["replay-har-prune"].harCopy
+	server.browserReplay.mu.RUnlock()
+	if _, err := os.Stat(copied); err != nil {
+		t.Fatalf("no copy: %v", err)
+	}
+	later := time.Now().Add(48 * time.Hour)
+	server.browserReplay.mu.Lock()
+	server.browserReplay.retention.now = func() time.Time { return later }
+	server.browserReplay.mu.Unlock()
+	if removed := server.browserReplay.PruneExpired(); removed == 0 {
+		t.Fatal("the terminal replay was not pruned")
+	}
+	if _, err := os.Stat(copied); !os.IsNotExist(err) {
+		t.Fatalf("a pruned record's copy stayed: %v", err)
+	}
+	server.browserReplay.mu.Lock()
+	server.browserReplay.retention.now = time.Now
+	server.browserReplay.mu.Unlock()
+
+	// The protocol fails to start after its recording opened.
+	failInit = true
+	published = publishFakeReplayHAR(t, harDir, "initfail", "init-failed")
+	if _, err := server.browserReplay.Start("", script, BrowserReplayStartRequest{ReplaySessionID: "replay-har-initfail"}); err != nil {
+		t.Fatal(err)
+	}
+	if session := waitBrowserReplayTerminal(t, server.browserReplay, "replay-har-initfail", 5*time.Second); session.Status != BrowserReplayFailed {
+		t.Fatalf("init failure %s", session.Status)
+	}
+	if _, err := os.Stat(published); !os.IsNotExist(err) {
+		t.Fatalf("a recording from a failed start stayed published: %v", err)
+	}
+}
+
+// The managed root is used only when it is a private directory; a link or a
+// shared one is never swept, and copies go to a private directory instead.
+// Directories left by ended processes are removed.
+func TestReplayHARStoreManagedRoot(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+	root := filepath.Join(tmp, replayHARRootName)
+	if err := os.MkdirAll(filepath.Join(root, "manager-ended"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * replayHARStaleAfter)
+	if err := os.Chtimes(filepath.Join(root, "manager-ended"), old, old); err != nil {
+		t.Fatal(err)
+	}
+	var store replayHARStore
+	copied, err := store.write(&BrowserReplaySession{ID: "a"}, strings.NewReader("{}"), 2)
+	if err != nil || filepath.Dir(filepath.Dir(copied)) != root {
+		t.Fatalf("copy %q under %q: %v", copied, root, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "manager-ended")); !os.IsNotExist(err) {
+		t.Fatalf("an ended process's directory stayed: %v", err)
+	}
+	store.close()
+
+	// The root is a link elsewhere: nothing there is touched.
+	elsewhere := t.TempDir()
+	victim := filepath.Join(elsewhere, "old")
+	if err := os.Mkdir(victim, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(victim, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(root); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(elsewhere, root); err != nil {
+		t.Fatal(err)
+	}
+	var linked replayHARStore
+	copied, err = linked.write(&BrowserReplaySession{ID: "b"}, strings.NewReader("{}"), 2)
+	if err != nil || strings.HasPrefix(copied, root+string(os.PathSeparator)) || strings.HasPrefix(copied, elsewhere) {
+		t.Fatalf("copy %q through a linked root: %v", copied, err)
+	}
+	if _, err := os.Stat(victim); err != nil {
+		t.Fatalf("the sweep followed the link: %v", err)
+	}
+	linked.close()
 }

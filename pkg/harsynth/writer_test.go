@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"math"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -145,6 +146,14 @@ func TestSyntheticHARIsValidHAR12(t *testing.T) {
 	}
 	if engines, _ := block["browser_engines"].([]any); len(engines) != 2 || engines[0] != "chromium" || engines[1] != "webkit" {
 		t.Fatalf("browser_engines = %#v", block["browser_engines"])
+	}
+	var creator struct {
+		Log struct {
+			Creator map[string]string `json:"creator"`
+		} `json:"log"`
+	}
+	if err := json.Unmarshal(raw, &creator); err != nil || creator.Log.Creator["comment"] != Algorithm+".v"+strconv.Itoa(AlgorithmVersion) || creator.Log.Creator["version"] != "test" {
+		t.Fatalf("creator = %v %v", creator.Log.Creator, err)
 	}
 }
 

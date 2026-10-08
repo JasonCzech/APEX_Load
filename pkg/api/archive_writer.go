@@ -332,6 +332,7 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 		Iteration:             result.Iteration,
 		Interrupted:           result.Interrupted,
 		VUserLifetime:         result.VUserLifetime,
+		EndsIteration:         result.EndsIteration,
 		ElapsedMs:             float64(result.WallElapsed) / float64(time.Millisecond),
 		MessageDetailPriority: result.MessageDetailPriority,
 		ActionName:            result.ActionName,

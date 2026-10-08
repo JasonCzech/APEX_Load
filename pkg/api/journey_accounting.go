@@ -46,11 +46,6 @@ const (
 	maxJourneyIterationEvents = 10_000
 	maxJourneyBufferedEvents  = 1_000_000
 	maxJourneyExamples        = 5
-	// journeyRunEndWindow: a VUser lifetime whose last row ended within this
-	// long of the archive's last row may have been cut by the run's end; one
-	// that ended earlier ended on its own (iterations done, fail-fast, an
-	// open-workload arrival's single iteration).
-	journeyRunEndWindow = 60 * time.Second
 )
 
 // JourneyAttemptRef identifies one attempt, for drill-down.
@@ -173,8 +168,10 @@ type journeyVUserState struct {
 	lifetime  uint64
 	iteration int64
 	events    []journeyEvent
-	// lastEnd is the end of the lifetime's latest row (Unix ns).
-	lastEnd int64
+	// ended: the engine recorded that the current iteration ended on its
+	// own (an ends_iteration row that is not interrupted), so it was not cut
+	// by a stop.
+	ended bool
 }
 
 type journeyAccumulator struct {
@@ -189,10 +186,9 @@ type journeyAccumulator struct {
 	ordinal  int64
 	report   *JourneyRiskReport
 	identity bool
-	// maxEnd is the end of the archive's latest row (Unix ns); lifetimes
-	// says any row carries a VUser lifetime, rowsWithoutLifetime counts
-	// those that do not (an older generator's).
-	maxEnd              int64
+	// lifetimes says any row carries a VUser lifetime; rowsWithoutLifetime
+	// counts the VUsers' action rows that do not (an older generator's).
+	// Lifecycle rows of a group's once-only init/teardown VUser carry none.
 	lifetimes           bool
 	rowsWithoutLifetime int64
 }
@@ -251,9 +247,9 @@ func (a *journeyAccumulator) settle(j int, state *journeyVUserState, attempt *jo
 // attempt at its end. A failure recorded once the VUser was stopping is not
 // the target's: it cuts every attempt open when it ended, and those are
 // censored unless they still reach their outcome. censored says the iteration
-// may have been cut short (the VUser's last iteration in the run, or in a
-// generator's share of it), so an attempt still open is censored rather than
-// aborted or failed.
+// may have been cut short (a VUser lifetime's last iteration that the engine
+// did not record ending on its own, or an evacuated share's last iteration),
+// so an attempt still open is censored rather than aborted or failed.
 func (a *journeyAccumulator) closeIteration(state *journeyVUserState, censored bool) {
 	points := make([]journeyPoint, 0, len(state.events)+4)
 	for i := range state.events {
@@ -386,10 +382,10 @@ func (a *journeyAccumulator) add(event *TransactionEvent) {
 	a.ordinal++
 	begin := event.Timestamp.UnixNano()
 	end := begin + int64(max(event.DurationMs, event.ElapsedMs)*float64(time.Millisecond))
-	a.maxEnd = max(a.maxEnd, end)
-	if event.VUserLifetime != 0 {
+	switch {
+	case event.VUserLifetime != 0:
 		a.lifetimes = true
-	} else {
+	case event.VUserID >= 0 && (event.Phase == "" || event.Phase == "action"):
 		a.rowsWithoutLifetime++
 	}
 	if event.Iteration <= 0 {
@@ -409,20 +405,22 @@ func (a *journeyAccumulator) add(event *TransactionEvent) {
 	}
 	switch {
 	case event.VUserLifetime != state.lifetime:
-		// A VUser ID is reused only once its previous VUser has exited (an
-		// open-workload arrival, a scale-up): that lifetime ended on its own,
-		// so its last iteration is settled, not censored.
-		a.closeIteration(state, false)
-		state.lifetime, state.iteration, state.lastEnd = event.VUserLifetime, event.Iteration, 0
+		// Another lifetime under the same VUser ID (an open-workload arrival,
+		// a scale-up, an evacuation's replacement, in any order): the earlier
+		// lifetime's last iteration is settled only if it ended on its own.
+		a.closeIteration(state, !state.ended)
+		state.lifetime, state.iteration, state.ended = event.VUserLifetime, event.Iteration, false
 	case event.Iteration != state.iteration:
-		// Within one lifetime rows are archived in order, so the iteration
-		// only goes back for rows without a lifetime, when a replacement
+		// Rows without a lifetime go back an iteration when a replacement
 		// generator continued the VUser after an evacuation: the earlier
-		// share's last iteration may have been cut.
+		// share's last iteration may have been cut. (Within one lifetime the
+		// engine never records an earlier iteration.)
 		a.closeIteration(state, event.Iteration < state.iteration)
-		state.iteration = event.Iteration
+		state.iteration, state.ended = event.Iteration, false
 	}
-	state.lastEnd = max(state.lastEnd, end)
+	if event.EndsIteration && !event.Interrupted {
+		state.ended = true
+	}
 	var starts, finishes uint64
 	for j, journey := range a.policy.Journeys {
 		if journey.Start.matches(event) {
@@ -446,9 +444,11 @@ func (a *journeyAccumulator) add(event *TransactionEvent) {
 	state.events = append(state.events, journeyEvent{ordinal: a.ordinal, begin: begin, end: end, step: step, success: event.Success, interrupted: event.Interrupted && !event.Success, name: event.ActionName, starts: starts, finishes: finishes})
 }
 
-// finish settles the run's end: each VUser's last iteration is censored when
-// a journey is still open in it, because the archive cannot tell an
-// iteration cut by the run's end from one that ended without the outcome.
+// finish settles the run's end: each VUser lifetime's last iteration is
+// settled when the engine recorded it ending on its own, and otherwise
+// censored when a journey is still open in it (a stop may have cut it). Rows
+// without a lifetime have no such record, so their last iteration is
+// censored.
 func (a *journeyAccumulator) finish() {
 	keys := make([]journeyVUserKey, 0, len(a.vusers))
 	for key := range a.vusers {
@@ -460,12 +460,9 @@ func (a *journeyAccumulator) finish() {
 		}
 		return keys[i].vuser < keys[j].vuser
 	})
-	// A lifetime still running near the archive's end may have been cut by
-	// the run's end; one that ended earlier ended on its own.
-	cutAfter := a.maxEnd - int64(journeyRunEndWindow)
 	for _, key := range keys {
 		state := a.vusers[key]
-		a.closeIteration(state, state.lastEnd >= cutAfter)
+		a.closeIteration(state, !state.ended)
 	}
 	if a.lifetimes && a.rowsWithoutLifetime > 0 {
 		// Rows from a source without VUser identity (an older generator)
@@ -520,7 +517,7 @@ func accountJourneys(ctx context.Context, record *storage.RunArchiveRecord, mani
 	report := &JourneyRiskReport{SchemaVersion: journeyRiskSchemaVersion, RunID: record.TestID, Policy: ref, Availability: "available", StepRiskEnabled: policy.StepRiskEnabled, Journeys: []JourneyAccounting{},
 		Notes: []string{
 			"Weighted test-journey risk from the run's own transactions; never revenue or conversion impact.",
-			"An attempt still open when the run ended (a VUser running within a minute of the run's last sample) is censored and excluded from the index.",
+			"An attempt still open when its VUser's last iteration ended is censored and excluded from the index, unless the engine recorded that iteration ending on its own.",
 		}}
 	acc := newJourneyAccumulator(policy, report)
 	err := forEachArchiveTransactionContext(ctx, record, func(event *TransactionEvent) error {
@@ -545,8 +542,9 @@ func accountJourneys(ctx context.Context, record *storage.RunArchiveRecord, mani
 	if !acc.identity {
 		report.Availability, report.Journeys = "unavailable", []JourneyAccounting{}
 		report.Reason = "archive_lacks_vuser_iteration_identity"
-		if acc.lifetimes {
-			// Identity was recorded, the run just ran no iteration.
+		if acc.lifetimes || acc.ordinal == 0 {
+			// Identity was recorded (or nothing was), the run just ran no
+			// iteration.
 			report.Reason = "no_iterations"
 		}
 		return report, nil

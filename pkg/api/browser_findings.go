@@ -33,7 +33,6 @@ const (
 	browserFindingsSchemaVersion      = "apexload.browser_findings.v1"
 	browserIntelligenceDeadline       = 5 * time.Minute
 	maxBrowserFindingEvidence         = 5
-	maxBrowserFindingNotifications    = 20
 	browserFindingStatistic           = "p75"
 	browserFindingRuleThreshold       = "threshold"
 	browserFindingRuleCollectionLoss  = "collection.incomplete"

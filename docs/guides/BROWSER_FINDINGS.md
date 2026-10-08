@@ -47,7 +47,8 @@ policy revision's digest and the archive manifest's digest.
 
 A run's own result is always an evaluation under its pinned policy. An
 evaluation under a named revision is an ordinary evaluation job: read it from
-the evaluation API (`apexctl … --policy … --wait` prints it). It never
+the evaluation API (`apexctl … --policy …` prints the job, and with `--wait`
+its result). It never
 replaces the run's result and never sends webhooks. Evaluations are indexed
 by their run (schema v53 `feature_evaluation_jobs.subject_id`), so a run's
 result is found however many evaluations the project has.
@@ -106,8 +107,12 @@ coverage are shown instead. The remaining metrics are never renormalized.
 
 - **API:** `GET /api/v1/tests/{id}/archive/browser-findings` returns the
   run's latest ready result under its pinned policy (`status: ready`),
-  `pending`, `failed` (the newest evaluation failed and none is ready, with
-  `failure`), or `not_evaluated`.
+  `pending`, `failed` (the newest evaluation failed or expired, claimed
+  repeatedly without finishing, and none is ready, with `failure`), or
+  `not_evaluated`. Queuing the automatic evaluation is best effort: if it
+  cannot be queued when the archive is attached (the evaluation quota, a
+  changed pin, an archive that cannot be read), the controller logs it and the
+  run stays `not_evaluated` until someone evaluates it.
 - **Dashboard:** the Browser findings panel in the run report's Diagnostics
   tab (Browser evidence) shows the score, its components and contributions,
   the findings by state, and the notes. It checks a pending evaluation again

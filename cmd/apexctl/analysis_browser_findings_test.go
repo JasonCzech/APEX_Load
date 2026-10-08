@@ -53,6 +53,14 @@ func TestAnalysisBrowserFindingsEvaluatesWaitsAndPrints(t *testing.T) {
 	if !strings.Contains(out.String(), `"source": "requested"`) || strings.Contains(out.String(), `"score": 62.5`) {
 		t.Fatalf("output %s", out.String())
 	}
+	// Without --wait the queued named-revision job is printed with its ID.
+	out.Reset()
+	if err := executeAnalysisBrowserFindingsCommand(context.Background(), args[:len(args)-1], &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `"id": "job-1"`) || strings.Contains(out.String(), `"score": 62.5`) {
+		t.Fatalf("queued named revision output %s", out.String())
+	}
 	out.Reset()
 	if err := executeAnalysisBrowserFindingsCommand(context.Background(), []string{"--api", server.URL, "--run", "run-1", "--evaluate", "--project", "proj", "--wait"}, &out); err != nil {
 		t.Fatal(err)

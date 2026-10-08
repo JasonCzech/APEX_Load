@@ -60,6 +60,7 @@ func (s *Server) autoQueueBrowserIntelligence(testID string) {
 	}
 	lease, err := acquireArchiveMaterialized(ctx, record)
 	if err != nil {
+		slog.Warn("browser findings were not queued", "test_id", testID, "error", err)
 		return
 	}
 	manifest, err := loadRunArchiveManifestFromRecord(record)
@@ -139,7 +140,9 @@ func (s *Server) handleGetRunArchiveBrowserFindings(w http.ResponseWriter, r *ht
 		case storage.EvaluationJobQueued, storage.EvaluationJobRunning:
 			response.Pending = true
 			continue
-		case storage.EvaluationJobFailed:
+		case storage.EvaluationJobFailed, storage.EvaluationJobExpired:
+			// An expired job was claimed repeatedly without finishing; its
+			// failure says so.
 			if index == 0 || response.Status == "not_evaluated" && response.Failure == "" {
 				response.Failure = summary.Failure
 			}
@@ -262,11 +265,11 @@ func notifyBrowserFindingTransitions(s *Server, job *storage.EvaluationJob, body
 			summary = fmt.Sprintf("%d browser findings; first: %s", len(findings), findings[0].Summary)
 		}
 		// One event per transition kind: per-destination delivery admits
-		// only a few concurrent events, so a burst would be dropped.
-		if !s.runner.notifier.Dispatch(settings, NotificationEvent{Type: eventType, TestID: current.RunID, ProjectID: job.ProjectID, TestName: name, Status: status,
-			Severity: severity, Summary: summary, Conditions: conditions, Timestamp: now}) {
-			slog.Warn("browser finding notification not delivered", "test_id", current.RunID, "job_id", job.ID, "event", eventType, "findings", len(findings))
-		}
+		// only a few concurrent events, so a burst would be dropped. The
+		// dispatcher logs a delivery it drops; false also means no webhook
+		// subscribes to the event, which is not a failure.
+		s.runner.notifier.Dispatch(settings, NotificationEvent{Type: eventType, TestID: current.RunID, ProjectID: job.ProjectID, TestName: name, Status: status,
+			Severity: severity, Summary: summary, Conditions: conditions, Timestamp: now})
 	}
 	send("browser_finding", "active", added)
 	send("browser_finding_resolved", "resolved", resolved)

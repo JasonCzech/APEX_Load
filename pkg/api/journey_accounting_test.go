@@ -46,6 +46,15 @@ func (l *journeyTimeline) stopped(iteration int64, name string) {
 	l.row(iteration, name, false, false, true, begin)
 }
 
+// ended is the row the engine records when the iteration ends on its own
+// (the iteration transaction): ends_iteration.
+func (l *journeyTimeline) ended(iteration int64, success bool) {
+	begin := l.at
+	l.at = l.at.Add(time.Millisecond)
+	l.row(iteration, "Iteration", true, success, false, begin)
+	l.rows[len(l.rows)-1].EndsIteration = true
+}
+
 // transaction runs the steps inside a transaction and writes its row last.
 func (l *journeyTimeline) transaction(iteration int64, name string, success bool, steps func()) {
 	begin := l.at
@@ -542,18 +551,66 @@ func TestJourneyAccountingSeparatesVUserLifetimes(t *testing.T) {
 		return l.rows
 	}
 	var rows []TransactionEvent
-	// Two arrivals reuse VUser 0, each in its iteration 1: the first
-	// completes; the second fails a step and exits (fail-fast) long before
-	// the run ends, so it failed rather than being censored.
-	rows = append(rows, lifetime(1, start, func(l *journeyTimeline) { l.step(1, "open_login", true); l.step(1, "submit_login", true) })...)
-	rows = append(rows, lifetime(2, start.Add(time.Second), func(l *journeyTimeline) { l.step(1, "open_login", true); l.step(1, "account", false) })...)
+	// Arrivals reuse VUser 0, each in its iteration 1: the first completes;
+	// the second fails a step and the engine records its iteration ending
+	// on its own (fail-fast), so it failed rather than being censored.
+	rows = append(rows, lifetime(1, start, func(l *journeyTimeline) {
+		l.step(1, "open_login", true)
+		l.step(1, "submit_login", true)
+		l.ended(1, true)
+	})...)
+	rows = append(rows, lifetime(2, start.Add(time.Second), func(l *journeyTimeline) {
+		l.step(1, "open_login", true)
+		l.step(1, "account", false)
+		l.ended(1, false)
+	})...)
 	// A third arrival never starts the journey: skipped.
-	rows = append(rows, lifetime(3, start.Add(2*time.Second), func(l *journeyTimeline) { l.step(1, "browse", true) })...)
-	// A VUser still running at the run's end, two minutes later, is cut.
-	rows = append(rows, lifetime(4, start.Add(2*time.Minute), func(l *journeyTimeline) { l.step(1, "open_login", true) })...)
+	rows = append(rows, lifetime(3, start.Add(2*time.Second), func(l *journeyTimeline) { l.step(1, "browse", true); l.ended(1, true) })...)
+	// Lifetimes with no record of their iteration ending may have been cut by
+	// a stop, however early they ended (a scale-down, a ramp-down, the run's
+	// end during think time): censored, never settled.
+	rows = append(rows, lifetime(4, start.Add(3*time.Second), func(l *journeyTimeline) { l.step(1, "open_login", true); l.step(1, "account", false) })...)
+	rows = append(rows, lifetime(5, start.Add(2*time.Minute), func(l *journeyTimeline) { l.step(1, "open_login", true) })...)
+	// A stop's record of the iteration (interrupted) is not an end of its own.
+	rows = append(rows, lifetime(6, start.Add(3*time.Minute), func(l *journeyTimeline) {
+		l.step(1, "open_login", true)
+		l.stopped(1, "Iteration")
+		l.rows[len(l.rows)-1].BusinessTransaction, l.rows[len(l.rows)-1].EndsIteration = true, true
+	})...)
 	login := journeyByID(t, accountJourneyRows(policy, rows), "login")
-	if login.Completed != 1 || login.Failed != 1 || login.Skipped != 1 || login.Censored != 1 || login.Aborted != 0 {
+	if login.Completed != 1 || login.Failed != 1 || login.Skipped != 1 || login.Censored != 3 || login.Aborted != 0 {
 		t.Fatalf("login %+v", login)
+	}
+	// The same rows in another order (an evacuation's replacement bundle
+	// first) give the same outcome.
+	reversed := append([]TransactionEvent(nil), rows[len(rows)/2:]...)
+	reversed = append(reversed, rows[:len(rows)/2]...)
+	if again := journeyByID(t, accountJourneyRows(policy, reversed), "login"); again.Completed != 1 || again.Failed != 1 || again.Skipped != 1 || again.Censored != 3 {
+		t.Fatalf("reordered login %+v", again)
+	}
+}
+
+// A group's once-only init/teardown VUser (-1) records lifecycle rows
+// without a lifetime; they do not make the accounting incomplete.
+func TestJourneyAccountingIgnoresLifecycleRowsWithoutLifetime(t *testing.T) {
+	policy := JourneyPolicyDefinition{Version: analysisPolicyVersion, Journeys: []JourneyDefinition{
+		{ID: "login", Name: "Login", Start: JourneyBoundary{Action: "open_login"}, Success: JourneyBoundary{Action: "submit_login"}, Weight: 1},
+	}}
+	start := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
+	rows := []TransactionEvent{
+		{Timestamp: start, Group: "web", VUserID: -1, Phase: "init", ActionName: "setup", Success: true},
+		{Timestamp: start.Add(time.Second), Group: "web", VUserID: 3, Iteration: 1, VUserLifetime: 9, Phase: "action", ActionName: "open_login", Success: true},
+		{Timestamp: start.Add(2 * time.Second), Group: "web", VUserID: 3, Iteration: 1, VUserLifetime: 9, Phase: "action", ActionName: "submit_login", Success: true},
+		{Timestamp: start.Add(3 * time.Second), Group: "web", VUserID: -1, Phase: "teardown", ActionName: "cleanup", Success: true},
+	}
+	report := accountJourneyRows(policy, rows)
+	if report.Incomplete || report.WeightedFailureIndex == nil {
+		t.Fatalf("lifecycle rows made the accounting incomplete: %+v", report)
+	}
+	// An older generator's action rows (no lifetime) beside them still do.
+	rows = append(rows, TransactionEvent{Timestamp: start.Add(4 * time.Second), Group: "web", VUserID: 0, Phase: "action", ActionName: "open_login", Success: true})
+	if report := accountJourneyRows(policy, rows); !report.Incomplete || !slices.Contains(report.IncompleteReasons, "rows_without_vuser_identity") {
+		t.Fatalf("older generator rows: %+v", report)
 	}
 }
 

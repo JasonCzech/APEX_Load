@@ -44,7 +44,7 @@ func TestArchiveRowsCarryVUserIterationIdentity(t *testing.T) {
 	}
 	start := time.Date(2026, time.October, 8, 9, 0, 0, 0, time.UTC)
 	for _, result := range []*protocol.Result{
-		{ActionName: "login", StartTime: start, Duration: time.Millisecond, Success: true, VUserID: 12, Iteration: 3},
+		{ActionName: "login", StartTime: start, Duration: time.Millisecond, Success: true, VUserID: 12, Iteration: 3, EndsIteration: true},
 		{ActionName: "Checkout", BusinessTransaction: true, StartTime: start, Duration: time.Millisecond, VUserID: 12, Iteration: 3, Interrupted: true, VUserLifetime: 77, WallElapsed: 3 * time.Second},
 	} {
 		if err := writer.RecordResult(result); err != nil {
@@ -59,11 +59,11 @@ func TestArchiveRowsCarryVUserIterationIdentity(t *testing.T) {
 	if len(rows) != 2 || rows[0].VUserID != 12 || rows[0].Iteration != 3 || rows[0].Interrupted || rows[1].VUserID != 12 || rows[1].Iteration != 3 || !rows[1].Interrupted {
 		t.Fatalf("rows = %+v", rows)
 	}
-	if rows[1].VUserLifetime != 77 || rows[1].ElapsedMs != 3000 || rows[0].VUserLifetime != 0 || rows[0].ElapsedMs != 0 {
+	if rows[1].VUserLifetime != 77 || rows[1].ElapsedMs != 3000 || rows[0].VUserLifetime != 0 || rows[0].ElapsedMs != 0 || !rows[0].EndsIteration || rows[1].EndsIteration {
 		t.Fatalf("lifetime/elapsed rows = %+v", rows)
 	}
 	parquet := toParquetTransactions(rows)
-	if parquet[0].VUserID != 12 || parquet[0].Iteration != 3 || parquet[0].Interrupted || !parquet[1].Interrupted || parquet[1].Iteration != 3 || parquet[1].VUserLifetime != 77 || parquet[1].ElapsedMs != 3000 {
+	if parquet[0].VUserID != 12 || parquet[0].Iteration != 3 || parquet[0].Interrupted || !parquet[1].Interrupted || parquet[1].Iteration != 3 || parquet[1].VUserLifetime != 77 || parquet[1].ElapsedMs != 3000 || !parquet[0].EndsIteration || parquet[1].EndsIteration {
 		t.Fatalf("parquet rows = %+v", parquet)
 	}
 	destination := filepath.Join(t.TempDir(), "merged.jsonl")
@@ -74,7 +74,7 @@ func TestArchiveRowsCarryVUserIterationIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	merged := readTransactionRows(t, destination)
-	if len(merged) != 2 || merged[1].VUserID != 12 || merged[1].Iteration != 3 || !merged[1].Interrupted || merged[1].VUserLifetime != 77 || merged[1].ElapsedMs != 3000 {
+	if len(merged) != 2 || merged[1].VUserID != 12 || merged[1].Iteration != 3 || !merged[1].Interrupted || merged[1].VUserLifetime != 77 || merged[1].ElapsedMs != 3000 || !merged[0].EndsIteration {
 		t.Fatalf("merged = %+v", merged)
 	}
 	// A row archived before identity existed decodes as outside iterations.

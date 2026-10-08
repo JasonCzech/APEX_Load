@@ -23,7 +23,7 @@ const result = {
   policy: { id: 'common', name: 'Common', revision: 2, sha256: 'c'.repeat(64), sustained_breach_window_ms: 15000, budgets: [] },
   runs: [
     { run_id: 'current', manifest_sha256: 'm', answerable: true, original: { intervals: 5, healthy: 2, degraded: 3, breached: 0, unscored: 0, unknown: 0 }, reevaluated: { intervals: 5, healthy: 4, degraded: 1, breached: 0, unscored: 0, unknown: 0, breached_classified_pct: 0 } },
-    { run_id: 'base-b', manifest_sha256: 'n', answerable: false, unanswerable: ['no_retained_telemetry'], original: { intervals: 1, healthy: 0, degraded: 0, breached: 0, unscored: 0, unknown: 1 } },
+    { run_id: 'base-b', manifest_sha256: 'n', answerable: false, unanswerable: ['no_classifiable_intervals'], stage_unscored: { 'sample_age:clock_quality_not_retained': 5, 'interval:no_scored_stage': 1 }, original: { intervals: 1, healthy: 0, degraded: 0, breached: 0, unscored: 0, unknown: 1 } },
   ],
   notes: ['A derived result: each run’s archive and original classification are unchanged.'],
 }
@@ -73,7 +73,7 @@ describe('BaselineTelemetryCompatibility', () => {
     const region = node.querySelector('[aria-label="Telemetry re-evaluation result"]')!
     expect(region.textContent).toContain('Common revision 2')
     expect(region.querySelector('tr[data-run="current"]')!.textContent).toContain('4 healthy · 1 degraded')
-    expect(region.querySelector('tr[data-run="base-b"]')!.textContent).toContain('No: no_retained_telemetry')
+    expect(region.querySelector('tr[data-run="base-b"]')!.textContent).toContain('No: no_classifiable_intervals (sample age:clock quality not retained ×5, interval:no scored stage ×1)')
     expect(region.textContent).toContain('original classification are unchanged')
     await act(async () => root.unmount())
   })

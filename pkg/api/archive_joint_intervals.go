@@ -27,6 +27,9 @@ const (
 	jointIntervalRecordType          = "joint_intervals_v4"
 	jointIntervalSchemaVersion       = "apexload.joint_interval.v4"
 	envArchiveJointIntervalsMaxBytes = "APEXLOAD_ARCHIVE_JOINT_INTERVALS_MAX_BYTES"
+	// jointIntervalsParquetOverhead is the Parquet copy's room beyond the
+	// JSONL's allowance for its own format (schema, footer, page headers).
+	jointIntervalsParquetOverhead = 1 << 20
 )
 
 // JointIntervalRecord is one archived joint evidence row.
@@ -168,26 +171,26 @@ var errJointIntervalBudget = errors.New("joint interval archive budget exhausted
 // persistJointIntervalArchive writes joint_intervals_v4.jsonl and .parquet
 // after finalize for a run with a joint evidence projection. Rows come from
 // the run's persisted interval evidence, which neither history trimming,
-// terminal compaction nor a controller restart shortens. Without that store
-// they come from the retained live history, which cannot prove it holds the
-// whole run, so the sidecar is marked truncated. A failed write leaves
-// neither file behind.
+// terminal compaction nor a controller restart shortens. A publication the
+// retained live history holds but the store lacks (a history write that
+// failed, or one still in flight) is added from the history, and the sidecar
+// is then marked truncated, since earlier writes may have failed too. Without
+// that store rows come from the retained history alone, which cannot prove
+// it holds the whole run, so the sidecar is marked truncated. A failed write
+// leaves neither file behind.
 func (tr *TestRunner) persistJointIntervalArchive(ctx context.Context, test *ManagedTest, record *storage.RunArchiveRecord, manifest *RunArchiveManifest) (err error) {
 	if test == nil || record == nil || manifest == nil || manifest.JointIntervalsFile != "" || manifest.Provenance.JointEvidence == nil {
 		return nil
 	}
 	reader, _ := tr.testStore.(storage.NativeIntervalEvidenceReader)
-	var history []*LiveMetrics
-	if reader == nil {
-		// History points are replaced, never mutated, so the copied pointers
-		// are read after unlocking.
-		tr.mu.RLock()
-		history = append([]*LiveMetrics(nil), test.History...)
-		if test.LiveMetrics != nil && (len(history) == 0 || history[len(history)-1] != test.LiveMetrics) {
-			history = append(history, test.LiveMetrics)
-		}
-		tr.mu.RUnlock()
+	// History points are replaced, never mutated, so the copied pointers are
+	// read after unlocking.
+	tr.mu.RLock()
+	history := append([]*LiveMetrics(nil), test.History...)
+	if test.LiveMetrics != nil && (len(history) == 0 || history[len(history)-1] != test.LiveMetrics) {
+		history = append(history, test.LiveMetrics)
 	}
+	tr.mu.RUnlock()
 	budget, err := newEvidenceSidecarBudget(ctx, record, envArchiveJointIntervalsMaxBytes, 64<<20)
 	if err != nil {
 		return err
@@ -236,13 +239,25 @@ func (tr *TestRunner) persistJointIntervalArchive(ctx context.Context, test *Man
 			return nil
 		}
 		var err error
+		seen := map[string]bool{}
 		if reader != nil {
-			seen := map[string]bool{}
 			err = reader.ForEachNativeIntervalEvidence(ctx, test.ID, func(timestamp time.Time, evidence *storage.NativeIntervalEvidence) error {
 				return emitAll(jointIntervalEvidenceRows(timestamp, evidence, seen))
 			})
-		} else {
-			err = emitAll(jointIntervalRows(history))
+		}
+		if err == nil {
+			for _, live := range history {
+				if live == nil {
+					continue
+				}
+				rows := jointIntervalEvidenceRows(live.Timestamp, live.NativeEvidence, seen)
+				if len(rows) > 0 && reader != nil {
+					truncated = true
+				}
+				if err = emitAll(rows); err != nil {
+					break
+				}
+			}
 		}
 		if errors.Is(err, errJointIntervalBudget) {
 			truncated = true
@@ -253,13 +268,15 @@ func (tr *TestRunner) persistJointIntervalArchive(ctx context.Context, test *Man
 	if err != nil {
 		return err
 	}
-	// The Parquet copy has its own allowance: the JSONL may have used all of
-	// the first one before it was truncated.
+	// The Parquet copy has its own allowance, the JSONL's plus room for its
+	// format overhead: the JSONL may have used all of its own before it was
+	// truncated.
 	parquetBudget, err := newEvidenceSidecarBudget(ctx, record, envArchiveJointIntervalsMaxBytes, 64<<20)
 	if err != nil {
 		return err
 	}
 	defer parquetBudget.close()
+	parquetBudget.remaining += jointIntervalsParquetOverhead
 	parquetCount, err := streamJSONLToParquet(jsonlPath, parquetPath, toParquetJointInterval, parquetBudget)
 	if err != nil {
 		return fmt.Errorf("write joint interval parquet: %w", err)

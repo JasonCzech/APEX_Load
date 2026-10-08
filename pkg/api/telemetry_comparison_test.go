@@ -636,7 +636,8 @@ func TestTelemetryReevaluationDerivesDistributionFromTheArchive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Answerable || !slices.Contains(got.Unanswerable, "no_classifiable_intervals") || got.StageUnscored != nil {
+	// The breakdown says why: the cross-host age had no retained quality.
+	if got.Answerable || !slices.Contains(got.Unanswerable, "no_classifiable_intervals") || got.Reevaluated != nil || got.StageUnscored["sample_age:clock_quality_not_retained"] != 5 {
 		t.Fatalf("a distributed run without retained clock quality %+v", got)
 	}
 	qualified := writeTelemetryArchive(t, "qualified", rows(&generatorrpc.ClockQuality{Qualified: true, UncertaintyMs: 2}), func(m *RunArchiveManifest) {

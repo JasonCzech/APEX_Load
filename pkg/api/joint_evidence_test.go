@@ -452,6 +452,42 @@ func TestJointEvidenceArchiveReadsPersistedEvidence(t *testing.T) {
 	if manifest.JointIntervalCount != 12 || manifest.JointIntervalsTruncated {
 		t.Fatalf("persisted evidence gave %d rows, truncated %v", manifest.JointIntervalCount, manifest.JointIntervalsTruncated)
 	}
+
+	// A publication the retained history holds but the store lacks (its
+	// history write failed) is added from the history, and the sidecar says
+	// earlier ones may be missing too.
+	unsaved := jointSidecarHistory(start.Add(time.Hour), 1, 2)[0]
+	unsaved.NativeEvidence.Publication.Sequence = 99
+	fresh := func() *RunArchiveManifest {
+		m, err := loadRunArchiveManifestFromRecord(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m.Provenance.JointEvidence = jointTestProjection.Clone()
+		m.JointIntervalsFile, m.JointIntervalsParquetFile = "", ""
+		return m
+	}
+	withUnsaved := fresh()
+	if err := server.runner.persistJointIntervalArchive(context.Background(), &ManagedTest{ID: "joint-stored", History: append(append([]*LiveMetrics(nil), history...), unsaved)}, record, withUnsaved); err != nil {
+		t.Fatal(err)
+	}
+	if withUnsaved.JointIntervalCount != 14 || !withUnsaved.JointIntervalsTruncated {
+		t.Fatalf("an unsaved publication gave %d rows, truncated %v", withUnsaved.JointIntervalCount, withUnsaved.JointIntervalsTruncated)
+	}
+
+	// The store-backed JSONL that reaches its allowance is truncated.
+	info, err := os.Stat(filepath.Join(record.ArchivePath, jointIntervalsFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envArchiveJointIntervalsMaxBytes, strconv.FormatInt(info.Size()/3, 10))
+	budgeted := fresh()
+	if err := server.runner.persistJointIntervalArchive(context.Background(), clone, record, budgeted); err != nil {
+		t.Fatal(err)
+	}
+	if !budgeted.JointIntervalsTruncated || budgeted.JointIntervalCount == 0 || budgeted.JointIntervalCount >= 12 {
+		t.Fatalf("budgeted store-backed sidecar %d rows, truncated %v", budgeted.JointIntervalCount, budgeted.JointIntervalsTruncated)
+	}
 }
 
 func TestJointEvidenceCapabilityFromProbedFeatures(t *testing.T) {

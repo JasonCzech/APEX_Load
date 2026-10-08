@@ -239,3 +239,62 @@ func exerciseEvaluationJobCompletionFences(t *testing.T, store *SQLiteStore) {
 		t.Fatal("the deleted project's job survived")
 	}
 }
+
+// A subject's evaluations are found by index: newest first, only that
+// project, kind and subject, hidden ones left out, bounded.
+func TestEvaluationJobsForSubject(t *testing.T) {
+	store := newAuthoringReceiptTestStore(t)
+	subjectJob := func(id, project, kind, subject string) {
+		t.Helper()
+		job := evaluationJob(id, "", "fp-"+id)
+		job.ProjectID, job.Kind, job.SubjectID = project, kind, subject
+		if _, _, err := store.CreateEvaluationJob(job, 50); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	subjectJob("first", DefaultProjectID, "test_kind", "run-a")
+	subjectJob("other-subject", DefaultProjectID, "test_kind", "run-b")
+	subjectJob("other-kind", DefaultProjectID, "another_kind", "run-a")
+	subjectJob("second", DefaultProjectID, "test_kind", "run-a")
+	subjectJob("third", DefaultProjectID, "test_kind", "run-a")
+	ids := func(jobs []*EvaluationJob) []string {
+		out := []string{}
+		for _, job := range jobs {
+			out = append(out, job.ID)
+		}
+		return out
+	}
+	jobs, err := store.ListEvaluationJobsForSubject(DefaultProjectID, "test_kind", "run-a", 10)
+	if err != nil || strings.Join(ids(jobs), ",") != "third,second,first" || jobs[0].Request != "" {
+		t.Fatalf("subject jobs %v %v", ids(jobs), err)
+	}
+	if limited, err := store.ListEvaluationJobsForSubject(DefaultProjectID, "test_kind", "run-a", 2); err != nil || strings.Join(ids(limited), ",") != "third,second" {
+		t.Fatalf("limited %v %v", ids(limited), err)
+	}
+	if foreign, err := store.ListEvaluationJobsForSubject("another-project", "test_kind", "run-a", 10); err != nil || len(foreign) != 0 {
+		t.Fatalf("another project's subject %v %v", ids(foreign), err)
+	}
+	now := time.Now().UTC()
+	claimed, err := store.ClaimEvaluationJob("owner", now, time.Minute, testEvaluationKinds, 3)
+	if err != nil || claimed == nil || claimed.ID != "first" {
+		t.Fatalf("claim %#v %v", claimed, err)
+	}
+	if done, err := store.CompleteEvaluationJobFenced("first", "owner", EvaluationJobReady, `{}`, "sha", "", "", now, "", "", 0); err != nil || !done {
+		t.Fatalf("complete %v %v", done, err)
+	}
+	if hidden, err := store.HideEvaluationJob(DefaultProjectID, "first", now); err != nil || !hidden {
+		t.Fatalf("hide %v %v", hidden, err)
+	}
+	if visible, err := store.ListEvaluationJobsForSubject(DefaultProjectID, "test_kind", "run-a", 10); err != nil || strings.Join(ids(visible), ",") != "third,second" {
+		t.Fatalf("after hiding %v %v", ids(visible), err)
+	}
+	for _, bad := range []struct {
+		kind, subject string
+		limit         int
+	}{{"", "run-a", 10}, {"test_kind", " ", 10}, {"test_kind", "run-a", 0}, {"test_kind", "run-a", 1001}} {
+		if _, err := store.ListEvaluationJobsForSubject(DefaultProjectID, bad.kind, bad.subject, bad.limit); err == nil {
+			t.Fatalf("invalid query %+v accepted", bad)
+		}
+	}
+}

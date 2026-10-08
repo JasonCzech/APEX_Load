@@ -272,3 +272,73 @@ func TestParallelFailFastIsAGenuineFailure(t *testing.T) {
 		t.Fatalf("iteration transaction %+v", iteration)
 	}
 }
+
+func sourceTx(name, function string) dsl.Action {
+	return dsl.Action{Name: name, Type: "source_transaction", Params: map[string]any{"function": function}}
+}
+
+// A transaction left open when a stop ends the VUser is the stop's: its
+// failure is interrupted and does not end the iteration. One left open when
+// the VUser ends on its own (a genuine failure, fail-fast) ends its
+// iteration, in the iteration that opened it, over its wall-clock span.
+func TestOpenTransactionsAtExitSayWhetherTheIterationEndedOnItsOwn(t *testing.T) {
+	run, stop := context.WithCancel(context.Background())
+	defer stop()
+	stopped := newControlFlowVUser(&stoppingProtocol{stopOn: "login", stop: stop}, nil, []dsl.Action{sourceTx("Checkout", "lr_start_transaction"), click("login"), click("pay"), sourceTx("Checkout", "lr_end_transaction")})
+	stopped.ActionBoundaryCtx, stopped.HardStopCtx = run, context.Background()
+	sink := &identitySink{}
+	stopped.ResultSink = sink
+	stopped.Run(run)
+	if got := resultsNamed(sink, "Checkout"); len(got) != 1 || got[0].Success || !got[0].Interrupted || got[0].EndsIteration || got[0].Iteration != 1 {
+		t.Fatalf("stopped VUser's open transaction %+v", got)
+	}
+
+	failing := newControlFlowVUser(&stoppingProtocol{stop: func() {}, failOn: "login"}, nil, []dsl.Action{sourceTx("Checkout", "lr_start_transaction"), click("login"), click("pay"), sourceTx("Checkout", "lr_end_transaction")})
+	sink = &identitySink{}
+	failing.ResultSink = sink
+	failing.Run(context.Background())
+	got := resultsNamed(sink, "Checkout")
+	if len(got) != 1 || got[0].Success || got[0].Interrupted || !got[0].EndsIteration || got[0].Iteration != 1 || got[0].WallElapsed <= 0 {
+		t.Fatalf("fail-fast VUser's open transaction %+v", got)
+	}
+	if login := resultsNamed(sink, "login"); len(login) != 1 || login[0].EndsIteration {
+		t.Fatalf("an ordinary step was marked as ending the iteration: %+v", login)
+	}
+}
+
+// The iteration transaction is recorded when the iteration ends on its own:
+// it ends the iteration. One a stop abandons does not.
+func TestIterationTransactionEndsItsIteration(t *testing.T) {
+	vu := newControlFlowVUser(&captureProtocol{}, nil, []dsl.Action{click("login")})
+	vu.Script.Config.RunLogic.Iterations = 2
+	sink := &identitySink{}
+	vu.ResultSink = sink
+	vu.Run(context.Background())
+	got := resultsNamed(sink, "ControlFlow")
+	if len(got) != 2 || !got[0].EndsIteration || !got[1].EndsIteration || got[1].Iteration != 2 {
+		t.Fatalf("iteration transactions %+v", got)
+	}
+	run, stop := context.WithCancel(context.Background())
+	defer stop()
+	abandoned := newControlFlowVUser(&stoppingProtocol{stopOn: "login", stop: stop}, nil, []dsl.Action{click("login"), click("checkout")})
+	abandoned.ActionBoundaryCtx, abandoned.HardStopCtx = run, context.Background()
+	sink = &identitySink{}
+	abandoned.ResultSink = sink
+	abandoned.Run(run)
+	if got := resultsNamed(sink, "ControlFlow"); len(got) != 1 || got[0].EndsIteration || !got[0].Interrupted {
+		t.Fatalf("abandoned iteration transaction %+v", got)
+	}
+}
+
+// A transaction still open when the next iteration starts is carried into
+// it, so its iteration never goes backward.
+func TestOpenTransactionsAreCarriedIntoTheNextIteration(t *testing.T) {
+	vu := &VUser{sourceTransactions: map[string]*sourceTransactionRuntimeState{
+		"checkout": {name: "Checkout", iteration: 1},
+		"init":     {name: "Init", iteration: 0},
+	}}
+	vu.carryOpenSourceTransactions(3)
+	if vu.sourceTransactions["checkout"].iteration != 3 || vu.sourceTransactions["init"].iteration != 0 {
+		t.Fatalf("carried %+v", vu.sourceTransactions)
+	}
+}

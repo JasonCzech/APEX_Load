@@ -317,7 +317,8 @@ func sourceMainIterationExit(action dsl.Action) (bool, bool) {
 type sourceTransactionRuntimeState struct {
 	name      string
 	startedAt time.Time
-	// iteration is the iteration that opened it: a transaction left open is
+	// iteration is the last iteration it was open in (the one that opened
+	// it, carried forward while it stays open): a transaction left open is
 	// recorded in that iteration even when it is closed after teardown.
 	iteration        int64
 	thinkTime        time.Duration
@@ -446,9 +447,22 @@ func (vu *VUser) finalizeSourceTransaction(key, reason string) *protocol.Result 
 		Success:      false,
 		ErrorMessage: reason,
 	}
-	result := vu.recordTransaction(name, duration, false, source)
+	// The wall-clock span keeps think time inside the transaction in its
+	// interval (journey accounting reads it).
+	result := vu.recordTransactionSpan(name, duration, false, source, state.startedAt)
 	vu.Variables[sourceTransactionStatusKey(name)] = strconv.FormatBool(false)
 	return result
+}
+
+// carryOpenSourceTransactions moves the transactions still open when a new
+// iteration starts into that iteration (an lr_exit that continues with the
+// next iteration leaves them open).
+func (vu *VUser) carryOpenSourceTransactions(iteration int64) {
+	for _, state := range vu.sourceTransactions {
+		if state != nil && state.iteration > 0 && state.iteration < iteration {
+			state.iteration = iteration
+		}
+	}
 }
 
 func (vu *VUser) finalizeOpenSourceTransactions(reason string) []*protocol.Result {

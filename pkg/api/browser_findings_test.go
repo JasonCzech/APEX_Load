@@ -681,3 +681,43 @@ func TestBrowserIntelligenceQueuesOnAttachAndReportsFailures(t *testing.T) {
 		t.Fatalf("failed status %+v", response)
 	}
 }
+
+// The verdict is the exact nearest-rank p75 of the qualified values, not a
+// bucket bound: 2100, 2200, 2300 and 5000 ms give a p75 of 2300 ms, good.
+func TestBrowserFindingsUseTheExactP75(t *testing.T) {
+	result := e1Evaluate(e1Policy(e1LCP), true, false, 0,
+		e1Document{id: 1, metric: "lcp", value: 2100, qualified: true},
+		e1Document{id: 2, metric: "lcp", value: 2200, qualified: true},
+		e1Document{id: 3, metric: "lcp", value: 2300, qualified: true},
+		e1Document{id: 4, metric: "lcp", value: 5000, qualified: true})
+	for _, finding := range e1Findings(result, browserFindingRuleThreshold, "lcp") {
+		if finding.State == "active" {
+			t.Fatalf("a good p75 raised a finding: %+v", finding)
+		}
+	}
+	if lcp := result.Score.Components[0]; lcp.Score == nil || *lcp.Score != 100 {
+		t.Fatalf("lcp component %+v", lcp)
+	}
+}
+
+// An evaluation claimed repeatedly without finishing expires; the run
+// reports it as failed with the reason, not as never evaluated.
+func TestRunBrowserFindingsReportAnExpiredEvaluation(t *testing.T) {
+	server, store := baselineTestServer(t)
+	pin := saveBrowserPolicy(t, store, "browser", 1, e1Policy(e1LCP))
+	e1Archive(t, server, store, "browser-expired", &pin, e1Document{id: 1, metric: "lcp", value: 5000, qualified: true})
+	if _, _, err := store.CreateEvaluationJob(&storage.EvaluationJob{ID: "expiring", ProjectID: storage.DefaultProjectID, Actor: browserIntelligenceSystemActor, Kind: browserIntelligenceKind,
+		Request: `{"run":"browser-expired"}`, InputFingerprint: "fp", SubjectID: "browser-expired"}, evaluationJobsActivePerProject); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if claimed, err := store.ClaimEvaluationJob("worker", now, time.Second, []string{browserIntelligenceKind}, 1); err != nil || claimed == nil {
+		t.Fatalf("claim %#v %v", claimed, err)
+	}
+	if again, err := store.ClaimEvaluationJob("worker", now.Add(time.Minute), time.Second, []string{browserIntelligenceKind}, 1); err != nil || again != nil {
+		t.Fatalf("an exhausted evaluation was claimed again: %#v %v", again, err)
+	}
+	if response := getRunBrowserFindings(t, server, "browser-expired"); response.Status != "failed" || !strings.Contains(response.Failure, "without finishing") {
+		t.Fatalf("expired evaluation %+v", response)
+	}
+}

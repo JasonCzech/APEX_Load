@@ -64,7 +64,8 @@ type CorrelationSemantics struct {
 	Left  CorrelationSide `json:"left"`
 	Right CorrelationSide `json:"right"`
 	// SameUnits is true only when both series share a declared unit and
-	// kind; otherwise their values are associated, never compared directly.
+	// kind, and the same population where both declare one; otherwise their
+	// values are associated, never compared directly.
 	SameUnits bool `json:"same_units"`
 	// UnitsUndeclared: a side has no evidence or no declared unit, so
 	// whether the units match is unknown (not that they differ).
@@ -135,9 +136,12 @@ func DescribeCorrelation(leftMetric, leftStatistic string, left []MetricPoint, r
 
 // RawSampleExclusions counts the raw samples a bucketing cannot use as valid
 // values, by reason: a quality other than valid (stale, clock_skewed,
-// dropped, ...) and, for a counter, each decrease between consecutive
-// samples of one series (counter_reset). Bucketing records only that a
-// bucket is missing, so the reasons are counted before it.
+// dropped, ...) and, for a raw counter series, each instant carrying a
+// second reading (duplicate_counter_instant) and each decrease between
+// consecutive readings (counter_reset). A gauge derived from a counter
+// (InputKind counter) is already a per-interval value whose decreases are not
+// resets. Bucketing records only that a bucket is missing, so the reasons
+// are counted before it.
 func RawSampleExclusions(points []MetricPoint) map[string]int {
 	out := map[string]int{}
 	type sample struct {
@@ -154,7 +158,7 @@ func RawSampleExclusions(points []MetricPoint) map[string]int {
 			out[reason]++
 			continue
 		}
-		if (point.Kind == KindCounter || point.InputKind == KindCounter) && point.Value != nil {
+		if point.Kind == KindCounter && point.Value != nil {
 			key := rawSeriesKey(point)
 			counters[key] = append(counters[key], sample{point.TimestampUTC, *point.Value})
 		}
@@ -162,7 +166,10 @@ func RawSampleExclusions(points []MetricPoint) map[string]int {
 	for _, series := range counters {
 		sort.SliceStable(series, func(i, j int) bool { return series[i].at.Before(series[j].at) })
 		for i := 1; i < len(series); i++ {
-			if series[i].value < series[i-1].value {
+			switch {
+			case series[i].at.Equal(series[i-1].at):
+				out[MissingDuplicateCounterInstant]++
+			case series[i].value < series[i-1].value:
 				out[MissingCounterReset]++
 			}
 		}

@@ -151,7 +151,10 @@ type VUser struct {
 	iterationThinkTime time.Duration
 	userWorkStarted    bool
 	resultPhase        string
-	resultSequence     uint64
+	// endingIteration marks the transactions recorded because the iteration
+	// ended on its own (Result.EndsIteration).
+	endingIteration bool
+	resultSequence  uint64
 }
 
 // resolvedActionCredentialComposites pins credential spellings to the exact
@@ -300,7 +303,15 @@ func (vu *VUser) Run(ctx context.Context) {
 	// the normal path; the defer covers every early return and panic unwind.
 	defer func() {
 		runTeardown()
+		// A VUser that leaves because it was told to stop (the run, its
+		// group, a scale-down or a goal boundary) leaves its open
+		// transactions cut, not failed; one that ended on its own (its
+		// iterations done, a genuine failure) ends their iteration.
+		stopped := ctx.Err() != nil || iterCtx.Err() != nil || entitledBoundaryCtx.Err() != nil
+		previousAbandoning, previousEnding := vu.abandoning, vu.endingIteration
+		vu.abandoning, vu.endingIteration = previousAbandoning || stopped, !stopped
 		vu.finalizeOpenSourceTransactions("source transaction ended without a matching end marker")
+		vu.abandoning, vu.endingIteration = previousAbandoning, previousEnding
 	}()
 
 	// --- Init phase ---
@@ -515,6 +526,9 @@ func (vu *VUser) Run(ctx context.Context) {
 		iterStart := time.Now()
 		previousIterStart = iterStart
 		vu.currentIteration.Store(int64(iteration + 1))
+		// A transaction still open from an earlier iteration is carried into
+		// this one, so the iteration it is recorded in never goes backward.
+		vu.carryOpenSourceTransactions(int64(iteration + 1))
 		if pacingCfg.activeClock != nil {
 			pacingCfg.iterStartActive = pacingCfg.activeClock()
 		}
@@ -594,6 +608,8 @@ func (vu *VUser) Run(ctx context.Context) {
 			if !iterationTxMode || iterTxRecorded {
 				return
 			}
+			vu.endingIteration = true
+			defer func() { vu.endingIteration = false }()
 			duration := iterTxDuration
 			if duration <= 0 {
 				duration = time.Since(iterTxStart) - vu.iterationThinkTime

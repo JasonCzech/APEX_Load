@@ -128,11 +128,12 @@ describe('useClientRenderReporter', () => {
     await act(async () => {
       root.render(<Harness testId="run-4" enabled metrics={metricsReceivedAt(Date.now())} />)
     })
-    // Hidden before the pending frame runs, visible again when it does.
+    // Hidden before the pending frame runs (a hidden tab runs no frames),
+    // and visible again by the time it does: the frame and the paint it
+    // measures both run while the tab is visible.
     await act(async () => {
       state.value = 'hidden'
       document.dispatchEvent(new Event('visibilitychange'))
-      vi.advanceTimersByTime(1)
       state.value = 'visible'
       document.dispatchEvent(new Event('visibilitychange'))
       vi.advanceTimersByTime(5)

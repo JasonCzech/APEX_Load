@@ -148,9 +148,17 @@ func TestRawSampleExclusionsKeepReasons(t *testing.T) {
 		p.Host = host
 		return p
 	}
-	points := []MetricPoint{stale, skewed, dropped, counter(3, "a", 5), counter(1, "a", 10), counter(2, "a", 20), counter(1, "b", 1), counter(2, "b", 2)}
+	// A series with two readings at one instant counts it as a duplicate,
+	// never as a reset; a gauge derived from a counter (per-bucket values)
+	// falls without resetting.
+	derived := func(at int, value float64) MetricPoint {
+		p := seriesPoint(from.Add(time.Duration(at)*time.Second), "requests", "count", KindGauge, "", value)
+		p.Host, p.InputKind = "c", KindCounter
+		return p
+	}
+	points := []MetricPoint{stale, skewed, dropped, counter(3, "a", 5), counter(1, "a", 10), counter(2, "a", 20), counter(1, "b", 1), counter(2, "b", 2), counter(2, "d", 9), counter(2, "d", 4), derived(1, 120), derived(2, 95), derived(3, 130)}
 	got := RawSampleExclusions(points)
-	want := map[string]int{QualityStale: 1, QualityClockSkewed: 1, QualityDropped: 1, MissingCounterReset: 1}
+	want := map[string]int{QualityStale: 1, QualityClockSkewed: 1, QualityDropped: 1, MissingCounterReset: 1, MissingDuplicateCounterInstant: 1}
 	if len(got) != len(want) {
 		t.Fatalf("exclusions %v, want %v", got, want)
 	}

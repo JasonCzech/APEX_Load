@@ -120,9 +120,11 @@ func executeAnalysisBrowserFindingsCommand(ctx context.Context, args []string, o
 			if job.State != "ready" {
 				return fmt.Errorf("evaluation %s ended %s: %s", job.ID, job.State, job.Failure)
 			}
-			if *policy != "" {
-				return printIndentedJSON(out, data, "invalid evaluation response")
-			}
+		}
+		// An evaluation under a named revision is its own job, never the run's
+		// result: print it (with its ID), waited for or not.
+		if *policy != "" {
+			return printIndentedJSON(out, data, "invalid evaluation response")
 		}
 	}
 	data, err := client.workflowRequest(ctx, http.MethodGet, "/api/v1/tests/"+url.PathEscape(*run)+"/archive/browser-findings", nil, "")

@@ -38,6 +38,13 @@ function counts(value?: TelemetryClassificationCounts) {
   return `${value.healthy} healthy · ${value.degraded} degraded · ${value.breached} breached · ${value.unscored} unscored · ${value.unknown} unknown${pct}`
 }
 
+// unscoredBreakdown names why an unanswerable run's intervals could not be
+// judged, most frequent first.
+function unscoredBreakdown(unscored?: Record<string, number>): string {
+  const entries = Object.entries(unscored || {}).filter(([, count]) => count > 0).sort(([a, x], [b, y]) => y - x || a.localeCompare(b)).slice(0, 3)
+  return entries.length ? ` (${entries.map(([reason, count]) => `${reason.replace(/_/g, ' ')} ×${count}`).join(', ')})` : ''
+}
+
 function TelemetryReevaluationPanel({ projectId, runIds, label }: { projectId: string; runIds: string[]; label: (id: string) => string }) {
   const [policies, setPolicies] = useState<TelemetryPolicySummary[] | null>(null)
   const [selected, setSelected] = useState('')
@@ -136,7 +143,7 @@ function TelemetryReevaluationPanel({ projectId, runIds, label }: { projectId: s
                     <th scope="row" title={run.run_id}>{label(run.run_id)}</th>
                     <td>{counts(run.original)}</td>
                     <td>{counts(run.reevaluated)}</td>
-                    <td>{run.answerable ? 'Yes' : `No: ${(run.unanswerable || []).join(', ')}`}</td>
+                    <td>{run.answerable ? 'Yes' : `No: ${(run.unanswerable || []).join(', ')}${unscoredBreakdown(run.stage_unscored)}`}</td>
                   </tr>
                 ))}
               </tbody>

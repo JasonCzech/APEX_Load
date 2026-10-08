@@ -71,9 +71,15 @@ func (m *BrowserReplayManager) retainReplayHAR(session *BrowserReplaySession, ar
 			if k > 0 || !keep {
 				return nil
 			}
+			// A copy that cannot be kept still lets the original be retired:
+			// the replay then serves a synthetic HAR.
 			copied, err := m.har.write(session, r, size)
+			if err != nil {
+				slog.Warn("browser replay HAR copy failed; serving a synthetic HAR", "session_id", session.ID, "err", err)
+				return nil
+			}
 			path = copied
-			return err
+			return nil
 		})
 		if err != nil {
 			slog.Warn("browser replay HAR was not retained", "session_id", session.ID, "err", err)
@@ -103,23 +109,49 @@ func (s *replayHARStore) openLocked() error {
 	if s.dir != "" {
 		return nil
 	}
+	dir, err := openManagedReplayHARDir()
+	if err != nil {
+		// Not this process's to manage (another user's, a link, other
+		// permissions): a private directory of its own, without the sweep.
+		if dir, err = os.MkdirTemp("", "apexload-replay-har-"); err != nil {
+			return err
+		}
+	}
+	s.dir, s.owners = dir, map[string]*BrowserReplaySession{}
+	return nil
+}
+
+// openManagedReplayHARDir makes this manager's directory under the managed
+// root and removes ones left by processes that ended. The root must be a
+// real, private directory this process can write: never a link (which would
+// steer the sweep elsewhere) or one another user shares.
+func openManagedReplayHARDir() (string, error) {
 	root := filepath.Join(os.TempDir(), replayHARRootName)
 	if err := os.MkdirAll(root, 0o700); err != nil {
-		return err
+		return "", err
+	}
+	info, err := os.Lstat(root)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0o700 {
+		return "", errors.New("the managed replay HAR root is not a private directory")
+	}
+	dir, err := os.MkdirTemp(root, "manager-")
+	if err != nil {
+		return "", err
 	}
 	if entries, err := os.ReadDir(root); err == nil {
 		for _, entry := range entries {
-			if info, err := entry.Info(); err == nil && entry.IsDir() && time.Since(info.ModTime()) > replayHARStaleAfter {
+			if entry.Name() == filepath.Base(dir) || entry.Type()&os.ModeSymlink != 0 || !entry.IsDir() {
+				continue
+			}
+			if info, err := entry.Info(); err == nil && time.Since(info.ModTime()) > replayHARStaleAfter {
 				_ = os.RemoveAll(filepath.Join(root, entry.Name()))
 			}
 		}
 	}
-	dir, err := os.MkdirTemp(root, "manager-")
-	if err != nil {
-		return err
-	}
-	s.dir, s.owners = dir, map[string]*BrowserReplaySession{}
-	return nil
+	return dir, nil
 }
 
 func (s *replayHARStore) write(owner *BrowserReplaySession, r io.Reader, size int64) (string, error) {
@@ -312,6 +344,8 @@ func (s *Server) browserReplayHARForRequest(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleDownloadBrowserReplayHAR(w http.ResponseWriter, r *http.Request) {
+	// A replay HAR may take longer than the server's write timeout.
+	extendArtifactWriteDeadline(w)
 	session, har, release, ok := s.browserReplayHARForRequest(w, r)
 	if !ok {
 		return
@@ -342,6 +376,7 @@ type browserReplayHARMetadata struct {
 // (har.json, written last with the digest of the HAR as streamed). The ZIP
 // is streamed; a failure after it started aborts the response.
 func (s *Server) handleDownloadBrowserReplayEvidence(w http.ResponseWriter, r *http.Request) {
+	extendArtifactWriteDeadline(w)
 	session, har, release, ok := s.browserReplayHARForRequest(w, r)
 	if !ok {
 		return

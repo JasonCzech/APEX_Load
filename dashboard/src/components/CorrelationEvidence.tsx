@@ -6,8 +6,9 @@ import './CorrelationEvidence.css'
 
 // Lagged correlation evidence (B6). Each series keeps its own semantics:
 // unit, kind, source semantics, population and the statistic or conversion
-// that produced its buckets. The investigation chart gives each series its
-// own labelled axis, so values in different units are never read as directly
+// that produced its buckets. The investigation chart gives series in
+// different units their own labelled axes (one shared axis only when the
+// units match), so values in different units are never read as directly
 // comparable; the scores are associations, not causes.
 
 export interface CorrelationScore {
@@ -111,7 +112,7 @@ export default function CorrelationEvidence({ scores, semantics, left, right }: 
           <SideSemantics label="Comparison series" side={semantics.right} />
           {semantics.units_undeclared
             ? (semantics.left.points > 0 && semantics.right.points > 0 && <p role="note">A series declares no unit, so whether the values are comparable is unknown: they are associated, never compared value for value.</p>)
-            : !semantics.same_units && <p role="note">The series have different units or kinds: they are associated, never compared value for value.</p>}
+            : !semantics.same_units && <p role="note">The series have different units, kinds or populations: they are associated, never compared value for value.</p>}
         </div>
       )}
       {data.length > 0 && (

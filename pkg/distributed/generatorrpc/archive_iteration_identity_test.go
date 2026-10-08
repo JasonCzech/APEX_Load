@@ -21,7 +21,7 @@ func TestGeneratorArchiveRecordsVUserIterationIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, result := range []*protocol.Result{
-		{ActionName: "login", Success: true, VUserID: 1_000_007, Iteration: 2},
+		{ActionName: "login", Success: true, VUserID: 1_000_007, Iteration: 2, EndsIteration: true},
 		{ActionName: "pay", VUserID: 1_000_007, Iteration: 2, Interrupted: true, VUserLifetime: 5, WallElapsed: 2 * time.Second},
 	} {
 		if err := recorder.RecordResult(result); err != nil {
@@ -50,11 +50,11 @@ func TestGeneratorArchiveRecordsVUserIterationIdentity(t *testing.T) {
 	if len(rows) != 2 || rows[0].VUserID != 1_000_007 || rows[0].Iteration != 2 || rows[0].Interrupted || !rows[1].Interrupted || rows[1].Iteration != 2 {
 		t.Fatalf("rows = %+v", rows)
 	}
-	if rows[1].VUserLifetime != 5 || rows[1].ElapsedMs != 2000 {
+	if rows[1].VUserLifetime != 5 || rows[1].ElapsedMs != 2000 || !rows[0].EndsIteration || rows[1].EndsIteration {
 		t.Fatalf("lifetime/elapsed rows = %+v", rows)
 	}
 	parquet := toParquetTransactions(rows)
-	if parquet[0].VUserID != 1_000_007 || parquet[0].Iteration != 2 || parquet[0].Interrupted || !parquet[1].Interrupted || parquet[1].VUserLifetime != 5 || parquet[1].ElapsedMs != 2000 {
+	if parquet[0].VUserID != 1_000_007 || parquet[0].Iteration != 2 || parquet[0].Interrupted || !parquet[1].Interrupted || parquet[1].VUserLifetime != 5 || parquet[1].ElapsedMs != 2000 || !parquet[0].EndsIteration || parquet[1].EndsIteration {
 		t.Fatalf("parquet = %+v", parquet)
 	}
 }

@@ -100,6 +100,7 @@ type archiveTransactionEvent struct {
 	Iteration             int64                     `json:"iteration,omitempty"`
 	Interrupted           bool                      `json:"interrupted,omitempty"`
 	VUserLifetime         uint64                    `json:"vuser_lifetime,omitempty"`
+	EndsIteration         bool                      `json:"ends_iteration,omitempty"`
 	ElapsedMs             float64                   `json:"elapsed_ms,omitempty"`
 	Population            string                    `json:"population,omitempty"`
 	BusinessTransaction   bool                      `json:"business_transaction,omitempty"`
@@ -651,6 +652,7 @@ type parquetTransactionEvent struct {
 	Iteration              int64   `parquet:"name=iteration, type=INT64"`
 	Interrupted            bool    `parquet:"name=interrupted, type=BOOLEAN"`
 	VUserLifetime          int64   `parquet:"name=vuser_lifetime, type=INT64"`
+	EndsIteration          bool    `parquet:"name=ends_iteration, type=BOOLEAN"`
 	ElapsedMs              float64 `parquet:"name=elapsed_ms, type=DOUBLE"`
 	Population             string  `parquet:"name=population, type=BYTE_ARRAY, convertedtype=UTF8"`
 	BusinessTransaction    bool    `parquet:"name=business_transaction, type=BOOLEAN"`
@@ -1087,6 +1089,7 @@ func (w *archiveRecorder) RecordResult(result *protocol.Result) error {
 		Iteration:             result.Iteration,
 		Interrupted:           result.Interrupted,
 		VUserLifetime:         result.VUserLifetime,
+		EndsIteration:         result.EndsIteration,
 		ElapsedMs:             float64(result.WallElapsed) / float64(time.Millisecond),
 		BusinessTransaction:   result.BusinessTransaction,
 		Population:            archiveResultPopulation(result.BusinessTransaction),
@@ -1782,6 +1785,7 @@ func toParquetTransactions(items []archiveTransactionEvent, sourceRows ...[]byte
 			Iteration:              item.Iteration,
 			Interrupted:            item.Interrupted,
 			VUserLifetime:          int64(item.VUserLifetime),
+			EndsIteration:          item.EndsIteration,
 			ElapsedMs:              item.ElapsedMs,
 			BusinessTransaction:    item.BusinessTransaction,
 			Population:             item.Population,

@@ -38,6 +38,7 @@ type parquetTransactionEvent struct {
 	Iteration              int64   `parquet:"name=iteration, type=INT64"`
 	Interrupted            bool    `parquet:"name=interrupted, type=BOOLEAN"`
 	VUserLifetime          int64   `parquet:"name=vuser_lifetime, type=INT64"`
+	EndsIteration          bool    `parquet:"name=ends_iteration, type=BOOLEAN"`
 	ElapsedMs              float64 `parquet:"name=elapsed_ms, type=DOUBLE"`
 	Population             string  `parquet:"name=population, type=BYTE_ARRAY, convertedtype=UTF8"`
 	BusinessTransaction    bool    `parquet:"name=business_transaction, type=BOOLEAN"`
@@ -310,6 +311,7 @@ func toParquetTransactions(items []TransactionEvent, sourceRows ...[]byte) []par
 			Iteration:              item.Iteration,
 			Interrupted:            item.Interrupted,
 			VUserLifetime:          int64(item.VUserLifetime),
+			EndsIteration:          item.EndsIteration,
 			ElapsedMs:              item.ElapsedMs,
 			BusinessTransaction:    item.BusinessTransaction,
 			Population:             item.Population,

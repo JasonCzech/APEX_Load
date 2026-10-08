@@ -1,8 +1,10 @@
 // Package harsynth writes HAR 1.2 from retained browser network evidence for
 // sessions that have no native recording: older peers and contexts recorded
-// without native capture. It writes only what the evidence holds. A timing
-// phase the evidence lacks is HAR's -1, content is never written, and every
-// value that is not a direct measurement is labelled where it appears. Each
+// without native capture. It writes only what the evidence holds. An optional
+// timing phase the evidence lacks is HAR's -1; the required send, wait and
+// receive and content.size, which HAR 1.2 requires to be non-negative, are 0
+// and named in the entry's unavailable_fields. Content is never written, and
+// every value that is not a direct measurement is labelled where it appears. Each
 // entry passes through the same scrubber as a native HAR before it is written.
 package harsynth
 
@@ -77,8 +79,9 @@ const (
 )
 
 // OmittedFields are the HAR fields a synthetic HAR never carries a measured
-// value for: they are written empty (strings, arrays), -1 (sizes, timings) or
-// left out (bodies).
+// value for: they are written empty (strings, arrays), -1 (optional sizes and
+// timings), 0 (the required timings.send and content.size, also named in each
+// entry's unavailable_fields) or left out (bodies).
 var OmittedFields = []string{
 	"request.httpVersion",
 	"request.cookies",

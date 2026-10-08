@@ -405,12 +405,15 @@ func reevaluateTelemetryIntervals(out *TelemetryReevaluationRun, intervals []Int
 	out.Answerable = len(out.Unanswerable) == 0
 	if out.Answerable {
 		out.Reevaluated = &reevaluated
-		if len(conditions) > 0 {
-			out.StageConditions = conditions
-		}
-		if len(unscoredByStage) > 0 {
-			out.StageUnscored = unscoredByStage
-		}
+	}
+	// The per-stage breakdown stays on an unanswerable run: it says why
+	// nothing could be classified (a missing clock quality, every budget
+	// disabled, ...).
+	if len(conditions) > 0 {
+		out.StageConditions = conditions
+	}
+	if len(unscoredByStage) > 0 {
+		out.StageUnscored = unscoredByStage
 	}
 }
 

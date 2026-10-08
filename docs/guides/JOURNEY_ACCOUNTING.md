@@ -50,31 +50,43 @@ skipped attempts never enter the index.
 ### Stops and interrupted samples
 
 The engine marks a failure `interrupted` when it was recorded after the VUser
-was told to stop. That covers two cases:
+was told to stop. That covers three cases:
 
 - The action in flight was cancelled by a hard stop (or by Run's own context
   when there is no hard-stop context).
 - A stop or goal boundary abandoned the iteration and left a failed
   transaction behind.
+- A transaction the VUser still had open when a stop ended it (the run's
+  stop or end, a ramp-down or scale-down, a goal boundary).
 
 Cancellation alone cannot establish a failure. An interrupted failure
 therefore censors every attempt it cut and is not counted as a step failure.
 An attempt that still reaches its outcome keeps it.
 
-A lifetime whose last sample ended within a minute of the archive's last
-sample may have been cut by the run's end, so an attempt still open in its
-last iteration is censored. A lifetime that ended earlier ended on its own
-(its iterations were done, a fail-fast failure ended it, or an
-open-workload arrival finished its iteration), so its attempts are settled
-as completed, failed or aborted. A source transaction left open when a
-VUser ends is recorded in the iteration that opened it.
+The last iteration of each VUser lifetime is the one a stop may have cut,
+for instance during think time between transactions, where no sample shows
+it. The engine therefore marks the rows it records because an iteration
+ended on its own (`ends_iteration`): the iteration transaction, and the
+transactions a VUser left open when it ended on its own (its iterations
+done, or a genuine failure that ends it). An attempt still open in a
+lifetime's last iteration is settled (failed or aborted) only when that
+iteration has such a row that is not interrupted; otherwise it is censored.
+A transaction still open when the next iteration starts is carried into it.
+
+So scripts that record an iteration transaction (automatic transactions per
+iteration, or none and no explicit transactions) settle every last
+iteration that ended on its own. Scripts with explicit transactions settle a
+last iteration only when the VUser ended on its own with transactions still
+open; a last iteration that ended on its own with none open, or a
+fail-fast failure outside any open transaction, is censored. Censoring
+excludes an attempt from the index rather than guessing its outcome.
 
 Rows without a lifetime (written before lifetimes existed) fall back to the
-VUser ID: a replacement generator that continues an evacuated VUser
-restarts its iterations, and the earlier share's last iteration is treated
-as possibly cut. With lifetimes, a share cut mid-run by an evacuation looks
-like a lifetime that ended on its own, so its open attempts are settled
-rather than censored.
+VUser ID: their last iteration is always censored, and a replacement
+generator that continues an evacuated VUser restarts its iterations, so
+the earlier share's last iteration is censored too. A group's once-only
+init/teardown VUser records lifecycle rows without a lifetime; they are not
+counted as rows without identity.
 
 ## Indexes
 
@@ -98,7 +110,8 @@ not all collected, or when rows from a source without VUser identity (an
 older generator) sit beside rows with it. An incomplete report lists its
 `incomplete_reasons`, and both indexes are withheld
 (`accounting_incomplete`). A run that recorded identity but ran no iteration
-is `unavailable` with `no_iterations`.
+is `unavailable` with `no_iterations` (as is an archive with no samples at
+all).
 
 ## Read the result
 

@@ -684,12 +684,16 @@ type Result struct {
 	// VUserLifetime is a random identity of the VUser's lifetime: a VUser ID
 	// is reused by later VUsers (open-workload arrivals, scale-up), a
 	// lifetime never is. WallElapsed is a transaction's wall-clock span when
-	// its Duration excludes time (think time inside it).
+	// its Duration excludes time (think time inside it). EndsIteration marks
+	// a row the engine recorded because the iteration ended on its own (the
+	// iteration transaction, or a transaction the VUser left open when it
+	// ended on its own), so the iteration was not cut by a stop.
 	VUserID             int           `json:"vuser_id,omitempty"`
 	Iteration           int64         `json:"iteration,omitempty"`
 	Interrupted         bool          `json:"interrupted,omitempty"`
 	VUserLifetime       uint64        `json:"vuser_lifetime,omitempty"`
 	WallElapsed         time.Duration `json:"wall_elapsed,omitempty"`
+	EndsIteration       bool          `json:"ends_iteration,omitempty"`
 	ActionName          string        // Name of the executed action
 	BusinessTransaction bool          // True when this sample represents a completed business transaction
 	SampleKind          string        // "child" or "aggregate" for StreamingProtocol results

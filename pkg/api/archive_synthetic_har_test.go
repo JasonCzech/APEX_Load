@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -177,6 +178,26 @@ func TestRunArchiveSyntheticHARLeavesNativeContextsOutAndScrubs(t *testing.T) {
 	}
 	if stats := converted.Stats; int64(stats.TotalRequests) != summary.Entries || int64(stats.ConvertedActions+stats.FilteredAssets+stats.SkippedRequests) != summary.Entries {
 		t.Fatalf("import stats %+v for %d entries", stats, summary.Entries)
+	}
+	if doc.Log.Apexload["native_har_coverage_unknown"] != nil {
+		t.Fatalf("coverage unknown with every native HAR naming its context: %v", doc.Log.Apexload)
+	}
+	// A native HAR that does not name its context makes the overlap unknown,
+	// and the HAR says so.
+	unnamed := manifest.BrowserHARArtifacts[0]
+	unnamed.EvidenceGeneration = ""
+	manifest.BrowserHARArtifacts = append(manifest.BrowserHARArtifacts, unnamed)
+	var disclosed bytes.Buffer
+	if _, err := writeRunArchiveSyntheticHAR(context.Background(), dir, manifest, &disclosed); err != nil {
+		t.Fatal(err)
+	}
+	var disclosedDoc syntheticHARDoc
+	if err := json.Unmarshal(disclosed.Bytes(), &disclosedDoc); err != nil {
+		t.Fatal(err)
+	}
+	reasons, _ := disclosedDoc.Log.Apexload["completeness_reasons"].([]any)
+	if disclosedDoc.Log.Apexload["native_har_coverage_unknown"] != float64(1) || !slices.Contains(reasons, any("native_har_coverage_unknown")) {
+		t.Fatalf("unknown native coverage not disclosed: %v", disclosedDoc.Log.Apexload)
 	}
 	// Without a native HAR naming its context, every retained entry is kept.
 	manifest.BrowserHARArtifacts = nil

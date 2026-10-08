@@ -66,7 +66,7 @@ describe('CorrelationEvidence', () => {
     const undeclared: CorrelationSemantics = { ...semantics, units_undeclared: true, right: { ...semantics.right, unit: undefined } }
     await act(async () => root.render(<CorrelationEvidence semantics={undeclared} scores={[]} left={[]} right={[]} />))
     expect(node.textContent).toContain('declares no unit')
-    expect(node.textContent).not.toContain('different units or kinds')
+    expect(node.textContent).not.toContain('different units, kinds or populations')
     const empty: CorrelationSemantics = { ...undeclared, right: { ...undeclared.right, points: 0, valid: 0 } }
     await act(async () => root.render(<CorrelationEvidence semantics={empty} scores={[]} left={[]} right={[]} />))
     expect(node.querySelector('[role="note"]')).toBeNull()

@@ -240,7 +240,9 @@ evidence generation of the context it recorded (`evidence_generation` in the
 manifest's HAR entries, from the context's resource evidence); entries of
 those contexts are left out of the synthetic HAR (counted as `native_har`),
 so a context's requests appear in one HAR or the other. Entries whose
-generation is unknown (older peers, malformed evidence) are kept. A native
+generation is unknown (older peers, malformed evidence, or a row whose
+evidence the engine dropped at its evidence budget, which may belong to a
+covered context) are kept. A native
 HAR that does not name its context (one written before evidence generations
 were recorded, or with a malformed one) makes the overlap unknown: the
 synthetic HAR's `_apexload` block then reports
