@@ -313,10 +313,12 @@ func RenderJavaLRFunctionCoverageMarkdown() string {
 	b.WriteString("These are Java-runner dispositions, including explicit overrides where the shared native-conversion registry would overstate sidecar behavior. ")
 	b.WriteString("A reachable `review_only` call is a fidelity blocker, while an unused helper remains review evidence only.\n\n")
 
-	b.WriteString("| Java method | Function | Family | Support mode | Target | Notes |\n")
-	b.WriteString("|---|---|---|---|---|---|\n")
+	// The method and its C function share a column: one is a rename of the
+	// other, and a sixth column leaves the notes too narrow to read.
+	b.WriteString("| Java method / C function | Family | Support mode | Target | Notes |\n")
+	b.WriteString("|---|---|---|---|---|\n")
 	for _, row := range rows {
-		fmt.Fprintf(&b, "| `%s` | `%s` | %s | `%s` | %s | %s |\n",
+		fmt.Fprintf(&b, "| `%s` / `%s` | %s | `%s` | %s | %s |\n",
 			row.Method, row.Function, row.Family, row.SupportMode, row.Target, row.Notes)
 	}
 	return b.String()
