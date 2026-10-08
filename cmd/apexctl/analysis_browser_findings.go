@@ -21,7 +21,8 @@ Prints a run's latest browser findings and qualified score (browser_findings.v1,
 browser_score.v1) under its pinned browser_policy. --evaluate queues a
 browser_intelligence evaluation first; --wait polls it and fails unless it is
 ready. An evaluation under a named revision (--policy, --revision) is not the
-run's result: with --wait its own evaluation job is printed instead.`
+run's result: its own evaluation job is printed instead (with --wait, once
+it settles).`
 
 // browserFindingsPollInterval spaces --wait polls.
 var browserFindingsPollInterval = 2 * time.Second

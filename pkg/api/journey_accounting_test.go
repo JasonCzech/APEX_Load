@@ -674,3 +674,31 @@ func TestJourneyAccountingDisclosesUncollectedSources(t *testing.T) {
 		t.Fatalf("uncollected %+v", report)
 	}
 }
+
+// An archive with only a group's once-only init/teardown rows ran no
+// iteration: no_iterations, not an archive without identity.
+func TestJourneyAccountingLifecycleOnlyArchiveRanNoIteration(t *testing.T) {
+	policy := JourneyPolicyDefinition{Version: analysisPolicyVersion, Journeys: []JourneyDefinition{
+		{ID: "login", Name: "Login", Start: JourneyBoundary{Action: "open_login"}, Success: JourneyBoundary{Action: "submit_login"}, Weight: 1},
+	}}
+	start := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
+	reason := func(rows []TransactionEvent) string {
+		acc := newJourneyAccumulator(policy, &JourneyRiskReport{})
+		for i := range rows {
+			acc.add(&rows[i])
+		}
+		if acc.identity {
+			t.Fatalf("rows %+v have iteration identity", rows)
+		}
+		return acc.unavailableReason()
+	}
+	if got := reason([]TransactionEvent{{Timestamp: start, Group: "web", VUserID: -1, Phase: "init", ActionName: "setup", Success: false}}); got != "no_iterations" {
+		t.Fatalf("lifecycle-only archive: %s", got)
+	}
+	if got := reason(nil); got != "no_iterations" {
+		t.Fatalf("empty archive: %s", got)
+	}
+	if got := reason([]TransactionEvent{{Timestamp: start, Group: "web", Phase: "action", ActionName: "open_login", Success: true}}); got != "archive_lacks_vuser_iteration_identity" {
+		t.Fatalf("legacy archive: %s", got)
+	}
+}

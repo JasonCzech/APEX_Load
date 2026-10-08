@@ -304,9 +304,11 @@ administrator) access to the project.
   turns it off; recording sets both capture aliases to `always`, overriding
   a script's own capture policy). When the replay's browser closes, the
   controller copies the published HAR into its own directory (under the
-  system temporary directory's `apexload-replay-har`, where directories
-  left by a process that ended are removed after a day) and retires the
-  original, so the HAR directory keeps nothing for replays. A replay that
+  system temporary directory's `apexload-replay-har`, used only when it is a
+  real 0700 directory the controller's user owns; a running controller
+  keeps its own directory fresh and others idle for a day are removed;
+  otherwise a private temporary directory that is not swept after a crash)
+  and retires the original, so the HAR directory keeps nothing for replays. A replay that
   fails before producing a report retires its recording too. The copy
   belongs to that session record: it is kept only while the record holds
   its lease and integrity fence, a later replay reusing the session ID never

@@ -332,6 +332,14 @@ func TestReplayHARStoreKeepsOnlyFencedCopies(t *testing.T) {
 	if _, err := manager.har.write(record, strings.NewReader("{}"), 2); !errors.Is(err, errReplayHARStoreClosed) {
 		t.Fatalf("a closed store accepted a write: %v", err)
 	}
+	// A copy that cannot be kept still retires the original.
+	original = publishFakeReplayHAR(t, harDir, "uncopied", "uncopied")
+	if copied := manager.retainReplayHAR(record, []protocol.BrowserHARArtifact{{Path: original}}, true); copied != "" {
+		t.Fatalf("a closed store kept %s", copied)
+	}
+	if _, err := os.Stat(original); !os.IsNotExist(err) {
+		t.Fatalf("the original stayed after a failed copy: %v", err)
+	}
 }
 
 // A pruned record's copy is removed by the janitor's prune; a replay whose
@@ -373,8 +381,14 @@ func TestBrowserReplayHARPruneInitFailureAndDownloadSlots(t *testing.T) {
 	for i := 0; i < replayHARMaxDownloads; i++ {
 		<-server.browserReplay.harDownloads
 	}
-	for _, path := range []string{base + "/har", base + "/evidence", "/api/v1/browser-replay/sessions/missing/har"} {
-		harDownloadRequest(t, server, path, "replay-editor", harEditor)
+	for path, want := range map[string]int{base + "/har": http.StatusOK, base + "/evidence": http.StatusOK} {
+		if got := harDownloadRequest(t, server, path, "replay-editor", harEditor); got.Code != want {
+			t.Fatalf("%s: %d, want %d", path, got.Code, want)
+		}
+	}
+	// A refused request (an unknown session) holds no slot either.
+	if got := harDownloadRequest(t, server, "/api/v1/browser-replay/sessions/missing/har", "replay-editor", harEditor); got.Code == http.StatusOK {
+		t.Fatal("an unknown session's HAR was served")
 	}
 	if held := len(server.browserReplay.harDownloads); held != 0 {
 		t.Fatalf("%d download slots were not released", held)
@@ -390,8 +404,13 @@ func TestBrowserReplayHARPruneInitFailureAndDownloadSlots(t *testing.T) {
 	server.browserReplay.mu.Lock()
 	server.browserReplay.retention.now = func() time.Time { return later }
 	server.browserReplay.mu.Unlock()
-	if removed := server.browserReplay.PruneExpired(); removed == 0 {
-		t.Fatal("the terminal replay was not pruned")
+	// The worker finishes just after the session turns terminal.
+	pruneDeadline := time.Now().Add(5 * time.Second)
+	for server.browserReplay.PruneExpired() == 0 {
+		if time.Now().After(pruneDeadline) {
+			t.Fatal("the terminal replay was not pruned")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	if _, err := os.Stat(copied); !os.IsNotExist(err) {
 		t.Fatalf("a pruned record's copy stayed: %v", err)
@@ -462,4 +481,46 @@ func TestReplayHARStoreManagedRoot(t *testing.T) {
 		t.Fatalf("the sweep followed the link: %v", err)
 	}
 	linked.close()
+
+	// A root that is not private (another mode) is not adopted either.
+	if err := os.Remove(root); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var shared replayHARStore
+	copied, err = shared.write(&BrowserReplaySession{ID: "c"}, strings.NewReader("{}"), 2)
+	if err != nil || strings.HasPrefix(copied, root+string(os.PathSeparator)) {
+		t.Fatalf("copy %q under a shared root: %v", copied, err)
+	}
+	shared.close()
+
+	// A live manager keeps its directory fresh, and makes it again if another
+	// process removed it.
+	if err := os.Chmod(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	var live replayHARStore
+	first, err := live.write(&BrowserReplaySession{ID: "d"}, strings.NewReader("{}"), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(filepath.Dir(first), old, old); err != nil {
+		t.Fatal(err)
+	}
+	live.sweep(func(*BrowserReplaySession) bool { return true })
+	if info, err := os.Stat(filepath.Dir(first)); err != nil || time.Since(info.ModTime()) > time.Minute {
+		t.Fatalf("the sweep did not keep the live directory fresh: %v %v", info, err)
+	}
+	if err := os.RemoveAll(filepath.Dir(first)); err != nil {
+		t.Fatal(err)
+	}
+	if second, err := live.write(&BrowserReplaySession{ID: "e"}, strings.NewReader("{}"), 2); err != nil || second == "" {
+		t.Fatalf("a removed live directory was not made again: %q %v", second, err)
+	}
+	live.close()
 }

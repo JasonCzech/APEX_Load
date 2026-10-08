@@ -510,6 +510,17 @@ func (a *journeyAccumulator) finish() {
 	a.report.Journeys = a.results
 }
 
+// unavailableReason says why an archive with no row in an iteration cannot
+// be accounted: it ran no iteration when identity was recorded or no VUser
+// action row lacks it (an empty archive, or only a group's once-only
+// init/teardown rows); otherwise it predates iteration identity.
+func (a *journeyAccumulator) unavailableReason() string {
+	if a.lifetimes || a.rowsWithoutLifetime == 0 {
+		return "no_iterations"
+	}
+	return "archive_lacks_vuser_iteration_identity"
+}
+
 // accountJourneys reads a finalized archive's transactions under a journey
 // policy. A scan stopped by the archive budget, or an archive whose
 // generator sources were not all collected, gives an incomplete report.
@@ -540,13 +551,7 @@ func accountJourneys(ctx context.Context, record *storage.RunArchiveRecord, mani
 		}
 	}
 	if !acc.identity {
-		report.Availability, report.Journeys = "unavailable", []JourneyAccounting{}
-		report.Reason = "archive_lacks_vuser_iteration_identity"
-		if acc.lifetimes || acc.ordinal == 0 {
-			// Identity was recorded (or nothing was), the run just ran no
-			// iteration.
-			report.Reason = "no_iterations"
-		}
+		report.Availability, report.Journeys, report.Reason = "unavailable", []JourneyAccounting{}, acc.unavailableReason()
 		return report, nil
 	}
 	acc.finish()

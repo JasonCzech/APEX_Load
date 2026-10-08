@@ -60,12 +60,16 @@ func (s *Server) autoQueueBrowserIntelligence(testID string) {
 	}
 	lease, err := acquireArchiveMaterialized(ctx, record)
 	if err != nil {
-		slog.Warn("browser findings were not queued", "test_id", testID, "error", err)
+		slog.Warn("the run archive could not be leased to check for browser findings", "test_id", testID, "error", err)
 		return
 	}
 	manifest, err := loadRunArchiveManifestFromRecord(record)
 	lease.Release()
-	if err != nil || (manifest.BrowserDocumentsFile == "" && !manifest.BrowserDocumentCaptureRequested) {
+	if err != nil {
+		slog.Warn("the run archive manifest could not be read to check for browser findings", "test_id", testID, "error", err)
+		return
+	}
+	if manifest.BrowserDocumentsFile == "" && !manifest.BrowserDocumentCaptureRequested {
 		return
 	}
 	pinned := false
@@ -84,6 +88,7 @@ func (s *Server) autoQueueBrowserIntelligence(testID string) {
 	}
 	existing, err := pinnedBrowserEvaluations(store, project, test.ID)
 	if err != nil {
+		slog.Warn("browser findings were not queued", "test_id", testID, "error", err)
 		return
 	}
 	for _, job := range existing {
@@ -104,8 +109,8 @@ func (s *Server) autoQueueBrowserIntelligence(testID string) {
 type RunBrowserFindingsResponse struct {
 	RunID string `json:"run_id"`
 	// Status is ready (Result is set), pending (an evaluation is queued or
-	// running and none is ready), failed (the newest evaluation failed and
-	// none is ready; Failure says why) or not_evaluated.
+	// running and none is ready), failed (the newest evaluation failed or
+	// expired and none is ready; Failure says why) or not_evaluated.
 	Status      string                     `json:"status"`
 	JobID       string                     `json:"job_id,omitempty"`
 	CompletedAt *time.Time                 `json:"completed_at,omitempty"`

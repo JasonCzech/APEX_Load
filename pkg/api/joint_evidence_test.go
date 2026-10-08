@@ -505,3 +505,33 @@ func TestJointEvidenceCapabilityFromProbedFeatures(t *testing.T) {
 		}
 	}
 }
+
+// A local window's persisted copy keeps its time at the store's resolution
+// (PostgreSQL: microseconds) while the retained copy keeps nanoseconds: they
+// are one window, archived once.
+func TestJointEvidenceArchiveMatchesLocalWindowsAtStoreResolution(t *testing.T) {
+	server, store := baselineTestServer(t)
+	comparisonArchiveFixture(t, server, store, "joint-local", 100, 100)
+	at := time.Date(2026, 10, 8, 12, 0, 1, 123456789, time.UTC)
+	local := func(timestamp time.Time) *LiveMetrics {
+		return &LiveMetrics{Timestamp: timestamp, NativeEvidence: &storage.NativeIntervalEvidence{Version: 3, WindowSeconds: 1,
+			Dimensions: map[string]map[string]storage.NativeIntervalMetric{storage.NativeJointDimension: {jointKey("login", "east", "3g"): nativeBucketMetric(10, 20)}},
+			Joint:      &storage.NativeJointEvidence{Population: "action", Dimensions: jointTestProjection.Dimensions, Availability: "measured"}}}
+	}
+	if err := store.SaveHistory("joint-local", at.Truncate(time.Microsecond), local(at.Truncate(time.Microsecond))); err != nil {
+		t.Fatal(err)
+	}
+	record := server.runner.archives["joint-local"]
+	admitArchiveForTest(t, record)
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Provenance.JointEvidence = jointTestProjection.Clone()
+	if err := server.runner.persistJointIntervalArchive(context.Background(), &ManagedTest{ID: "joint-local", History: []*LiveMetrics{local(at)}}, record, manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.JointIntervalCount != 1 || manifest.JointIntervalsTruncated {
+		t.Fatalf("local window archived %d times, truncated %v", manifest.JointIntervalCount, manifest.JointIntervalsTruncated)
+	}
+}

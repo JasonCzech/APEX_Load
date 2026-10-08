@@ -75,11 +75,17 @@ A transaction still open when the next iteration starts is carried into it.
 
 So scripts that record an iteration transaction (automatic transactions per
 iteration, or none and no explicit transactions) settle every last
-iteration that ended on its own. Scripts with explicit transactions settle a
-last iteration only when the VUser ended on its own with transactions still
+iteration that ended on its own. Scripts without one (explicit
+transactions, or automatic transactions per action) settle a last
+iteration only when the VUser ended on its own with transactions still
 open; a last iteration that ended on its own with none open, or a
-fail-fast failure outside any open transaction, is censored. Censoring
-excludes an attempt from the index rather than guessing its outcome.
+fail-fast failure outside any open transaction, is censored. In an open
+workload every arrival runs a single iteration, so for such scripts every
+arrival's unsettled attempt is censored. Censoring excludes an attempt from
+the index rather than guessing its outcome. Whether a VUser ended on its own
+(its iterations or data done, a genuine failure with continue on error off)
+or was ended (a stop, ramp-down, scale-down or goal limit) is recorded by
+the engine where its loop ends.
 
 Rows without a lifetime (written before lifetimes existed) fall back to the
 VUser ID: their last iteration is always censored, and a replacement

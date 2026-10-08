@@ -264,6 +264,12 @@ func (vu *VUser) Run(ctx context.Context) {
 		vu.lifetime = newVUserLifetime()
 	}
 
+	// genuineExit records that the VUser ended on its own (its iterations
+	// done, its data exhausted, a genuine failure with continue_on_error off)
+	// rather than because a stop, ramp-down, scale-down or goal boundary ended
+	// it. It is recorded where the loop ends, never inferred from contexts: a
+	// goal limiter can refuse a slot without cancelling anything.
+	genuineExit := false
 	if err := vu.prepareRuntimeState(); err != nil {
 		vu.recordDataRowError(err)
 		return
@@ -307,7 +313,7 @@ func (vu *VUser) Run(ctx context.Context) {
 		// group, a scale-down or a goal boundary) leaves its open
 		// transactions cut, not failed; one that ended on its own (its
 		// iterations done, a genuine failure) ends their iteration.
-		stopped := ctx.Err() != nil || iterCtx.Err() != nil || entitledBoundaryCtx.Err() != nil
+		stopped := !genuineExit
 		previousAbandoning, previousEnding := vu.abandoning, vu.endingIteration
 		vu.abandoning, vu.endingIteration = previousAbandoning || stopped, !stopped
 		vu.finalizeOpenSourceTransactions("source transaction ended without a matching end marker")
@@ -326,6 +332,8 @@ func (vu *VUser) Run(ctx context.Context) {
 		stopInitBoundaryLink()
 		cancelInitBoundary()
 		if !ok {
+			// Init failed on its own unless a stop ended it.
+			genuineExit = ctx.Err() == nil && iterCtx.Err() == nil && entitledBoundaryCtx.Err() == nil
 			return
 		}
 	}
@@ -428,6 +436,7 @@ func (vu *VUser) Run(ctx context.Context) {
 		}
 		// Check iteration limit
 		if maxIter > 0 && iteration >= maxIter {
+			genuineExit = true
 			break
 		}
 		// Must precede the goal reservations below: once a reservation is
@@ -451,7 +460,10 @@ func (vu *VUser) Run(ctx context.Context) {
 				// becomes definitive and the peer can release its iteration.
 				reserved = vu.ExecutionGoals.TryReserveIteration()
 				if !reserved {
+					// The goal boundary, not the target, ends it.
+					vu.abandoning = true
 					vu.finalizeOpenSourceTransactions("source transaction could not acquire a global iteration slot")
+					vu.abandoning = false
 				}
 			} else {
 				reserved = vu.ExecutionGoals.WaitReserveIteration(iterationBoundaryCtx)
@@ -471,7 +483,9 @@ func (vu *VUser) Run(ctx context.Context) {
 				// relinquish any earlier iteration reservation.
 				reserved = vu.ExecutionGoals.TryReserveTransaction()
 				if !reserved {
+					vu.abandoning = true
 					vu.finalizeOpenSourceTransactions("source transaction could not acquire a per-iteration transaction slot")
+					vu.abandoning = false
 				}
 			} else {
 				reserved = vu.ExecutionGoals.WaitReserveTransaction(iterationBoundaryCtx)
@@ -542,6 +556,8 @@ func (vu *VUser) Run(ctx context.Context) {
 				vu.restoreDataBindings(cleanupBindings)
 				vu.recordDataRowError(err)
 				releasePreIterationReservations()
+				// Its data ran out: the VUser ends on its own.
+				genuineExit = true
 				goto teardown
 			}
 			if vu.Parameters != nil {
@@ -625,6 +641,12 @@ func (vu *VUser) Run(ctx context.Context) {
 			iterTxRecorded = true
 		}
 
+		// failIteration ends the iteration on a genuine failure with
+		// continue_on_error off: the VUser ends on its own.
+		failIteration := func() {
+			genuineExit = true
+			recordIterationTransaction(false)
+		}
 		iterSuccess := true
 		iterationExitRequested := false
 
@@ -722,7 +744,7 @@ func (vu *VUser) Run(ctx context.Context) {
 					if !continueOnError {
 						// A genuine failure ends the iteration: record it as one,
 						// never as a boundary abort.
-						recordIterationTransaction(false)
+						failIteration()
 						return flowTeardown
 					}
 					return flowNext
@@ -730,7 +752,7 @@ func (vu *VUser) Run(ctx context.Context) {
 				if !vu.executeParallelBlock(iterCtx, action, "action") {
 					iterSuccess = false
 					if !continueOnError {
-						recordIterationTransaction(false)
+						failIteration()
 						return flowTeardown
 					}
 				}
@@ -893,7 +915,7 @@ func (vu *VUser) Run(ctx context.Context) {
 					logger.Error("action error", "action", action.Name, "err", scrubSensitiveError(err, vu.RedactionConfig))
 					iterSuccess = false
 					if !continueOnError {
-						recordIterationTransaction(false)
+						failIteration()
 						return flowTeardown
 					}
 				}
@@ -952,7 +974,7 @@ func (vu *VUser) Run(ctx context.Context) {
 					logger.Error("action error", "action", action.Name, "err", scrubSensitiveError(err, vu.RedactionConfig))
 					iterSuccess = false
 					if !continueOnError {
-						recordIterationTransaction(false)
+						failIteration()
 						return flowTeardown
 					}
 					return flowNext
@@ -972,7 +994,7 @@ func (vu *VUser) Run(ctx context.Context) {
 						logger.Error("action failed", actionLogAttrs(action.Name, nil, result, logCfg, true, vu.RedactionConfig)...)
 					}
 					if !continueOnError {
-						recordIterationTransaction(false)
+						failIteration()
 						return flowTeardown
 					}
 				} else if logCfg.Level == "extended" || logCfg.OnErrorOnly {
@@ -992,7 +1014,7 @@ func (vu *VUser) Run(ctx context.Context) {
 			}
 			if err := vu.beforeWebSocketAction(iterCtx, action.Type); err != nil {
 				logger.Error("WebSocket callback failed", "err", scrubSensitiveError(err, vu.RedactionConfig))
-				recordIterationTransaction(false)
+				failIteration()
 				return flowTeardown
 			}
 			leasedCtx, releasePause, pauseErr := vu.admitRuntimePauseAction(iterCtx)
@@ -1063,7 +1085,7 @@ func (vu *VUser) Run(ctx context.Context) {
 					restoreIterationBoundary()
 				}
 				if !continueOnError {
-					recordIterationTransaction(false)
+					failIteration()
 					return flowTeardown
 				}
 				if iterCtx.Err() == nil && iterationBoundaryCtx.Err() == nil {
@@ -1125,7 +1147,7 @@ func (vu *VUser) Run(ctx context.Context) {
 					logger.Error("action failed", actionLogAttrs(action.Name, resolved, result, logCfg, true, vu.RedactionConfig)...)
 				}
 				if !continueOnError {
-					recordIterationTransaction(false)
+					failIteration()
 					return flowTeardown
 				}
 			} else if logCfg.Level == "extended" || logCfg.OnErrorOnly {

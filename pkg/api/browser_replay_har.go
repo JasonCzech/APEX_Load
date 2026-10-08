@@ -100,14 +100,18 @@ func (m *BrowserReplayManager) discardReplayHAR(artifacts []protocol.BrowserHARA
 	m.retainReplayHAR(&BrowserReplaySession{}, artifacts, false)
 }
 
-// openLocked makes the store's directory, removing ones left by processes
-// that ended.
+// openLocked makes the store's directory, removing ones left idle for a day
+// by processes that ended. A directory that disappeared (another process
+// took it for stale) is made again.
 func (s *replayHARStore) openLocked() error {
 	if s.closed {
 		return errReplayHARStoreClosed
 	}
 	if s.dir != "" {
-		return nil
+		if _, err := os.Lstat(s.dir); err == nil {
+			return nil
+		}
+		s.dir = ""
 	}
 	dir, err := openManagedReplayHARDir()
 	if err != nil {
@@ -122,9 +126,9 @@ func (s *replayHARStore) openLocked() error {
 }
 
 // openManagedReplayHARDir makes this manager's directory under the managed
-// root and removes ones left by processes that ended. The root must be a
-// real, private directory this process can write: never a link (which would
-// steer the sweep elsewhere) or one another user shares.
+// root and removes ones idle for a day (a live manager keeps its own fresh).
+// The root must be a real, private directory this process's user owns: never
+// a link (which would steer the sweep elsewhere) or another user's.
 func openManagedReplayHARDir() (string, error) {
 	root := filepath.Join(os.TempDir(), replayHARRootName)
 	if err := os.MkdirAll(root, 0o700); err != nil {
@@ -134,7 +138,7 @@ func openManagedReplayHARDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0o700 {
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0o700 || !replayHAROwnedByProcess(info) {
 		return "", errors.New("the managed replay HAR root is not a private directory")
 	}
 	dir, err := os.MkdirTemp(root, "manager-")
@@ -202,10 +206,16 @@ func (s *replayHARStore) open(path string) (*os.File, error) {
 	return os.Open(path)
 }
 
-// sweep removes the copies whose session record the manager no longer holds.
+// sweep removes the copies whose session record the manager no longer holds,
+// and keeps the live manager's directory fresh so no other process takes it
+// for stale.
 func (s *replayHARStore) sweep(live func(*BrowserReplaySession) bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.dir != "" {
+		now := time.Now()
+		_ = os.Chtimes(s.dir, now, now)
+	}
 	for path, owner := range s.owners {
 		if !live(owner) {
 			_ = os.Remove(path)

@@ -342,3 +342,45 @@ func TestOpenTransactionsAreCarriedIntoTheNextIteration(t *testing.T) {
 		t.Fatalf("carried %+v", vu.sourceTransactions)
 	}
 }
+
+// reservingProtocol lets a peer VUser reserve a goal slot when the named
+// action runs.
+type reservingProtocol struct {
+	captureProtocol
+	on      string
+	reserve func()
+}
+
+func (p *reservingProtocol) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
+	if action.Name == p.on {
+		p.reserve()
+	}
+	return &protocol.Result{ActionName: action.Name, StartTime: time.Now(), Duration: time.Millisecond, Success: true}, nil
+}
+
+// A goal limiter can refuse a transaction slot without cancelling anything
+// (another VUser holds a pending reservation): the VUser abandons the
+// iteration at that goal boundary, so the transactions it leaves open are
+// the boundary's, interrupted, and do not end the iteration.
+func TestGoalBoundaryRefusalLeavesOpenTransactionsInterrupted(t *testing.T) {
+	limiter := NewExecutionGoalLimiter(dsl.RunLogicConfig{MaxTransactions: 2}, func() {})
+	// Inside E2E, another VUser reserves the last slot and has not committed
+	// it, so starting Pay is refused without stopping anything.
+	proto := &reservingProtocol{on: "browse", reserve: func() {
+		if !limiter.TryReserveTransaction() {
+			t.Error("the peer reservation failed")
+		}
+	}}
+	vu := newControlFlowVUser(proto, nil, []dsl.Action{sourceTx("E2E", "lr_start_transaction"), click("browse"), sourceTx("Pay", "lr_start_transaction"), click("pay"), sourceTx("Pay", "lr_end_transaction"), sourceTx("E2E", "lr_end_transaction")})
+	vu.ExecutionGoals = limiter
+	sink := &identitySink{}
+	vu.ResultSink = sink
+	vu.Run(context.Background())
+	e2e := resultsNamed(sink, "E2E")
+	if len(e2e) != 1 || e2e[0].Success || !e2e[0].Interrupted || e2e[0].EndsIteration {
+		t.Fatalf("E2E cut at the goal boundary %+v", e2e)
+	}
+	if pay := resultsNamed(sink, "pay"); len(pay) != 0 {
+		t.Fatalf("pay ran past the goal boundary: %+v", pay)
+	}
+}

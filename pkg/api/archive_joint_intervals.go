@@ -127,7 +127,10 @@ func jointIntervalEvidenceRows(timestamp time.Time, evidence *storage.NativeInte
 	}
 	base := JointIntervalRecord{SchemaVersion: jointIntervalSchemaVersion, Timestamp: timestamp.UTC(), WindowSeconds: evidence.WindowSeconds, SourceID: "local"}
 	joint, tuples := evidence.Joint, evidence.Dimensions[storage.NativeJointDimension]
-	identity := fmt.Sprintf("local/%d", timestamp.UnixNano())
+	// A local window is identified by its time at the store's resolution
+	// (PostgreSQL keeps microseconds), so the persisted and the retained copy
+	// of one window are the same window.
+	identity := fmt.Sprintf("local/%d", timestamp.UTC().Truncate(time.Microsecond).UnixNano())
 	if p := evidence.Publication; p != nil {
 		base.Timestamp, base.WindowSeconds, base.SourceID = p.Timestamp.UTC(), p.WindowSeconds, p.SourceID
 		base.ExecutionGeneration, base.Sequence = p.ExecutionGeneration, p.Sequence
