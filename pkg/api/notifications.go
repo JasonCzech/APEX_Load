@@ -50,6 +50,9 @@ var supportedNotificationEvents = map[string]struct{}{
 
 	"threshold_alert": {},
 
+	"browser_finding":          {},
+	"browser_finding_resolved": {},
+
 	"load_phase": {},
 
 	"fleet_alert":                {},

@@ -160,6 +160,8 @@ const NOTIFICATION_EVENTS = [
   'telemetry_breached',
   'telemetry_recovered',
   'threshold_alert',
+  'browser_finding',
+  'browser_finding_resolved',
   'load_phase',
   'fleet_alert',
   'fleet_alert_acknowledged',

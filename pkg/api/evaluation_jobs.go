@@ -49,6 +49,9 @@ type evaluationKind struct {
 	// shutdown or the kind's deadline.
 	Run      func(ctx context.Context, s *Server, job *storage.EvaluationJob) (any, error)
 	Deadline time.Duration
+	// OnReady, when set, runs after the job's result is stored as ready
+	// (delivery such as webhooks); it never changes the result.
+	OnReady func(s *Server, job *storage.EvaluationJob, result []byte)
 }
 
 var evaluationKinds = struct {
@@ -448,7 +451,13 @@ func (s *Server) runEvaluationJob(ctx context.Context, store storage.EvaluationJ
 	if len(body) > storage.MaxEvaluationJobResultBytes {
 		return s.completeEvaluationJob(store, job, owner, term, storage.EvaluationJobFailed, "", storage.EvaluationFailureResultTooLarge, "evaluation result exceeds the stored size limit")
 	}
-	return s.completeEvaluationJob(store, job, owner, term, storage.EvaluationJobReady, string(body), "", "")
+	if err := s.completeEvaluationJob(store, job, owner, term, storage.EvaluationJobReady, string(body), "", ""); err != nil {
+		return err
+	}
+	if kind.OnReady != nil {
+		kind.OnReady(s, job, body)
+	}
+	return nil
 }
 
 func (s *Server) completeEvaluationJob(store storage.EvaluationJobStore, job *storage.EvaluationJob, owner string, term executionLeaseTerm, state, result, failureCode, failure string) error {

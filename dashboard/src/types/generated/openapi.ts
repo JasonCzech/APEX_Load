@@ -64767,6 +64767,143 @@ export interface operations {
       };
     };
   };
+  "handleGetRunArchiveBrowserFindings": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "completed_at"?: (string) | null;
+            "job_id"?: string;
+            "pending"?: boolean;
+            "result"?: ({
+              "counts": Record<string, number>;
+              "findings": Array<{
+                "algorithm"?: string;
+                "applicable": boolean;
+                "baseline": {
+                  "mode": string;
+                  "status": string;
+                };
+                "category": string;
+                "cohort"?: ({
+                  "device_profile": string;
+                  "engine": string;
+                  "frame_scope": string;
+                  "lifecycle_phase": string;
+                }) | null;
+                "evidence": {
+                  "documents"?: Array<Record<string, unknown>>;
+                };
+                "good"?: (number) | null;
+                "id": string;
+                "key": string;
+                "metric"?: string;
+                "observed"?: (number) | null;
+                "poor"?: (number) | null;
+                "quality": {
+                  "censored": number;
+                  "eligible_final": number;
+                  "excluded_reasons"?: Record<string, number>;
+                  "incomplete"?: boolean;
+                  "provisional": number;
+                  "unavailable_final": number;
+                  "unqualified_final": number;
+                };
+                "reason"?: string;
+                "rule_id": string;
+                "rule_set": string;
+                "rule_version": number;
+                "severity"?: string;
+                "state": string;
+                "statistic"?: string;
+                "summary": string;
+                "unit"?: string;
+                "window": {
+                  "end": string;
+                  "start": string;
+                };
+              }>;
+              "input_fingerprint": string;
+              "notes": Array<string>;
+              "policy": {
+                "id": string;
+                "name": string;
+                "revision": number;
+                "sha256": string;
+                "source": string;
+              };
+              "rule_set": string;
+              "run_id": string;
+              "schema_version": string;
+              "score": {
+                "components": Array<{
+                  "contribution"?: (number) | null;
+                  "good": number;
+                  "metric": string;
+                  "observed"?: (number) | null;
+                  "poor": number;
+                  "reason"?: string;
+                  "required": boolean;
+                  "samples": number;
+                  "score"?: (number) | null;
+                  "weight": number;
+                }>;
+                "coverage": {
+                  "observed": number;
+                  "required": number;
+                };
+                "missing"?: Array<string>;
+                "score"?: (number) | null;
+                "severity": string;
+                "unscored_reason"?: string;
+                "version": string;
+              };
+              "window": {
+                "end": string;
+                "start": string;
+              };
+            }) | null;
+            "run_id": string;
+            "status": string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleGetRunArchiveBrowserResources": {
     parameters: {
       "path": {
@@ -166975,6 +167112,9 @@ export interface paths {
   };
   "/api/v1/tests/{id}/archive/browser-diagnostics": {
     "get": operations["handleDownloadRunArchiveBrowserDiagnostics"];
+  };
+  "/api/v1/tests/{id}/archive/browser-findings": {
+    "get": operations["handleGetRunArchiveBrowserFindings"];
   };
   "/api/v1/tests/{id}/archive/browser-resources": {
     "get": operations["handleGetRunArchiveBrowserResources"];

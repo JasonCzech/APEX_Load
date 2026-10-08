@@ -367,7 +367,10 @@ type TestRunner struct {
 	execution                                   testExecutionBackend
 	notifier                                    *notificationDispatcher
 	notifications                               atomic.Value
-	routeCache                                  map[string]latencyRouteCacheEntry
+	// archiveAttachedHook, installed by Server, runs (in its own goroutine)
+	// after a finalized archive is attached to its run.
+	archiveAttachedHook func(testID string)
+	routeCache          map[string]latencyRouteCacheEntry
 	// importPublicationSnapshot is installed by Server after construction. It
 	// reads the durable direct-import journal and returns assets that have been
 	// created but whose containing batch has not committed. Keeping the callback

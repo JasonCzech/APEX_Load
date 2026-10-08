@@ -46,6 +46,7 @@ import SynchronizedTimeline from './runReport/SynchronizedTimeline'
 import ImportedDashboardPanels from './runReport/ImportedDashboardPanels'
 import TransactionSlaScoreboard from './runReport/TransactionSlaScoreboard'
 import JourneyRiskPanel from './runReport/JourneyRiskPanel'
+import BrowserFindingsPanel from './runReport/BrowserFindingsPanel'
 import TransactionResponseTimeSLATable from './TransactionResponseTimeSLATable'
 import {
   alignBaselineTimeline,
@@ -586,7 +587,7 @@ export default function RunReportPage({
           <RunReportDiagnostics report={report} loading={archiveModel.archiveAnalysisLoading} error={archiveModel.archiveAnalysisError} />
           {renderEvidence('report-error-patterns')}
           {renderEvidence('transactions')}
-          <details><summary>Browser evidence</summary>{renderEvidence('report-browser-summary')}{renderEvidence('report-browser-resources')}</details>
+          <details><summary>Browser evidence</summary><BrowserFindingsPanel testId={testId} projectId={test.project_id || 'default'} canEvaluate={canPublishConfluence} />{renderEvidence('report-browser-summary')}{renderEvidence('report-browser-resources')}</details>
           <details><summary>Execution path analysis</summary>{renderEvidence('report-analysis')}</details>
         </>}
         {area === 'Evidence' && hasArchive && <>

@@ -349130,6 +349130,357 @@ paths:
       tags:
         - Tests
       x-handler: handleDownloadRunArchiveBrowserDiagnostics
+  /api/v1/tests/{id}/archive/browser-findings:
+    get:
+      summary: Get Run Archive Browser Findings
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      operationId: handleGetRunArchiveBrowserFindings
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  completed_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  job_id:
+                    type: string
+                  pending:
+                    type: boolean
+                  result:
+                    type: object
+                    properties:
+                      counts:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                          format: int64
+                      findings:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            algorithm:
+                              type: string
+                            applicable:
+                              type: boolean
+                            baseline:
+                              type: object
+                              properties:
+                                mode:
+                                  type: string
+                                status:
+                                  type: string
+                              required:
+                                - mode
+                                - status
+                            category:
+                              type: string
+                            cohort:
+                              type: object
+                              properties:
+                                device_profile:
+                                  type: string
+                                engine:
+                                  type: string
+                                frame_scope:
+                                  type: string
+                                lifecycle_phase:
+                                  type: string
+                              required:
+                                - device_profile
+                                - engine
+                                - frame_scope
+                                - lifecycle_phase
+                              nullable: true
+                            evidence:
+                              type: object
+                              properties:
+                                documents:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: BrowserFindingDocument'
+                                    additionalProperties: true
+                            good:
+                              type: number
+                              format: double
+                              nullable: true
+                            id:
+                              type: string
+                            key:
+                              type: string
+                            metric:
+                              type: string
+                            observed:
+                              type: number
+                              format: double
+                              nullable: true
+                            poor:
+                              type: number
+                              format: double
+                              nullable: true
+                            quality:
+                              type: object
+                              properties:
+                                censored:
+                                  type: integer
+                                  format: int64
+                                eligible_final:
+                                  type: integer
+                                  format: int64
+                                excluded_reasons:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                incomplete:
+                                  type: boolean
+                                provisional:
+                                  type: integer
+                                  format: int64
+                                unavailable_final:
+                                  type: integer
+                                  format: int64
+                                unqualified_final:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - censored
+                                - eligible_final
+                                - provisional
+                                - unavailable_final
+                                - unqualified_final
+                            reason:
+                              type: string
+                            rule_id:
+                              type: string
+                            rule_set:
+                              type: string
+                            rule_version:
+                              type: integer
+                              format: int64
+                            severity:
+                              type: string
+                            state:
+                              type: string
+                            statistic:
+                              type: string
+                            summary:
+                              type: string
+                            unit:
+                              type: string
+                            window:
+                              type: object
+                              properties:
+                                end:
+                                  type: string
+                                  format: date-time
+                                start:
+                                  type: string
+                                  format: date-time
+                              required:
+                                - end
+                                - start
+                          required:
+                            - applicable
+                            - baseline
+                            - category
+                            - evidence
+                            - id
+                            - key
+                            - quality
+                            - rule_id
+                            - rule_set
+                            - rule_version
+                            - state
+                            - summary
+                            - window
+                      input_fingerprint:
+                        type: string
+                      notes:
+                        type: array
+                        items:
+                          type: string
+                      policy:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          name:
+                            type: string
+                          revision:
+                            type: integer
+                            format: int64
+                          sha256:
+                            type: string
+                          source:
+                            type: string
+                        required:
+                          - id
+                          - name
+                          - revision
+                          - sha256
+                          - source
+                      rule_set:
+                        type: string
+                      run_id:
+                        type: string
+                      schema_version:
+                        type: string
+                      score:
+                        type: object
+                        properties:
+                          components:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                contribution:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                good:
+                                  type: number
+                                  format: double
+                                metric:
+                                  type: string
+                                observed:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                poor:
+                                  type: number
+                                  format: double
+                                reason:
+                                  type: string
+                                required:
+                                  type: boolean
+                                samples:
+                                  type: integer
+                                  format: int64
+                                score:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                weight:
+                                  type: number
+                                  format: double
+                              required:
+                                - good
+                                - metric
+                                - poor
+                                - required
+                                - samples
+                                - weight
+                          coverage:
+                            type: object
+                            properties:
+                              observed:
+                                type: integer
+                                format: int64
+                              required:
+                                type: integer
+                                format: int64
+                            required:
+                              - observed
+                              - required
+                          missing:
+                            type: array
+                            items:
+                              type: string
+                          score:
+                            type: number
+                            format: double
+                            nullable: true
+                          severity:
+                            type: string
+                          unscored_reason:
+                            type: string
+                          version:
+                            type: string
+                        required:
+                          - components
+                          - coverage
+                          - severity
+                          - version
+                      window:
+                        type: object
+                        properties:
+                          end:
+                            type: string
+                            format: date-time
+                          start:
+                            type: string
+                            format: date-time
+                        required:
+                          - end
+                          - start
+                    required:
+                      - counts
+                      - findings
+                      - input_fingerprint
+                      - notes
+                      - policy
+                      - rule_set
+                      - run_id
+                      - schema_version
+                      - score
+                      - window
+                    nullable: true
+                  run_id:
+                    type: string
+                  status:
+                    type: string
+                required:
+                  - run_id
+                  - status
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleGetRunArchiveBrowserFindings
   /api/v1/tests/{id}/archive/browser-resources:
     get:
       summary: Get Run Archive Browser Resources

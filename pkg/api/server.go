@@ -789,6 +789,9 @@ func NewServer(cfg ServerConfig) *Server {
 		slog.Warn("failed to recover abandoned direct import during construction", "error", err)
 	}
 	runner.setImportPublicationSnapshot(s.store, s.pendingDirectImportAssets)
+	// Browser findings are evaluated when a run's finalized archive is
+	// attached (E1).
+	runner.archiveAttachedHook = s.autoQueueBrowserIntelligence
 
 	s.loadLibraryState()
 	s.routes(cfg.AllowedOrigins)
