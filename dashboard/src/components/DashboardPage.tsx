@@ -1,4 +1,5 @@
 import SeriesChartExport from "./SeriesChartExport"
+import { errorRateBasisLabel, liveRunCounts, liveRunErrorPercent } from '../utils/liveErrorRate'
 import type { AnalysisReportContext } from './dashboardAnalysisModel'
 import TabList from './ux/TabList'
 import DashboardLandingSummary from './DashboardLandingSummary'
@@ -1612,10 +1613,10 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                           <span className="dac-metric-label">Avg ms</span>
                         </div>
                         <div className="dac-metric">
-                          <span className={`dac-metric-value ${(latest?.error_pct ?? 0) > 0 ? 'text-danger' : ''}`}>
-                            {latest?.error_pct?.toFixed(2) ?? '0'}%
+                          <span className={`dac-metric-value ${(liveRunErrorPercent(latest) ?? 0) > 0 ? 'text-danger' : ''}`}>
+                            {liveRunErrorPercent(latest)?.toFixed(2) ?? '0'}%
                           </span>
-                          <span className="dac-metric-label">Errors</span>
+                          <span className="dac-metric-label" title={liveRunCounts(latest)?.basis === 'window' ? 'Error rate of the last sample window' : 'Error rate since the run started'}>Errors ({errorRateBasisLabel(liveRunCounts(latest)?.basis)})</span>
                         </div>
                       </div>
                       {chartData.length > 1 && (

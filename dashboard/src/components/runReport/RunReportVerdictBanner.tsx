@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 
 import type { ReportAnnotations, RunArchiveReport } from '../../types'
 import { effectiveReportVerdict } from './runReportModel'
+import { REPORT_LENS_LABELS } from './reportLensLabels'
+import type { ReportLens } from '../../appRouting'
 
 interface Props {
   report: RunArchiveReport | null
@@ -13,6 +15,16 @@ interface Props {
   onStatusChange: (status: string) => void
   onExplanationChange: (explanation: string) => void
   onSaveOverride: (status: string, explanation: string) => Promise<boolean>
+}
+
+function verdictProvenance(annotations: ReportAnnotations | null): string {
+  const shared = 'One assessment per run: it appears in every report audience and export.'
+  if (!annotations?.verdict_override) return shared
+  const author = annotations.verdict_updated_by || annotations.updated_by
+  const audience = annotations.verdict_profile ? REPORT_LENS_LABELS[annotations.verdict_profile as ReportLens] ?? annotations.verdict_profile : ''
+  const when = annotations.verdict_updated_at ? new Date(annotations.verdict_updated_at).toLocaleString() : ''
+  const setBy = [author && `by ${author}`, audience && `from the ${audience} report`, when && `on ${when}`].filter(Boolean).join(' ')
+  return setBy ? `Set ${setBy}. ${shared}` : shared
 }
 
 function verdictTone(verdict: ReturnType<typeof effectiveReportVerdict>) {
@@ -77,6 +89,7 @@ export default function RunReportVerdictBanner({
             <span>Explanation</span>
             <textarea value={explanation} onChange={event => onExplanationChange(event.currentTarget.value)} rows={3} disabled={controlsDisabled} />
           </label>
+          <p className="run-report-muted run-report-override-provenance">{verdictProvenance(annotations)}</p>
           <div className="run-report-override-actions">
             <button className="btn btn-sm btn-primary" type="button" onClick={() => void save()} disabled={controlsDisabled}>
               {saving ? 'Saving...' : 'Save'}

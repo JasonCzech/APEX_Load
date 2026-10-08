@@ -403,3 +403,29 @@ func TestConvertZipUnderProductionOptions(t *testing.T) {
 		})
 	}
 }
+
+func TestBaseURLOverrideWarnsAboutAbsoluteTargetsItCannotRepoint(t *testing.T) {
+	parsed, err := ParseActionFile("Action.c", sampleActionC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rebased, err := Convert([]*ParsedAction{parsed}, ConvertOptions{BaseURL: "https://override.test", PreserveTransactions: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, warning := range rebased.Warnings {
+		if strings.Contains(warning, "Base URL override applies only to relative targets") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("warnings = %#v, want the override limitation disclosed", rebased.Warnings)
+	}
+	same, _ := Convert([]*ParsedAction{parsed}, ConvertOptions{BaseURL: "https://example.com", PreserveTransactions: true})
+	for _, warning := range same.Warnings {
+		if strings.Contains(warning, "Base URL override") {
+			t.Fatalf("same-origin override should not warn: %q", warning)
+		}
+	}
+}

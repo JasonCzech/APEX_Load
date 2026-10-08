@@ -166,3 +166,26 @@
     border-radius: 20px;
   }
 }
+
+.session-expiry-notice {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  z-index: 1200;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(640px, calc(100vw - 32px));
+  padding: 10px 14px;
+  border: 1px solid var(--warning);
+  border-radius: 10px;
+  background: var(--bg-card-solid, var(--bg-secondary));
+  color: var(--text-primary);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  font-size: 13px;
+}
+
+.session-expired-dialog .auth-gate-form {
+  margin-top: 12px;
+}

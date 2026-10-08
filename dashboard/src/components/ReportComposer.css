@@ -101,7 +101,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .report-brand-name {
@@ -113,7 +113,7 @@
 
 .report-eyebrow {
   margin: 14px 0 4px;
-  color: var(--accent);
+  color: var(--accent-text);
   font: 600 12px/1.2 "Avenir Next", "Segoe UI", sans-serif;
   letter-spacing: var(--label-tracking, 0.14em);
   text-transform: var(--label-case, uppercase);
@@ -200,7 +200,7 @@
 }
 
 .report-metric.tone-ok .report-metric-value {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .report-metric.tone-warn .report-metric-value {
@@ -501,7 +501,7 @@
 
 .report-finding-id {
   font: 700 12px/1 "IBM Plex Mono", "SF Mono", Menlo, monospace;
-  color: var(--accent);
+  color: var(--accent-text);
   white-space: nowrap;
 }
 

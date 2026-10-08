@@ -788,9 +788,12 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 		// The project row and its governed secret metadata are already gone at
 		// this point. Preserve the external-provider cleanup guidance in the
 		// error response so an administrator is not forced to reconstruct it
-		// after a separate physical-artifact cleanup failure.
+		// after a separate physical-artifact cleanup failure. The per-artifact
+		// causes (storage paths, provider errors) stay in the log and audit.
+		ref := logServerError(w, http.StatusInternalServerError, errors.New(strings.Join(cleanupErrors, "; ")), "project_id", id)
 		writeJSON(w, http.StatusInternalServerError, map[string]any{
-			"error":                               "project metadata was deleted but physical archive cleanup was incomplete: " + strings.Join(cleanupErrors, "; "),
+			"error":                               fmt.Sprintf("project metadata was deleted but physical archive cleanup was incomplete for %d item(s)", len(cleanupErrors)),
+			"ref":                                 ref,
 			"deleted":                             id,
 			"external_secret_cleanup_required":    externalSecretCleanupRequired,
 			"external_application_secret_cleanup": applicationSecretCleanup,

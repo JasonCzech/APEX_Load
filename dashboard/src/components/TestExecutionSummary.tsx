@@ -337,7 +337,7 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
                 <div className="error-pattern-meta">
                   <span>First {formatTimestamp(pattern.first_seen)}</span>
                   <span>Latest {formatTimestamp(pattern.latest_seen)}</span>
-                  <span>{formatPercentage(pattern.error_pct || 0)} errors</span>
+                  {typeof pattern.share_of_errors_pct === 'number' && <span>{formatPercentage(pattern.share_of_errors_pct)} of errors</span>}
                 </div>
                 <div className="error-pattern-tags">
                   {(pattern.actions || []).slice(0, 3).map((action) => <span key={action}>{action}</span>)}

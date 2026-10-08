@@ -101,7 +101,7 @@ body .settings-tabbed-layout .settings-browse-button {
   border: 0;
   background: transparent;
   box-shadow: none;
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 700;
   padding: 4px 0;
 }
@@ -133,7 +133,7 @@ body .repository-scope-toggle > button.btn.btn-secondary:hover:not(:disabled):no
   border: 0;
   background: var(--bg-hover);
   box-shadow: none;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 body .repository-scope-toggle > button.btn.btn-secondary[aria-pressed='true'] {
@@ -202,7 +202,7 @@ body .related-links {
 }
 
 body .related-link {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: var(--font-size-base, 13px);
   font-weight: 700;
   text-decoration: none;

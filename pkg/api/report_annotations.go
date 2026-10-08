@@ -44,6 +44,21 @@ type ReportAnnotations struct {
 	Findings  []ReportFinding `json:"findings,omitempty"`
 	UpdatedAt time.Time       `json:"updated_at"`
 	UpdatedBy string          `json:"updated_by"`
+	// The verdict is stored once per run (runReportVerdict), not per profile.
+	// These response-only fields say which audience last set it, when and by
+	// whom; they are never written to the per-profile record.
+	VerdictProfile   string     `json:"verdict_profile,omitempty"`
+	VerdictUpdatedAt *time.Time `json:"verdict_updated_at,omitempty"`
+	VerdictUpdatedBy string     `json:"verdict_updated_by,omitempty"`
+}
+
+// VerdictAuthor names who set the analyst verdict, falling back to the
+// commentary author for records that predate the run-level verdict.
+func (a *ReportAnnotations) VerdictAuthor() string {
+	if a == nil {
+		return ""
+	}
+	return firstNonEmpty(a.VerdictUpdatedBy, a.UpdatedBy)
 }
 
 // reportCommentarySection describes a labeled, analyst-editable comment block.
@@ -262,6 +277,19 @@ func marshalReportAnnotations(ann *ReportAnnotations) ([]byte, error) {
 // a populated SectionComments map covering reportCommentarySectionOrder so the
 // composer and renderer have a stable shape to work with.
 func resolveReportAnnotations(store storage.Store, report *RunArchiveReport, testID, profile string) (*ReportAnnotations, error) {
+	ann, err := resolveProfileReportAnnotations(store, report, testID, profile)
+	if err != nil {
+		return nil, err
+	}
+	verdict, err := loadRunReportVerdict(store, testID)
+	if err != nil {
+		return nil, err
+	}
+	applyRunReportVerdict(ann, verdict)
+	return ann, nil
+}
+
+func resolveProfileReportAnnotations(store storage.Store, report *RunArchiveReport, testID, profile string) (*ReportAnnotations, error) {
 	saved, err := loadReportAnnotations(store, testID, profile)
 	if err != nil {
 		return nil, err
@@ -323,6 +351,8 @@ func defaultReportAnnotations(report *RunArchiveReport, testID, profile string) 
 	}
 
 	ov := report.Overview
+	// Narrative numbers come from the same population as the on-screen KPIs.
+	headline := reportHeadline(report)
 	verdict := "has not been assessed against acceptance criteria"
 	assessment := deriveReportVerdict(report)
 	if assessment.Status == reportVerdictPass {
@@ -337,11 +367,11 @@ func defaultReportAnnotations(report *RunArchiveReport, testID, profile string) 
 	switch profileID {
 	case "executive":
 		ann.ExecutiveNarrative = fmt.Sprintf(
-			"This run reached %s active VUsers, peaked at %.1f TPS, recorded %s archive-record errors, and %s.",
-			formatPDFInt(ov.PeakActiveVUsers), ov.PeakTPS, formatReportPercentage(ov.ErrorPct), verdict,
+			"This run reached %s active VUsers, peaked at %.1f attempts/s, recorded a %s error rate (%s), and %s.",
+			formatPDFInt(ov.PeakActiveVUsers), headline.PeakTPS, formatReportPercentage(headline.ErrorPct), headline.Label, verdict,
 		)
 		ann.SectionComments["decision"] = "Not provided"
-		ann.SectionComments["business_impact"] = fmt.Sprintf("Archive records show %s errors and %.1f ms average response time.", formatReportPercentage(ov.ErrorPct), ov.AvgResponseMs)
+		ann.SectionComments["business_impact"] = fmt.Sprintf("%s: %s error rate and %s average response time.", headline.Label, formatReportPercentage(headline.ErrorPct), formatReportMs(headline.AvgResponseMs))
 		ann.SectionComments["sla"] = deriveReportVerdict(report).Explanation
 		ann.SectionComments["risks"] = defaultRiskComment(report)
 		ann.SectionComments["recommendations"] = "Not provided"
@@ -357,11 +387,11 @@ func defaultReportAnnotations(report *RunArchiveReport, testID, profile string) 
 		ann.SectionComments["approvals"] = "Not provided"
 	default:
 		ann.ExecutiveNarrative = fmt.Sprintf(
-			"This run captured %s archive record(s) at a peak of %.1f TPS with %s archive-record errors and a %.1f ms average response time, reaching %s active VUsers. The test %s.",
-			formatPDFInt(ov.Transactions), ov.PeakTPS, formatReportPercentage(ov.ErrorPct), ov.AvgResponseMs, formatPDFInt(ov.PeakActiveVUsers), verdict,
+			"This run captured %s archive record(s). %s peaked at %.1f attempts/s with a %s error rate and a %s average response time, reaching %s active VUsers. The test %s.",
+			formatPDFInt(ov.Transactions), headline.Label, headline.PeakTPS, formatReportPercentage(headline.ErrorPct), formatReportMs(headline.AvgResponseMs), formatPDFInt(ov.PeakActiveVUsers), verdict,
 		)
-		ann.SectionComments["overview"] = fmt.Sprintf("%s archive record(s) were captured with a %s error rate across the run.", formatPDFInt(ov.Transactions), formatReportPercentage(ov.ErrorPct))
-		ann.SectionComments["performance"] = fmt.Sprintf("Throughput peaked at %.1f TPS and response time ranged from %.1f ms to %.1f ms (avg %.1f ms).", ov.PeakTPS, ov.MinResponseMs, ov.MaxResponseMs, ov.AvgResponseMs)
+		ann.SectionComments["overview"] = fmt.Sprintf("%s archive record(s) were captured; %s had a %s error rate.", formatPDFInt(ov.Transactions), headline.Label, formatReportPercentage(headline.ErrorPct))
+		ann.SectionComments["performance"] = fmt.Sprintf("Throughput peaked at %.1f attempts/s and response time ranged from %.1f ms to %.1f ms (avg %s; %s).", headline.PeakTPS, headline.MinResponseMs, headline.MaxResponseMs, formatReportMs(headline.AvgResponseMs), headline.Label)
 		ann.SectionComments["sla"] = deriveReportVerdict(report).Explanation
 		ann.SectionComments["bottlenecks"] = "Not provided"
 		ann.SectionComments["errors"] = defaultRiskComment(report)

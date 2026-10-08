@@ -273,7 +273,7 @@
   border: 1px solid var(--accent-border);
   border-radius: 999px;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 10px;
   font-weight: 600;
   text-transform: var(--label-case, uppercase);
@@ -377,7 +377,7 @@
 .credentials-location-details summary {
   width: fit-content;
   cursor: pointer;
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 11px;
   font-weight: 600;
 }

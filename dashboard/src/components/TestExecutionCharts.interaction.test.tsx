@@ -700,7 +700,8 @@ describe('TestExecutionCharts context menu', () => {
     const tpsChart = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Transactions Per Second'))
     const chartVisual = tpsChart?.querySelector('.chart-visual')
     const tableId = chartVisual?.getAttribute('aria-describedby')
-    expect(chartVisual?.getAttribute('role')).toBe('img')
+    // role=group: the Recharts surface inside is focusable, which role=img forbids.
+    expect(chartVisual?.getAttribute('role')).toBe('group')
     expect(chartVisual?.getAttribute('aria-label')).toContain('Transactions Per Second chart. 2 samples.')
     expect(tableId).toBeTruthy()
     expect(tpsChart?.querySelector(`#${tableId}`)?.textContent).toContain('Transactions Per Second measurements')

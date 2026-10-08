@@ -3067,6 +3067,7 @@ export interface operations {
             "error_patterns"?: Array<{
               "actions"?: Array<string>;
               "count"?: number;
+              "counts_by_population"?: Record<string, number>;
               "first_seen"?: string;
               "latest_seen"?: string;
               "sample"?: string;
@@ -7569,6 +7570,7 @@ export interface operations {
               "owner_id"?: string;
               "updated_at"?: string;
             }) | null;
+            "ref"?: string;
             "status": string;
           };
         };
@@ -34499,6 +34501,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
                 "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
@@ -34827,6 +34832,7 @@ export interface operations {
                   "latest_evidence_id"?: string;
                   "latest_seen": string;
                   "sample": string;
+                  "share_of_errors_pct"?: number;
                   "signature": string;
                   "snapshot_url"?: string;
                   "status_code"?: number;
@@ -34886,6 +34892,9 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "run_error_pct"?: (number) | null;
+                  "run_errors"?: (number) | null;
+                  "run_transactions"?: (number) | null;
                   "target_tps"?: number;
                   "throughput_gap_pct"?: number;
                   "throughput_target_missed"?: boolean;
@@ -35026,6 +35035,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -42033,6 +42045,7 @@ export interface operations {
                 "latest_evidence_id"?: string;
                 "latest_seen": string;
                 "sample": string;
+                "share_of_errors_pct"?: number;
                 "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
@@ -42092,6 +42105,9 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "run_error_pct"?: (number) | null;
+                "run_errors"?: (number) | null;
+                "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -42252,6 +42268,9 @@ export interface operations {
                 "tcp_time_wait"?: number;
                 "thread_count"?: number;
               }) | null;
+              "run_error_pct"?: (number) | null;
+              "run_total_errors"?: (number) | null;
+              "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -43028,6 +43047,7 @@ export interface operations {
                 "latest_evidence_id"?: string;
                 "latest_seen": string;
                 "sample": string;
+                "share_of_errors_pct"?: number;
                 "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
@@ -43147,6 +43167,9 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "run_error_pct"?: (number) | null;
+                "run_errors"?: (number) | null;
+                "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -43691,6 +43714,9 @@ export interface operations {
                 "tcp_time_wait"?: number;
                 "thread_count"?: number;
               }) | null;
+              "run_error_pct"?: (number) | null;
+              "run_total_errors"?: (number) | null;
+              "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -57581,6 +57607,7 @@ export interface operations {
               "owner_id"?: string;
               "updated_at"?: string;
             }) | null;
+            "ref"?: string;
             "status": string;
           };
         };
@@ -59299,6 +59326,7 @@ export interface operations {
                 "latest_evidence_id"?: string;
                 "latest_seen": string;
                 "sample": string;
+                "share_of_errors_pct"?: number;
                 "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
@@ -59358,6 +59386,9 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "run_error_pct"?: (number) | null;
+                "run_errors"?: (number) | null;
+                "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -59518,6 +59549,9 @@ export interface operations {
                 "tcp_time_wait"?: number;
                 "thread_count"?: number;
               }) | null;
+              "run_error_pct"?: (number) | null;
+              "run_total_errors"?: (number) | null;
+              "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -60290,6 +60324,7 @@ export interface operations {
                 "latest_evidence_id"?: string;
                 "latest_seen": string;
                 "sample": string;
+                "share_of_errors_pct"?: number;
                 "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
@@ -60409,6 +60444,9 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "run_error_pct"?: (number) | null;
+                "run_errors"?: (number) | null;
+                "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -60953,6 +60991,9 @@ export interface operations {
                 "tcp_time_wait"?: number;
                 "thread_count"?: number;
               }) | null;
+              "run_error_pct"?: (number) | null;
+              "run_total_errors"?: (number) | null;
+              "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -63365,6 +63406,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
                 "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
@@ -63693,6 +63737,7 @@ export interface operations {
                   "latest_evidence_id"?: string;
                   "latest_seen": string;
                   "sample": string;
+                  "share_of_errors_pct"?: number;
                   "signature": string;
                   "snapshot_url"?: string;
                   "status_code"?: number;
@@ -63752,6 +63797,9 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "run_error_pct"?: (number) | null;
+                  "run_errors"?: (number) | null;
+                  "run_transactions"?: (number) | null;
                   "target_tps"?: number;
                   "throughput_gap_pct"?: number;
                   "throughput_target_missed"?: boolean;
@@ -63892,6 +63940,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -64519,6 +64570,9 @@ export interface operations {
               "updated_by": string;
               "verdict_explanation"?: string;
               "verdict_override"?: string;
+              "verdict_profile"?: string;
+              "verdict_updated_at"?: (string) | null;
+              "verdict_updated_by"?: string;
             }) | null;
             "sections": Array<{
               "id": string;
@@ -69324,6 +69378,7 @@ export interface operations {
             "error_patterns"?: Array<{
               "actions"?: Array<string>;
               "count": number;
+              "counts_by_population"?: Record<string, number>;
               "first_seen": string;
               "latest_seen": string;
               "sample": string;
@@ -77839,6 +77894,7 @@ export interface operations {
                 "latest_evidence_id"?: string;
                 "latest_seen": string;
                 "sample": string;
+                "share_of_errors_pct"?: number;
                 "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
@@ -77898,6 +77954,9 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "run_error_pct"?: (number) | null;
+                "run_errors"?: (number) | null;
+                "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -78058,6 +78117,9 @@ export interface operations {
                 "tcp_time_wait"?: number;
                 "thread_count"?: number;
               }) | null;
+              "run_error_pct"?: (number) | null;
+              "run_total_errors"?: (number) | null;
+              "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -78834,6 +78896,7 @@ export interface operations {
                 "latest_evidence_id"?: string;
                 "latest_seen": string;
                 "sample": string;
+                "share_of_errors_pct"?: number;
                 "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
@@ -78953,6 +79016,9 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "run_error_pct"?: (number) | null;
+                "run_errors"?: (number) | null;
+                "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -79497,6 +79563,9 @@ export interface operations {
                 "tcp_time_wait"?: number;
                 "thread_count"?: number;
               }) | null;
+              "run_error_pct"?: (number) | null;
+              "run_total_errors"?: (number) | null;
+              "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -88640,6 +88709,58 @@ export interface operations {
       "200": {
         content: {
           "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleListBaselineComparisons": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "comparisons": Array<{
+              "baselines": Array<{
+                "archive_available": boolean;
+                "completed_at"?: (string) | null;
+                "id": string;
+                "name": string;
+                "peak_vusers": number;
+                "pinned": boolean;
+                "release_id": string;
+                "release_name": string;
+                "scenario_id": string;
+                "status": string;
+                "vusers": number;
+              }>;
+              "created_at": string;
+              "id": string;
+              "verdict"?: string;
+            }>;
+          };
         };
       };
       "401": {
@@ -98698,6 +98819,7 @@ export interface operations {
                 "latest_evidence_id"?: string;
                 "latest_seen": string;
                 "sample": string;
+                "share_of_errors_pct"?: number;
                 "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
@@ -98757,6 +98879,9 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "run_error_pct"?: (number) | null;
+                "run_errors"?: (number) | null;
+                "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -98917,6 +99042,9 @@ export interface operations {
                 "tcp_time_wait"?: number;
                 "thread_count"?: number;
               }) | null;
+              "run_error_pct"?: (number) | null;
+              "run_total_errors"?: (number) | null;
+              "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -99693,6 +99821,7 @@ export interface operations {
                 "latest_evidence_id"?: string;
                 "latest_seen": string;
                 "sample": string;
+                "share_of_errors_pct"?: number;
                 "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
@@ -99812,6 +99941,9 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "run_error_pct"?: (number) | null;
+                "run_errors"?: (number) | null;
+                "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -100356,6 +100488,9 @@ export interface operations {
                 "tcp_time_wait"?: number;
                 "thread_count"?: number;
               }) | null;
+              "run_error_pct"?: (number) | null;
+              "run_total_errors"?: (number) | null;
+              "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -113525,6 +113660,7 @@ export interface operations {
               "owner_id"?: string;
               "updated_at"?: string;
             }) | null;
+            "ref"?: string;
             "status": string;
           };
         };
@@ -114295,6 +114431,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
                 "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
@@ -114623,6 +114762,7 @@ export interface operations {
                   "latest_evidence_id"?: string;
                   "latest_seen": string;
                   "sample": string;
+                  "share_of_errors_pct"?: number;
                   "signature": string;
                   "snapshot_url"?: string;
                   "status_code"?: number;
@@ -114682,6 +114822,9 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "run_error_pct"?: (number) | null;
+                  "run_errors"?: (number) | null;
+                  "run_transactions"?: (number) | null;
                   "target_tps"?: number;
                   "throughput_gap_pct"?: number;
                   "throughput_target_missed"?: boolean;
@@ -114822,6 +114965,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -116166,6 +116312,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
                 "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
@@ -116494,6 +116643,7 @@ export interface operations {
                   "latest_evidence_id"?: string;
                   "latest_seen": string;
                   "sample": string;
+                  "share_of_errors_pct"?: number;
                   "signature": string;
                   "snapshot_url"?: string;
                   "status_code"?: number;
@@ -116553,6 +116703,9 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "run_error_pct"?: (number) | null;
+                  "run_errors"?: (number) | null;
+                  "run_transactions"?: (number) | null;
                   "target_tps"?: number;
                   "throughput_gap_pct"?: number;
                   "throughput_target_missed"?: boolean;
@@ -116693,6 +116846,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -118037,6 +118193,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
                 "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
@@ -118365,6 +118524,7 @@ export interface operations {
                   "latest_evidence_id"?: string;
                   "latest_seen": string;
                   "sample": string;
+                  "share_of_errors_pct"?: number;
                   "signature": string;
                   "snapshot_url"?: string;
                   "status_code"?: number;
@@ -118424,6 +118584,9 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "run_error_pct"?: (number) | null;
+                  "run_errors"?: (number) | null;
+                  "run_transactions"?: (number) | null;
                   "target_tps"?: number;
                   "throughput_gap_pct"?: number;
                   "throughput_target_missed"?: boolean;
@@ -118564,6 +118727,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -119908,6 +120074,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
                 "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
@@ -120236,6 +120405,7 @@ export interface operations {
                   "latest_evidence_id"?: string;
                   "latest_seen": string;
                   "sample": string;
+                  "share_of_errors_pct"?: number;
                   "signature": string;
                   "snapshot_url"?: string;
                   "status_code"?: number;
@@ -120295,6 +120465,9 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "run_error_pct"?: (number) | null;
+                  "run_errors"?: (number) | null;
+                  "run_transactions"?: (number) | null;
                   "target_tps"?: number;
                   "throughput_gap_pct"?: number;
                   "throughput_target_missed"?: boolean;
@@ -120435,6 +120608,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -121779,6 +121955,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
                 "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
@@ -122107,6 +122286,7 @@ export interface operations {
                   "latest_evidence_id"?: string;
                   "latest_seen": string;
                   "sample": string;
+                  "share_of_errors_pct"?: number;
                   "signature": string;
                   "snapshot_url"?: string;
                   "status_code"?: number;
@@ -122166,6 +122346,9 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "run_error_pct"?: (number) | null;
+                  "run_errors"?: (number) | null;
+                  "run_transactions"?: (number) | null;
                   "target_tps"?: number;
                   "throughput_gap_pct"?: number;
                   "throughput_target_missed"?: boolean;
@@ -122306,6 +122489,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -122954,6 +123140,7 @@ export interface operations {
               "owner_id"?: string;
               "updated_at"?: string;
             }) | null;
+            "ref"?: string;
             "status": string;
           };
         };
@@ -124518,6 +124705,65 @@ export interface operations {
         };
       };
       "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleReportClientError": {
+    parameters?: never;
+    requestBody: {
+      content: {
+        "application/json": {
+          "app_version"?: string;
+          "component_stack"?: string;
+          "kind"?: string;
+          "message"?: string;
+          "name"?: string;
+          "page"?: string;
+          "request_id"?: string;
+          "request_method"?: string;
+          "request_path"?: string;
+          "request_status"?: number;
+          "source"?: string;
+          "stack"?: string;
+        };
+      };
+    };
+    responses: {
+      "204": {
+        content?: never;
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "429": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -130608,6 +130854,7 @@ export interface operations {
         "application/json": {
           "executive_narrative"?: string;
           "expected_updated_at"?: string;
+          "expected_verdict_updated_at"?: (string) | null;
           "findings"?: Array<{
             "evidence"?: string;
             "id"?: string;
@@ -130649,6 +130896,9 @@ export interface operations {
               "updated_by": string;
               "verdict_explanation"?: string;
               "verdict_override"?: string;
+              "verdict_profile"?: string;
+              "verdict_updated_at"?: (string) | null;
+              "verdict_updated_by"?: string;
             }) | null;
             "sections": Array<{
               "id": string;
@@ -144902,11 +145152,13 @@ export interface operations {
             "active_run_count"?: number;
             "active_vusers"?: number;
             "disabled_reason"?: string;
+            "error"?: string;
             "forced"?: boolean;
             "message": string;
             "namespace"?: string;
             "pod_name"?: string;
             "reachable"?: (boolean) | null;
+            "ref"?: string;
             "scope": string;
             "status": string;
             "target": string;
@@ -146668,6 +146920,7 @@ export interface operations {
                 "latest_evidence_id"?: string;
                 "latest_seen": string;
                 "sample": string;
+                "share_of_errors_pct"?: number;
                 "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
@@ -146727,6 +146980,9 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "run_error_pct"?: (number) | null;
+                "run_errors"?: (number) | null;
+                "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -146887,6 +147143,9 @@ export interface operations {
                 "tcp_time_wait"?: number;
                 "thread_count"?: number;
               }) | null;
+              "run_error_pct"?: (number) | null;
+              "run_total_errors"?: (number) | null;
+              "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -147663,6 +147922,7 @@ export interface operations {
                 "latest_evidence_id"?: string;
                 "latest_seen": string;
                 "sample": string;
+                "share_of_errors_pct"?: number;
                 "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
@@ -147782,6 +148042,9 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "run_error_pct"?: (number) | null;
+                "run_errors"?: (number) | null;
+                "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -148326,6 +148589,9 @@ export interface operations {
                 "tcp_time_wait"?: number;
                 "thread_count"?: number;
               }) | null;
+              "run_error_pct"?: (number) | null;
+              "run_total_errors"?: (number) | null;
+              "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -166988,6 +167254,9 @@ export interface paths {
   "/api/v1/system/browser-benchmarks": {
     "get": operations["handleGetBrowserBenchmarkEvidence"];
   };
+  "/api/v1/system/client-errors": {
+    "post": operations["handleReportClientError"];
+  };
   "/api/v1/system/cloud-connections": {
     "get": operations["handleListCloudConnections"];
     "post": operations["handleCreateCloudConnection"];
@@ -167240,6 +167509,7 @@ export interface paths {
     "get": operations["handleBaselineComparisonCandidates"];
   };
   "/api/v1/tests/{id}/baseline-comparisons": {
+    "get": operations["handleListBaselineComparisons"];
     "post": operations["handleCreateBaselineComparison"];
   };
   "/api/v1/tests/{id}/baseline-comparisons/{comparison_id}": {

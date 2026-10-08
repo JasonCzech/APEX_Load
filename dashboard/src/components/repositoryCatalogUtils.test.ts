@@ -308,3 +308,26 @@ it('shows assigned scripts and scenarios before their first run and labels histo
   expect(script.detail).toContain('Run releases: None')
   expect(scenario.detail).toContain('Assignment: Checkout App')
 })
+
+describe('application scope for unassigned assets', () => {
+  it('keeps scripts with no application visible and hides scripts that belong to another application', () => {
+    const script = (id: string, extra: Record<string, unknown> = {}) => ({ id, name: id, protocol: 'http', version: '1.0.0', created_at: '2026-01-01T00:00:00Z', scenario_count: 0, associated_scenarios: [], associated_releases: [], ...extra })
+    const rows = buildRepositoryCatalogRows({
+      activeDomain: domain,
+      activeApplication: { id: 'app-1', name: 'Storefront', project_id: project.id, created_at: '', updated_at: '' },
+      categories: [category],
+      projects: [project],
+      releasesByProject: { [project.id]: [{ id: 'release-other', application_id: 'app-2', project_id: project.id, name: 'Other', created_at: '', updated_at: '' }] },
+      scriptsByProject: { [project.id]: [
+        script('imported-unassigned'),
+        script('assigned-elsewhere', { library_assignment: { application: { id: 'app-2', name: 'Other app' }, releases: [], revision: 1 } }),
+        script('ran-elsewhere', { associated_releases: [{ id: 'release-other', name: 'Other', application_id: 'app-2' }] }),
+      ] },
+      scenariosByProject: {},
+      testsByProject: {},
+      dataPoolsByProject: {},
+    } as never)
+    const scripts = rows.filter(row => row.kind === 'script').map(row => row.id)
+    expect(scripts).toEqual(['imported-unassigned'])
+  })
+})

@@ -33,7 +33,7 @@ func (s *Server) admitScenarioWriter(w http.ResponseWriter, r *http.Request, sce
 	reader, readable := s.store.(storage.ScenarioAuthoringStore)
 	if !guarded || !readable {
 		if scenarioSaveIfMatchPresented(r.Header) {
-			reference := newErrorReference()
+			reference := errorReferenceFor(w)
 			slog.Error("scenario writer condition unavailable", "ref", reference, "path", r.URL.Path)
 			writeJSON(w, http.StatusServiceUnavailable, ScenarioSaveCapabilityUnavailableError{
 				Error: "scenario If-Match writes are unavailable without durable scenario revisions",

@@ -46,10 +46,13 @@ export interface ScenarioRunRow {
   p99: number
 }
 
-function errorPctFromCounts(errors: number, successes: number) {
-  const attempts = errors + successes
-  if (attempts <= 0) return 0
-  return errors / attempts * 100
+// Every row reports the last sample window with one definition per column:
+// TPS is the reported rate, `transactions` is attempts (successes + errors)
+// and Error % is errors / attempts. Group metrics count successes and errors
+// separately; transaction metrics' `count` already includes errors.
+function errorPctFromAttempts(errors: number, attempts: number) {
+  if (attempts <= 0) return errors > 0 ? 100 : 0
+  return Math.min(100, errors / attempts * 100)
 }
 
 function calculateThroughputGap(tps: number, targetTps?: number) {
@@ -66,8 +69,11 @@ export function buildScenarioRunRows(
 ): ScenarioRunRow[] {
   const rows: ScenarioRunRow[] = groups.map(group => {
     const groupMetrics = metrics?.groups?.[group.name]
-    const transactions = groupMetrics?.transactions ?? group.transactions
-    const errors = groupMetrics?.errors ?? group.errors
+    // A single-group run may report only whole-test window counters.
+    const windowFallback = !groupMetrics && groups.length === 1 ? metrics : undefined
+    const successes = groupMetrics?.transactions ?? windowFallback?.total_transactions ?? 0
+    const errors = groupMetrics?.errors ?? windowFallback?.total_errors ?? 0
+    const attempts = successes + errors
     const tps = groupMetrics?.tps ?? group.tps
     const targetTps = group.targetMode === 'tps'
       ? group.targetTps ?? group.target
@@ -85,9 +91,9 @@ export function buildScenarioRunRows(
       throughputGap: group.targetMode === 'tps'
         ? calculateThroughputGap(tps, targetTps)
         : groupMetrics?.throughput_gap_pct ?? calculateThroughputGap(tps, targetTps),
-      transactions,
+      transactions: attempts,
       errors,
-      errorPct: errorPctFromCounts(errors, transactions),
+      errorPct: errorPctFromAttempts(errors, attempts),
       art: groupMetrics?.avg_response_ms ?? group.art,
       p50: groupMetrics?.p50_ms ?? group.art * 0.72,
       p90: groupMetrics?.p90_ms ?? group.art * 1.55,
@@ -107,10 +113,10 @@ export function buildScenarioRunRows(
       name,
       group: 'All groups',
       protocol: tx.dependency_type || 'transaction',
-      tps: tx.count,
+      tps: tx.tps ?? 0,
       transactions: tx.count,
       errors: tx.errors,
-      errorPct: errorPctFromCounts(tx.errors, tx.count),
+      errorPct: errorPctFromAttempts(tx.errors, tx.count),
       art: tx.avg_ms,
       p50: tx.p50_ms,
       p90: tx.p90_ms,

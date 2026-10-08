@@ -30,6 +30,9 @@ const plansApiMock = {
   rejectExecutionPlanApproval: vi.fn(),
 }
 
+const confirmActionMock = vi.hoisted(() => vi.fn<(message: string) => Promise<boolean>>(async () => true))
+vi.mock('./ux/confirmAction', () => ({ confirmAction: confirmActionMock }))
+
 vi.mock('../hooks/api/useExecutionPlansApi', () => ({
   useExecutionPlansApi: () => plansApiMock,
 }))
@@ -203,6 +206,40 @@ describe('ExecutionPlansPanel', () => {
     expect(plansApiMock.getExecutionPlanRun).toHaveBeenCalledWith('p1', 'epr-1')
     expect(container.textContent).toContain('each entry starts only after the previous run finishes')
     expect(container.textContent).toContain('completed')
+  })
+
+  it('asks before starting load and describes a parallel run accurately', async () => {
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [plan({ run_mode: 'parallel' })], count: 1 })
+    plansApiMock.runExecutionPlan.mockResolvedValue({ execution_plan_id: 'p1', run_mode: 'parallel', run_id: 'epr-2', status: 'running', results: [{ order: 0, scenario_id: 's1', test_id: 't1', status: 'created' }], materialized_at: '' })
+    plansApiMock.getExecutionPlanRun.mockResolvedValue({ id: 'epr-2', plan_id: 'p1', run_mode: 'parallel', status: 'completed', entries: [{ order: 0, scenario_id: 's1', test_id: 't1', status: 'created' }], created_at: '', updated_at: '' })
+    await act(async () => { root.render(<ExecutionPlansPanel projectId="proj-a" canManage />) })
+    await flush()
+    const runBtn = () => [...container.querySelectorAll('button')].find(b => b.textContent === 'Run') as HTMLElement
+    confirmActionMock.mockResolvedValueOnce(false)
+    await act(async () => { runBtn().click() })
+    await flush()
+    expect(confirmActionMock.mock.calls[0][0]).toContain('all at the same time')
+    expect(plansApiMock.runExecutionPlan).not.toHaveBeenCalled()
+    await act(async () => { runBtn().click() })
+    await flush()
+    expect(plansApiMock.runExecutionPlan).toHaveBeenCalledWith('p1')
+    expect(container.textContent).toContain('parallel — every enabled entry starts at once')
+    expect(container.textContent).toContain('All runs started')
+    expect(container.textContent).not.toContain('each entry starts only after the previous run finishes')
+  })
+
+  it('names the entries and the real outcome when a plan run only partly starts', async () => {
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [plan({ run_mode: 'parallel', entries: [{ order: 0, scenario_id: 's1', scenario_name: 'Browse catalog', enabled: true }, { order: 1, scenario_id: 's2', scenario_name: 'Checkout', enabled: true }] })], count: 1 })
+    plansApiMock.runExecutionPlan.mockResolvedValue({ execution_plan_id: 'p1', run_mode: 'parallel', status: 'completed', results: [{ order: 0, scenario_id: 's1', test_id: 't1', status: 'created' }, { order: 1, scenario_id: 's2', status: 'failed', detail: 'scenario archived' }], created_count: 1, failed_count: 1, materialized_at: '' })
+    await act(async () => { root.render(<ExecutionPlansPanel projectId="proj-a" canManage />) })
+    await flush()
+    await act(async () => { ([...container.querySelectorAll('button')].find(b => b.textContent === 'Run') as HTMLElement).click() })
+    await flush()
+    const dialog = document.querySelector('[aria-labelledby="execution-plan-result-title"]')
+    expect(dialog?.querySelector('h3')?.textContent).toBe('Plan run partly started: “nightly”')
+    expect(dialog?.textContent).toContain('#1 Browse catalog')
+    expect(dialog?.textContent).toContain('#2 Checkout')
+    expect(dialog?.textContent).toContain('1 failed to start')
   })
 
   it('authors per-entry timeslot and data pools into the create payload', async () => {

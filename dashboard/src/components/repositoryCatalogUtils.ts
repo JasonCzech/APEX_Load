@@ -162,6 +162,21 @@ function testMatchesApplication(test: TestSummary, activeApplicationId: string, 
   return releaseMatchesApplication(test.release_id ? releaseMap.get(test.release_id) : undefined, activeApplicationId)
 }
 
+// An asset belongs to the active application when it is assigned to it or ran
+// under one of its releases. Assets with no application at all (fresh imports,
+// API-created scripts) are project-wide and stay visible, so the Repository
+// reconciles with the Script Library instead of silently hiding them.
+function assetInApplicationScope(
+  assignedApplicationId: string | undefined,
+  refsForApplication: unknown[],
+  allRefs: unknown[],
+  activeApplicationId: string,
+) {
+  if (!activeApplicationId) return true
+  if (assignedApplicationId === activeApplicationId || refsForApplication.length > 0) return true
+  return !assignedApplicationId && allRefs.length === 0
+}
+
 function scenarioModeLabel(value?: StoredScenario['scenario_mode']) {
   return value === 'goal_oriented' ? 'Goal' : 'VUser'
 }
@@ -251,12 +266,13 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
     if (!project) continue
     const category = project.category_id ? categoryMap.get(project.category_id) : undefined
     for (const script of scripts) {
-      const scriptReleaseRefs = releaseRefsForApplication([
+      const allScriptReleaseRefs = [
         ...(script.library_assignment?.releases || []),
         ...(script.associated_releases || []),
         ...(script.scenario_run_releases || []),
-      ], activeApplicationId, releaseMap)
-      if (activeApplicationId && script.library_assignment?.application?.id !== activeApplicationId && scriptReleaseRefs.length === 0) continue
+      ]
+      const scriptReleaseRefs = releaseRefsForApplication(allScriptReleaseRefs, activeApplicationId, releaseMap)
+      if (!assetInApplicationScope(script.library_assignment?.application?.id, scriptReleaseRefs, allScriptReleaseRefs, activeApplicationId)) continue
       const releaseNames = unique([
         ...releaseNamesFromRefs(scriptReleaseRefs),
       ])
@@ -282,7 +298,7 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
         detail: `Assignment: ${script.library_assignment?.application?.name || 'Unassigned'} · Assigned releases: ${(script.library_assignment?.releases || []).map(release => release.name).join(', ') || 'None'} · Run releases: ${(script.associated_releases || []).map(release => release.name).join(', ') || 'None'}`,
         createdAt: script.created_at,
         lastActivityAt: newestTimestamp([script.last_run_at, script.created_at]),
-        searchText: buildSearchText([script.id, script.name, script.protocol, script.version, status, project.name, category?.name, releaseNames, 'script']),
+        searchText: buildSearchText([script.id, script.name, script.protocol, script.version, status, project.name, category?.name, releaseNames, 'script', script.library_assignment?.application ? '' : 'unassigned']),
       })
     }
   }
@@ -292,8 +308,9 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
     if (!project) continue
     const category = project.category_id ? categoryMap.get(project.category_id) : undefined
     for (const scenario of scenarios) {
-      const scenarioReleaseRefs = releaseRefsForApplication([...(scenario.library_assignment?.releases || []), ...(scenario.associated_releases || [])], activeApplicationId, releaseMap)
-      if (activeApplicationId && scenario.library_assignment?.application?.id !== activeApplicationId && scenarioReleaseRefs.length === 0) continue
+      const allScenarioReleaseRefs = [...(scenario.library_assignment?.releases || []), ...(scenario.associated_releases || [])]
+      const scenarioReleaseRefs = releaseRefsForApplication(allScenarioReleaseRefs, activeApplicationId, releaseMap)
+      if (!assetInApplicationScope(scenario.library_assignment?.application?.id, scenarioReleaseRefs, allScenarioReleaseRefs, activeApplicationId)) continue
       const releaseNames = releaseNamesFromRefs(scenarioReleaseRefs)
       const releaseIds = releaseIdsFromRefs(scenarioReleaseRefs)
       const protocols = protocolListFromScenario(scenario)

@@ -39,6 +39,7 @@ import RunReportPowerBIPublish from './runReport/RunReportPowerBIPublish'
 import RunReportConfluencePublish from './runReport/RunReportConfluencePublish'
 import RunReportKpiScorecard from './runReport/RunReportKpiScorecard'
 import RunReportLensSwitcher from './runReport/RunReportLensSwitcher'
+import { REPORT_LENS_LABELS } from './runReport/reportLensLabels'
 import RunArchiveCoverageNotice from './runReport/RunArchiveCoverageNotice'
 import RunArchiveAvailabilitySummary from './runReport/RunArchiveAvailabilitySummary'
 import RunReportVerdictBanner from './runReport/RunReportVerdictBanner'
@@ -355,6 +356,9 @@ export default function RunReportPage({
               section_comments: latest.section_comments || {},
               verdict_override: status,
               verdict_explanation: explanation,
+              // The verdict is shared by every audience; a change made from
+              // another audience since this one loaded must not be reverted.
+              expected_verdict_updated_at: current.verdict_updated_at,
               findings: latest.findings || [],
             })
             break
@@ -490,6 +494,7 @@ export default function RunReportPage({
         <div><p className="run-report-kicker">Run results · {test.ref_key || test.id}</p><h1>{test.name || test.id}</h1><p><StatusBadge status={resolvedStatus} stoppedByOperator={report?.manifest?.termination_reason === 'operator_stopped'} /> · Configured {recordedNumber(facts.vusers)} VUsers for {facts.duration || 'Not recorded'} · Lifecycle elapsed {facts.lifecycleElapsed}{hasArchive && <> · Archived evidence elapsed {report ? facts.elapsed : 'Not recorded'}</>}</p></div>
         <div className="run-report-toolbar-actions">
           <button className="btn btn-secondary" type="button" disabled={!hasArchive} aria-expanded={area === 'Comparison'} onClick={() => { setShowCompare(false); setArea('Comparison') }}>Compare</button>
+          {hasArchive && <RunReportLensSwitcher activeLens={activeLens} onLensChange={setLens} />}
           <button className="btn btn-primary" type="button" disabled={!hasArchive} aria-expanded={showExport} onClick={() => setShowExport(v => !v)}>Export report</button>
           <button className="btn btn-ghost" type="button" onClick={() => setShowNotes(true)}>Test notes</button>
         </div>
@@ -506,8 +511,7 @@ export default function RunReportPage({
       </section>}
       {hasArchive && <RunArchiveCoverageNotice report={report} />}
       {showExport && hasArchive && <section className="run-report-panel" aria-label="Report export options">
-        <h2>Export report</h2><p>Choose an audience. Outputs cover the whole run, independent of the population selector below. Any release trend in an output uses the prior release run and names that reference.</p>
-        <RunReportLensSwitcher activeLens={activeLens} onLensChange={setLens} />
+        <h2>Export report</h2><p>Exports use the {REPORT_LENS_LABELS[activeLens]} report audience selected above. Outputs cover the whole run, independent of the population selector below. Any release trend in an output uses the prior release run and names that reference.</p>
         <button className="btn btn-secondary" type="button" onClick={() => setShowComposer(true)}>Preview / edit commentary</button>
         <RunReportExportActions testId={testId} lens={activeLens} testName={test.name} downloadHTML={(id, lens) => api.downloadTestReport(id, lens, { comparisonId: initialComparisonId })} downloadFormat={(id, lens, format) => api.downloadTestReportFormat(id, lens, format, { comparisonId: initialComparisonId })} />
         <details><summary>Publish to Power BI</summary><RunReportPowerBIPublish testId={testId} publish={api.publishTestToPowerBI} getStatus={api.getPowerBIPublishStatus} /></details>
@@ -553,7 +557,7 @@ export default function RunReportPage({
             {report?.completeness && report.completeness.score_pct < 100 && <p>Evidence coverage is {report.completeness.score_pct}%. <button className="btn btn-ghost" onClick={() => setArea('Evidence')}>Review evidence gaps</button></p>}
           </section>
           {annotationsError && <p className="run-report-error" role="alert">{annotationsError}</p>}
-          <details><summary>Analyst assessment ({activeLens} output)</summary><RunReportVerdictBanner report={report} annotations={annotations} status={verdictDraft.status} explanation={verdictDraft.explanation} saving={savingAnnotations || annotationsLoading} disabled={!annotations} onStatusChange={updateVerdictStatus} onExplanationChange={updateVerdictExplanation} onSaveOverride={saveOverride} /></details>
+          <details><summary>Analyst assessment (shared by every report audience)</summary><RunReportVerdictBanner report={report} annotations={annotations} status={verdictDraft.status} explanation={verdictDraft.explanation} saving={savingAnnotations || annotationsLoading} disabled={!annotations} onStatusChange={updateVerdictStatus} onExplanationChange={updateVerdictExplanation} onSaveOverride={saveOverride} /></details>
         </>}
         {area === 'Performance' && hasArchive && <>
           <RunReportKpiScorecard kpis={kpis} />

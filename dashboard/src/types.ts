@@ -1834,6 +1834,10 @@ export interface ReportAnnotations {
   findings?: ReportFinding[]
   updated_at: string
   updated_by: string
+  /** The verdict is stored once per run: which audience last set it, when and by whom. */
+  verdict_profile?: string
+  verdict_updated_at?: string
+  verdict_updated_by?: string
 }
 
 export interface ReportAnnotationsResponse {
@@ -1849,6 +1853,8 @@ export interface ReportAnnotationsInput {
   section_comments: Record<string, string>
   verdict_override: string
   verdict_explanation: string
+  /** Verdict revision the editor loaded; a stale verdict change is refused with 409. */
+  expected_verdict_updated_at?: string
   findings: ReportFinding[]
 }
 
@@ -2143,9 +2149,18 @@ export interface LiveMetrics {
   throughput_gap_pct?: number
   throughput_target_missed?: boolean
   avg_response_ms: number
+  /** Error % of the last sample window (sample_window_seconds, normally 1 s). */
   error_pct: number
+  /** Successful transactions in the last sample window. */
   total_transactions: number
+  /** Failed transactions in the last sample window. */
   total_errors: number
+  /** Successful transactions since the run started (absent on older runs). */
+  run_total_transactions?: number
+  /** Failed transactions since the run started (absent on older runs). */
+  run_total_errors?: number
+  /** Failed ÷ all attempts since the run started (absent on older runs). */
+  run_error_pct?: number
   p50_ms: number
   p90_ms: number
   p95_ms: number
@@ -2436,7 +2451,10 @@ export interface LiveErrorPattern {
   actions?: string[]
   affected_groups?: string[]
   status_code?: number
+  /** @deprecated No longer sent; it was one action's one-second error rate. */
   error_pct?: number
+  /** This signature's share of all live errors so far. */
+  share_of_errors_pct?: number
   snapshot_url?: string
   evidence_url?: string
   evidence_count?: number
@@ -2488,6 +2506,9 @@ export interface GroupLiveMetrics {
   vusers: number
   transactions: number
   errors: number
+  run_transactions?: number
+  run_errors?: number
+  run_error_pct?: number
   tps: number
   target_tps?: number
   throughput_gap_pct?: number

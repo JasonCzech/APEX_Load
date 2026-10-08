@@ -27,3 +27,14 @@ it('cancels on Escape or navigation so stale actions cannot run', async () => {
     expect(await result).toBe(false)
   }
 })
+it('uses explicit wording instead of guessing it from user-chosen names in the message', async () => {
+  let result!: Promise<boolean>
+  await act(async () => { result = confirmAction('Start “Delete account flow”?', { title: 'Start execution plan', confirmLabel: 'Start runs', destructive: false }) })
+  const dialog = document.querySelector('[role="alertdialog"]')!
+  expect(dialog.querySelector('h3')?.textContent).toBe('Start execution plan')
+  expect(dialog.querySelector('.btn-danger')).toBeNull()
+  const confirm = dialog.querySelector<HTMLButtonElement>('.btn-primary')!
+  expect(confirm.textContent).toBe('Start runs')
+  await act(async () => { confirm.click() })
+  expect(await result).toBe(true)
+})

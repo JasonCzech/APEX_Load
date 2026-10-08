@@ -381,6 +381,9 @@ func clearLivePerformanceMetrics(live *LiveMetrics) {
 	live.ErrorPct = 0
 	live.TotalTx = 0
 	live.TotalErrors = 0
+	live.RunTotalTx = nil
+	live.RunTotalErrors = nil
+	live.RunErrorPct = nil
 	live.P50Ms = 0
 	live.P90Ms = 0
 	live.P95Ms = 0
@@ -437,6 +440,7 @@ func applySelectedGroupAggregate(live *LiveMetrics, selected []*GroupLiveMetrics
 		live.AvgResponseMs = weightedDuration / float64(attempts)
 		live.ErrorPct = float64(live.TotalErrors) / float64(attempts) * 100
 	}
+	applySelectedGroupRunTotals(live, selected)
 	if digestCount > 0 {
 		live.P50Ms = mergedDigest.Quantile(0.50) / 1_000_000
 		live.P90Ms = mergedDigest.Quantile(0.90) / 1_000_000
@@ -452,6 +456,31 @@ func applySelectedGroupAggregate(live *LiveMetrics, selected []*GroupLiveMetrics
 		live.ThroughputGapPct = ((live.TargetTPS - live.TPS) / live.TargetTPS) * 100
 		live.ThroughputTargetMissed = live.ThroughputTargetMissed || live.ThroughputGapPct >= 5.0
 	}
+}
+
+// applySelectedGroupRunTotals scopes the run-to-date counters to the selected
+// groups, like the window counters. They stay absent unless every selected
+// group carries them, so a filtered view never mixes in whole-test totals.
+func applySelectedGroupRunTotals(live *LiveMetrics, selected []*GroupLiveMetrics) {
+	var tx, errors int64
+	counted := false
+	for _, group := range selected {
+		if group == nil {
+			continue
+		}
+		if group.RunTransactions == nil || group.RunErrors == nil {
+			return
+		}
+		tx += *group.RunTransactions
+		errors += *group.RunErrors
+		counted = true
+	}
+	if !counted {
+		return
+	}
+	live.RunTotalTx = ptrTo(tx)
+	live.RunTotalErrors = ptrTo(errors)
+	live.RunErrorPct = ptrTo(errorPercent(tx, errors))
 }
 
 func sortedGroupFilterNames(set map[string]struct{}) []string {

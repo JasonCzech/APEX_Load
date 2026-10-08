@@ -3,6 +3,7 @@
 import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { resetSharedTestListStoreForTests } from '../hooks/useSharedTestList'
 
 import ResultsPage from './ResultsPage'
 import { buildComparisonSummarySeries, comparisonChartYAxisLabel } from './resultsComparisonChartModel'
@@ -323,6 +324,7 @@ describe('ResultsPage', () => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
     vi.clearAllMocks()
+    resetSharedTestListStoreForTests()
   })
 
   it('uses one line color per compared run across TPS and P95 series', () => {
@@ -359,6 +361,56 @@ describe('ResultsPage', () => {
       description: 'error percentage',
       valueFormat: 'percent',
     })).toBe('Error rate (%)')
+  })
+
+  it('shows a load failure with Retry instead of the empty library', async () => {
+    apiMock.listTests.mockRejectedValue(new Error('Simulated failure'))
+    apiMock.getReleaseSLAGovernance.mockResolvedValue(null)
+    apiMock.listExternalResultImports.mockResolvedValue({ imports: [], count: 0, limit: 0, offset: 0 })
+    await act(async () => {
+      root.render(
+        <ResultsPage
+          onNavigate={vi.fn()}
+          testStatuses={{}}
+          onSelectTest={vi.fn()}
+          activeApplication={{ id: 'app-1', project_id: 'project-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+          activeRelease={{ id: 'rel-1', application_id: 'app-1', project_id: 'project-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
+        />,
+      )
+    })
+    for (let i = 0; i < 5; i++) await act(async () => { await Promise.resolve() })
+    const alert = container.querySelector('.results-load-error')
+    expect(alert?.getAttribute('role')).toBe('alert')
+    expect(alert?.textContent).toContain('Results could not be loaded.')
+    expect(container.textContent).not.toContain('No result sources yet.')
+    expect(container.textContent).not.toContain('0 matching runs')
+    apiMock.listTests.mockResolvedValue({ tests: [] })
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Retry')!.click())
+    for (let i = 0; i < 5; i++) await act(async () => { await Promise.resolve() })
+    expect(container.textContent).toContain('No result sources yet.')
+  })
+
+  it('keeps a local load failure visible with Retry when remote results are still listed', async () => {
+    apiMock.listTests.mockRejectedValue(new Error('Simulated failure'))
+    apiMock.getReleaseSLAGovernance.mockResolvedValue(null)
+    apiMock.listExternalResultImports.mockResolvedValue({ imports: [{ id: 'import-1', provider: 'k6', name: 'checkout-smoke.json', release_id: 'rel-1', created_at: '2026-05-12T20:10:00Z', summary: { transactions: 1200, error_pct: 0.25 } }], count: 1, limit: 50, offset: 0 })
+    await act(async () => {
+      root.render(
+        <ResultsPage
+          onNavigate={vi.fn()}
+          testStatuses={{}}
+          onSelectTest={vi.fn()}
+          activeApplication={{ id: 'app-1', project_id: 'project-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+          activeRelease={{ id: 'rel-1', application_id: 'app-1', project_id: 'project-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
+        />,
+      )
+    })
+    for (let i = 0; i < 5; i++) await act(async () => { await Promise.resolve() })
+    expect(container.querySelector('.results-load-error')).toBeNull()
+    expect(container.textContent).toContain('showing remote results only')
+    const banner = container.querySelector('.settings-error-inline[role="alert"]')
+    expect(banner?.textContent).toContain('Local results could not be loaded')
+    expect(Array.from(banner?.querySelectorAll('button') || []).some(button => button.textContent === 'Retry')).toBe(true)
   })
 
   it('shows a loading state before rendering an empty release result list', async () => {

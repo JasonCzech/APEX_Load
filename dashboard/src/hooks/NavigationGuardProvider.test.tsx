@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   useNavigationGuard,
   useNavigationGuardRunner,
+  useUnsavedWorkGuard,
   type NavigationGuard,
 } from './NavigationGuardProvider'
 import { NavigationGuardProvider } from './NavigationGuardRoot'
@@ -54,6 +55,21 @@ describe('NavigationGuardProvider', () => {
     expect(departed).not.toHaveBeenCalled()
     await click('Keep editing')
     expect(parentDiscard).not.toHaveBeenCalled()
+  })
+
+  it('asks only to discard or stay for work that cannot be saved from the prompt', async () => {
+    const proceed = vi.fn()
+    const discard = vi.fn()
+    await act(async () => root.render(<NavigationGuardProvider>
+      <Runner proceed={proceed} />
+      <UnsavedWork dirty discard={discard} />
+    </NavigationGuardProvider>))
+    await click('Navigate')
+    expect(container.textContent).toContain('Import review has work that is not saved yet')
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent?.includes('Save changes'))).toBe(false)
+    await click('Discard changes')
+    expect(discard).toHaveBeenCalledOnce()
+    expect(proceed).toHaveBeenCalledOnce()
   })
 
   it('proceeds immediately when no registered guard is dirty', async () => {
@@ -302,4 +318,9 @@ function NestedRunner({ proceed }: { proceed: () => void }) {
       Navigate nested
     </button>
   )
+}
+
+function UnsavedWork({ dirty, discard }: { dirty: boolean; discard: () => void }) {
+  useUnsavedWorkGuard('import-review', 'Import review', dirty, discard)
+  return null
 }

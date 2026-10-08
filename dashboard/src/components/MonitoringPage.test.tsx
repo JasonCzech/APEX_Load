@@ -331,6 +331,22 @@ describe('MonitoringPage', () => {
     )
   }
 
+  it('shows configured capacity on a directly opened Fleet tab without live generator inventory', async () => {
+    apiMock.getHealth.mockResolvedValue({
+      status: 'ok', version: '1.2.3', ws_clients: 2, test_count: 1,
+      capacity_availability: { configured_available_generators: 12, effective_available_generators: 12, reserved_generators: 0, shared_available_generators: 0, source: 'configured' },
+    } as Awaited<ReturnType<typeof apiMock.getHealth>>)
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} initialCategoryId="fleet" />)
+    })
+    await flushAsyncWork()
+
+    expect(apiMock.getHealth).toHaveBeenCalled()
+    expect(container.textContent).toContain('12 configured')
+    expect(container.textContent).toContain('Configured inventory · no live generator inventory')
+  })
+
   it('shows controller, Vite server, and UX build metadata on the system card', async () => {
     await act(async () => {
       root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
@@ -748,6 +764,7 @@ describe('MonitoringPage', () => {
       root.render(
         <NavigationGuardRunnerContext.Provider value={{
           hasDirtyGuard: () => true,
+          markClean: () => undefined,
           runGuarded: proceed => { pending = proceed },
         }}>
           <MonitoringPage connectionState="connected" />
@@ -1787,7 +1804,7 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('Project Active Slots')
     expect(container.textContent).toContain('Project Pending Slots')
     expect(container.textContent).toContain('project-1: 250 active / 400 pending slots (reserved)')
-    expect(container.textContent).toContain('fleet placement API')
+    expect(container.textContent).toContain('Live generator inventory (fleet placement)')
     expect(container.textContent).toContain('http, browser')
 
     expect(container.querySelector('[data-testid="fleet-provisioner"]')).toBeTruthy()

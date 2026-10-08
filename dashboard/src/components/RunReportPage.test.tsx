@@ -865,14 +865,14 @@ describe('RunReportPage', () => {
       .mockResolvedValueOnce({
         annotations: {
           test_id: 'run-1', profile: 'executive', title: 'Initial', prepared_by: '', executive_narrative: 'old narrative',
-          section_comments: {}, verdict_override: '', verdict_explanation: '', findings: [], updated_at: 'rev-1', updated_by: '',
+          section_comments: {}, verdict_override: '', verdict_explanation: '', findings: [], updated_at: 'rev-1', updated_by: '', verdict_updated_at: 'verdict-rev-1',
         },
         sections: [],
       })
       .mockResolvedValueOnce({
         annotations: {
           test_id: 'run-1', profile: 'executive', title: 'Composer title', prepared_by: 'Other analyst', executive_narrative: 'newer narrative',
-          section_comments: { decision: 'preserve me' }, verdict_override: '', verdict_explanation: '', findings: [], updated_at: 'rev-2', updated_by: 'Other analyst',
+          section_comments: { decision: 'preserve me' }, verdict_override: '', verdict_explanation: '', findings: [], updated_at: 'rev-2', updated_by: 'Other analyst', verdict_updated_at: 'verdict-rev-2',
         },
         sections: [],
       })
@@ -908,6 +908,8 @@ describe('RunReportPage', () => {
       executive_narrative: 'newer narrative',
       section_comments: { decision: 'preserve me' },
       verdict_explanation: 'Analyst verdict',
+      // A commentary retry must not adopt a verdict revision the analyst never saw.
+      expected_verdict_updated_at: 'verdict-rev-1',
     })
   })
 })

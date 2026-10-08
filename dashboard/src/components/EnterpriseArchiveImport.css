@@ -4,7 +4,7 @@
 .lr-import-header { display: flex; justify-content: space-between; align-items: flex-start; }
 .lr-import-header h2 { font-size: 20px; margin-bottom: 6px; }
 .lr-subtitle { color: var(--text-muted); font-size: 13px; line-height: 1.6; max-width: 640px; }
-.lr-subtitle code { background: var(--bg-hover); padding: 1px 5px; border-radius: 3px; font-size: 12px; color: var(--accent); }
+.lr-subtitle code { background: var(--bg-hover); padding: 1px 5px; border-radius: 3px; font-size: 12px; color: var(--accent-text); }
 
 /* Drop zone */
 .lr-dropzone {
@@ -105,7 +105,7 @@
 }
 .lr-file-status-pill.validating,
 .lr-file-status-pill.converting {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .lr-file-status-pill.failed {
   color: var(--danger);
@@ -380,7 +380,7 @@
 }
 .lr-validation-review-tabs button.active {
   border-bottom-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .lr-validation-review-tabs button:focus-visible {
   border-radius: 5px 5px 0 0;

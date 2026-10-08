@@ -36,8 +36,8 @@ import {
   formatLaunchWindow,
   formatNextBlockingEvent,
   formatReservationWindow,
-  formatScheduleTimestamp,
   formatScheduleTimestampInZone,
+  formatScheduleInstant,
   formatScheduleToken,
   formatScheduleWindow,
   formatTimeslotLabel,
@@ -1363,6 +1363,19 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     [effectiveScenarioGroups, scenario, timeslotValidationError],
   )
   const monitorRuleValidationError = monitorEditorError || validateGoalConfig({ monitor_rules: monitorRules ?? scenario?.goal_config?.monitor_rules })
+  // The first reasons a launch is unavailable, shown beside the disabled
+  // launch buttons instead of leaving them silently greyed out.
+  const launchBlockers = [
+    ...readiness.filter(item => !item.ready).map(item => item.label),
+    ...(scenario?.archived_at ? ['This scenario is archived'] : []),
+    ...(archivedDependencies.length ? ['A script in this scenario is archived'] : []),
+    ...(!canManageTests ? ['Your role cannot start runs in this project'] : []),
+    ...(runSetupValidationError ? [runSetupValidationError] : []),
+    ...(monitorRuleValidationError ? ['Fix the monitor rules'] : []),
+    ...(elasticMonitorConflict ? ['Resolve the Elastic capture conflict'] : []),
+    ...(captureNeedsReview ? ['Review the telemetry capture selection'] : []),
+    ...(traceContextNeedsReview ? ['Fix the trace context settings'] : []),
+  ]
   const canLaunch = !elasticMonitorConflict && !monitorRuleValidationError && !scenario?.archived_at && archivedDependencies.length === 0 && readiness.every(item => item.ready) && !creating && canManageTests && !runSetupValidationError && !captureNeedsReview && !traceContextNeedsReview
   const buildCurrentRunCreatePayload = useCallback((
     currentRunDefaults: RunDefaultOverrides,
@@ -2997,8 +3010,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                       <tr>
                         <th>Name</th>
                         <th>Cron</th>
-                        <th>Next Run</th>
-                        <th>Last Run</th>
+                        <th>Next run (schedule time zone)</th>
+                        <th>Last run (schedule time zone)</th>
                         <th>Release</th>
                         <th>Policy</th>
                         <th>Status</th>
@@ -3030,8 +3043,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                                   {!!item.availability_windows?.length && <span className="script-health-token healthy">{item.availability_windows.length} availability</span>}
                                 </div>
                               </td>
-                              <td>{formatScheduleTimestamp(item.next_run_at)}</td>
-                              <td>{formatScheduleTimestamp(item.last_run_at)}</td>
+                              <td>{formatScheduleInstant(item.next_run_at, item.timezone)}</td>
+                              <td>{formatScheduleInstant(item.last_run_at, item.timezone)}</td>
                               <td>{releases.find(releaseItem => releaseItem.id === item.release_id)?.name || 'None'}</td>
                           <td aria-label="Schedule governance">
                                 <div className="schedule-governance-chips">
@@ -3109,8 +3122,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                                           <tbody>
                                             {occurrences.map(occurrence => (
                                               <tr key={occurrence.id}>
-                                                <td>{formatScheduleTimestamp(occurrence.planned_at)}</td>
-                                                <td>{formatScheduleTimestamp(occurrence.materialized_at)}</td>
+                                                <td>{formatScheduleInstant(occurrence.planned_at, item.timezone)}</td>
+                                                <td>{formatScheduleInstant(occurrence.materialized_at, item.timezone)}</td>
                                                 <td><span className={`script-health-token ${scheduleStatusTone(occurrence.status)}`}>{formatScheduleToken(occurrence.status)}</span></td>
                                                 <td>{formatScheduleToken(occurrence.reason_code) || 'None'}</td>
                                                 <td className="cell-mono">{occurrence.test_id || 'None'}</td>
@@ -3704,12 +3717,17 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
               )}
               {showStartNow && (
                 <>
-                  <button className="btn btn-primary" onClick={() => createRun('start')} disabled={!canLaunch || immediatePreflightLoading || !startNowAllowed}>Start Now</button>
-                  <button className="btn btn-secondary" onClick={() => createRun('reserve')} disabled={!canLaunch || immediatePreflightLoading || !startNowAllowed} title="Holds a launch window for this run to be started manually later. This is not a capacity timeslot reservation.">Hold for Manual Start</button>
+                  <button className="btn btn-primary" onClick={() => createRun('start')} disabled={!canLaunch || immediatePreflightLoading || !startNowAllowed} aria-describedby={launchBlockers.length && !creating ? 'new-test-launch-blockers' : undefined}>Start Now</button>
+                  <button className="btn btn-secondary" onClick={() => createRun('reserve')} disabled={!canLaunch || immediatePreflightLoading || !startNowAllowed} aria-describedby={launchBlockers.length && !creating ? 'new-test-launch-blockers' : undefined} title="Holds a launch window for this run to be started manually later. This is not a capacity timeslot reservation.">Hold for Manual Start</button>
                 </>
               )}
               {showQueueRun && (
-                <button className="btn btn-secondary" onClick={() => createRun('queue')} disabled={!canLaunch || immediatePreflightLoading || Boolean(queueRecovery)}>Create Queued Run</button>
+                <button className="btn btn-secondary" onClick={() => createRun('queue')} disabled={!canLaunch || immediatePreflightLoading || Boolean(queueRecovery)} aria-describedby={launchBlockers.length && !creating ? 'new-test-launch-blockers' : undefined}>Create Queued Run</button>
+              )}
+              {launchBlockers.length > 0 && !creating && (
+                <div id="new-test-launch-blockers" className="new-test-launch-feedback warning" role="status">
+                  To launch: {launchBlockers.slice(0, 3).join(' · ')}{launchBlockers.length > 3 ? ` · and ${launchBlockers.length - 3} more` : ''}.
+                </div>
               )}
               {immediateLaunchBlocked && (
                 <div className="new-test-launch-feedback warning" role="status">{formatLaunchConflict(immediatePreflight)}</div>
@@ -3742,7 +3760,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
           <section className="new-test-summary">
             <h3>Run Summary</h3>
             <p>Capacity is an estimate. The proposed window is not reserved until you hold or schedule the run.</p>
-            <p>{generatorInventoryError || (inventoryCheckedAt ? `${generatorInventory.length} live inventory hosts · checked ${inventoryCheckedAt}` : 'Live inventory not yet verified')}</p>
+            <p>{generatorInventoryError || (inventoryCheckedAt ? (generatorInventory.length > 0 ? `${generatorInventory.length} live inventory hosts · checked ${inventoryCheckedAt}` : `No live generator inventory (local or static mode); capacity uses the configured generator count · checked ${inventoryCheckedAt}`) : 'Live inventory not yet verified')}</p>
             <button type="button" className="btn btn-secondary btn-sm" disabled={generatorInventoryLoading} onClick={() => { setInventoryRefresh(value => value + 1); void refreshBindableTimeslots() }}>Refresh capacity and inventory</button>
             <dl className="new-test-summary-list" aria-label="Run settings summary">
               <div><dt>Elastic capture</dt><dd>{elkConnections.find(c => c.id === elkConnectionId)?.name || (elkConnectionId ? 'Selected connection unavailable — review required' : 'Off for this test')}</dd></div>

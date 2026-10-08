@@ -71,7 +71,7 @@
 
 .expand-toggle.open {
   transform: rotate(90deg);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .scenario-info {
@@ -254,7 +254,7 @@
 
 .run-row:hover .run-arrow {
   transform: translateX(2px);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 
@@ -446,7 +446,7 @@
 
 .stepped-ramp-heading > span,
 .stepped-ramp-stage-preview-header span {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: var(--label-tracking, 0.08em);
@@ -492,7 +492,7 @@
   border: 1px solid var(--accent-border);
   border-radius: 50%;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 12px;
   font-weight: 800;
 }
@@ -727,7 +727,7 @@
 }
 
 .stepped-ramp-stage-preview td:nth-child(3) {
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 800;
 }
 
@@ -769,7 +769,7 @@
 }
 
 .scenario-shape-guidance-category {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 11px;
   text-transform: var(--label-case, uppercase);
   letter-spacing: var(--label-tracking, 0.04em);
@@ -1014,7 +1014,7 @@
 }
 
 .scenario-source-card strong {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 11px;
   text-transform: var(--label-case, uppercase);
   letter-spacing: var(--label-tracking, 0.05em);
@@ -1737,7 +1737,7 @@
   padding: 6px 8px;
   border: 1px solid var(--border-subtle, var(--border));
   border-radius: 8px;
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--bg-primary);
 }
 
@@ -1916,7 +1916,7 @@
 }
 
 .scenario-template-card strong {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 11px;
   text-transform: var(--label-case, uppercase);
   letter-spacing: var(--label-tracking, 0.05em);
@@ -2167,7 +2167,7 @@
   border-radius: 999px;
   background: rgba(0, 163, 255, 0.12);
   border: 1px solid rgba(0, 163, 255, 0.22);
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 12px;
   font-weight: 600;
 }
@@ -2223,7 +2223,7 @@
 }
 
 .scenario-table-assignment-badge.auto {
-  color: var(--accent);
+  color: var(--accent-text);
   background: rgba(0, 163, 255, 0.12);
   border: 1px solid rgba(0, 163, 255, 0.22);
 }
@@ -2266,7 +2266,7 @@
 
 .scenario-script-selection-status {
   margin: 6px 0 0;
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 12px;
   font-weight: 600;
 }
@@ -2445,7 +2445,7 @@
 }
 
 .runtime-source-badge.source-group {
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-soft);
   border-color: var(--accent-border);
 }
@@ -2505,7 +2505,7 @@
 .link-button {
   background: none;
   border: none;
-  color: var(--accent);
+  color: var(--accent-text);
   cursor: pointer;
   padding: 0;
   font-size: 12px;

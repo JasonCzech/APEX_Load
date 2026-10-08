@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 
-import { act } from 'react'
+import { act, useState } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AccessPage from './AccessPage'
 import { downloadBlob } from '../utils/fileUtils'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
+import { useNavigationGuardRunner } from '../hooks/NavigationGuardProvider'
+import type { AccessView } from './accessDestinations'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -775,6 +777,43 @@ describe('AccessPage', () => {
     await flushPromises()
     expect(apiMock.createAuthServiceAccount).toHaveBeenCalledWith(expect.objectContaining({ name: 'Draft automation key' }))
     expect(container.querySelector('section[aria-label="Users access workspace"]')).not.toBeNull()
+  })
+
+  // App routes Access sub-tab changes through a guarded view change, which reads
+  // the dirty-draft flags synchronously. A successful create must not leave the
+  // just-saved draft flagged dirty, or the guard opens right after the create
+  // (and stacks over the one-time API-key dialog for service accounts).
+  it.each([
+    { kind: 'user', initial: 'onboard' as AccessView, submit: 'Create User', settled: 'Users access workspace' },
+    { kind: 'service account', initial: 'create-account' as AccessView, submit: 'Create Service Account', settled: 'Service accounts access workspace' },
+  ])('does not raise the unsaved-changes guard after creating a $kind through a guarded route', async ({ kind, initial, submit, settled }) => {
+    function GuardedAccess() {
+      const { runGuarded } = useNavigationGuardRunner()
+      const [view, setView] = useState<AccessView>(initial)
+      return <AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle canManageUserBindings canViewUserActivity canManageServiceAccounts accessView={view} onViewChange={next => runGuarded(() => setView(next))} />
+    }
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await act(async () => {
+      root.render(<NavigationGuardProvider><GuardedAccess /></NavigationGuardProvider>)
+    })
+    await flushPromises()
+    if (kind === 'user') {
+      const subjectInput = inputByPlaceholder(container, 'oidc-subject-or-upstream-user')
+      expect(subjectInput).toBeDefined()
+      if (!subjectInput) return
+      changeInput(subjectInput, 'cara')
+    } else {
+      const accountNameInput = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Service Account Name'))?.querySelector('input') as HTMLInputElement | undefined
+      expect(accountNameInput).toBeDefined()
+      if (!accountNameInput) return
+      changeInput(accountNameInput, 'Nightly automation')
+    }
+
+    await clickButton(container, submit)
+    await flushPromises()
+
+    expect(Array.from(container.querySelectorAll('[role="dialog"], [role="alertdialog"]')).map(dialog => dialog.textContent).join(' ')).not.toContain('unsaved changes')
+    expect(container.querySelector(`section[aria-label="${settled}"]`)).not.toBeNull()
   })
 
   it('guards user and service-account edit drafts when switching rows', async () => {

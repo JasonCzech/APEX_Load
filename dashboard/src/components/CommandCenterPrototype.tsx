@@ -10,6 +10,7 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  Legend,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -63,6 +64,7 @@ import {
   formatSnapshotRequestLineAndHeaders,
   formatSnapshotResponseStatusAndHeaders,
 } from '../utils/snapshotFormatUtils'
+import { attemptErrorPercent, errorRateBasisLabel, groupRunCounts, groupRunErrorPercent, liveRunCounts, type ErrorRateBasis } from '../utils/liveErrorRate'
 import './TestExecution.css'
 import './CommandCenterPrototype.css'
 
@@ -268,17 +270,28 @@ function isHistoricalRunStatus(status: TestStatus | string | undefined) {
   return status === 'COMPLETE' || status === 'FAILED' || status === 'ABORTED'
 }
 
+// The group settings dialogs open from a context-menu item that unmounts when
+// the dialog opens; focus returns to that group's row action button instead.
+function groupActionsSelector(groupName: string) {
+  // Escape for a double-quoted CSS attribute value (CSS.escape is not in every runtime).
+  const label = `${groupName} group actions`.replace(/["\\]/g, match => `\\${match}`)
+  return `button.command-group-name[aria-label="${label}"]`
+}
+
+// Error rates on this page are run-to-date whenever the controller reports
+// run counters; a one-second window misreports a failing run as 0.00%.
 function groupErrorPercent(group: GroupLiveMetrics | undefined) {
-  if (!group) return 0
-  const attempts = group.transactions + group.errors
-  return attempts > 0 ? group.errors / attempts * 100 : 0
+  return groupRunErrorPercent(group)
 }
 
 function wholeTestErrorPercent(metrics: LiveMetrics | undefined, groups: CommandGroup[]) {
-  const totalTransactions = metrics?.total_transactions ?? groups.reduce((sum, group) => sum + group.transactions, 0)
-  const totalErrors = metrics?.total_errors ?? groups.reduce((sum, group) => sum + group.errors, 0)
-  const attempts = totalTransactions + totalErrors
-  return attempts > 0 ? totalErrors / attempts * 100 : 0
+  const counts = liveRunCounts(metrics)
+  if (counts) return attemptErrorPercent(counts.transactions, counts.errors)
+  return attemptErrorPercent(groups.reduce((sum, group) => sum + group.transactions, 0), groups.reduce((sum, group) => sum + group.errors, 0))
+}
+
+function wholeTestErrorRateBasis(metrics: LiveMetrics | undefined): ErrorRateBasis | undefined {
+  return liveRunCounts(metrics)?.basis
 }
 
 function highestGroupErrorRate(groups: CommandGroup[]) {
@@ -363,6 +376,7 @@ function buildLiveGroups(test: TestSummary, targetDrafts: Record<string, number>
   return (test.groups || []).map((group, index) => {
     const metrics = test.live_metrics?.groups?.[group.name]
     const aggregateFallback = !metrics && test.groups.length === 1 ? test.live_metrics : undefined
+    const fallbackCounts = liveRunCounts(aggregateFallback)
     const activeVuserRamp = test.vuser_ramps?.[group.name]
     const liveTargetVusers = activeVuserRamp?.target_vusers ?? group.vusers
     const liveTarget = targetMode === 'tps' ? goalTargets[group.name] : liveTargetVusers
@@ -387,18 +401,21 @@ function buildLiveGroups(test: TestSummary, targetDrafts: Record<string, number>
       activeVuserRamp,
       tps: metrics?.tps ?? aggregateFallback?.tps ?? 0,
       art: metrics?.avg_response_ms ?? aggregateFallback?.avg_response_ms ?? 0,
-      errorPct: metrics ? groupErrorPercent(metrics) : aggregateFallback?.error_pct ?? 0,
+      errorPct: metrics ? groupErrorPercent(metrics) : fallbackCounts ? attemptErrorPercent(fallbackCounts.transactions, fallbackCounts.errors) : 0,
       p99: metrics?.p99_ms ?? aggregateFallback?.p99_ms ?? 0,
-      transactions: metrics?.transactions ?? aggregateFallback?.total_transactions ?? 0,
-      errors: metrics?.errors ?? aggregateFallback?.total_errors ?? 0,
+      transactions: groupRunCounts(metrics)?.transactions ?? fallbackCounts?.transactions ?? 0,
+      errors: groupRunCounts(metrics)?.errors ?? fallbackCounts?.errors ?? 0,
       color: COMMAND_GROUP_COLORS[index % COMMAND_GROUP_COLORS.length],
     }
   })
 }
 
 function buildLiveErrorPatterns(metrics?: LiveMetrics): ErrorPattern[] {
-  return (metrics?.error_patterns || []).map((pattern, index) => {
-    const rate = pattern.error_pct ?? (metrics?.total_transactions ? pattern.count / metrics.total_transactions * 100 : 0)
+  const patterns = metrics?.error_patterns || []
+  const totalErrors = patterns.reduce((sum, pattern) => sum + (pattern.count || 0), 0)
+  return patterns.map((pattern, index) => {
+    // One rate per signature everywhere on this page: its share of all errors.
+    const rate = pattern.share_of_errors_pct ?? (totalErrors > 0 ? pattern.count / totalErrors * 100 : 0)
     const group = pattern.affected_groups?.join(', ') || 'Multiple groups'
     // Fall back to the pattern's identifying evidence when the backend supplied
     // no signature, and to the index when there is no evidence either. The
@@ -421,7 +438,7 @@ function buildLiveErrorPatterns(metrics?: LiveMetrics): ErrorPattern[] {
       rate,
       firstSeen: formatTimeValue(pattern.first_seen),
       latestSeen: formatTimeValue(pattern.latest_seen),
-      severity: rate >= 1 || pattern.status_code && pattern.status_code >= 500 ? 'danger' : 'warning',
+      severity: rate >= 50 || pattern.status_code && pattern.status_code >= 500 ? 'danger' : 'warning',
       sample: pattern.sample || 'No sample captured yet.',
       statusCode: pattern.status_code,
       actions: pattern.actions || [],
@@ -1341,7 +1358,17 @@ export default function CommandCenterPrototype({
         }))
       } catch (error: unknown) {
         if (currentRunRef.current !== testId) return
-        setState(prev => ({ ...prev, feedback: getErrorMessage(error, targetMode === 'tps' ? 'Unable to update goal target' : 'Unable to scale VUsers') }))
+        // The controller rejected the change: drop the staged value so the
+        // hero, row and chart show the committed target again, and say so.
+        const drafts = { ...(viewMemory.values.get('targetDrafts') as Record<string, number> || {}) }
+        delete drafts[groupName]
+        viewMemory.values.set('targetDrafts', drafts)
+        const reason = getErrorMessage(error, targetMode === 'tps' ? 'Unable to update goal target' : 'Unable to scale VUsers')
+        setState(prev => {
+          const vuserTargets = { ...prev.vuserTargets }
+          delete vuserTargets[groupName]
+          return { ...prev, vuserTargets, feedback: `Not applied: ${groupName} keeps its current ${targetMode === 'tps' ? 'TPS target' : 'VUser target'}. ${reason}` }
+        })
       }
       return
     }
@@ -1434,6 +1461,7 @@ export default function CommandCenterPrototype({
         totalTarget={totalTarget}
         targetMode={targetMode}
         errorPct={noRequestSamples ? undefined : wholeTestErrorPercent(displayTest.live_metrics, groups)}
+        errorRateBasis={wholeTestErrorRateBasis(displayTest.live_metrics)}
         noRequestSamples={noRequestSamples}
         highestErrorGroup={noRequestSamples ? undefined : highestGroupErrorRate(groups)}
         tps={runSummaryTps}
@@ -1477,6 +1505,7 @@ export default function CommandCenterPrototype({
       {showRuntimeAdjustment && testId && liveMode && runStatus === 'RUNNING' && (
         <RuntimeAdjustmentDialog
           test={displayTest}
+          returnFocusSelector='[data-command-action="change-duration"]'
           onClose={() => setShowRuntimeAdjustment(false)}
           onApplied={(result) => {
             setLiveTest(current => {
@@ -1525,6 +1554,7 @@ export default function CommandCenterPrototype({
           key={visibleGroupSettingsDialog.plannedOwner ? `${visibleGroupSettingsDialog.plannedOwner.scope}:${visibleGroupSettingsDialog.plannedOwner.token.generation}` : undefined}
           testId={testId}
           groupName={visibleGroupSettingsDialog.group}
+          returnFocusSelector={groupActionsSelector(visibleGroupSettingsDialog.group)}
           onClose={() => {
             const owner = visibleGroupSettingsDialog.plannedOwner
             if (owner && (plannedSettingsScopeRef.current !== owner.scope || plannedSettingsTokenRef.current !== owner.token)) return
@@ -1541,6 +1571,7 @@ export default function CommandCenterPrototype({
         <GroupParametersDialog
           testId={testId}
           groupName={visibleGroupSettingsDialog.group}
+          returnFocusSelector={groupActionsSelector(visibleGroupSettingsDialog.group)}
           onClose={() => setGroupSettingsDialog(null)}
           onSaved={handleGroupParametersSaved}
         />
@@ -1663,6 +1694,7 @@ interface RunControlShelfProps {
   totalTarget: number
   targetMode: CommandGroup['targetMode']
   errorPct?: number
+  errorRateBasis?: ErrorRateBasis
   highestErrorGroup?: { name: string; errorPct: number }
   tps?: number
   tpsHint?: string
@@ -1688,6 +1720,7 @@ function RunControlShelf({
   totalTarget,
   targetMode,
   errorPct,
+  errorRateBasis,
   highestErrorGroup,
   tps,
   tpsHint,
@@ -1731,10 +1764,10 @@ function RunControlShelf({
         />
         {test.termination_mode === 'iterations' ? <><MetricPill label="Completed / expected iterations" value={`${test.live_metrics?.completed_iterations ?? 0} / ${test.groups.reduce((n,g) => n + g.vusers * (g.iterations || 0), 0)}`} /><MetricPill label="Elapsed" value={formatRemaining(test.started_at ? Math.max(0, ((test.ended_at ? Date.parse(test.ended_at) : Date.now()) - Date.parse(test.started_at)) / 1000) : 0)} /></> : <MetricPill label="Remaining" value={formatRemaining(remainingSeconds)} tone={remainingSeconds <= 60 ? 'warning' : 'default'} />}
         {tps !== undefined && <MetricPill label={tpsHint ? `TPS (${tpsHint})` : 'TPS'} value={canStart ? "Not started" : noRequestSamples ? "No samples" : formatNumber(tps, 1)} tone="accent" />}
-        <MetricPill label="Overall Error Rate" value={canStart || noRequestSamples ? "No samples" : formatOptionalPercent(errorPct)} tone={errorPct && errorPct > 0 ? "danger" : "default"} />
+        <MetricPill label={`Error Rate (${errorRateBasisLabel(errorRateBasis)})`} value={canStart || noRequestSamples ? "No samples" : formatOptionalPercent(errorPct)} tone={errorPct && errorPct > 0 ? "danger" : "default"} />
         {test.groups.length > 1 && (
           <MetricPill
-            label="Highest Error Rate"
+            label={`Highest Error Rate (${errorRateBasisLabel(errorRateBasis)})`}
             value={canStart || noRequestSamples ? "No samples" : highestErrorGroup ? `${highestErrorGroup.errorPct < 0.005 ? "<0.01%" : formatOptionalPercent(highestErrorGroup.errorPct)} · ${highestErrorGroup.name}` : errorPct && errorPct > 0 ? "No group data" : "No errors"}
             tone={highestErrorGroup ? "danger" : "default"}
           />
@@ -1759,7 +1792,7 @@ function RunControlShelf({
           </button>
         )}
         {onChangeDuration && (
-          <button type="button" className="btn btn-sm btn-accent" onClick={onChangeDuration} disabled={changeDurationDisabled}>
+          <button type="button" className="btn btn-sm btn-accent" data-command-action="change-duration" onClick={onChangeDuration} disabled={changeDurationDisabled}>
             Change duration
           </button>
         )}
@@ -2168,8 +2201,9 @@ function OpsCockpitV2View({
                   <YAxis stroke="var(--text-muted)" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
                   <Tooltip contentStyle={chartTooltipContentStyle} labelStyle={chartTooltipLabelStyle} labelFormatter={value => `${formatNumber(Number(value))}% elapsed`} />
                   <ReferenceLine x={progressPct} stroke="var(--text-primary)" strokeWidth={1.5} ifOverflow="extendDomain" />
-                  <Area type="stepAfter" dataKey="planned" name="Target VUsers" stroke="var(--accent)" strokeDasharray="5 4" fill="transparent" strokeWidth={2} dot={false} isAnimationActive={false} />
-                  <Area type="stepAfter" dataKey="actual" name="Actual VUsers" stroke="var(--chart-2)" fill="var(--accent-soft)" fillOpacity={0.32} strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Area type="stepAfter" dataKey="planned" name="Target VUsers" stroke="var(--chart-1)" strokeDasharray="5 4" fill="transparent" strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Area type="stepAfter" dataKey="actual" name="Actual VUsers" stroke="var(--chart-2)" fill="var(--chart-2)" fillOpacity={0.16} strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Legend verticalAlign="bottom" height={22} iconType="plainline" wrapperStyle={{ fontSize: 11, color: 'var(--text-secondary)' }} />
                 </AreaChart>
               </ResponsiveContainer></SeriesChartExport>
             </div>
@@ -2619,11 +2653,12 @@ function ScenarioRunTable({
   onSort: (key: string) => void
 }) {
   const essentialColumns = [0, 1, 4, 5, 6, 11, 15]
-  const labels = ['Name', 'Group', 'Type', 'Protocol', 'Current VU', 'Target VU', 'TPS', 'Target TPS', 'Gap', 'Tx', 'Errors', 'Error %', 'ART', 'p50', 'p90', 'p95', 'p99']
+  const labels = ['Name', 'Group', 'Type', 'Protocol', 'Current VU', 'Target VU', 'TPS', 'Target TPS', 'Gap', 'Attempts', 'Errors', 'Error %', 'ART', 'p50', 'p90', 'p95', 'p99']
   const [columns, setColumns] = useCommandViewState('scenarioColumns', essentialColumns)
   const fullMetrics = columns.length === labels.length
   return (
-    <div className="command-data-table-wrap" role="tabpanel" aria-label="Scenario run metrics">
+    <div className="command-data-table-wrap" role="tabpanel" aria-label="Scenario run metrics" tabIndex={0}>
+      <p className="command-table-caption">Rates and counts cover the last sample window; Group Load shows run-to-date error rates.</p>
       <label className="command-column-preset"><input type="checkbox" checked={fullMetrics} onChange={event => setColumns(event.target.checked ? labels.map((_, index) => index) : essentialColumns)} /> Show all 17 metrics</label>
       <details className="command-column-picker"><summary>Choose columns</summary>
         <div>{labels.map((label, index) => <label key={label}><input type="checkbox" checked={columns.includes(index)} disabled={index < 2} onChange={event => setColumns(previous => event.target.checked ? [...previous, index] : previous.filter(column => column !== index))} />{label}</label>)}</div>
@@ -2640,7 +2675,7 @@ function ScenarioRunTable({
             <SortableHeader hidden={!columns.includes(6)} label="TPS" sortKey="tps" sort={sort} onSort={onSort} align="right" />
             <SortableHeader hidden={!columns.includes(7)} label="Target TPS" sortKey="targetTps" sort={sort} onSort={onSort} align="right" />
             <SortableHeader hidden={!columns.includes(8)} label="Gap" sortKey="throughputGap" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(9)} label="Tx" sortKey="transactions" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(9)} label="Attempts" sortKey="transactions" sort={sort} onSort={onSort} align="right" />
             <SortableHeader hidden={!columns.includes(10)} label="Errors" sortKey="errors" sort={sort} onSort={onSort} align="right" />
             <SortableHeader hidden={!columns.includes(11)} label="Error %" sortKey="errorPct" sort={sort} onSort={onSort} align="right" />
             <SortableHeader hidden={!columns.includes(12)} label="ART" sortKey="art" sort={sort} onSort={onSort} align="right" />
@@ -2714,7 +2749,7 @@ function ErrorDetailsTable({
             <tr>
               <SortableHeader label="Signature" sortKey="title" sort={sort} onSort={onSort} />
               <SortableHeader label="Count" sortKey="count" sort={sort} onSort={onSort} align="right" />
-              <SortableHeader label="Rate" sortKey="rate" sort={sort} onSort={onSort} align="right" />
+              <SortableHeader label="Share of errors" sortKey="rate" sort={sort} onSort={onSort} align="right" />
               <SortableHeader label="Status" sortKey="statusCode" sort={sort} onSort={onSort} align="right" />
               <SortableHeader label="Affected Groups" sortKey="group" sort={sort} onSort={onSort} />
               <SortableHeader label="Actions" sortKey="transaction" sort={sort} onSort={onSort} />
@@ -2735,7 +2770,7 @@ function ErrorDetailsTable({
               >
                 <td><strong>{row.title}</strong><span className="command-table-subtext">{row.sample}</span></td>
                 <td className="numeric">{formatNumber(row.count)}</td>
-                <td className={`numeric ${metricTone(row.rate, 0.75, 1.5)}`}>{formatPercent(row.rate)}</td>
+                <td className="numeric">{formatPercent(row.rate)}</td>
                 <td className="numeric">{row.statusCode || '--'}</td>
                 <td>{row.affectedGroups.join(', ') || row.group}</td>
                 <td>{row.actions.join(', ') || row.transaction}</td>
@@ -3662,7 +3697,7 @@ function LoadModelPanel({
       </details>
       <div className="command-load-model-chart" aria-hidden="true">
         <ResponsiveContainer width="100%" height={132} minWidth={240}>
-          <AreaChart data={profile} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+          <AreaChart data={profile} margin={{ top: 8, right: 8, left: -18, bottom: 0 }} accessibilityLayer={false}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
             <XAxis
               dataKey="pct"
@@ -4128,7 +4163,7 @@ function ErrorDrilldown({
           >
             <span>{pattern.title}</span>
             <strong>{pattern.count}</strong>
-            <small>{pattern.group} / {formatPercent(pattern.rate)}</small>
+            <small>{pattern.group} / {formatPercent(pattern.rate)} of errors</small>
           </button>
         ))}
       </div>
@@ -4146,7 +4181,7 @@ function ErrorDrilldown({
               <dd>{selectedError.firstSeen}</dd>
             </div>
             <div>
-              <dt>Error rate</dt>
+              <dt>Share of errors</dt>
               <dd>{formatPercent(selectedError.rate)}</dd>
             </div>
           </dl>

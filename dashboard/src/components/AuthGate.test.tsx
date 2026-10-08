@@ -46,6 +46,70 @@ describe("AuthGate", () => {
     vi.restoreAllMocks();
   });
 
+  it("keeps the app mounted under a sign-in dialog when a signed-in session expires", async () => {
+    const signedIn = readyState({ enabled: true, mode: "local", authenticated: true, user: { subject: "local:dev" } as ReadyAuthState["user"] });
+    await act(async () => {
+      root.render(<AuthGate state={signedIn}><input aria-label="Draft" defaultValue="" /></AuthGate>);
+    });
+    const draft = container.querySelector<HTMLInputElement>('[aria-label="Draft"]')!;
+    await act(async () => setInputValue(draft, "unsaved work"));
+    await act(async () => {
+      root.render(<AuthGate state={readyState({ enabled: true, mode: "local", authenticated: false, session_status: "expired" })}><input aria-label="Draft" defaultValue="" /></AuthGate>);
+    });
+    // The same input element survives with its value: the app was not unmounted.
+    expect(container.querySelector<HTMLInputElement>('[aria-label="Draft"]')).toBe(draft);
+    expect(draft.value).toBe("unsaved work");
+    const dialog = document.body.querySelector('[role="alertdialog"]');
+    expect(dialog?.textContent).toContain("Your session expired");
+    expect(dialog?.querySelector('input[autocomplete="username"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("Choose a test persona");
+  });
+
+  it("tells a signed-in OIDC user that continuing to the provider leaves the page, and offers a re-check", async () => {
+    const refresh = vi.fn();
+    window.addEventListener("apexload:auth-status-refresh", refresh);
+    const signedIn = readyState({ enabled: true, mode: "oidc", authenticated: true, provider_name: "Microsoft Entra ID", login_url: "/api/v1/auth/oidc/login", user: { subject: "oidc:dev" } as ReadyAuthState["user"] });
+    await act(async () => root.render(<AuthGate state={signedIn}><div>Protected content</div></AuthGate>));
+    await act(async () => root.render(<AuthGate state={readyState({ enabled: true, mode: "oidc", authenticated: false, provider_name: "Microsoft Entra ID", login_url: "/api/v1/auth/oidc/login" })}><div>Protected content</div></AuthGate>));
+    expect(container.textContent).toContain("Protected content");
+    const dialog = document.body.querySelector('[role="alertdialog"]');
+    expect(dialog?.textContent).toContain("leaves this page");
+    expect(dialog?.textContent).toContain("Continue to Microsoft Entra ID");
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(json({ enabled: true, mode: "oidc", authenticated: false }))
+      .mockResolvedValueOnce(json({ enabled: true, mode: "oidc", authenticated: true, user: { subject: "oidc:dev" } }));
+    const checkAgain = () => Array.from(document.body.querySelectorAll('[role="alertdialog"] button')).find(button => button.textContent?.includes("check again"));
+    // Still signed out: say so instead of silently doing nothing.
+    await act(async () => checkAgain()?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await act(async () => { await Promise.resolve(); });
+    expect(document.body.querySelector('[role="alertdialog"] [role="alert"]')?.textContent).toContain("Still signed out");
+    expect(refresh).not.toHaveBeenCalled();
+    // Signed in as the same user: resume the kept page in place.
+    await act(async () => checkAgain()?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await act(async () => { await Promise.resolve(); });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    window.removeEventListener("apexload:auth-status-refresh", refresh);
+  });
+
+  it("keeps the app and offers Retry when a re-check fails after sign-in", async () => {
+    const signedIn = readyState({ enabled: true, mode: "local", authenticated: true, user: { subject: "local:dev" } as ReadyAuthState["user"] });
+    await act(async () => root.render(<AuthGate state={signedIn}><div>Protected content</div></AuthGate>));
+    const diagnostic = diagnoseError(new Error("network down"), "Unable to determine authentication status.");
+    await act(async () => root.render(<AuthGate state={{ status: "error", message: diagnostic.summary, diagnostic }}><div>Protected content</div></AuthGate>));
+    expect(container.textContent).toContain("Protected content");
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain("Could not confirm your session");
+    expect(alert?.querySelector("button")?.textContent).toBe("Retry now");
+  });
+
+  it("warns shortly before the session ends", async () => {
+    const soon = new Date(Date.now() + 2 * 60_000).toISOString();
+    await act(async () => root.render(<AuthGate state={readyState({ enabled: true, mode: "local", authenticated: true, session_expires_at: soon })}><div>Protected content</div></AuthGate>));
+    expect(container.querySelector(".session-expiry-notice")?.textContent).toContain("You will be asked to sign in again");
+  });
+
   it("renders children when authentication is disabled", async () => {
     await act(async () => {
       root.render(

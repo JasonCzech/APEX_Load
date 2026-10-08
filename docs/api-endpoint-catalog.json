@@ -5806,6 +5806,16 @@
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: system:read"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/system/client-errors",
+      "operationId": "handleReportClientError",
+      "summary": "Report Client Error",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; service-account scope: system:read"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/system/cloud-connections",
       "operationId": "handleListCloudConnections",
@@ -6750,6 +6760,16 @@
       "path": "/api/v1/tests/{id}/baseline-candidates",
       "operationId": "handleBaselineComparisonCandidates",
       "summary": "Baseline Comparison Candidates",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/baseline-comparisons",
+      "operationId": "handleListBaselineComparisons",
+      "summary": "List Baseline Comparisons",
       "category": "Test Execution",
       "public": false,
       "authenticated": true,

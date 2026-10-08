@@ -67,6 +67,39 @@ describe('useModalDialog integration', () => {
     opener.remove()
   })
 
+  it.each([
+    ['removed', (opener: HTMLButtonElement) => opener.remove()],
+    ['disabled', (opener: HTMLButtonElement) => { opener.disabled = true }],
+  ])('returns focus to the fallback target when the opener was %s', async (_label, breakOpener) => {
+    // Context-menu items unmount and shelf buttons can be disabled while the
+    // dialog is open; either way focus must not be stranded on <body>.
+    const opener = document.createElement('button')
+    opener.textContent = 'Runtime Settings'
+    const fallback = document.createElement('button')
+    fallback.textContent = 'Checkout group actions'
+    fallback.setAttribute('data-return-target', 'group')
+    document.body.append(opener, fallback)
+    opener.focus()
+
+    function SelectorDialog() {
+      const dialogRef = useRef<HTMLDivElement>(null)
+      useModalDialog({ dialogRef, onClose: vi.fn(), returnFocusSelector: '[data-return-target="group"]' })
+      return <div ref={dialogRef} role="dialog" aria-label="Runtime Settings"><button type="button">Close</button></div>
+    }
+
+    await act(async () => {
+      root.render(<SelectorDialog />)
+    })
+    breakOpener(opener)
+    await act(async () => {
+      root.unmount()
+    })
+
+    expect(document.activeElement).toBe(fallback)
+    opener.remove()
+    fallback.remove()
+  })
+
   it('keeps Tab focus inside the dialog', async () => {
     await act(async () => {
       root.render(<ProjectModal title="New Project" onClose={vi.fn()} onSubmit={vi.fn()} />)

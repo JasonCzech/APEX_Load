@@ -296,9 +296,11 @@ func (s *Server) handleStartBrowserRecording(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		if availability, ok := browserRecordingAvailabilityFromStartError(err); ok {
+			ref := logServerError(w, http.StatusServiceUnavailable, err, "code", availability.Code)
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 				"error":        availability.Reason,
 				"availability": availability,
+				"ref":          ref,
 			})
 			return
 		}

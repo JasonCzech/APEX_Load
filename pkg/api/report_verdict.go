@@ -219,7 +219,7 @@ func deriveReportFindings(report *RunArchiveReport) []ReportFinding {
 			break
 		}
 		severity := "minor"
-		if report.Overview.Transactions > 0 && float64(pattern.Count)/float64(report.Overview.Transactions) >= 0.01 {
+		if archiveErrorPatternFailureRate(report, pattern) >= 0.01 {
 			severity = "major"
 		}
 		evidence := fmt.Sprintf("Signature %q", pattern.Signature)

@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 726,
+    "routes": 728,
     "public": 31,
-    "protected": 695,
-    "rbac": 690,
+    "protected": 697,
+    "rbac": 692,
     "handler_authenticated": 5,
     "role_metadata_missing": 0,
-    "green": 726,
+    "green": 728,
     "partial": 0,
     "missing": 0
   },
@@ -13682,6 +13682,20 @@
       "service_account_scope": "system:read"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/system/client-errors",
+      "operation_id": "handleReportClientError",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; service-account scope: system:read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "any authenticated identity allowed",
+      "allowed_roles": {},
+      "service_account_scope": "system:read"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/system/cloud-connections",
       "operation_id": "handleListCloudConnections",
@@ -15792,6 +15806,33 @@
       "method": "GET",
       "path": "/api/v1/tests/{id}/baseline-candidates",
       "operation_id": "handleBaselineComparisonCandidates",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "results:read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/baseline-comparisons",
+      "operation_id": "handleListBaselineComparisons",
       "public": false,
       "authenticated": true,
       "state": "GREEN",

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import type { CapacityTimeslot, LaunchConflict, LaunchPreflightResponse } from '../types'
 import {
   RESERVATION_INCREMENT_MINUTES,
+  formatScheduleInstant,
   COMMON_TIMEZONES,
   ceilDateToReservationIncrement,
   datetimeLocalToISO,
@@ -202,4 +203,12 @@ it('shows iteration completion without inventing a capacity deadline', () => {
   const result = preflight({ candidate_window: { start_at: '2026-09-23T12:00:00Z', open_ended: true, duration_seconds: 0 } })
   expect(formatLaunchWindow(result)).toContain('until all iterations complete')
   expect(formatReservationWindow(result)).toContain('cannot reserve')
+})
+
+describe('formatScheduleInstant', () => {
+  it('formats in the schedule timezone, not the browser timezone', () => {
+    // 06:00Z is 2:00 AM in New York (EDT), whatever the browser zone is.
+    expect(formatScheduleInstant('2026-10-08T06:00:00Z', 'America/New_York')).toMatch(/2:00\s?AM/)
+    expect(formatScheduleInstant(undefined, 'America/New_York')).toBe('Not scheduled')
+  })
 })

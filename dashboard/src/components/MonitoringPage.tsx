@@ -33,6 +33,7 @@ import PrometheusConnectionsCard from './PrometheusConnectionsCard'
 import TimeslotsPanel from './TimeslotsPanel'
 import { dialogBackdropProps } from './dialogBackdropProps'
 import { frontendBuildMetadata, type FrontendBuildComponentInfo } from '../buildMetadata'
+import { fleetCapacitySummary } from '../utils/fleetCapacitySummary'
 import './CreateTestModal.css'
 import './StatusBadge.css'
 
@@ -774,6 +775,16 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     return request
   }, [activeProjectId, api])
 
+  // Overview polls system health. Fleet needs it only for the configured
+  // capacity fallback, so it loads health just when no response is held yet
+  // (for example when Fleet is opened directly) instead of polling it twice.
+  const healthLoadedRef = useRef(false)
+  const loadHealth = useCallback(async () => {
+    const response = await api.getHealth()
+    healthLoadedRef.current = true
+    return response
+  }, [api])
+
   const refresh = useCallback((categoryId: MonitorCategoryId = activeCategoryId) => runCoalescedRefresh(async () => {
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
     const generation = refreshGenerationRef.current
@@ -782,7 +793,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
 
     if (categoryId === 'overview') {
       const [healthRes, inventoryRes, restartCapsRes, readinessOk, servicesRes] = await Promise.all([
-        settleApiCall(() => api.getHealth()),
+        settleApiCall(loadHealth),
         settleApiCall(() => api.getSystemInventory()),
         canManageSystem ? settleApiCall(() => api.getRestartCapabilities()) : Promise.resolve({ ok: false } as const),
         refreshReadiness(),
@@ -802,15 +813,19 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     }
 
     if (categoryId === 'fleet') {
-      const [inventoryRes, restartCapsRes, fleetAlertsRes, fleetAuditRes, fleetCapacityRes, provisionerRes] = await Promise.all([
+      const [inventoryRes, restartCapsRes, fleetAlertsRes, fleetAuditRes, fleetCapacityRes, provisionerRes, healthRes] = await Promise.all([
         settleApiCall(() => api.getSystemInventory()),
         canManageSystem ? settleApiCall(() => api.getRestartCapabilities()) : Promise.resolve({ ok: false } as const),
         settleApiCall(() => api.getFleetAlerts()),
         canManageSystem ? settleApiCall(() => api.listAuthAuditEvents({ limit: 8, category: 'fleet' })) : Promise.resolve({ ok: false } as const),
         settleApiCall(() => api.getFleetCapacity(projectScope ? { project_id: projectScope } : undefined)),
         settleApiCall(() => api.getFleetProvisioner()),
+        // The capacity card falls back to the configured generator count from
+        // health when there is no live generator inventory.
+        healthLoadedRef.current ? Promise.resolve({ ok: false } as const) : settleApiCall(loadHealth),
       ])
       if (!isCurrent()) return
+      if (healthRes.ok) setHealth(healthRes.value)
       if (inventoryRes.ok) setInventory(inventoryRes.value)
       if (restartCapsRes.ok) setRestartCapabilities(restartCapsRes.value)
       if (fleetAlertsRes.ok) setFleetAlerts(fleetAlertsRes.value.alerts || [])
@@ -860,7 +875,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     if (runCalendarRes.ok) setRunCalendar(runCalendarRes.value)
     recordCardFreshness([{ cardId: 'run-calendar', ok: scheduleHealthRes.ok && runCalendarRes.ok }])
     if (scheduleHealthRes.ok || runCalendarRes.ok) setLastRefreshed(new Date())
-  }), [activeCategoryId, activeProjectId, api, calendarRange.from, calendarRange.to, canManageSystem, recordCardFreshness, refreshReadiness, runCoalescedRefresh])
+  }), [activeCategoryId, activeProjectId, api, calendarRange.from, calendarRange.to, canManageSystem, loadHealth, recordCardFreshness, refreshReadiness, runCoalescedRefresh])
 
   const refreshAllCategories = useCallback(async (): Promise<boolean> => {
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return false
@@ -1075,6 +1090,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     }
   }, [api, refresh, restartAction])
 
+  const capacitySummary = useMemo(() => fleetCapacitySummary(fleetCapacity, health), [fleetCapacity, health])
   const cards = useMemo<MonitorCard[]>(() => [
     { id: 'run-monitor-sources', title: 'Run monitor sources', icon: <span aria-hidden="true">M</span>, content: <RunMonitorSources key={activeProjectId} projectId={activeProjectId} canManage={canManageProjects} /> },
     { id: 'parquet-analysis', title: 'Analysis workspace', icon: <span aria-hidden="true">PT</span>, content: <AnalysisWorkspace key={activeProjectId} projectId={activeProjectId} canEdit={canManageTests} /> },
@@ -1390,7 +1406,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
             const totalSlots = (fleetCapacity?.active_slots || 0) + (fleetCapacity?.available_slots || 0) + (fleetCapacity?.reserved_slots || 0)
             const usedSlots = (fleetCapacity?.active_slots || 0) + (fleetCapacity?.reserved_slots || 0)
             const usagePct = totalSlots > 0 ? Math.round((usedSlots / totalSlots) * 100) : 0
-            return totalSlots > 0 ? (
+            return totalSlots > 0 && capacitySummary.hasLiveInventory ? (
               <div className="capacity-gauge">
                 <div className="capacity-gauge-header">
                   <span className="capacity-gauge-label">Utilization</span>
@@ -1422,11 +1438,11 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           )}
           <div className="monitor-row">
             <span className="monitor-label">Effective Available</span>
-            <span className="monitor-value">{fleetCapacity?.available_slots?.toLocaleString() ?? health?.capacity_availability?.effective_available_generators ?? '-'}</span>
+            <span className="monitor-value">{capacitySummary.effectiveAvailable?.toLocaleString() ?? '-'}</span>
           </div>
           <div className="monitor-row">
             <span className="monitor-label">Eligible Generators</span>
-            <span className="monitor-value">{fleetCapacity ? `${fleetCapacity.eligible_generators}/${fleetCapacity.total_generators}` : health?.capacity_availability?.configured_available_generators ?? '-'}</span>
+            <span className="monitor-value">{capacitySummary.eligibleLabel}</span>
           </div>
           <div className="monitor-row">
             <span className="monitor-label">Active Slots</span>
@@ -1446,7 +1462,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           </div>
           <div className="monitor-row">
             <span className="monitor-label">Source</span>
-            <span className="monitor-value">{fleetCapacity ? 'fleet placement API' : health?.capacity_availability?.source || '-'}</span>
+            <span className="monitor-value">{capacitySummary.sourceLabel}</span>
           </div>
           {fleetCapacity?.project_slots?.length ? (
             <div className="monitor-warning-list">
@@ -1690,7 +1706,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     },
     { id: 'prometheus-test-connections', title: 'Prometheus Test Monitoring', icon: <span aria-hidden="true">P</span>, content: <PrometheusConnectionsCard summaryOnly projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} /> },
 
-  ], [activeProjectId, activeProject?.id, allConfiguredReadinessChecksPassing, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, showQueuedRuns, canManageTests, canManageProjects, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertActionBusy, fleetAlertActionError, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlertList, fleetAlertsUnknown, fleetAuditEvents, fleetAuditHeaderLabel, fleetAuditHeaderSeverity, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, hasAllRequiredInfrastructureChecks, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onScheduleForDate, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessDisplayedCheckCount, readinessFailureChecks, readinessFetchState, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, thresholdAlertHeaderLabel, thresholdAlertHeaderSeverity, toggleFleetAlertAck, websocketLabel, websocketValueClass])
+  ], [capacitySummary, activeProjectId, activeProject?.id, allConfiguredReadinessChecksPassing, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, showQueuedRuns, canManageTests, canManageProjects, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertActionBusy, fleetAlertActionError, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlertList, fleetAlertsUnknown, fleetAuditEvents, fleetAuditHeaderLabel, fleetAuditHeaderSeverity, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, hasAllRequiredInfrastructureChecks, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onScheduleForDate, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessDisplayedCheckCount, readinessFailureChecks, readinessFetchState, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, thresholdAlertHeaderLabel, thresholdAlertHeaderSeverity, toggleFleetAlertAck, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => {

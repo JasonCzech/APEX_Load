@@ -36,10 +36,11 @@ describe('access stylesheet ownership and preservation', () => {
     // re-frozen for the shared-theme pass: label case/tracking became the
     // --label-case/--label-tracking tokens, the pill-style .access-navigation
     // rules gave way to the shared section list, and .access-load-older styles
-    // the end of server-batched event tables.
+    // the end of server-batched event tables. Re-frozen again when accent-coloured
+    // text moved to the contrast-safe --accent-text token (UXH-004).
     // @ts-expect-error Style contracts run in Node; application sources omit Node types.
     const { createHash } = await import('node:crypto')
-    expect(createHash('sha256').update(JSON.stringify(ruleReceipt(css))).digest('hex')).toBe('0531294262b16a93c2f9f731d2c17aac502ae6e988312162d8cae55bc9678beb')
+    expect(createHash('sha256').update(JSON.stringify(ruleReceipt(css))).digest('hex')).toBe('ed5cb96f940a3904bc695c130162f27ba3f552901b21054929e9206ca9bfe262')
     css.walkRules(rule => { expect(rule.selectors.every(selector => /^\.access-[a-z0-9-]+(?:$|[^a-z0-9-])/i.test(selector))).toBe(true) })
   })
 

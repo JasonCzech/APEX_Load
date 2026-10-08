@@ -83,6 +83,8 @@ var profileHTMLFuncMap = template.FuncMap{
 	"identityName":             identityName,
 	"reportEnvironment":        reportEnvironment,
 	"populationRate":           reportPopulationRate,
+	"headline":                 reportHeadline,
+	"fms":                      formatReportMs,
 	"executionLabel":           reportExecutionLabel,
 	"elapsedDuration":          reportElapsedDuration,
 	"formatTime": func(value any) string {

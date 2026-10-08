@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/hamba/avro/v2/ocf"
@@ -117,6 +118,70 @@ func TestHandleImportEventHubsCapture(t *testing.T) {
 	if !foundReview {
 		t.Fatalf("expected an eventhubs_capture review section, got %+v", result.ReviewSections)
 	}
+}
+
+// An .avro upload that is not Capture output (the dashboard routes every .avro
+// here) must import its records as event bodies and say so in review, not
+// seed empty produce actions under a Capture heading.
+func TestHandleImportEventHubsCaptureAcceptsGenericAvroRecords(t *testing.T) {
+	const schema = `{"type":"record","name":"kylosample","fields":[{"name":"id","type":"long"},{"name":"email","type":"string"},{"name":"salary","type":["null","double"],"default":null}]}`
+	var buf bytes.Buffer
+	enc, err := ocf.NewEncoder(schema, &buf, ocf.WithCodec(ocf.Snappy))
+	if err != nil {
+		t.Fatalf("NewEncoder: %v", err)
+	}
+	for _, rec := range []map[string]any{{"id": int64(1), "email": "a@example.com", "salary": 10.5}, {"id": int64(2), "email": "b@example.com", "salary": nil}} {
+		if err := enc.Encode(rec); err != nil {
+			t.Fatalf("Encode: %v", err)
+		}
+	}
+	if err := enc.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	server := NewServer(ServerConfig{})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/eventhubs-capture?project_id=proj-eh&filename=userdata1.avro", bytes.NewReader(buf.Bytes()))
+	req.Header.Set("Content-Type", "application/octet-stream")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", resp.Code, resp.Body.String())
+	}
+	var result struct {
+		Script struct {
+			Actions []struct {
+				Body string `json:"body"`
+			} `json:"actions"`
+		} `json:"script"`
+		Stats struct {
+			SourceFormat string `json:"source_format"`
+			AvroSchema   string `json:"avro_schema"`
+			EmptyBodies  int    `json:"empty_bodies"`
+		} `json:"stats"`
+		ReviewSections []struct {
+			Key   string   `json:"key"`
+			Title string   `json:"title"`
+			Items []string `json:"items"`
+		} `json:"review_sections"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if result.Stats.SourceFormat != "avro_records" || result.Stats.AvroSchema != "kylosample" || result.Stats.EmptyBodies != 0 {
+		t.Fatalf("stats = %+v", result.Stats)
+	}
+	if len(result.Script.Actions) != 2 || result.Script.Actions[0].Body != `{"id":1,"email":"a@example.com","salary":10.5}` || result.Script.Actions[1].Body != `{"id":2,"email":"b@example.com","salary":null}` {
+		t.Fatalf("actions = %+v", result.Script.Actions)
+	}
+	for _, section := range result.ReviewSections {
+		if section.Key == "eventhubs_capture" {
+			if section.Title != "Avro records" || len(section.Items) == 0 || !strings.Contains(section.Items[0], "kylosample") {
+				t.Fatalf("review section = %+v", section)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing eventhubs_capture review section: %+v", result.ReviewSections)
 }
 
 func TestHandleImportEventHubsCaptureRejectsGarbage(t *testing.T) {

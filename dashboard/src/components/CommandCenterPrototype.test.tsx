@@ -419,6 +419,24 @@ describe('CommandCenterPrototype', () => {
     expect(inputByLabel('Live Checkout target VUsers').value).toBe('65')
   })
 
+  it('reverts a rejected VUser target and says it was not applied', async () => {
+    const run = buildLiveVuserTest()
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
+      const url = requestUrl(input)
+      if (url.includes('/vusers')) return Promise.resolve(new Response(JSON.stringify({ error: 'capacity advisory recommends 13 load generators but only 12 are available' }), { status: 400, headers: { 'Content-Type': 'application/json' } }))
+      if (url.endsWith(`/tests/${run.id}`)) return Promise.resolve(jsonResponse(run))
+      return Promise.resolve(jsonResponse({}))
+    })
+    await act(async () => { root.render(<CommandCenterPrototype testId={run.id} initialTest={run} />) })
+    await flush()
+    await changeNumberInput(inputByLabel('Live Checkout target VUsers'), '99999')
+    const apply = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Apply' && button.classList.contains('btn-accent'))!
+    await click(apply)
+    await flush()
+    expect(inputByLabel('Live Checkout target VUsers').value).toBe('50')
+    expect(container.textContent).toContain('Not applied: Live Checkout keeps its current VUser target')
+  })
+
   it('keeps the selected run status consistent with acknowledged controls when the catalog is stale', async () => {
     const run = buildLiveVuserTest()
     const other = { ...run, id: 'other-run', name: 'Other run' }
@@ -1909,6 +1927,8 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).toContain('Live Checkout Ramp')
     expect(container.textContent).toContain('Live Checkout')
     expect(container.textContent).toContain('HTTP 500 checkout spike')
+    // One per-signature rate definition, named as such (not a windowed "Error rate").
+    expect(container.textContent).toContain('Share of errors')
     expect(container.textContent).not.toContain('In-flight Run Command Center')
   })
 
@@ -1916,11 +1936,13 @@ describe('CommandCenterPrototype', () => {
     const liveTest = buildLiveVuserTest()
     liveTest.live_metrics = {
       ...liveTest.live_metrics!,
-      // Deliberately differ from the cumulative rate to prove the hero does
-      // not display a point/window rate supplied by the stream.
-      error_pct: 1,
-      total_transactions: 100,
-      total_errors: 20,
+      // total_* and error_pct describe the last one-second window; the hero
+      // must show the run-to-date rate from the run_* counters instead.
+      error_pct: 0,
+      total_transactions: 18,
+      total_errors: 0,
+      run_total_transactions: 100,
+      run_total_errors: 20,
     }
 
     await act(async () => {
@@ -1931,9 +1953,9 @@ describe('CommandCenterPrototype', () => {
     expect(summaryMetrics[0].querySelector('span')?.textContent).toBe('Observed / Target Load')
     expect(summaryMetrics[0].querySelector('strong')?.textContent).toBe('42 / 50 VU')
     const errorRateMetric = summaryMetrics
-      .find(metric => metric.querySelector('span')?.textContent === 'Overall Error Rate')
+      .find(metric => metric.querySelector('span')?.textContent === 'Error Rate (run to date)')
     expect(errorRateMetric?.querySelector('strong')?.textContent).toBe('16.67%')
-    expect(summaryMetrics.some(metric => metric.querySelector('span')?.textContent === 'Highest Error Rate')).toBe(false)
+    expect(summaryMetrics.some(metric => metric.querySelector('span')?.textContent?.startsWith('Highest Error Rate'))).toBe(false)
     const tpsMetric = summaryMetrics.find(metric => metric.querySelector('span')?.textContent?.startsWith('TPS'))
     expect(tpsMetric?.querySelector('strong')?.textContent).toBe('75.4')
     expect(container.querySelector('.command-hero-strip')).toBeNull()
@@ -1947,23 +1969,29 @@ describe('CommandCenterPrototype', () => {
     ]
     liveTest.live_metrics = {
       ...liveTest.live_metrics!,
-      total_transactions: 180,
-      total_errors: 20,
-      // The latest streamed point deliberately differs from the cumulative
-      // rate used by the run-summary cards.
-      error_pct: 1,
+      // The last one-second window happens to hold no errors; the run-to-date
+      // counters carry the rate the run summary must show.
+      total_transactions: 20,
+      total_errors: 0,
+      error_pct: 0,
+      run_total_transactions: 180,
+      run_total_errors: 20,
       groups: {
         'Live Checkout': {
           ...liveTest.live_metrics!.groups!['Live Checkout'],
-          transactions: 90,
-          errors: 10,
+          transactions: 12,
+          errors: 0,
+          run_transactions: 90,
+          run_errors: 10,
         },
         Search: {
           ...liveTest.live_metrics!.groups!['Live Checkout'],
           name: 'Search',
           vusers: 25,
-          transactions: 40,
-          errors: 10,
+          transactions: 8,
+          errors: 0,
+          run_transactions: 40,
+          run_errors: 10,
         },
       },
     }
@@ -1975,8 +2003,8 @@ describe('CommandCenterPrototype', () => {
     const summaryMetrics = Array.from(container.querySelectorAll<HTMLElement>('.command-metric-pill'))
     expect(summaryMetrics[0].querySelector('span')?.textContent).toBe('Observed / Target Load')
     expect(summaryMetrics[0].querySelector('strong')?.textContent).toBe('67 / 75 VU')
-    const overall = summaryMetrics.find(metric => metric.querySelector('span')?.textContent === 'Overall Error Rate')
-    const highest = summaryMetrics.find(metric => metric.querySelector('span')?.textContent === 'Highest Error Rate')
+    const overall = summaryMetrics.find(metric => metric.querySelector('span')?.textContent === 'Error Rate (run to date)')
+    const highest = summaryMetrics.find(metric => metric.querySelector('span')?.textContent === 'Highest Error Rate (run to date)')
     expect(overall?.querySelector('strong')?.textContent).toBe('10.00%')
     expect(highest?.querySelector('strong')?.textContent).toBe('20.00% · Search')
   })
@@ -1995,7 +2023,8 @@ describe('CommandCenterPrototype', () => {
       groups: Object.fromEntries(['Live Checkout', 'Search'].map(name => [name, { ...groupMetrics, name, transactions, errors }])),
     }
     await act(async () => root.render(<CommandCenterPrototype testId={liveTest.id} initialTest={liveTest} />))
-    const highest = Array.from(container.querySelectorAll('.command-metric-pill')).find(metric => metric.querySelector('span')?.textContent === 'Highest Error Rate')!
+    // Runs recorded before run counters existed fall back to the window and say so.
+    const highest = Array.from(container.querySelectorAll('.command-metric-pill')).find(metric => metric.querySelector('span')?.textContent === 'Highest Error Rate (last sample)')!
     expect(highest.querySelector('strong')?.textContent).toBe(expected)
     expect(highest.classList.contains('danger')).toBe(danger)
     if (!errors) expect(highest.textContent).not.toMatch(/Live Checkout|Search/)

@@ -1901,6 +1901,17 @@ describe('ScriptEditor', () => {
     const activeCenterTab = Array.from(container.querySelectorAll('.center-tab-button')).find(button => button.textContent?.trim() === 'Runtime Settings')
     expect(activeCenterTab?.getAttribute('aria-selected')).toBe('true')
     expect(runtimeDialog?.textContent).toContain('Script Configuration')
+
+    // The tablist exposes only tabs: wrappers are presentational and the
+    // mouse-only close control is hidden; Delete closes the focused tab.
+    const strip = container.querySelector('.center-tab-strip')!
+    expect(Array.from(strip.children).every(child => child.getAttribute('role') === 'presentation')).toBe(true)
+    expect(strip.querySelector('.center-tab-close')?.getAttribute('aria-hidden')).toBe('true')
+    expect(activeCenterTab?.getAttribute('aria-keyshortcuts')).toBe('Delete')
+    await act(async () => {
+      activeCenterTab?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }))
+    })
+    expect(Array.from(container.querySelectorAll('.center-tab-button')).some(button => button.textContent?.trim() === 'Runtime Settings')).toBe(false)
   })
 
   it('collapses outline lists and focuses parameter references in script JSON', async () => {

@@ -84,9 +84,22 @@ export interface ComparisonSnapshot {
 }
 export const defaultPolicy: ComparisonPolicy = { revision: 0, load_tolerance_pct: 5, latency_pct: 10, latency_ms: 10, throughput_pct: 10, error_points: 1, resource_pct: 20 }
 const runPath = (id: string) => `/tests/${encodeURIComponent(id)}`
+/** A saved comparison for a run, listed so the report can reopen it. */
+export interface SavedComparisonSummary {
+  id: string
+  created_at: string
+  baselines: RunIdentity[]
+  verdict?: string
+}
+export function comparisonVerdictLabel(status?: string): string {
+  if (!status) return 'Not evaluated'
+  const text = status.replace(/_/g, ' ')
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
 export const comparisonApi = {
   candidates: (id: string, other: boolean, q: string, offset: number, signal?: AbortSignal) => request<{ runs: RunIdentity[]; total: number; suggested_baseline?: RunIdentity | null }>(`${runPath(id)}/baseline-candidates?${new URLSearchParams({ other_scenarios: String(other), q, offset: String(offset), limit: '50' })}`, { signal }),
   evaluate: (id: string, body: ComparisonRequest, signal?: AbortSignal) => request<ComparisonSnapshot>(`${runPath(id)}/baseline-comparisons`, { method: 'POST', body: JSON.stringify(body), signal, timeoutMs: 120000 }),
+  saved: (id: string, signal?: AbortSignal) => request<{ comparisons: SavedComparisonSummary[] }>(`${runPath(id)}/baseline-comparisons`, { signal }),
   snapshot: (id: string, comparison: string, signal?: AbortSignal) => request<ComparisonSnapshot>(`${runPath(id)}/baseline-comparisons/${encodeURIComponent(comparison)}`, { signal }),
   policy: (scenario: string, signal?: AbortSignal) => request<ComparisonPolicy>(`/scenarios/${encodeURIComponent(scenario)}/comparison-policy`, { signal }),
   savePolicy: (scenario: string, policy: ComparisonPolicy) => request<ComparisonPolicy>(`/scenarios/${encodeURIComponent(scenario)}/comparison-policy`, { method: 'PUT', body: JSON.stringify(policy) }),

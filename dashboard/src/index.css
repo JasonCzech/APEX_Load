@@ -69,6 +69,10 @@
   --accent-soft: rgba(139, 92, 246, 0.15);
   --accent-border: rgba(139, 92, 246, 0.4);
   --accent-contrast: #050508;
+  /* Text-safe accent and filled-danger tokens (≥4.5:1). */
+  --accent-text: #a78bfa;
+  --danger-fill: #dc2626;
+  --danger-fill-text: #ffffff;
   --accent-hover: #a78bfa;
 
   /* State Colors */
@@ -88,6 +92,8 @@
   --chart-4: #ef4444;
   --chart-5: #3b82f6;
   --chart-6: #ec4899;
+  --chart-7: #a3e635;
+  --chart-8: #f0abfc;
 
   /* Premium Effects */
   --app-sheen: rgba(139, 92, 246, 0.05);
@@ -173,6 +179,10 @@
   --accent-soft: rgba(0, 114, 178, 0.09);
   --accent-border: rgba(0, 56, 143, 0.3);
   --accent-contrast: #ffffff;
+  /* Text-safe accent and filled-danger tokens (≥4.5:1). */
+  --accent-text: var(--accent);
+  --danger-fill: #c70032;
+  --danger-fill-text: #ffffff;
   --accent-hover: #002a6b;
 
   /* State Colors */
@@ -192,6 +202,8 @@
   --chart-4: #c70032;
   --chart-5: #009fdb;
   --chart-6: #af29bb;
+  --chart-7: #5533ff;
+  --chart-8: #6b3d00;
 
   /* Effects */
   --app-sheen: transparent;
@@ -251,6 +263,10 @@
   --accent-soft: rgba(103, 183, 225, 0.1);
   --accent-border: rgba(103, 183, 225, 0.38);
   --accent-contrast: #002b36;
+  /* Text-safe accent and filled-danger tokens (≥4.5:1). */
+  --accent-text: var(--accent);
+  --danger-fill: #c0261f;
+  --danger-fill-text: #ffffff;
   --accent-hover: #7dd3c7;
 
   --success: #859900;
@@ -268,6 +284,8 @@
   --chart-4: #dc322f;
   --chart-5: #d33682;
   --chart-6: #6c71c4;
+  --chart-7: #2aa198;
+  --chart-8: #f5a3d0;
 
   --app-sheen: rgba(38, 139, 210, 0.04);
   --topbar-bg: rgba(0, 43, 54, 0.75);
@@ -331,6 +349,10 @@
   --accent-soft: rgba(95, 111, 0, 0.11);
   --accent-border: rgba(95, 111, 0, 0.36);
   --accent-contrast: #fdf6e3;
+  /* Text-safe accent and filled-danger tokens (≥4.5:1). */
+  --accent-text: var(--accent);
+  --danger-fill: #c0261f;
+  --danger-fill-text: #ffffff;
   --accent-hover: #4d5b00;
 
   --success: #859900;
@@ -348,6 +370,8 @@
   --chart-4: #dc322f;
   --chart-5: #d33682;
   --chart-6: #657b83;
+  --chart-7: #0f4c81;
+  --chart-8: #6c71c4;
 
   --app-sheen: rgba(133, 153, 0, 0.04);
   --topbar-bg: rgba(253, 246, 227, 0.75);
@@ -405,6 +429,10 @@
   --accent-soft: rgba(255, 97, 136, 0.12);
   --accent-border: rgba(255, 97, 136, 0.3);
   --accent-contrast: #1e1f1c;
+  /* Text-safe accent and filled-danger tokens (≥4.5:1). */
+  --accent-text: var(--accent);
+  --danger-fill: #c2410c;
+  --danger-fill-text: #ffffff;
   --accent-hover: #ff8eaa;
 
   /* Vibrant Monokai State Colors */
@@ -424,6 +452,8 @@
   --chart-4: #fc9867;
   --chart-5: #78dce8;
   --chart-6: #ab9df2;
+  --chart-7: #4fa86b;
+  --chart-8: #fcfcfa;
 
   --app-sheen: rgba(255, 97, 136, 0.04);
   --topbar-bg: rgba(30, 31, 28, 0.75);
@@ -722,7 +752,7 @@ select option:checked {
 
 .btn-secondary {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   border: 1px solid var(--accent-border);
 }
 
@@ -768,13 +798,13 @@ select option:checked {
 }
 
 .btn-danger {
-  background: var(--danger);
-  color: white;
+  background: var(--danger-fill);
+  color: var(--danger-fill-text);
   box-shadow: 0 2px 8px rgba(var(--danger-rgb), 0.15);
 }
 
 .btn-danger:hover {
-  background: var(--danger);
+  background: var(--danger-fill);
   box-shadow: 0 4px 12px rgba(var(--danger-rgb), 0.25);
   transform: translateY(-1px);
 }
@@ -827,7 +857,7 @@ select option:checked {
 }
 :where(input, textarea)::placeholder { color: var(--text-muted); opacity: 1; }
 :where(input, textarea):disabled { cursor: not-allowed; opacity: .65; }
-:where(a[href]), :where(a[href]:visited) { color: var(--accent); }
+:where(a[href]), :where(a[href]:visited) { color: var(--accent-text); }
 :where(a[href]:hover) { text-decoration: underline; text-underline-offset: 3px; }
 
 /* Screen-reader-only text. Defined globally: it used to live only in the Run

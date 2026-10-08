@@ -823,13 +823,17 @@ func archivePercentileAvailable(quality string) bool {
 }
 
 type RunArchiveErrorPattern struct {
-	Signature  string                  `json:"signature"`
-	Sample     string                  `json:"sample"`
-	Count      int64                   `json:"count"`
-	FirstSeen  time.Time               `json:"first_seen"`
-	LatestSeen time.Time               `json:"latest_seen"`
-	Actions    []string                `json:"actions,omitempty"`
-	Snapshot   *protocol.ErrorSnapshot `json:"snapshot,omitempty"`
+	Signature string `json:"signature"`
+	Sample    string `json:"sample"`
+	// Count is the failures of one metric population (requests and their
+	// enclosing named transactions are both archived); CountsByPopulation
+	// keeps the per-population figures.
+	Count              int64                   `json:"count"`
+	CountsByPopulation map[string]int64        `json:"counts_by_population,omitempty"`
+	FirstSeen          time.Time               `json:"first_seen"`
+	LatestSeen         time.Time               `json:"latest_seen"`
+	Actions            []string                `json:"actions,omitempty"`
+	Snapshot           *protocol.ErrorSnapshot `json:"snapshot,omitempty"`
 }
 
 type RunArchiveSOAPFaultTimelineBucket struct {

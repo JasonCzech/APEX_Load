@@ -13,6 +13,7 @@ import {
   ScenarioDataPoolBinding,
 } from '../types'
 import ConfirmDestructiveModal from './ConfirmDestructiveModal'
+import { confirmAction } from './ux/confirmAction'
 import ExecutionPlanApprovalsModal from './ExecutionPlanApprovalsModal'
 import ExecutionPlanSchedulesModal from './ExecutionPlanSchedulesModal'
 import { dialogBackdropProps } from './dialogBackdropProps'
@@ -116,6 +117,22 @@ function runStatusPill(status: string): string {
   }
 }
 
+// Created and failed entry counts; older controllers may omit the totals.
+function planRunCounts(res: ExecutionPlanRunResponse) {
+  return {
+    created: res.created_count ?? res.results.filter(result => result.status === 'created').length,
+    failed: res.failed_count ?? res.results.filter(result => result.status === 'failed').length,
+  }
+}
+
+// A parallel plan run "completes" once every entry has been started, not when
+// the load finishes; name that state instead of showing "completed".
+function planRunStatusLabel(run: ExecutionPlanRun): string {
+  const status = (run.status || '').toLowerCase()
+  if (run.run_mode === 'parallel' && (status === 'completed' || status === 'complete')) return 'All runs started'
+  return run.status
+}
+
 export default function ExecutionPlansPanel({ projectId, canManage = false, canAdmin = false, scenarioOptions, onOpenTest, seedScenarioId, onSeedConsumed }: Props) {
   const api = useExecutionPlansApi()
   const { runGuarded } = useNavigationGuardRunner()
@@ -124,7 +141,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState<PlanDraft | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ExecutionPlan | null>(null)
-  const [runResult, setRunResult] = useState<{ plan: string; res: ExecutionPlanRunResponse } | null>(null)
+  const [runResult, setRunResult] = useState<{ plan: string; res: ExecutionPlanRunResponse; names: Record<number, string> } | null>(null)
   const [planRun, setPlanRun] = useState<{ planId: string; planName: string; run: ExecutionPlanRun } | null>(null)
   const [schedulesTarget, setSchedulesTarget] = useState<ExecutionPlan | null>(null)
   const [approvalsTarget, setApprovalsTarget] = useState<ExecutionPlan | null>(null)
@@ -146,6 +163,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
 	}, [])
 	const closeDraft = useCallback(() => runGuarded(discardDraft), [discardDraft, runGuarded])
   const closeRunResult = useCallback(() => setRunResult(null), [])
+  const runResultCounts = runResult ? planRunCounts(runResult.res) : { created: 0, failed: 0 }
   const closePlanRun = useCallback(() => setPlanRun(null), [])
 
 	useModalDialog({ dialogRef: draftDialogRef, enabled: Boolean(draft), onClose: busy ? undefined : closeDraft })
@@ -269,6 +287,11 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
 
   const runPlan = useCallback(
     async (plan: ExecutionPlan) => {
+      // Running a plan starts real load immediately; say what will start first.
+      const enabled = plan.entries.filter(entry => entry.enabled !== false)
+      const names = enabled.map(entry => entry.scenario_name || entry.scenario_id).slice(0, 5).join(', ')
+      const how = plan.run_mode === 'parallel' ? 'all at the same time' : 'one after another, each after the previous run finishes'
+      if (!await confirmAction(`Start “${plan.name}”? This starts ${enabled.length} scenario run${enabled.length === 1 ? '' : 's'} ${how} and sends real load to their targets: ${names}${enabled.length > 5 ? ', …' : ''}.`, { title: 'Start execution plan', confirmLabel: 'Start runs', destructive: false })) return
       const scope = { ...scopeRef.current }
       setBusy(true)
       setError(null)
@@ -301,7 +324,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
             /* keep the seeded snapshot if the run can't be re-read yet */
           }
         } else {
-          setRunResult({ plan: plan.name, res })
+          setRunResult({ plan: plan.name, res, names: Object.fromEntries(plan.entries.map(entry => [entry.order, entry.scenario_name || ''])) })
         }
         await load()
       } catch (err) {
@@ -613,23 +636,23 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
         <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closeRunResult, 'Close execution plan result')}>
           <div ref={resultDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="execution-plan-result-title">
             <div className="pp-modal-header">
-              <h3 id="execution-plan-result-title">Run “{runResult.plan}”</h3>
+              <h3 id="execution-plan-result-title">{runResultCounts.created === 0 ? 'Plan run did not start' : runResultCounts.failed > 0 ? 'Plan run partly started' : 'Plan run started'}: “{runResult.plan}”</h3>
               <button type="button" className="btn btn-ghost btn-sm" onClick={closeRunResult}>
                 Close
               </button>
             </div>
             <div className="pp-modal-form">
               <div className="pp-row-meta">
-                <span>mode: {runResult.res.run_mode}</span>
-                <span>created: {runResult.res.created_count}</span>
-                <span>failed: {runResult.res.failed_count}</span>
+                <span>{runResult.res.run_mode === 'parallel' ? 'Parallel' : 'Sequential'}</span>
+                <span>{runResultCounts.created} run{runResultCounts.created === 1 ? '' : 's'} created</span>
+                <span>{runResultCounts.failed} failed to start</span>
               </div>
               <div className="pp-list">
                 {runResult.res.results.map(result => (
                   <div className="pp-row" key={result.order}>
                     <div className="pp-row-main">
                       <div className="pp-row-title">
-                        #{result.order + 1} {result.scenario_id}
+                        #{result.order + 1} {runResult.names[result.order] || result.scenario_id}
                         <span className={runResultPill(result.status)}>{result.status}</span>
                       </div>
                       {result.detail ? <div className="pp-row-meta"><span>{result.detail}</span></div> : null}
@@ -662,7 +685,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
               <h3 id="execution-plan-progress-title">
                 Run “{planRun.planName}”
                 <span className={runStatusPill(planRun.run.status)} style={{ marginLeft: 8 }} role="status" aria-live="polite">
-                  {planRun.run.status}
+                  {planRunStatusLabel(planRun.run)}
                 </span>
               </h3>
               <button type="button" className="btn btn-ghost btn-sm" onClick={closePlanRun}>
@@ -671,7 +694,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
             </div>
             <div className="pp-modal-form">
               <div className="pp-row-meta">
-                <span>sequential — each entry starts only after the previous run finishes</span>
+                <span>{planRun.run.run_mode === 'parallel' ? 'parallel — every enabled entry starts at once' : 'sequential — each entry starts only after the previous run finishes'}</span>
                 {!RUN_TERMINAL.includes(planRun.run.status) ? <span>updating…</span> : null}
               </div>
               <div className="pp-list">

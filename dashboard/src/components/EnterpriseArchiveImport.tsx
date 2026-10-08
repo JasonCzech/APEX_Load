@@ -1,4 +1,5 @@
 import ImportReviewSectionHeader from './ImportReviewSectionHeader'
+import { useUnsavedWorkGuard } from '../hooks/NavigationGuardProvider'
 import ImportRuntimeSettingsTable from './ImportRuntimeSettingsTable'
 import { ImportConversionDetails, ImportEvidenceFacts } from './ImportConversionDetails'
 import { ImportGuidedRepair, type RepairResult } from './ImportGuidedRepair'
@@ -1236,6 +1237,12 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     .filter(index => reviewSessionIsSaved(item, index)).length, 0)
   const pendingReviewScriptCount = importItems.reduce((count, item) => count + pendingItemReviewCount(item), 0)
   const validatedAwaitingSaveCount = validatedItems.filter(item => pendingItemReviewCount(item) > 0).length
+  // Validated drafts and review decisions live only in this page until saved.
+  useUnsavedWorkGuard('enterprise-archive-import', 'LoadRunner import review', pendingReviewScriptCount > 0, () => {
+    invalidateOperationScopes()
+    setImportItems([])
+    setSelectedItemId('')
+  })
   const pendingValidationFileCount = Math.max(queuedFileCount - validatedFileCount - convertedFileCount, 0)
   const allValidatedReviewsMatchOptions = validatedItems.every(item => item.reviewOptionsIdentity === importOptionsIdentity(options))
   const selectedItemValidated = selectedItem?.status === 'validated'

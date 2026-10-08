@@ -12,6 +12,7 @@ import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
+import { buildComparisonActionCsv, comparisonCsvFilename } from './comparisonCsv'
 import { downloadBlob } from '../utils/fileUtils'
 import { isCompletedTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
 import { Application, ExternalResultImport, IntervalSummaryRecord, Release, RunArchiveActionStats, RunArchiveReport, TestSummary } from '../types'
@@ -579,6 +580,8 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
   const [toDate, setToDate] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [archiveFilter, setArchiveFilter] = useState<ArchiveFilter>('all')
+  // A failed list load is not an empty library: report it, with a Retry.
+  const resultsLoadFailed = Boolean(listError) && firstResultPage.length === 0
   const error = operationError || listError || resultTailError || externalImportsError
   // Older local pages stream in behind the first page. Keep the usable first
   // page visible while that background work continues.
@@ -743,6 +746,9 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
 
     return rows
   }, [activeRelease?.id, activeRelease?.name, completed, externalImports, localCatalogById, remoteItems, sourceFilter, syncStatusForLocal, testStatuses])
+  // With nothing to show, the failure replaces the empty library; with remote
+  // rows still listed, it stays in the banner above the table.
+  const showResultsLoadErrorCard = resultsLoadFailed && sourceRows.length === 0
 
   const applicationQualifiedRows = useMemo(
     () => sourceRows.filter(row => (
@@ -1007,6 +1013,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
     [comparisonActionFiltered, comparisonCards],
   )
 
+  const selectedComparisonBreakdown = comparisonBreakdown
   const exportComparison = useCallback(async () => {
     if (comparisonCards.length < 2 || comparisonCards.length > MAX_COMPARISON_RUNS || !comparisonCards.every(item => item.report)) {
       return
@@ -1015,6 +1022,18 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
     const [baseline, ...comparisonRuns] = comparisonCards
     const action = comparisonActionFiltered ? comparisonActionFilter : undefined
     const actionFilename = action ? `-${comparisonFilenameToken(action)}` : ''
+    if (!action && !comparisonHasBrowserBreakdowns) {
+      // Export the comparison on screen (per action and run, with deltas);
+      // a browser breakdown would be empty for protocol-level runs.
+      try {
+        await downloadBlob(new Blob([buildComparisonActionCsv(comparisonCards)], { type: 'text/csv' }), comparisonCsvFilename(comparisonCards))
+        setComparisonError('')
+      } catch (error: unknown) {
+        setComparisonError(getErrorMessage(error, 'Unable to export comparison CSV'))
+      }
+      return
+    }
+    const comparisonBreakdown = action || comparisonHasBrowserBreakdowns ? selectedComparisonBreakdown : 'overall'
     try {
       if (comparisonCards.length === 2) {
         const [current] = comparisonRuns
@@ -1033,7 +1052,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
     } catch (error: unknown) {
       setComparisonError(getErrorMessage(error, 'Unable to export comparison CSV'))
     }
-  }, [api, comparisonActionFilter, comparisonActionFiltered, comparisonBreakdown, comparisonCards])
+  }, [api, comparisonActionFilter, comparisonActionFiltered, selectedComparisonBreakdown, comparisonCards, comparisonHasBrowserBreakdowns])
 
   const comparisonActionRows = useMemo(() => {
     if (comparisonCards.length < 2 || !comparisonCards.every(item => item.report)) return []
@@ -1356,7 +1375,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
         <td className="cell-muted">{row.duration || '-'}{!row.test && <small> (source-reported)</small>}</td>
         <td className="cell-muted">
           {test
-            ? (test.archive ? `${test.archive.transaction_count} archive records` : 'Unavailable')
+            ? (test.archive ? <span title="Raw archive rows: each request and each named transaction that wraps it is a separate row, so this exceeds the transaction count.">{test.archive.transaction_count.toLocaleString()} archive rows (requests + transactions)</span> : 'Unavailable')
             : (externalImport && row.archiveCount !== undefined ? `${row.archiveCount} tx` : (row.hasArchive ? 'Ready' : '-'))}
           {test?.baseline_pinned && (
             <>
@@ -1481,7 +1500,10 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
         )}
       </div>
 
-      {error && <div className="settings-error-inline">{error}</div>}
+      {error && !(showResultsLoadErrorCard && error === listError) && <div className="settings-error-inline" role="alert">
+        {resultsLoadFailed && error === listError ? `Local results could not be loaded: ${listError}` : error}
+        {resultsLoadFailed && error === listError && <button className="btn btn-secondary btn-sm" type="button" onClick={() => { void refreshLocalResults() }}>Retry</button>}
+      </div>}
 
       {(comparisonCards.length >= 2 || comparisonLoading || comparisonError) && (
         <div className="page-section">
@@ -1806,7 +1828,9 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
             )}
             summaryText={resultsSourcesLoading
               ? 'Loading local and remote result sources...'
-              : `${filteredRows.length} matching run${filteredRows.length === 1 ? '' : 's'} · ${activeRelease.name}.`}
+              : showResultsLoadErrorCard
+                ? 'Results could not be loaded.'
+                : `${resultsLoadFailed ? 'Local results could not be loaded; showing remote results only. ' : ''}${filteredRows.length} matching run${filteredRows.length === 1 ? '' : 's'} · ${activeRelease.name}.`}
           />
           {(search || fromDate || toDate || statusFilter !== 'all' || archiveFilter !== 'all' || releaseFilter !== (activeRelease?.id || 'all')) && <div className="settings-inline-actions" aria-label="Active result filters">
             <span>{[search && `Search: ${search}`, fromDate && `From ${fromDate}`, toDate && `Through ${toDate}`, releaseFilter !== (activeRelease?.id || 'all') && `Release: ${releaseFilter === 'all' ? 'All releases' : releaseFilter}`, statusFilter !== 'all' && `Status: ${statusFilter}`, archiveFilter !== 'all' && `Archive: ${archiveFilter === 'ready' ? 'ready' : 'unavailable'}`].filter(Boolean).join(' · ')}</span>
@@ -1836,6 +1860,12 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
                 <p>Loading result sources...</p>
                 <p className="empty-hint">Fetching completed runs and library catalog entries for this release.</p>
               </div>
+            </div>
+          ) : showResultsLoadErrorCard ? (
+            <div className="empty-card results-load-error" role="alert">
+              <p>Results could not be loaded.</p>
+              <p className="empty-hint">{listError}</p>
+              <button className="btn btn-secondary" type="button" onClick={() => { void refreshLocalResults() }}>Retry</button>
             </div>
           ) : sourceRows.length === 0 ? (
             <div className="empty-card">

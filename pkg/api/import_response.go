@@ -1170,10 +1170,13 @@ func writeScriptImportResponse(w http.ResponseWriter, status int, response map[s
 			}
 		}
 		w.Header().Set("Retry-After", "5")
+		cause, _ := response[importDraftResponseFailureErrorKey].(error)
+		ref := logServerError(w, http.StatusServiceUnavailable, cause, "code", "import_draft_attestation_unavailable")
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"error":     "credential-preserving import draft could not be secured; retry the import",
 			"code":      "import_draft_attestation_unavailable",
 			"retryable": true,
+			"ref":       ref,
 		})
 		return
 	}
@@ -1192,10 +1195,12 @@ func writeProtectedImportStoreError(w http.ResponseWriter, err error) {
 	if retryable {
 		w.Header().Set("Retry-After", "5")
 	}
+	ref := logServerError(w, http.StatusServiceUnavailable, err, "code", code)
 	writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 		"error":     message,
 		"code":      code,
 		"retryable": retryable,
+		"ref":       ref,
 	})
 }
 

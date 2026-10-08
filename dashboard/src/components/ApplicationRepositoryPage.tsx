@@ -1183,7 +1183,7 @@ export default function ApplicationRepositoryPage({
             <button type="button" className="btn btn-secondary" disabled={!activeProject} aria-pressed={!!activeProject && filters.projectId === activeProject.id} onClick={() => setFilters(prev => ({ ...prev, projectId: activeProject?.id || 'all', releaseId: 'all' }))}>Current workspace</button>
             <button type="button" className="btn btn-secondary" aria-pressed={filters.projectId === 'all'} onClick={() => setFilters(prev => ({ ...prev, projectId: 'all', releaseId: 'all' }))}>All accessible projects</button>
           </div>
-          <span>Catalog: {activeDomain?.name || 'Selected domain'} · {filters.projectId === 'all' ? 'All accessible projects' : scopedProjects.find(project => project.id === filters.projectId)?.name || filters.projectId} · {activeApplication ? `Application ${activeApplication.name} for releases, scripts, scenarios and runs; projects and data pools are project-wide.` : 'All applications'}</span>
+          <span>Catalog: {activeDomain?.name || 'Selected domain'} · {filters.projectId === 'all' ? 'All accessible projects' : scopedProjects.find(project => project.id === filters.projectId)?.name || filters.projectId} · {activeApplication ? `Application ${activeApplication.name} for releases, scripts, scenarios and runs; projects, data pools and unassigned scripts and scenarios are project-wide.` : 'All applications'}</span>
         </div>
         <LibraryToolbar filtersActive={Boolean(filterActive)} label="Repository controls" search={<label className="library-search repository-search">
             <span>Search repository</span>

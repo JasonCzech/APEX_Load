@@ -1,4 +1,5 @@
 import { useLiveObservation } from '../hooks/useLiveObservation'
+import { errorRateBasisLabel, groupRunCounts, groupRunErrorPercent } from '../utils/liveErrorRate'
 import LiveObservationNotice from './LiveObservationNotice'
 import { GroupLiveMetrics, TestSummary } from '../types'
 import { formatTimeCompact } from '../utils/timeUtils'
@@ -48,7 +49,7 @@ export default function TestExecutionRunState({ test, groupMetrics, remainingSec
       <LiveObservationNotice state={observation} />
       <div className="advanced-group-table-wrap">
         <table className="advanced-group-table">
-          <thead><tr><th>Group</th><th>{retained ? 'Last observed / planned' : 'Observed / planned'}</th><th>TPS</th><th>P95</th><th>Error rate</th></tr></thead>
+          <thead><tr><th>Group</th><th>{retained ? 'Last observed / planned' : 'Observed / planned'}</th><th>TPS</th><th>P95</th><th>Error rate ({errorRateBasisLabel(groupMetrics.some(group => groupRunCounts(group)?.basis === 'window') ? 'window' : 'run')})</th></tr></thead>
           <tbody>
             {groupMetrics.map(group => (
               <tr key={group.name}>
@@ -56,7 +57,7 @@ export default function TestExecutionRunState({ test, groupMetrics, remainingSec
                 <td>{group.vusers ?? '—'} / {test.groups?.find(item => item.name === group.name)?.vusers ?? '—'} VUsers</td>
                 <td>{metricValue(group.tps)}</td>
                 <td>{metricValue(group.p95_ms, ' ms')}</td>
-                <td>{group.transactions > 0 ? metricValue((group.errors / group.transactions) * 100, '%', 2) : '0.00%'}</td>
+                <td>{metricValue(groupRunErrorPercent(group), '%', 2)}</td>
               </tr>
             ))}
             {groupMetrics.length === 0 && <tr><td colSpan={5}>No group observations have arrived yet.</td></tr>}

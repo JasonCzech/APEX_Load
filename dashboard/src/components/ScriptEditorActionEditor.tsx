@@ -799,7 +799,7 @@ function ActionCoreFields({ hideActionType = false, typeOnly = false, action, in
           ? action.type === 'db_procedure' ? 'Procedure' : 'SQL'
           : isNetworkScript
             ? 'Endpoint / Host'
-    : 'Target (path)'
+    : 'Target (URL or path)'
   const targetPlaceholder = isJmsScript
     ? 'orders.in or {{data.destinations.queue}}'
     : isBrowserScript

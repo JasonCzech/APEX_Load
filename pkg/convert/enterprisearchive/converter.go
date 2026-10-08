@@ -197,6 +197,9 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 		baseURL = detectBaseURL(projectionFunctions)
 	}
 	result.Script.Config.BaseURL = baseURL
+	// A Base URL override never repoints recorded traffic to another host, so
+	// count the requests it cannot apply to and say so instead of staying silent.
+	overrideMissedTargets := 0
 	result.RecordedResourceURLs = collectRecordedResourceURLs(projectionFunctions)
 	result.RecordedResourceURLsCaptured = true
 
@@ -660,6 +663,9 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 		case "web_url", "web_submit_data", "web_submit_form", "web_custom_request", "web_rest", "web_service_call",
 			"web_link", "web_image", "web_image_check":
 			action, warnings := convertAction(fn, baseURL, currentTransaction, currentSubTransaction, opts, lastRequestURL)
+			if opts.BaseURL != "" && action != nil && (strings.HasPrefix(action.Target, "http://") || strings.HasPrefix(action.Target, "https://")) {
+				overrideMissedTargets++
+			}
 			if contextURL := sourceRequestContextURL(fn, lastRequestURL); contextURL != "" && fn.Name != "web_image_check" {
 				lastRequestURL = contextURL
 			}
@@ -904,6 +910,9 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			[]*dsl.Script{result.Script},
 			archiveFinalizationContext{},
 		)
+	}
+	if overrideMissedTargets > 0 {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("%d recorded request(s) use absolute URLs on another host; the Base URL override applies only to relative targets, so these still go to the recorded host. Edit their targets to repoint them.", overrideMissedTargets))
 	}
 
 	return result, nil

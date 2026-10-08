@@ -308,6 +308,18 @@ describe('NewTestPage', () => {
     expect(release.value).toBe('')
   })
 
+  it('says why the launch buttons are disabled until a release is chosen', async () => {
+    const initial = await apiMock.listScenarios()
+    await act(async () => root.render(<NewTestPage activeApplication={{ id: 'app-1', name: 'App', project_id: 'project-1', created_at: '', updated_at: '' }} activeRelease={null} releases={[{ id: 'release-1', name: 'Release', application_id: 'app-1', created_at: '', updated_at: '' }]} initialScenarioId={initial.scenarios[0].id} onSelectTest={vi.fn()} onCreateRelease={vi.fn()} />))
+    await flushPromises()
+    const blockers = container.querySelector('#new-test-launch-blockers')
+    expect(blockers?.textContent).toContain('Select or create a release')
+    const start = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Start Now')!
+    expect(start.getAttribute('aria-describedby')).toBe('new-test-launch-blockers')
+    await selectLaunchRelease()
+    expect(container.querySelector('#new-test-launch-blockers')?.textContent ?? '').not.toContain('release')
+  })
+
   it('keeps an explicit release through transient workspace application hydration', async () => {
     const props = { activeApplication: { id: 'app-1', name: 'App', project_id: 'project-1', created_at: '', updated_at: '' }, activeRelease: null, releases: [{ id: 'release-1', name: 'Release', application_id: 'app-1', created_at: '', updated_at: '' }], onSelectTest: vi.fn(), onCreateRelease: vi.fn() }
     await act(async () => root.render(<NewTestPage {...props} />))
@@ -3876,9 +3888,9 @@ describe('NewTestPage', () => {
     await vi.waitFor(() => expect(queuedButton?.disabled).toBe(false))
     await act(async () => queuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await flushPromises()
+    await vi.waitFor(() => expect(container.textContent).toContain('queued run was preserved for recovery'))
 
     const requestedTestId = apiMock.createTest.mock.calls[0][0].requested_test_id as string
-    expect(container.textContent).toContain('queued run was preserved for recovery')
     expect(apiMock.createTest).toHaveBeenCalledTimes(1)
     expect(apiMock.startTest).toHaveBeenLastCalledWith(requestedTestId)
     expect(window.localStorage.length).toBe(1)
