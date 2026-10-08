@@ -350218,6 +350218,228 @@ paths:
       tags:
         - Tests
       x-handler: handleDownloadRunArchiveArtifact
+  /api/v1/tests/{id}/archive/journeys:
+    get:
+      summary: Get Run Archive Journeys
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      operationId: handleGetRunArchiveJourneys
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  availability:
+                    type: string
+                  incomplete:
+                    type: boolean
+                  index_unscored:
+                    type: string
+                  journeys:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        aborted:
+                          type: integer
+                          format: int64
+                        censored:
+                          type: integer
+                          format: int64
+                        completed:
+                          type: integer
+                          format: int64
+                        eligible:
+                          type: integer
+                          format: int64
+                        examples:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              failed_step:
+                                type: string
+                              group:
+                                type: string
+                              iteration:
+                                type: integer
+                                format: int64
+                              outcome:
+                                type: string
+                              started_at:
+                                type: string
+                                format: date-time
+                              vuser_id:
+                                type: integer
+                                format: int64
+                            required:
+                              - group
+                              - iteration
+                              - outcome
+                              - started_at
+                              - vuser_id
+                        failed:
+                          type: integer
+                          format: int64
+                        failure_rate:
+                          type: number
+                          format: double
+                          nullable: true
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        skipped:
+                          type: integer
+                          format: int64
+                        start:
+                          type: object
+                          properties:
+                            action:
+                              type: string
+                            transaction:
+                              type: string
+                        step_failures:
+                          type: integer
+                          format: int64
+                        steps:
+                          type: integer
+                          format: int64
+                        success:
+                          type: object
+                          properties:
+                            action:
+                              type: string
+                            transaction:
+                              type: string
+                        weight:
+                          type: number
+                          format: double
+                      required:
+                        - aborted
+                        - censored
+                        - completed
+                        - eligible
+                        - failed
+                        - id
+                        - name
+                        - skipped
+                        - start
+                        - step_failures
+                        - steps
+                        - success
+                        - weight
+                  notes:
+                    type: array
+                    items:
+                      type: string
+                  policy:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                      revision:
+                        type: integer
+                        format: int64
+                      sha256:
+                        type: string
+                      source:
+                        type: string
+                    required:
+                      - id
+                      - name
+                      - revision
+                      - sha256
+                      - source
+                  reason:
+                    type: string
+                  rows_outside_iterations:
+                    type: integer
+                    format: int64
+                  run_id:
+                    type: string
+                  schema_version:
+                    type: string
+                  step_risk_enabled:
+                    type: boolean
+                  step_risk_index:
+                    type: number
+                    format: double
+                    nullable: true
+                  step_risk_unscored:
+                    type: string
+                  weighted_failure_index:
+                    type: number
+                    format: double
+                    nullable: true
+                required:
+                  - availability
+                  - journeys
+                  - notes
+                  - policy
+                  - rows_outside_iterations
+                  - run_id
+                  - schema_version
+                  - step_risk_enabled
+                nullable: true
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: policy
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: revision
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleGetRunArchiveJourneys
   /api/v1/tests/{id}/archive/manifest:
     get:
       summary: Get Run Archive Manifest

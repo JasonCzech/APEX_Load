@@ -87,6 +87,15 @@ type VUser struct {
 	// rng, when set, makes random template builtins ({{fn.random}}, {{fake.*}})
 	// deterministic. Set by the replay path; nil in load runs (time-seeded).
 	rng *rand.Rand
+	// currentIteration is the 1-based iteration being executed (0 during
+	// init and teardown); results are stamped with it.
+	currentIteration atomic.Int64
+	// runCtx is the context Run was given; without a HardStopCtx its
+	// cancellation interrupts the action in flight. abandoning is set while a
+	// stop or goal boundary records the failed transaction it leaves behind.
+	// A failure recorded under either is marked interrupted.
+	runCtx     context.Context
+	abandoning bool
 	// unresolvedSecretRefs collects {{secret.*}} references that failed to resolve
 	// during the most recent resolveAction; the execution path fails the action
 	// closed rather than sending the literal placeholder. Per-VUser (single
@@ -242,6 +251,7 @@ func (vu *VUser) Run(ctx context.Context) {
 		}
 	}()
 	vu.resultPhase = "action"
+	vu.runCtx = ctx
 
 	if err := vu.prepareRuntimeState(); err != nil {
 		vu.recordDataRowError(err)
@@ -496,6 +506,7 @@ func (vu *VUser) Run(ctx context.Context) {
 
 		iterStart := time.Now()
 		previousIterStart = iterStart
+		vu.currentIteration.Store(int64(iteration + 1))
 		if pacingCfg.activeClock != nil {
 			pacingCfg.iterStartActive = pacingCfg.activeClock()
 		}
@@ -976,7 +987,7 @@ func (vu *VUser) Run(ctx context.Context) {
 				!reservedActionTransaction {
 				if !vu.reserveGoalTransaction(iterationBoundaryCtx) {
 					if actionTxMode {
-						vu.recordTransaction(action.Name, time.Since(actionTxStart), false, nil)
+						vu.recordAbandonedTransaction(action.Name, time.Since(actionTxStart), nil)
 						restoreIterationBoundary()
 					}
 					return flowTeardown
@@ -1011,7 +1022,7 @@ func (vu *VUser) Run(ctx context.Context) {
 						// The automatic action slot was claimed before protocol
 						// execution. Preserve one metric for that consumed slot even
 						// when an additional streamed child is refused by the goal.
-						vu.recordTransaction(action.Name, time.Since(actionTxStart), false, nil)
+						vu.recordAbandonedTransaction(action.Name, time.Since(actionTxStart), nil)
 						restoreIterationBoundary()
 					}
 					return flowTeardown
@@ -1041,7 +1052,7 @@ func (vu *VUser) Run(ctx context.Context) {
 					restoreIterationBoundary()
 				}
 				if actionTxMode {
-					vu.recordTransaction(action.Name, vu.sourceSampleDuration(actionTxStart, result), false, result)
+					vu.recordAbandonedTransaction(action.Name, vu.sourceSampleDuration(actionTxStart, result), result)
 					restoreIterationBoundary()
 				}
 				return flowTeardown
@@ -1123,7 +1134,9 @@ func (vu *VUser) Run(ctx context.Context) {
 				// Once the automatic per-iteration reservation is committed,
 				// every post-setup boundary abort must emit the corresponding
 				// failed transaction instead of silently consuming the goal.
+				vu.abandoning = true
 				recordIterationTransaction(false)
+				vu.abandoning = false
 				releaseReservedActionTransaction()
 				goto teardown
 			case flowBreak, flowContinue:
@@ -1143,6 +1156,7 @@ func (vu *VUser) Run(ctx context.Context) {
 	}
 
 teardown:
+	vu.currentIteration.Store(0)
 	releasePreIterationReservations()
 	runTeardown()
 }

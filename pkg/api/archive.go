@@ -338,6 +338,9 @@ type TransactionEvent struct {
 	HasDetail             bool                      `json:"has_detail"`
 	MessageDetailPriority int                       `json:"message_detail_priority,omitempty"`
 	ActionName            string                    `json:"action_name,omitempty"`
+	VUserID               int                       `json:"vuser_id,omitempty"`
+	Iteration             int64                     `json:"iteration,omitempty"`
+	Interrupted           bool                      `json:"interrupted,omitempty"`
 	BusinessTransaction   bool                      `json:"business_transaction,omitempty"`
 	CorrelationID         string                    `json:"correlation_id,omitempty"`
 	TraceID               string                    `json:"trace_id,omitempty"`

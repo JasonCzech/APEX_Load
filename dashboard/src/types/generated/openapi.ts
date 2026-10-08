@@ -65058,6 +65058,103 @@ export interface operations {
       };
     };
   };
+  "handleGetRunArchiveJourneys": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "policy"?: string;
+        "revision"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": ({
+            "availability": string;
+            "incomplete"?: boolean;
+            "index_unscored"?: string;
+            "journeys": Array<{
+              "aborted": number;
+              "censored": number;
+              "completed": number;
+              "eligible": number;
+              "examples"?: Array<{
+                "failed_step"?: string;
+                "group": string;
+                "iteration": number;
+                "outcome": string;
+                "started_at": string;
+                "vuser_id": number;
+              }>;
+              "failed": number;
+              "failure_rate"?: (number) | null;
+              "id": string;
+              "name": string;
+              "skipped": number;
+              "start": {
+                "action"?: string;
+                "transaction"?: string;
+              };
+              "step_failures": number;
+              "steps": number;
+              "success": {
+                "action"?: string;
+                "transaction"?: string;
+              };
+              "weight": number;
+            }>;
+            "notes": Array<string>;
+            "policy": {
+              "id": string;
+              "name": string;
+              "revision": number;
+              "sha256": string;
+              "source": string;
+            };
+            "reason"?: string;
+            "rows_outside_iterations": number;
+            "run_id": string;
+            "schema_version": string;
+            "step_risk_enabled": boolean;
+            "step_risk_index"?: (number) | null;
+            "step_risk_unscored"?: string;
+            "weighted_failure_index"?: (number) | null;
+          }) | null;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleGetRunArchiveManifest": {
     parameters: {
       "path": {
@@ -166899,6 +166996,9 @@ export interface paths {
   };
   "/api/v1/tests/{id}/archive/files/{name}": {
     "get": operations["handleDownloadRunArchiveArtifact"];
+  };
+  "/api/v1/tests/{id}/archive/journeys": {
+    "get": operations["handleGetRunArchiveJourneys"];
   };
   "/api/v1/tests/{id}/archive/manifest": {
     "get": operations["handleGetRunArchiveManifest"];

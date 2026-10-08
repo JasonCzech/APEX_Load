@@ -40,6 +40,7 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	// ResultSink implementation may retain it, even accidentally in-process.
 	result.CorrelationEvidence = nil
 	result.Group = vu.Group
+	result.VUserID, result.Iteration = vu.ID, vu.currentIteration.Load()
 	if result.Region == "" {
 		result.Region = vu.Region
 	}
@@ -79,6 +80,7 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	scrubSensitiveResultWithOptions(result, publicationConfig, retainResponseBody)
 	boundResultEvidence(result)
 	result.PropertyDimensions = promotedPropertyDimensions(vu.Script, result.Extractions)
+	result.Interrupted = !result.Success && vu.interruptedFailure()
 	metricResult := vu.metricResultWithDeclaredIdentity(result, declaredTransactionName)
 	if result.BusinessTransaction {
 		// Streamed adapters (notably java_vuser) emit completed business
@@ -163,6 +165,8 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 		StartTime:           time.Now().Add(-duration),
 		Duration:            duration,
 		Success:             success,
+		VUserID:             vu.ID,
+		Iteration:           vu.currentIteration.Load(),
 	}
 	if source != nil {
 		tx.WorkerDuration = source.WorkerDuration
@@ -214,6 +218,7 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 	scrubSensitiveResultWithOptions(tx, vu.RedactionConfig, false)
 	boundResultEvidence(tx)
 	tx.PropertyDimensions = promotedPropertyDimensions(vu.Script, tx.Extractions)
+	tx.Interrupted = !tx.Success && vu.interruptedFailure()
 	if vu.Metrics != nil {
 		vu.Metrics.RecordTransactionResult(vu.metricResultWithDeclaredIdentity(tx, name))
 	}
@@ -221,6 +226,29 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 		_ = sink.RecordTransaction(tx)
 	}
 	return tx
+}
+
+// interruptedFailure reports whether a failure being recorded may be the
+// stop's rather than the target's: the in-flight action's context was
+// cancelled (a hard stop, or Run's context when there is no hard-stop
+// context), or a stop or goal boundary is abandoning the iteration.
+func (vu *VUser) interruptedFailure() bool {
+	if vu.abandoning {
+		return true
+	}
+	ctx := vu.HardStopCtx
+	if ctx == nil {
+		ctx = vu.runCtx
+	}
+	return ctx != nil && ctx.Err() != nil
+}
+
+// recordAbandonedTransaction records the failed transaction a stop or goal
+// boundary leaves behind; it is marked interrupted.
+func (vu *VUser) recordAbandonedTransaction(name string, duration time.Duration, source *protocol.Result) *protocol.Result {
+	vu.abandoning = true
+	defer func() { vu.abandoning = false }()
+	return vu.recordTransaction(name, duration, false, source)
 }
 
 func (vu *VUser) iterationTransactionName() string {

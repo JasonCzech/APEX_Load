@@ -45,6 +45,7 @@ import RunReportVerdictBanner from './runReport/RunReportVerdictBanner'
 import SynchronizedTimeline from './runReport/SynchronizedTimeline'
 import ImportedDashboardPanels from './runReport/ImportedDashboardPanels'
 import TransactionSlaScoreboard from './runReport/TransactionSlaScoreboard'
+import JourneyRiskPanel from './runReport/JourneyRiskPanel'
 import TransactionResponseTimeSLATable from './TransactionResponseTimeSLATable'
 import {
   alignBaselineTimeline,
@@ -575,6 +576,7 @@ export default function RunReportPage({
             <TransactionSlaScoreboard rows={slaRows} selectedAction={population === slaPopulation && slaRows.some(row => row.name === archiveModel.selectedArchiveAction) ? archiveModel.selectedArchiveAction : ''} drilldownTransactions={population === slaPopulation ? archiveModel.archiveTransactions : []} loadingTransactions={archiveModel.archiveTransactionsLoading} onSelectAction={name => { setPopulationChoice(slaPopulation); archiveModel.onSelectedArchiveGroupChange(''); archiveModel.onSelectedArchiveActionChange(name) }} />
           )}
           {renderEvidence('action-summary')}
+          <JourneyRiskPanel testId={testId} />
           <details><summary>Load impact</summary>{renderEvidence('load-impact')}</details>
         </>}
         {area === 'Diagnostics' && hasArchive && <>

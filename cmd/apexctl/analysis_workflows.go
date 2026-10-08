@@ -56,6 +56,9 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	if kind == "analysis" && action == "telemetry-reevaluate" {
 		return executeTelemetryReevaluateCommand(ctx, args[1:], out)
 	}
+	if kind == "analysis" && action == "journeys" {
+		return executeAnalysisJourneysCommand(ctx, args[1:], out)
+	}
 	flags := flag.NewFlagSet(kind+" "+action, flag.ContinueOnError)
 	flags.SetOutput(out)
 	endpoint := flags.String("api", "http://127.0.0.1:8080", "controller URL")

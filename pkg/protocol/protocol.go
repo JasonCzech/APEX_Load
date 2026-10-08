@@ -675,6 +675,15 @@ type Result struct {
 	ContentCheckInfoMatches  int      `json:"content_check_info_matches,omitempty"`
 	WarningCodes             []string `json:"warning_codes,omitempty"` // bounded protocol policy warnings
 
+	// VUserID and Iteration identify the VUser iteration that produced the
+	// result: the run-wide VUser ID and the 1-based iteration (0 during init
+	// and teardown). Journey accounting (E5) groups archived rows by them.
+	// Interrupted marks a failure recorded once the VUser was stopping (its
+	// in-flight action cancelled, or a stop or goal boundary abandoning the
+	// iteration): the stop, not the target, may have caused it.
+	VUserID             int           `json:"vuser_id,omitempty"`
+	Iteration           int64         `json:"iteration,omitempty"`
+	Interrupted         bool          `json:"interrupted,omitempty"`
 	ActionName          string        // Name of the executed action
 	BusinessTransaction bool          // True when this sample represents a completed business transaction
 	SampleKind          string        // "child" or "aggregate" for StreamingProtocol results
