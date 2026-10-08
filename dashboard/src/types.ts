@@ -2276,6 +2276,12 @@ export interface TelemetryStageDistribution {
   max_ms?: number
   // Advisory stages (browser render) never affect run health.
   advisory?: boolean
+  // When this controller began sampling: a controller that adopted the run
+  // after a failover or restart samples only from then.
+  sampled_from?: string
+  // Why an unavailable stage has no evidence (recorder_lost: the finalizing
+  // controller never sampled the run).
+  reason?: string
 }
 
 export interface TelemetryRunHealth {

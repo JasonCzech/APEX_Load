@@ -96,6 +96,11 @@ type VUser struct {
 	// A failure recorded under either is marked interrupted.
 	runCtx     context.Context
 	abandoning bool
+	// lifetime identifies this VUser's lifetime (see protocol.Result).
+	lifetime uint64
+	// transactionSpanStart, while set, is the real start of the transaction
+	// being recorded (see recordTransactionSpan).
+	transactionSpanStart time.Time
 	// unresolvedSecretRefs collects {{secret.*}} references that failed to resolve
 	// during the most recent resolveAction; the execution path fails the action
 	// closed rather than sending the literal placeholder. Per-VUser (single
@@ -252,6 +257,9 @@ func (vu *VUser) Run(ctx context.Context) {
 	}()
 	vu.resultPhase = "action"
 	vu.runCtx = ctx
+	if vu.lifetime == 0 {
+		vu.lifetime = newVUserLifetime()
+	}
 
 	if err := vu.prepareRuntimeState(); err != nil {
 		vu.recordDataRowError(err)
@@ -597,7 +605,7 @@ func (vu *VUser) Run(ctx context.Context) {
 			if !success {
 				source = iterTransactionSource
 			}
-			vu.recordTransaction(vu.iterationTransactionName(), duration, success, source)
+			vu.recordTransactionSpan(vu.iterationTransactionName(), duration, success, source, iterTxStart)
 			iterTxRecorded = true
 		}
 
@@ -696,6 +704,9 @@ func (vu *VUser) Run(ctx context.Context) {
 				if action.Control == nil || depth >= maxControlDepth {
 					iterSuccess = false
 					if !continueOnError {
+						// A genuine failure ends the iteration: record it as one,
+						// never as a boundary abort.
+						recordIterationTransaction(false)
 						return flowTeardown
 					}
 					return flowNext
@@ -703,6 +714,7 @@ func (vu *VUser) Run(ctx context.Context) {
 				if !vu.executeParallelBlock(iterCtx, action, "action") {
 					iterSuccess = false
 					if !continueOnError {
+						recordIterationTransaction(false)
 						return flowTeardown
 					}
 				}

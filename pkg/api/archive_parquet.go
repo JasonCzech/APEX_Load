@@ -37,6 +37,8 @@ type parquetTransactionEvent struct {
 	VUserID                int64   `parquet:"name=vuser_id, type=INT64"`
 	Iteration              int64   `parquet:"name=iteration, type=INT64"`
 	Interrupted            bool    `parquet:"name=interrupted, type=BOOLEAN"`
+	VUserLifetime          int64   `parquet:"name=vuser_lifetime, type=INT64"`
+	ElapsedMs              float64 `parquet:"name=elapsed_ms, type=DOUBLE"`
 	Population             string  `parquet:"name=population, type=BYTE_ARRAY, convertedtype=UTF8"`
 	BusinessTransaction    bool    `parquet:"name=business_transaction, type=BOOLEAN"`
 	CorrelationID          string  `parquet:"name=correlation_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
@@ -307,6 +309,8 @@ func toParquetTransactions(items []TransactionEvent, sourceRows ...[]byte) []par
 			VUserID:                int64(item.VUserID),
 			Iteration:              item.Iteration,
 			Interrupted:            item.Interrupted,
+			VUserLifetime:          int64(item.VUserLifetime),
+			ElapsedMs:              item.ElapsedMs,
 			BusinessTransaction:    item.BusinessTransaction,
 			Population:             item.Population,
 			CorrelationID:          item.CorrelationID,

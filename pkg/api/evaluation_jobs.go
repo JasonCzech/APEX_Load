@@ -50,8 +50,13 @@ type evaluationKind struct {
 	Run      func(ctx context.Context, s *Server, job *storage.EvaluationJob) (any, error)
 	Deadline time.Duration
 	// OnReady, when set, runs after the job's result is stored as ready
-	// (delivery such as webhooks); it never changes the result.
+	// (delivery such as webhooks); it never changes the result. A completion
+	// that stored nothing (cancelled, overtaken, lost lease) never runs it.
 	OnReady func(s *Server, job *storage.EvaluationJob, result []byte)
+	// Subject, when set, names what a request is about (indexed with the
+	// job), so the evaluations of one subject are found without reading
+	// requests. Prepare has already validated the request.
+	Subject func(s *Server, projectID string, request json.RawMessage) string
 }
 
 var evaluationKinds = struct {
@@ -247,6 +252,10 @@ func (s *Server) handleCreateEvaluationJob(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	actor := authoringReceiptActor(r, s)
+	subject := ""
+	if kind.Subject != nil {
+		subject = kind.Subject(s, project, req.Request)
+	}
 	keyHash, requestDigest := "", ""
 	if values := r.Header.Values("Idempotency-Key"); len(values) > 0 {
 		key, err := validateCIRunIdempotencyKey(strings.Join(values, ","))
@@ -270,7 +279,7 @@ func (s *Server) handleCreateEvaluationJob(w http.ResponseWriter, r *http.Reques
 	}
 	job, created, err := store.CreateEvaluationJob(&storage.EvaluationJob{
 		ID: uuid.NewString(), ProjectID: project, Actor: actor, Kind: req.Kind, IdempotencyKeyHash: keyHash,
-		RequestDigest: requestDigest, Request: string(req.Request), InputFingerprint: fingerprint,
+		RequestDigest: requestDigest, Request: string(req.Request), InputFingerprint: fingerprint, SubjectID: subject,
 	}, evaluationJobsActivePerProject)
 	switch {
 	case errors.Is(err, storage.ErrEvaluationJobKeyConflict):
@@ -451,16 +460,24 @@ func (s *Server) runEvaluationJob(ctx context.Context, store storage.EvaluationJ
 	if len(body) > storage.MaxEvaluationJobResultBytes {
 		return s.completeEvaluationJob(store, job, owner, term, storage.EvaluationJobFailed, "", storage.EvaluationFailureResultTooLarge, "evaluation result exceeds the stored size limit")
 	}
-	if err := s.completeEvaluationJob(store, job, owner, term, storage.EvaluationJobReady, string(body), "", ""); err != nil {
+	stored, err := s.completeEvaluationJobStored(store, job, owner, term, storage.EvaluationJobReady, string(body), "", "")
+	if err != nil {
 		return err
 	}
-	if kind.OnReady != nil {
+	if stored && kind.OnReady != nil {
 		kind.OnReady(s, job, body)
 	}
 	return nil
 }
 
 func (s *Server) completeEvaluationJob(store storage.EvaluationJobStore, job *storage.EvaluationJob, owner string, term executionLeaseTerm, state, result, failureCode, failure string) error {
+	_, err := s.completeEvaluationJobStored(store, job, owner, term, state, result, failureCode, failure)
+	return err
+}
+
+// completeEvaluationJobStored is completeEvaluationJob reporting whether the
+// fenced write stored the outcome.
+func (s *Server) completeEvaluationJobStored(store storage.EvaluationJobStore, job *storage.EvaluationJob, owner string, term executionLeaseTerm, state, result, failureCode, failure string) (bool, error) {
 	digest := ""
 	if result != "" {
 		sum := sha256.Sum256([]byte(result))
@@ -468,8 +485,7 @@ func (s *Server) completeEvaluationJob(store storage.EvaluationJobStore, job *st
 	}
 	leaseName, leaseOwner, generation := s.fencedLease(term)
 	// A cancelled job, an overtaken owner or a lost term records nothing.
-	_, err := store.CompleteEvaluationJobFenced(job.ID, owner, state, result, digest, failureCode, failure, time.Now(), leaseName, leaseOwner, generation)
-	return err
+	return store.CompleteEvaluationJobFenced(job.ID, owner, state, result, digest, failureCode, failure, time.Now(), leaseName, leaseOwner, generation)
 }
 
 func boundedFailure(message string) string {

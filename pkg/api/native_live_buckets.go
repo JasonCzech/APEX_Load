@@ -194,6 +194,9 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 			expected[i][id] = true
 		}
 		versionInvalid := !jointV4 && e != nil && (e.Version < 2 || e.Version > 3 || jointDimensions && e.Version != 3)
+		// Joint evidence carries its own completeness (tuple bound and sample
+		// loss); the marginal dimensions' key caps do not make it partial.
+		marginalIncomplete := !jointV4 && e != nil && e.Incomplete
 		// A window whose joint evidence is unavailable, incomplete (tuples
 		// past the bound) or under another projection is a gap, never a
 		// partial total.
@@ -207,7 +210,7 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 				jointInvalid = !matches
 			}
 		}
-		if e == nil || versionInvalid || jointInvalid || e.Incomplete || math.IsNaN(e.WindowSeconds) || math.IsInf(e.WindowSeconds, 0) || e.WindowSeconds <= 0 || e.WindowSeconds > 3600 {
+		if e == nil || versionInvalid || jointInvalid || marginalIncomplete || math.IsNaN(e.WindowSeconds) || math.IsInf(e.WindowSeconds, 0) || e.WindowSeconds <= 0 || e.WindowSeconds > 3600 {
 			invalid[i] = true
 			continue
 		}

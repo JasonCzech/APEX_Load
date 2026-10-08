@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$comment": "HAR 1.2 structure (W3C Web Performance HAR 1.2 draft): required members, types and the -1 convention for unavailable sizes and timings. Written for these tests.",
+  "$comment": "HAR 1.2 structure (W3C Web Performance HAR 1.2 draft): required members and types; -1 is allowed only where HAR 1.2 allows it (the optional timings blocked, dns, connect and ssl, and headersSize/bodySize), while send, wait, receive and content.size must be non-negative.",
   "type": "object",
   "required": ["log"],
   "properties": {
@@ -135,7 +135,7 @@
           "type": "object",
           "required": ["size", "mimeType"],
           "properties": {
-            "size": { "type": "integer", "minimum": -1 },
+            "size": { "type": "integer", "minimum": 0 },
             "compression": { "type": "integer" },
             "mimeType": { "type": "string" },
             "text": { "type": "string" },
@@ -158,9 +158,9 @@
         "blocked": { "type": "number", "minimum": -1 },
         "dns": { "type": "number", "minimum": -1 },
         "connect": { "type": "number", "minimum": -1 },
-        "send": { "type": "number", "minimum": -1 },
-        "wait": { "type": "number", "minimum": -1 },
-        "receive": { "type": "number", "minimum": -1 },
+        "send": { "type": "number", "minimum": 0 },
+        "wait": { "type": "number", "minimum": 0 },
+        "receive": { "type": "number", "minimum": 0 },
         "ssl": { "type": "number", "minimum": -1 },
         "comment": { "type": "string" }
       },

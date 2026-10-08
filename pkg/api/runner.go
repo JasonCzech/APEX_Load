@@ -1107,9 +1107,10 @@ type TelemetryHealth struct {
 	// collectedAtBoundUnixMs is the controller-clock instant the qualified
 	// generators' oldest samples were certainly collected by (0 = none).
 	collectedAtBoundUnixMs float64
-	// sampleAgeUnavailable: no generator reported a sample, so no sample-age
-	// budget decision is made.
-	sampleAgeUnavailable bool
+	// SampleAgeUnavailable: no generator reported a sample, so no sample-age
+	// budget decision is made. It is retained with the interval so a later
+	// re-evaluation makes the same decision.
+	SampleAgeUnavailable bool `json:"sample_age_unavailable,omitempty"`
 	// qualifiedAt and qualifiedMonotonic are the controller's wall time and
 	// monotonic reading when collectedAtQuality was judged; a step between
 	// then and publication voids it.

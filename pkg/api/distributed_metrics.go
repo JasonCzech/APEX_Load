@@ -11,6 +11,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 // mergeRetainedDropCounters preserves a nonnegative loss lower bound when an
@@ -682,7 +683,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 			// and there is no sample whose age a budget could judge.
 			live.Telemetry.collectedAtQuality = &generatorrpc.ClockQuality{Reason: clockReasonUncalibrated}
 			live.Telemetry.collectedAtOffsetMs, live.Telemetry.collectedAtBoundUnixMs = 0, 0
-			live.Telemetry.sampleAgeUnavailable = true
+			live.Telemetry.SampleAgeUnavailable = true
 		}
 	}
 	defer func() {
@@ -721,7 +722,12 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 				setNativeJointEvidence(live.NativeEvidence, runJointProjection(test), published, tuples, other, omitted, incomplete)
 				if live.NativeEvidence.Joint != nil {
 					live.NativeEvidence.Joint.UnavailableSources = batch.JointInfo.UnavailableSources
+					// Merged queries and the archive read each publication's own
+					// tuples; the fleet re-merge of resident batches keeps only its
+					// availability, or every point would carry the tuples twice.
+					live.NativeEvidence.Joint.Other = nil
 				}
+				delete(live.NativeEvidence.Dimensions, storage.NativeJointDimension)
 			} else if projection := runJointProjection(test); projection != nil {
 				setNativeJointEvidence(live.NativeEvidence, projection, nil, nil, nil, 0, false)
 			}

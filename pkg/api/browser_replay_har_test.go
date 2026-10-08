@@ -1,12 +1,19 @@
 package api
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -145,15 +152,183 @@ func TestBrowserReplayActualNativeHAR(t *testing.T) {
 			t.Fatalf("the HAR directory kept %s", entry.Name())
 		}
 	}
-	copied := server.browserReplay.har.path("replay-native-true")
+	server.browserReplay.mu.RLock()
+	copied := server.browserReplay.sessions["replay-native-true"].harCopy
+	server.browserReplay.mu.RUnlock()
 	if _, err := os.Stat(copied); err != nil {
 		t.Fatalf("no private copy: %v", err)
 	}
 	server.browserReplay.mu.Lock()
 	delete(server.browserReplay.sessions, "replay-native-true")
 	server.browserReplay.mu.Unlock()
-	server.browserReplay.sweepReplayHARs()
+	server.browserReplay.PruneExpired()
 	if _, err := os.Stat(copied); !os.IsNotExist(err) {
 		t.Fatalf("a pruned replay's HAR copy stayed: %v", err)
+	}
+}
+
+// replayHARProtocol is a replay protocol that "records" a published HAR: it
+// hands over fake published artifacts the way the browser does.
+type replayHARProtocol struct {
+	replayAPIProtocol
+	mu        sync.Mutex
+	artifacts []protocol.BrowserHARArtifact
+	onInit    func(map[string]any)
+}
+
+func (p *replayHARProtocol) Init(_ context.Context, config map[string]any) error {
+	if p.onInit != nil {
+		p.onInit(config)
+	}
+	return nil
+}
+
+func (p *replayHARProtocol) TakeBrowserHARArtifacts() []protocol.BrowserHARArtifact {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := p.artifacts
+	p.artifacts = nil
+	return out
+}
+
+// publishFakeReplayHAR writes a published-looking scrubbed HAR into dir.
+func publishFakeReplayHAR(t *testing.T, dir, name, page string) string {
+	t.Helper()
+	path := filepath.Join(dir, "apexload_browser_"+name+"_scrubbed.har")
+	body := `{"log":{"version":"1.2","creator":{"name":"apexload","version":"test"},"pages":[{"id":"` + page + `"}],"entries":[]}}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func registerReplayHARProtocol(t *testing.T, harDir string, publish func() []string, onInit func(map[string]any)) string {
+	t.Helper()
+	name := "replay-har-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-") + "-" + strconv.FormatUint(replayAPIProtocolCounter.Add(1), 10)
+	protocol.Register(name, func() protocol.Protocol {
+		p := &replayHARProtocol{replayAPIProtocol: replayAPIProtocol{execute: func(action *protocol.Action) (*protocol.Result, error) {
+			return &protocol.Result{ActionName: action.Name, Success: true}, nil
+		}}, onInit: onInit}
+		for _, path := range publish() {
+			p.artifacts = append(p.artifacts, protocol.BrowserHARArtifact{Path: path})
+		}
+		return p
+	})
+	return name
+}
+
+// A replay's native HAR copy belongs to its session record: a later record
+// reusing the ID never serves it, removing the record removes the copy, the
+// evidence ZIP streams it with its digest, and a replay that fails before
+// reporting retires its recording instead of leaving it published.
+func TestBrowserReplayHARCopiesBelongToTheirRecord(t *testing.T) {
+	server, _ := baselineTestServer(t)
+	enableTrustedHeaderAuth(t, server)
+	harDir := t.TempDir()
+	published := ""
+	var captureMu sync.Mutex
+	captures := map[string]any{}
+	protocolName := registerReplayHARProtocol(t, harDir, func() []string {
+		if published == "" {
+			return nil
+		}
+		return []string{published}
+	}, func(config map[string]any) {
+		captureMu.Lock()
+		defer captureMu.Unlock()
+		captures["browser_har_capture"], captures["browser_har_capture_policy"] = config["browser_har_capture"], config["browser_har_capture_policy"]
+	})
+	script := &dsl.Script{Name: "Replay HAR copy", Protocol: protocolName, Version: "1.0.0", ProjectID: storage.DefaultProjectID, Actions: []dsl.Action{{Name: "open", Type: "browser_navigate", Target: "/"}}}
+	published = publishFakeReplayHAR(t, harDir, "first", "first-attempt")
+	if _, err := server.browserReplay.Start("", script, BrowserReplayStartRequest{ReplaySessionID: "replay-har-reuse"}); err != nil {
+		t.Fatal(err)
+	}
+	waitBrowserReplayTerminal(t, server.browserReplay, "replay-har-reuse", 5*time.Second)
+	if _, err := os.Stat(published); !os.IsNotExist(err) {
+		t.Fatalf("the HAR directory kept the replay's original: %v", err)
+	}
+	// Recording sets both capture aliases, so a script's own on_error policy
+	// cannot discard a successful replay's recording.
+	captureMu.Lock()
+	if captures["browser_har_capture"] != "always" || captures["browser_har_capture_policy"] != "always" {
+		t.Fatalf("capture config %+v", captures)
+	}
+	captureMu.Unlock()
+	base := "/api/v1/browser-replay/sessions/replay-har-reuse"
+	reply := harDownloadRequest(t, server, base+"/har", "replay-editor", harEditor)
+	if reply.Code != http.StatusOK || reply.Header().Get("X-APEXLoad-HAR-Fidelity") != "native" || !strings.Contains(reply.Body.String(), "first-attempt") {
+		t.Fatalf("native replay HAR %d %v %s", reply.Code, reply.Header(), reply.Body.String())
+	}
+	evidence := harDownloadRequest(t, server, base+"/evidence", "replay-editor", harEditor)
+	entries := harZipEntries(t, evidence.Body.Bytes())
+	var metadata browserReplayHARMetadata
+	sum := sha256.Sum256(entries["replay.har"])
+	if err := json.Unmarshal(entries["har.json"], &metadata); err != nil || metadata.Fidelity != "native" || metadata.SHA256 != hex.EncodeToString(sum[:]) || metadata.Bytes != int64(len(entries["replay.har"])) || string(entries["replay.har"]) != reply.Body.String() {
+		t.Fatalf("streamed evidence %+v %v", metadata, err)
+	}
+	server.browserReplay.mu.RLock()
+	record := server.browserReplay.sessions["replay-har-reuse"]
+	server.browserReplay.mu.RUnlock()
+	first := record.harCopy
+
+	// The record is retired (its fence was lost), which removes its copy, and
+	// a retry reuses the ID without recording: it has its own synthetic HAR.
+	record.mu.Lock()
+	record.terminalFenceEstablished = false
+	record.mu.Unlock()
+	server.browserReplay.retireUnfencedSession(record)
+	if _, err := os.Stat(first); !os.IsNotExist(err) {
+		t.Fatalf("a retired record's copy stayed: %v", err)
+	}
+	published = ""
+	off := false
+	if _, err := server.browserReplay.Start("", script, BrowserReplayStartRequest{ReplaySessionID: "replay-har-reuse", RecordHAR: &off}); err != nil {
+		t.Fatal(err)
+	}
+	waitBrowserReplayTerminal(t, server.browserReplay, "replay-har-reuse", 5*time.Second)
+	if reply := harDownloadRequest(t, server, base+"/har", "replay-editor", harEditor); reply.Code != http.StatusOK || reply.Header().Get("X-APEXLoad-HAR-Fidelity") != harsynth.Fidelity || strings.Contains(reply.Body.String(), "first-attempt") {
+		t.Fatalf("a reused ID served the earlier record's HAR: %d %s", reply.Code, reply.Header().Get("X-APEXLoad-HAR-Fidelity"))
+	}
+
+	// A replay that fails before reporting (a data source that cannot load)
+	// retires its recording.
+	published = publishFakeReplayHAR(t, harDir, "failed", "failed-attempt")
+	broken := *script
+	broken.DataSources = []dsl.DataSource{{Name: "rows", Type: "csv", Path: filepath.Join(t.TempDir(), "missing.csv")}}
+	if _, err := server.browserReplay.Start("", &broken, BrowserReplayStartRequest{ReplaySessionID: "replay-har-early"}); err != nil {
+		t.Fatal(err)
+	}
+	if session := waitBrowserReplayTerminal(t, server.browserReplay, "replay-har-early", 5*time.Second); session.Status != BrowserReplayFailed {
+		t.Fatalf("broken replay %s", session.Status)
+	}
+	if _, err := os.Stat(published); !os.IsNotExist(err) {
+		t.Fatalf("an unreported recording stayed published: %v", err)
+	}
+}
+
+// A copy is kept only when asked (a fenced, live record); the original is
+// retired either way, and a closed store refuses writes.
+func TestReplayHARStoreKeepsOnlyFencedCopies(t *testing.T) {
+	manager := NewBrowserReplayManager(nil)
+	harDir := t.TempDir()
+	original := publishFakeReplayHAR(t, harDir, "unfenced", "unfenced")
+	record := &BrowserReplaySession{ID: "unfenced"}
+	if copied := manager.retainReplayHAR(record, []protocol.BrowserHARArtifact{{Path: original}}, false); copied != "" {
+		t.Fatalf("an unfenced record kept %s", copied)
+	}
+	if _, err := os.Stat(original); !os.IsNotExist(err) {
+		t.Fatalf("the original was not retired: %v", err)
+	}
+	original = publishFakeReplayHAR(t, harDir, "kept", "kept")
+	copied := manager.retainReplayHAR(record, []protocol.BrowserHARArtifact{{Path: original}}, true)
+	if copied == "" || !strings.HasPrefix(copied, filepath.Join(os.TempDir(), replayHARRootName)) {
+		t.Fatalf("copy %q outside the managed root", copied)
+	}
+	manager.Close()
+	if _, err := os.Stat(copied); !os.IsNotExist(err) {
+		t.Fatalf("close kept the copy: %v", err)
+	}
+	if _, err := manager.har.write(record, strings.NewReader("{}"), 2); !errors.Is(err, errReplayHARStoreClosed) {
+		t.Fatalf("a closed store accepted a write: %v", err)
 	}
 }

@@ -45,15 +45,21 @@ Evaluation is a `browser_intelligence` evaluation job.
 The job's input fingerprint covers the rule set, the score version, the
 policy revision's digest and the archive manifest's digest.
 
+A run's own result is always an evaluation under its pinned policy. An
+evaluation under a named revision is an ordinary evaluation job: read it from
+the evaluation API (`apexctl … --policy … --wait` prints it). It never
+replaces the run's result and never sends webhooks. Evaluations are indexed
+by their run (schema v53 `feature_evaluation_jobs.subject_id`), so a run's
+result is found however many evaluations the project has.
+
 ## What is judged
 
 Only main-frame navigations are judged. Child frames and back/forward-cache
 restores are listed in the result's notes, never scored.
 
 Each cohort (engine and device profile) is judged per policy metric. The
-observed value is the p75 of the qualified final observations. It is
-approximate: the upper bound of its distribution bucket, capped by the
-observed maximum.
+observed value is the nearest-rank p75 of the qualified final
+observations' values.
 
 Provisional, censored, unqualified and unavailable observations are
 reported in the finding's `quality`, never in its value.
@@ -99,15 +105,19 @@ coverage are shown instead. The remaining metrics are never renormalized.
 ## Reading results
 
 - **API:** `GET /api/v1/tests/{id}/archive/browser-findings` returns the
-  run's latest ready result (`status: ready`), `pending`, or
-  `not_evaluated`.
+  run's latest ready result under its pinned policy (`status: ready`),
+  `pending`, `failed` (the newest evaluation failed and none is ready, with
+  `failure`), or `not_evaluated`.
 - **Dashboard:** the Browser findings panel in the run report's Diagnostics
   tab (Browser evidence) shows the score, its components and contributions,
-  the findings by state, and the notes.
+  the findings by state, and the notes. It checks a pending evaluation again
+  until it settles.
 - **Webhooks:** subscribe to `browser_finding` and `browser_finding_resolved`.
-  When an evaluation becomes ready:
-  - a finding active now but not in the run's previous ready evaluation is
-    sent once;
-  - one active before and not now is sent as resolved;
-  - an identical rerun sends nothing;
-  - at most 20 events are sent per evaluation.
+  When an evaluation under the run's pinned policy is stored as ready:
+  - one `browser_finding` event lists the findings active now but not in the
+    run's previous ready pinned evaluation;
+  - one `browser_finding_resolved` event lists those active before and not
+    now;
+  - an identical rerun sends nothing, and a completion that stored nothing
+    (cancelled, overtaken) sends nothing;
+  - each event lists at most 20 finding keys.

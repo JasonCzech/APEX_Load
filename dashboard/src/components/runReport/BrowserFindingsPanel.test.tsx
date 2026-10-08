@@ -88,6 +88,28 @@ describe('BrowserFindingsPanel', () => {
     expect((container.querySelector('button') as HTMLButtonElement).disabled).toBe(true)
   })
 
+  it('checks a pending evaluation again and shows a failed one', async () => {
+    vi.useFakeTimers()
+    try {
+      mocks.request.mockResolvedValueOnce({ run_id: 'run-1', status: 'pending', pending: true }).mockResolvedValueOnce(ready)
+      act(() => root.render(<BrowserFindingsPanel testId="run-1" projectId="proj" canEvaluate={false} />))
+      await act(async () => { await Promise.resolve() })
+      await act(async () => { await Promise.resolve() })
+      expect(container.textContent).toContain('queued or running')
+      await act(async () => { vi.advanceTimersByTime(3000) })
+      await act(async () => { await Promise.resolve() })
+      await act(async () => { await Promise.resolve() })
+      expect(mocks.request).toHaveBeenCalledTimes(2)
+      expect(container.textContent).toContain('Web vitals revision 2')
+    } finally {
+      vi.useRealTimers()
+    }
+    mocks.request.mockResolvedValue({ run_id: 'run-2', status: 'failed', failure: 'the pinned browser policy revision no longer matches its pin' })
+    act(() => root.render(<BrowserFindingsPanel testId="run-2" projectId="proj" canEvaluate={false} />))
+    await flush()
+    expect(container.textContent).toContain('The browser evaluation failed: the pinned browser policy revision no longer matches its pin.')
+  })
+
   it('reports load failures and formats values', async () => {
     mocks.request.mockRejectedValue(new Error('boom'))
     act(() => root.render(<BrowserFindingsPanel testId="run-1" projectId="proj" canEvaluate={false} />))

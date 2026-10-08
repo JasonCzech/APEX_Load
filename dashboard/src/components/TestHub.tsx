@@ -4314,7 +4314,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
           {scenarioSettingsSection === 'composition' && <>
 		  <ScenarioCompositionTimeline
 			duration={form.duration}
-			groups={formGroups}
+			groups={compositionTimelineGroups}
 			onOffsetChange={(index, value) => updateScenarioGroup(index, { start_offset: value })}
             selectedGroupIndex={activeGroupIndex}
             onGroupSelect={setStageGroupIndex}

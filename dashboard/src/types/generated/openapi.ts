@@ -3492,6 +3492,8 @@ export interface operations {
                 "p50_ms"?: (number) | null;
                 "p95_ms"?: (number) | null;
                 "p99_ms"?: (number) | null;
+                "reason"?: string;
+                "sampled_from"?: (string) | null;
                 "samples"?: number;
                 "stage"?: string;
                 "unit"?: string;
@@ -7815,10 +7817,13 @@ export interface operations {
                 "allowed_filters": Array<string>;
                 "evidence_mode": string;
                 "grouping"?: string;
+                "grouping_dimensions"?: Array<string>;
                 "id": string;
+                "joint_evidence"?: boolean;
                 "live_bucket_mode"?: string;
                 "max_bucket_seconds": number;
                 "max_buckets": number;
+                "max_grouping_dimensions"?: number;
                 "max_series": number;
                 "max_window_seconds": number;
                 "population": string;
@@ -8186,7 +8191,9 @@ export interface operations {
               "lag_convention": string;
               "left": {
                 "conversion"?: string;
+                "derivation"?: string;
                 "excluded"?: Record<string, number>;
+                "excluded_samples"?: Record<string, number>;
                 "input_kind"?: string;
                 "kind"?: string;
                 "metric": string;
@@ -8198,7 +8205,9 @@ export interface operations {
               };
               "right": {
                 "conversion"?: string;
+                "derivation"?: string;
                 "excluded"?: Record<string, number>;
+                "excluded_samples"?: Record<string, number>;
                 "input_kind"?: string;
                 "kind"?: string;
                 "metric": string;
@@ -8209,6 +8218,7 @@ export interface operations {
                 "valid": number;
               };
               "same_units": boolean;
+              "units_undeclared"?: boolean;
             }) | null;
             "interpretation": string;
             "left": Array<{
@@ -34557,6 +34567,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "sample_age_unavailable"?: boolean;
                   "shedded_arrivals"?: number;
                   "sources"?: ({
                     "epochs": number;
@@ -35111,6 +35122,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "sample_age_unavailable"?: boolean;
                   "shedded_arrivals"?: number;
                   "sources"?: ({
                     "epochs": number;
@@ -42336,6 +42348,7 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "sample_age_unavailable"?: boolean;
                 "shedded_arrivals"?: number;
                 "sources"?: ({
                   "epochs": number;
@@ -43949,6 +43962,7 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "sample_age_unavailable"?: boolean;
                 "shedded_arrivals"?: number;
                 "sources"?: ({
                   "epochs": number;
@@ -43967,6 +43981,8 @@ export interface operations {
                   "p50_ms"?: (number) | null;
                   "p95_ms"?: (number) | null;
                   "p99_ms"?: (number) | null;
+                  "reason"?: string;
+                  "sampled_from"?: (string) | null;
                   "samples": number;
                   "stage": string;
                   "unit": string;
@@ -59598,6 +59614,7 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "sample_age_unavailable"?: boolean;
                 "shedded_arrivals"?: number;
                 "sources"?: ({
                   "epochs": number;
@@ -61207,6 +61224,7 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "sample_age_unavailable"?: boolean;
                 "shedded_arrivals"?: number;
                 "sources"?: ({
                   "epochs": number;
@@ -61225,6 +61243,8 @@ export interface operations {
                   "p50_ms"?: (number) | null;
                   "p95_ms"?: (number) | null;
                   "p99_ms"?: (number) | null;
+                  "reason"?: string;
+                  "sampled_from"?: (string) | null;
                   "samples": number;
                   "stage": string;
                   "unit": string;
@@ -63413,6 +63433,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "sample_age_unavailable"?: boolean;
                   "shedded_arrivals"?: number;
                   "sources"?: ({
                     "epochs": number;
@@ -63967,6 +63988,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "sample_age_unavailable"?: boolean;
                   "shedded_arrivals"?: number;
                   "sources"?: ({
                     "epochs": number;
@@ -64779,6 +64801,7 @@ export interface operations {
         content: {
           "application/json": {
             "completed_at"?: (string) | null;
+            "failure"?: string;
             "job_id"?: string;
             "pending"?: boolean;
             "result"?: ({
@@ -65212,6 +65235,7 @@ export interface operations {
           "application/json": ({
             "availability": string;
             "incomplete"?: boolean;
+            "incomplete_reasons"?: Array<string>;
             "index_unscored"?: string;
             "journeys": Array<{
               "aborted": number;
@@ -67071,6 +67095,8 @@ export interface operations {
               "p50_ms"?: (number) | null;
               "p95_ms"?: (number) | null;
               "p99_ms"?: (number) | null;
+              "reason"?: string;
+              "sampled_from"?: (string) | null;
               "samples": number;
               "stage": string;
               "unit": string;
@@ -70261,6 +70287,8 @@ export interface operations {
                 "p50_ms"?: (number) | null;
                 "p95_ms"?: (number) | null;
                 "p99_ms"?: (number) | null;
+                "reason"?: string;
+                "sampled_from"?: (string) | null;
                 "samples": number;
                 "stage": string;
                 "unit": string;
@@ -78126,6 +78154,7 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "sample_age_unavailable"?: boolean;
                 "shedded_arrivals"?: number;
                 "sources"?: ({
                   "epochs": number;
@@ -79739,6 +79768,7 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "sample_age_unavailable"?: boolean;
                 "shedded_arrivals"?: number;
                 "sources"?: ({
                   "epochs": number;
@@ -79757,6 +79787,8 @@ export interface operations {
                   "p50_ms"?: (number) | null;
                   "p95_ms"?: (number) | null;
                   "p99_ms"?: (number) | null;
+                  "reason"?: string;
+                  "sampled_from"?: (string) | null;
                   "samples": number;
                   "stage": string;
                   "unit": string;
@@ -98981,6 +99013,7 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "sample_age_unavailable"?: boolean;
                 "shedded_arrivals"?: number;
                 "sources"?: ({
                   "epochs": number;
@@ -100594,6 +100627,7 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "sample_age_unavailable"?: boolean;
                 "shedded_arrivals"?: number;
                 "sources"?: ({
                   "epochs": number;
@@ -100612,6 +100646,8 @@ export interface operations {
                   "p50_ms"?: (number) | null;
                   "p95_ms"?: (number) | null;
                   "p99_ms"?: (number) | null;
+                  "reason"?: string;
+                  "sampled_from"?: (string) | null;
                   "samples": number;
                   "stage": string;
                   "unit": string;
@@ -114327,6 +114363,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "sample_age_unavailable"?: boolean;
                   "shedded_arrivals"?: number;
                   "sources"?: ({
                     "epochs": number;
@@ -114881,6 +114918,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "sample_age_unavailable"?: boolean;
                   "shedded_arrivals"?: number;
                   "sources"?: ({
                     "epochs": number;
@@ -116196,6 +116234,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "sample_age_unavailable"?: boolean;
                   "shedded_arrivals"?: number;
                   "sources"?: ({
                     "epochs": number;
@@ -116750,6 +116789,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "sample_age_unavailable"?: boolean;
                   "shedded_arrivals"?: number;
                   "sources"?: ({
                     "epochs": number;
@@ -118065,6 +118105,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "sample_age_unavailable"?: boolean;
                   "shedded_arrivals"?: number;
                   "sources"?: ({
                     "epochs": number;
@@ -118619,6 +118660,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "sample_age_unavailable"?: boolean;
                   "shedded_arrivals"?: number;
                   "sources"?: ({
                     "epochs": number;
@@ -119934,6 +119976,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "sample_age_unavailable"?: boolean;
                   "shedded_arrivals"?: number;
                   "sources"?: ({
                     "epochs": number;
@@ -120488,6 +120531,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "sample_age_unavailable"?: boolean;
                   "shedded_arrivals"?: number;
                   "sources"?: ({
                     "epochs": number;
@@ -121803,6 +121847,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "sample_age_unavailable"?: boolean;
                   "shedded_arrivals"?: number;
                   "sources"?: ({
                     "epochs": number;
@@ -122357,6 +122402,7 @@ export interface operations {
                     "reason"?: string;
                     "uncertainty_ms"?: number;
                   }) | null;
+                  "sample_age_unavailable"?: boolean;
                   "shedded_arrivals"?: number;
                   "sources"?: ({
                     "epochs": number;
@@ -146937,6 +146983,7 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "sample_age_unavailable"?: boolean;
                 "shedded_arrivals"?: number;
                 "sources"?: ({
                   "epochs": number;
@@ -148550,6 +148597,7 @@ export interface operations {
                   "reason"?: string;
                   "uncertainty_ms"?: number;
                 }) | null;
+                "sample_age_unavailable"?: boolean;
                 "shedded_arrivals"?: number;
                 "sources"?: ({
                   "epochs": number;
@@ -148568,6 +148616,8 @@ export interface operations {
                   "p50_ms"?: (number) | null;
                   "p95_ms"?: (number) | null;
                   "p99_ms"?: (number) | null;
+                  "reason"?: string;
+                  "sampled_from"?: (string) | null;
                   "samples": number;
                   "stage": string;
                   "unit": string;

@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 
 import { useApi } from '../../hooks/useApi'
 import { getErrorMessage } from '../../utils/errorUtils'
-import { formatJourneyBoundary, formatJourneyFraction, journeyUnavailableText, journeyUnscoredText, type JourneyRiskReport } from './journeyRiskModel'
+import { formatJourneyBoundary, formatJourneyFraction, journeyIncompleteText, journeyUnavailableText, journeyUnscoredText, type JourneyRiskReport } from './journeyRiskModel'
 
 interface JourneySelection {
   policy?: string
@@ -58,7 +58,7 @@ export default function JourneyRiskPanel({ testId }: { testId: string }) {
         <strong>Weighted failure index:</strong> {report.weighted_failure_index !== undefined ? formatJourneyFraction(report.weighted_failure_index) : journeyUnscoredText(report.index_unscored)}
         {report.step_risk_enabled && <> <strong>Step risk index:</strong> {report.step_risk_index !== undefined ? formatJourneyFraction(report.step_risk_index) : journeyUnscoredText(report.step_risk_unscored)}</>}
       </p>
-      {report.incomplete && <p role="note">Some rows were past the accounting bounds, so the counts are incomplete.</p>}
+      {report.incomplete && <p role="note">{journeyIncompleteText(report.incomplete_reasons)}</p>}
       <div className="run-archive-coverage-table"><table className="tx-table">
         <thead><tr>
           <th scope="col">Journey</th><th scope="col">Weight</th><th scope="col">Completed</th><th scope="col">Failed</th><th scope="col">Aborted</th>

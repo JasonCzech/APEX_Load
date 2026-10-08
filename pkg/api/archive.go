@@ -341,6 +341,8 @@ type TransactionEvent struct {
 	VUserID               int                       `json:"vuser_id,omitempty"`
 	Iteration             int64                     `json:"iteration,omitempty"`
 	Interrupted           bool                      `json:"interrupted,omitempty"`
+	VUserLifetime         uint64                    `json:"vuser_lifetime,omitempty"`
+	ElapsedMs             float64                   `json:"elapsed_ms,omitempty"`
 	BusinessTransaction   bool                      `json:"business_transaction,omitempty"`
 	CorrelationID         string                    `json:"correlation_id,omitempty"`
 	TraceID               string                    `json:"trace_id,omitempty"`

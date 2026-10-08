@@ -423,3 +423,145 @@ func TestSampleAgeStageNeedsAQualifiedClockWhenDistributed(t *testing.T) {
 		t.Fatalf("a qualified cross-host age was dropped: %+v", got)
 	}
 }
+
+// Publications are throttled fleet-wide, so most generator batches are only
+// stored: each generator's stages are sampled where its batch is accepted,
+// not from the batch a publication happens to re-read.
+func TestTelemetryStagesSampleEveryAcceptedGeneratorBatch(t *testing.T) {
+	runner, run, backend := newDistributedThresholdTestRunner(t)
+	for sequence := uint64(1); sequence <= 3; sequence++ {
+		for _, target := range []string{"generator-a", "generator-b", "generator-c"} {
+			batch := distributedP99Batch(run.ID, int64(sequence)*1000, 100)
+			batch.SourceEpoch, batch.BatchSequence = "epoch-"+target, sequence
+			batch.Telemetry = &generatorrpc.MetricsTelemetry{GeneratorProcessingLagMs: 5}
+			if !backend.storeRemoteMetricsBatchOnly(runner, run, target, batch) {
+				t.Fatalf("%s batch %d rejected", target, sequence)
+			}
+			// A rejected duplicate is not sampled again.
+			backend.storeRemoteMetricsBatchOnly(runner, run, target, batch)
+		}
+	}
+	terminal := distributedP99Batch(run.ID, 4000, 100)
+	terminal.SourceEpoch, terminal.BatchSequence, terminal.LifecycleState = "epoch-generator-a", 4, "COMPLETE"
+	terminal.Telemetry = &generatorrpc.MetricsTelemetry{GeneratorProcessingLagMs: 5}
+	backend.applyRemoteMetricsBatchWithFreshness(runner, run, "generator-a", terminal, false)
+	runner.mu.RLock()
+	recorder := run.telemetryStages
+	runner.mu.RUnlock()
+	for _, stage := range recorder.snapshot() {
+		if stage.Stage == telemetryStageGeneratorProcessing && stage.Samples != 10 {
+			t.Fatalf("processing samples %d, want 10 (3 generators × 3 batches + a terminal batch)", stage.Samples)
+		}
+	}
+}
+
+func TestClientRenderViewerBudgetRefills(t *testing.T) {
+	var limiter clientRenderLimiter
+	now := time.Now()
+	if ok, _ := limiter.spend("viewer", clientRenderViewerBurst, now); !ok {
+		t.Fatal("a full first report was refused")
+	}
+	if ok, wait := limiter.spend("viewer", 1, now); ok || wait <= 0 {
+		t.Fatal("an exhausted viewer was admitted")
+	}
+	if ok, _ := limiter.spend("other", 1, now); !ok {
+		t.Fatal("another viewer shared the budget")
+	}
+	if ok, _ := limiter.spend("viewer", clientRenderViewerSamplesPerSecond, now.Add(time.Second)); !ok {
+		t.Fatal("the budget did not refill")
+	}
+	limiter.release("viewer", 4)
+	if ok, _ := limiter.spend("viewer", 4, now.Add(time.Second)); !ok {
+		t.Fatal("released samples were not returned")
+	}
+}
+
+// A viewer cannot buy more samples with new tab identities: the per-tab
+// interval is backed by a per-viewer sample budget across all tabs.
+func TestClientRenderReportsRotatingTabsShareTheViewerBudget(t *testing.T) {
+	server, test, _ := clientRenderTestServer(t, true)
+	full := make([]clientRenderSample, clientRenderMaxSamples)
+	for i := range full {
+		full[i] = clientRenderSample{ReceiveToRenderMs: 59_999, State: "visible", ObservedAt: time.Now().UTC()}
+	}
+	post := func(clientID, remote string) int {
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/tests/"+test.ID+"/telemetry/client-render", strings.NewReader(clientRenderBody(clientID, full...)))
+		request.SetPathValue("id", test.ID)
+		request.RemoteAddr = remote
+		recorder := httptest.NewRecorder()
+		server.handleReportClientRender(recorder, request)
+		return recorder.Code
+	}
+	if code := post("tab-1", "192.0.2.1:1000"); code != http.StatusAccepted {
+		t.Fatalf("first report: %d", code)
+	}
+	if code := post("tab-2", "192.0.2.1:1001"); code != http.StatusTooManyRequests {
+		t.Fatalf("a fresh tab identity bypassed the viewer budget: %d", code)
+	}
+	if code := post("tab-3", "192.0.2.9:1000"); code != http.StatusAccepted {
+		t.Fatalf("another viewer was limited: %d", code)
+	}
+}
+
+// A finalize by a controller that never held the run's recorder (after a
+// restart or failover) records every stage as recorder_lost, never as a run
+// without stage evidence; a held recorder reports when it began sampling.
+func TestStageDistributionsDiscloseALostRecorder(t *testing.T) {
+	runner := &TestRunner{}
+	started := time.Now().Add(-time.Hour)
+	manifest := &RunArchiveManifest{}
+	runner.persistTelemetryStageDistributions(&ManagedTest{ID: "restarted", StartedAt: &started}, manifest)
+	if len(manifest.TelemetryStageDistributions) != len(telemetryStageOrder) || manifest.TelemetryStageDigests != nil {
+		t.Fatalf("lost recorder %+v", manifest)
+	}
+	for _, stage := range manifest.TelemetryStageDistributions {
+		if stage.Availability != "unavailable" || stage.Reason != telemetryStageReasonRecorderLost {
+			t.Fatalf("stage %+v", stage)
+		}
+	}
+	never := &RunArchiveManifest{}
+	runner.persistTelemetryStageDistributions(&ManagedTest{ID: "never-started"}, never)
+	if never.TelemetryStageDistributions != nil {
+		t.Fatalf("a run that never started recorded stages %+v", never.TelemetryStageDistributions)
+	}
+	before := time.Now().UTC()
+	recorder := newTelemetryStageRecorder()
+	recorder.observe(telemetryStageControllerFanout, 3)
+	snapshot := recorder.snapshot()
+	if snapshot[0].SampledFrom == nil || snapshot[0].SampledFrom.Before(before.Add(-time.Second)) {
+		t.Fatalf("sampled_from %v", snapshot[0].SampledFrom)
+	}
+	cloned := cloneTelemetryStageDistributions(snapshot)
+	if cloned[0].SampledFrom == snapshot[0].SampledFrom || !cloned[0].SampledFrom.Equal(*snapshot[0].SampledFrom) {
+		t.Fatal("sampled_from was not deep-copied")
+	}
+}
+
+// A general project update never changes the telemetry opt-in, whatever
+// copy of it a settings form resends.
+func TestGeneralProjectUpdateKeepsTheTelemetryOptIn(t *testing.T) {
+	server, _, store := clientRenderTestServer(t, true)
+	update := func(body string) {
+		t.Helper()
+		request := httptest.NewRequest(http.MethodPut, "/api/v1/projects/render-project", strings.NewReader(body))
+		request.SetPathValue("id", "render-project")
+		recorder := httptest.NewRecorder()
+		server.handleUpdateProject(recorder, request)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("update: %d %s", recorder.Code, recorder.Body)
+		}
+	}
+	update(`{"name":"Render","settings":{"telemetry":{}}}`)
+	if saved, err := store.GetProject("render-project"); err != nil || saved.Settings.Telemetry == nil || !saved.Settings.Telemetry.ClientRenderEvidence {
+		t.Fatalf("a stale settings copy reverted the opt-in: %+v %v", saved.Settings.Telemetry, err)
+	}
+	project, _ := store.GetProject("render-project")
+	project.Settings.Telemetry = nil
+	if err := store.SaveProject(project); err != nil {
+		t.Fatal(err)
+	}
+	update(`{"name":"Render","settings":{"telemetry":{"client_render_evidence":true}}}`)
+	if saved, _ := store.GetProject("render-project"); saved.Settings.Telemetry != nil && saved.Settings.Telemetry.ClientRenderEvidence {
+		t.Fatal("a general update enabled viewer reporting")
+	}
+}

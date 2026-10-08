@@ -50,7 +50,7 @@ func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics, thresholds T
 			signatureParts = append(signatureParts, "websocket_drops")
 			severity = maxDiagnosticSeverity(severity, "danger")
 		}
-		if live.Telemetry.sampleAgeUnavailable {
+		if live.Telemetry.SampleAgeUnavailable {
 			// No sample was reported: there is no age to judge.
 		} else if reason := clockBudgetUnscored(live.Telemetry.SampleAgeMs, thresholds.MaxTelemetrySampleAgeMs, live.Telemetry.SampleAgeQuality); reason != "" {
 			unscored = append(unscored, "stale_sample:"+reason)

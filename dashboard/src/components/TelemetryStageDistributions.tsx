@@ -35,11 +35,29 @@ function describeStageExclusions(excluded?: Record<string, number>): string {
     .join(', ')
 }
 
+// STAGE_ADOPTION_SLACK_MS is how long after the run's start sampling may
+// begin before the panel says the distributions cover only part of the run.
+export const STAGE_ADOPTION_SLACK_MS = 60_000
+
+// stageCoverageNote describes distributions this controller began sampling
+// well after the run started (it adopted the run after a failover or
+// restart), or ones it never sampled.
+export function stageCoverageNote(stages: TelemetryStageDistribution[], startedAt?: string): string {
+  if (stages.some(stage => stage.reason === 'recorder_lost')) {
+    return 'This controller did not sample the run (it restarted or took over after the run); stage distributions are unavailable.'
+  }
+  const from = Date.parse(stages.find(stage => stage.sampled_from)?.sampled_from || '')
+  const started = Date.parse(startedAt || '')
+  if (!Number.isFinite(from) || !Number.isFinite(started) || from - started <= STAGE_ADOPTION_SLACK_MS) return ''
+  return `Sampled from ${new Date(from).toLocaleTimeString()}: this controller took over the run then, so earlier publications are not included.`
+}
+
 // Each stage's own sampled percentiles for the run so far. Stages are
 // independent distributions: their percentiles are never added, and an
 // unsampled stage shows no figures rather than zero.
-export default function TelemetryStageDistributions({ stages }: { stages?: TelemetryStageDistribution[] }) {
+export default function TelemetryStageDistributions({ stages, startedAt }: { stages?: TelemetryStageDistribution[]; startedAt?: string }) {
   if (!stages || stages.length === 0) return null
+  const coverage = stageCoverageNote(stages, startedAt)
   return (
     <div className="telemetry-stage-distributions">
       <h4 className="goal-status-title">Stage distributions (run so far)</h4>
@@ -79,6 +97,7 @@ export default function TelemetryStageDistributions({ stages }: { stages?: Telem
         </tbody>
       </table>
       </div>
+      {coverage && <p className="goal-status-subtitle" role="note">{coverage}</p>}
       <p className="goal-status-subtitle">Each stage is its own distribution; percentiles are not summed across stages. Browser render comes from dashboard tabs that opted in, and only visible renders count.</p>
     </div>
   )

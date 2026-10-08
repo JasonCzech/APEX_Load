@@ -18,7 +18,7 @@ class ApiError extends Error {
 }
 vi.mock('../hooks/apiClient', () => ({ request, ApiError }))
 
-const { CLIENT_RENDER_FLUSH_MS, CLIENT_RENDER_MAX_SAMPLES, enqueueRenderSample, renderSample, useClientRenderReporter } = await import('./clientRenderReporter')
+const { CLIENT_RENDER_FLUSH_MS, CLIENT_RENDER_MAX_SAMPLES, enqueueRenderSample, renderSample, useClientRenderReporter, visibleThroughout } = await import('./clientRenderReporter')
 
 function Harness({ testId, enabled, metrics }: { testId: string; enabled: boolean; metrics?: LiveMetrics }) {
   useClientRenderReporter(testId, enabled, metrics)
@@ -36,6 +36,14 @@ describe('client render samples', () => {
     expect(renderSample(received, received + 40, false)?.state).toBe('background')
     expect(renderSample(received, received - 5, true)?.receive_to_render_ms).toBe(0)
     expect(renderSample(Number.NaN, received, true)).toBeNull()
+  })
+
+  it('counts a render as visible only if the tab stayed visible since receipt', () => {
+    expect(visibleThroughout(1000, 0, true)).toBe(true)
+    expect(visibleThroughout(1000, 999, true)).toBe(true)
+    expect(visibleThroughout(1000, 1000, true)).toBe(false)
+    expect(visibleThroughout(1000, 1500, true)).toBe(false)
+    expect(visibleThroughout(1000, 0, false)).toBe(false)
   })
 
   it('keeps at most one report of the newest samples', () => {
@@ -111,6 +119,30 @@ describe('useClientRenderReporter', () => {
       vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS * 2)
     })
     expect(request).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports a render whose tab was hidden before it painted as background', async () => {
+    request.mockResolvedValue({ accepted: 0 })
+    const state = { value: 'visible' as DocumentVisibilityState }
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => state.value)
+    await act(async () => {
+      root.render(<Harness testId="run-4" enabled metrics={metricsReceivedAt(Date.now())} />)
+    })
+    // Hidden before the pending frame runs, visible again when it does.
+    await act(async () => {
+      state.value = 'hidden'
+      document.dispatchEvent(new Event('visibilitychange'))
+      vi.advanceTimersByTime(1)
+      state.value = 'visible'
+      document.dispatchEvent(new Event('visibilitychange'))
+      vi.advanceTimersByTime(5)
+    })
+    await act(async () => {
+      vi.advanceTimersByTime(CLIENT_RENDER_FLUSH_MS)
+    })
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(request.mock.calls[0][1].body).samples.map((sample: { state: string }) => sample.state)).toEqual(['background'])
+    visibility.mockRestore()
   })
 
   it('does not measure a publication received while the tab is hidden', async () => {

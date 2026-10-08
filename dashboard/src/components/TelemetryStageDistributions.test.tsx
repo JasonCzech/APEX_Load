@@ -4,7 +4,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it } from 'vitest'
 
-import TelemetryStageDistributions from './TelemetryStageDistributions'
+import TelemetryStageDistributions, { STAGE_ADOPTION_SLACK_MS, stageCoverageNote } from './TelemetryStageDistributions'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -36,6 +36,23 @@ describe('TelemetryStageDistributions', () => {
     const cells = [...container.querySelectorAll('tbody td')].map(cell => cell.textContent)
     expect(cells[0]).toBe('future_stage')
     expect(cells[6]).toBe('not sampled · excluded: 1 some new reason')
+    act(() => root.unmount())
+  })
+
+  it('says when the controller adopted the run or never sampled it', () => {
+    const started = '2026-10-08T12:00:00.000Z'
+    const at = (offsetMs: number) => new Date(Date.parse(started) + offsetMs).toISOString()
+    const stage = (sampledFrom?: string, reason?: string) => ({ stage: 'transport', unit: 'ms', availability: 'unavailable', samples: 0, sampled_from: sampledFrom, reason })
+    expect(stageCoverageNote([stage(at(STAGE_ADOPTION_SLACK_MS))], started)).toBe('')
+    expect(stageCoverageNote([stage(at(STAGE_ADOPTION_SLACK_MS + 1))], started)).toMatch(/took over the run/)
+    expect(stageCoverageNote([stage(at(10 * 60_000))])).toBe('')
+    expect(stageCoverageNote([stage(undefined, 'recorder_lost')], started)).toMatch(/did not sample the run/)
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    act(() => {
+      root.render(<TelemetryStageDistributions stages={[stage(at(10 * 60_000))]} startedAt={started} />)
+    })
+    expect(container.querySelector('[role="note"]')?.textContent).toMatch(/earlier publications are not included/)
     act(() => root.unmount())
   })
 })

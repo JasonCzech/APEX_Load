@@ -1408,7 +1408,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			return
 		}
 		for i := range plans {
-			plans[i].jointEvidence = stringSliceContainsEqualFold(loadByTarget[plans[i].target].CompatibleFeatures, generatorrpc.FeatureJointEvidenceV4)
+			plans[i].jointEvidence = generatorAcceptsJointEvidence(loadByTarget[plans[i].target].CompatibleFeatures)
 		}
 		if !distributedRunStartable(tr, test) {
 			cleanup(true)

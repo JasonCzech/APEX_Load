@@ -109,10 +109,19 @@ func executeBrowserHARCommand(ctx context.Context, args []string, out io.Writer)
 
 // downloadBrowserHAR streams a HAR download to a new file (or out for -),
 // removing a partial file when the download fails.
-func (c *ApiClient) downloadBrowserHAR(ctx context.Context, path, output string, out io.Writer) (err error) {
+func (c *ApiClient) downloadBrowserHAR(ctx context.Context, path, output string, out io.Writer) error {
 	ctx, cancel := context.WithTimeout(ctx, browserHARDownloadTimeout)
 	defer cancel()
-	res, err := c.doContext(ctx, http.MethodGet, path, nil, "")
+	// The download's own deadline bounds headers and body: the shared
+	// client's short timeout would cut a large HAR or a slow derivation.
+	downloader := *c
+	httpClient := http.Client{}
+	if c.Client != nil {
+		httpClient = *c.Client
+	}
+	httpClient.Timeout = 0
+	downloader.Client = &httpClient
+	res, err := downloader.doContext(ctx, http.MethodGet, path, nil, "")
 	if err != nil {
 		return err
 	}
@@ -121,28 +130,19 @@ func (c *ApiClient) downloadBrowserHAR(ctx context.Context, path, output string,
 		data, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
 		return fmt.Errorf("controller returned %s: %s", res.Status, bytes.TrimSpace(data))
 	}
-	destination := out
-	if output != "-" {
-		file, err := os.OpenFile(output, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-		if err != nil {
-			return fmt.Errorf("create %s: %w", output, err)
-		}
-		defer func() {
-			if closeErr := file.Close(); err == nil {
-				err = closeErr
-			}
-			if err != nil {
-				_ = os.Remove(output)
-			}
-		}()
-		destination = file
-	}
-	written, err := io.Copy(destination, res.Body)
-	if err != nil {
+	if output == "-" {
+		_, err := io.Copy(out, res.Body)
 		return err
 	}
-	if output != "-" {
-		_, err = fmt.Fprintf(out, "wrote %d bytes to %s (fidelity %s)\n", written, output, firstNonEmptyCLI(res.Header.Get("X-APEXLoad-HAR-Fidelity"), "evidence"))
+	file, err := os.OpenFile(output, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", output, err)
 	}
+	written, copyErr := io.Copy(file, res.Body)
+	if err := errors.Join(copyErr, file.Close()); err != nil {
+		_ = os.Remove(output)
+		return fmt.Errorf("download %s: %w", output, err)
+	}
+	_, err = fmt.Fprintf(out, "wrote %d bytes to %s (fidelity %s)\n", written, output, firstNonEmptyCLI(res.Header.Get("X-APEXLoad-HAR-Fidelity"), "evidence"))
 	return err
 }

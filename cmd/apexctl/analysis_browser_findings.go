@@ -18,9 +18,10 @@ import (
 const analysisBrowserFindingsUsage = `Usage:
   apexctl analysis browser-findings --run ID [--evaluate [--policy ID --revision N] --project ID [--wait] [--timeout 5m]] [--api URL] [--api-key KEY|--bearer-token TOKEN]
 Prints a run's latest browser findings and qualified score (browser_findings.v1,
-browser_score.v1). --evaluate queues a browser_intelligence evaluation first,
-under the run's pinned browser_policy or the named revision; --wait polls it
-and fails unless it is ready.`
+browser_score.v1) under its pinned browser_policy. --evaluate queues a
+browser_intelligence evaluation first; --wait polls it and fails unless it is
+ready. An evaluation under a named revision (--policy, --revision) is not the
+run's result: with --wait its own evaluation job is printed instead.`
 
 // browserFindingsPollInterval spaces --wait polls.
 var browserFindingsPollInterval = 2 * time.Second
@@ -119,17 +120,24 @@ func executeAnalysisBrowserFindingsCommand(ctx context.Context, args []string, o
 			if job.State != "ready" {
 				return fmt.Errorf("evaluation %s ended %s: %s", job.ID, job.State, job.Failure)
 			}
+			if *policy != "" {
+				return printIndentedJSON(out, data, "invalid evaluation response")
+			}
 		}
 	}
 	data, err := client.workflowRequest(ctx, http.MethodGet, "/api/v1/tests/"+url.PathEscape(*run)+"/archive/browser-findings", nil, "")
 	if err != nil {
 		return err
 	}
+	return printIndentedJSON(out, data, "invalid browser findings response")
+}
+
+func printIndentedJSON(out io.Writer, data []byte, invalid string) error {
 	var pretty bytes.Buffer
 	if err := json.Indent(&pretty, data, "", "  "); err != nil {
-		return errors.New("invalid browser findings response")
+		return errors.New(invalid)
 	}
 	pretty.WriteByte('\n')
-	_, err = out.Write(pretty.Bytes())
+	_, err := out.Write(pretty.Bytes())
 	return err
 }

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -416,7 +417,11 @@ func TestAccountJourneysReadsTheArchive(t *testing.T) {
 	journeyArchive(t, server, store, "archived", journeyFixtureRows(), nil)
 	record := server.runner.archives["archived"]
 	admitArchiveForTest(t, record)
-	report, err := accountJourneys(context.Background(), record, journeyFixturePolicy(false), JourneyPolicyRef{ID: "p", Source: "requested"})
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := accountJourneys(context.Background(), record, manifest, journeyFixturePolicy(false), JourneyPolicyRef{ID: "p", Source: "requested"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -517,5 +522,98 @@ func TestJourneyAccountingBoundsTrackedVUsers(t *testing.T) {
 	}
 	if !report.Incomplete || len(acc.vusers) != maxJourneyTrackedVUsers {
 		t.Fatalf("incomplete %v tracked %d", report.Incomplete, len(acc.vusers))
+	}
+}
+
+// A VUser ID is reused by later VUsers (open-workload arrivals): each
+// lifetime is its own context, and one that ended well before the run's end
+// is settled rather than censored.
+func TestJourneyAccountingSeparatesVUserLifetimes(t *testing.T) {
+	policy := JourneyPolicyDefinition{Version: analysisPolicyVersion, Journeys: []JourneyDefinition{
+		{ID: "login", Name: "Login", Start: JourneyBoundary{Action: "open_login"}, Success: JourneyBoundary{Action: "submit_login"}, Weight: 1},
+	}}
+	start := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
+	lifetime := func(id uint64, at time.Time, steps func(l *journeyTimeline)) []TransactionEvent {
+		l := &journeyTimeline{group: "arrivals", vuser: 0, at: at}
+		steps(l)
+		for i := range l.rows {
+			l.rows[i].VUserLifetime = id
+		}
+		return l.rows
+	}
+	var rows []TransactionEvent
+	// Two arrivals reuse VUser 0, each in its iteration 1: the first
+	// completes; the second fails a step and exits (fail-fast) long before
+	// the run ends, so it failed rather than being censored.
+	rows = append(rows, lifetime(1, start, func(l *journeyTimeline) { l.step(1, "open_login", true); l.step(1, "submit_login", true) })...)
+	rows = append(rows, lifetime(2, start.Add(time.Second), func(l *journeyTimeline) { l.step(1, "open_login", true); l.step(1, "account", false) })...)
+	// A third arrival never starts the journey: skipped.
+	rows = append(rows, lifetime(3, start.Add(2*time.Second), func(l *journeyTimeline) { l.step(1, "browse", true) })...)
+	// A VUser still running at the run's end, two minutes later, is cut.
+	rows = append(rows, lifetime(4, start.Add(2*time.Minute), func(l *journeyTimeline) { l.step(1, "open_login", true) })...)
+	login := journeyByID(t, accountJourneyRows(policy, rows), "login")
+	if login.Completed != 1 || login.Failed != 1 || login.Skipped != 1 || login.Censored != 1 || login.Aborted != 0 {
+		t.Fatalf("login %+v", login)
+	}
+}
+
+// A transaction's interval is its wall-clock span: think time inside it is
+// excluded from its duration, not from the attempt.
+func TestJourneyAccountingUsesTheTransactionsWallSpan(t *testing.T) {
+	policy := JourneyPolicyDefinition{Version: analysisPolicyVersion, Journeys: []JourneyDefinition{
+		{ID: "browse", Name: "Browse", Start: JourneyBoundary{Transaction: "Browse"}, Success: JourneyBoundary{Transaction: "Browse"}, Weight: 1},
+	}}
+	start := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
+	rows := []TransactionEvent{
+		{Timestamp: start, Group: "web", VUserID: 1, Iteration: 1, ActionName: "browse_a", Success: true, DurationMs: 10},
+		// three seconds of think time
+		{Timestamp: start.Add(3010 * time.Millisecond), Group: "web", VUserID: 1, Iteration: 1, ActionName: "browse_b", Success: false, DurationMs: 10},
+		{Timestamp: start, Group: "web", VUserID: 1, Iteration: 1, ActionName: "Browse", BusinessTransaction: true, Success: false, DurationMs: 20, ElapsedMs: 3020},
+		{Timestamp: start.Add(5 * time.Minute), Group: "web", VUserID: 1, Iteration: 2, ActionName: "idle", Success: true, DurationMs: 10},
+	}
+	browse := journeyByID(t, accountJourneyRows(policy, rows), "browse")
+	if browse.Failed != 1 || browse.Steps != 2 || browse.StepFailures != 1 || len(browse.Examples) != 1 || browse.Examples[0].FailedStep != "browse_b" {
+		t.Fatalf("browse %+v", browse)
+	}
+}
+
+// Rows without VUser identity beside rows with it (an older generator in a
+// mixed fleet) leave the accounting incomplete; a run that recorded identity
+// but ran no iteration is not a legacy archive.
+func TestJourneyAccountingDisclosesMissingIdentity(t *testing.T) {
+	policy := journeyFixturePolicy(false)
+	rows := journeyFixtureRows()
+	for i := range rows {
+		rows[i].VUserLifetime = uint64(10 + rows[i].VUserID)
+	}
+	old := TransactionEvent{Timestamp: rows[0].Timestamp, Group: "web", ActionName: "browse_a", Success: true, DurationMs: 10, Phase: "action"}
+	report := accountJourneyRows(policy, append(rows, old))
+	if !report.Incomplete || !slices.Contains(report.IncompleteReasons, "rows_without_vuser_identity") || report.WeightedFailureIndex != nil {
+		t.Fatalf("mixed identity %+v", report)
+	}
+	server, store := baselineTestServer(t)
+	pin := saveJourneyPolicy(t, store, "journeys", 1, policy)
+	journeyArchive(t, server, store, "no-iterations", []TransactionEvent{{Timestamp: rows[0].Timestamp, Group: "web", VUserID: 1, VUserLifetime: 7, ActionName: "init", Success: true}}, &pin)
+	if code, response, body := getJourneys(t, server, "no-iterations", ""); code != http.StatusOK || response.Availability != "unavailable" || response.Reason != "no_iterations" {
+		t.Fatalf("no iterations: %d %s", code, body)
+	}
+}
+
+// An archive whose generator sources were not all collected is incomplete.
+func TestJourneyAccountingDisclosesUncollectedSources(t *testing.T) {
+	server, store := baselineTestServer(t)
+	journeyArchive(t, server, store, "partial", journeyFixtureRows(), nil)
+	record := server.runner.archives["partial"]
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.SourceCoverage = &RunArchiveSourceCoverage{Mode: "best_effort", Sources: []RunArchiveSource{{Target: "gen-a", Collected: true}, {Target: "gen-b", Collected: false}}}
+	report, err := accountJourneys(context.Background(), record, manifest, journeyFixturePolicy(false), JourneyPolicyRef{ID: "p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.Incomplete || !slices.Contains(report.IncompleteReasons, "sources_not_collected") || report.WeightedFailureIndex != nil {
+		t.Fatalf("uncollected %+v", report)
 	}
 }

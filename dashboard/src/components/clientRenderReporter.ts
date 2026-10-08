@@ -49,6 +49,16 @@ function tabVisible(): boolean {
   return typeof document === 'undefined' || document.visibilityState === 'visible'
 }
 
+// visibleThroughout says whether a tab stayed visible from receiving a
+// publication until it painted it. A hidden tab does not run animation
+// frames, so a frame pending when the tab was hidden runs only once it is
+// visible again: the tab is visible then, but the measured time includes the
+// hidden interval. lastHiddenAtMs is the wall-clock time the tab was last
+// hidden (0 if never).
+export function visibleThroughout(receivedAtMs: number, lastHiddenAtMs: number, visibleNow: boolean): boolean {
+  return visibleNow && !(lastHiddenAtMs > 0 && lastHiddenAtMs >= receivedAtMs)
+}
+
 export function postClientRenderReport(testId: string, clientID: string, samples: ClientRenderSample[]) {
   return request<{ accepted: number; excluded?: Record<string, number> }>(
     `/tests/${encodeURIComponent(testId)}/telemetry/client-render`,
@@ -58,15 +68,25 @@ export function postClientRenderReport(testId: string, clientID: string, samples
 
 // useClientRenderReporter measures and reports receive-to-render for each
 // live publication of testId while enabled. A publication received while the
-// tab was hidden is not measured (a hidden tab does not paint); one that
-// became hidden before painting is reported as background, which the
-// controller excludes. A 409 (the project turned the setting off, or the run
-// ended) stops reporting for this run.
+// tab was hidden is not measured (a hidden tab does not paint); one whose tab
+// was hidden at any point before it painted is reported as background, which
+// the controller excludes. A 409 (the project turned the setting off, or the
+// run ended) stops reporting for this run.
 export function useClientRenderReporter(testId: string, enabled: boolean, latestMetrics?: LiveMetrics) {
   const clientIDRef = useRef<string>('')
   const queueRef = useRef<ClientRenderSample[]>([])
   const stoppedForRef = useRef<string | null>(null)
+  const lastHiddenAtRef = useRef(0)
   const active = enabled && Boolean(testId) && stoppedForRef.current !== testId
+
+  useEffect(() => {
+    if (!active || typeof document === 'undefined') return
+    const onVisibility = () => {
+      if (!tabVisible()) lastHiddenAtRef.current = Date.now()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [active])
 
   useEffect(() => {
     queueRef.current = []
@@ -81,7 +101,7 @@ export function useClientRenderReporter(testId: string, enabled: boolean, latest
       // The frame that rendered this publication paints after this callback;
       // a zero-delay task runs once it has.
       timer = window.setTimeout(() => {
-        const sample = renderSample(receivedAtMs, Date.now(), tabVisible())
+        const sample = renderSample(receivedAtMs, Date.now(), visibleThroughout(receivedAtMs, lastHiddenAtRef.current, tabVisible()))
         if (sample) queueRef.current = enqueueRenderSample(queueRef.current, sample)
       }, 0)
     })

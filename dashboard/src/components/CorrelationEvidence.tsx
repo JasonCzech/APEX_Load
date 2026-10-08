@@ -28,15 +28,20 @@ export interface CorrelationSide {
   population?: string
   statistic: string
   conversion?: string
+  derivation?: string
   points: number
   valid: number
   excluded?: Record<string, number>
+  // Raw samples bucketing could not use, by reason.
+  excluded_samples?: Record<string, number>
 }
 
 export interface CorrelationSemantics {
   left: CorrelationSide
   right: CorrelationSide
   same_units: boolean
+  // A side has no evidence or no declared unit: whether units match is unknown.
+  units_undeclared?: boolean
   lag_convention: string
 }
 
@@ -49,6 +54,7 @@ const CONVERSION: Record<string, string> = {
   counter_rate: 'counter converted to a per-second rate',
   declared_summary_statistic: 'declared summary statistic (not raw observations)',
   observation_percentile: 'percentile of raw observations',
+  histogram_percentile_estimate: 'percentile estimated from histogram buckets',
 }
 
 const EXCLUSION: Record<string, string> = {
@@ -72,10 +78,11 @@ function SideSemantics({ label, side }: { label: string; side: CorrelationSide }
       <dl>
         <dt>Unit</dt><dd>{side.unit || 'Undeclared'}</dd>
         <dt>Values</dt><dd>{side.kind || 'Unknown'}{side.input_kind && side.input_kind !== side.kind ? ` from ${side.input_kind}` : ''}</dd>
-        <dt>Statistic</dt><dd>{side.statistic}{side.conversion ? ` · ${CONVERSION[side.conversion] || side.conversion}` : ''}</dd>
+        <dt>Statistic</dt><dd>{side.statistic}{side.conversion ? ` · ${CONVERSION[side.conversion] || side.conversion}` : ''}{side.derivation ? ` · derived: ${side.derivation.replace(/_/g, ' ')}` : ''}</dd>
         {side.population && <><dt>Population</dt><dd>{side.population}</dd></>}
         <dt>Buckets</dt><dd>{side.valid} valid of {side.points}</dd>
-        <dt>Excluded</dt><dd>{describeExclusions(side.excluded)}</dd>
+        <dt>Excluded buckets</dt><dd>{describeExclusions(side.excluded)}</dd>
+        {side.excluded_samples && <><dt>Excluded samples</dt><dd>{describeExclusions(side.excluded_samples)}</dd></>}
       </dl>
     </div>
   )
@@ -93,31 +100,36 @@ export default function CorrelationEvidence({ scores, semantics, left, right }: 
   const data = [...rows.values()].sort((a, b) => a.timestamp.localeCompare(b.timestamp))
   const leftUnit = semantics?.left.unit || left[0]?.unit
   const rightUnit = semantics?.right.unit || right[0]?.unit
+  // Series in one declared unit share an axis, so their values read against
+  // one scale; otherwise each keeps its own labelled axis.
+  const sharedAxis = Boolean(semantics?.same_units)
   return (
     <div className="correlation-evidence" aria-label="Correlation evidence">
       {semantics && (
         <div className="correlation-semantics">
           <SideSemantics label="Dataset series" side={semantics.left} />
           <SideSemantics label="Comparison series" side={semantics.right} />
-          {!semantics.same_units && <p role="note">The series have different units or kinds: they are associated, never compared value for value.</p>}
+          {semantics.units_undeclared
+            ? (semantics.left.points > 0 && semantics.right.points > 0 && <p role="note">A series declares no unit, so whether the values are comparable is unknown: they are associated, never compared value for value.</p>)
+            : !semantics.same_units && <p role="note">The series have different units or kinds: they are associated, never compared value for value.</p>}
         </div>
       )}
       {data.length > 0 && (
-        <div className="analysis-chart" role="img" aria-label={`Correlation investigation chart: ${leftUnit || 'dataset'} on the left axis, ${rightUnit || 'comparison'} on the right axis`}>
+        <div className="analysis-chart" role="img" aria-label={sharedAxis ? `Correlation investigation chart: both series in ${leftUnit} on one axis` : `Correlation investigation chart: ${leftUnit || 'dataset'} on the left axis, ${rightUnit || 'comparison'} on the right axis`}>
           <ResponsiveContainer width="100%" height={260}>
             <LineChart data={data} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
               <XAxis dataKey="timestamp" tickFormatter={formatAnalysisTimeTick} tick={{ fontSize: 11 }} interval="preserveStartEnd" minTickGap={20} />
               <YAxis yAxisId="left" orientation="left" label={{ value: leftUnit || 'dataset', angle: -90, position: 'insideLeft', fontSize: 11 }} tick={{ fontSize: 11 }} />
-              <YAxis yAxisId="right" orientation="right" label={{ value: rightUnit || 'comparison', angle: 90, position: 'insideRight', fontSize: 11 }} tick={{ fontSize: 11 }} />
+              {!sharedAxis && <YAxis yAxisId="right" orientation="right" label={{ value: rightUnit || 'comparison', angle: 90, position: 'insideRight', fontSize: 11 }} tick={{ fontSize: 11 }} />}
               <Tooltip />
               <Line yAxisId="left" isAnimationActive={false} type="linear" dataKey="left" name={semantics?.left.metric || 'Dataset series'} stroke="var(--accent)" dot={false} connectNulls={false} />
-              <Line yAxisId="right" isAnimationActive={false} type="linear" dataKey="right" name={semantics?.right.metric || 'Comparison series'} stroke="var(--warning, #bd7800)" dot={false} connectNulls={false} />
+              <Line yAxisId={sharedAxis ? 'left' : 'right'} isAnimationActive={false} type="linear" dataKey="right" name={semantics?.right.metric || 'Comparison series'} stroke="var(--warning, #bd7800)" dot={false} connectNulls={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
       )}
       <table aria-label="Lagged correlation">
-        <caption>{semantics?.lag_convention || 'Positive lag means the comparison series follows the dataset.'}</caption>
+        <caption>Positive lag means the comparison series follows the dataset series by that many seconds.</caption>
         <thead><tr><th>Lag (seconds)</th><th>Association</th><th>Pairs</th><th>Coverage</th></tr></thead>
         <tbody>
           {scores.map(score => (

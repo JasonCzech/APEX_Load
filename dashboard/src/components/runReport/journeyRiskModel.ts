@@ -46,6 +46,7 @@ export interface JourneyRiskReport {
   step_risk_index?: number
   step_risk_unscored?: string
   incomplete?: boolean
+  incomplete_reasons?: string[]
   rows_outside_iterations: number
   notes: string[]
 }
@@ -53,6 +54,20 @@ export interface JourneyRiskReport {
 const unavailableReasons: Record<string, string> = {
   no_journey_policy: 'This run pinned no journey policy. Name one to account its journeys.',
   archive_lacks_vuser_iteration_identity: 'This archive was written before runs recorded VUser iterations, so its journeys cannot be accounted.',
+  no_iterations: 'The run ran no VUser iteration, so it has no journey attempts.',
+}
+
+const incompleteReasons: Record<string, string> = {
+  vuser_tracking_bound: 'more VUsers than the accounting tracks',
+  buffer_bound: 'iterations larger than the accounting buffers',
+  archive_scan_budget: 'more rows than one archive scan reads',
+  sources_not_collected: 'generator sources whose archives were not collected',
+  rows_without_vuser_identity: 'rows from a source that records no VUser identity',
+}
+
+export function journeyIncompleteText(reasons?: string[]): string {
+  const known = (reasons || []).map(reason => incompleteReasons[reason] || reason.replace(/_/g, ' '))
+  return known.length ? `The counts are incomplete (${known.join('; ')}), so the indexes are withheld.` : 'The counts are incomplete, so the indexes are withheld.'
 }
 
 const unscoredReasons: Record<string, string> = {

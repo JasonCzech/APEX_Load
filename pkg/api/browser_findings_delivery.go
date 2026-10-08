@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,34 +16,24 @@ import (
 
 // Delivery of browser findings (E1): automatic evaluation when a run's
 // archive is attached, the run's latest result, and webhook transitions.
+// A run's own result is always an evaluation under its pinned policy; one
+// under a named revision is an ordinary evaluation job and never stands in
+// for it.
 
 const (
 	browserIntelligenceSystemActor = "system:browser-intelligence"
-	// maxBrowserIntelligenceJobScan bounds how many of a project's most recent
-	// browser_intelligence jobs are read to find a run's.
-	maxBrowserIntelligenceJobScan = 50
+	// maxBrowserIntelligenceSubjectJobs bounds the evaluations read for one
+	// run (found by index, newest first).
+	maxBrowserIntelligenceSubjectJobs = 200
+	// maxBrowserFindingEventKeys bounds the finding keys one webhook event
+	// lists.
+	maxBrowserFindingEventKeys = 20
 )
 
-// browserIntelligenceJobsForRun returns the project's recent
-// browser_intelligence jobs for one run, newest first, with their bodies.
-func browserIntelligenceJobsForRun(store storage.EvaluationJobStore, projectID, runID string) ([]*storage.EvaluationJob, error) {
-	summaries, err := store.ListEvaluationJobs(projectID, browserIntelligenceKind, maxBrowserIntelligenceJobScan, 0)
-	if err != nil {
-		return nil, err
-	}
-	var jobs []*storage.EvaluationJob
-	for _, summary := range summaries {
-		job, err := store.GetEvaluationJob(projectID, summary.ID)
-		if err != nil || job == nil {
-			continue
-		}
-		var request BrowserIntelligenceRequest
-		if json.Unmarshal([]byte(job.Request), &request) != nil || request.Run != runID {
-			continue
-		}
-		jobs = append(jobs, job)
-	}
-	return jobs, nil
+// pinnedBrowserEvaluations returns a run's evaluations under its pinned
+// policy, newest first (summaries without bodies).
+func pinnedBrowserEvaluations(store storage.EvaluationJobStore, projectID, runID string) ([]*storage.EvaluationJob, error) {
+	return store.ListEvaluationJobsForSubject(projectID, browserIntelligenceKind, runID, maxBrowserIntelligenceSubjectJobs)
 }
 
 // autoQueueBrowserIntelligence queues a browser_intelligence evaluation for a
@@ -67,7 +58,12 @@ func (s *Server) autoQueueBrowserIntelligence(testID string) {
 	if !ok || record == nil {
 		return
 	}
+	lease, err := acquireArchiveMaterialized(ctx, record)
+	if err != nil {
+		return
+	}
 	manifest, err := loadRunArchiveManifestFromRecord(record)
+	lease.Release()
 	if err != nil || (manifest.BrowserDocumentsFile == "" && !manifest.BrowserDocumentCaptureRequested) {
 		return
 	}
@@ -85,7 +81,7 @@ func (s *Server) autoQueueBrowserIntelligence(testID string) {
 		slog.Warn("browser findings were not queued", "test_id", testID, "error", err)
 		return
 	}
-	existing, err := browserIntelligenceJobsForRun(store, project, test.ID)
+	existing, err := pinnedBrowserEvaluations(store, project, test.ID)
 	if err != nil {
 		return
 	}
@@ -95,27 +91,30 @@ func (s *Server) autoQueueBrowserIntelligence(testID string) {
 		}
 	}
 	if _, _, err := store.CreateEvaluationJob(&storage.EvaluationJob{ID: uuid.NewString(), ProjectID: project, Actor: browserIntelligenceSystemActor, Kind: browserIntelligenceKind,
-		Request: string(request), InputFingerprint: inputs.fingerprint}, evaluationJobsActivePerProject); err != nil {
+		Request: string(request), InputFingerprint: inputs.fingerprint, SubjectID: test.ID}, evaluationJobsActivePerProject); err != nil {
 		slog.Warn("browser findings were not queued", "test_id", testID, "error", err)
 		return
 	}
 	s.wakeEvaluationWorker()
 }
 
-// RunBrowserFindingsResponse is a run's latest browser findings.
+// RunBrowserFindingsResponse is a run's latest browser findings under its
+// pinned policy.
 type RunBrowserFindingsResponse struct {
 	RunID string `json:"run_id"`
 	// Status is ready (Result is set), pending (an evaluation is queued or
-	// running and none is ready) or not_evaluated.
+	// running and none is ready), failed (the newest evaluation failed and
+	// none is ready; Failure says why) or not_evaluated.
 	Status      string                     `json:"status"`
 	JobID       string                     `json:"job_id,omitempty"`
 	CompletedAt *time.Time                 `json:"completed_at,omitempty"`
 	Pending     bool                       `json:"pending,omitempty"`
+	Failure     string                     `json:"failure,omitempty"`
 	Result      *BrowserIntelligenceResult `json:"result,omitempty"`
 }
 
 // handleGetRunArchiveBrowserFindings returns the run's latest ready browser
-// findings.
+// findings under its pinned policy.
 func (s *Server) handleGetRunArchiveBrowserFindings(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	test, ok := s.archiveDomainService().GetTestSummary(id)
@@ -128,18 +127,29 @@ func (s *Server) handleGetRunArchiveBrowserFindings(w http.ResponseWriter, r *ht
 		writeError(w, http.StatusServiceUnavailable, "evaluations unavailable")
 		return
 	}
-	jobs, err := browserIntelligenceJobsForRun(store, normalizeProjectID(test.ProjectID), test.ID)
+	project := normalizeProjectID(test.ProjectID)
+	jobs, err := pinnedBrowserEvaluations(store, project, test.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "cannot list browser findings")
 		return
 	}
 	response := RunBrowserFindingsResponse{RunID: test.ID, Status: "not_evaluated"}
-	for _, job := range jobs {
-		if job.State == storage.EvaluationJobQueued || job.State == storage.EvaluationJobRunning {
+	for index, summary := range jobs {
+		switch summary.State {
+		case storage.EvaluationJobQueued, storage.EvaluationJobRunning:
 			response.Pending = true
 			continue
+		case storage.EvaluationJobFailed:
+			if index == 0 || response.Status == "not_evaluated" && response.Failure == "" {
+				response.Failure = summary.Failure
+			}
+			continue
+		case storage.EvaluationJobReady:
+		default:
+			continue
 		}
-		if job.State != storage.EvaluationJobReady || response.Result != nil {
+		job, err := store.GetEvaluationJob(project, summary.ID)
+		if err != nil {
 			continue
 		}
 		var result BrowserIntelligenceResult
@@ -147,20 +157,28 @@ func (s *Server) handleGetRunArchiveBrowserFindings(w http.ResponseWriter, r *ht
 			continue
 		}
 		response.Status, response.JobID, response.CompletedAt, response.Result = "ready", job.ID, job.CompletedAt, &result
+		break
 	}
-	if response.Result == nil && response.Pending {
-		response.Status = "pending"
+	if response.Result == nil {
+		switch {
+		case response.Pending:
+			response.Status = "pending"
+		case response.Failure != "":
+			response.Status = "failed"
+		}
 	}
 	writeJSON(w, http.StatusOK, response)
 }
 
 // notifyBrowserFindingTransitions sends webhook events when an evaluation
-// becomes ready: browser_finding for a finding active now that was not
-// active in the run's previous ready evaluation, browser_finding_resolved for
-// one active before and not now. A finding is identified across evaluations
-// by its key, so a rerun of identical inputs sends nothing.
+// under a run's pinned policy becomes ready: one browser_finding event
+// listing the findings active now that were not active in the run's previous
+// ready pinned evaluation, and one browser_finding_resolved event listing
+// those active before and not now. A finding is identified across
+// evaluations by its key, so a rerun of identical inputs sends nothing. An
+// evaluation under a named revision sends nothing.
 func notifyBrowserFindingTransitions(s *Server, job *storage.EvaluationJob, body []byte) {
-	if s == nil || s.runner == nil || s.runner.notifier == nil {
+	if s == nil || s.runner == nil || s.runner.notifier == nil || job == nil || job.SubjectID == "" || strings.HasSuffix(job.SubjectID, browserRequestedSubjectSuffix) {
 		return
 	}
 	var current BrowserIntelligenceResult
@@ -171,18 +189,23 @@ func notifyBrowserFindingTransitions(s *Server, job *storage.EvaluationJob, body
 	if !ok {
 		return
 	}
-	previous := map[string]BrowserFinding{}
-	jobs, err := browserIntelligenceJobsForRun(store, job.ProjectID, current.RunID)
+	jobs, err := pinnedBrowserEvaluations(store, job.ProjectID, job.SubjectID)
 	if err != nil {
 		return
 	}
+	previous := map[string]BrowserFinding{}
 	for _, other := range jobs {
-		// The run's previous ready evaluation: jobs are listed newest first.
+		// The previous ready evaluation: jobs are listed newest first, and an
+		// evaluation completing late compares with the ones before it.
 		if other.ID == job.ID || other.State != storage.EvaluationJobReady || !other.CreatedAt.Before(job.CreatedAt) {
 			continue
 		}
+		full, err := store.GetEvaluationJob(job.ProjectID, other.ID)
+		if err != nil {
+			continue
+		}
 		var result BrowserIntelligenceResult
-		if json.Unmarshal([]byte(other.Result), &result) != nil {
+		if json.Unmarshal([]byte(full.Result), &result) != nil {
 			continue
 		}
 		for _, finding := range result.Findings {
@@ -192,22 +215,7 @@ func notifyBrowserFindingTransitions(s *Server, job *storage.EvaluationJob, body
 		}
 		break
 	}
-	test, _ := s.runner.GetTestSummary(current.RunID)
-	name := current.RunID
-	if test != nil && test.Name != "" {
-		name = test.Name
-	}
-	settings := s.runner.currentNotificationSettings()
-	now := time.Now().UTC()
-	sent := 0
-	send := func(eventType, status string, finding BrowserFinding) {
-		if sent >= maxBrowserFindingNotifications {
-			return
-		}
-		sent++
-		s.runner.notifier.Dispatch(settings, NotificationEvent{Type: eventType, TestID: current.RunID, ProjectID: job.ProjectID, TestName: name, Status: status,
-			Severity: finding.Severity, Summary: finding.Summary, Conditions: []string{"finding:" + finding.Key, "rule:" + finding.RuleID}, Timestamp: now})
-	}
+	var added, resolved []BrowserFinding
 	active := map[string]bool{}
 	for _, finding := range current.Findings {
 		if finding.State != "active" {
@@ -215,20 +223,51 @@ func notifyBrowserFindingTransitions(s *Server, job *storage.EvaluationJob, body
 		}
 		active[finding.Key] = true
 		if _, seen := previous[finding.Key]; !seen {
-			send("browser_finding", "active", finding)
+			added = append(added, finding)
 		}
 	}
-	resolved := make([]string, 0, len(previous))
+	keys := make([]string, 0, len(previous))
 	for key := range previous {
 		if !active[key] {
-			resolved = append(resolved, key)
+			keys = append(keys, key)
 		}
 	}
-	sort.Strings(resolved)
-	for _, key := range resolved {
-		send("browser_finding_resolved", "resolved", previous[key])
+	sort.Strings(keys)
+	for _, key := range keys {
+		resolved = append(resolved, previous[key])
 	}
-	if sent >= maxBrowserFindingNotifications {
-		slog.Info("browser finding notifications truncated", "test_id", current.RunID, "job_id", job.ID, "limit", fmt.Sprint(maxBrowserFindingNotifications))
+	test, _ := s.runner.GetTestSummary(current.RunID)
+	name := current.RunID
+	if test != nil && test.Name != "" {
+		name = test.Name
 	}
+	settings := s.runner.currentNotificationSettings()
+	now := time.Now().UTC()
+	send := func(eventType, status string, findings []BrowserFinding) {
+		if len(findings) == 0 {
+			return
+		}
+		severity := ""
+		conditions := []string{}
+		for index, finding := range findings {
+			if finding.Severity == "poor" || severity == "" {
+				severity = finding.Severity
+			}
+			if index < maxBrowserFindingEventKeys {
+				conditions = append(conditions, "finding:"+finding.Key+" rule:"+finding.RuleID)
+			}
+		}
+		summary := findings[0].Summary
+		if len(findings) > 1 {
+			summary = fmt.Sprintf("%d browser findings; first: %s", len(findings), findings[0].Summary)
+		}
+		// One event per transition kind: per-destination delivery admits
+		// only a few concurrent events, so a burst would be dropped.
+		if !s.runner.notifier.Dispatch(settings, NotificationEvent{Type: eventType, TestID: current.RunID, ProjectID: job.ProjectID, TestName: name, Status: status,
+			Severity: severity, Summary: summary, Conditions: conditions, Timestamp: now}) {
+			slog.Warn("browser finding notification not delivered", "test_id", current.RunID, "job_id", job.ID, "event", eventType, "findings", len(findings))
+		}
+	}
+	send("browser_finding", "active", added)
+	send("browser_finding_resolved", "resolved", resolved)
 }

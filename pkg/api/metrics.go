@@ -201,7 +201,7 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 	if snap.Joint != nil {
 		// A local run's engine counts under the run's own projection.
 		published, tuples, other, omitted, incomplete := jointEvidenceFromEngine(snap.Joint, snap.Window)
-		setNativeJointEvidence(live.NativeEvidence, nil, published, tuples, other, omitted, incomplete)
+		setNativeJointEvidence(live.NativeEvidence, nil, published, tuples, other, omitted, incomplete || telemetryWindowLost(live.Telemetry))
 	}
 	return live
 }

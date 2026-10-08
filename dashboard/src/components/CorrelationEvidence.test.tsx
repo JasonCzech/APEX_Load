@@ -8,10 +8,10 @@ import CorrelationEvidence, { type CorrelationSemantics } from './CorrelationEvi
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const semantics: CorrelationSemantics = {
-  left: { metric: 'cpu', unit: 'percent', kind: 'gauge', input_kind: 'gauge', statistic: 'avg', points: 10, valid: 8, excluded: { stale: 1, counter_reset: 1 } },
+  left: { metric: 'cpu', unit: 'percent', kind: 'gauge', input_kind: 'gauge', statistic: 'avg', points: 10, valid: 8, excluded: { missing: 2 }, excluded_samples: { stale: 1, counter_reset: 1 } },
   right: { metric: 'transaction.duration', unit: 'ms', kind: 'gauge', input_kind: 'summary', population: 'transaction', statistic: 'p95', conversion: 'declared_summary_statistic', points: 10, valid: 10 },
   same_units: false,
-  lag_convention: 'lag_seconds > 0 pairs each dataset bucket with the comparison series lag seconds later: the comparison series follows the dataset.',
+  lag_convention: 'lag_seconds > 0 pairs each left bucket with the right series lag seconds later: the right series follows the left.',
 }
 
 describe('CorrelationEvidence', () => {
@@ -26,7 +26,8 @@ describe('CorrelationEvidence', () => {
     const left = node.querySelector('[data-side="Dataset series"]')!.textContent!
     const right = node.querySelector('[data-side="Comparison series"]')!.textContent!
     expect(left).toContain('percent')
-    expect(left).toContain('1 counter reset, 1 stale')
+    expect(left).toContain('Excluded buckets2 missing')
+    expect(left).toContain('Excluded samples1 counter reset, 1 stale')
     expect(right).toContain('ms')
     expect(right).toContain('p95 · declared summary statistic (not raw observations)')
     expect(right).toContain('gauge from summary')
@@ -36,7 +37,8 @@ describe('CorrelationEvidence', () => {
     expect(rows[0]).toContain('Fewer than three paired buckets')
     expect(rows[1]).toContain('A series did not vary')
     expect(rows[2]).toContain('0.734')
-    expect(node.querySelector('caption')!.textContent).toContain('the comparison series follows the dataset')
+    // The caption speaks the panel's own labels, never the API's left/right.
+    expect(node.querySelector('caption')!.textContent).toBe('Positive lag means the comparison series follows the dataset series by that many seconds.')
     await act(async () => root.unmount())
   })
 
@@ -48,6 +50,26 @@ describe('CorrelationEvidence', () => {
       left={[point('2026-10-08T00:00:00Z', 50, 'percent'), point('2026-10-08T00:00:10Z', 60, 'percent')]}
       right={[point('2026-10-08T00:00:00Z', 120, 'ms'), point('2026-10-08T00:00:10Z', 180, 'ms')]} />))
     expect(node.querySelector('[role="img"]')!.getAttribute('aria-label')).toBe('Correlation investigation chart: percent on the left axis, ms on the right axis')
+    await act(async () => root.unmount())
+  })
+
+  it('shares one axis for series in one unit and says when units are undeclared', async () => {
+    const node = document.createElement('div')
+    const root = createRoot(node)
+    const point = (timestamp_utc: string, value: number) => ({ timestamp_utc, value, unit: 'ms', quality: 'valid', metric_name: 'm' })
+    const same: CorrelationSemantics = { ...semantics, same_units: true,
+      left: { ...semantics.left, unit: 'ms', derivation: 'moving_stddev' }, right: { ...semantics.right, unit: 'ms' } }
+    await act(async () => root.render(<CorrelationEvidence semantics={same} scores={[]} left={[point('2026-10-08T00:00:00Z', 100)]} right={[point('2026-10-08T00:00:00Z', 400)]} />))
+    expect(node.querySelector('[role="img"]')!.getAttribute('aria-label')).toBe('Correlation investigation chart: both series in ms on one axis')
+    expect(node.textContent).not.toContain('never compared value for value')
+    expect(node.querySelector('[data-side="Dataset series"]')!.textContent).toContain('derived: moving stddev')
+    const undeclared: CorrelationSemantics = { ...semantics, units_undeclared: true, right: { ...semantics.right, unit: undefined } }
+    await act(async () => root.render(<CorrelationEvidence semantics={undeclared} scores={[]} left={[]} right={[]} />))
+    expect(node.textContent).toContain('declares no unit')
+    expect(node.textContent).not.toContain('different units or kinds')
+    const empty: CorrelationSemantics = { ...undeclared, right: { ...undeclared.right, points: 0, valid: 0 } }
+    await act(async () => root.render(<CorrelationEvidence semantics={empty} scores={[]} left={[]} right={[]} />))
+    expect(node.querySelector('[role="note"]')).toBeNull()
     await act(async () => root.unmount())
   })
 })

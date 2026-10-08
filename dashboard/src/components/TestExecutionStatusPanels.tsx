@@ -388,7 +388,7 @@ export default function TestExecutionStatusPanels({
             </div>
           </div>
           <p>Drop counters are cumulative controller observations, not an exact run loss total. Age observations do not establish synchronized clocks, complete time coverage, or a telemetry verdict.</p>
-          <TelemetryStageDistributions stages={metrics.telemetry.stage_distributions} />
+          <TelemetryStageDistributions stages={metrics.telemetry.stage_distributions} startedAt={test.started_at} />
         </div>
       )}
 

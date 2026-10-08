@@ -9,7 +9,7 @@ import type { TelemetryComparison, TelemetryRunProfile } from './model'
 
 const request = vi.fn()
 vi.mock('../../hooks/apiClient', () => ({ request }))
-const { default: BaselineTelemetryCompatibility } = await import('./BaselineTelemetryCompatibility')
+const { default: BaselineTelemetryCompatibility, POLL_RETRIES } = await import('./BaselineTelemetryCompatibility')
 
 const profile = (run_id: string, cadence_ms: number): TelemetryRunProfile => ({
   run_id, policy_availability: 'available', policy_hash: 'a'.repeat(64), cadence_ms, cadence_scope: 'local-controller-ticker',
@@ -90,6 +90,38 @@ describe('BaselineTelemetryCompatibility', () => {
     expect(node.textContent).toContain('Re-evaluation failed: run base-b has no finalized archive')
     await act(async () => root.render(<BaselineTelemetryCompatibility comparisons={[]} projectId="proj" />))
     expect(node.innerHTML).toBe('')
+    await act(async () => root.unmount())
+  })
+
+  it('retries a failed poll, then frees the panel, and starts over for another run set', async () => {
+    let polls = 0
+    request.mockImplementation(async (path: string, options?: { method?: string }) => {
+      if (path.startsWith('/analysis/policies')) return [{ id: 'common', name: 'Common', revision: 1 }]
+      if (options?.method === 'POST') return { id: 'job-3', state: 'queued', input_fingerprint: 'f' }
+      polls++
+      throw new Error('network down')
+    })
+    const root = createRoot(node)
+    await act(async () => root.render(<BaselineTelemetryCompatibility comparisons={[comparable]} projectId="proj" />))
+    await act(async () => { node.querySelector<HTMLButtonElement>('.bc-telemetry-reevaluation button')!.click() })
+    await act(async () => { vi.advanceTimersByTime(2000) })
+    expect(node.textContent).toContain('network down; retrying')
+    expect(node.querySelector<HTMLButtonElement>('.bc-telemetry-reevaluation button')!.disabled).toBe(true)
+    for (let attempt = 1; attempt <= POLL_RETRIES; attempt++) {
+      await act(async () => { vi.advanceTimersByTime(2000 * 2 ** attempt) })
+    }
+    expect(polls).toBe(POLL_RETRIES + 1)
+    expect(node.querySelector('[role="alert"]')!.textContent).toBe('network down')
+    expect(node.querySelector<HTMLButtonElement>('.bc-telemetry-reevaluation button')!.disabled).toBe(false)
+
+    // Another run set mounts a fresh panel: the old job's status is gone.
+    await act(async () => { node.querySelector<HTMLButtonElement>('.bc-telemetry-reevaluation button')!.click() })
+    expect(node.textContent).toContain('Re-evaluation queued')
+    await act(async () => root.render(<BaselineTelemetryCompatibility comparisons={[cadence]} projectId="proj" />))
+    expect(node.textContent).not.toContain('Re-evaluation queued')
+    const before = polls
+    await act(async () => { vi.advanceTimersByTime(60_000) })
+    expect(polls).toBe(before)
     await act(async () => root.unmount())
   })
 })

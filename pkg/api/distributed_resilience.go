@@ -1299,7 +1299,7 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 					}
 					// Joint evidence is passive: a replacement without it publishes
 					// none, so it simply does not receive the projection.
-					if !stringSliceContainsEqualFold(snapshot.CompatibleFeatures, generatorrpc.FeatureJointEvidenceV4) {
+					if !generatorAcceptsJointEvidence(snapshot.CompatibleFeatures) {
 						jointProjection = nil
 					}
 				}

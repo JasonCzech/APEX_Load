@@ -3,6 +3,7 @@ package harsynth
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 	"os"
 	"testing"
 	"time"
@@ -151,7 +152,8 @@ func TestSyntheticHARNeverInventsTimingsOrContent(t *testing.T) {
 	raw, _ := writeHAR(t, Metadata{CaptureMode: CaptureRetainedNetworkEntries}, fixtureEntries())
 	har := decode(t, raw)
 	full := har.Log.Entries[0]
-	want := map[string]float64{"blocked": -1, "dns": 4, "connect": 26, "ssl": 18, "send": -1, "wait": 50, "receive": 15}
+	// send is required non-negative: unmeasured, it is 0 and named.
+	want := map[string]float64{"blocked": -1, "dns": 4, "connect": 26, "ssl": 18, "send": 0, "wait": 50, "receive": 15}
 	for name, value := range want {
 		if full.Timings[name] != value {
 			t.Fatalf("full timings[%s] = %v, want %v (%v)", name, full.Timings[name], value, full.Timings)
@@ -164,8 +166,15 @@ func TestSyntheticHARNeverInventsTimingsOrContent(t *testing.T) {
 	if full.StartedDateTime != "2026-10-07T11:59:58.0005Z" {
 		t.Fatalf("startedDateTime = %q, want the measured request start", full.StartedDateTime)
 	}
-	if full.Request.HeadersSize != 410 || full.Request.BodySize != 0 || full.Response.HeadersSize != 220 || full.Response.BodySize != 5120 || full.Response.Content["size"] != float64(-1) || full.Response.Content["mimeType"] != "text/html; charset=utf-8" {
+	if full.Request.HeadersSize != 410 || full.Request.BodySize != 0 || full.Response.HeadersSize != 220 || full.Response.BodySize != 5120 || full.Response.Content["size"] != float64(0) || full.Response.Content["mimeType"] != "text/html; charset=utf-8" {
 		t.Fatalf("sizes = %+v %+v", full.Request, full.Response)
+	}
+	unavailable := func(evidence map[string]any) []any {
+		fields, _ := evidence["unavailable_fields"].([]any)
+		return fields
+	}
+	if got := unavailable(full.Evidence); len(got) != 2 || got[0] != "timings.send" || got[1] != "response.content.size" {
+		t.Fatalf("full entry unavailable fields %v", got)
 	}
 	if len(full.Request.QueryString) != 3 || full.Request.QueryString[0]["value"] != "a b" || full.Request.QueryString[1]["name"] != "page" || full.Request.QueryString[2]["value"] != "c" {
 		t.Fatalf("queryString = %v", full.Request.QueryString)
@@ -178,24 +187,42 @@ func TestSyntheticHARNeverInventsTimingsOrContent(t *testing.T) {
 		t.Fatalf("reused timings = %v time %v", reused.Timings, reused.Time)
 	}
 	failed := har.Log.Entries[2]
-	if failed.Response.Status != 0 || failed.Evidence["failure_kind"] != "transport" || failed.Evidence["state"] != "failed" || failed.Timings["wait"] != -1 || failed.Timings["receive"] != -1 || failed.Time != 2 {
+	if failed.Response.Status != 0 || failed.Evidence["failure_kind"] != "transport" || failed.Evidence["state"] != "failed" || failed.Timings["wait"] != 0 || failed.Timings["receive"] != 0 || failed.Time != 2 || len(unavailable(failed.Evidence)) != 4 {
 		t.Fatalf("failed entry = %+v", failed)
 	}
 	if failed.Request.PostData != nil || bytes.Contains(raw, []byte(`"sku"`)) || bytes.Contains(raw, []byte(`"text"`)) {
 		t.Fatal("a request or response body was written")
 	}
 	legacy := har.Log.Entries[3]
-	for name, value := range legacy.Timings {
-		if value != -1 {
-			t.Fatalf("legacy timings[%s] = %v, want -1", name, value)
+	// Only the entry's duration is known: it is the whole wait, so time is
+	// still the sum of the timings.
+	for name, value := range map[string]float64{"blocked": -1, "dns": -1, "connect": -1, "ssl": -1, "send": 0, "wait": 12, "receive": 0} {
+		if legacy.Timings[name] != value {
+			t.Fatalf("legacy timings[%s] = %v, want %v", name, legacy.Timings[name], value)
 		}
+	}
+	if legacy.Evidence["wait_is_entry_duration"] != true {
+		t.Fatalf("legacy evidence %v", legacy.Evidence)
 	}
 	if legacy.Time != 12 || legacy.Evidence["time_source"] != TimeEntryDuration || legacy.Evidence["started_source"] != StartedRecordTime || legacy.StartedDateTime != "2026-10-07T12:00:00Z" || legacy.Response.RedirectURL != "https://shop.example/new" || legacy.Request.HeadersSize != -1 || legacy.Response.BodySize != -1 {
 		t.Fatalf("legacy entry = %+v", legacy)
 	}
 	bare := har.Log.Entries[4]
-	if bare.Time != 0 || bare.Evidence["time_source"] != TimeUnavailable {
+	if bare.Time != 0 || bare.Evidence["time_source"] != TimeUnavailable || bare.Timings["wait"] != 0 {
 		t.Fatalf("an entry without any duration claims time %v (%v)", bare.Time, bare.Evidence)
+	}
+	// HAR 1.2: time is the sum of the timings that are not -1 (ssl is
+	// inside connect).
+	for i, entry := range har.Log.Entries {
+		sum := 0.0
+		for _, name := range []string{"blocked", "dns", "connect", "send", "wait", "receive"} {
+			if value := entry.Timings[name]; value >= 0 {
+				sum += value
+			}
+		}
+		if math.Abs(sum-entry.Time) > 1e-9 {
+			t.Fatalf("entry %d time %v, timings sum %v", i, entry.Time, sum)
+		}
 	}
 }
 
@@ -343,4 +370,24 @@ func TestSyntheticHARListsSourceSpecificOmittedFields(t *testing.T) {
 	if len(fields) != len(OmittedFields)+2 || fields[len(fields)-2] != "request.headers" || fields[len(fields)-1] != "response.headers" {
 		t.Fatalf("omitted_fields = %v", fields)
 	}
+}
+
+// Native HARs that do not say which contexts they cover make the overlap
+// with this HAR unknown, and the HAR says so.
+func TestSyntheticHARDisclosesUnknownNativeCoverage(t *testing.T) {
+	raw, _ := writeHAR(t, Metadata{CaptureMode: CaptureRetainedNetworkEntries, NativeHARCoverageUnknown: 2}, fixtureEntries())
+	block := decode(t, raw).Log.Apexload
+	reasons, _ := block["completeness_reasons"].([]any)
+	if block["native_har_coverage_unknown"] != float64(2) || len(reasons) != 2 || reasons[1] != "native_har_coverage_unknown" {
+		t.Fatalf("block %v", block)
+	}
+	if plain := decode(t, mustWriteHAR(t)).Log.Apexload; plain["native_har_coverage_unknown"] != nil {
+		t.Fatalf("coverage unknown without native HARs: %v", plain)
+	}
+}
+
+func mustWriteHAR(t *testing.T) []byte {
+	t.Helper()
+	raw, _ := writeHAR(t, Metadata{CaptureMode: CaptureRetainedNetworkEntries}, fixtureEntries())
+	return raw
 }

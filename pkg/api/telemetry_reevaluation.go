@@ -305,12 +305,32 @@ func reevaluateRunArchive(ctx context.Context, run telemetryReevaluationRunInput
 	if evidence := telemetryPolicyEvidenceFromProvenance(&manifest.Provenance); evidence.Policy != nil {
 		out.OriginalPolicyHash = evidence.Policy.Hash
 	}
-	distributed := len(manifest.Provenance.GeneratorShards) > 0 || manifest.TelemetrySourceEpochCount > 0
-	if evidence := telemetryPolicyEvidenceFromProvenance(&manifest.Provenance); evidence.Policy != nil && evidence.Policy.CadenceScope == "distributed-controller-coalescing-gate" {
-		distributed = true
-	}
-	reevaluateTelemetryIntervals(&out, intervals, policy, distributed)
+	reevaluateTelemetryIntervals(&out, intervals, policy, telemetryRunDistributed(manifest))
 	return out, nil
+}
+
+const telemetryCadenceScopeDistributed = "distributed-controller-coalescing-gate"
+
+// telemetryRunDistributed reports whether a run's telemetry crossed hosts:
+// its receipt's cadence scope when recorded, else generator source epochs or
+// a shard on a generator (local runtime-resource shards run in the
+// controller).
+func telemetryRunDistributed(manifest *RunArchiveManifest) bool {
+	if manifest == nil {
+		return false
+	}
+	if evidence := telemetryPolicyEvidenceFromProvenance(&manifest.Provenance); evidence.Policy != nil && evidence.Policy.CadenceScope != "" {
+		return evidence.Policy.CadenceScope == telemetryCadenceScopeDistributed
+	}
+	if manifest.TelemetrySourceEpochCount > 0 {
+		return true
+	}
+	for _, shard := range manifest.Provenance.GeneratorShards {
+		if target := strings.TrimSpace(shard.Target); target != "" && target != localRuntimeResourceTarget {
+			return true
+		}
+	}
+	return false
 }
 
 // reevaluateTelemetryIntervals classifies retained intervals under the
@@ -338,7 +358,7 @@ func reevaluateTelemetryIntervals(out *TelemetryReevaluationRun, intervals []Int
 			continue
 		}
 		telemetryTimes = append(telemetryTimes, interval.Timestamp)
-		over, unscored := scoreRetainedTelemetry(t, policy, distributed)
+		over, unscored, scored := scoreRetainedTelemetry(t, policy, distributed)
 		for _, stage := range over {
 			conditions[stage]++
 		}
@@ -359,6 +379,12 @@ func reevaluateTelemetryIntervals(out *TelemetryReevaluationRun, intervals []Int
 		case len(unscored) > 0:
 			reevaluated.Unscored++
 			streak = nil
+		case scored == 0:
+			// Healthy needs a stage judged within its budget; an interval
+			// with nothing to judge is never counted healthy.
+			reevaluated.Unscored++
+			unscoredByStage["interval:no_scored_stage"]++
+			streak = nil
 		default:
 			reevaluated.Healthy++
 			streak = nil
@@ -373,6 +399,9 @@ func reevaluateTelemetryIntervals(out *TelemetryReevaluationRun, intervals []Int
 		// than their own spacing.
 		out.Unanswerable = append(out.Unanswerable, fmt.Sprintf("sustained_window_shorter_than_retained_interval_spacing:%dms", spacing.Milliseconds()))
 	}
+	if len(telemetryTimes) > 0 && reevaluated.Healthy+reevaluated.Degraded+reevaluated.Breached == 0 {
+		out.Unanswerable = append(out.Unanswerable, "no_classifiable_intervals")
+	}
 	out.Answerable = len(out.Unanswerable) == 0
 	if out.Answerable {
 		out.Reevaluated = &reevaluated
@@ -385,9 +414,10 @@ func reevaluateTelemetryIntervals(out *TelemetryReevaluationRun, intervals []Int
 	}
 }
 
-// scoreRetainedTelemetry returns the stages over budget and the stages that
-// could not be scored ("stage:reason") in one retained interval.
-func scoreRetainedTelemetry(t *TelemetryHealth, policy TelemetryReevaluationPolicy, distributed bool) (over, unscored []string) {
+// scoreRetainedTelemetry returns the stages over budget, the stages that
+// could not be scored ("stage:reason") and how many enabled stages were
+// judged against their budget in one retained interval.
+func scoreRetainedTelemetry(t *TelemetryHealth, policy TelemetryReevaluationPolicy, distributed bool) (over, unscored []string, scored int) {
 	scoreClock := func(stage string, value float64, quality *generatorrpc.ClockQuality, measured bool) {
 		limit := policy.limit(stage)
 		if limit <= 0 || !measured {
@@ -403,20 +433,28 @@ func scoreRetainedTelemetry(t *TelemetryHealth, policy TelemetryReevaluationPoli
 			unscored = append(unscored, stage+":"+reason)
 			return
 		}
-		if scored := clockScoredValue(value, quality); scored > 0 && scored > limit {
+		scored++
+		if value := clockScoredValue(value, quality); value > 0 && value > limit {
 			over = append(over, stage)
 		}
 	}
 	scoreLocal := func(stage string, value float64) {
-		if limit := policy.limit(stage); limit > 0 && value > 0 && value > limit {
+		limit := policy.limit(stage)
+		if limit <= 0 || value <= 0 {
+			return
+		}
+		scored++
+		if value > limit {
 			over = append(over, stage)
 		}
 	}
-	scoreClock("sample_age", t.SampleAgeMs, t.SampleAgeQuality, !t.CollectedAt.IsZero())
+	// As live: an interval in which no generator reported a sample has no
+	// sample-age decision.
+	scoreClock("sample_age", t.SampleAgeMs, t.SampleAgeQuality, !t.CollectedAt.IsZero() && !t.SampleAgeUnavailable)
 	scoreLocal("generator_processing", t.GeneratorProcessingLagMs)
 	scoreClock("transport", t.TransportLagMs, t.TransportLagQuality, t.TransportLagMs > 0 || t.TransportLagQuality != nil)
 	scoreLocal("controller_fanout", t.ControllerFanoutLagMs)
-	return over, unscored
+	return over, unscored, scored
 }
 
 func countTelemetryStatus(counts *TelemetryClassificationCounts, status string) {

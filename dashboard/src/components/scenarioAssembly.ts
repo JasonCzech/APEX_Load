@@ -197,11 +197,16 @@ export function scenarioCreatePayload(draft: ScenarioDraft, context: ScenarioCre
 /**
  * The capacity estimate request: the run the draft would create. A host
  * selection without hosts is still being authored, so it is estimated as
- * automatic placement rather than refused.
+ * automatic placement in the same pool, with the same labels and loss
+ * tolerance, rather than refused. A new run's data pool bindings are left
+ * out: the estimate never reads pool content, and binding them would make
+ * the controller load every bound pool on each edit (the save checks them).
  */
 export function scenarioEstimateRequest(draft: ScenarioDraft, context: ScenarioCreateContext = {}): CreateTestPayload {
   const pending = draft.assignment.mode === 'specific_hosts' && (draft.assignment.selected_targets || []).length === 0
-  return scenarioCreatePayload(pending ? { ...draft, assignment: { mode: 'auto', selected_targets: [] } } : draft, context)
+  const payload = scenarioCreatePayload(pending ? { ...draft, assignment: { ...draft.assignment, mode: 'auto', selected_targets: [] } } : draft, context)
+  if (!draft.revisionContext) delete payload.data_pools
+  return payload
 }
 
 /**

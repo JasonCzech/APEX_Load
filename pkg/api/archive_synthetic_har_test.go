@@ -291,8 +291,9 @@ func TestNativeHARRecordsItsEvidenceGeneration(t *testing.T) {
 	if manifest.BrowserHARArtifacts[0].EvidenceGeneration != syntheticCoveredGeneration || manifest.BrowserHARArtifacts[1].EvidenceGeneration != "" {
 		t.Fatalf("evidence generations %+v", manifest.BrowserHARArtifacts)
 	}
-	if covered := nativeHARCoveredGenerations(manifest); len(covered) != 1 || !covered[syntheticCoveredGeneration] {
-		t.Fatalf("covered %v", covered)
+	// The HAR whose generation was malformed covers an unknown context.
+	if covered, unknown := nativeHARCoveredGenerations(manifest); len(covered) != 1 || !covered[syntheticCoveredGeneration] || unknown != 1 {
+		t.Fatalf("covered %v unknown %d", covered, unknown)
 	}
 	declared := manifest.BrowserHARArtifacts[0]
 	if !validDeclaredHAR(declared) {

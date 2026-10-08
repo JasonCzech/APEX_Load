@@ -72,7 +72,7 @@ test('a CPU-percent vs latency-ms correlation keeps both semantics on separate a
   const scores = evidence.getByRole('table', { name: 'Lagged correlation', exact: true })
   await expect(scores.locator('tbody tr').nth(0)).toContainText('Fewer than three paired buckets')
   await expect(scores.locator('tbody tr').nth(2)).toContainText('0.910')
-  await expect(scores.locator('caption')).toContainText('the right series follows the left')
+  await expect(scores.locator('caption')).toContainText('the comparison series follows the dataset series')
   await evidence.screenshot({ path: test.info().outputPath('correlation-semantics.png') })
 })
 

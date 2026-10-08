@@ -25,6 +25,7 @@ const (
 	telemetryReasonCadenceDiffers        = "cadence_differs"
 	telemetryReasonCapabilityDiffers     = "source_capability_differs"
 	telemetryReasonWorkloadUnqualified   = "workload_unqualified"
+	telemetryReasonWorkloadVersion       = "workload_version_differs"
 )
 
 // TelemetryRunProfile is what decides how a run's telemetry was classified.
@@ -88,7 +89,10 @@ func telemetryRunProfile(runID string, manifest *RunArchiveManifest) TelemetryRu
 	if manifest.TelemetrySourceEpochCount > 0 {
 		profile.SourceCapabilities = append(profile.SourceCapabilities, "source_epochs")
 	}
-	if manifest.ClockObservationsFile != "" {
+	// Clock qualification classifies only a distributed run's cross-host
+	// ages; a local run's clock observations (from monitoring collectors)
+	// never changed how it was classified.
+	if manifest.ClockObservationsFile != "" && telemetryRunDistributed(manifest) {
 		profile.SourceCapabilities = append(profile.SourceCapabilities, "clock_qualification")
 	}
 	if manifest.TelemetryCoverage != nil {
@@ -152,6 +156,10 @@ func compareBaselineTelemetry(current, baseline *baselineComparisonRun, workload
 	if !sameStrings(c.SourceCapabilities, b.SourceCapabilities) {
 		out.Reasons = append(out.Reasons, telemetryReasonCapabilityDiffers)
 	}
+	// Workload keys of different shapes were not qualified alike.
+	if c.WorkloadVersion != 0 && b.WorkloadVersion != 0 && c.WorkloadVersion != b.WorkloadVersion {
+		out.Reasons = append(out.Reasons, telemetryReasonWorkloadVersion)
+	}
 	switch workload.Status {
 	case rca.BaselineUnqualified:
 		out.Reasons = append(out.Reasons, telemetryReasonWorkloadUnqualified)
@@ -194,8 +202,13 @@ func baselineTelemetryComparisonLine(c BaselineTelemetryComparison) string {
 		}
 		return fmt.Sprintf("%+.3g%s", *v, unit)
 	}
-	return fmt.Sprintf("Telemetry of %s vs %s comparable (same policy %s): breached classified intervals %s, health coverage %s, breached known-time fraction %s",
-		c.Current.RunID, c.BaselineRunID, shortTelemetryHash(c.Current.PolicyHash), signed(c.BreachedIntervalPctDelta, " pts"), signed(c.HealthCoveragePctDelta, " pts"), signed(c.BreachedKnownFractionDelta, ""))
+	policy := "same policy " + shortTelemetryHash(c.Current.PolicyHash)
+	if c.Current.PolicyHash != c.Baseline.PolicyHash {
+		// Receipts that differ only in advisory budgets classify alike.
+		policy = fmt.Sprintf("equivalent classifying budgets, policies %s / %s", shortTelemetryHash(c.Current.PolicyHash), shortTelemetryHash(c.Baseline.PolicyHash))
+	}
+	return fmt.Sprintf("Telemetry of %s vs %s comparable (%s): breached classified intervals %s, health coverage %s, breached known-time fraction %s",
+		c.Current.RunID, c.BaselineRunID, policy, signed(c.BreachedIntervalPctDelta, " pts"), signed(c.HealthCoveragePctDelta, " pts"), signed(c.BreachedKnownFractionDelta, ""))
 }
 
 func shortTelemetryHash(hash string) string {

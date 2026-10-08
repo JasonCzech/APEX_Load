@@ -10,9 +10,13 @@ const REASON_LABELS: Record<string, string> = {
   cadence_differs: 'different publication cadence',
   source_capability_differs: 'different telemetry source capabilities',
   workload_unqualified: 'different offered workload',
+  workload_version_differs: 'differently recorded offered workloads',
 }
 
 const POLL_MS = 2000
+// A poll that fails is retried with backoff this many times before the job
+// is dropped (so a new re-evaluation can be queued).
+export const POLL_RETRIES = 4
 
 const shortHash = (hash?: string) => (hash ? hash.slice(0, 12) : 'Unavailable')
 const signed = (value: number | undefined, unit: string) => (value === undefined || !Number.isFinite(value) ? 'Unavailable' : `${value > 0 ? '+' : ''}${value.toFixed(2)}${unit}`)
@@ -59,16 +63,27 @@ function TelemetryReevaluationPanel({ projectId, runIds, label }: { projectId: s
     abort.current?.abort()
   }, [])
 
-  const poll = (id: string) => {
+  const poll = (id: string, failures = 0) => {
     abort.current?.abort()
     const controller = new AbortController()
     abort.current = controller
     telemetryReevaluationApi.get(projectId, id, controller.signal)
       .then(next => {
+        setError('')
         setJob(next)
         if (!telemetryReevaluationTerminal(next.state)) timer.current = window.setTimeout(() => poll(id), POLL_MS)
       })
-      .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Could not read the re-evaluation') })
+      .catch(cause => {
+        if (controller.signal.aborted) return
+        const message = cause instanceof Error ? cause.message : 'Could not read the re-evaluation'
+        if (failures < POLL_RETRIES) {
+          setError(`${message}; retrying`)
+          timer.current = window.setTimeout(() => poll(id, failures + 1), POLL_MS * 2 ** (failures + 1))
+          return
+        }
+        setError(message)
+        setJob(null)
+      })
   }
 
   const start = async () => {
@@ -166,7 +181,9 @@ export default function BaselineTelemetryCompatibility({ comparisons, projectId,
           {comparison.notes?.map((note, index) => <p key={index}>{note}</p>)}
         </div>
       ))}
-      {projectId && <TelemetryReevaluationPanel projectId={projectId} runIds={runIds} label={label} />}
+      {/* Keyed on the run set: another comparison starts a fresh panel and
+          stops polling the previous one's job. */}
+      {projectId && <TelemetryReevaluationPanel key={runIds.join(',')} projectId={projectId} runIds={runIds} label={label} />}
     </section>
   )
 }

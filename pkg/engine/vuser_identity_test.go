@@ -193,3 +193,82 @@ func TestHardStopMarksTheInFlightFailureInterrupted(t *testing.T) {
 		t.Fatalf("genuine: %+v", got)
 	}
 }
+
+// Every result of one VUser lifetime carries the same random lifetime; a
+// later VUser reusing the ID gets another, and parallel branches share it.
+func TestVUserResultsCarryTheirLifetime(t *testing.T) {
+	lifetimes := map[uint64]int{}
+	for run := 0; run < 2; run++ {
+		vu := newControlFlowVUser(&captureProtocol{}, nil, []dsl.Action{click("login")})
+		vu.ID = 3
+		sink := &identitySink{}
+		vu.ResultSink = sink
+		vu.Run(context.Background())
+		seen := map[uint64]bool{}
+		for _, result := range sink.results {
+			seen[result.VUserLifetime] = true
+		}
+		if len(seen) != 1 || seen[0] {
+			t.Fatalf("run %d lifetimes %v", run, seen)
+		}
+		for lifetime := range seen {
+			lifetimes[lifetime]++
+		}
+	}
+	if len(lifetimes) != 2 {
+		t.Fatalf("two VUsers shared a lifetime: %v", lifetimes)
+	}
+	sink := &identitySink{}
+	vu := &VUser{ID: 3, Group: "parallel", Proto: &parallelTestProtocol{}, Variables: map[string]string{}, Metrics: NewMetricsCollector(32), ResultSink: sink,
+		Script: &dsl.Script{Protocol: parallelTestProtocolName, Actions: []dsl.Action{{Name: "unused", Type: "GET", Target: "/"}}}}
+	vu.lifetime = 99
+	control := &dsl.ControlFlow{Concurrency: 2, Branches: []dsl.ParallelBranch{{Name: "a", Steps: []dsl.Action{{Name: "a-call", Type: "GET", Target: "/a"}}}, {Name: "b", Steps: []dsl.Action{{Name: "b-call", Type: "GET", Target: "/b"}}}}}
+	if !vu.runParallelBranches(context.Background(), control, "action") {
+		t.Fatal("parallel branches failed")
+	}
+	for _, result := range sink.results {
+		if result.VUserLifetime != 99 {
+			t.Fatalf("branch result lifetime %d", result.VUserLifetime)
+		}
+	}
+}
+
+// A transaction whose duration excludes time starts at its real start and
+// carries its wall-clock span.
+func TestTransactionSpanKeepsTheWallClock(t *testing.T) {
+	sink := &identitySink{}
+	vu := &VUser{ID: 1, Group: "web", ResultSink: sink, Metrics: NewMetricsCollector(16), Script: &dsl.Script{Protocol: "http"}}
+	started := time.Now().Add(-3 * time.Second)
+	vu.recordTransactionSpan("Browse", time.Second, true, nil, started)
+	vu.recordTransaction("Plain", time.Second, true, nil)
+	browse, plain := resultsNamed(sink, "Browse"), resultsNamed(sink, "Plain")
+	if len(browse) != 1 || !browse[0].StartTime.Equal(started) || browse[0].WallElapsed < 3*time.Second || browse[0].Duration != time.Second {
+		t.Fatalf("span %+v", browse)
+	}
+	if len(plain) != 1 || plain[0].WallElapsed != 0 {
+		t.Fatalf("plain %+v", plain)
+	}
+	// A source transaction left open is recorded in the iteration that
+	// opened it, even after teardown reset the iteration.
+	vu.sourceTransactions = map[string]*sourceTransactionRuntimeState{"checkout": {name: "Checkout", startedAt: started, iteration: 4}}
+	vu.finalizeSourceTransaction("checkout", "ended without an end marker")
+	if checkout := resultsNamed(sink, "Checkout"); len(checkout) != 1 || checkout[0].Iteration != 4 || vu.currentIteration.Load() != 0 {
+		t.Fatalf("finalized %+v iteration now %d", checkout, vu.currentIteration.Load())
+	}
+}
+
+// A parallel block that genuinely fails ends a fail-fast iteration as a
+// failure, not as a stop.
+func TestParallelFailFastIsAGenuineFailure(t *testing.T) {
+	no := false
+	vu := &VUser{ID: 2, Group: "parallel", Proto: &parallelTestProtocol{}, Variables: map[string]string{}, Metrics: NewMetricsCollector(32),
+		Script: &dsl.Script{Name: "Parallel", Protocol: parallelTestProtocolName, Config: dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 1}, ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: &no}},
+			Actions: []dsl.Action{{Name: "fan-out", Type: "control_parallel", Control: &dsl.ControlFlow{Concurrency: 2, Branches: []dsl.ParallelBranch{{Name: "a", Steps: []dsl.Action{{Name: "transport-error", Type: "GET", Target: "/"}}}, {Name: "b", Steps: []dsl.Action{{Name: "b-call", Type: "GET", Target: "/b"}}}}}}}}}
+	sink := &identitySink{}
+	vu.ResultSink = sink
+	vu.Run(context.Background())
+	iteration := resultsNamed(sink, "Parallel")
+	if len(iteration) != 1 || iteration[0].Success || iteration[0].Interrupted {
+		t.Fatalf("iteration transaction %+v", iteration)
+	}
+}

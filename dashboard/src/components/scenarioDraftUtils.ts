@@ -243,6 +243,8 @@ export function buildInitialScenarioDraft(initialScenario: ScenarioDraft | undef
       ? structuredClone(initialScenario.goalConfig)
       : { stop_on_sla_breach: false, stop_on_max_errors: false, sla_breach_window: '30s' },
     runtimeSettings: cloneRuntimeSettingsDraft(initialScenario?.runtimeSettings),
+    ...(initialScenario?.trafficProfile ? { trafficProfile: structuredClone(initialScenario.trafficProfile) } : {}),
+    ...(initialScenario?.dataPools ? { dataPools: initialScenario.dataPools.map(binding => ({ ...binding })) } : {}),
     groups: initialScenario?.groups.length
       ? initialScenario.groups.map(cloneScenarioGroup)
       : [buildDefaultScenarioGroup(scripts)],

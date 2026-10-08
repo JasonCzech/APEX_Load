@@ -67,6 +67,8 @@ function testFromCreate(payload: CreateTestPayload, id: string): TestSummary {
     groups: (payload.groups || []).map(group => ({
       name: group.name || '', script_id: group.script_id, script_name: '', protocol: 'http', role: group.role, vusers: group.vusers,
       ramp_up: group.ramp_up, ramp_down: group.ramp_down, start_offset: group.start_offset, stages: group.stages,
+      // A run created now records whether its iterations were authored; a
+      // legacy run (unknown) is covered separately below.
       iteration_override: group.iterations, iteration_override_known: true, runtime_settings: group.runtime_settings,
       initialization: group.initialization, assignment: group.assignment, transaction_response_time_sla_ms: group.transaction_response_time_sla_ms,
     })),
@@ -128,6 +130,10 @@ describe('scenario assembly', () => {
     const draft = scenarioDraftFromStoredScenario(kitchenSinkScenario(), { includeBrowser: true })
     const created = scenarioCreatePayload(buildInitialScenarioDraft(draft, []), { projectId: 'proj', folderId: null })
     expect(created).toMatchObject({ project_id: 'proj', folder_id: null, name: 'Checkout' })
+    // A new run keeps the scenario's traffic profile and pool bindings: it
+    // has no source run to inherit them from.
+    expect(created.traffic_profile).toEqual(kitchenSinkScenario().traffic_profile)
+    expect(created.data_pools).toEqual(kitchenSinkScenario().data_pools)
     // The queued run reloads into the revision editor; saving it unchanged
     // creates the same run (a new queued copy of it).
     const revision = scenarioCreatePayload(buildScenarioDraftFromTest(testFromCreate(created, 'run-1')))
@@ -175,10 +181,18 @@ describe('scenario assembly', () => {
 
   it('estimates the run the draft would create', () => {
     const draft = scenarioDraftFromStoredScenario(kitchenSinkScenario(), { includeBrowser: true })
-    expect(scenarioEstimateRequest(draft, { projectId: 'proj' })).toEqual(scenarioCreatePayload(draft, { projectId: 'proj' }))
-    // A host selection still being authored is estimated as automatic.
-    const pending = { ...draft, assignment: { mode: 'specific_hosts' as const, selected_targets: [] } }
-    expect(scenarioEstimateRequest(pending).assignment).toMatchObject({ mode: 'auto' })
+    // A new run's pool bindings are left out: the estimate never reads pool
+    // content, and binding them would load every pool on each edit.
+    const estimate = scenarioEstimateRequest(draft, { projectId: 'proj' })
+    expect(estimate).not.toHaveProperty('data_pools')
+    expect(estimate).toEqual(omit(scenarioCreatePayload(draft, { projectId: 'proj' }), ['data_pools']))
+    // A revision's bindings come from its source run and stay.
+    const revisionDraft = buildScenarioDraftFromTest(testFromCreate(scenarioCreatePayload(draft), 'run-1'))
+    expect(scenarioEstimateRequest(revisionDraft).data_pools).toEqual(scenarioCreatePayload(revisionDraft).data_pools)
+    // A host selection still being authored is estimated as automatic, in
+    // the same pool with the same labels and loss tolerance.
+    const pending = { ...draft, assignment: { mode: 'specific_hosts' as const, selected_targets: [], pool_id: 'east-pool', required_labels: { zone: 'east' }, tolerate_generator_loss: true } }
+    expect(scenarioEstimateRequest(pending).assignment).toMatchObject({ mode: 'auto', pool_id: 'east-pool', required_labels: { zone: 'east' }, tolerate_generator_loss: true })
     expect(scenarioCreatePayload(pending).assignment).toMatchObject({ mode: 'specific_hosts' })
   })
 

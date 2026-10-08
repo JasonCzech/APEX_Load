@@ -131,3 +131,65 @@ func TestCorrelationSaysWhyACoefficientIsUnavailable(t *testing.T) {
 		t.Fatalf("a scored lag carries a reason: %+v %v", scores, err)
 	}
 }
+
+// Bucketing reduces stale, skewed, dropped and reset samples to missing
+// buckets; their reasons are counted from the raw samples first.
+func TestRawSampleExclusionsKeepReasons(t *testing.T) {
+	from := time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC)
+	stale := seriesPoint(from, "cpu", "percent", KindGauge, "", 10)
+	stale.Quality = QualityStale
+	skewed := seriesPoint(from.Add(time.Second), "cpu", "percent", KindGauge, "", 11)
+	skewed.Quality = QualityClockSkewed
+	dropped := MetricPoint{SchemaVersion: SchemaVersion, ProjectID: "project", Source: "collector", TimestampUTC: from.Add(2 * time.Second), MetricName: "cpu", Quality: QualityDropped}
+	// A counter that resets once per series, given out of order; another
+	// series of the same metric keeps increasing.
+	counter := func(at int, host string, value float64) MetricPoint {
+		p := seriesPoint(from.Add(time.Duration(at)*time.Second), "requests", "count", KindCounter, "", value)
+		p.Host = host
+		return p
+	}
+	points := []MetricPoint{stale, skewed, dropped, counter(3, "a", 5), counter(1, "a", 10), counter(2, "a", 20), counter(1, "b", 1), counter(2, "b", 2)}
+	got := RawSampleExclusions(points)
+	want := map[string]int{QualityStale: 1, QualityClockSkewed: 1, QualityDropped: 1, MissingCounterReset: 1}
+	if len(got) != len(want) {
+		t.Fatalf("exclusions %v, want %v", got, want)
+	}
+	for reason, count := range want {
+		if got[reason] != count {
+			t.Fatalf("exclusions %v, want %v", got, want)
+		}
+	}
+	if RawSampleExclusions([]MetricPoint{seriesPoint(from, "cpu", "percent", KindGauge, "", 1)}) != nil {
+		t.Fatal("valid samples report exclusions")
+	}
+}
+
+func TestCorrelationSemanticsPopulationUnitsAndHistograms(t *testing.T) {
+	from := time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC)
+	transaction := seriesPoint(from, "transaction.duration", "ms", KindObservation, "", 120)
+	transaction.Dimensions = map[string]string{"population": "transaction"}
+	action := seriesPoint(from, "transaction.duration", "ms", KindObservation, "", 80)
+	action.Population = "action"
+	semantics := DescribeCorrelation("transaction.duration", "p95", []MetricPoint{transaction}, "transaction.duration", "p95", []MetricPoint{action})
+	// Population comes from the dimension when the field is unset, and two
+	// populations are never directly comparable.
+	if semantics.Left.Population != "transaction" || semantics.Right.Population != "action" || semantics.SameUnits || semantics.UnitsUndeclared {
+		t.Fatalf("populations %+v", semantics)
+	}
+	if same := DescribeCorrelation("a", "p95", []MetricPoint{transaction}, "b", "p95", []MetricPoint{transaction}); !same.SameUnits {
+		t.Fatalf("same population %+v", same)
+	}
+	// A side with no evidence, or no declared unit, leaves the comparison
+	// unknown rather than "different".
+	undeclared := seriesPoint(from, "queue", "", KindGauge, "", 1)
+	for _, right := range [][]MetricPoint{nil, {undeclared}} {
+		if s := DescribeCorrelation("a", "avg", []MetricPoint{transaction}, "b", "avg", right); s.SameUnits || !s.UnitsUndeclared {
+			t.Fatalf("undeclared %+v", s)
+		}
+	}
+	// A histogram percentile is an interpolated estimate.
+	histogram := seriesPoint(from, "latency", "ms", KindGauge, KindHistogram, 90)
+	if side := DescribeCorrelationSide("latency", "p95", []MetricPoint{histogram}); side.Conversion != ConversionHistogramPercentileEstimate {
+		t.Fatalf("histogram %+v", side)
+	}
+}

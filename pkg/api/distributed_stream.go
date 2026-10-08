@@ -1338,6 +1338,9 @@ func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner
 		}
 	}
 	test.remoteMetricsBatchesByTarget[target] = batch
+	// Each generator's stages are sampled where its batch is accepted:
+	// publications are throttled fleet-wide, so most batches are only stored.
+	stageRecorderLocked(test).observeGeneratorBatch(target, batch)
 	if len(batch.TransactionResponseTimeSLA) > 0 {
 		delete(test.remoteTransactionResponseTimeSLALegacyByTarget, target)
 	} else {
@@ -1696,6 +1699,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 				accepted = true
 				test.remoteMetricsAcceptedRevision++
 				revision = test.remoteMetricsAcceptedRevision
+				stageRecorderLocked(test).observeGeneratorBatch(target, batch)
 			} else {
 				batch = prior
 			}
@@ -1704,6 +1708,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 			accepted = true
 			test.remoteMetricsAcceptedRevision++
 			revision = test.remoteMetricsAcceptedRevision
+			stageRecorderLocked(test).observeGeneratorBatch(target, batch)
 			stageDistributedGoalErrorWindowLocked(tr, test, target, batch)
 		}
 	}
@@ -1781,9 +1786,6 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 	// is deliberately deferred until this publication wins guarded admission.
 	aggregated, fleetTPS, groupTPS := aggregateDistributedMetricsBatches(test.ID, batches)
 	tr.mu.Lock()
-	// Each generator's stages are sampled from its arriving batch only: the
-	// aggregate re-reads every resident batch on each publication.
-	stageRecorderLocked(test).observeGeneratorBatch(target, batch)
 	live := buildLiveMetricsFromDistributedBatch(test, aggregated, fleetTPS, groupTPS)
 	if live.Telemetry != nil {
 		live.Telemetry.Sources, live.Telemetry.Loss = telemetrySourceRollupLocked(test)

@@ -24,10 +24,13 @@ rewrites an earlier run's accounting.
 
 ## How attempts are classified
 
-Every archived sample carries its VUser and 1-based iteration. Each VUser
-iteration is read in time order. Samples are archived as they are recorded,
-so a transaction's row follows its own steps. Ordering by time puts it back
-around them:
+Every archived sample carries its VUser, its 1-based iteration and a random
+VUser lifetime. A VUser ID is reused by later VUsers (open-workload
+arrivals, scale-up); a lifetime never is, so each lifetime is its own
+context. Each iteration is read in time order. Samples are archived as they
+are recorded, so a transaction's row follows its own steps. Ordering by time
+puts it back around them, using each transaction's wall-clock span
+(`elapsed_ms`) when its duration excludes think time inside it:
 
 - A start boundary opens an attempt when it begins.
 - Action samples that begin while an attempt is open are its steps.
@@ -58,14 +61,20 @@ Cancellation alone cannot establish a failure. An interrupted failure
 therefore censors every attempt it cut and is not counted as a step failure.
 An attempt that still reaches its outcome keeps it.
 
-The archive cannot tell an iteration the run's end cut short from one that
-simply ended. So an attempt still open in a VUser's last iteration is
-censored rather than aborted or failed. In an iteration-limited run this is
-conservative: an attempt that genuinely stopped short in the final iteration
-is censored, not aborted.
+A lifetime whose last sample ended within a minute of the archive's last
+sample may have been cut by the run's end, so an attempt still open in its
+last iteration is censored. A lifetime that ended earlier ended on its own
+(its iterations were done, a fail-fast failure ended it, or an
+open-workload arrival finished its iteration), so its attempts are settled
+as completed, failed or aborted. A source transaction left open when a
+VUser ends is recorded in the iteration that opened it.
 
-A replacement generator that continues an evacuated VUser restarts its
-iterations. The earlier share's last iteration is treated as possibly cut.
+Rows without a lifetime (written before lifetimes existed) fall back to the
+VUser ID: a replacement generator that continues an evacuated VUser
+restarts its iterations, and the earlier share's last iteration is treated
+as possibly cut. With lifetimes, a share cut mid-run by an evacuation looks
+like a lifetime that ended on its own, so its open attempts are settled
+rather than censored.
 
 ## Indexes
 
@@ -83,8 +92,13 @@ Accounting is bounded:
 - 10,000 buffered samples per open iteration;
 - 1,000,000 buffered samples in total.
 
-Past any bound the report is `incomplete`, and both indexes are withheld
-(`accounting_incomplete`).
+The report is also incomplete when the archive scan stops at its budget
+(2,000,000 rows or 512 MiB), when a distributed run's generator sources were
+not all collected, or when rows from a source without VUser identity (an
+older generator) sit beside rows with it. An incomplete report lists its
+`incomplete_reasons`, and both indexes are withheld
+(`accounting_incomplete`). A run that recorded identity but ran no iteration
+is `unavailable` with `no_iterations`.
 
 ## Read the result
 

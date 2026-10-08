@@ -17,7 +17,8 @@ import (
 // Client render evidence (C5). A dashboard tab viewing a live run reports how
 // long each publication took from receipt to render, when the run's project
 // opts in (settings.telemetry.client_render_evidence). Reports are
-// authenticated, bounded and rate-limited per viewer and tab; only a visible
+// authenticated and bounded, rate-limited per tab and given a sample budget
+// per viewer (so new tab identities buy no more samples); only a visible
 // tab's renders enter the run's advisory browser_render distribution, and
 // the absence of any report never affects a run.
 
@@ -28,6 +29,10 @@ const (
 	// from one viewer's tab.
 	clientRenderMinInterval  = 2 * time.Second
 	clientRenderMaxReporters = 1024
+	// A viewer's samples across all their tabs refill at
+	// clientRenderViewerSamplesPerSecond up to one full report.
+	clientRenderViewerSamplesPerSecond = 8
+	clientRenderViewerBurst            = clientRenderMaxSamples
 )
 
 type clientRenderReport struct {
@@ -41,11 +46,48 @@ type ClientRenderReportResult struct {
 	Excluded map[string]int64 `json:"excluded,omitempty"`
 }
 
-// clientRenderLimiter remembers each reporter's last accepted report.
+// clientRenderLimiter remembers each reporter's last accepted report and
+// each viewer's sample budget.
 type clientRenderLimiter struct {
-	mu    sync.Mutex
-	last  map[string]time.Time
-	order []string
+	mu      sync.Mutex
+	last    map[string]time.Time
+	order   []string
+	viewers map[string]*clientRenderBudget
+	vorder  []string
+}
+
+type clientRenderBudget struct {
+	tokens float64
+	at     time.Time
+}
+
+// spend takes samples from a viewer's budget, or returns how long until it
+// holds that many.
+func (l *clientRenderLimiter) spend(viewer string, samples int, now time.Time) (bool, time.Duration) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.viewers == nil {
+		l.viewers = map[string]*clientRenderBudget{}
+	}
+	budget := l.viewers[viewer]
+	if budget == nil {
+		budget = &clientRenderBudget{tokens: clientRenderViewerBurst, at: now}
+		l.viewers[viewer] = budget
+		l.vorder = append(l.vorder, viewer)
+		if len(l.vorder) > clientRenderMaxReporters {
+			delete(l.viewers, l.vorder[0])
+			l.vorder = l.vorder[1:]
+		}
+	}
+	if elapsed := now.Sub(budget.at); elapsed > 0 {
+		budget.tokens = min(clientRenderViewerBurst, budget.tokens+elapsed.Seconds()*clientRenderViewerSamplesPerSecond)
+		budget.at = now
+	}
+	if need := float64(samples); budget.tokens < need {
+		return false, time.Duration((need - budget.tokens) / clientRenderViewerSamplesPerSecond * float64(time.Second))
+	}
+	budget.tokens -= float64(samples)
+	return true, 0
 }
 
 // allow admits one report from key at now, or returns how long to wait.
@@ -68,6 +110,16 @@ func (l *clientRenderLimiter) allow(key string, now time.Time) (bool, time.Durat
 	}
 	l.last[key] = now
 	return true, 0
+}
+
+// release returns samples to a viewer's budget (a report refused after
+// spending).
+func (l *clientRenderLimiter) release(viewer string, samples int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if budget := l.viewers[viewer]; budget != nil {
+		budget.tokens = min(clientRenderViewerBurst, budget.tokens+float64(samples))
+	}
 }
 
 func clientRenderEvidenceEnabled(runner *TestRunner, projectID string) bool {
@@ -106,13 +158,16 @@ func (s *Server) handleReportClientRender(w http.ResponseWriter, r *http.Request
 	if !s.requireExecutionLeader(w) {
 		return
 	}
-	test, ok := s.runner.GetTest(r.PathValue("id"))
-	if !ok {
-		writeError(w, http.StatusNotFound, "test not found")
-		return
-	}
-	if !clientRenderEvidenceEnabled(s.runner, test.ProjectID) {
-		writeError(w, http.StatusConflict, "client render evidence is not enabled for this project")
+	// A live run is in memory on the leader: resolve only its identity, never
+	// a snapshot of its history.
+	id := r.PathValue("id")
+	recorder, testID, projectID, started, live := s.runner.liveStageRecorder(id)
+	if !live {
+		if summary, ok := s.runner.GetTestSummary(id); !ok || summary == nil {
+			writeError(w, http.StatusNotFound, "test not found")
+		} else {
+			writeError(w, http.StatusConflict, "client render evidence is accepted only while a run is live")
+		}
 		return
 	}
 	var report clientRenderReport
@@ -124,19 +179,25 @@ func (s *Server) handleReportClientRender(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "a client render report needs a client_id and 1 to 64 samples")
 		return
 	}
-	recorder, started, live := s.runner.liveStageRecorder(test.ID, test.ProjectID)
-	if !live {
-		writeError(w, http.StatusConflict, "client render evidence is accepted only while a run is live")
-		return
-	}
-	subject := "anonymous"
+	subject := "anonymous:" + requestSourceIP(r).String()
 	if user, ok := AuthenticatedUserFromContext(r.Context()); ok && user != nil {
-		subject = user.Subject
+		subject = "user:" + user.Subject
 	}
 	now := time.Now()
-	if allowed, wait := s.clientRenderReports.allow(test.ID+"\x00"+subject+"\x00"+report.ClientID, now); !allowed {
+	viewer := testID + "\x00" + subject
+	if allowed, wait := s.clientRenderReports.spend(viewer, len(report.Samples), now); !allowed {
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait/time.Second)+1))
+		writeError(w, http.StatusTooManyRequests, "client render samples are limited per viewer across all tabs")
+		return
+	}
+	if allowed, wait := s.clientRenderReports.allow(viewer+"\x00"+report.ClientID, now); !allowed {
+		s.clientRenderReports.release(viewer, len(report.Samples))
 		w.Header().Set("Retry-After", strconv.Itoa(int(wait/time.Second)+1))
 		writeError(w, http.StatusTooManyRequests, "client render reports are limited to one every 2 seconds per tab")
+		return
+	}
+	if !clientRenderEvidenceEnabled(s.runner, projectID) {
+		writeError(w, http.StatusConflict, "client render evidence is not enabled for this project")
 		return
 	}
 	result := ClientRenderReportResult{}

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { getErrorMessage } from '../../utils/errorUtils'
 import {
-  browserCohortLabel, browserFindingReasonText, browserFindingsApi, browserScoreUnscoredText, formatBrowserMetric,
+  BROWSER_FINDINGS_POLL_MS, browserCohortLabel, browserFindingReasonText, browserFindingsApi, browserScoreUnscoredText, formatBrowserMetric,
   type BrowserFinding, type RunBrowserFindings,
 } from './browserFindingsModel'
 
@@ -33,6 +33,14 @@ export default function BrowserFindingsPanel({ testId, projectId, canEvaluate }:
     return () => controller.abort()
   }, [testId, reload])
 
+  // A queued or running evaluation is checked again until it settles.
+  const pending = state?.status === 'pending'
+  useEffect(() => {
+    if (!pending) return
+    const timer = window.setTimeout(() => setReload(value => value + 1), BROWSER_FINDINGS_POLL_MS)
+    return () => window.clearTimeout(timer)
+  }, [pending, state])
+
   const evaluate = useCallback(async () => {
     setQueueing(true)
     setError('')
@@ -50,9 +58,13 @@ export default function BrowserFindingsPanel({ testId, projectId, canEvaluate }:
   const findings = [...(result?.findings || [])].sort((a, b) => (stateOrder[a.state] ?? 3) - (stateOrder[b.state] ?? 3) || a.summary.localeCompare(b.summary))
   return <section className="run-report-panel browser-findings" aria-label="Browser findings">
     <h2>Browser findings</h2>
-    {loading && <p role="status">Loading browser findings...</p>}
+    {loading && !state && <p role="status">Loading browser findings...</p>}
     {!loading && error && <p role="alert" className="run-report-error">{error}</p>}
-    {!loading && state && !result && <p>{state.status === 'pending' ? 'A browser evaluation is queued or running.' : 'This run has no browser evaluation. Runs that pin a browser policy are evaluated when their archive is finalized.'}</p>}
+    {state && !result && <p>{state.status === 'pending'
+      ? 'A browser evaluation is queued or running.'
+      : state.status === 'failed'
+        ? `The browser evaluation failed: ${state.failure || 'no reason recorded'}.`
+        : 'This run has no browser evaluation. Runs that pin a browser policy are evaluated when their archive is finalized.'}</p>}
     {canEvaluate && !loading && <button type="button" className="btn btn-secondary" onClick={() => void evaluate()} disabled={queueing || state?.status === 'pending'}>Evaluate with the pinned policy</button>}
     {result && <>
       <p>

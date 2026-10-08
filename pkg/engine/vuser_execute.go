@@ -5,6 +5,8 @@ package engine
 import (
 	"bytes"
 	"context"
+	cryptorand "crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"runtime/debug"
@@ -40,7 +42,7 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	// ResultSink implementation may retain it, even accidentally in-process.
 	result.CorrelationEvidence = nil
 	result.Group = vu.Group
-	result.VUserID, result.Iteration = vu.ID, vu.currentIteration.Load()
+	result.VUserID, result.Iteration, result.VUserLifetime = vu.ID, vu.currentIteration.Load(), vu.lifetime
 	if result.Region == "" {
 		result.Region = vu.Region
 	}
@@ -148,6 +150,32 @@ func logConfigRetainsSuccessfulResponseBody(logCfg dsl.LogConfig) bool {
 	return false
 }
 
+// newVUserLifetime is a random, non-zero identity for one VUser lifetime
+// (63 bits, so it survives signed storage).
+func newVUserLifetime() uint64 {
+	var raw [8]byte
+	for {
+		if _, err := cryptorand.Read(raw[:]); err != nil {
+			return uint64(time.Now().UnixNano()) >> 1
+		}
+		if value := binary.BigEndian.Uint64(raw[:]) >> 1; value != 0 {
+			return value
+		}
+	}
+}
+
+// recordTransactionSpan is recordTransaction for a transaction whose
+// duration excludes time (think time inside it): the row starts at its real
+// start and carries its wall-clock span.
+func (vu *VUser) recordTransactionSpan(name string, duration time.Duration, success bool, source *protocol.Result, startedAt time.Time) *protocol.Result {
+	if startedAt.IsZero() {
+		return vu.recordTransaction(name, duration, success, source)
+	}
+	vu.transactionSpanStart = startedAt
+	defer func() { vu.transactionSpanStart = time.Time{} }()
+	return vu.recordTransaction(name, duration, success, source)
+}
+
 func (vu *VUser) recordTransaction(name string, duration time.Duration, success bool, source *protocol.Result) *protocol.Result {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -167,6 +195,7 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 		Success:             success,
 		VUserID:             vu.ID,
 		Iteration:           vu.currentIteration.Load(),
+		VUserLifetime:       vu.lifetime,
 	}
 	if source != nil {
 		tx.WorkerDuration = source.WorkerDuration
@@ -206,6 +235,12 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 	}
 	if !success && tx.ErrorMessage == "" {
 		tx.ErrorMessage = "transaction failed"
+	}
+	if start := vu.transactionSpanStart; !start.IsZero() {
+		tx.StartTime = start
+		if elapsed := time.Since(start); elapsed > duration {
+			tx.WallElapsed = elapsed
+		}
 	}
 	// Transaction-only execution paths (notably http_sequence aggregates) do
 	// not pass through recordResult. Apply the same detach, exact-secret

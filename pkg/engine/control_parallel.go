@@ -193,7 +193,7 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 	}
 	// A branch's samples belong to the parent's iteration.
 	branchVU.currentIteration.Store(vu.currentIteration.Load())
-	branchVU.runCtx = vu.runCtx
+	branchVU.runCtx, branchVU.lifetime = vu.runCtx, vu.lifetime
 	defer func() { result.publicationRedactionFailed = branchVU.runtimeCredentialRedactionErr != nil }()
 	defer branchVU.closeErrorLogs()
 	branchVU.ensureImportedCredentialInspection()

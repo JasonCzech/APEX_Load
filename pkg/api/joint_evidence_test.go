@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -282,5 +284,188 @@ func TestJointEvidenceArchiveSidecar(t *testing.T) {
 	plain := &RunArchiveManifest{TestID: "plain"}
 	if err := tr.persistJointIntervalArchive(context.Background(), test, record, plain); err != nil || plain.JointIntervalsFile != "" {
 		t.Fatalf("plain run %+v %v", plain, err)
+	}
+}
+
+// The marginal dimensions' key caps make a window's marginal evidence
+// incomplete, never its joint evidence; sample loss makes both incomplete.
+func TestJointEvidenceQueryIgnoresMarginalKeyCaps(t *testing.T) {
+	start := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	digest := nativeBucketMetric(10, 20).DurationDigest
+	actions := map[string]*engine.ActionMetrics{}
+	for i := 0; i < 200; i++ {
+		actions[fmt.Sprintf("step-%03d", i)] = &engine.ActionMetrics{Count: 2, DurationDigest: digest}
+	}
+	snapshot := func(dropped int64) engine.MetricsSnapshot {
+		s := engine.MetricsSnapshot{Timestamp: start.Add(time.Second), Window: time.Second, ByAction: actions,
+			Joint: &engine.JointMetricsSnapshot{Version: 4, Population: "action", Dimensions: jointTestProjection.Dimensions, Tuples: map[string]*engine.ActionMetrics{jointKey("login", "east", "3g"): {Count: 2, DurationDigest: digest}}}}
+		if dropped > 0 {
+			s.Telemetry = &engine.TelemetryMetrics{DroppedResults: dropped}
+		}
+		return s
+	}
+	local := buildLiveMetricsFromSnapshot(snapshot(0), nil)
+	if !local.NativeEvidence.Incomplete || local.NativeEvidence.Joint.Incomplete {
+		t.Fatalf("marginal incomplete %v, joint incomplete %v", local.NativeEvidence.Incomplete, local.NativeEvidence.Joint.Incomplete)
+	}
+	out, err := buildNativeLiveEvidence(context.Background(), start, []*LiveMetrics{local}, jointQuery())
+	if err != nil || len(out.Series) != 1 || out.Series[0].Points[0].Count != 2 {
+		t.Fatalf("local joint query over 200 actions: %+v %v", out.Series, err)
+	}
+	lossy := buildLiveMetricsFromSnapshot(snapshot(3), nil)
+	if !lossy.NativeEvidence.Joint.Incomplete {
+		t.Fatal("dropped results left the joint evidence complete")
+	}
+	// Its only window is a gap, so there is no measured evidence to answer.
+	if out, err = buildNativeLiveEvidence(context.Background(), start, []*LiveMetrics{lossy}, jointQuery()); err == nil {
+		t.Fatalf("a lossy window was graphed: %+v", out.Series)
+	}
+
+	// A generator publication with 200 actions.
+	batch := jointBatch(1, start.Add(time.Second), jointAggregate(jointKey("login", "east", "3g"), 10, 20))
+	for name := range actions {
+		batch.ActionMetrics = append(batch.ActionMetrics, jointAggregate(name, 5))
+	}
+	publication := nativePublicationEvidence("gen-a", batch, map[string]generatorrpc.MetricsBatch{"gen-a": batch}, jointTestProjection)
+	if !publication.Incomplete || publication.Joint.Incomplete {
+		t.Fatalf("publication marginal incomplete %v, joint incomplete %v", publication.Incomplete, publication.Joint.Incomplete)
+	}
+	point := &LiveMetrics{Timestamp: start.Add(time.Second), NativeEvidence: &storage.NativeIntervalEvidence{Publication: publication}}
+	out, err = buildNativeLiveEvidence(context.Background(), start, []*LiveMetrics{point}, jointQuery())
+	if err != nil || len(out.Series) != 1 || out.Series[0].Points[0].Count != 2 {
+		t.Fatalf("merged joint query over a 200-action publication: %+v %v", out.Series, err)
+	}
+	batch.Telemetry = &generatorrpc.MetricsTelemetry{DroppedResults: 1}
+	if got := nativePublicationEvidence("gen-a", batch, nil, jointTestProjection).Joint; !got.Incomplete {
+		t.Fatal("a generator's dropped results left its joint evidence complete")
+	}
+}
+
+// A distributed history point keeps only the fleet's joint availability:
+// merged queries and the archive read each publication's own tuples.
+func TestJointEvidenceFleetPointKeepsNoTuples(t *testing.T) {
+	at := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	batch := jointBatch(1, at, jointAggregate(jointKey("login", "east", "3g"), 10, 20))
+	batch.JointInfo.Other = &generatorrpc.MetricAggregate{Name: "other", Count: 1}
+	test := &ManagedTest{ID: "fleet", JointEvidence: jointTestProjection.Clone()}
+	live := buildLiveMetricsFromDistributedBatch(test, batch, 1, nil)
+	if live.NativeEvidence == nil || live.NativeEvidence.Joint == nil || live.NativeEvidence.Joint.Availability != "measured" {
+		t.Fatalf("fleet joint availability %+v", live.NativeEvidence)
+	}
+	if _, ok := live.NativeEvidence.Dimensions[storage.NativeJointDimension]; ok || live.NativeEvidence.Joint.Other != nil {
+		t.Fatalf("the fleet point kept joint tuples: %+v", live.NativeEvidence.Joint)
+	}
+}
+
+func jointSidecarHistory(start time.Time, publications, tuples int) []*LiveMetrics {
+	var history []*LiveMetrics
+	for p := 0; p < publications; p++ {
+		at := start.Add(time.Duration(p+1) * time.Second)
+		values := map[string]storage.NativeIntervalMetric{}
+		for i := 0; i < tuples; i++ {
+			values[jointKey(fmt.Sprintf("step-%d", i), "east", "3g")] = nativeBucketMetric(float64(10+i), float64(20+p))
+		}
+		history = append(history, &LiveMetrics{Timestamp: at, NativeEvidence: &storage.NativeIntervalEvidence{Publication: &storage.NativePublicationEvidence{SourceID: "gen-a", Sequence: uint64(p + 1), ExecutionGeneration: 1, Timestamp: at, Version: 3, WindowSeconds: 1,
+			Dimensions: map[string]map[string]storage.NativeIntervalMetric{storage.NativeJointDimension: values}, ExpectedSources: []string{"gen-a"},
+			Joint: &storage.NativeJointEvidence{Population: "action", Dimensions: jointTestProjection.Dimensions, Availability: "measured"}}}})
+	}
+	return history
+}
+
+func jointSidecarRecord(t *testing.T, id string) (*storage.RunArchiveRecord, *RunArchiveManifest) {
+	t.Helper()
+	root := t.TempDir()
+	record := &storage.RunArchiveRecord{TestID: id, ArchivePath: root, ManifestPath: root + "/manifest.json"}
+	admitArchiveForTest(t, record)
+	return record, &RunArchiveManifest{TestID: id, Provenance: RunArchiveProvenance{JointEvidence: jointTestProjection.Clone()}}
+}
+
+// A JSONL truncated at its budget still gets its Parquet copy (its own
+// allowance), and a failed write leaves neither file nor manifest entry.
+func TestJointEvidenceArchiveBudgetAndFailure(t *testing.T) {
+	start := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	test := &ManagedTest{ID: "joint-budget", History: jointSidecarHistory(start, 100, 5)}
+	tr := NewTestRunner(1, NewHub(), nil)
+	full, fullManifest := jointSidecarRecord(t, "joint-budget")
+	if err := tr.persistJointIntervalArchive(context.Background(), test, full, fullManifest); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(full.ArchivePath, jointIntervalsFileName))
+	if err != nil || fullManifest.JointIntervalCount != 500 {
+		t.Fatalf("full sidecar %d rows: %v", fullManifest.JointIntervalCount, err)
+	}
+	t.Setenv(envArchiveJointIntervalsMaxBytes, strconv.FormatInt(info.Size()/2, 10))
+	record, manifest := jointSidecarRecord(t, "joint-budget")
+	if err := tr.persistJointIntervalArchive(context.Background(), test, record, manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.JointIntervalsFile == "" || manifest.JointIntervalsParquetFile == "" || !manifest.JointIntervalsTruncated || manifest.JointIntervalCount == 0 || manifest.JointIntervalCount >= 500 {
+		t.Fatalf("budgeted sidecar %+v", manifest)
+	}
+	if _, err := os.Stat(filepath.Join(record.ArchivePath, jointIntervalsParquetFileName)); err != nil {
+		t.Fatal(err)
+	}
+
+	// The Parquet copy cannot be written: nothing is left behind.
+	t.Setenv(envArchiveJointIntervalsMaxBytes, "")
+	failed, failedManifest := jointSidecarRecord(t, "joint-budget")
+	blocker := filepath.Join(failed.ArchivePath, jointIntervalsParquetFileName)
+	if err := os.MkdirAll(filepath.Join(blocker, "occupied"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := tr.persistJointIntervalArchive(context.Background(), test, failed, failedManifest); err == nil {
+		t.Fatal("a failed Parquet copy was reported as written")
+	}
+	if _, err := os.Stat(filepath.Join(failed.ArchivePath, jointIntervalsFileName)); !os.IsNotExist(err) {
+		t.Fatalf("the JSONL was left behind: %v", err)
+	}
+	if failedManifest.JointIntervalsFile != "" || failedManifest.JointIntervalCount != 0 || len(failedManifest.Artifacts) != 0 {
+		t.Fatalf("a failed sidecar was declared: %+v", failedManifest)
+	}
+}
+
+// Rows come from the persisted interval evidence, so a compacted terminal
+// clone (or a reloaded run) still archives every publication.
+func TestJointEvidenceArchiveReadsPersistedEvidence(t *testing.T) {
+	server, store := baselineTestServer(t)
+	comparisonArchiveFixture(t, server, store, "joint-stored", 100, 100)
+	start := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	history := jointSidecarHistory(start, 4, 3)
+	for _, point := range history {
+		if err := store.SaveHistory("joint-stored", point.Timestamp, point); err != nil {
+			t.Fatal(err)
+		}
+	}
+	record := server.runner.archives["joint-stored"]
+	admitArchiveForTest(t, record)
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Provenance.JointEvidence = jointTestProjection.Clone()
+	compacted := *history[len(history)-1]
+	compacted.NativeEvidence = nil
+	clone := &ManagedTest{ID: "joint-stored", Status: "COMPLETED", History: []*LiveMetrics{&compacted}}
+	if err := server.runner.persistJointIntervalArchive(context.Background(), clone, record, manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.JointIntervalCount != 12 || manifest.JointIntervalsTruncated {
+		t.Fatalf("persisted evidence gave %d rows, truncated %v", manifest.JointIntervalCount, manifest.JointIntervalsTruncated)
+	}
+}
+
+func TestJointEvidenceCapabilityFromProbedFeatures(t *testing.T) {
+	for _, tc := range []struct {
+		features []string
+		want     bool
+	}{
+		{[]string{generatorrpc.FeatureRunCorrelationV1, generatorrpc.FeatureJointEvidenceV4}, true},
+		{[]string{strings.ToUpper(generatorrpc.FeatureJointEvidenceV4)}, true},
+		{[]string{generatorrpc.FeatureRunCorrelationV1}, false},
+		{nil, false},
+	} {
+		if got := generatorAcceptsJointEvidence(tc.features); got != tc.want {
+			t.Fatalf("features %v: %v, want %v", tc.features, got, tc.want)
+		}
 	}
 }

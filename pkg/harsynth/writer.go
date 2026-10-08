@@ -115,6 +115,10 @@ type Metadata struct {
 	// ExtraOmittedFields names fields this source never holds (for example
 	// headers in a projection that keeps none), added to OmittedFields.
 	ExtraOmittedFields []string
+	// NativeHARCoverageUnknown counts native HARs in the same evidence that
+	// do not say which contexts they cover, so their requests may appear in
+	// both HARs.
+	NativeHARCoverageUnknown int
 }
 
 // Summary describes a written HAR.
@@ -174,7 +178,7 @@ func (w *Writer) begin() error {
 	if creatorVersion == "" {
 		creatorVersion = strconv.Itoa(AlgorithmVersion)
 	}
-	head, _ := json.Marshal(map[string]any{"name": "APEX Load synthetic HAR", "version": creatorVersion, "comment": Algorithm + ".v1"})
+	head, _ := json.Marshal(map[string]any{"name": "APEX Load synthetic HAR", "version": creatorVersion, "comment": Algorithm + ".v" + strconv.Itoa(AlgorithmVersion)})
 	_, w.err = w.out.WriteString(`{"log":{"version":"` + SchemaVersion + `","creator":` + string(head) + `,"entries":[`)
 	return w.err
 }
@@ -243,6 +247,9 @@ func (w *Writer) Close() (Summary, error) {
 		completeness = CompletenessTruncated
 		reasons = append(reasons, "writer_limit")
 	}
+	if w.meta.NativeHARCoverageUnknown > 0 {
+		reasons = append(reasons, "native_har_coverage_unknown")
+	}
 	engines := make([]string, 0, len(w.engines))
 	for engine := range w.engines {
 		engines = append(engines, engine)
@@ -266,6 +273,9 @@ func (w *Writer) Close() (Summary, error) {
 		"body_policy":          BodyPolicy,
 		"browser_engines":      engines,
 		"ordering":             "source_order",
+	}
+	if w.meta.NativeHARCoverageUnknown > 0 {
+		block["native_har_coverage_unknown"] = w.meta.NativeHARCoverageUnknown
 	}
 	raw, _ := json.Marshal(block)
 	if _, err := w.out.WriteString(`],"_apexloadSensitivity":"` + scrub.SensitivityScrubbed + `","_apexload":` + string(raw) + `}}`); err != nil {
@@ -343,6 +353,13 @@ type harEntryEvidence struct {
 	// WaitIncludesSend: the evidence measures request start to response start
 	// as one phase, written as wait with send unavailable.
 	WaitIncludesSend bool `json:"wait_includes_send,omitempty"`
+	// WaitIsEntryDuration: no phase was measured, so the entry's whole
+	// duration is written as wait (time_source entry_duration).
+	WaitIsEntryDuration bool `json:"wait_is_entry_duration,omitempty"`
+	// UnavailableFields names required HAR fields that were not measured
+	// and are written as 0 (HAR 1.2 allows -1 only for optional timings and
+	// sizes).
+	UnavailableFields []string `json:"unavailable_fields,omitempty"`
 }
 
 type harEntry struct {
@@ -401,7 +418,11 @@ func buildEntry(e Entry, policy scrub.Policy) (harEntry, string) {
 	default:
 		return harEntry{}, OmittedNoStartTime
 	}
-	out.Timings = harTimings{Blocked: -1, DNS: -1, Connect: -1, SSL: -1, Send: -1, Wait: -1, Receive: -1}
+	// Optional timings are -1 when unmeasured; send, wait and receive are
+	// required non-negative, so an unmeasured one is 0 and named in
+	// unavailable_fields.
+	out.Timings = harTimings{Blocked: -1, DNS: -1, Connect: -1, SSL: -1}
+	waitMeasured, receiveMeasured := false, false
 	if evidence != nil {
 		for _, phase := range evidence.Phases {
 			duration, ok := phaseDuration(phase)
@@ -416,19 +437,25 @@ func buildEntry(e Entry, policy scrub.Policy) (harEntry, string) {
 			case "tls":
 				out.Timings.SSL = duration
 			case "request_wait":
-				out.Timings.Wait = duration
+				out.Timings.Wait, waitMeasured = duration, true
 				out.Evidence.WaitIncludesSend = true
 			case "response":
-				out.Timings.Receive = duration
+				out.Timings.Receive, receiveMeasured = duration, true
 			}
 		}
 		out.Evidence.RequestID = cleanText(evidence.RequestID, 128)
 		out.Evidence.State = cleanText(evidence.State, 32)
 		out.Evidence.TimingSource = cleanText(evidence.TimingSource, 64)
 	}
-	total, measured := 0.0, false
+	total, measured := 0.0, waitMeasured || receiveMeasured
+	if waitMeasured {
+		total += out.Timings.Wait
+	}
+	if receiveMeasured {
+		total += out.Timings.Receive
+	}
 	// HAR includes ssl inside connect, so it is not added again.
-	for _, value := range []float64{out.Timings.Blocked, out.Timings.DNS, out.Timings.Connect, out.Timings.Send, out.Timings.Wait, out.Timings.Receive} {
+	for _, value := range []float64{out.Timings.Blocked, out.Timings.DNS, out.Timings.Connect} {
 		if value >= 0 {
 			total += value
 			measured = true
@@ -439,13 +466,24 @@ func buildEntry(e Entry, policy scrub.Policy) (harEntry, string) {
 		out.Time = roundMS(total)
 		out.Evidence.TimeSource = TimeTimings
 	case n.DurationMs > 0 && !math.IsInf(n.DurationMs, 0) && !math.IsNaN(n.DurationMs) && n.DurationMs <= 86_400_000:
+		// time is the sum of the timings: the whole duration is one wait.
 		out.Time = roundMS(n.DurationMs)
-		out.Evidence.TimeSource = TimeEntryDuration
+		out.Timings.Wait, waitMeasured = out.Time, true
+		out.Evidence.TimeSource, out.Evidence.WaitIsEntryDuration = TimeEntryDuration, true
 	default:
 		out.Evidence.TimeSource = TimeUnavailable
 	}
+	out.Evidence.UnavailableFields = append(out.Evidence.UnavailableFields, "timings.send")
+	if !waitMeasured {
+		out.Evidence.UnavailableFields = append(out.Evidence.UnavailableFields, "timings.wait")
+	}
+	if !receiveMeasured {
+		out.Evidence.UnavailableFields = append(out.Evidence.UnavailableFields, "timings.receive")
+	}
 	out.Request = harRequest{Method: method, URL: rawURL, HTTPVersion: "", Cookies: []harNameValue{}, Headers: headerPairs(n.RequestHeaders), QueryString: queryPairs(parsed.RawQuery), HeadersSize: -1, BodySize: -1}
-	out.Response = harResponse{Status: 0, StatusText: "", HTTPVersion: "", Cookies: []harNameValue{}, Headers: headerPairs(n.ResponseHeaders), Content: harContent{Size: -1, MimeType: "x-unknown"}, HeadersSize: -1, BodySize: -1}
+	// The decoded content size is never measured; HAR 1.2 gives it no -1.
+	out.Response = harResponse{Status: 0, StatusText: "", HTTPVersion: "", Cookies: []harNameValue{}, Headers: headerPairs(n.ResponseHeaders), Content: harContent{Size: 0, MimeType: "x-unknown"}, HeadersSize: -1, BodySize: -1}
+	out.Evidence.UnavailableFields = append(out.Evidence.UnavailableFields, "response.content.size")
 	if n.StatusCode > 0 && n.StatusCode <= 999 {
 		out.Response.Status = n.StatusCode
 	}

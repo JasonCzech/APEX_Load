@@ -681,9 +681,15 @@ type Result struct {
 	// Interrupted marks a failure recorded once the VUser was stopping (its
 	// in-flight action cancelled, or a stop or goal boundary abandoning the
 	// iteration): the stop, not the target, may have caused it.
+	// VUserLifetime is a random identity of the VUser's lifetime: a VUser ID
+	// is reused by later VUsers (open-workload arrivals, scale-up), a
+	// lifetime never is. WallElapsed is a transaction's wall-clock span when
+	// its Duration excludes time (think time inside it).
 	VUserID             int           `json:"vuser_id,omitempty"`
 	Iteration           int64         `json:"iteration,omitempty"`
 	Interrupted         bool          `json:"interrupted,omitempty"`
+	VUserLifetime       uint64        `json:"vuser_lifetime,omitempty"`
+	WallElapsed         time.Duration `json:"wall_elapsed,omitempty"`
 	ActionName          string        // Name of the executed action
 	BusinessTransaction bool          // True when this sample represents a completed business transaction
 	SampleKind          string        // "child" or "aggregate" for StreamingProtocol results

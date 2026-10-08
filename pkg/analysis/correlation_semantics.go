@@ -1,6 +1,10 @@
 package analysis
 
-import "sort"
+import (
+	"sort"
+	"strings"
+	"time"
+)
 
 // Correlation completeness (B6). A lagged correlation associates two series
 // that each keep their own semantics: unit, kind, the source semantics the
@@ -25,6 +29,9 @@ const (
 	ConversionCounterRate              = "counter_rate"
 	ConversionDeclaredSummaryStatistic = "declared_summary_statistic"
 	ConversionObservationPercentile    = "observation_percentile"
+	// ConversionHistogramPercentileEstimate: a percentile interpolated from
+	// histogram buckets, an estimate rather than an observed value.
+	ConversionHistogramPercentileEstimate = "histogram_percentile_estimate"
 )
 
 // CorrelationSide is one correlated series' semantics and evidence.
@@ -38,11 +45,18 @@ type CorrelationSide struct {
 	// non-scalar source became scalar buckets.
 	Statistic  string `json:"statistic"`
 	Conversion string `json:"conversion,omitempty"`
+	// Derivation names the catalog operation the values are, when the series
+	// is derived (a moving standard deviation is not its raw statistic).
+	Derivation string `json:"derivation,omitempty"`
 	Points     int    `json:"points"`
 	Valid      int    `json:"valid"`
-	// Excluded counts buckets kept out of every pairing, by reason (stale,
-	// clock_skewed, dropped, missing, counter_reset, ...).
+	// Excluded counts buckets kept out of every pairing, by reason.
 	Excluded map[string]int `json:"excluded,omitempty"`
+	// ExcludedSamples counts the raw samples bucketing could not use, by
+	// reason (stale, clock_skewed, dropped, counter_reset, ...). A side read
+	// from an imported dataset is aggregated by its dataset query and has
+	// none.
+	ExcludedSamples map[string]int `json:"excluded_samples,omitempty"`
 }
 
 // CorrelationSemantics describes both sides of a correlation.
@@ -51,8 +65,11 @@ type CorrelationSemantics struct {
 	Right CorrelationSide `json:"right"`
 	// SameUnits is true only when both series share a declared unit and
 	// kind; otherwise their values are associated, never compared directly.
-	SameUnits     bool   `json:"same_units"`
-	LagConvention string `json:"lag_convention"`
+	SameUnits bool `json:"same_units"`
+	// UnitsUndeclared: a side has no evidence or no declared unit, so
+	// whether the units match is unknown (not that they differ).
+	UnitsUndeclared bool   `json:"units_undeclared,omitempty"`
+	LagConvention   string `json:"lag_convention"`
 }
 
 // DescribeCorrelationSide reports a series' semantics and exclusions.
@@ -64,6 +81,10 @@ func DescribeCorrelationSide(metric, statistic string, points []MetricPoint) Cor
 		}
 		if side.Kind == "" {
 			side.Kind, side.InputKind, side.Population = point.Kind, point.InputKind, point.Population
+			if side.Population == "" {
+				// Archived transaction points carry it as a dimension.
+				side.Population = point.Dimensions["population"]
+			}
 		}
 		if point.Quality == QualityValid && point.Value != nil {
 			side.Valid++
@@ -88,6 +109,8 @@ func DescribeCorrelationSide(metric, statistic string, points []MetricPoint) Cor
 		side.Conversion = ConversionDeclaredSummaryStatistic
 	case (side.InputKind == KindObservation || side.Kind == KindObservation) && isPercentileStatistic(statistic):
 		side.Conversion = ConversionObservationPercentile
+	case (side.InputKind == KindHistogram || side.Kind == KindHistogram) && isPercentileStatistic(statistic):
+		side.Conversion = ConversionHistogramPercentileEstimate
 	}
 	return side
 }
@@ -103,8 +126,64 @@ func isPercentileStatistic(statistic string) bool {
 // DescribeCorrelation describes both sides of a correlation.
 func DescribeCorrelation(leftMetric, leftStatistic string, left []MetricPoint, rightMetric, rightStatistic string, right []MetricPoint) CorrelationSemantics {
 	semantics := CorrelationSemantics{Left: DescribeCorrelationSide(leftMetric, leftStatistic, left), Right: DescribeCorrelationSide(rightMetric, rightStatistic, right), LagConvention: CorrelationLagConvention}
-	semantics.SameUnits = semantics.Left.Unit != "" && semantics.Left.Unit == semantics.Right.Unit && semantics.Left.Kind == semantics.Right.Kind && semantics.Left.InputKind == semantics.Right.InputKind
+	l, r := semantics.Left, semantics.Right
+	semantics.UnitsUndeclared = l.Points == 0 || r.Points == 0 || l.Unit == "" || r.Unit == ""
+	samePopulation := l.Population == "" || r.Population == "" || l.Population == r.Population
+	semantics.SameUnits = !semantics.UnitsUndeclared && l.Unit == r.Unit && l.Kind == r.Kind && l.InputKind == r.InputKind && samePopulation
 	return semantics
+}
+
+// RawSampleExclusions counts the raw samples a bucketing cannot use as valid
+// values, by reason: a quality other than valid (stale, clock_skewed,
+// dropped, ...) and, for a counter, each decrease between consecutive
+// samples of one series (counter_reset). Bucketing records only that a
+// bucket is missing, so the reasons are counted before it.
+func RawSampleExclusions(points []MetricPoint) map[string]int {
+	out := map[string]int{}
+	type sample struct {
+		at    time.Time
+		value float64
+	}
+	counters := map[string][]sample{}
+	for _, point := range points {
+		if point.Quality != "" && point.Quality != QualityValid {
+			reason := point.Quality
+			if point.MissingReason != "" {
+				reason = point.MissingReason
+			}
+			out[reason]++
+			continue
+		}
+		if (point.Kind == KindCounter || point.InputKind == KindCounter) && point.Value != nil {
+			key := rawSeriesKey(point)
+			counters[key] = append(counters[key], sample{point.TimestampUTC, *point.Value})
+		}
+	}
+	for _, series := range counters {
+		sort.SliceStable(series, func(i, j int) bool { return series[i].at.Before(series[j].at) })
+		for i := 1; i < len(series); i++ {
+			if series[i].value < series[i-1].value {
+				out[MissingCounterReset]++
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func rawSeriesKey(point MetricPoint) string {
+	keys := make([]string, 0, len(point.Dimensions))
+	for key := range point.Dimensions {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := []string{point.Source, point.Host, point.Service, point.MetricName}
+	for _, key := range keys {
+		parts = append(parts, key+"="+point.Dimensions[key])
+	}
+	return strings.Join(parts, "\x00")
 }
 
 // correlationUnavailable says why paired buckets gave no coefficient.

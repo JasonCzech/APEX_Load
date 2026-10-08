@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func browserHARTestController(t *testing.T) *httptest.Server {
@@ -26,6 +27,13 @@ func browserHARTestController(t *testing.T) *httptest.Server {
 			_, _ = w.Write([]byte("PK-evidence"))
 		case "/api/v1/tests/run-1/archive/browser/har/forbidden.har":
 			http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		case "/api/v1/tests/run-1/archive/browser/har/cut.har":
+			// The connection drops mid-body.
+			w.Header().Set("Content-Length", "100000")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"log":{"version":"1.2","entries":[`))
+			w.(http.Flusher).Flush()
+			panic(http.ErrAbortHandler)
 		default:
 			http.NotFound(w, r)
 		}
@@ -64,6 +72,14 @@ func TestBrowserHARCommandListsAndDownloads(t *testing.T) {
 	if _, err := os.Stat(refused); !os.IsNotExist(err) {
 		t.Fatal("a refused download left a file")
 	}
+	// A download cut mid-body leaves no partial file, so a retry can write.
+	cut := filepath.Join(dir, "cut.har")
+	if err := executeBrowserHARCommand(context.Background(), []string{"download", "--api", server.URL, "--id", "run-1", "--artifact", "cut.har", "--out", cut}, &out); err == nil {
+		t.Fatal("a cut download succeeded")
+	}
+	if _, err := os.Stat(cut); !os.IsNotExist(err) {
+		t.Fatalf("a cut download left a partial file: %v", err)
+	}
 	// A replay's evidence ZIP to standard output.
 	out.Reset()
 	if err := executeBrowserHARCommand(context.Background(), []string{"download", "--api", server.URL, "--replay", "replay-1", "--evidence", "--out", "-"}, &out); err != nil || out.String() != "PK-evidence" {
@@ -90,5 +106,23 @@ func TestBrowserHARCommandRefusesAmbiguousArguments(t *testing.T) {
 	var out bytes.Buffer
 	if err := executeBrowserHARCommand(context.Background(), []string{"--help"}, &out); err != nil || !strings.Contains(out.String(), "browser-har download --replay") {
 		t.Fatalf("help %q %v", out.String(), err)
+	}
+}
+
+// The download's own deadline governs it, not the shared client's short
+// request timeout.
+func TestBrowserHARDownloadOutlivesTheClientTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(150 * time.Millisecond)
+		_, _ = w.Write([]byte(`{"log":{"version":"1.2","entries":[]}}`))
+	}))
+	t.Cleanup(server.Close)
+	client := &ApiClient{BaseURL: server.URL, Client: &http.Client{Timeout: 20 * time.Millisecond}}
+	var out bytes.Buffer
+	if err := client.downloadBrowserHAR(context.Background(), "/slow.har", "-", &out); err != nil || !strings.Contains(out.String(), `"1.2"`) {
+		t.Fatalf("slow download %q %v", out.String(), err)
+	}
+	if client.Client.Timeout != 20*time.Millisecond {
+		t.Fatal("the shared client was changed")
 	}
 }

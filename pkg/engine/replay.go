@@ -32,6 +32,10 @@ type ReplayOptions struct {
 	// hands the published HAR over (TakeHARArtifacts) once the browser has
 	// closed.
 	RecordHAR bool
+	// DiscardHAR receives a recorded HAR that no report carries (the replay
+	// returned an error after the recording opened), so the caller can
+	// retire it instead of leaving it in the HAR directory.
+	DiscardHAR func([]protocol.BrowserHARArtifact)
 	// Seed, when set, makes random data selection and {{fn.random}}/{{fake.*}}
 	// reproducible across replays. Nil uses defaultReplaySeed.
 	Seed            *int64
@@ -163,10 +167,10 @@ type ReplayReport struct {
 	FinalVariables              map[string]string         `json:"final_variables,omitempty"`
 	Snapshots                   []*protocol.ErrorSnapshot `json:"snapshots,omitempty"`
 
-	messageDetailBudget     *replaySnapshotBudget
+	messageDetailBudget *replaySnapshotBudget
 	// harArtifacts are the native HARs a replay recorded (RecordHAR); never
 	// serialized, since they name local files.
-	harArtifacts []protocol.BrowserHARArtifact
+	harArtifacts            []protocol.BrowserHARArtifact
 	totalEventCount         int
 	retainedEventJSONBytes  int
 	eventJSONBytes          []int
@@ -364,11 +368,28 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	_, recordsHAR := proto.(protocol.BrowserHARArtifactProvider)
 	recordsHAR = recordsHAR && opts.RecordHAR
 	if recordsHAR {
+		// Both aliases: the policy key is applied after the plain one, so a
+		// script's own "on_error" policy would otherwise discard the
+		// recording of a successful replay.
 		protoConfig["browser_har_capture"] = "always"
+		protoConfig["browser_har_capture_policy"] = "always"
+	}
+	// discardUnreportedHAR hands a recording no report carries to the caller.
+	reported := false
+	discardUnreportedHAR := func() {
+		if !recordsHAR || reported || opts.DiscardHAR == nil {
+			return
+		}
+		if provider, ok := proto.(protocol.BrowserHARArtifactProvider); ok {
+			if artifacts := takeBrowserHARArtifacts(provider); len(artifacts) > 0 {
+				opts.DiscardHAR(artifacts)
+			}
+		}
 	}
 	bindProtocolRuntimeRedaction(proto, func() *RedactionConfig { return redactionConfig })
 	if err := callProtocolInit(ctx, proto, protoConfig, redactionConfig); err != nil {
 		runProtocolTeardown(proto, func() *RedactionConfig { return redactionConfig })
+		discardUnreportedHAR()
 		return nil, fmt.Errorf("protocol init: %s", err)
 	}
 	var vu *VUser
@@ -385,7 +406,10 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 			})
 		})
 	}
-	defer teardownProtocol()
+	defer func() {
+		teardownProtocol()
+		discardUnreportedHAR()
+	}()
 
 	dataProvider, err := NewDataProvider(script.DataSources)
 	if err != nil {
@@ -531,7 +555,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 			report.harArtifacts = takeBrowserHARArtifacts(provider)
 		}
 	}
-
+	reported = true
 	return report, nil
 }
 

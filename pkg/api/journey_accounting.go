@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -45,6 +46,11 @@ const (
 	maxJourneyIterationEvents = 10_000
 	maxJourneyBufferedEvents  = 1_000_000
 	maxJourneyExamples        = 5
+	// journeyRunEndWindow: a VUser lifetime whose last row ended within this
+	// long of the archive's last row may have been cut by the run's end; one
+	// that ended earlier ended on its own (iterations done, fail-fast, an
+	// open-workload arrival's single iteration).
+	journeyRunEndWindow = 60 * time.Second
 )
 
 // JourneyAttemptRef identifies one attempt, for drill-down.
@@ -104,8 +110,11 @@ type JourneyRiskReport struct {
 	StepRiskEnabled  bool     `json:"step_risk_enabled"`
 	StepRiskIndex    *float64 `json:"step_risk_index,omitempty"`
 	StepRiskUnscored string   `json:"step_risk_unscored,omitempty"`
-	// Incomplete: some VUsers were past the tracking bound.
-	Incomplete bool `json:"incomplete,omitempty"`
+	// Incomplete: the accounting does not cover the whole run;
+	// IncompleteReasons says why (tracking bounds, the archive scan budget,
+	// uncollected generator sources, rows without VUser identity).
+	Incomplete        bool     `json:"incomplete,omitempty"`
+	IncompleteReasons []string `json:"incomplete_reasons,omitempty"`
 	// RowsOutsideIterations counts init, teardown and identity-less rows,
 	// which belong to no journey attempt.
 	RowsOutsideIterations int64    `json:"rows_outside_iterations"`
@@ -161,8 +170,11 @@ type journeyAttempt struct {
 type journeyVUserState struct {
 	group     string
 	vuser     int
+	lifetime  uint64
 	iteration int64
 	events    []journeyEvent
+	// lastEnd is the end of the lifetime's latest row (Unix ns).
+	lastEnd int64
 }
 
 type journeyAccumulator struct {
@@ -177,6 +189,12 @@ type journeyAccumulator struct {
 	ordinal  int64
 	report   *JourneyRiskReport
 	identity bool
+	// maxEnd is the end of the archive's latest row (Unix ns); lifetimes
+	// says any row carries a VUser lifetime, rowsWithoutLifetime counts
+	// those that do not (an older generator's).
+	maxEnd              int64
+	lifetimes           bool
+	rowsWithoutLifetime int64
 }
 
 type journeyVUserKey struct {
@@ -356,8 +374,24 @@ func (a *journeyAccumulator) closeIteration(state *journeyVUserState, censored b
 	state.events = state.events[:0]
 }
 
+// incomplete marks the accounting incomplete for a reason (once).
+func (a *journeyAccumulator) incomplete(reason string) {
+	a.report.Incomplete = true
+	if !slices.Contains(a.report.IncompleteReasons, reason) {
+		a.report.IncompleteReasons = append(a.report.IncompleteReasons, reason)
+	}
+}
+
 func (a *journeyAccumulator) add(event *TransactionEvent) {
 	a.ordinal++
+	begin := event.Timestamp.UnixNano()
+	end := begin + int64(max(event.DurationMs, event.ElapsedMs)*float64(time.Millisecond))
+	a.maxEnd = max(a.maxEnd, end)
+	if event.VUserLifetime != 0 {
+		a.lifetimes = true
+	} else {
+		a.rowsWithoutLifetime++
+	}
 	if event.Iteration <= 0 {
 		a.report.RowsOutsideIterations++
 		return
@@ -367,19 +401,28 @@ func (a *journeyAccumulator) add(event *TransactionEvent) {
 	state := a.vusers[key]
 	if state == nil {
 		if len(a.vusers) >= maxJourneyTrackedVUsers {
-			a.report.Incomplete = true
+			a.incomplete("vuser_tracking_bound")
 			return
 		}
-		state = &journeyVUserState{group: event.Group, vuser: event.VUserID, iteration: event.Iteration}
+		state = &journeyVUserState{group: event.Group, vuser: event.VUserID, lifetime: event.VUserLifetime, iteration: event.Iteration}
 		a.vusers[key] = state
 	}
-	if event.Iteration != state.iteration {
-		// A VUser's rows are archived in order, so its iteration only goes
-		// back when a replacement generator continued the VUser after an
-		// evacuation: the earlier share's last iteration may have been cut.
+	switch {
+	case event.VUserLifetime != state.lifetime:
+		// A VUser ID is reused only once its previous VUser has exited (an
+		// open-workload arrival, a scale-up): that lifetime ended on its own,
+		// so its last iteration is settled, not censored.
+		a.closeIteration(state, false)
+		state.lifetime, state.iteration, state.lastEnd = event.VUserLifetime, event.Iteration, 0
+	case event.Iteration != state.iteration:
+		// Within one lifetime rows are archived in order, so the iteration
+		// only goes back for rows without a lifetime, when a replacement
+		// generator continued the VUser after an evacuation: the earlier
+		// share's last iteration may have been cut.
 		a.closeIteration(state, event.Iteration < state.iteration)
 		state.iteration = event.Iteration
 	}
+	state.lastEnd = max(state.lastEnd, end)
 	var starts, finishes uint64
 	for j, journey := range a.policy.Journeys {
 		if journey.Start.matches(event) {
@@ -394,12 +437,13 @@ func (a *journeyAccumulator) add(event *TransactionEvent) {
 		return
 	}
 	if len(state.events) >= maxJourneyIterationEvents || a.buffered >= maxJourneyBufferedEvents {
-		a.report.Incomplete = true
+		a.incomplete("buffer_bound")
 		return
 	}
-	begin := event.Timestamp.UnixNano()
 	a.buffered++
-	state.events = append(state.events, journeyEvent{ordinal: a.ordinal, begin: begin, end: begin + int64(event.DurationMs*float64(time.Millisecond)), step: step, success: event.Success, interrupted: event.Interrupted && !event.Success, name: event.ActionName, starts: starts, finishes: finishes})
+	// A transaction's interval is its wall-clock span (its duration can
+	// exclude think time inside it).
+	state.events = append(state.events, journeyEvent{ordinal: a.ordinal, begin: begin, end: end, step: step, success: event.Success, interrupted: event.Interrupted && !event.Success, name: event.ActionName, starts: starts, finishes: finishes})
 }
 
 // finish settles the run's end: each VUser's last iteration is censored when
@@ -416,8 +460,17 @@ func (a *journeyAccumulator) finish() {
 		}
 		return keys[i].vuser < keys[j].vuser
 	})
+	// A lifetime still running near the archive's end may have been cut by
+	// the run's end; one that ended earlier ended on its own.
+	cutAfter := a.maxEnd - int64(journeyRunEndWindow)
 	for _, key := range keys {
-		a.closeIteration(a.vusers[key], true)
+		state := a.vusers[key]
+		a.closeIteration(state, state.lastEnd >= cutAfter)
+	}
+	if a.lifetimes && a.rowsWithoutLifetime > 0 {
+		// Rows from a source without VUser identity (an older generator)
+		// cannot be accounted.
+		a.incomplete("rows_without_vuser_identity")
 	}
 	weightedFailed, weightedEligible, weightedStepFailures, weightedSteps := 0.0, 0.0, 0.0, 0.0
 	for j := range a.results {
@@ -461,23 +514,41 @@ func (a *journeyAccumulator) finish() {
 }
 
 // accountJourneys reads a finalized archive's transactions under a journey
-// policy.
-func accountJourneys(ctx context.Context, record *storage.RunArchiveRecord, policy JourneyPolicyDefinition, ref JourneyPolicyRef) (*JourneyRiskReport, error) {
+// policy. A scan stopped by the archive budget, or an archive whose
+// generator sources were not all collected, gives an incomplete report.
+func accountJourneys(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, policy JourneyPolicyDefinition, ref JourneyPolicyRef) (*JourneyRiskReport, error) {
 	report := &JourneyRiskReport{SchemaVersion: journeyRiskSchemaVersion, RunID: record.TestID, Policy: ref, Availability: "available", StepRiskEnabled: policy.StepRiskEnabled, Journeys: []JourneyAccounting{},
 		Notes: []string{
 			"Weighted test-journey risk from the run's own transactions; never revenue or conversion impact.",
-			"An attempt still open when the run ended is censored and excluded from the index.",
+			"An attempt still open when the run ended (a VUser running within a minute of the run's last sample) is censored and excluded from the index.",
 		}}
 	acc := newJourneyAccumulator(policy, report)
-	if err := forEachArchiveTransactionContext(ctx, record, func(event *TransactionEvent) error {
+	err := forEachArchiveTransactionContext(ctx, record, func(event *TransactionEvent) error {
 		acc.add(event)
 		return nil
-	}); err != nil {
+	})
+	var budget *archiveScanBudgetError
+	switch {
+	case errors.As(err, &budget):
+		acc.incomplete("archive_scan_budget")
+	case err != nil:
 		return nil, err
 	}
+	if manifest != nil && manifest.SourceCoverage != nil {
+		for _, source := range manifest.SourceCoverage.Sources {
+			if !source.Collected {
+				acc.incomplete("sources_not_collected")
+				break
+			}
+		}
+	}
 	if !acc.identity {
-		report.Availability, report.Reason = "unavailable", "archive_lacks_vuser_iteration_identity"
-		report.Journeys = []JourneyAccounting{}
+		report.Availability, report.Journeys = "unavailable", []JourneyAccounting{}
+		report.Reason = "archive_lacks_vuser_iteration_identity"
+		if acc.lifetimes {
+			// Identity was recorded, the run just ran no iteration.
+			report.Reason = "no_iterations"
+		}
 		return report, nil
 	}
 	acc.finish()
@@ -564,7 +635,7 @@ func (s *Server) handleGetRunArchiveJourneys(w http.ResponseWriter, r *http.Requ
 			Notes: []string{"The run pinned no journey_policy; name one with ?policy=ID."}})
 		return
 	}
-	report, err := accountJourneys(r.Context(), record, policy, ref)
+	report, err := accountJourneys(r.Context(), record, manifest, policy, ref)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to read archive transactions: "+err.Error())
 		return

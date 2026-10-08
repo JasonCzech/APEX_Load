@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"slices"
 	"sort"
@@ -56,6 +57,7 @@ func init() {
 		},
 		Run:     runBrowserIntelligence,
 		OnReady: notifyBrowserFindingTransitions,
+		Subject: browserIntelligenceSubject,
 	})
 }
 
@@ -247,7 +249,14 @@ func prepareBrowserIntelligence(ctx context.Context, s *Server, projectID string
 	if !ok {
 		return nil, errors.New("analysis policies are unavailable")
 	}
+	// Like every archive reader, hold a materialization lease while reading:
+	// an object-backed archive's local source may have been retired.
+	lease, err := acquireArchiveMaterialized(ctx, record)
+	if err != nil {
+		return nil, fmt.Errorf("run %s archive: %w", runID, err)
+	}
 	manifest, err := loadRunArchiveManifestFromRecord(record)
+	lease.Release()
 	if err != nil {
 		return nil, fmt.Errorf("run %s manifest: %w", runID, err)
 	}
@@ -344,11 +353,11 @@ func runBrowserIntelligence(ctx context.Context, s *Server, job *storage.Evaluat
 
 // browserCohortEvidence is one cohort's view of one metric.
 type browserCohortEvidence struct {
-	cohort       BrowserFindingCohort
-	algorithm    string
-	quality      BrowserFindingQuality
-	distribution protocol.BrowserMetricDistribution
-	merged       bool // false once a distribution could not merge
+	cohort    BrowserFindingCohort
+	algorithm string
+	quality   BrowserFindingQuality
+	// values are the qualified final observations' values.
+	values []float64
 }
 
 // browserEngineFamily maps an observed engine onto the policy's engine
@@ -416,7 +425,7 @@ func evaluateBrowserFindings(inputs *browserIntelligenceInputs, window BrowserFi
 		Findings: []BrowserFinding{}, Counts: map[string]int{"active": 0, "suppressed": 0, "unscored": 0},
 		Notes: []string{
 			"Only qualified final observations of main-frame navigations are judged; child frames and back/forward-cache restores are reported as quality, never scored.",
-			"The observed value is the p75 of the qualified final observations (approximate: the upper bound of its distribution bucket, capped by the observed maximum).",
+			"The observed value is the nearest-rank p75 of the qualified final observations' values.",
 			"Thresholds and weights come from the policy revision named here; findings are not compared with a baseline (baseline anomalies are a separate rule set).",
 		}}
 	windowKey := window.Start.Format(time.RFC3339Nano) + "/" + window.End.Format(time.RFC3339Nano)
@@ -468,7 +477,7 @@ func evaluateBrowserFindings(inputs *browserIntelligenceInputs, window BrowserFi
 		}
 		evidence := metrics[cohort.key()]
 		if evidence == nil {
-			evidence = &browserCohortEvidence{cohort: cohort, algorithm: observation.Algorithm, merged: true, quality: BrowserFindingQuality{Incomplete: incomplete}}
+			evidence = &browserCohortEvidence{cohort: cohort, algorithm: observation.Algorithm, quality: BrowserFindingQuality{Incomplete: incomplete}}
 			metrics[cohort.key()] = evidence
 		}
 		quality := &evidence.quality
@@ -482,7 +491,7 @@ func evaluateBrowserFindings(inputs *browserIntelligenceInputs, window BrowserFi
 			switch {
 			case observation.Qualified && observation.Value != nil:
 				quality.EligibleFinal++
-				evidence.distribution.Add(*observation.Value)
+				evidence.values = append(evidence.values, *observation.Value)
 			case observation.Available:
 				quality.UnqualifiedFinal++
 				reason = "cohort_unavailable"
@@ -519,7 +528,7 @@ func evaluateBrowserFindings(inputs *browserIntelligenceInputs, window BrowserFi
 		good, poor := metric.Good, metric.Poor
 		required := metric.Weight > 0
 		component := BrowserScoreComponent{Metric: metric.Metric, Weight: metric.Weight, Required: required, Good: good, Poor: poor}
-		var overall protocol.BrowserMetricDistribution
+		var overall []float64
 		for _, key := range cohortKeys {
 			cohort := cohorts[key]
 			evidence := byMetric[metric.Metric][key]
@@ -548,14 +557,8 @@ func evaluateBrowserFindings(inputs *browserIntelligenceInputs, window BrowserFi
 				add(finding)
 				continue
 			}
-			_ = overall.Merge(evidence.distribution)
-			value, ok := evidence.distribution.Quantile(0.75)
-			if !ok {
-				finding.State, finding.Reason = "unscored", "distribution_invalid"
-				finding.Summary = fmt.Sprintf("%s on %s/%s could not be summarized.", strings.ToUpper(metric.Metric), cohort.Engine, cohort.DeviceProfile)
-				add(finding)
-				continue
-			}
+			overall = append(overall, evidence.values...)
+			value := nearestRankP75(evidence.values)
 			severity := browserSeverity(value, good, poor)
 			if severity == "good" {
 				continue
@@ -566,12 +569,11 @@ func evaluateBrowserFindings(inputs *browserIntelligenceInputs, window BrowserFi
 				formatBrowserMetricValue(metric.Metric, value), strings.ReplaceAll(severity, "_", " "), formatBrowserMetricValue(metric.Metric, good), evidence.quality.EligibleFinal)
 			add(finding)
 		}
-		component.Samples = overall.Count
-		if overall.Count > 0 {
-			if value, ok := overall.Quantile(0.75); ok {
-				componentScore := browserComponentScore(value, good, poor)
-				component.Observed, component.Score = &value, &componentScore
-			}
+		component.Samples = int64(len(overall))
+		if len(overall) > 0 {
+			value := nearestRankP75(overall)
+			componentScore := browserComponentScore(value, good, poor)
+			component.Observed, component.Score = &value, &componentScore
 		}
 		if component.Score == nil {
 			component.Reason = "no_qualified_final_observations"
@@ -639,6 +641,35 @@ func browserFindingDocuments(runID string, observations []protocol.BrowserDocume
 	}
 	return documents
 }
+
+// nearestRankP75 is the nearest-rank 75th percentile of values.
+func nearestRankP75(values []float64) float64 {
+	sorted := append([]float64(nil), values...)
+	sort.Float64s(sorted)
+	rank := int(math.Ceil(0.75 * float64(len(sorted))))
+	return sorted[max(rank, 1)-1]
+}
+
+// browserIntelligenceSubject is the evaluation's indexed subject: the
+// canonical run ID for an evaluation under the run's pinned policy, and the
+// run ID marked requested for one under a named revision, so the run's own
+// result is found by index and a named revision never stands in for it.
+func browserIntelligenceSubject(s *Server, projectID string, raw json.RawMessage) string {
+	var request BrowserIntelligenceRequest
+	if json.Unmarshal(raw, &request) != nil || s == nil || s.runner == nil {
+		return ""
+	}
+	test, ok := s.runner.GetTestSummary(strings.TrimSpace(request.Run))
+	if !ok || test == nil {
+		return ""
+	}
+	if request.Policy != nil {
+		return test.ID + browserRequestedSubjectSuffix
+	}
+	return test.ID
+}
+
+const browserRequestedSubjectSuffix = "#requested"
 
 func browserMetricUnitName(metric string) string {
 	if metric == "cls" {

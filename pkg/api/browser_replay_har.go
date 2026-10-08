@@ -7,10 +7,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -22,63 +25,108 @@ import (
 // Browser replay HARs (D7). A browser replay records a native HAR through the
 // browser's own capture, owner and scrub path; when it closes, the manager
 // copies the published HAR into its own private directory and retires the
-// original, so the HAR directory keeps nothing for replays. A replay without
+// original, so the HAR directory keeps nothing for replays. The copy belongs
+// to that session record: it is kept only for a session that still holds
+// its lease and integrity fence, is never served to another session reusing
+// the ID, and is removed when the record leaves the manager. A replay without
 // a native HAR (recording off, or it failed) still has a synthetic HAR built
 // from its report's retained network entries. Downloads need editor access to
-// the replay's project.
+// the replay's project; native HARs are streamed from the copy.
 
-const replayHARReadTimeout = 30 * time.Second
+const (
+	replayHARReadTimeout = 30 * time.Second
+	// replayHARRootName is the managed directory under the system temporary
+	// directory; each manager uses its own subdirectory, and one left by a
+	// process that ended (older than replayHARStaleAfter) is removed.
+	replayHARRootName   = "apexload-replay-har"
+	replayHARStaleAfter = 24 * time.Hour
+	// replayHARMaxDownloads bounds concurrent replay HAR and evidence
+	// downloads.
+	replayHARMaxDownloads = 4
+)
+
+var errReplayHARStoreClosed = errors.New("the replay HAR store is closed")
 
 // replayHARStore holds the native HAR copies of a manager's replay sessions.
 type replayHARStore struct {
-	mu    sync.Mutex
-	dir   string
-	files map[string]string // session ID → copy
+	mu     sync.Mutex
+	dir    string
+	closed bool
+	owners map[string]*BrowserReplaySession // copy path → owning session record
 }
 
 // retainReplayHAR copies a replay's native HAR (the first; a replay drives one
-// browser context) out of the HAR directory and retires every published
-// original. It returns false when no copy was kept.
-func (m *BrowserReplayManager) retainReplayHAR(sessionID string, artifacts []protocol.BrowserHARArtifact) bool {
+// browser context) out of the HAR directory for session when keep is set,
+// and retires every published original. It returns the copy's path, or "".
+func (m *BrowserReplayManager) retainReplayHAR(session *BrowserReplaySession, artifacts []protocol.BrowserHARArtifact, keep bool) string {
 	if m == nil || len(artifacts) == 0 {
-		return false
+		return ""
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), replayHARReadTimeout)
 	defer cancel()
-	kept := false
+	kept := ""
 	for k, artifact := range artifacts {
 		var path string
 		identity, err := browser.ReadRuntimeHARArtifact(ctx, artifact.Path, func(r io.Reader, size int64) error {
-			if k > 0 {
+			if k > 0 || !keep {
 				return nil
 			}
-			copied, err := m.har.write(sessionID, r, size)
+			copied, err := m.har.write(session, r, size)
 			path = copied
 			return err
 		})
 		if err != nil {
-			slog.Warn("browser replay HAR was not retained", "session_id", sessionID, "err", err)
+			slog.Warn("browser replay HAR was not retained", "session_id", session.ID, "err", err)
 			continue
 		}
-		if k == 0 && path != "" {
-			kept = true
+		if path != "" {
+			kept = path
 		}
 		if err := browser.RetireRuntimeHARArtifact(ctx, artifact.Path, identity); err != nil {
-			slog.Warn("browser replay HAR stays in its HAR directory until retention", "session_id", sessionID, "err", err)
+			slog.Warn("browser replay HAR stays in its HAR directory until retention", "session_id", session.ID, "err", err)
 		}
 	}
 	return kept
 }
 
-func (s *replayHARStore) write(sessionID string, r io.Reader, size int64) (string, error) {
+// discardReplayHAR retires HARs that no session keeps.
+func (m *BrowserReplayManager) discardReplayHAR(artifacts []protocol.BrowserHARArtifact) {
+	m.retainReplayHAR(&BrowserReplaySession{}, artifacts, false)
+}
+
+// openLocked makes the store's directory, removing ones left by processes
+// that ended.
+func (s *replayHARStore) openLocked() error {
+	if s.closed {
+		return errReplayHARStoreClosed
+	}
+	if s.dir != "" {
+		return nil
+	}
+	root := filepath.Join(os.TempDir(), replayHARRootName)
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return err
+	}
+	if entries, err := os.ReadDir(root); err == nil {
+		for _, entry := range entries {
+			if info, err := entry.Info(); err == nil && entry.IsDir() && time.Since(info.ModTime()) > replayHARStaleAfter {
+				_ = os.RemoveAll(filepath.Join(root, entry.Name()))
+			}
+		}
+	}
+	dir, err := os.MkdirTemp(root, "manager-")
+	if err != nil {
+		return err
+	}
+	s.dir, s.owners = dir, map[string]*BrowserReplaySession{}
+	return nil
+}
+
+func (s *replayHARStore) write(owner *BrowserReplaySession, r io.Reader, size int64) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.dir == "" {
-		dir, err := os.MkdirTemp("", "apexload-replay-har-")
-		if err != nil {
-			return "", err
-		}
-		s.dir, s.files = dir, map[string]string{}
+	if err := s.openLocked(); err != nil {
+		return "", err
 	}
 	file, err := os.CreateTemp(s.dir, "replay-*.har")
 	if err != nil {
@@ -95,67 +143,111 @@ func (s *replayHARStore) write(sessionID string, r io.Reader, size int64) (strin
 		_ = os.Remove(file.Name())
 		return "", err
 	}
-	if previous := s.files[sessionID]; previous != "" {
-		_ = os.Remove(previous)
-	}
-	s.files[sessionID] = file.Name()
+	// Touch the directory so a live manager's is never taken for stale.
+	now := time.Now()
+	_ = os.Chtimes(s.dir, now, now)
+	s.owners[file.Name()] = owner
 	return file.Name(), nil
 }
 
-func (s *replayHARStore) path(sessionID string) string {
+// remove drops one copy.
+func (s *replayHARStore) remove(path string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.files[sessionID]
+	if _, ok := s.owners[path]; ok {
+		_ = os.Remove(path)
+		delete(s.owners, path)
+	}
 }
 
-// sweep removes the copies of sessions the manager no longer holds.
-func (s *replayHARStore) sweep(live func(string) bool) {
+// open opens a session's copy, if the store still holds it.
+func (s *replayHARStore) open(path string) (*os.File, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for id, path := range s.files {
-		if !live(id) {
+	if _, ok := s.owners[path]; !ok || path == "" {
+		return nil, os.ErrNotExist
+	}
+	return os.Open(path)
+}
+
+// sweep removes the copies whose session record the manager no longer holds.
+func (s *replayHARStore) sweep(live func(*BrowserReplaySession) bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for path, owner := range s.owners {
+		if !live(owner) {
 			_ = os.Remove(path)
-			delete(s.files, id)
+			delete(s.owners, path)
 		}
 	}
 }
 
+// close removes every copy; later writes are refused.
 func (s *replayHARStore) close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.dir != "" {
 		_ = os.RemoveAll(s.dir)
 	}
-	s.dir, s.files = "", nil
+	s.dir, s.owners, s.closed = "", nil, true
 }
 
-// sweepReplayHARs drops the HAR copies of pruned sessions.
+// sweepReplayHARs drops the HAR copies of session records the manager no
+// longer holds (pruned, evicted, retired, abandoned or replaced).
 func (m *BrowserReplayManager) sweepReplayHARs() {
-	m.har.sweep(func(id string) bool {
+	m.har.sweep(func(owner *BrowserReplaySession) bool {
 		m.mu.RLock()
 		defer m.mu.RUnlock()
-		_, ok := m.sessions[id]
-		return ok
+		return owner != nil && m.sessions[owner.ID] == owner
 	})
 }
 
-// replayHAR is a replay's downloadable HAR.
+// replayHAR is a replay's downloadable HAR: a native copy (streamed from
+// file) or a synthetic one (bounded by the report's retained entries).
 type replayHAR struct {
+	file     *os.File
+	size     int64
 	data     []byte
 	fidelity string
 	summary  *harsynth.Summary
 }
 
+func (h replayHAR) close() {
+	if h.file != nil {
+		_ = h.file.Close()
+	}
+}
+
+func (h replayHAR) reader() io.Reader {
+	if h.file != nil {
+		return h.file
+	}
+	return bytes.NewReader(h.data)
+}
+
+func (h replayHAR) length() int64 {
+	if h.file != nil {
+		return h.size
+	}
+	return int64(len(h.data))
+}
+
 // replayHARFor returns a terminal replay's native HAR copy, or a synthetic
-// one from its report. ok is false while it runs or without a report.
+// one from its report. ok is false while it runs or without a report. The
+// caller closes the result.
 func (m *BrowserReplayManager) replayHARFor(session *BrowserReplaySession) (replayHAR, bool, error) {
 	if session == nil || !replaySessionStatusTerminal(session.Status) {
 		return replayHAR{}, false, nil
 	}
-	if path := m.har.path(session.ID); path != "" {
-		data, err := os.ReadFile(path)
+	if session.harCopy != "" {
+		file, err := m.har.open(session.harCopy)
 		if err == nil {
-			return replayHAR{data: data, fidelity: "native"}, true, nil
+			info, statErr := file.Stat()
+			if statErr != nil {
+				_ = file.Close()
+				return replayHAR{}, false, statErr
+			}
+			return replayHAR{file: file, size: info.Size(), fidelity: "native"}, true, nil
 		}
 		if !os.IsNotExist(err) {
 			return replayHAR{}, false, err
@@ -172,41 +264,66 @@ func (m *BrowserReplayManager) replayHARFor(session *BrowserReplaySession) (repl
 	return replayHAR{data: out.Bytes(), fidelity: harsynth.Fidelity, summary: &summary}, true, nil
 }
 
-func (s *Server) browserReplayHARForRequest(w http.ResponseWriter, r *http.Request) (*BrowserReplaySession, replayHAR, bool) {
+// acquireHARDownload takes one of the bounded replay HAR download slots.
+func (m *BrowserReplayManager) acquireHARDownload() (func(), bool) {
+	if m.harDownloads == nil {
+		return func() {}, true
+	}
+	select {
+	case m.harDownloads <- struct{}{}:
+		return func() { <-m.harDownloads }, true
+	default:
+		return nil, false
+	}
+}
+
+// browserReplayHARForRequest resolves a request's replay HAR and takes a
+// download slot; the caller calls the returned release.
+func (s *Server) browserReplayHARForRequest(w http.ResponseWriter, r *http.Request) (*BrowserReplaySession, replayHAR, func(), bool) {
 	sessionID := r.PathValue("session_id")
 	authorizedProjectID, _ := authorizedProjectFromRequest(r)
 	session, ok := s.browserReplay.GetForProject(sessionID, authorizedProjectID)
 	if !ok {
 		writeError(w, http.StatusNotFound, "browser replay session not found")
-		return nil, replayHAR{}, false
+		return nil, replayHAR{}, nil, false
 	}
 	if !replaySessionStatusTerminal(session.Status) {
 		writeError(w, http.StatusConflict, "the replay is still running; its HAR is available when it ends")
-		return nil, replayHAR{}, false
+		return nil, replayHAR{}, nil, false
+	}
+	release, admitted := s.browserReplay.acquireHARDownload()
+	if !admitted {
+		w.Header().Set("Retry-After", "5")
+		writeError(w, http.StatusServiceUnavailable, "too many replay HAR downloads are in progress; retry shortly")
+		return nil, replayHAR{}, nil, false
 	}
 	har, ok, err := s.browserReplay.replayHARFor(session)
 	if err != nil {
+		release()
 		writeError(w, http.StatusInternalServerError, "failed to read the replay HAR")
-		return nil, replayHAR{}, false
+		return nil, replayHAR{}, nil, false
 	}
 	if !ok {
+		release()
 		writeError(w, http.StatusNotFound, "this replay has no HAR")
-		return nil, replayHAR{}, false
+		return nil, replayHAR{}, nil, false
 	}
-	return session, har, true
+	return session, har, func() { har.close(); release() }, true
 }
 
 func (s *Server) handleDownloadBrowserReplayHAR(w http.ResponseWriter, r *http.Request) {
-	session, har, ok := s.browserReplayHARForRequest(w, r)
+	session, har, release, ok := s.browserReplayHARForRequest(w, r)
 	if !ok {
 		return
 	}
+	defer release()
 	writeBrowserHARHeaders(w, "replay-"+session.ID+".har", har.fidelity)
 	if har.summary != nil {
 		w.Header().Set("X-APEXLoad-HAR-Completeness", har.summary.Completeness)
 	}
+	w.Header().Set("Content-Length", strconv.FormatInt(har.length(), 10))
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(har.data)
+	_, _ = io.Copy(w, har.reader())
 }
 
 // browserReplayHARMetadata describes the HAR in a replay evidence ZIP.
@@ -222,46 +339,50 @@ type browserReplayHARMetadata struct {
 
 // handleDownloadBrowserReplayEvidence is a terminal replay's evidence ZIP:
 // the session (report.json), its HAR (replay.har) and what the HAR is
-// (har.json).
+// (har.json, written last with the digest of the HAR as streamed). The ZIP
+// is streamed; a failure after it started aborts the response.
 func (s *Server) handleDownloadBrowserReplayEvidence(w http.ResponseWriter, r *http.Request) {
-	session, har, ok := s.browserReplayHARForRequest(w, r)
+	session, har, release, ok := s.browserReplayHARForRequest(w, r)
 	if !ok {
 		return
 	}
+	defer release()
 	report, err := json.MarshalIndent(BrowserReplaySessionResponse{Session: session}, "", "  ")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to encode the replay report")
-		return
-	}
-	sum := sha256.Sum256(har.data)
-	metadata := browserReplayHARMetadata{Fidelity: har.fidelity, CaptureMode: "native_recording", SHA256: hex.EncodeToString(sum[:]), Bytes: int64(len(har.data))}
-	if har.summary != nil {
-		entries := har.summary.Entries
-		metadata.CaptureMode, metadata.Completeness, metadata.Entries, metadata.Omitted = harsynth.CaptureReplayNetworkEntries, har.summary.Completeness, &entries, har.summary.Omitted
-	}
-	metadataJSON, _ := json.MarshalIndent(metadata, "", "  ")
-	var out bytes.Buffer
-	archive := zip.NewWriter(&out)
-	for _, file := range []struct {
-		name string
-		data []byte
-	}{{"report.json", report}, {"replay.har", har.data}, {"har.json", metadataJSON}} {
-		entry, err := archive.CreateHeader(&zip.FileHeader{Name: file.name, Method: zip.Deflate, Modified: time.Now().UTC()})
-		if err == nil {
-			_, err = entry.Write(file.data)
-		}
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to build the replay evidence")
-			return
-		}
-	}
-	if err := archive.Close(); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to build the replay evidence")
 		return
 	}
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", "attachment; filename=\"replay-"+session.ID+"-evidence.zip\"")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(out.Bytes())
+	archive := zip.NewWriter(w)
+	create := func(name string) io.Writer {
+		entry, err := archive.CreateHeader(&zip.FileHeader{Name: name, Method: zip.Deflate, Modified: time.Now().UTC()})
+		if err != nil {
+			panic(http.ErrAbortHandler)
+		}
+		return entry
+	}
+	if _, err := create("report.json").Write(report); err != nil {
+		panic(http.ErrAbortHandler)
+	}
+	digest := sha256.New()
+	written, err := io.Copy(io.MultiWriter(create("replay.har"), digest), har.reader())
+	if err != nil || written != har.length() {
+		slog.Warn("browser replay evidence was cut short", "session_id", session.ID, "err", err)
+		panic(http.ErrAbortHandler)
+	}
+	metadata := browserReplayHARMetadata{Fidelity: har.fidelity, CaptureMode: "native_recording", SHA256: hex.EncodeToString(digest.Sum(nil)), Bytes: written}
+	if har.summary != nil {
+		entries := har.summary.Entries
+		metadata.CaptureMode, metadata.Completeness, metadata.Entries, metadata.Omitted = harsynth.CaptureReplayNetworkEntries, har.summary.Completeness, &entries, har.summary.Omitted
+	}
+	metadataJSON, _ := json.MarshalIndent(metadata, "", "  ")
+	if _, err := create("har.json").Write(metadataJSON); err != nil {
+		panic(http.ErrAbortHandler)
+	}
+	if err := archive.Close(); err != nil {
+		panic(http.ErrAbortHandler)
+	}
 }

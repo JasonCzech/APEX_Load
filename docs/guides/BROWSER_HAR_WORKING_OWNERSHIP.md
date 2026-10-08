@@ -240,18 +240,29 @@ evidence generation of the context it recorded (`evidence_generation` in the
 manifest's HAR entries, from the context's resource evidence); entries of
 those contexts are left out of the synthetic HAR (counted as `native_har`),
 so a context's requests appear in one HAR or the other. Entries whose
-generation is unknown (older peers, malformed evidence) are kept.
+generation is unknown (older peers, malformed evidence) are kept. A native
+HAR that does not name its context (one written before evidence generations
+were recorded, or with a malformed one) makes the overlap unknown: the
+synthetic HAR's `_apexload` block then reports
+`native_har_coverage_unknown` (how many such HARs) and lists it among the
+completeness reasons, since those contexts' requests may be in both.
 
 Entries first pass the same sanitizer as the safe transaction download, then
 the native HAR scrubber, so a synthetic HAR never shows more than that
-download does. The writer invents nothing: a timing phase the evidence lacks
-is HAR's -1 (HAR's `send` is always -1, since the evidence measures request
-start to response start as one phase, written as `wait`); `startedDateTime`
-is the measured request start, or the transaction's record time labelled
-`started_source: record_time`; `time` is the sum of the measured phases, or
-the entry's duration labelled `entry_duration`, or 0 labelled
-`unavailable`; sizes the evidence lacks are -1; HTTP versions, status text and
-cookies are empty; request and response bodies are never written (body
+download does. The writer invents nothing: an optional timing phase the
+evidence lacks (`blocked`, `dns`, `connect`, `ssl`) is HAR's -1, while the
+required `send`, `wait` and `receive`, which HAR 1.2 requires to be
+non-negative, are 0 when unmeasured and named in the entry's
+`_apexload.unavailable_fields` (`send` always, since the evidence measures
+request start to response start as one phase, written as `wait`);
+`startedDateTime` is the measured request start, or the transaction's
+record time labelled `started_source: record_time`; `time` is the sum of the
+measured phases, or the entry's duration labelled `entry_duration` and
+written as the whole `wait` (`wait_is_entry_duration`) so that `time` stays
+the sum of the timings, or 0 labelled `unavailable`; header and body sizes
+the evidence lacks are -1, and the decoded `content.size`, never measured,
+is 0 and listed as unavailable; HTTP versions, status text and cookies are
+empty; request and response bodies are never written (body
 policy `omitted`). A Parquet-only archive's projection keeps no headers, so
 its synthetic HAR carries none and says so. The log's `_apexload` block
 records fidelity `synthetic`, capture mode (`retained_network_entries`, or
@@ -288,16 +299,27 @@ administrator) access to the project.
   are refused (403). The default export, and library bundles, still omit
   them.
 - A browser replay records a native HAR by default (`record_har: false`
-  turns it off). When the replay's browser closes, the controller copies the
-  published HAR into a private directory and retires the original, so the
-  HAR directory keeps nothing for replays; the copy is dropped when the
-  session is pruned. `GET /api/v1/browser-replay/sessions/{id}/har` serves
-  it, or a synthetic HAR from the replay's network entries when there is
-  none (`capture_mode: replay_network_entries`), once the replay has ended
-  (409 while it runs). `GET /api/v1/browser-replay/sessions/{id}/evidence`
-  is a ZIP of the session (`report.json`), the HAR (`replay.har`) and what
-  the HAR is (`har.json`: fidelity, capture mode, completeness, entries,
-  SHA-256, bytes). Both need editor access to the replay's project.
+  turns it off; recording sets both capture aliases to `always`, overriding
+  a script's own capture policy). When the replay's browser closes, the
+  controller copies the published HAR into its own directory (under the
+  system temporary directory's `apexload-replay-har`, where directories
+  left by a process that ended are removed after a day) and retires the
+  original, so the HAR directory keeps nothing for replays. A replay that
+  fails before producing a report retires its recording too. The copy
+  belongs to that session record: it is kept only while the record holds
+  its lease and integrity fence, a later replay reusing the session ID never
+  sees it, and it is removed when the record is pruned, evicted or retired.
+  `GET /api/v1/browser-replay/sessions/{id}/har` streams it, or a synthetic
+  HAR from the replay's network entries when there is none
+  (`capture_mode: replay_network_entries`), once the replay has ended (409
+  while it runs). `GET /api/v1/browser-replay/sessions/{id}/evidence` is a
+  streamed ZIP of the session (`report.json`), the HAR (`replay.har`) and
+  what the HAR is (`har.json`, written last: fidelity, capture mode,
+  completeness, entries, SHA-256 and bytes of the HAR as streamed). Both
+  need editor access to the replay's project; at most four replay HAR
+  downloads run at once (503 with `Retry-After` beyond that). Replay HARs
+  live with the controller process that ran the replay: they are not
+  durable across a restart and not reachable from another replica.
 
 The dashboard lists a run's HARs above the retained resource inspector, with
 a download per HAR and an archive download with its native HARs; each
@@ -313,7 +335,9 @@ apexctl analysis browser-har download --replay SESSION_ID --evidence --out repla
 ```
 
 Downloads go to a new file (an existing one is never overwritten, and a
-failed download leaves none) or to standard output with `--out -`.
+failed download, including one cut mid-body, leaves none) or to standard
+output with `--out -`. A download has ten minutes, independent of the CLI's
+ordinary request timeout.
 
 ## Bounds and compatibility
 

@@ -99,6 +99,8 @@ type archiveTransactionEvent struct {
 	VUserID               int                       `json:"vuser_id,omitempty"`
 	Iteration             int64                     `json:"iteration,omitempty"`
 	Interrupted           bool                      `json:"interrupted,omitempty"`
+	VUserLifetime         uint64                    `json:"vuser_lifetime,omitempty"`
+	ElapsedMs             float64                   `json:"elapsed_ms,omitempty"`
 	Population            string                    `json:"population,omitempty"`
 	BusinessTransaction   bool                      `json:"business_transaction,omitempty"`
 	DurationMs            float64                   `json:"duration_ms"`
@@ -648,6 +650,8 @@ type parquetTransactionEvent struct {
 	VUserID                int64   `parquet:"name=vuser_id, type=INT64"`
 	Iteration              int64   `parquet:"name=iteration, type=INT64"`
 	Interrupted            bool    `parquet:"name=interrupted, type=BOOLEAN"`
+	VUserLifetime          int64   `parquet:"name=vuser_lifetime, type=INT64"`
+	ElapsedMs              float64 `parquet:"name=elapsed_ms, type=DOUBLE"`
 	Population             string  `parquet:"name=population, type=BYTE_ARRAY, convertedtype=UTF8"`
 	BusinessTransaction    bool    `parquet:"name=business_transaction, type=BOOLEAN"`
 	DurationMs             float64 `parquet:"name=duration_ms, type=DOUBLE"`
@@ -1082,6 +1086,8 @@ func (w *archiveRecorder) RecordResult(result *protocol.Result) error {
 		VUserID:               result.VUserID,
 		Iteration:             result.Iteration,
 		Interrupted:           result.Interrupted,
+		VUserLifetime:         result.VUserLifetime,
+		ElapsedMs:             float64(result.WallElapsed) / float64(time.Millisecond),
 		BusinessTransaction:   result.BusinessTransaction,
 		Population:            archiveResultPopulation(result.BusinessTransaction),
 		DurationMs:            durationMillis(result.Duration),
@@ -1775,6 +1781,8 @@ func toParquetTransactions(items []archiveTransactionEvent, sourceRows ...[]byte
 			VUserID:                int64(item.VUserID),
 			Iteration:              item.Iteration,
 			Interrupted:            item.Interrupted,
+			VUserLifetime:          int64(item.VUserLifetime),
+			ElapsedMs:              item.ElapsedMs,
 			BusinessTransaction:    item.BusinessTransaction,
 			Population:             item.Population,
 			DurationMs:             item.DurationMs,

@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import JourneyRiskPanel from './JourneyRiskPanel'
-import { formatJourneyFraction, journeyUnavailableText, journeyUnscoredText } from './journeyRiskModel'
+import { formatJourneyFraction, journeyIncompleteText, journeyUnavailableText, journeyUnscoredText } from './journeyRiskModel'
 
 const mocks = vi.hoisted(() => ({ api: { getTestArchiveJourneys: vi.fn() } }))
 vi.mock('../../hooks/useApi', () => ({ useApi: () => mocks.api }))
@@ -96,5 +96,7 @@ describe('JourneyRiskPanel', () => {
     expect(journeyUnavailableText('no_journey_policy')).toContain('pinned no journey policy')
     expect(journeyUnavailableText('other')).toContain('(other)')
     expect(journeyUnscoredText('accounting_incomplete')).toContain('incomplete')
+    expect(journeyUnavailableText('no_iterations')).toContain('ran no VUser iteration')
+    expect(journeyIncompleteText(['sources_not_collected', 'novel_reason'])).toBe('The counts are incomplete (generator sources whose archives were not collected; novel reason), so the indexes are withheld.')
   })
 })

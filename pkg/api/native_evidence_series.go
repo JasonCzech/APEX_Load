@@ -470,7 +470,7 @@ func (s *Server) attachNativeOverlay(ctx context.Context, project, runID string,
 	if o.DatasetID == "" {
 		selection.RunID = runID
 	}
-	request := AnalysisComparisonRequest{From: out.From, To: out.To, BucketSeconds: q.BucketSeconds, MaxLagSeconds: o.MaxLagSeconds}
+	request := AnalysisComparisonRequest{From: out.From, To: out.To, BucketSeconds: q.BucketSeconds, MaxLagSeconds: o.MaxLagSeconds, sampleExclusions: map[analysisSeriesSelectionKey]map[string]int{}}
 	points, associated, err := s.loadAnalysisSelection(ctx, project, selection, request)
 	if err != nil {
 		return err
@@ -517,7 +517,22 @@ func (s *Server) attachNativeOverlay(ctx context.Context, project, runID string,
 			return err
 		}
 		out.Correlation[series.Name] = scores
-		out.CorrelationSemantics[series.Name] = analysis.DescribeCorrelation(q.Metric, q.Aggregation, left, o.Metric, o.Aggregation, points)
+		semantics := analysis.DescribeCorrelation(q.Metric, q.Aggregation, left, o.Metric, o.Aggregation, points)
+		if q.Derivation != nil {
+			semantics.Left.Derivation = analysis.CanonicalDerivation(q.Derivation.Operation)
+			// A derived bucket left unscored is excluded for its own reason.
+			for _, p := range series.Points {
+				if p.Value == nil && p.Reason != "" && semantics.Left.Excluded[analysis.QualityMissing] > 0 {
+					semantics.Left.Excluded[analysis.QualityMissing]--
+					semantics.Left.Excluded[p.Reason]++
+				}
+			}
+			if semantics.Left.Excluded[analysis.QualityMissing] == 0 {
+				delete(semantics.Left.Excluded, analysis.QualityMissing)
+			}
+		}
+		semantics.Right.ExcludedSamples = request.sampleExclusions[analysisSelectionKey(selection)]
+		out.CorrelationSemantics[series.Name] = semantics
 	}
 	return nil
 }

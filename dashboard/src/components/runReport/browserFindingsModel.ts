@@ -35,9 +35,12 @@ export interface BrowserIntelligenceResult {
   counts: Record<string, number>; notes: string[]
 }
 export interface RunBrowserFindings {
-  run_id: string; status: 'ready' | 'pending' | 'not_evaluated' | string
-  job_id?: string; completed_at?: string; pending?: boolean; result?: BrowserIntelligenceResult
+  run_id: string; status: 'ready' | 'pending' | 'failed' | 'not_evaluated' | string
+  job_id?: string; completed_at?: string; pending?: boolean; failure?: string; result?: BrowserIntelligenceResult
 }
+
+/** How often a pending evaluation is checked again. */
+export const BROWSER_FINDINGS_POLL_MS = 3000
 
 export const browserFindingsApi = {
   get: (runId: string, signal?: AbortSignal) =>

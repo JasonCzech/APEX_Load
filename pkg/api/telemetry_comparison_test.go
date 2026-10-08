@@ -76,10 +76,35 @@ func TestTelemetryComparisonComparesHealthOnlyForCompatibleRuns(t *testing.T) {
 	}
 
 	capability := compareBaselineTelemetry(current, telemetryComparisonRun("capability", telemetryReceipt(t, 1, 250), 4, func(m *RunArchiveManifest) {
-		m.ClockObservationsFile = "clock_observations.jsonl"
+		m.TelemetrySourceEpochCount = 2
 	}), qualified)
-	if capability.Comparable || !sameStrings(capability.Reasons, []string{telemetryReasonCapabilityDiffers}) || !slices.Contains(capability.Baseline.SourceCapabilities, "clock_qualification") {
+	if capability.Comparable || !sameStrings(capability.Reasons, []string{telemetryReasonCapabilityDiffers}) || !slices.Contains(capability.Baseline.SourceCapabilities, "source_epochs") {
 		t.Fatalf("source capability %+v", capability)
+	}
+	// A local run's clock observations (from monitoring collectors) never
+	// classified it, so they are not a capability; a distributed run's are.
+	if got := compareBaselineTelemetry(current, telemetryComparisonRun("collector", telemetryReceipt(t, 1, 250), 4, func(m *RunArchiveManifest) {
+		m.ClockObservationsFile = "clock_observations.jsonl"
+	}), qualified); !got.Comparable {
+		t.Fatalf("a local run's collector clock observations blocked the comparison: %+v", got.Reasons)
+	}
+	distributedReceipt := func() *TelemetryBudgetPolicy {
+		fanout := 250.0
+		return captureTelemetryBudgetPolicy(RunArchiveExecutionSettingsSnapshot{Thresholds: ThresholdSettings{MaxTelemetryControllerFanoutMs: &fanout}}, true, time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC))
+	}
+	distributedCurrent := telemetryComparisonRun("dist-current", distributedReceipt(), 12, nil)
+	if got := compareBaselineTelemetry(distributedCurrent, telemetryComparisonRun("dist-clock", distributedReceipt(), 4, func(m *RunArchiveManifest) {
+		m.ClockObservationsFile = "clock_observations.jsonl"
+	}), qualified); got.Comparable || !slices.Contains(got.Baseline.SourceCapabilities, "clock_qualification") {
+		t.Fatalf("a distributed run's clock qualification is a capability: %+v", got)
+	}
+	current.manifest.Provenance.Workload = &rca.WorkloadKey{Version: 1}
+	version := compareBaselineTelemetry(current, telemetryComparisonRun("version", telemetryReceipt(t, 1, 250), 4, func(m *RunArchiveManifest) {
+		m.Provenance.Workload = &rca.WorkloadKey{Version: 2}
+	}), qualified)
+	current.manifest.Provenance.Workload = nil
+	if version.Comparable || !sameStrings(version.Reasons, []string{telemetryReasonWorkloadVersion}) {
+		t.Fatalf("workload key versions %+v", version.Reasons)
 	}
 
 	unqualified := compareBaselineTelemetry(current, telemetryComparisonRun("load", telemetryReceipt(t, 1, 250), 4, nil), rca.WorkloadQualification{Status: rca.BaselineUnqualified, Reasons: []string{rca.ReasonLevelsChanged}})
@@ -94,7 +119,12 @@ func TestTelemetryComparisonComparesHealthOnlyForCompatibleRuns(t *testing.T) {
 	if line := baselineTelemetryComparisonLine(cadence); !strings.Contains(line, "not compared (cadence_differs)") || !strings.Contains(line, "1000 / 3000 ms") {
 		t.Fatalf("export line %q", line)
 	}
-	if line := baselineTelemetryComparisonLine(same); !strings.Contains(line, "comparable") || !strings.Contains(line, "+8 pts") {
+	if line := baselineTelemetryComparisonLine(same); !strings.Contains(line, "comparable (same policy") || !strings.Contains(line, "+8 pts") {
+		t.Fatalf("export line %q", line)
+	}
+	// Receipts that differ only in the advisory budget show both hashes.
+	render := compareBaselineTelemetry(current, telemetryComparisonRun("render", renderOnly, 4, nil), qualified)
+	if line := baselineTelemetryComparisonLine(render); !strings.Contains(line, "equivalent classifying budgets") || !strings.Contains(line, shortTelemetryHash(renderOnly.Hash)) {
 		t.Fatalf("export line %q", line)
 	}
 }
@@ -180,10 +210,12 @@ func TestTelemetryReevaluationScoresOnlyWhatTheEvidenceCanAnswer(t *testing.T) {
 	var run TelemetryReevaluationRun
 	reevaluateTelemetryIntervals(&run, intervals, policy, true)
 	got := run.Reevaluated
-	if got == nil || got.Healthy != 2 || got.Unscored != 2 || got.Degraded != 1 {
+	// The disabled fan-out and the advisory browser render leave their
+	// intervals with nothing judged: unscored, never healthy.
+	if got == nil || got.Healthy != 0 || got.Unscored != 4 || got.Degraded != 1 {
 		t.Fatalf("re-evaluated %+v", got)
 	}
-	if run.StageUnscored["transport:clock_quality_not_retained"] != 1 || run.StageUnscored["transport:uncalibrated"] != 1 || run.StageConditions["transport"] != 1 {
+	if run.StageUnscored["transport:clock_quality_not_retained"] != 1 || run.StageUnscored["transport:uncalibrated"] != 1 || run.StageUnscored["interval:no_scored_stage"] != 2 || run.StageConditions["transport"] != 1 {
 		t.Fatalf("stages %+v %+v", run.StageConditions, run.StageUnscored)
 	}
 
@@ -196,7 +228,8 @@ func TestTelemetryReevaluationScoresOnlyWhatTheEvidenceCanAnswer(t *testing.T) {
 
 	// A sustained window shorter than the retained interval spacing, or no
 	// retained telemetry at all, cannot be answered.
-	sparse := []IntervalSummaryRecord{telemetryInterval(start, "", &TelemetryHealth{}), telemetryInterval(start.Add(5*time.Second), "", &TelemetryHealth{}), telemetryInterval(start.Add(10*time.Second), "", &TelemetryHealth{})}
+	judged := func() *TelemetryHealth { return &TelemetryHealth{ControllerFanoutLagMs: 5} }
+	sparse := []IntervalSummaryRecord{telemetryInterval(start, "", judged()), telemetryInterval(start.Add(5*time.Second), "", judged()), telemetryInterval(start.Add(10*time.Second), "", judged())}
 	run = TelemetryReevaluationRun{}
 	reevaluateTelemetryIntervals(&run, sparse, reevaluationPolicy(2*time.Second, nil, nil), false)
 	if run.Answerable || run.Reevaluated != nil || len(run.Unanswerable) != 1 || !strings.HasPrefix(run.Unanswerable[0], "sustained_window_shorter_than_retained_interval_spacing:5000ms") {
@@ -515,5 +548,106 @@ func TestTelemetryReevaluationFingerprintFollowsArchivesAndProject(t *testing.T)
 	foreign := json.RawMessage(`{"runs":["reeval-f"],"policy":{"id":"other-common","revision":1}}`)
 	if _, err := prepareTelemetryReevaluation(context.Background(), server, "other-project", foreign); err == nil || !strings.Contains(err.Error(), "not in this project") {
 		t.Fatalf("a run of another project was accepted: %v", err)
+	}
+}
+
+// A run whose retained intervals judge nothing is unanswerable, never
+// healthy; an interval in which no generator reported a sample has no
+// sample-age decision, as live.
+func TestTelemetryReevaluationNeedsAJudgedStage(t *testing.T) {
+	start := time.Date(2026, 10, 8, 10, 0, 0, 0, time.UTC)
+	transport := 100.0
+	policy := reevaluationPolicy(10*time.Second, nil, &transport)
+	unjudged := []IntervalSummaryRecord{telemetryInterval(start, "", &TelemetryHealth{}), telemetryInterval(start.Add(time.Second), "", &TelemetryHealth{BrowserRenderLagMs: 40})}
+	var run TelemetryReevaluationRun
+	reevaluateTelemetryIntervals(&run, unjudged, policy, false)
+	if run.Answerable || !slices.Contains(run.Unanswerable, "no_classifiable_intervals") {
+		t.Fatalf("a run without a judged interval was answerable: %+v", run)
+	}
+	sampleless := &TelemetryHealth{CollectedAt: start, SampleAgeMs: 90000, SampleAgeQuality: &generatorrpc.ClockQuality{Reason: "uncalibrated"}, SampleAgeUnavailable: true, ControllerFanoutLagMs: 4}
+	run = TelemetryReevaluationRun{}
+	reevaluateTelemetryIntervals(&run, []IntervalSummaryRecord{telemetryInterval(start, "healthy", sampleless)}, policy, true)
+	if run.Reevaluated == nil || run.Reevaluated.Healthy != 1 || run.StageUnscored["sample_age:uncalibrated"] != 0 {
+		t.Fatalf("a sample-less interval was judged on sample age: %+v %+v", run.Reevaluated, run.StageUnscored)
+	}
+}
+
+// writeTelemetryArchive writes a finalized run archive with the given
+// interval rows and manifest changes.
+func writeTelemetryArchive(t *testing.T, id string, rows []IntervalSummaryRecord, mutate func(*RunArchiveManifest)) *storage.RunArchiveRecord {
+	t.Helper()
+	start := time.Date(2026, 10, 8, 11, 0, 0, 0, time.UTC)
+	root := t.TempDir()
+	provenance := RunArchiveProvenance{ProjectID: storage.DefaultProjectID, StartedAt: &start}
+	manifest := RunArchiveManifest{SchemaVersion: archiveSchemaVersion, TestID: id, TestName: id, Status: "COMPLETE", CreatedAt: start, CompletedAt: start.Add(time.Minute), Provenance: provenance, IntervalSummariesFile: "interval_summaries.jsonl", IntervalSummaryCount: int64(len(rows))}
+	if mutate != nil {
+		mutate(&manifest)
+	}
+	var buffer bytes.Buffer
+	for _, row := range rows {
+		if err := json.NewEncoder(&buffer).Encode(row); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, manifest.IntervalSummariesFile), buffer.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "manifest.json"), manifestBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(manifestBytes)
+	record := &storage.RunArchiveRecord{TestID: id, SchemaVersion: archiveSchemaVersion, ArchivePath: root, ManifestPath: filepath.Join(root, "manifest.json"), ManifestSHA256: hex.EncodeToString(sum[:]), CreatedAt: start, CompletedAt: start.Add(time.Minute), IntervalSummaryCount: int64(len(rows))}
+	admitArchiveForTest(t, record)
+	return record
+}
+
+// Whether a run's telemetry crossed hosts comes from its archive: a local
+// run whose runtime-resource shards run in the controller judges its own
+// sample age, and a distributed run's needs the retained clock quality.
+func TestTelemetryReevaluationDerivesDistributionFromTheArchive(t *testing.T) {
+	start := time.Date(2026, 10, 8, 11, 0, 0, 0, time.UTC)
+	policy := reevaluationPolicy(10*time.Second, nil, nil)
+	rows := func(quality *generatorrpc.ClockQuality) []IntervalSummaryRecord {
+		var out []IntervalSummaryRecord
+		for i := 0; i < 5; i++ {
+			at := start.Add(time.Duration(i) * time.Second)
+			out = append(out, telemetryInterval(at, "healthy", &TelemetryHealth{CollectedAt: at.Add(-time.Second), SampleAgeMs: 1000, SampleAgeQuality: quality, ControllerFanoutLagMs: 3}))
+		}
+		return out
+	}
+	local := writeTelemetryArchive(t, "local-shards", rows(nil), func(m *RunArchiveManifest) {
+		m.Provenance.GeneratorShards = []GeneratorShardSummary{{Group: "events", Target: localRuntimeResourceTarget, VUsers: 1, ShardCount: 1}}
+	})
+	got, err := reevaluateRunArchive(context.Background(), telemetryReevaluationRunInput{id: "local-shards", record: local}, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Answerable || got.Reevaluated.Healthy != 5 || got.StageUnscored["sample_age:clock_quality_not_retained"] != 0 {
+		t.Fatalf("local run with local shards %+v", got)
+	}
+	remote := writeTelemetryArchive(t, "remote", rows(nil), func(m *RunArchiveManifest) {
+		m.Provenance.GeneratorShards = []GeneratorShardSummary{{Group: "web", Target: "gen-a:9091", VUsers: 1, ShardCount: 1}}
+	})
+	got, err = reevaluateRunArchive(context.Background(), telemetryReevaluationRunInput{id: "remote", record: remote}, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Answerable || !slices.Contains(got.Unanswerable, "no_classifiable_intervals") || got.StageUnscored != nil {
+		t.Fatalf("a distributed run without retained clock quality %+v", got)
+	}
+	qualified := writeTelemetryArchive(t, "qualified", rows(&generatorrpc.ClockQuality{Qualified: true, UncertaintyMs: 2}), func(m *RunArchiveManifest) {
+		fanout := 250.0
+		m.Provenance.TelemetryPolicy = captureTelemetryBudgetPolicy(RunArchiveExecutionSettingsSnapshot{Thresholds: ThresholdSettings{MaxTelemetryControllerFanoutMs: &fanout}}, true, start)
+	})
+	got, err = reevaluateRunArchive(context.Background(), telemetryReevaluationRunInput{id: "qualified", record: qualified}, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Answerable || got.Reevaluated.Healthy != 5 {
+		t.Fatalf("a distributed run with qualified clocks %+v", got)
 	}
 }

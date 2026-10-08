@@ -564,29 +564,120 @@ func TestBrowserFindingTransitionsNotifyOnceAndResolve(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 	evaluate(`{"run":"browser-notify"}`)
 	quiet()
-	// A lenient revision resolves it.
-	lenient := e1Policy(BrowserPolicyMetric{Metric: "lcp", Good: 6000, Poor: 8000, Weight: 1})
-	saveBrowserPolicy(t, store, "browser", 2, lenient)
+	// An evaluation under a named revision is an ordinary evaluation job: it
+	// neither replaces the run's result nor sends anything.
+	saveBrowserPolicy(t, store, "browser", 2, e1Policy(BrowserPolicyMetric{Metric: "lcp", Good: 6000, Poor: 8000, Weight: 1}))
 	time.Sleep(10 * time.Millisecond)
 	evaluate(`{"run":"browser-notify","policy":{"id":"browser","revision":2}}`)
+	quiet()
+	if latest := getRunBrowserFindings(t, server, "browser-notify"); latest.Result == nil || latest.Result.Policy.Revision != 1 || len(e1Findings(latest.Result, browserFindingRuleThreshold, "lcp")) != 1 {
+		t.Fatalf("a named revision replaced the run's result: %+v", latest)
+	}
+	// The run's archive changes (its slow document is gone): the pinned
+	// evaluation resolves the finding.
+	e1Archive(t, server, store, "browser-notify", &strict, e1Document{id: 1, metric: "lcp", value: 1000, qualified: true})
+	time.Sleep(10 * time.Millisecond)
+	evaluate(`{"run":"browser-notify"}`)
 	if payload := next(); !strings.Contains(fmt.Sprint(payload["text"]), "Browser Finding Resolved: browser-notify (resolved)") {
 		t.Fatalf("resolved webhook %v", payload)
 	}
 	quiet()
-	// The run's result is its newest ready evaluation.
-	latest := getRunBrowserFindings(t, server, "browser-notify")
-	if latest.Result == nil || latest.Result.Policy.Revision != 2 || len(e1Findings(latest.Result, browserFindingRuleThreshold, "lcp")) != 0 {
+	if latest := getRunBrowserFindings(t, server, "browser-notify"); latest.Result == nil || len(e1Findings(latest.Result, browserFindingRuleThreshold, "lcp")) != 0 {
 		t.Fatalf("latest %+v", latest)
 	}
 	// An evaluation that completes late compares with the evaluation before
 	// it, never a newer one: replaying the strict rerun's delivery after the
-	// lenient evaluation compares it with the first strict one and sends
+	// resolving evaluation compares it with the first strict one and sends
 	// nothing.
-	jobs, err := browserIntelligenceJobsForRun(store, storage.DefaultProjectID, "browser-notify")
+	jobs, err := pinnedBrowserEvaluations(store, storage.DefaultProjectID, "browser-notify")
 	if err != nil || len(jobs) != 3 {
-		t.Fatalf("jobs %d %v", len(jobs), err)
+		t.Fatalf("pinned jobs %d %v", len(jobs), err)
 	}
-	rerun := jobs[1]
+	rerun, err := store.GetEvaluationJob(storage.DefaultProjectID, jobs[1].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	notifyBrowserFindingTransitions(server, rerun, []byte(rerun.Result))
 	quiet()
+}
+
+// Several transitions are one event: per-destination delivery admits only a
+// few concurrent events, so one event per finding would be dropped.
+func TestBrowserFindingTransitionsAreOneEvent(t *testing.T) {
+	t.Setenv("APEXLOAD_ALLOW_PRIVATE_WEBHOOKS", "true")
+	server, store := baselineTestServer(t)
+	received := make(chan map[string]any, 16)
+	hook := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		var payload map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+		received <- payload
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer hook.Close()
+	server.runner.notifier = newNotificationDispatcher(hook.Client())
+	settings := server.runner.GetSystemSettings()
+	settings.Notifications = NotificationsSettings{Webhooks: []NotificationWebhookSettings{{Enabled: true, URL: hook.URL, Format: notificationFormatSlack, Events: []string{"browser_finding"}}}}
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	pin := saveBrowserPolicy(t, store, "browser", 1, e1Policy(e1LCP, e1CLS))
+	e1Archive(t, server, store, "browser-many", &pin,
+		e1Document{id: 1, metric: "lcp", value: 5000, qualified: true}, e1Document{id: 2, metric: "lcp", engine: "webkit", device: "iphone", value: 5000, qualified: true},
+		e1Document{id: 1, metric: "cls", value: 0.5, qualified: true})
+	server.autoQueueBrowserIntelligence("browser-many")
+	if ran, err := server.runNextEvaluationJob(context.Background()); err != nil || !ran {
+		t.Fatalf("worker ran=%v err=%v", ran, err)
+	}
+	select {
+	case payload := <-received:
+		if !strings.Contains(fmt.Sprint(payload["blocks"]), "3 browser findings") {
+			t.Fatalf("webhook %v", payload)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no webhook")
+	}
+	select {
+	case payload := <-received:
+		t.Fatalf("a second event %v", payload)
+	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+// Attaching a finalized archive queues the evaluation; a failed evaluation
+// is reported as such.
+func TestBrowserIntelligenceQueuesOnAttachAndReportsFailures(t *testing.T) {
+	server, store := baselineTestServer(t)
+	pin := saveBrowserPolicy(t, store, "browser", 1, e1Policy(e1LCP))
+	record := e1Archive(t, server, store, "browser-attach", &pin, e1Document{id: 1, metric: "lcp", value: 5000, qualified: true})
+	server.runner.attachFinalizedRunArchive("browser-attach", record, nil)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		jobs, _ := pinnedBrowserEvaluations(store, storage.DefaultProjectID, "browser-attach")
+		if len(jobs) == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("attaching the archive queued no evaluation")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	// The archive changes before the queued evaluation runs: it fails, and
+	// the run says so instead of "not evaluated".
+	raw, err := os.ReadFile(record.ManifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = append(raw[:len(raw)-1], []byte(`,"test_name":"refreshed"}`)...)
+	if err := os.WriteFile(record.ManifestPath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(raw)
+	record.ManifestSHA256 = hex.EncodeToString(digest[:])
+	if ran, err := server.runNextEvaluationJob(context.Background()); err != nil || !ran {
+		t.Fatalf("worker ran=%v err=%v", ran, err)
+	}
+	if response := getRunBrowserFindings(t, server, "browser-attach"); response.Status != "failed" || response.Failure == "" {
+		t.Fatalf("failed status %+v", response)
+	}
 }

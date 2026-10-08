@@ -3,9 +3,11 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"time"
 
@@ -17,9 +19,7 @@ import (
 // projection gets joint_intervals_v4.jsonl (and .parquet): one row per
 // measured tuple of each retained source publication (a generator batch, or
 // a local window), one for the samples past the tuple bound, and one per
-// publication whose source had no joint evidence. The rows come from the
-// controller's retained live history; when that history was trimmed, the
-// file is marked truncated.
+// publication whose source had no joint evidence.
 
 const (
 	jointIntervalsFileName           = "joint_intervals_v4.jsonl"
@@ -103,102 +103,164 @@ func jointIntervalRow(base JointIntervalRecord, metric storage.NativeIntervalMet
 	return base
 }
 
-// jointIntervalRows turns retained live history into archive rows, once per
-// source publication.
+// jointIntervalRows turns live history into archive rows, once per source
+// publication.
 func jointIntervalRows(history []*LiveMetrics) []JointIntervalRecord {
 	var rows []JointIntervalRecord
 	seen := map[string]bool{}
 	for _, live := range history {
-		if live == nil || live.NativeEvidence == nil {
-			continue
-		}
-		evidence := live.NativeEvidence
-		base := JointIntervalRecord{SchemaVersion: jointIntervalSchemaVersion, Timestamp: live.Timestamp.UTC(), WindowSeconds: evidence.WindowSeconds, SourceID: "local"}
-		joint, tuples := evidence.Joint, evidence.Dimensions[storage.NativeJointDimension]
-		identity := fmt.Sprintf("local/%d", live.Timestamp.UnixNano())
-		if p := evidence.Publication; p != nil {
-			base.Timestamp, base.WindowSeconds, base.SourceID = p.Timestamp.UTC(), p.WindowSeconds, p.SourceID
-			base.ExecutionGeneration, base.Sequence = p.ExecutionGeneration, p.Sequence
-			joint, tuples = p.Joint, p.Dimensions[storage.NativeJointDimension]
-			identity = fmt.Sprintf("%s/%d/%d", p.SourceID, p.ExecutionGeneration, p.Sequence)
-		}
-		if joint == nil || seen[identity] {
-			continue
-		}
-		seen[identity] = true
-		base.Population, base.Dimensions = joint.Population, append([]string(nil), joint.Dimensions...)
-		base.Availability, base.Reason, base.Incomplete, base.OmittedTuples = joint.Availability, joint.Reason, joint.Incomplete, joint.OmittedTuples
-		if joint.Availability != "measured" {
-			rows = append(rows, base)
-			continue
-		}
-		keys := make([]string, 0, len(tuples))
-		for key := range tuples {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			values, ok := engine.JointTupleValues(key, len(joint.Dimensions))
-			if !ok {
-				continue
-			}
-			row := jointIntervalRow(base, tuples[key])
-			row.Values = values
-			rows = append(rows, row)
-		}
-		if joint.Other != nil {
-			row := jointIntervalRow(base, *joint.Other)
-			row.Other = true
-			rows = append(rows, row)
+		if live != nil {
+			rows = append(rows, jointIntervalEvidenceRows(live.Timestamp, live.NativeEvidence, seen)...)
 		}
 	}
 	return rows
 }
 
+// jointIntervalEvidenceRows turns one interval's evidence into archive rows,
+// unless its source publication was already seen.
+func jointIntervalEvidenceRows(timestamp time.Time, evidence *storage.NativeIntervalEvidence, seen map[string]bool) []JointIntervalRecord {
+	if evidence == nil {
+		return nil
+	}
+	base := JointIntervalRecord{SchemaVersion: jointIntervalSchemaVersion, Timestamp: timestamp.UTC(), WindowSeconds: evidence.WindowSeconds, SourceID: "local"}
+	joint, tuples := evidence.Joint, evidence.Dimensions[storage.NativeJointDimension]
+	identity := fmt.Sprintf("local/%d", timestamp.UnixNano())
+	if p := evidence.Publication; p != nil {
+		base.Timestamp, base.WindowSeconds, base.SourceID = p.Timestamp.UTC(), p.WindowSeconds, p.SourceID
+		base.ExecutionGeneration, base.Sequence = p.ExecutionGeneration, p.Sequence
+		joint, tuples = p.Joint, p.Dimensions[storage.NativeJointDimension]
+		identity = fmt.Sprintf("%s/%d/%d", p.SourceID, p.ExecutionGeneration, p.Sequence)
+	}
+	if joint == nil || seen[identity] {
+		return nil
+	}
+	seen[identity] = true
+	base.Population, base.Dimensions = joint.Population, append([]string(nil), joint.Dimensions...)
+	base.Availability, base.Reason, base.Incomplete, base.OmittedTuples = joint.Availability, joint.Reason, joint.Incomplete, joint.OmittedTuples
+	if joint.Availability != "measured" {
+		return []JointIntervalRecord{base}
+	}
+	keys := make([]string, 0, len(tuples))
+	for key := range tuples {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	rows := make([]JointIntervalRecord, 0, len(keys)+1)
+	for _, key := range keys {
+		values, ok := engine.JointTupleValues(key, len(joint.Dimensions))
+		if !ok {
+			continue
+		}
+		row := jointIntervalRow(base, tuples[key])
+		row.Values = values
+		rows = append(rows, row)
+	}
+	if joint.Other != nil {
+		row := jointIntervalRow(base, *joint.Other)
+		row.Other = true
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+var errJointIntervalBudget = errors.New("joint interval archive budget exhausted")
+
 // persistJointIntervalArchive writes joint_intervals_v4.jsonl and .parquet
-// after finalize for a run with a joint evidence projection.
-func (tr *TestRunner) persistJointIntervalArchive(ctx context.Context, test *ManagedTest, record *storage.RunArchiveRecord, manifest *RunArchiveManifest) error {
+// after finalize for a run with a joint evidence projection. Rows come from
+// the run's persisted interval evidence, which neither history trimming,
+// terminal compaction nor a controller restart shortens. Without that store
+// they come from the retained live history, which cannot prove it holds the
+// whole run, so the sidecar is marked truncated. A failed write leaves
+// neither file behind.
+func (tr *TestRunner) persistJointIntervalArchive(ctx context.Context, test *ManagedTest, record *storage.RunArchiveRecord, manifest *RunArchiveManifest) (err error) {
 	if test == nil || record == nil || manifest == nil || manifest.JointIntervalsFile != "" || manifest.Provenance.JointEvidence == nil {
 		return nil
 	}
-	tr.mu.RLock()
-	history := append([]*LiveMetrics(nil), test.History...)
-	if test.LiveMetrics != nil && (len(history) == 0 || history[len(history)-1] != test.LiveMetrics) {
-		history = append(history, test.LiveMetrics)
+	reader, _ := tr.testStore.(storage.NativeIntervalEvidenceReader)
+	var history []*LiveMetrics
+	if reader == nil {
+		// History points are replaced, never mutated, so the copied pointers
+		// are read after unlocking.
+		tr.mu.RLock()
+		history = append([]*LiveMetrics(nil), test.History...)
+		if test.LiveMetrics != nil && (len(history) == 0 || history[len(history)-1] != test.LiveMetrics) {
+			history = append(history, test.LiveMetrics)
+		}
+		tr.mu.RUnlock()
 	}
-	trimmed := test.historyTrimmed > 0
-	rows := jointIntervalRows(history)
-	tr.mu.RUnlock()
 	budget, err := newEvidenceSidecarBudget(ctx, record, envArchiveJointIntervalsMaxBytes, 64<<20)
 	if err != nil {
 		return err
 	}
 	defer budget.close()
+	jsonlPath, parquetPath := filepath.Join(record.ArchivePath, jointIntervalsFileName), filepath.Join(record.ArchivePath, jointIntervalsParquetFileName)
+	defer func() {
+		if err == nil {
+			return
+		}
+		manifest.JointIntervalsFile, manifest.JointIntervalsParquetFile, manifest.JointIntervalCount, manifest.JointIntervalsTruncated = "", "", 0, false
+		manifest.Artifacts = slices.DeleteFunc(manifest.Artifacts, func(artifact RunArchiveArtifact) bool {
+			return artifact.Name == jointIntervalsFileName || artifact.Name == jointIntervalsParquetFileName
+		})
+		if root, openErr := os.OpenRoot(record.ArchivePath); openErr == nil {
+			_ = root.Remove(jointIntervalsFileName)
+			_ = root.Remove(jointIntervalsParquetFileName)
+			_ = root.Close()
+		}
+	}()
 	var count int64
-	truncated := trimmed
+	truncated := reader == nil
 	err = writeArchiveArtifactDurableWithWriter(record.ArchivePath, jointIntervalsFileName, nil, 0600, func(file *os.File, _ []byte) (int, error) {
 		out := &archiveOutputFile{file: file, budget: budget}
-		for _, row := range rows {
+		emit := func(row JointIntervalRecord) error {
 			line, err := json.Marshal(row)
 			if err != nil {
-				return 0, err
+				return err
 			}
 			line = append(line, '\n')
 			if !budget.admits(len(line)) {
-				truncated = true
-				return 0, nil
+				return errJointIntervalBudget
 			}
 			if _, err := out.Write(line); err != nil {
-				return 0, err
+				return err
 			}
 			count++
+			return nil
 		}
-		return 0, nil
+		emitAll := func(rows []JointIntervalRecord) error {
+			for _, row := range rows {
+				if err := emit(row); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		var err error
+		if reader != nil {
+			seen := map[string]bool{}
+			err = reader.ForEachNativeIntervalEvidence(ctx, test.ID, func(timestamp time.Time, evidence *storage.NativeIntervalEvidence) error {
+				return emitAll(jointIntervalEvidenceRows(timestamp, evidence, seen))
+			})
+		} else {
+			err = emitAll(jointIntervalRows(history))
+		}
+		if errors.Is(err, errJointIntervalBudget) {
+			truncated = true
+			err = nil
+		}
+		return 0, err
 	}, ctx)
 	if err != nil {
 		return err
 	}
-	parquetCount, err := streamJSONLToParquet(filepath.Join(record.ArchivePath, jointIntervalsFileName), filepath.Join(record.ArchivePath, jointIntervalsParquetFileName), toParquetJointInterval, budget)
+	// The Parquet copy has its own allowance: the JSONL may have used all of
+	// the first one before it was truncated.
+	parquetBudget, err := newEvidenceSidecarBudget(ctx, record, envArchiveJointIntervalsMaxBytes, 64<<20)
+	if err != nil {
+		return err
+	}
+	defer parquetBudget.close()
+	parquetCount, err := streamJSONLToParquet(jsonlPath, parquetPath, toParquetJointInterval, parquetBudget)
 	if err != nil {
 		return fmt.Errorf("write joint interval parquet: %w", err)
 	}
@@ -207,8 +269,9 @@ func (tr *TestRunner) persistJointIntervalArchive(ctx context.Context, test *Man
 	}
 	manifest.JointIntervalsFile, manifest.JointIntervalsParquetFile = jointIntervalsFileName, jointIntervalsParquetFileName
 	manifest.JointIntervalCount, manifest.JointIntervalsTruncated = count, truncated
-	if err := updateRunArchiveSingleArtifactIntegrity(record.ArchivePath, manifest, RunArchiveArtifact{Name: jointIntervalsFileName, Kind: "evidence", Format: "jsonl", RecordType: jointIntervalRecordType, Count: count}); err != nil {
+	if err = updateRunArchiveSingleArtifactIntegrity(record.ArchivePath, manifest, RunArchiveArtifact{Name: jointIntervalsFileName, Kind: "evidence", Format: "jsonl", RecordType: jointIntervalRecordType, Count: count}); err != nil {
 		return err
 	}
-	return updateRunArchiveSingleArtifactIntegrity(record.ArchivePath, manifest, RunArchiveArtifact{Name: jointIntervalsParquetFileName, Kind: "evidence", Format: "parquet", RecordType: jointIntervalRecordType, Count: count})
+	err = updateRunArchiveSingleArtifactIntegrity(record.ArchivePath, manifest, RunArchiveArtifact{Name: jointIntervalsParquetFileName, Kind: "evidence", Format: "parquet", RecordType: jointIntervalRecordType, Count: count})
+	return err
 }

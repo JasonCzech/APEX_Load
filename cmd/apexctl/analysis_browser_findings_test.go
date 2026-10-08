@@ -32,7 +32,7 @@ func TestAnalysisBrowserFindingsEvaluatesWaitsAndPrints(t *testing.T) {
 				_, _ = w.Write([]byte(`{"id":"job-1","state":"running"}`))
 				return
 			}
-			_, _ = w.Write([]byte(`{"id":"job-1","state":"ready"}`))
+			_, _ = w.Write([]byte(`{"id":"job-1","state":"ready","result":{"policy":{"revision":2,"source":"requested"}}}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tests/run-1/archive/browser-findings":
 			_, _ = w.Write([]byte(`{"run_id":"run-1","status":"ready","result":{"score":{"score":62.5}}}`))
 		default:
@@ -49,8 +49,16 @@ func TestAnalysisBrowserFindingsEvaluatesWaitsAndPrints(t *testing.T) {
 	if created["kind"] != "browser_intelligence" || request["run"] != "run-1" || request["policy"].(map[string]any)["revision"] != float64(2) || polls.Load() != 2 {
 		t.Fatalf("created %+v polls %d", created, polls.Load())
 	}
-	if !strings.Contains(out.String(), `"score": 62.5`) {
+	// A named revision's evaluation is printed itself, not the run's result.
+	if !strings.Contains(out.String(), `"source": "requested"`) || strings.Contains(out.String(), `"score": 62.5`) {
 		t.Fatalf("output %s", out.String())
+	}
+	out.Reset()
+	if err := executeAnalysisBrowserFindingsCommand(context.Background(), []string{"--api", server.URL, "--run", "run-1", "--evaluate", "--project", "proj", "--wait"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `"score": 62.5`) {
+		t.Fatalf("pinned output %s", out.String())
 	}
 	out.Reset()
 	if err := executeWorkflowCommand(context.Background(), "analysis", []string{"browser-findings", "--api", server.URL, "--run", "run-1"}, &out); err != nil || !strings.Contains(out.String(), `"status": "ready"`) {

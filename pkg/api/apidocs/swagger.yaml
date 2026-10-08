@@ -9796,6 +9796,12 @@ paths:
                                 type: number
                                 format: double
                                 nullable: true
+                              reason:
+                                type: string
+                              sampled_from:
+                                type: string
+                                format: date-time
+                                nullable: true
                               samples:
                                 type: integer
                                 format: int64
@@ -20541,14 +20547,23 @@ paths:
                               type: string
                             grouping:
                               type: string
+                            grouping_dimensions:
+                              type: array
+                              items:
+                                type: string
                             id:
                               type: string
+                            joint_evidence:
+                              type: boolean
                             live_bucket_mode:
                               type: string
                             max_bucket_seconds:
                               type: integer
                               format: int64
                             max_buckets:
+                              type: integer
+                              format: int64
+                            max_grouping_dimensions:
                               type: integer
                               format: int64
                             max_series:
@@ -20833,7 +20848,14 @@ paths:
                         properties:
                           conversion:
                             type: string
+                          derivation:
+                            type: string
                           excluded:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          excluded_samples:
                             type: object
                             additionalProperties:
                               type: integer
@@ -20866,7 +20888,14 @@ paths:
                         properties:
                           conversion:
                             type: string
+                          derivation:
+                            type: string
                           excluded:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          excluded_samples:
                             type: object
                             additionalProperties:
                               type: integer
@@ -20895,6 +20924,8 @@ paths:
                           - statistic
                           - valid
                       same_units:
+                        type: boolean
+                      units_undeclared:
                         type: boolean
                     required:
                       - lag_convention
@@ -85522,6 +85553,8 @@ paths:
                                   required:
                                     - qualified
                                   nullable: true
+                                sample_age_unavailable:
+                                  type: boolean
                                 shedded_arrivals:
                                   type: integer
                                   format: int64
@@ -87335,6 +87368,8 @@ paths:
                                 required:
                                   - qualified
                                 nullable: true
+                              sample_age_unavailable:
+                                type: boolean
                               shedded_arrivals:
                                 type: integer
                                 format: int64
@@ -91274,6 +91309,8 @@ paths:
                                   required:
                                     - qualified
                                   nullable: true
+                                sample_age_unavailable:
+                                  type: boolean
                                 shedded_arrivals:
                                   type: integer
                                   format: int64
@@ -93087,6 +93124,8 @@ paths:
                                 required:
                                   - qualified
                                 nullable: true
+                              sample_age_unavailable:
+                                type: boolean
                               shedded_arrivals:
                                 type: integer
                                 format: int64
@@ -97027,6 +97066,8 @@ paths:
                                   required:
                                     - qualified
                                   nullable: true
+                                sample_age_unavailable:
+                                  type: boolean
                                 shedded_arrivals:
                                   type: integer
                                   format: int64
@@ -98840,6 +98881,8 @@ paths:
                                 required:
                                   - qualified
                                 nullable: true
+                              sample_age_unavailable:
+                                type: boolean
                               shedded_arrivals:
                                 type: integer
                                 format: int64
@@ -102792,6 +102835,8 @@ paths:
                                   required:
                                     - qualified
                                   nullable: true
+                                sample_age_unavailable:
+                                  type: boolean
                                 shedded_arrivals:
                                   type: integer
                                   format: int64
@@ -104605,6 +104650,8 @@ paths:
                                 required:
                                   - qualified
                                 nullable: true
+                              sample_age_unavailable:
+                                type: boolean
                               shedded_arrivals:
                                 type: integer
                                 format: int64
@@ -108557,6 +108604,8 @@ paths:
                                   required:
                                     - qualified
                                   nullable: true
+                                sample_age_unavailable:
+                                  type: boolean
                                 shedded_arrivals:
                                   type: integer
                                   format: int64
@@ -110370,6 +110419,8 @@ paths:
                                 required:
                                   - qualified
                                 nullable: true
+                              sample_age_unavailable:
+                                type: boolean
                               shedded_arrivals:
                                 type: integer
                                 format: int64
@@ -114322,6 +114373,8 @@ paths:
                                   required:
                                     - qualified
                                   nullable: true
+                                sample_age_unavailable:
+                                  type: boolean
                                 shedded_arrivals:
                                   type: integer
                                   format: int64
@@ -116135,6 +116188,8 @@ paths:
                                 required:
                                   - qualified
                                 nullable: true
+                              sample_age_unavailable:
+                                type: boolean
                               shedded_arrivals:
                                 type: integer
                                 format: int64
@@ -120087,6 +120142,8 @@ paths:
                                   required:
                                     - qualified
                                   nullable: true
+                                sample_age_unavailable:
+                                  type: boolean
                                 shedded_arrivals:
                                   type: integer
                                   format: int64
@@ -121900,6 +121957,8 @@ paths:
                                 required:
                                   - qualified
                                 nullable: true
+                              sample_age_unavailable:
+                                type: boolean
                               shedded_arrivals:
                                 type: integer
                                 format: int64
@@ -327534,6 +327593,8 @@ paths:
                               required:
                                 - qualified
                               nullable: true
+                            sample_age_unavailable:
+                              type: boolean
                             shedded_arrivals:
                               type: integer
                               format: int64
@@ -333048,6 +333109,8 @@ paths:
                             required:
                               - qualified
                             nullable: true
+                          sample_age_unavailable:
+                            type: boolean
                           shedded_arrivals:
                             type: integer
                             format: int64
@@ -333108,6 +333171,12 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                  nullable: true
+                                reason:
+                                  type: string
+                                sampled_from:
+                                  type: string
+                                  format: date-time
                                   nullable: true
                                 samples:
                                   type: integer
@@ -340281,6 +340350,8 @@ paths:
                               required:
                                 - qualified
                               nullable: true
+                            sample_age_unavailable:
+                              type: boolean
                             shedded_arrivals:
                               type: integer
                               format: int64
@@ -345795,6 +345866,8 @@ paths:
                             required:
                               - qualified
                             nullable: true
+                          sample_age_unavailable:
+                            type: boolean
                           shedded_arrivals:
                             type: integer
                             format: int64
@@ -345855,6 +345928,12 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                  nullable: true
+                                reason:
+                                  type: string
+                                sampled_from:
+                                  type: string
+                                  format: date-time
                                   nullable: true
                                 samples:
                                   type: integer
@@ -349147,6 +349226,8 @@ paths:
                     type: string
                     format: date-time
                     nullable: true
+                  failure:
+                    type: string
                   job_id:
                     type: string
                   pending:
@@ -350586,6 +350667,10 @@ paths:
                     type: string
                   incomplete:
                     type: boolean
+                  incomplete_reasons:
+                    type: array
+                    items:
+                      type: string
                   index_unscored:
                     type: string
                   journeys:
@@ -356088,6 +356173,12 @@ paths:
                         p99_ms:
                           type: number
                           format: double
+                          nullable: true
+                        reason:
+                          type: string
+                        sampled_from:
+                          type: string
+                          format: date-time
                           nullable: true
                         samples:
                           type: integer
@@ -367249,6 +367340,12 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                              nullable: true
+                            reason:
+                              type: string
+                            sampled_from:
+                              type: string
+                              format: date-time
                               nullable: true
                             samples:
                               type: integer
@@ -380520,6 +380617,8 @@ paths:
                               required:
                                 - qualified
                               nullable: true
+                            sample_age_unavailable:
+                              type: boolean
                             shedded_arrivals:
                               type: integer
                               format: int64
@@ -386034,6 +386133,8 @@ paths:
                             required:
                               - qualified
                             nullable: true
+                          sample_age_unavailable:
+                            type: boolean
                           shedded_arrivals:
                             type: integer
                             format: int64
@@ -386094,6 +386195,12 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                  nullable: true
+                                reason:
+                                  type: string
+                                sampled_from:
+                                  type: string
+                                  format: date-time
                                   nullable: true
                                 samples:
                                   type: integer
@@ -393211,6 +393318,8 @@ paths:
                               required:
                                 - qualified
                               nullable: true
+                            sample_age_unavailable:
+                              type: boolean
                             shedded_arrivals:
                               type: integer
                               format: int64
@@ -398725,6 +398834,8 @@ paths:
                             required:
                               - qualified
                             nullable: true
+                          sample_age_unavailable:
+                            type: boolean
                           shedded_arrivals:
                             type: integer
                             format: int64
@@ -398785,6 +398896,12 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                  nullable: true
+                                reason:
+                                  type: string
+                                sampled_from:
+                                  type: string
+                                  format: date-time
                                   nullable: true
                                 samples:
                                   type: integer
@@ -413068,6 +413185,8 @@ paths:
                               required:
                                 - qualified
                               nullable: true
+                            sample_age_unavailable:
+                              type: boolean
                             shedded_arrivals:
                               type: integer
                               format: int64
@@ -418570,6 +418689,8 @@ paths:
                             required:
                               - qualified
                             nullable: true
+                          sample_age_unavailable:
+                            type: boolean
                           shedded_arrivals:
                             type: integer
                             format: int64
@@ -418630,6 +418751,12 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                  nullable: true
+                                reason:
+                                  type: string
+                                sampled_from:
+                                  type: string
+                                  format: date-time
                                   nullable: true
                                 samples:
                                   type: integer

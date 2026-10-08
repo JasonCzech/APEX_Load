@@ -36,18 +36,22 @@ var errSyntheticHARSourceUnavailable = errors.New("run archive has no transactio
 
 // nativeHARCoveredGenerations names the browser evidence generations whose
 // contexts have a native HAR in the archive; their entries are left out of
-// the synthetic HAR (counted as native_har).
-func nativeHARCoveredGenerations(manifest *RunArchiveManifest) map[string]bool {
-	covered := map[string]bool{}
+// the synthetic HAR (counted as native_har). unknown counts native HARs that
+// do not say which context they cover (written before evidence generations
+// were recorded): their requests may also be in the synthetic HAR.
+func nativeHARCoveredGenerations(manifest *RunArchiveManifest) (covered map[string]bool, unknown int) {
+	covered = map[string]bool{}
 	if manifest == nil {
-		return covered
+		return covered, 0
 	}
 	for _, har := range manifest.BrowserHARArtifacts {
 		if har.EvidenceGeneration != "" {
 			covered[har.EvidenceGeneration] = true
+		} else {
+			unknown++
 		}
 	}
-	return covered
+	return covered, unknown
 }
 
 // writeRunArchiveSyntheticHAR streams the archive's transactions (JSONL, or
@@ -68,7 +72,8 @@ func writeRunArchiveSyntheticHAR(ctx context.Context, archivePath string, manife
 		return runArchiveSyntheticHARSummary{}, err
 	}
 	defer file.Close()
-	meta := harsynth.Metadata{CaptureMode: harsynth.CaptureRetainedNetworkEntries}
+	covered, unknown := nativeHARCoveredGenerations(manifest)
+	meta := harsynth.Metadata{CaptureMode: harsynth.CaptureRetainedNetworkEntries, NativeHARCoverageUnknown: unknown}
 	headers := format != "parquet"
 	if !headers {
 		// The Parquet resource projection keeps no headers (a legacy file's
@@ -76,7 +81,6 @@ func writeRunArchiveSyntheticHAR(ctx context.Context, archivePath string, manife
 		meta.ExtraOmittedFields = []string{"request.headers", "response.headers"}
 	}
 	writer := harsynth.NewWriter(out, meta)
-	covered := nativeHARCoveredGenerations(manifest)
 	visit := func(raw []byte) error {
 		if err := ctx.Err(); err != nil {
 			return err

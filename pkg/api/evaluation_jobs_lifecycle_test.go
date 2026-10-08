@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -178,5 +179,45 @@ func TestEvaluationCancelAfterTheJobFinishedAnswersTheFinishedJob(t *testing.T) 
 	var answered EvaluationJobResponse
 	if err := json.Unmarshal(response.Body.Bytes(), &answered); err != nil || response.Code != http.StatusOK || answered.State != storage.EvaluationJobReady {
 		t.Fatalf("cancel after completion: %d %s", response.Code, response.Body.String())
+	}
+}
+
+var testOnReadyCalls atomic.Int32
+
+func init() {
+	registerEvaluationKind(evaluationKind{
+		Name:    "test_on_ready",
+		Prepare: func(*Server, string, json.RawMessage) (string, error) { return "fp-on-ready", nil },
+		Run: func(_ context.Context, s *Server, job *storage.EvaluationJob) (any, error) {
+			var in testEvaluationInput
+			_ = json.Unmarshal([]byte(job.Request), &in)
+			if in.Mode == "cancel" {
+				// Cancelled while running: the fenced completion stores nothing.
+				_, _ = s.store.(storage.EvaluationJobStore).CancelEvaluationJob(job.ProjectID, job.ID, time.Now())
+			}
+			return map[string]int{"value": in.Value}, nil
+		},
+		OnReady: func(*Server, *storage.EvaluationJob, []byte) { testOnReadyCalls.Add(1) },
+	})
+}
+
+// OnReady delivers only a result the fenced completion stored.
+func TestEvaluationOnReadyRunsOnlyForAStoredResult(t *testing.T) {
+	server, store := newAuditTestServer(t)
+	t.Cleanup(func() { store.Close() })
+	testOnReadyCalls.Store(0)
+	queueEvaluationKind(t, server, "test_on_ready", testEvaluationInput{Mode: "cancel"})
+	if ran, err := server.runNextEvaluationJob(context.Background()); err != nil || !ran {
+		t.Fatalf("run %v %v", ran, err)
+	}
+	if calls := testOnReadyCalls.Load(); calls != 0 {
+		t.Fatalf("OnReady ran %d times for a cancelled job", calls)
+	}
+	queueEvaluationKind(t, server, "test_on_ready", testEvaluationInput{Value: 1})
+	if ran, err := server.runNextEvaluationJob(context.Background()); err != nil || !ran {
+		t.Fatalf("run %v %v", ran, err)
+	}
+	if calls := testOnReadyCalls.Load(); calls != 1 {
+		t.Fatalf("OnReady ran %d times for a stored result", calls)
 	}
 }

@@ -43,6 +43,9 @@ type AnalysisComparisonRequest struct {
 	MaxLagSeconds  int                                                 `json:"max_lag_seconds"`
 	Mode           string                                              `json:"mode"` // overlay or correlation
 	providerSeries map[analysisSeriesSelectionKey]analysis.MetricPoint `json:"-"`
+	// sampleExclusions, when set, receives each run selection's raw sample
+	// exclusions (reasons bucketing would reduce to missing buckets).
+	sampleExclusions map[analysisSeriesSelectionKey]map[string]int `json:"-"`
 }
 
 type analysisSeriesSelectionKey string
@@ -164,6 +167,7 @@ func (s *Server) handleAnalysisComparison(w http.ResponseWriter, r *http.Request
 	}
 	defer closeNativeAnalysisPipeline(pipeline, dir)
 	q.providerSeries = map[analysisSeriesSelectionKey]analysis.MetricPoint{}
+	q.sampleExclusions = map[analysisSeriesSelectionKey]map[string]int{}
 	left, leftRun, err := s.loadAnalysisSelection(ctx, project, q.Left, q)
 	if err != nil {
 		writeError(w, 422, err.Error())
@@ -211,6 +215,8 @@ func (s *Server) handleAnalysisComparison(w http.ResponseWriter, r *http.Request
 		}
 		response.Correlation = scores
 		semantics := analysis.DescribeCorrelation(q.Left.Metric, q.Left.Aggregation, left, q.Right.Metric, q.Right.Aggregation, right)
+		semantics.Left.ExcludedSamples = q.sampleExclusions[analysisSelectionKey(q.Left)]
+		semantics.Right.ExcludedSamples = q.sampleExclusions[analysisSelectionKey(q.Right)]
 		response.CorrelationSemantics = &semantics
 	}
 	if err := s.verifyNativeAnalysisComparison(ctx, project); err != nil {
@@ -346,6 +352,9 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 					if q.providerSeries != nil && len(points) > 0 {
 						q.providerSeries[analysisSelectionKey(selection)] = points[0]
 					}
+					if q.sampleExclusions != nil {
+						q.sampleExclusions[analysisSelectionKey(selection)] = analysis.RawSampleExclusions(points)
+					}
 					result, err := analysis.BucketSeries(points, q.From, q.To, q.BucketSeconds, selection.Aggregation)
 					return result, selection.RunID, err
 				}
@@ -411,6 +420,9 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 		if err != nil {
 			return nil, "", errors.New("transaction evidence unavailable or exceeds bounded query limits")
 		}
+	}
+	if q.sampleExclusions != nil {
+		q.sampleExclusions[analysisSelectionKey(selection)] = analysis.RawSampleExclusions(points)
 	}
 	points, err = analysis.BucketSeries(points, q.From, q.To, q.BucketSeconds, selection.Aggregation)
 	return points, selection.RunID, err

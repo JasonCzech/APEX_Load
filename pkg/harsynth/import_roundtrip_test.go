@@ -18,7 +18,7 @@ func TestSyntheticHARRoundTripsThroughImporter(t *testing.T) {
 		}
 		stats := result.Stats
 		accounted := stats.ConvertedActions + stats.FilteredAssets + stats.SkippedRequests
-		if int64(stats.TotalRequests) != summary.Entries && int64(accounted) != summary.Entries {
+		if int64(stats.TotalRequests) != summary.Entries || int64(accounted) != summary.Entries {
 			t.Fatalf("import (assets %v) accounts for %+v, HAR holds %d entries", include, stats, summary.Entries)
 		}
 		if int64(accounted) != summary.Entries {

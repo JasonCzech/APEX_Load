@@ -1840,7 +1840,8 @@ func schemaCreateTableStatements() []string {
 			hidden_at DATETIME,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL,
-			completed_at DATETIME
+			completed_at DATETIME,
+			subject_id TEXT NOT NULL DEFAULT ''
 		)`,
 		// Append-only qualification evidence behind support claims.
 		`CREATE TABLE IF NOT EXISTS feature_acceptance_records (
@@ -2164,6 +2165,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "feature_evaluation_jobs.attempts", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0`},
 		{name: "feature_evaluation_jobs.failure_code", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN failure_code TEXT NOT NULL DEFAULT ''`},
 		{name: "feature_evaluation_jobs.result_bytes", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN result_bytes INTEGER NOT NULL DEFAULT 0`},
+		{name: "feature_evaluation_jobs.subject_id", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN subject_id TEXT NOT NULL DEFAULT ''`},
 		{name: "feature_acceptance_records.seq", query: `ALTER TABLE feature_acceptance_records ADD COLUMN seq BIGINT NOT NULL DEFAULT 0`},
 	}
 }
@@ -2317,6 +2319,7 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_feature_evaluation_jobs_key ON feature_evaluation_jobs(project_id, actor, kind, idempotency_key_hash) WHERE idempotency_key_hash <> ''`, "idx_feature_evaluation_jobs_key"},
 	{`CREATE INDEX IF NOT EXISTS idx_feature_evaluation_jobs_claim ON feature_evaluation_jobs(state, created_at)`, "idx_feature_evaluation_jobs_claim"},
 	{`CREATE INDEX IF NOT EXISTS idx_feature_evaluation_jobs_project ON feature_evaluation_jobs(project_id, created_at)`, "idx_feature_evaluation_jobs_project"},
+	{`CREATE INDEX IF NOT EXISTS idx_feature_evaluation_jobs_subject ON feature_evaluation_jobs(project_id, kind, subject_id, created_at)`, "idx_feature_evaluation_jobs_subject"},
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_feature_acceptance_records_seq ON feature_acceptance_records(seq) WHERE seq > 0`, "idx_feature_acceptance_records_seq"},
 	{`CREATE INDEX IF NOT EXISTS idx_feature_acceptance_records_subject ON feature_acceptance_records(requirement_id, feature, recorded_at)`, "idx_feature_acceptance_records_subject"},
 }

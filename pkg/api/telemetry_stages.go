@@ -53,7 +53,19 @@ type TelemetryStageDistribution struct {
 	// Advisory marks a stage that never affects run health (browser
 	// render: a viewer's tab is not the system under test).
 	Advisory bool `json:"advisory,omitempty"`
+	// SampledFrom is when this controller began sampling the run's stages.
+	// A controller that adopted the run after a failover or restart samples
+	// only from then.
+	SampledFrom *time.Time `json:"sampled_from,omitempty"`
+	// Reason says why an unavailable stage has no evidence:
+	// recorder_lost when the controller that finalized the run never
+	// sampled it (it restarted or took over after the run).
+	Reason string `json:"reason,omitempty"`
 }
+
+// telemetryStageReasonRecorderLost marks a finalized run whose stage
+// recorder did not survive (it lives in the sampling controller's memory).
+const telemetryStageReasonRecorderLost = "recorder_lost"
 
 type telemetryStageDigest struct {
 	digest   *engine.TDigest
@@ -65,6 +77,7 @@ type telemetryStageDigest struct {
 // concurrent use.
 type telemetryStageRecorder struct {
 	mu       sync.Mutex
+	since    time.Time
 	stages   map[string]*telemetryStageDigest
 	lastSeen map[string]generatorBatchPosition
 }
@@ -77,7 +90,7 @@ type generatorBatchPosition struct {
 }
 
 func newTelemetryStageRecorder() *telemetryStageRecorder {
-	return &telemetryStageRecorder{stages: map[string]*telemetryStageDigest{}, lastSeen: map[string]generatorBatchPosition{}}
+	return &telemetryStageRecorder{since: time.Now().UTC(), stages: map[string]*telemetryStageDigest{}, lastSeen: map[string]generatorBatchPosition{}}
 }
 
 func (r *telemetryStageRecorder) stageLocked(stage string) *telemetryStageDigest {
@@ -172,7 +185,8 @@ func (r *telemetryStageRecorder) snapshot() []TelemetryStageDistribution {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, stage := range telemetryStageOrder {
-		distribution := TelemetryStageDistribution{Stage: stage, Unit: "ms", Availability: "unavailable", Advisory: stage == telemetryStageBrowserRender}
+		since := r.since
+		distribution := TelemetryStageDistribution{Stage: stage, Unit: "ms", Availability: "unavailable", Advisory: stage == telemetryStageBrowserRender, SampledFrom: &since}
 		if current := r.stages[stage]; current != nil {
 			distribution.Samples = current.digest.Count()
 			if len(current.excluded) > 0 {
@@ -233,25 +247,24 @@ func stageRecorderLocked(test *ManagedTest) *telemetryStageRecorder {
 }
 
 // liveStageRecorder returns the recorder of the in-memory run (never a read
-// snapshot, whose recorder would be lost) while it is live in the given
-// project, with the run's start time.
-func (tr *TestRunner) liveStageRecorder(id, projectID string) (*telemetryStageRecorder, time.Time, bool) {
+// snapshot, whose recorder would be lost) while it is live, with its ID,
+// project and start time.
+func (tr *TestRunner) liveStageRecorder(ref string) (recorder *telemetryStageRecorder, id, projectID string, started time.Time, live bool) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	test, ok := tr.tests[id]
-	if !ok || test.ProjectID != projectID {
-		return nil, time.Time{}, false
+	test := tr.tests[tr.resolveRefKeyLocked(ref)]
+	if test == nil {
+		return nil, "", "", time.Time{}, false
 	}
 	switch test.Status {
 	case "STARTING", "RUNNING", "PAUSED", "STOPPING":
 	default:
-		return nil, time.Time{}, false
+		return nil, "", "", time.Time{}, false
 	}
-	started := time.Time{}
 	if test.StartedAt != nil {
 		started = *test.StartedAt
 	}
-	return stageRecorderLocked(test), started, true
+	return stageRecorderLocked(test), test.ID, test.ProjectID, started, true
 }
 
 // sampleTelemetryStagesLocked samples one installed live publication's
@@ -278,7 +291,7 @@ func sampleTelemetryStagesLocked(test *ManagedTest, live *LiveMetrics) {
 		recorder.observe(telemetryStageGeneratorProcessing, telemetry.GeneratorProcessingLagMs)
 	}
 	switch {
-	case telemetry.sampleAgeUnavailable || telemetry.CollectedAt.IsZero():
+	case telemetry.SampleAgeUnavailable || telemetry.CollectedAt.IsZero():
 	case telemetry.SampleAgeQuality == nil && !distributed, telemetry.SampleAgeQuality != nil && telemetry.SampleAgeQuality.Qualified:
 		recorder.observe(telemetryStageSampleAge, telemetry.SampleAgeMs)
 	default:
@@ -317,20 +330,35 @@ func cloneTelemetryStageDistributions(in []TelemetryStageDistribution) []Telemet
 				*field = &value
 			}
 		}
+		if distribution.SampledFrom != nil {
+			since := *distribution.SampledFrom
+			out[i].SampledFrom = &since
+		}
 	}
 	return out
 }
 
 // persistTelemetryStageDistributions records the run's stage distributions
-// and their digests in the manifest at finalize.
+// and their digests in the manifest at finalize. A run that started but whose
+// recorder this controller does not hold (a finalize after a restart or
+// failover) records every stage as unavailable with recorder_lost, so it is
+// never mistaken for a run without stage evidence by design.
 func (tr *TestRunner) persistTelemetryStageDistributions(test *ManagedTest, manifest *RunArchiveManifest) {
 	if test == nil || manifest == nil || manifest.TelemetryStageDistributions != nil {
 		return
 	}
 	tr.mu.RLock()
-	recorder := test.telemetryStages
+	recorder, started := test.telemetryStages, test.StartedAt != nil
 	tr.mu.RUnlock()
 	if recorder == nil {
+		if !started {
+			return
+		}
+		lost := make([]TelemetryStageDistribution, 0, len(telemetryStageOrder))
+		for _, stage := range telemetryStageOrder {
+			lost = append(lost, TelemetryStageDistribution{Stage: stage, Unit: "ms", Availability: "unavailable", Advisory: stage == telemetryStageBrowserRender, Reason: telemetryStageReasonRecorderLost})
+		}
+		manifest.TelemetryStageDistributions = lost
 		return
 	}
 	manifest.TelemetryStageDistributions = recorder.snapshot()

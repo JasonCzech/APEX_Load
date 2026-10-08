@@ -66,6 +66,14 @@ func runJointProjection(test *ManagedTest) *engine.JointProjection {
 	return test.JointEvidence.Clone()
 }
 
+// generatorAcceptsJointEvidence reports whether a generator's probed
+// features include joint evidence v4. Only such a generator is sent the
+// projection, at Start or as an evacuation replacement; another leaves its
+// windows' joint evidence unavailable.
+func generatorAcceptsJointEvidence(features []string) bool {
+	return stringSliceContainsEqualFold(features, generatorrpc.FeatureJointEvidenceV4)
+}
+
 // Joint evidence unavailability reasons.
 const (
 	jointReasonSourceLacksCapability = "source_lacks_joint_evidence_v4"
@@ -82,7 +90,8 @@ func nativeJointMetric(m *TxMetrics) storage.NativeIntervalMetric {
 // description. projection is the run's; a source that published none while
 // the run has one is unavailable, as is one counted under another
 // projection. Tuples that do not decode to the projection are dropped and
-// make the evidence incomplete.
+// make the evidence incomplete. incomplete also carries the window's sample
+// loss; the marginal dimensions' key caps never make joint evidence partial.
 func setNativeJointEvidence(out *storage.NativeIntervalEvidence, projection *engine.JointProjection, published *engine.JointProjection, tuples map[string]*TxMetrics, other *TxMetrics, omitted int64, incomplete bool) {
 	if out == nil || projection == nil && published == nil {
 		return
