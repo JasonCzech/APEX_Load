@@ -507,7 +507,9 @@ old participant set from the current fleet DNS list or elapsed leases; an
 unreachable generator might still be executing. An operator must establish
 positive process-fence evidence for all possible old generator instances before
 terminal/capacity cleanup. There is not yet an automatic reconciliation path
-for runs without a complete durable participant journal.
+for runs without a complete durable participant journal. *(Superseded 2026-10-08,
+§17: supervised runs now resolve automatically from their archive-collection
+intent, with an audited operator override for generators that are gone.)*
 
 The harness now keeps every archive under its run directory (`APEXLOAD_ARCHIVE_DIR`). Earlier runs had written generator archives into the user cache.
 
@@ -660,7 +662,41 @@ nonce. `APEXLOAD_CONTROLLER_ID` shared by two replicas, or surviving a container
 restart, previously produced identical owner tokens that the lease treats as one
 holder renewing.
 
-Still open (Phase 2 of the review): automatic resolution of runs that cannot be
-adopted (they stay STOPPING), preparations orphaned by a leadership change,
-leader-only routes missing from the Helm active ingress, a stable installation
-ID for cloud ownership tags, and monotonic lease deadlines.
+The remaining review items are covered in §17.
+
+## 17. Review Phase 2 (2026-10-08)
+
+- **Interrupted runs no longer stay STOPPING forever.** After admission the
+  successor proves, per generator, that a run it could not adopt has stopped
+  (`runInterruptedRunResolution`). The participant journal is the run's
+  archive-collection intent (every target is recorded before work is
+  dispatched to it, including evacuation replacements). An epoch claim of the
+  new term that a target accepts proves it holds no older-term assignment and
+  no unfinished fence. When every journaled target confirms, the run ends
+  FAILED through the ordinary terminal path (capacity released, CI notified);
+  the archive retry worker then collects the retained generator archives. The
+  first attempt waits 30 seconds past admission so a graceful drain the lost
+  leader started cannot be missed. Unreachable targets and runs without a
+  journal stay STOPPING and are retried. For generators that are gone,
+  SystemAdmins can call `POST /api/v1/tests/{id}/interrupted-stop/resolve`
+  with `{"attestation":"all-generator-processes-stopped"}` (audited; the
+  operator and note are recorded on the run).
+- **Leader-only routes reach the leader.** The Helm, AKS, EKS and on-prem
+  Ingresses also route `/api/v1/fleet`, `/api/v1/projects`, `/api/v1/archives`,
+  `/api/v1/system/generators`, `/api/v1/system/restarts` and
+  `/api/v1/generator-gateway` to the active endpoint.
+  `deployments/k8s/leader_routes_test.go` derives the leader-only routes from
+  the controller source and fails if any Ingress leaves one out.
+- **Cloud capacity has an installation-wide owner.** AWS and Azure backends
+  tag and trust instances by an identity stored once in `app_settings`, shared
+  by every replica and stable across restarts (an explicit
+  `APEXLOAD_CONTROLLER_ID` still wins), so a successor can see, adopt and clean
+  up its predecessor's instances.
+- **Lease deadlines use the monotonic clock**, so a wall-clock step cannot
+  extend or shorten a lease.
+- **Preparations needed no change.** The review flagged preparations as
+  stranded by a leadership change. In fact `LatestPreparation` (used by GET
+  and DELETE) already marks a preparation `failed` once its run is terminal and
+  `expired` past its deadline, without the old owner fence, and takeover always
+  fails the prepared (INITIALIZING) run. `TestPreparationTakeoverAndExpiredAuditRecovery`
+  pins this; a successor deliberately never adopts the old term's reservation.
