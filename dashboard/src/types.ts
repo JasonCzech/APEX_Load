@@ -1715,6 +1715,8 @@ export interface IntegrationOutcome {
 
 export interface RunArchiveReport {
   telemetry_policy?: import('./types/telemetryPolicy').TelemetryPolicyEvidence
+  // The finalized telemetry verdict under the run's pinned acceptance policy.
+  telemetry_acceptance?: TelemetryAcceptanceVerdict
   browser_documents?: BrowserDocumentSummary | null
   browser_document_evidence?: BrowserDocumentObservation[]
   browser_document_evidence_truncated?: boolean
@@ -2273,6 +2275,45 @@ export interface TelemetryHealth {
   sample_age_ms?: number
   // Run-cumulative stage distributions (C5); the live snapshot only.
   stage_distributions?: TelemetryStageDistribution[]
+  // Provisional telemetry verdict under the run's pinned acceptance policy
+  // (C7); the finalized verdict is in the run report.
+  acceptance?: TelemetryAcceptanceVerdict
+}
+
+// One telemetry acceptance criterion with the evidence it read (C7).
+export interface TelemetryAcceptanceCriterion {
+  criterion: string
+  outcome: 'pass' | 'fail' | 'inconclusive' | string
+  comparator: string
+  threshold: number
+  unit: 'ratio' | 'records' | 'ms' | string
+  observed?: number
+  // exact, or lower_bound when more loss or observed time may exist.
+  bound?: string
+  numerator?: number
+  denominator?: number
+  reason?: string
+}
+
+export interface TelemetryAcceptancePolicyPin {
+  kind: string
+  id: string
+  name: string
+  revision: number
+  sha256: string
+  source?: string
+}
+
+// A run's telemetry verdict, separate from the application verdict. Only a
+// fail_ci policy can change a CI outcome; unknown evidence is inconclusive.
+export interface TelemetryAcceptanceVerdict {
+  outcome: 'pass' | 'fail' | 'inconclusive' | string
+  mode: 'advisory' | 'fail_ci' | 'unknown' | string
+  provisional?: boolean
+  policy?: TelemetryAcceptancePolicyPin
+  criteria: TelemetryAcceptanceCriterion[]
+  reasons?: string[]
+  exclusions?: string[]
 }
 
 export type TelemetryStageName = 'generator_processing' | 'transport' | 'controller_fanout' | 'sample_age' | 'browser_render'

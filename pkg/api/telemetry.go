@@ -653,7 +653,7 @@ func archivedTelemetryHealth(in *TelemetryHealth) *TelemetryHealth {
 	out := cloneTelemetryHealth(in)
 	if out != nil {
 		// Run-cumulative records are in the manifest, not on every row.
-		out.Coverage, out.StageDistributions = nil, nil
+		out.Coverage, out.StageDistributions, out.Acceptance = nil, nil, nil
 	}
 	return out
 }
@@ -669,6 +669,7 @@ func cloneTelemetryHealth(in *TelemetryHealth) *TelemetryHealth {
 	}
 	out.Loss = in.Loss.clone()
 	out.StageDistributions = cloneTelemetryStageDistributions(in.StageDistributions)
+	out.Acceptance = cloneTelemetryAcceptanceVerdict(in.Acceptance)
 	if in.Coverage != nil {
 		coverage := *in.Coverage
 		coverage.Sources = append([]TelemetrySourceCoverage(nil), in.Coverage.Sources...)

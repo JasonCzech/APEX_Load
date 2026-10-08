@@ -162,6 +162,7 @@ const NOTIFICATION_EVENTS = [
   'threshold_alert',
   'browser_finding',
   'browser_finding_resolved',
+  'telemetry_acceptance',
   'load_phase',
   'fleet_alert',
   'fleet_alert_acknowledged',

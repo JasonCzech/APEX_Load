@@ -1120,6 +1120,9 @@ type TelemetryHealth struct {
 	// Coverage is the run's wall-time observation coverage so far: the
 	// time every required generator was observed, and the unknown rest.
 	Coverage *TelemetryCoverage `json:"coverage,omitempty"`
+	// Acceptance is the run's provisional telemetry verdict under its pinned
+	// acceptance policy; the finalized verdict is in the run report.
+	Acceptance *TelemetryAcceptanceVerdict `json:"acceptance,omitempty"`
 	// TransportLagQuality and SampleAgeQuality qualify the stages measured
 	// across a generator's clock and the controller's: qualified when a
 	// current offset calibration corrected them. Absent for a run executed

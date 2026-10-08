@@ -54,6 +54,20 @@ describe('BaselineTelemetryCompatibility', () => {
     await act(async () => root.unmount())
   })
 
+  it('shows each run\'s own telemetry verdict and dropped results side by side', async () => {
+    request.mockResolvedValue([])
+    const judged: TelemetryComparison = {
+      ...cadence,
+      current: { ...profile('current', 1000), acceptance: { outcome: 'fail', mode: 'fail_ci', policy: { kind: 'telemetry_acceptance_policy', id: 'gate', name: 'Gate', revision: 3, sha256: 'abc' }, criteria: [] }, loss: { dropped_results: { state: 'lower_bound', value: 4 } } },
+    }
+    const root = createRoot(node)
+    await act(async () => root.render(<BaselineTelemetryCompatibility comparisons={[judged]} projectId="proj" />))
+    const cells = [...node.querySelectorAll('.bc-telemetry-compatibility tbody tr')].map(row => [...row.querySelectorAll('td')].map(cell => cell.textContent))
+    expect(cells[0].slice(-2)).toEqual(['fail (fail_ci, Gate r3)', '≥ 4 (lower bound)'])
+    expect(cells[1].slice(-2)).toEqual(['No acceptance policy', 'Unavailable'])
+    await act(async () => root.unmount())
+  })
+
   it('queues a re-evaluation of every run, polls it and shows the derived result', async () => {
     request.mockImplementation(async (path: string, options?: { method?: string; body?: string }) => {
       if (path.startsWith('/analysis/policies')) return [{ id: 'common', name: 'Common', revision: 2 }, { id: 'old', name: 'Old', revision: 1, deleted: true }]

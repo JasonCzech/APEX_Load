@@ -560,6 +560,7 @@ func maskTestGroupsRuntimeSettings(groups []TestGroup) []TestGroup {
 func maskRunArchiveProvenance(provenance RunArchiveProvenance) RunArchiveProvenance {
 	provenance.TelemetryPolicy = cloneTelemetryBudgetPolicy(provenance.TelemetryPolicy)
 	provenance.PolicyPins = cloneRunPolicyPins(provenance.PolicyPins)
+	provenance.TelemetryAcceptancePolicy = cloneTelemetryAcceptancePolicySnapshot(provenance.TelemetryAcceptancePolicy)
 	provenance.ExecutionSettings.Thresholds = cloneThresholdSettings(provenance.ExecutionSettings.Thresholds)
 	provenance.TrafficProfile = cloneTrafficProfile(provenance.TrafficProfile)
 	provenance.RuntimeSettings = maskRuntimeSettings(provenance.RuntimeSettings)

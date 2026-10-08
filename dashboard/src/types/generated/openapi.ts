@@ -3264,7 +3264,15 @@ export interface operations {
                 "governance"?: (Record<string, unknown>) | null;
                 "groups"?: Array<Record<string, unknown>>;
                 "joint_evidence"?: (Record<string, unknown>) | null;
-                "policy_pins"?: (Array<Record<string, unknown>>) | null;
+                "policy_pins"?: (Array<{
+                  "applied"?: boolean;
+                  "id"?: string;
+                  "kind"?: string;
+                  "name"?: string;
+                  "revision"?: number;
+                  "sha256"?: string;
+                  "source"?: string;
+                }>) | null;
                 "project_id"?: string;
                 "release_id"?: string;
                 "requested_at"?: string;
@@ -3281,6 +3289,32 @@ export interface operations {
                 "started_by_subject"?: string;
                 "stopped_by_display_name"?: string;
                 "stopped_by_subject"?: string;
+                "telemetry_acceptance_policy"?: ({
+                  "definition"?: {
+                    "apply_by_default"?: boolean;
+                    "description"?: string;
+                    "max_breached_known_time_fraction"?: (number) | null;
+                    "max_loss_ratio"?: (number) | null;
+                    "max_lost_records"?: (number) | null;
+                    "min_wall_time_coverage"?: (number) | null;
+                    "mode"?: string;
+                    "stage_lag_percentiles"?: Array<{
+                      "max_ms"?: number;
+                      "percentile"?: string;
+                      "stage"?: string;
+                    }>;
+                    "version"?: number;
+                  };
+                  "pin"?: {
+                    "applied"?: boolean;
+                    "id"?: string;
+                    "kind"?: string;
+                    "name"?: string;
+                    "revision"?: number;
+                    "sha256"?: string;
+                    "source"?: string;
+                  };
+                }) | null;
                 "telemetry_policy"?: ({
                   "budgets"?: Array<{
                     "enabled"?: boolean;
@@ -3388,7 +3422,15 @@ export interface operations {
                 "governance"?: (Record<string, unknown>) | null;
                 "groups"?: Array<Record<string, unknown>>;
                 "joint_evidence"?: (Record<string, unknown>) | null;
-                "policy_pins"?: (Array<Record<string, unknown>>) | null;
+                "policy_pins"?: (Array<{
+                  "applied"?: boolean;
+                  "id"?: string;
+                  "kind"?: string;
+                  "name"?: string;
+                  "revision"?: number;
+                  "sha256"?: string;
+                  "source"?: string;
+                }>) | null;
                 "project_id"?: string;
                 "release_id"?: string;
                 "requested_at"?: string;
@@ -3405,6 +3447,32 @@ export interface operations {
                 "started_by_subject"?: string;
                 "stopped_by_display_name"?: string;
                 "stopped_by_subject"?: string;
+                "telemetry_acceptance_policy"?: ({
+                  "definition"?: {
+                    "apply_by_default"?: boolean;
+                    "description"?: string;
+                    "max_breached_known_time_fraction"?: (number) | null;
+                    "max_loss_ratio"?: (number) | null;
+                    "max_lost_records"?: (number) | null;
+                    "min_wall_time_coverage"?: (number) | null;
+                    "mode"?: string;
+                    "stage_lag_percentiles"?: Array<{
+                      "max_ms"?: number;
+                      "percentile"?: string;
+                      "stage"?: string;
+                    }>;
+                    "version"?: number;
+                  };
+                  "pin"?: {
+                    "applied"?: boolean;
+                    "id"?: string;
+                    "kind"?: string;
+                    "name"?: string;
+                    "revision"?: number;
+                    "sha256"?: string;
+                    "source"?: string;
+                  };
+                }) | null;
                 "telemetry_policy"?: ({
                   "budgets"?: Array<{
                     "enabled"?: boolean;
@@ -3473,6 +3541,38 @@ export interface operations {
                   "unavailable"?: string;
                 }>;
                 "unknown_ms"?: number;
+              }) | null;
+              "telemetry_loss"?: ({
+                "dropped_results"?: ({
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: number;
+                }) | null;
+                "dropped_subscriber_batches"?: ({
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: number;
+                }) | null;
+                "lost_publications"?: ({
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: number;
+                }) | null;
+                "shedded_arrivals"?: ({
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: number;
+                }) | null;
+                "websocket_dropped_events"?: ({
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: number;
+                }) | null;
+                "websocket_dropped_messages"?: ({
+                  "reason"?: string;
+                  "state"?: string;
+                  "value"?: number;
+                }) | null;
               }) | null;
               "telemetry_source_epoch_count"?: number;
               "telemetry_sources_file"?: string;
@@ -4122,6 +4222,34 @@ export interface operations {
               "total_transactions"?: number;
               "tps"?: number;
             }>;
+            "telemetry_acceptance"?: ({
+              "criteria"?: Array<{
+                "bound"?: string;
+                "comparator"?: string;
+                "criterion"?: string;
+                "denominator"?: (number) | null;
+                "numerator"?: (number) | null;
+                "observed"?: (number) | null;
+                "outcome"?: string;
+                "reason"?: string;
+                "threshold"?: number;
+                "unit"?: string;
+              }>;
+              "exclusions"?: Array<string>;
+              "mode"?: string;
+              "outcome"?: string;
+              "policy"?: ({
+                "applied"?: boolean;
+                "id"?: string;
+                "kind"?: string;
+                "name"?: string;
+                "revision"?: number;
+                "sha256"?: string;
+                "source"?: string;
+              }) | null;
+              "provisional"?: boolean;
+              "reasons"?: Array<string>;
+            }) | null;
             "telemetry_policy"?: ({
               "availability"?: string;
               "policy"?: ({
@@ -7319,6 +7447,36 @@ export interface operations {
             "sla_evaluated": boolean;
             "status": string;
             "status_url": string;
+            "telemetry_verdict"?: ({
+              "criteria": Array<{
+                "bound"?: string;
+                "comparator": string;
+                "criterion": string;
+                "denominator"?: (number) | null;
+                "numerator"?: (number) | null;
+                "observed"?: (number) | null;
+                "outcome": string;
+                "reason"?: string;
+                "threshold": number;
+                "unit": string;
+              }>;
+              "enforced": boolean;
+              "exclusions"?: Array<string>;
+              "inconclusive_policy"?: string;
+              "mode": string;
+              "outcome": string;
+              "policy"?: ({
+                "applied": boolean;
+                "id": string;
+                "kind": string;
+                "name": string;
+                "revision": number;
+                "sha256": string;
+                "source": string;
+              }) | null;
+              "provisional"?: boolean;
+              "reasons"?: Array<string>;
+            }) | null;
             "test_id": string;
             "tps": number;
             "transactions": number;
@@ -29307,6 +29465,34 @@ export interface operations {
             }>;
             "telemetry_comparisons"?: Array<{
               "baseline": {
+                "acceptance"?: ({
+                  "criteria": Array<{
+                    "bound"?: string;
+                    "comparator": string;
+                    "criterion": string;
+                    "denominator"?: (number) | null;
+                    "numerator"?: (number) | null;
+                    "observed"?: (number) | null;
+                    "outcome": string;
+                    "reason"?: string;
+                    "threshold": number;
+                    "unit": string;
+                  }>;
+                  "exclusions"?: Array<string>;
+                  "mode": string;
+                  "outcome": string;
+                  "policy"?: ({
+                    "applied": boolean;
+                    "id": string;
+                    "kind": string;
+                    "name": string;
+                    "revision": number;
+                    "sha256": string;
+                    "source": string;
+                  }) | null;
+                  "provisional"?: boolean;
+                  "reasons"?: Array<string>;
+                }) | null;
                 "budgets"?: Array<{
                   "enabled": boolean;
                   "limit_ms": number;
@@ -29314,6 +29500,38 @@ export interface operations {
                 }>;
                 "cadence_ms"?: number;
                 "cadence_scope"?: string;
+                "loss"?: ({
+                  "dropped_results"?: ({
+                    "reason"?: string;
+                    "state": string;
+                    "value": number;
+                  }) | null;
+                  "dropped_subscriber_batches"?: ({
+                    "reason"?: string;
+                    "state": string;
+                    "value": number;
+                  }) | null;
+                  "lost_publications"?: ({
+                    "reason"?: string;
+                    "state": string;
+                    "value": number;
+                  }) | null;
+                  "shedded_arrivals"?: ({
+                    "reason"?: string;
+                    "state": string;
+                    "value": number;
+                  }) | null;
+                  "websocket_dropped_events"?: ({
+                    "reason"?: string;
+                    "state": string;
+                    "value": number;
+                  }) | null;
+                  "websocket_dropped_messages"?: ({
+                    "reason"?: string;
+                    "state": string;
+                    "value": number;
+                  }) | null;
+                }) | null;
                 "policy_availability": string;
                 "policy_hash"?: string;
                 "policy_pin"?: ({
@@ -29335,6 +29553,34 @@ export interface operations {
               "breached_known_fraction_delta"?: (number) | null;
               "comparable": boolean;
               "current": {
+                "acceptance"?: ({
+                  "criteria": Array<{
+                    "bound"?: string;
+                    "comparator": string;
+                    "criterion": string;
+                    "denominator"?: (number) | null;
+                    "numerator"?: (number) | null;
+                    "observed"?: (number) | null;
+                    "outcome": string;
+                    "reason"?: string;
+                    "threshold": number;
+                    "unit": string;
+                  }>;
+                  "exclusions"?: Array<string>;
+                  "mode": string;
+                  "outcome": string;
+                  "policy"?: ({
+                    "applied": boolean;
+                    "id": string;
+                    "kind": string;
+                    "name": string;
+                    "revision": number;
+                    "sha256": string;
+                    "source": string;
+                  }) | null;
+                  "provisional"?: boolean;
+                  "reasons"?: Array<string>;
+                }) | null;
                 "budgets"?: Array<{
                   "enabled": boolean;
                   "limit_ms": number;
@@ -29342,6 +29588,38 @@ export interface operations {
                 }>;
                 "cadence_ms"?: number;
                 "cadence_scope"?: string;
+                "loss"?: ({
+                  "dropped_results"?: ({
+                    "reason"?: string;
+                    "state": string;
+                    "value": number;
+                  }) | null;
+                  "dropped_subscriber_batches"?: ({
+                    "reason"?: string;
+                    "state": string;
+                    "value": number;
+                  }) | null;
+                  "lost_publications"?: ({
+                    "reason"?: string;
+                    "state": string;
+                    "value": number;
+                  }) | null;
+                  "shedded_arrivals"?: ({
+                    "reason"?: string;
+                    "state": string;
+                    "value": number;
+                  }) | null;
+                  "websocket_dropped_events"?: ({
+                    "reason"?: string;
+                    "state": string;
+                    "value": number;
+                  }) | null;
+                  "websocket_dropped_messages"?: ({
+                    "reason"?: string;
+                    "state": string;
+                    "value": number;
+                  }) | null;
+                }) | null;
                 "policy_availability": string;
                 "policy_hash"?: string;
                 "policy_pin"?: ({
@@ -29692,6 +29970,7 @@ export interface operations {
             "sha"?: string;
             "workflow_ref"?: string;
           };
+          "telemetry_inconclusive"?: string;
         };
       };
     };
@@ -29744,6 +30023,36 @@ export interface operations {
             "sla_evaluated": boolean;
             "status": string;
             "status_url": string;
+            "telemetry_verdict"?: ({
+              "criteria": Array<{
+                "bound"?: string;
+                "comparator": string;
+                "criterion": string;
+                "denominator"?: (number) | null;
+                "numerator"?: (number) | null;
+                "observed"?: (number) | null;
+                "outcome": string;
+                "reason"?: string;
+                "threshold": number;
+                "unit": string;
+              }>;
+              "enforced": boolean;
+              "exclusions"?: Array<string>;
+              "inconclusive_policy"?: string;
+              "mode": string;
+              "outcome": string;
+              "policy"?: ({
+                "applied": boolean;
+                "id": string;
+                "kind": string;
+                "name": string;
+                "revision": number;
+                "sha256": string;
+                "source": string;
+              }) | null;
+              "provisional"?: boolean;
+              "reasons"?: Array<string>;
+            }) | null;
             "test_id": string;
             "tps": number;
             "transactions": number;
@@ -34509,6 +34818,34 @@ export interface operations {
                 "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
                 "telemetry"?: ({
+                  "acceptance"?: ({
+                    "criteria": Array<{
+                      "bound"?: string;
+                      "comparator": string;
+                      "criterion": string;
+                      "denominator"?: (number) | null;
+                      "numerator"?: (number) | null;
+                      "observed"?: (number) | null;
+                      "outcome": string;
+                      "reason"?: string;
+                      "threshold": number;
+                      "unit": string;
+                    }>;
+                    "exclusions"?: Array<string>;
+                    "mode": string;
+                    "outcome": string;
+                    "policy"?: ({
+                      "applied": boolean;
+                      "id": string;
+                      "kind": string;
+                      "name": string;
+                      "revision": number;
+                      "sha256": string;
+                      "source": string;
+                    }) | null;
+                    "provisional"?: boolean;
+                    "reasons"?: Array<string>;
+                  }) | null;
                   "browser_render_lag_ms"?: number;
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
@@ -35072,6 +35409,34 @@ export interface operations {
                 }>;
                 "target_tps"?: number;
                 "telemetry"?: ({
+                  "acceptance"?: ({
+                    "criteria": Array<{
+                      "bound"?: string;
+                      "comparator": string;
+                      "criterion": string;
+                      "denominator"?: (number) | null;
+                      "numerator"?: (number) | null;
+                      "observed"?: (number) | null;
+                      "outcome": string;
+                      "reason"?: string;
+                      "threshold": number;
+                      "unit": string;
+                    }>;
+                    "exclusions"?: Array<string>;
+                    "mode": string;
+                    "outcome": string;
+                    "policy"?: ({
+                      "applied": boolean;
+                      "id": string;
+                      "kind": string;
+                      "name": string;
+                      "revision": number;
+                      "sha256": string;
+                      "source": string;
+                    }) | null;
+                    "provisional"?: boolean;
+                    "reasons"?: Array<string>;
+                  }) | null;
                   "browser_render_lag_ms"?: number;
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
@@ -42307,6 +42672,34 @@ export interface operations {
               }>;
               "target_tps"?: number;
               "telemetry"?: ({
+                "acceptance"?: ({
+                  "criteria": Array<{
+                    "bound"?: string;
+                    "comparator": string;
+                    "criterion": string;
+                    "denominator"?: (number) | null;
+                    "numerator"?: (number) | null;
+                    "observed"?: (number) | null;
+                    "outcome": string;
+                    "reason"?: string;
+                    "threshold": number;
+                    "unit": string;
+                  }>;
+                  "exclusions"?: Array<string>;
+                  "mode": string;
+                  "outcome": string;
+                  "policy"?: ({
+                    "applied": boolean;
+                    "id": string;
+                    "kind": string;
+                    "name": string;
+                    "revision": number;
+                    "sha256": string;
+                    "source": string;
+                  }) | null;
+                  "provisional"?: boolean;
+                  "reasons"?: Array<string>;
+                }) | null;
                 "browser_render_lag_ms"?: number;
                 "collected_at"?: string;
                 "controller_fanout_lag_ms"?: number;
@@ -43942,6 +44335,34 @@ export interface operations {
               }>;
               "target_tps"?: number;
               "telemetry"?: ({
+                "acceptance"?: ({
+                  "criteria": Array<{
+                    "bound"?: string;
+                    "comparator": string;
+                    "criterion": string;
+                    "denominator"?: (number) | null;
+                    "numerator"?: (number) | null;
+                    "observed"?: (number) | null;
+                    "outcome": string;
+                    "reason"?: string;
+                    "threshold": number;
+                    "unit": string;
+                  }>;
+                  "exclusions"?: Array<string>;
+                  "mode": string;
+                  "outcome": string;
+                  "policy"?: ({
+                    "applied": boolean;
+                    "id": string;
+                    "kind": string;
+                    "name": string;
+                    "revision": number;
+                    "sha256": string;
+                    "source": string;
+                  }) | null;
+                  "provisional"?: boolean;
+                  "reasons"?: Array<string>;
+                }) | null;
                 "browser_render_lag_ms"?: number;
                 "collected_at"?: string;
                 "controller_fanout_lag_ms"?: number;
@@ -55959,6 +56380,34 @@ export interface operations {
             }>;
             "telemetry_comparisons"?: Array<{
               "baseline": {
+                "acceptance"?: ({
+                  "criteria": Array<{
+                    "bound"?: string;
+                    "comparator": string;
+                    "criterion": string;
+                    "denominator"?: (number) | null;
+                    "numerator"?: (number) | null;
+                    "observed"?: (number) | null;
+                    "outcome": string;
+                    "reason"?: string;
+                    "threshold": number;
+                    "unit": string;
+                  }>;
+                  "exclusions"?: Array<string>;
+                  "mode": string;
+                  "outcome": string;
+                  "policy"?: ({
+                    "applied": boolean;
+                    "id": string;
+                    "kind": string;
+                    "name": string;
+                    "revision": number;
+                    "sha256": string;
+                    "source": string;
+                  }) | null;
+                  "provisional"?: boolean;
+                  "reasons"?: Array<string>;
+                }) | null;
                 "budgets"?: Array<{
                   "enabled": boolean;
                   "limit_ms": number;
@@ -55966,6 +56415,38 @@ export interface operations {
                 }>;
                 "cadence_ms"?: number;
                 "cadence_scope"?: string;
+                "loss"?: ({
+                  "dropped_results"?: ({
+                    "reason"?: string;
+                    "state": string;
+                    "value": number;
+                  }) | null;
+                  "dropped_subscriber_batches"?: ({
+                    "reason"?: string;
+                    "state": string;
+                    "value": number;
+                  }) | null;
+                  "lost_publications"?: ({
+                    "reason"?: string;
+                    "state": string;
+                    "value": number;
+                  }) | null;
+                  "shedded_arrivals"?: ({
+                    "reason"?: string;
+                    "state": string;
+                    "value": number;
+                  }) | null;
+                  "websocket_dropped_events"?: ({
+                    "reason"?: string;
+                    "state": string;
+                    "value": number;
+                  }) | null;
+                  "websocket_dropped_messages"?: ({
+                    "reason"?: string;
+                    "state": string;
+                    "value": number;
+                  }) | null;
+                }) | null;
                 "policy_availability": string;
                 "policy_hash"?: string;
                 "policy_pin"?: ({
@@ -55987,6 +56468,34 @@ export interface operations {
               "breached_known_fraction_delta"?: (number) | null;
               "comparable": boolean;
               "current": {
+                "acceptance"?: ({
+                  "criteria": Array<{
+                    "bound"?: string;
+                    "comparator": string;
+                    "criterion": string;
+                    "denominator"?: (number) | null;
+                    "numerator"?: (number) | null;
+                    "observed"?: (number) | null;
+                    "outcome": string;
+                    "reason"?: string;
+                    "threshold": number;
+                    "unit": string;
+                  }>;
+                  "exclusions"?: Array<string>;
+                  "mode": string;
+                  "outcome": string;
+                  "policy"?: ({
+                    "applied": boolean;
+                    "id": string;
+                    "kind": string;
+                    "name": string;
+                    "revision": number;
+                    "sha256": string;
+                    "source": string;
+                  }) | null;
+                  "provisional"?: boolean;
+                  "reasons"?: Array<string>;
+                }) | null;
                 "budgets"?: Array<{
                   "enabled": boolean;
                   "limit_ms": number;
@@ -55994,6 +56503,38 @@ export interface operations {
                 }>;
                 "cadence_ms"?: number;
                 "cadence_scope"?: string;
+                "loss"?: ({
+                  "dropped_results"?: ({
+                    "reason"?: string;
+                    "state": string;
+                    "value": number;
+                  }) | null;
+                  "dropped_subscriber_batches"?: ({
+                    "reason"?: string;
+                    "state": string;
+                    "value": number;
+                  }) | null;
+                  "lost_publications"?: ({
+                    "reason"?: string;
+                    "state": string;
+                    "value": number;
+                  }) | null;
+                  "shedded_arrivals"?: ({
+                    "reason"?: string;
+                    "state": string;
+                    "value": number;
+                  }) | null;
+                  "websocket_dropped_events"?: ({
+                    "reason"?: string;
+                    "state": string;
+                    "value": number;
+                  }) | null;
+                  "websocket_dropped_messages"?: ({
+                    "reason"?: string;
+                    "state": string;
+                    "value": number;
+                  }) | null;
+                }) | null;
                 "policy_availability": string;
                 "policy_hash"?: string;
                 "policy_pin"?: ({
@@ -57111,6 +57652,36 @@ export interface operations {
             "sla_evaluated": boolean;
             "status": string;
             "status_url": string;
+            "telemetry_verdict"?: ({
+              "criteria": Array<{
+                "bound"?: string;
+                "comparator": string;
+                "criterion": string;
+                "denominator"?: (number) | null;
+                "numerator"?: (number) | null;
+                "observed"?: (number) | null;
+                "outcome": string;
+                "reason"?: string;
+                "threshold": number;
+                "unit": string;
+              }>;
+              "enforced": boolean;
+              "exclusions"?: Array<string>;
+              "inconclusive_policy"?: string;
+              "mode": string;
+              "outcome": string;
+              "policy"?: ({
+                "applied": boolean;
+                "id": string;
+                "kind": string;
+                "name": string;
+                "revision": number;
+                "sha256": string;
+                "source": string;
+              }) | null;
+              "provisional"?: boolean;
+              "reasons"?: Array<string>;
+            }) | null;
             "test_id": string;
             "tps": number;
             "transactions": number;
@@ -59641,6 +60212,34 @@ export interface operations {
               }>;
               "target_tps"?: number;
               "telemetry"?: ({
+                "acceptance"?: ({
+                  "criteria": Array<{
+                    "bound"?: string;
+                    "comparator": string;
+                    "criterion": string;
+                    "denominator"?: (number) | null;
+                    "numerator"?: (number) | null;
+                    "observed"?: (number) | null;
+                    "outcome": string;
+                    "reason"?: string;
+                    "threshold": number;
+                    "unit": string;
+                  }>;
+                  "exclusions"?: Array<string>;
+                  "mode": string;
+                  "outcome": string;
+                  "policy"?: ({
+                    "applied": boolean;
+                    "id": string;
+                    "kind": string;
+                    "name": string;
+                    "revision": number;
+                    "sha256": string;
+                    "source": string;
+                  }) | null;
+                  "provisional"?: boolean;
+                  "reasons"?: Array<string>;
+                }) | null;
                 "browser_render_lag_ms"?: number;
                 "collected_at"?: string;
                 "controller_fanout_lag_ms"?: number;
@@ -61272,6 +61871,34 @@ export interface operations {
               }>;
               "target_tps"?: number;
               "telemetry"?: ({
+                "acceptance"?: ({
+                  "criteria": Array<{
+                    "bound"?: string;
+                    "comparator": string;
+                    "criterion": string;
+                    "denominator"?: (number) | null;
+                    "numerator"?: (number) | null;
+                    "observed"?: (number) | null;
+                    "outcome": string;
+                    "reason"?: string;
+                    "threshold": number;
+                    "unit": string;
+                  }>;
+                  "exclusions"?: Array<string>;
+                  "mode": string;
+                  "outcome": string;
+                  "policy"?: ({
+                    "applied": boolean;
+                    "id": string;
+                    "kind": string;
+                    "name": string;
+                    "revision": number;
+                    "sha256": string;
+                    "source": string;
+                  }) | null;
+                  "provisional"?: boolean;
+                  "reasons"?: Array<string>;
+                }) | null;
                 "browser_render_lag_ms"?: number;
                 "collected_at"?: string;
                 "controller_fanout_lag_ms"?: number;
@@ -63485,6 +64112,34 @@ export interface operations {
                 "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
                 "telemetry"?: ({
+                  "acceptance"?: ({
+                    "criteria": Array<{
+                      "bound"?: string;
+                      "comparator": string;
+                      "criterion": string;
+                      "denominator"?: (number) | null;
+                      "numerator"?: (number) | null;
+                      "observed"?: (number) | null;
+                      "outcome": string;
+                      "reason"?: string;
+                      "threshold": number;
+                      "unit": string;
+                    }>;
+                    "exclusions"?: Array<string>;
+                    "mode": string;
+                    "outcome": string;
+                    "policy"?: ({
+                      "applied": boolean;
+                      "id": string;
+                      "kind": string;
+                      "name": string;
+                      "revision": number;
+                      "sha256": string;
+                      "source": string;
+                    }) | null;
+                    "provisional"?: boolean;
+                    "reasons"?: Array<string>;
+                  }) | null;
                   "browser_render_lag_ms"?: number;
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
@@ -64048,6 +64703,34 @@ export interface operations {
                 }>;
                 "target_tps"?: number;
                 "telemetry"?: ({
+                  "acceptance"?: ({
+                    "criteria": Array<{
+                      "bound"?: string;
+                      "comparator": string;
+                      "criterion": string;
+                      "denominator"?: (number) | null;
+                      "numerator"?: (number) | null;
+                      "observed"?: (number) | null;
+                      "outcome": string;
+                      "reason"?: string;
+                      "threshold": number;
+                      "unit": string;
+                    }>;
+                    "exclusions"?: Array<string>;
+                    "mode": string;
+                    "outcome": string;
+                    "policy"?: ({
+                      "applied": boolean;
+                      "id": string;
+                      "kind": string;
+                      "name": string;
+                      "revision": number;
+                      "sha256": string;
+                      "source": string;
+                    }) | null;
+                    "provisional"?: boolean;
+                    "reasons"?: Array<string>;
+                  }) | null;
                   "browser_render_lag_ms"?: number;
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
@@ -66209,6 +66892,32 @@ export interface operations {
               "started_by_subject"?: string;
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
+              "telemetry_acceptance_policy"?: ({
+                "definition": {
+                  "apply_by_default"?: boolean;
+                  "description"?: string;
+                  "max_breached_known_time_fraction"?: (number) | null;
+                  "max_loss_ratio"?: (number) | null;
+                  "max_lost_records"?: (number) | null;
+                  "min_wall_time_coverage"?: (number) | null;
+                  "mode": string;
+                  "stage_lag_percentiles"?: Array<{
+                    "max_ms": number;
+                    "percentile": string;
+                    "stage": string;
+                  }>;
+                  "version": number;
+                };
+                "pin": {
+                  "applied": boolean;
+                  "id": string;
+                  "kind": string;
+                  "name": string;
+                  "revision": number;
+                  "sha256": string;
+                  "source": string;
+                };
+              }) | null;
               "telemetry_policy"?: ({
                 "budgets": Array<{
                   "enabled": boolean;
@@ -67086,6 +67795,32 @@ export interface operations {
               "started_by_subject"?: string;
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
+              "telemetry_acceptance_policy"?: ({
+                "definition": {
+                  "apply_by_default"?: boolean;
+                  "description"?: string;
+                  "max_breached_known_time_fraction"?: (number) | null;
+                  "max_loss_ratio"?: (number) | null;
+                  "max_lost_records"?: (number) | null;
+                  "min_wall_time_coverage"?: (number) | null;
+                  "mode": string;
+                  "stage_lag_percentiles"?: Array<{
+                    "max_ms": number;
+                    "percentile": string;
+                    "stage": string;
+                  }>;
+                  "version": number;
+                };
+                "pin": {
+                  "applied": boolean;
+                  "id": string;
+                  "kind": string;
+                  "name": string;
+                  "revision": number;
+                  "sha256": string;
+                  "source": string;
+                };
+              }) | null;
               "telemetry_policy"?: ({
                 "budgets": Array<{
                   "enabled": boolean;
@@ -67209,6 +67944,38 @@ export interface operations {
                 "unavailable"?: string;
               }>;
               "unknown_ms": number;
+            }) | null;
+            "telemetry_loss"?: ({
+              "dropped_results"?: ({
+                "reason"?: string;
+                "state": string;
+                "value": number;
+              }) | null;
+              "dropped_subscriber_batches"?: ({
+                "reason"?: string;
+                "state": string;
+                "value": number;
+              }) | null;
+              "lost_publications"?: ({
+                "reason"?: string;
+                "state": string;
+                "value": number;
+              }) | null;
+              "shedded_arrivals"?: ({
+                "reason"?: string;
+                "state": string;
+                "value": number;
+              }) | null;
+              "websocket_dropped_events"?: ({
+                "reason"?: string;
+                "state": string;
+                "value": number;
+              }) | null;
+              "websocket_dropped_messages"?: ({
+                "reason"?: string;
+                "state": string;
+                "value": number;
+              }) | null;
             }) | null;
             "telemetry_source_epoch_count"?: number;
             "telemetry_sources_file"?: string;
@@ -67644,6 +68411,34 @@ export interface operations {
               }>;
               "telemetry_comparisons"?: Array<{
                 "baseline": {
+                  "acceptance"?: ({
+                    "criteria": Array<{
+                      "bound"?: string;
+                      "comparator": string;
+                      "criterion": string;
+                      "denominator"?: (number) | null;
+                      "numerator"?: (number) | null;
+                      "observed"?: (number) | null;
+                      "outcome": string;
+                      "reason"?: string;
+                      "threshold": number;
+                      "unit": string;
+                    }>;
+                    "exclusions"?: Array<string>;
+                    "mode": string;
+                    "outcome": string;
+                    "policy"?: ({
+                      "applied": boolean;
+                      "id": string;
+                      "kind": string;
+                      "name": string;
+                      "revision": number;
+                      "sha256": string;
+                      "source": string;
+                    }) | null;
+                    "provisional"?: boolean;
+                    "reasons"?: Array<string>;
+                  }) | null;
                   "budgets"?: Array<{
                     "enabled": boolean;
                     "limit_ms": number;
@@ -67651,9 +68446,49 @@ export interface operations {
                   }>;
                   "cadence_ms"?: number;
                   "cadence_scope"?: string;
+                  "loss"?: ({
+                    "dropped_results"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "dropped_subscriber_batches"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "lost_publications"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "shedded_arrivals"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_events"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_messages"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                  }) | null;
                   "policy_availability": string;
                   "policy_hash"?: string;
-                  "policy_pin"?: (Record<string, unknown>) | null;
+                  "policy_pin"?: ({
+                    "applied": boolean;
+                    "id": string;
+                    "kind": string;
+                    "name": string;
+                    "revision": number;
+                    "sha256": string;
+                    "source": string;
+                  }) | null;
                   "run_id": string;
                   "source_capabilities": Array<string>;
                   "sustained_breach_window_ms"?: number;
@@ -67664,6 +68499,34 @@ export interface operations {
                 "breached_known_fraction_delta"?: (number) | null;
                 "comparable": boolean;
                 "current": {
+                  "acceptance"?: ({
+                    "criteria": Array<{
+                      "bound"?: string;
+                      "comparator": string;
+                      "criterion": string;
+                      "denominator"?: (number) | null;
+                      "numerator"?: (number) | null;
+                      "observed"?: (number) | null;
+                      "outcome": string;
+                      "reason"?: string;
+                      "threshold": number;
+                      "unit": string;
+                    }>;
+                    "exclusions"?: Array<string>;
+                    "mode": string;
+                    "outcome": string;
+                    "policy"?: ({
+                      "applied": boolean;
+                      "id": string;
+                      "kind": string;
+                      "name": string;
+                      "revision": number;
+                      "sha256": string;
+                      "source": string;
+                    }) | null;
+                    "provisional"?: boolean;
+                    "reasons"?: Array<string>;
+                  }) | null;
                   "budgets"?: Array<{
                     "enabled": boolean;
                     "limit_ms": number;
@@ -67671,9 +68534,49 @@ export interface operations {
                   }>;
                   "cadence_ms"?: number;
                   "cadence_scope"?: string;
+                  "loss"?: ({
+                    "dropped_results"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "dropped_subscriber_batches"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "lost_publications"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "shedded_arrivals"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_events"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                    "websocket_dropped_messages"?: ({
+                      "reason"?: string;
+                      "state": string;
+                      "value": number;
+                    }) | null;
+                  }) | null;
                   "policy_availability": string;
                   "policy_hash"?: string;
-                  "policy_pin"?: (Record<string, unknown>) | null;
+                  "policy_pin"?: ({
+                    "applied": boolean;
+                    "id": string;
+                    "kind": string;
+                    "name": string;
+                    "revision": number;
+                    "sha256": string;
+                    "source": string;
+                  }) | null;
                   "run_id": string;
                   "source_capabilities": Array<string>;
                   "sustained_breach_window_ms"?: number;
@@ -69897,6 +70800,32 @@ export interface operations {
                 "started_by_subject"?: string;
                 "stopped_by_display_name"?: string;
                 "stopped_by_subject"?: string;
+                "telemetry_acceptance_policy"?: ({
+                  "definition": {
+                    "apply_by_default"?: boolean;
+                    "description"?: string;
+                    "max_breached_known_time_fraction"?: (number) | null;
+                    "max_loss_ratio"?: (number) | null;
+                    "max_lost_records"?: (number) | null;
+                    "min_wall_time_coverage"?: (number) | null;
+                    "mode": string;
+                    "stage_lag_percentiles"?: Array<{
+                      "max_ms": number;
+                      "percentile": string;
+                      "stage": string;
+                    }>;
+                    "version": number;
+                  };
+                  "pin": {
+                    "applied": boolean;
+                    "id": string;
+                    "kind": string;
+                    "name": string;
+                    "revision": number;
+                    "sha256": string;
+                    "source": string;
+                  };
+                }) | null;
                 "telemetry_policy"?: ({
                   "budgets": Array<{
                     "enabled": boolean;
@@ -70319,6 +71248,32 @@ export interface operations {
                 "started_by_subject"?: string;
                 "stopped_by_display_name"?: string;
                 "stopped_by_subject"?: string;
+                "telemetry_acceptance_policy"?: ({
+                  "definition": {
+                    "apply_by_default"?: boolean;
+                    "description"?: string;
+                    "max_breached_known_time_fraction"?: (number) | null;
+                    "max_loss_ratio"?: (number) | null;
+                    "max_lost_records"?: (number) | null;
+                    "min_wall_time_coverage"?: (number) | null;
+                    "mode": string;
+                    "stage_lag_percentiles"?: Array<{
+                      "max_ms": number;
+                      "percentile": string;
+                      "stage": string;
+                    }>;
+                    "version": number;
+                  };
+                  "pin": {
+                    "applied": boolean;
+                    "id": string;
+                    "kind": string;
+                    "name": string;
+                    "revision": number;
+                    "sha256": string;
+                    "source": string;
+                  };
+                }) | null;
                 "telemetry_policy"?: ({
                   "budgets": Array<{
                     "enabled": boolean;
@@ -70405,6 +71360,38 @@ export interface operations {
                   "unavailable"?: string;
                 }>;
                 "unknown_ms": number;
+              }) | null;
+              "telemetry_loss"?: ({
+                "dropped_results"?: ({
+                  "reason"?: string;
+                  "state": string;
+                  "value": number;
+                }) | null;
+                "dropped_subscriber_batches"?: ({
+                  "reason"?: string;
+                  "state": string;
+                  "value": number;
+                }) | null;
+                "lost_publications"?: ({
+                  "reason"?: string;
+                  "state": string;
+                  "value": number;
+                }) | null;
+                "shedded_arrivals"?: ({
+                  "reason"?: string;
+                  "state": string;
+                  "value": number;
+                }) | null;
+                "websocket_dropped_events"?: ({
+                  "reason"?: string;
+                  "state": string;
+                  "value": number;
+                }) | null;
+                "websocket_dropped_messages"?: ({
+                  "reason"?: string;
+                  "state": string;
+                  "value": number;
+                }) | null;
               }) | null;
               "telemetry_source_epoch_count"?: number;
               "telemetry_sources_file"?: string;
@@ -71134,6 +72121,34 @@ export interface operations {
               "total_transactions": number;
               "tps": number;
             }>;
+            "telemetry_acceptance"?: ({
+              "criteria": Array<{
+                "bound"?: string;
+                "comparator": string;
+                "criterion": string;
+                "denominator"?: (number) | null;
+                "numerator"?: (number) | null;
+                "observed"?: (number) | null;
+                "outcome": string;
+                "reason"?: string;
+                "threshold": number;
+                "unit": string;
+              }>;
+              "exclusions"?: Array<string>;
+              "mode": string;
+              "outcome": string;
+              "policy"?: ({
+                "applied": boolean;
+                "id": string;
+                "kind": string;
+                "name": string;
+                "revision": number;
+                "sha256": string;
+                "source": string;
+              }) | null;
+              "provisional"?: boolean;
+              "reasons"?: Array<string>;
+            }) | null;
             "telemetry_policy"?: ({
               "availability": string;
               "policy"?: ({
@@ -78237,6 +79252,34 @@ export interface operations {
               }>;
               "target_tps"?: number;
               "telemetry"?: ({
+                "acceptance"?: ({
+                  "criteria": Array<{
+                    "bound"?: string;
+                    "comparator": string;
+                    "criterion": string;
+                    "denominator"?: (number) | null;
+                    "numerator"?: (number) | null;
+                    "observed"?: (number) | null;
+                    "outcome": string;
+                    "reason"?: string;
+                    "threshold": number;
+                    "unit": string;
+                  }>;
+                  "exclusions"?: Array<string>;
+                  "mode": string;
+                  "outcome": string;
+                  "policy"?: ({
+                    "applied": boolean;
+                    "id": string;
+                    "kind": string;
+                    "name": string;
+                    "revision": number;
+                    "sha256": string;
+                    "source": string;
+                  }) | null;
+                  "provisional"?: boolean;
+                  "reasons"?: Array<string>;
+                }) | null;
                 "browser_render_lag_ms"?: number;
                 "collected_at"?: string;
                 "controller_fanout_lag_ms"?: number;
@@ -79872,6 +80915,34 @@ export interface operations {
               }>;
               "target_tps"?: number;
               "telemetry"?: ({
+                "acceptance"?: ({
+                  "criteria": Array<{
+                    "bound"?: string;
+                    "comparator": string;
+                    "criterion": string;
+                    "denominator"?: (number) | null;
+                    "numerator"?: (number) | null;
+                    "observed"?: (number) | null;
+                    "outcome": string;
+                    "reason"?: string;
+                    "threshold": number;
+                    "unit": string;
+                  }>;
+                  "exclusions"?: Array<string>;
+                  "mode": string;
+                  "outcome": string;
+                  "policy"?: ({
+                    "applied": boolean;
+                    "id": string;
+                    "kind": string;
+                    "name": string;
+                    "revision": number;
+                    "sha256": string;
+                    "source": string;
+                  }) | null;
+                  "provisional"?: boolean;
+                  "reasons"?: Array<string>;
+                }) | null;
                 "browser_render_lag_ms"?: number;
                 "collected_at"?: string;
                 "controller_fanout_lag_ms"?: number;
@@ -99178,6 +100249,34 @@ export interface operations {
               }>;
               "target_tps"?: number;
               "telemetry"?: ({
+                "acceptance"?: ({
+                  "criteria": Array<{
+                    "bound"?: string;
+                    "comparator": string;
+                    "criterion": string;
+                    "denominator"?: (number) | null;
+                    "numerator"?: (number) | null;
+                    "observed"?: (number) | null;
+                    "outcome": string;
+                    "reason"?: string;
+                    "threshold": number;
+                    "unit": string;
+                  }>;
+                  "exclusions"?: Array<string>;
+                  "mode": string;
+                  "outcome": string;
+                  "policy"?: ({
+                    "applied": boolean;
+                    "id": string;
+                    "kind": string;
+                    "name": string;
+                    "revision": number;
+                    "sha256": string;
+                    "source": string;
+                  }) | null;
+                  "provisional"?: boolean;
+                  "reasons"?: Array<string>;
+                }) | null;
                 "browser_render_lag_ms"?: number;
                 "collected_at"?: string;
                 "controller_fanout_lag_ms"?: number;
@@ -100813,6 +101912,34 @@ export interface operations {
               }>;
               "target_tps"?: number;
               "telemetry"?: ({
+                "acceptance"?: ({
+                  "criteria": Array<{
+                    "bound"?: string;
+                    "comparator": string;
+                    "criterion": string;
+                    "denominator"?: (number) | null;
+                    "numerator"?: (number) | null;
+                    "observed"?: (number) | null;
+                    "outcome": string;
+                    "reason"?: string;
+                    "threshold": number;
+                    "unit": string;
+                  }>;
+                  "exclusions"?: Array<string>;
+                  "mode": string;
+                  "outcome": string;
+                  "policy"?: ({
+                    "applied": boolean;
+                    "id": string;
+                    "kind": string;
+                    "name": string;
+                    "revision": number;
+                    "sha256": string;
+                    "source": string;
+                  }) | null;
+                  "provisional"?: boolean;
+                  "reasons"?: Array<string>;
+                }) | null;
                 "browser_render_lag_ms"?: number;
                 "collected_at"?: string;
                 "controller_fanout_lag_ms"?: number;
@@ -114554,6 +115681,34 @@ export interface operations {
                 "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
                 "telemetry"?: ({
+                  "acceptance"?: ({
+                    "criteria": Array<{
+                      "bound"?: string;
+                      "comparator": string;
+                      "criterion": string;
+                      "denominator"?: (number) | null;
+                      "numerator"?: (number) | null;
+                      "observed"?: (number) | null;
+                      "outcome": string;
+                      "reason"?: string;
+                      "threshold": number;
+                      "unit": string;
+                    }>;
+                    "exclusions"?: Array<string>;
+                    "mode": string;
+                    "outcome": string;
+                    "policy"?: ({
+                      "applied": boolean;
+                      "id": string;
+                      "kind": string;
+                      "name": string;
+                      "revision": number;
+                      "sha256": string;
+                      "source": string;
+                    }) | null;
+                    "provisional"?: boolean;
+                    "reasons"?: Array<string>;
+                  }) | null;
                   "browser_render_lag_ms"?: number;
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
@@ -115117,6 +116272,34 @@ export interface operations {
                 }>;
                 "target_tps"?: number;
                 "telemetry"?: ({
+                  "acceptance"?: ({
+                    "criteria": Array<{
+                      "bound"?: string;
+                      "comparator": string;
+                      "criterion": string;
+                      "denominator"?: (number) | null;
+                      "numerator"?: (number) | null;
+                      "observed"?: (number) | null;
+                      "outcome": string;
+                      "reason"?: string;
+                      "threshold": number;
+                      "unit": string;
+                    }>;
+                    "exclusions"?: Array<string>;
+                    "mode": string;
+                    "outcome": string;
+                    "policy"?: ({
+                      "applied": boolean;
+                      "id": string;
+                      "kind": string;
+                      "name": string;
+                      "revision": number;
+                      "sha256": string;
+                      "source": string;
+                    }) | null;
+                    "provisional"?: boolean;
+                    "reasons"?: Array<string>;
+                  }) | null;
                   "browser_render_lag_ms"?: number;
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
@@ -116437,6 +117620,34 @@ export interface operations {
                 "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
                 "telemetry"?: ({
+                  "acceptance"?: ({
+                    "criteria": Array<{
+                      "bound"?: string;
+                      "comparator": string;
+                      "criterion": string;
+                      "denominator"?: (number) | null;
+                      "numerator"?: (number) | null;
+                      "observed"?: (number) | null;
+                      "outcome": string;
+                      "reason"?: string;
+                      "threshold": number;
+                      "unit": string;
+                    }>;
+                    "exclusions"?: Array<string>;
+                    "mode": string;
+                    "outcome": string;
+                    "policy"?: ({
+                      "applied": boolean;
+                      "id": string;
+                      "kind": string;
+                      "name": string;
+                      "revision": number;
+                      "sha256": string;
+                      "source": string;
+                    }) | null;
+                    "provisional"?: boolean;
+                    "reasons"?: Array<string>;
+                  }) | null;
                   "browser_render_lag_ms"?: number;
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
@@ -117000,6 +118211,34 @@ export interface operations {
                 }>;
                 "target_tps"?: number;
                 "telemetry"?: ({
+                  "acceptance"?: ({
+                    "criteria": Array<{
+                      "bound"?: string;
+                      "comparator": string;
+                      "criterion": string;
+                      "denominator"?: (number) | null;
+                      "numerator"?: (number) | null;
+                      "observed"?: (number) | null;
+                      "outcome": string;
+                      "reason"?: string;
+                      "threshold": number;
+                      "unit": string;
+                    }>;
+                    "exclusions"?: Array<string>;
+                    "mode": string;
+                    "outcome": string;
+                    "policy"?: ({
+                      "applied": boolean;
+                      "id": string;
+                      "kind": string;
+                      "name": string;
+                      "revision": number;
+                      "sha256": string;
+                      "source": string;
+                    }) | null;
+                    "provisional"?: boolean;
+                    "reasons"?: Array<string>;
+                  }) | null;
                   "browser_render_lag_ms"?: number;
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
@@ -118320,6 +119559,34 @@ export interface operations {
                 "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
                 "telemetry"?: ({
+                  "acceptance"?: ({
+                    "criteria": Array<{
+                      "bound"?: string;
+                      "comparator": string;
+                      "criterion": string;
+                      "denominator"?: (number) | null;
+                      "numerator"?: (number) | null;
+                      "observed"?: (number) | null;
+                      "outcome": string;
+                      "reason"?: string;
+                      "threshold": number;
+                      "unit": string;
+                    }>;
+                    "exclusions"?: Array<string>;
+                    "mode": string;
+                    "outcome": string;
+                    "policy"?: ({
+                      "applied": boolean;
+                      "id": string;
+                      "kind": string;
+                      "name": string;
+                      "revision": number;
+                      "sha256": string;
+                      "source": string;
+                    }) | null;
+                    "provisional"?: boolean;
+                    "reasons"?: Array<string>;
+                  }) | null;
                   "browser_render_lag_ms"?: number;
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
@@ -118883,6 +120150,34 @@ export interface operations {
                 }>;
                 "target_tps"?: number;
                 "telemetry"?: ({
+                  "acceptance"?: ({
+                    "criteria": Array<{
+                      "bound"?: string;
+                      "comparator": string;
+                      "criterion": string;
+                      "denominator"?: (number) | null;
+                      "numerator"?: (number) | null;
+                      "observed"?: (number) | null;
+                      "outcome": string;
+                      "reason"?: string;
+                      "threshold": number;
+                      "unit": string;
+                    }>;
+                    "exclusions"?: Array<string>;
+                    "mode": string;
+                    "outcome": string;
+                    "policy"?: ({
+                      "applied": boolean;
+                      "id": string;
+                      "kind": string;
+                      "name": string;
+                      "revision": number;
+                      "sha256": string;
+                      "source": string;
+                    }) | null;
+                    "provisional"?: boolean;
+                    "reasons"?: Array<string>;
+                  }) | null;
                   "browser_render_lag_ms"?: number;
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
@@ -120203,6 +121498,34 @@ export interface operations {
                 "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
                 "telemetry"?: ({
+                  "acceptance"?: ({
+                    "criteria": Array<{
+                      "bound"?: string;
+                      "comparator": string;
+                      "criterion": string;
+                      "denominator"?: (number) | null;
+                      "numerator"?: (number) | null;
+                      "observed"?: (number) | null;
+                      "outcome": string;
+                      "reason"?: string;
+                      "threshold": number;
+                      "unit": string;
+                    }>;
+                    "exclusions"?: Array<string>;
+                    "mode": string;
+                    "outcome": string;
+                    "policy"?: ({
+                      "applied": boolean;
+                      "id": string;
+                      "kind": string;
+                      "name": string;
+                      "revision": number;
+                      "sha256": string;
+                      "source": string;
+                    }) | null;
+                    "provisional"?: boolean;
+                    "reasons"?: Array<string>;
+                  }) | null;
                   "browser_render_lag_ms"?: number;
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
@@ -120766,6 +122089,34 @@ export interface operations {
                 }>;
                 "target_tps"?: number;
                 "telemetry"?: ({
+                  "acceptance"?: ({
+                    "criteria": Array<{
+                      "bound"?: string;
+                      "comparator": string;
+                      "criterion": string;
+                      "denominator"?: (number) | null;
+                      "numerator"?: (number) | null;
+                      "observed"?: (number) | null;
+                      "outcome": string;
+                      "reason"?: string;
+                      "threshold": number;
+                      "unit": string;
+                    }>;
+                    "exclusions"?: Array<string>;
+                    "mode": string;
+                    "outcome": string;
+                    "policy"?: ({
+                      "applied": boolean;
+                      "id": string;
+                      "kind": string;
+                      "name": string;
+                      "revision": number;
+                      "sha256": string;
+                      "source": string;
+                    }) | null;
+                    "provisional"?: boolean;
+                    "reasons"?: Array<string>;
+                  }) | null;
                   "browser_render_lag_ms"?: number;
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
@@ -122086,6 +123437,34 @@ export interface operations {
                 "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
                 "telemetry"?: ({
+                  "acceptance"?: ({
+                    "criteria": Array<{
+                      "bound"?: string;
+                      "comparator": string;
+                      "criterion": string;
+                      "denominator"?: (number) | null;
+                      "numerator"?: (number) | null;
+                      "observed"?: (number) | null;
+                      "outcome": string;
+                      "reason"?: string;
+                      "threshold": number;
+                      "unit": string;
+                    }>;
+                    "exclusions"?: Array<string>;
+                    "mode": string;
+                    "outcome": string;
+                    "policy"?: ({
+                      "applied": boolean;
+                      "id": string;
+                      "kind": string;
+                      "name": string;
+                      "revision": number;
+                      "sha256": string;
+                      "source": string;
+                    }) | null;
+                    "provisional"?: boolean;
+                    "reasons"?: Array<string>;
+                  }) | null;
                   "browser_render_lag_ms"?: number;
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
@@ -122649,6 +124028,34 @@ export interface operations {
                 }>;
                 "target_tps"?: number;
                 "telemetry"?: ({
+                  "acceptance"?: ({
+                    "criteria": Array<{
+                      "bound"?: string;
+                      "comparator": string;
+                      "criterion": string;
+                      "denominator"?: (number) | null;
+                      "numerator"?: (number) | null;
+                      "observed"?: (number) | null;
+                      "outcome": string;
+                      "reason"?: string;
+                      "threshold": number;
+                      "unit": string;
+                    }>;
+                    "exclusions"?: Array<string>;
+                    "mode": string;
+                    "outcome": string;
+                    "policy"?: ({
+                      "applied": boolean;
+                      "id": string;
+                      "kind": string;
+                      "name": string;
+                      "revision": number;
+                      "sha256": string;
+                      "source": string;
+                    }) | null;
+                    "provisional"?: boolean;
+                    "reasons"?: Array<string>;
+                  }) | null;
                   "browser_render_lag_ms"?: number;
                   "collected_at"?: string;
                   "controller_fanout_lag_ms"?: number;
@@ -147310,6 +148717,34 @@ export interface operations {
               }>;
               "target_tps"?: number;
               "telemetry"?: ({
+                "acceptance"?: ({
+                  "criteria": Array<{
+                    "bound"?: string;
+                    "comparator": string;
+                    "criterion": string;
+                    "denominator"?: (number) | null;
+                    "numerator"?: (number) | null;
+                    "observed"?: (number) | null;
+                    "outcome": string;
+                    "reason"?: string;
+                    "threshold": number;
+                    "unit": string;
+                  }>;
+                  "exclusions"?: Array<string>;
+                  "mode": string;
+                  "outcome": string;
+                  "policy"?: ({
+                    "applied": boolean;
+                    "id": string;
+                    "kind": string;
+                    "name": string;
+                    "revision": number;
+                    "sha256": string;
+                    "source": string;
+                  }) | null;
+                  "provisional"?: boolean;
+                  "reasons"?: Array<string>;
+                }) | null;
                 "browser_render_lag_ms"?: number;
                 "collected_at"?: string;
                 "controller_fanout_lag_ms"?: number;
@@ -148945,6 +150380,34 @@ export interface operations {
               }>;
               "target_tps"?: number;
               "telemetry"?: ({
+                "acceptance"?: ({
+                  "criteria": Array<{
+                    "bound"?: string;
+                    "comparator": string;
+                    "criterion": string;
+                    "denominator"?: (number) | null;
+                    "numerator"?: (number) | null;
+                    "observed"?: (number) | null;
+                    "outcome": string;
+                    "reason"?: string;
+                    "threshold": number;
+                    "unit": string;
+                  }>;
+                  "exclusions"?: Array<string>;
+                  "mode": string;
+                  "outcome": string;
+                  "policy"?: ({
+                    "applied": boolean;
+                    "id": string;
+                    "kind": string;
+                    "name": string;
+                    "revision": number;
+                    "sha256": string;
+                    "source": string;
+                  }) | null;
+                  "provisional"?: boolean;
+                  "reasons"?: Array<string>;
+                }) | null;
                 "browser_render_lag_ms"?: number;
                 "collected_at"?: string;
                 "controller_fanout_lag_ms"?: number;

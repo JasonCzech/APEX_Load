@@ -29,7 +29,23 @@ function profileCells(profile: TelemetryRunProfile) {
     profile.sustained_breach_window_ms !== undefined ? `${profile.sustained_breach_window_ms} ms` : 'Unavailable',
     profile.cadence_ms !== undefined ? `${profile.cadence_ms} ms (${profile.cadence_scope})` : 'Unavailable',
     profile.source_capabilities.length ? profile.source_capabilities.join(', ') : 'none',
+    acceptanceCell(profile),
+    droppedCell(profile),
   ]
+}
+
+// Each run's telemetry verdict was judged by its own pinned policy revision.
+function acceptanceCell(profile: TelemetryRunProfile): string {
+  const verdict = profile.acceptance
+  if (!verdict) return 'No acceptance policy'
+  const policy = verdict.policy ? `, ${verdict.policy.name} r${verdict.policy.revision}` : ''
+  return `${verdict.outcome} (${verdict.mode}${policy})`
+}
+
+function droppedCell(profile: TelemetryRunProfile): string {
+  const dropped = profile.loss?.dropped_results
+  if (!dropped || dropped.state === 'unavailable') return 'Unavailable'
+  return `${dropped.state === 'lower_bound' ? '≥ ' : ''}${dropped.value.toLocaleString()} (${dropped.state.replace('_', ' ')})`
 }
 
 function counts(value?: TelemetryClassificationCounts) {
@@ -177,7 +193,7 @@ export default function BaselineTelemetryCompatibility({ comparisons, projectId,
           )}
           <div className="bc-table-scroll">
             <table aria-label={`Telemetry profiles of ${comparison.current.run_id} and ${comparison.baseline_run_id}`}>
-              <thead><tr><th>Run</th><th>Policy receipt</th><th>Budgets</th><th>Sustained window</th><th>Cadence</th><th>Source capabilities</th></tr></thead>
+              <thead><tr><th>Run</th><th>Policy receipt</th><th>Budgets</th><th>Sustained window</th><th>Cadence</th><th>Source capabilities</th><th>Telemetry acceptance</th><th>Dropped results</th></tr></thead>
               <tbody>
                 {[comparison.current, comparison.baseline].map(profile => (
                   <tr key={profile.run_id}><th scope="row" title={profile.run_id}>{label(profile.run_id)}</th>{profileCells(profile).map((cell, index) => <td key={index}>{cell}</td>)}</tr>

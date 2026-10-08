@@ -62,6 +62,10 @@ export interface TelemetryRunProfile {
  cadence_ms?: number; cadence_scope?: string
  policy_pin?: { kind: string; id: string; name: string; revision: number; sha256: string }
  source_capabilities: string[]; workload_version?: number
+ // The run's own telemetry verdict under its pinned acceptance policy (C7)
+ // and its loss totals; verdicts are shown side by side, never compared.
+ acceptance?: import('../../types').TelemetryAcceptanceVerdict
+ loss?: { dropped_results?: { state: string; value: number; reason?: string } }
 }
 // Whether one baseline's whole-run telemetry health compares with the
 // current run's, and the deltas (current minus baseline) when it does.

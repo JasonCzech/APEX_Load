@@ -1825,7 +1825,7 @@ func (tr *TestRunner) persistManagedTestStartOutsideLockLocked(test *ManagedTest
 		// runner lock, and frozen into the same write-once admission receipt.
 		// A resolution failure refuses Start: silently dropping a fail_ci
 		// policy would let CI pass without the telemetry gate it configured.
-		pins, pinErr := tr.resolveRunPolicyPins(freshAdmission.ProjectID)
+		pins, acceptance, pinErr := tr.resolveRunPolicyPins(freshAdmission.ProjectID)
 		if errors.Is(pinErr, errRunPolicyConfiguration) {
 			persistErr = pinErr
 		} else if pinErr != nil {
@@ -1833,6 +1833,7 @@ func (tr *TestRunner) persistManagedTestStartOutsideLockLocked(test *ManagedTest
 			persistErr = errors.Join(errStartAdmissionEvidenceStale, fmt.Errorf("resolve run policies: %w", pinErr))
 		} else {
 			freshAdmission.PolicyPins = pins
+			freshAdmission.TelemetryAcceptancePolicy = acceptance
 			snapshot.record.InitialProvenance = initialProvenanceForStorage(freshAdmission)
 		}
 	}

@@ -720,6 +720,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 		}})
 
 	// --- Completeness ------------------------------------------------------
+	add(reportSectionRenderer{ID: "telemetry_acceptance", Label: "Telemetry Acceptance", PDF: telemetryAcceptanceReportPDF, CSV: telemetryAcceptanceReportCSV})
 	add(reportSectionRenderer{ID: "completeness", Label: "Completeness Score",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
 			pdfHeading(lines, "Completeness")

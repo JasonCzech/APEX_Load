@@ -253,6 +253,36 @@ Live cards, saved baseline comparisons and HTML/PDF/DOCX/CSV/JSON/JUnit exports 
 
 Delivery progress, 2026-10-08 (Wave 3, C6): saved baseline comparisons carry `telemetry_comparisons`, one per baseline, always scoped to the whole run (never the selected steady-load windows). Health is compared, as deltas in breached classified intervals, health coverage and breached known-time fraction, only when both runs retained a valid policy receipt with the same lag budgets (browser render, advisory, excluded), the same sustained window and the same publication cadence and scope, the same telemetry source capabilities (source epochs, clock qualification, coverage algorithm) and a workload that is not unqualified; otherwise both runs' profiles are shown side by side with the reasons (`policy_unavailable`, `budgets_differ`, `sustained_window_differs`, `cadence_differs`, `source_capability_differs`, `workload_unqualified`). Different pinned project telemetry policies are noted, since the receipts are what classified the runs. The verdict is in the comparison view and the HTML, PDF and CSV exports. Re-evaluation is the `telemetry_acceptance` evaluation kind (F2): it re-classifies 1 to 10 runs' retained interval lag evidence under an explicit `telemetry_policy` revision with the live scoring rules (zero or absent budget disables a stage, absent budgets resolve to the built-in defaults rather than current settings, cross-host stages need a qualified clock or the interval is unscored, a distributed run's cross-host age without retained quality is unscored, sustained-window breaches), reports a run as unanswerable when it retained no telemetry or its interval spacing exceeds the policy's sustained window, and publishes an immutable derived result whose input fingerprint covers the policy revision's digest and each run's manifest digest; the archives and original classifications are unchanged, and a run whose inputs changed after queueing fails rather than answering for different evidence. The comparison view queues it and shows original and re-evaluated counts; `apexctl analysis telemetry-reevaluate` queues and optionally waits. Review fixes: local runs whose runtime-resource shards run in the controller are no longer treated as distributed (the receipt's cadence scope decides when present); intervals now retain `sample_age_unavailable` so a sample-less window gets no sample-age decision, as live; an interval is healthy only when an enabled stage was judged, and a run with no classifiable interval is unanswerable (`no_classifiable_intervals`); clock qualification is a capability only for a distributed run; workload keys of different versions are not compared (`workload_version_differs`); a comparable pair with different receipt hashes names both in exports; and the dashboard re-evaluation panel restarts for another run set and retries a failed poll. Deviations: the policy hash is not compared directly (budgets, window and cadence are, with browser render excluded); the `source_epochs` capability is lost when a run is adopted before finalize (fail-closed); intervals archived before `sample_age_unavailable` cannot tell sample-less windows apart; re-evaluation reports per-run counts, not a delta between the re-evaluated runs; only the lag budgets are re-scored (the original mixed classification also counted drop, stream-gap and transaction diagnostics, so the two counts are not a like-for-like delta); DOCX and JUnit exports and the telemetry acceptance verdicts are C7. Cross-cutting review: re-evaluation requests answer 404/409/503 for a missing run or policy, an unfinalized run and an unavailable dependency; the Settings page labels the browser render budget advisory.
 
+Delivery progress, 2026-10-08 (Wave 4, C7): a `telemetry_acceptance_policy` pinned at Start now has its definition frozen beside the pin in the admission receipt, and the run is judged against that definition. The verdict is `pass`, `fail` or `inconclusive`. Any failed criterion fails it. A criterion without the evidence to decide it, or whose lower-bound evidence could still be within its limit, is inconclusive, so unknown required evidence never passes. Evidence comes from the manifest:
+- **Coverage:** observed ÷ window wall time.
+- **Lost records:** `dropped_results`. A lost publication or a dropped subscriber batch makes the count a lower bound. Shed arrivals and the controller-wide WebSocket drops are excluded.
+- **Loss ratio:** lost ÷ (lost + recorded results).
+- **Breach:** breached ÷ classified telemetry time.
+- **Stage percentiles:** the C5 stage distributions; `end_to_end` has none and is always inconclusive.
+
+The manifest now records `telemetry_loss` at finalize. A distributed run finalized without its source ledger has every loss counter unavailable (`ledger_lost`).
+
+Where the verdict appears:
+- **CI:** `ciRunResponse.telemetry_verdict`, beside the application outcome. Only `fail_ci` changes the outcome, and only for an otherwise passed run: `telemetry_failed` (exit 1), or `telemetry_inconclusive` (exit 2) when the caller gave no mapping. `telemetry_inconclusive` (`apexctl --telemetry-inconclusive=pass|fail`, action input `telemetry-inconclusive`) has no default. The controller refuses a CI run without it when the project's default acceptance policy is `fail_ci`. Advisory and provisional verdicts never change the outcome.
+- **CI evidence:** a separate `telemetry_acceptance` JUnit test case (an advisory non-pass is skipped), a separate section in the GitHub check, job summary rows, and the `telemetry-verdict` output.
+- **Live:** the Telemetry card shows a provisional verdict.
+- **Run report:** a **Telemetry Acceptance** section in every report profile (HTML, PDF, CSV and, through HTML, DOCX). The report JSON adds `telemetry_acceptance`. The section shows:
+  - policy revisions;
+  - criteria with their observed values, bounds and denominators;
+  - exact or lower-bound loss;
+  - coverage by source and classified time;
+  - clock quality;
+  - stage distributions with their exclusions;
+  - what the verdict does not count.
+- **Saved comparisons:** each run's verdict and dropped results, side by side.
+- **Webhooks:** a `telemetry_acceptance` event for a failed or inconclusive finalized run. It names the run, the policy revision, the criteria that did not pass and the sources with unknown time, and is stamped with the completion time so its idempotency key is stable.
+
+Deviations:
+- No incident record is created; the webhook is the notification.
+- A run that pinned a policy before definitions were frozen is inconclusive in mode `unknown`, which no gate enforces.
+- The live verdict leaves breached time inconclusive until finalize.
+- A local run's live coverage is recorded only at finalize.
+
 ### TEL-4: Acceptance and measured latency
 
 Complete the final published malformed-counter API regressions and refreshed API race gate, plus live PostgreSQL release-26 migration verification, before this program's new behavior merges. Test legacy/nil/zero/positive/negative/overflow/reset counters, cold/missing peers, out-of-order/retried publications, ownership epochs, cadence/policy changes, clock skew, browser reconnect/background/render stalls, HA adoption gaps and sanitized exports.

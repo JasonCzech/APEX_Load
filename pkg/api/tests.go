@@ -1085,6 +1085,7 @@ func cloneRunLiveMetrics(test *ManagedTest) *LiveMetrics {
 	metrics := cloneLiveMetrics(test.LiveMetrics)
 	annotateLiveObservation(metrics, test.Status, time.Now())
 	attachTelemetryStageDistributions(metrics, test)
+	attachTelemetryAcceptance(metrics, test)
 	return metrics
 }
 

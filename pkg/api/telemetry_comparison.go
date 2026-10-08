@@ -46,6 +46,12 @@ type TelemetryRunProfile struct {
 	// produce (source epochs, clock qualification, wall-time coverage).
 	SourceCapabilities []string `json:"source_capabilities"`
 	WorkloadVersion    int      `json:"workload_version,omitempty"`
+	// Acceptance is the run's own telemetry verdict under its pinned
+	// acceptance policy (C7); each run is judged by its own policy, so two
+	// verdicts are shown side by side, never compared.
+	Acceptance *TelemetryAcceptanceVerdict `json:"acceptance,omitempty"`
+	// Loss is the run's loss totals: exact, lower bound or unavailable.
+	Loss *TelemetryLossAccounting `json:"loss,omitempty"`
 }
 
 // BaselineTelemetryComparison compares one baseline's whole-run telemetry
@@ -102,6 +108,8 @@ func telemetryRunProfile(runID string, manifest *RunArchiveManifest) TelemetryRu
 	if manifest.Provenance.Workload != nil {
 		profile.WorkloadVersion = manifest.Provenance.Workload.Version
 	}
+	profile.Acceptance = telemetryAcceptanceForManifest(manifest)
+	profile.Loss = manifest.TelemetryLoss.clone()
 	return profile
 }
 
@@ -191,6 +199,33 @@ func compareBaselineTelemetry(current, baseline *baselineComparisonRun, workload
 // baselineTelemetryComparisonLine is one export line: the deltas of a
 // comparable pair, or why the pair is not comparable.
 func baselineTelemetryComparisonLine(c BaselineTelemetryComparison) string {
+	return baselineTelemetryHealthLine(c) + telemetryAcceptancePairLine(c.Current, c.Baseline)
+}
+
+// telemetryAcceptancePairLine states both runs' telemetry verdicts and
+// dropped-result totals side by side; each was judged by its own pinned
+// policy revision.
+func telemetryAcceptancePairLine(current, baseline TelemetryRunProfile) string {
+	verdict := func(profile TelemetryRunProfile) string {
+		if profile.Acceptance == nil {
+			return "no acceptance policy"
+		}
+		label := profile.Acceptance.Outcome + " (" + profile.Acceptance.Mode
+		if pin := profile.Acceptance.Policy; pin != nil {
+			label += fmt.Sprintf(", %s r%d", pin.Name, pin.Revision)
+		}
+		return label + ")"
+	}
+	dropped := func(profile TelemetryRunProfile) string {
+		if profile.Loss == nil || profile.Loss.DroppedResults == nil || profile.Loss.DroppedResults.State == TelemetryCounterUnavailable {
+			return "unavailable"
+		}
+		return boundedCount(profile.Loss.DroppedResults.Value, map[string]string{TelemetryCounterExact: telemetryAcceptanceExact, TelemetryCounterLowerBound: telemetryAcceptanceLowerBound}[profile.Loss.DroppedResults.State])
+	}
+	return fmt.Sprintf("; telemetry acceptance %s / %s; dropped results %s / %s", verdict(current), verdict(baseline), dropped(current), dropped(baseline))
+}
+
+func baselineTelemetryHealthLine(c BaselineTelemetryComparison) string {
 	if !c.Comparable {
 		return fmt.Sprintf("Telemetry of %s vs %s not compared (%s): policy %s / %s, cadence %d / %d ms, sources [%s] / [%s]",
 			c.Current.RunID, c.BaselineRunID, strings.Join(c.Reasons, ", "), shortTelemetryHash(c.Current.PolicyHash), shortTelemetryHash(c.Baseline.PolicyHash),

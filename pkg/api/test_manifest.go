@@ -844,6 +844,7 @@ func (tr *TestRunner) persistTestManifestArtifactWithPreparation(test *ManagedTe
 		slog.Warn("failed to record telemetry coverage", "test_id", test.ID, "error", err)
 	}
 	tr.persistTelemetryStageDistributions(test, archiveManifest, refresh)
+	tr.persistTelemetryLoss(test, archiveManifest, refresh)
 	if err := tr.persistJointIntervalArchive(context.Background(), test, record, archiveManifest); err != nil {
 		slog.Warn("failed to archive joint evidence", "test_id", test.ID, "error", err)
 	}

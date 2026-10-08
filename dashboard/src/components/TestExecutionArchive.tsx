@@ -605,6 +605,7 @@ function formatReportSectionLabel(section: string): string {
     artifact_integrity: 'Artifact integrity',
     report_authorship: 'Report authorship',
     official_outcome: 'Official outcome',
+    telemetry_acceptance: 'Telemetry acceptance',
   }
   return labels[section] || section.replace(/_/g, ' ')
 }
