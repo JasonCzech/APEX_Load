@@ -669,8 +669,8 @@ func (s *Server) handleEventHubsCaptureSupportMatrix(w http.ResponseWriter, r *h
 }
 
 // handleImportEventHubsCapture imports an Event Hubs Capture Avro file (binary)
-// into a native eventhubs producer script. Accepts a multipart file upload or a
-// raw binary body.
+// into a native eventhubs producer script. Any other Avro data file is imported
+// record-per-event. Accepts a multipart file upload or a raw binary body.
 func (s *Server) handleImportEventHubsCapture(w http.ResponseWriter, r *http.Request) {
 	upload, ok := decodeImportUpload(w, r, webAPIImportMaxBodyBytes)
 	if !ok {
@@ -721,6 +721,23 @@ func (s *Server) handleImportEventHubsCapture(w http.ResponseWriter, r *http.Req
 func buildEventHubsCaptureReviewSections(result *eventhubscapture.ConvertResult) []scriptImportReviewSection {
 	if result == nil {
 		return nil
+	}
+	if result.Stats.SourceFormat == eventhubscapture.SourceFormatAvroRecords {
+		items := []string{
+			fmt.Sprintf("Avro schema: %s (not the Event Hubs Capture EventData schema)", result.Stats.AvroSchema),
+			fmt.Sprintf("Records read: %d", result.Stats.RecordsRead),
+			fmt.Sprintf("Produce actions seeded: %d", result.Stats.ActionsEmitted),
+		}
+		if result.Stats.EmptyBodies > 0 {
+			items = append(items, fmt.Sprintf("Empty bodies: %d", result.Stats.EmptyBodies))
+		}
+		return []scriptImportReviewSection{{
+			Key:      "eventhubs_capture",
+			Title:    "Avro records",
+			Severity: "warning",
+			Summary:  "Each Avro record was seeded as one eventhubs_produce body; there are no captured properties or partition keys (mock mode; set a namespace and build -tags eventhubs_real to run live).",
+			Items:    items,
+		}}
 	}
 	severity := "info"
 	if result.Stats.PartitionKeys == 0 || result.Stats.EmptyBodies > 0 {

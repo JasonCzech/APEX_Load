@@ -165,7 +165,7 @@ func writeScenarioSaveCapabilityUnavailable(w http.ResponseWriter, strictPolicy 
 		message = "scenario If-Match saves are unavailable without durable scenario revisions; the configured strict policy prevents this save"
 		code = "scenario_save_strict_policy_unavailable"
 	}
-	reference := newErrorReference()
+	reference := errorReferenceFor(w)
 	slog.Error("scenario save capability unavailable", "ref", reference, "code", code)
 	writeJSON(w, http.StatusServiceUnavailable, ScenarioSaveCapabilityUnavailableError{Error: message, Code: code, Ref: reference})
 }
@@ -208,7 +208,7 @@ func writeScenarioAuthoringSaveOutcomeUnavailable(w http.ResponseWriter, unknown
 	if unknown {
 		code = "scenario_save_outcome_unknown"
 	}
-	reference := newErrorReference()
+	reference := errorReferenceFor(w)
 	slog.Error("scenario save outcome needs verification", "ref", reference, "code", code)
 	writeJSON(w, http.StatusServiceUnavailable, ScenarioAuthoringSaveOutcomeError{
 		Error: "scenario save outcome requires verification; reload the scenario before retrying",

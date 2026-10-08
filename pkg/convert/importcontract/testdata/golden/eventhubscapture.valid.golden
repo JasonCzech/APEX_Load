@@ -85,10 +85,12 @@
   },
   "stats": {
     "actions_emitted": 1,
+    "avro_schema": "Microsoft.ServiceBus.Messaging.EventData",
     "binary_bodies": 0,
     "empty_bodies": 0,
     "partition_keys": 1,
-    "records_read": 1
+    "records_read": 1,
+    "source_format": "eventhubs_capture"
   },
   "summary": "Imported 1 of 1 captured Event Hubs events into produce actions for event hub \"orders\" (mock mode)."
 }

@@ -1,4 +1,5 @@
-import { Component, type ReactNode } from 'react'
+import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { reportClientError } from '../utils/clientErrorReporting'
 
 export default class ArchiveReviewBoundary extends Component<{
   resetKey?: string
@@ -10,6 +11,10 @@ export default class ArchiveReviewBoundary extends Component<{
   state = { failed: false }
 
   static getDerivedStateFromError() { return { failed: true } }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    reportClientError('render', error, { component_stack: info.componentStack ?? undefined })
+  }
 
   componentDidUpdate(previous: Readonly<{ resetKey?: string }>) {
     if (this.state.failed && previous.resetKey !== this.props.resetKey) this.setState({ failed: false })

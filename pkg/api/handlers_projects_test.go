@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -559,6 +560,7 @@ func TestDeleteProjectPartialCleanupResponseRetainsExternalSecretGuidance(t *tes
 	}
 	var payload struct {
 		Error     string   `json:"error"`
+		Ref       string   `json:"ref"`
 		Deleted   string   `json:"deleted"`
 		Required  bool     `json:"external_secret_cleanup_required"`
 		Names     []string `json:"external_secret_cleanup_names"`
@@ -566,6 +568,11 @@ func TestDeleteProjectPartialCleanupResponseRetainsExternalSecretGuidance(t *tes
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
+	}
+	// The per-artifact cause names controller storage; it belongs in the log
+	// under the ref, not in the response.
+	if strings.Contains(response.Body.String(), artifactRoot) || payload.Ref == "" || payload.Ref != response.Header().Get(requestIDHeader) {
+		t.Fatalf("partial deletion leaked internal detail or lost its ref: %s", response.Body.String())
 	}
 	if payload.Error == "" || payload.Deleted != projectID || !payload.Required ||
 		len(payload.Names) != 1 || payload.Names[0] != "EXTERNAL_TOKEN" ||

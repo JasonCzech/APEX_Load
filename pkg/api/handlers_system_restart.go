@@ -49,8 +49,12 @@ type SystemRestartCapabilities struct {
 }
 
 type SystemRestartResult struct {
-	Status         string   `json:"status"`
-	Message        string   `json:"message"`
+	Status  string `json:"status"`
+	Message string `json:"message"`
+	// Error and Ref are set only on a 500: the cause stays in the controller
+	// log under Ref instead of the response.
+	Error          string   `json:"error,omitempty"`
+	Ref            string   `json:"ref,omitempty"`
 	TargetType     string   `json:"target_type"`
 	Scope          string   `json:"scope"`
 	Target         string   `json:"target"`
@@ -170,9 +174,12 @@ func (s *Server) handleSystemRestart(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.auditSystemRestart(r, req, "failed", result, map[string]any{"error": err.Error()})
+		ref := logServerError(w, http.StatusInternalServerError, err, "target_type", req.TargetType, "target", req.Target)
 		writeJSON(w, http.StatusInternalServerError, SystemRestartResult{
 			Status:     "failed",
-			Message:    err.Error(),
+			Message:    "restart request failed",
+			Error:      "restart request failed",
+			Ref:        ref,
 			TargetType: req.TargetType,
 			Scope:      req.Scope,
 			Target:     req.Target,

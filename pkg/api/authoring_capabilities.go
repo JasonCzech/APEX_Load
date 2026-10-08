@@ -323,7 +323,7 @@ func authoringImportSurfaces() []AuthoringImportSurface {
 		{
 			ID:          "eventhubs_capture",
 			Title:       "Event Hubs Capture",
-			Description: "Seed native Event Hubs producer actions from Azure Event Hubs Capture Avro files.",
+			Description: "Seed native Event Hubs producer actions from Azure Event Hubs Capture files or any Avro data file.",
 			Badge:       "EH",
 			Category:    "Messaging & Cloud Artifacts",
 			Order:       300,

@@ -802,6 +802,7 @@ func NewServer(cfg ServerConfig) *Server {
 		WriteTimeout:   60 * time.Second,
 		IdleTimeout:    120 * time.Second,
 		MaxHeaderBytes: 1 << 20, // 1 MiB
+		ErrorLog:       httpServerErrorLog(),
 	}
 
 	s.startNativeAnalysisReconciliation()
@@ -1872,6 +1873,7 @@ func (s *Server) startMetricsListener() error {
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  120 * time.Second,
+		ErrorLog:     httpServerErrorLog(),
 	}
 	listener, err := net.Listen("tcp", s.metricsAddr)
 	if err != nil {
@@ -2044,7 +2046,8 @@ func (s *Server) handleDesktopBrowserBootstrap(w http.ResponseWriter, r *http.Re
 	// desktop capability header/WebSocket query parameter.
 	scriptNonce, err := generateDesktopSecret()
 	if err != nil {
-		http.Error(w, "desktop browser bootstrap failed", http.StatusInternalServerError)
+		ref := logServerError(w, http.StatusInternalServerError, err)
+		http.Error(w, "desktop browser bootstrap failed (ref "+ref+")", http.StatusInternalServerError)
 		return
 	}
 	s.desktopBootstrapMu.Lock()

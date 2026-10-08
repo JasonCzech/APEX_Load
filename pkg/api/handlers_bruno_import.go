@@ -1467,8 +1467,10 @@ func (s *Server) handleCommitBrunoNativeImport(
 				committedNames = append(committedNames, metadata.Name)
 			}
 			sort.Strings(committedNames)
+			ref := logServerError(w, http.StatusServiceUnavailable, reconcileErr, "code", "bruno_native_commit_state_unknown", "session_id", session.ID)
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
-				"error":                   "Native Bruno batch commit state could not be reconciled: " + reconcileErr.Error(),
+				"error":                   "Native Bruno batch commit state could not be reconciled",
+				"ref":                     ref,
 				"code":                    "bruno_native_commit_state_unknown",
 				"commit_state":            "unknown",
 				"script_committed":        "unknown",

@@ -1,11 +1,13 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
-import { initializeDesktopApiOrigin } from './hooks/apiClient'
+import { apiFetch, initializeDesktopApiOrigin } from './hooks/apiClient'
 import { ApiProvider } from './hooks/ApiProvider'
 import { getDesktopBridge } from './desktop/desktopBridge'
 import DesktopStartupFailure from './components/DesktopStartupFailure'
 import { applyInitialTheme } from './hooks/useDashboardTheme'
+import { CLIENT_ERRORS_PATH, installClientErrorReporting } from './utils/clientErrorReporting'
+import { frontendBuildMetadata } from './buildMetadata'
 import './index.css'
 import './components/Modal.css'
 import './topbarNavigation.css'
@@ -36,6 +38,19 @@ async function bootstrap() {
     root.render(<DesktopStartupFailure message={message} />)
     return
   }
+  // Installed once the API origin is known, so reports reach the controller
+  // this dashboard is talking to.
+  installClientErrorReporting(
+    report => apiFetch(CLIENT_ERRORS_PATH, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(report),
+      keepalive: true,
+      timeoutMs: 10_000,
+      silent: true,
+    }).then(response => response.status, () => undefined),
+    { appVersion: frontendBuildMetadata.ux.version },
+  )
   root.render(
     <React.StrictMode>
       <ApiProvider>

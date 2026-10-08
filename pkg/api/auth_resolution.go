@@ -46,6 +46,7 @@ func AuthenticatedServiceAccountFromContext(ctx context.Context) (*Authenticated
 
 func withAuthenticatedContext(r *http.Request, resolution authResolution) *http.Request {
 	ctx := r.Context()
+	annotateRequestLogActor(ctx, authResolutionActor(resolution))
 	if resolution.User != nil {
 		ctx = context.WithValue(ctx, authUserContextKey{}, resolution.User)
 	}
@@ -53,6 +54,21 @@ func withAuthenticatedContext(r *http.Request, resolution authResolution) *http.
 		ctx = context.WithValue(ctx, authServiceAccountContextKey{}, resolution.ServiceAccount)
 	}
 	return r.WithContext(ctx)
+}
+
+// authResolutionActor is the stable principal label shared by idempotency-key
+// scoping and the access log: the service account when a key authenticated the
+// request, otherwise the user's subject; empty when neither is known.
+func authResolutionActor(resolution authResolution) string {
+	if resolution.ServiceAccount != nil {
+		return "service-account:" + resolution.ServiceAccount.ID
+	}
+	if resolution.User != nil {
+		if subject := strings.TrimSpace(resolution.User.Subject); subject != "" {
+			return "user:" + subject
+		}
+	}
+	return ""
 }
 
 func resolveRequestAuth(r *http.Request, settings AuthSettings, store storage.Store, expectedLocalGeneration ...string) (authResolution, error) {

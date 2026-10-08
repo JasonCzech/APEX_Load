@@ -17,6 +17,9 @@ var systemEntitlementsAPIRouteCatalog = apiRouteCatalog{
 var systemObservabilityAPIRouteCatalog = apiRouteCatalog{
 	Domain: "system-observability",
 	Routes: []apiRouteSpec{
+		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/system/client-errors", "handleReportClientError", accessRequirement{AuthenticatedOnly: true, MaxBodyBytes: maxClientErrorReportBodyBytes}, func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleReportClientError)
+		}),
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/system/inventory", "handleGetSystemInventory", viewerGlobalAccess(), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetSystemInventory)
 		}),

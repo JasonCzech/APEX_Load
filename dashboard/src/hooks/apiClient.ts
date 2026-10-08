@@ -1,5 +1,6 @@
 import { isWailsLocation } from "../desktop/desktopBridge";
 import { readStoredString, writeStoredString } from "../utils/browserStorage";
+import { reportClientError } from "../utils/clientErrorReporting";
 
 const DEFAULT_LOCAL_API_ORIGIN = "http://127.0.0.1:8080";
 export const DEV_VIEW_STORAGE_KEY = "apexload.devViewMode";
@@ -35,6 +36,9 @@ type ApiErrorPayload = {
 export type ApiRequestOptions = RequestInit & {
   timeoutMs?: number;
   maxResponseBytes?: number;
+  // Background telemetry (client error reports): no activity notification and
+  // no failure reporting, so a report can never trigger another report.
+  silent?: boolean;
 };
 
 export function trimTrailingSlash(value: string): string {
@@ -262,10 +266,6 @@ function buildApiUrl(apiOrigin: string, pathOrURL: string): string {
   return `${trimTrailingSlash(apiOrigin)}/api/v1${path}`;
 }
 
-function apiUrl(pathOrURL: string): string {
-  return buildApiUrl(API_ORIGIN, pathOrURL);
-}
-
 export function resolveApiResourceUrl(
   pathOrURL: string,
   apiOrigin = API_ORIGIN,
@@ -348,24 +348,80 @@ async function parseJsonResponse(res: Response, maxBytes?: number): Promise<unkn
   throw new ApiError(message, res.status, {
     content_type: contentType,
     body: snippet,
-  });
+  }, res.headers.get(REQUEST_ID_HEADER));
+}
+
+// The controller stamps every API response with this header and uses the same
+// value as the "ref" of 5xx error bodies; both locate the request's log lines.
+export const REQUEST_ID_HEADER = "X-Request-ID";
+const ERROR_REFERENCE_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
+
+function errorReference(value: unknown): string | undefined {
+  return typeof value === "string" && ERROR_REFERENCE_PATTERN.test(value)
+    ? value
+    : undefined;
 }
 
 export class ApiError extends Error {
   status: number;
   code?: string;
+  // ref is the server log reference shown to the user; requestId is this
+  // response's X-Request-ID, kept for every status.
+  ref?: string;
+  requestId?: string;
   payload?: unknown;
 
-  constructor(message: string, status: number, payload?: unknown) {
-    super(message);
+  constructor(
+    message: string,
+    status: number,
+    payload?: unknown,
+    requestId?: string | null,
+  ) {
+    const validRequestId = errorReference(requestId);
+    // Server failures always get a reference so the user has something to
+    // report; 4xx messages already state the reason the server logged.
+    const ref =
+      (isApiErrorPayload(payload) ? errorReference(payload.ref) : undefined) ??
+      (status >= 500 ? validRequestId : undefined);
+    super(ref && !message.includes(ref) ? `${message} (ref ${ref})` : message);
     this.name = "ApiError";
     this.status = status;
     this.code =
       isApiErrorPayload(payload) && typeof payload.code === "string"
         ? payload.code
         : undefined;
+    this.ref = ref;
+    this.requestId = validRequestId;
     this.payload = payload;
   }
+}
+
+function apiRequestPath(target: string): string {
+  try {
+    return new URL(target).pathname;
+  } catch {
+    return "";
+  }
+}
+
+// A 5xx without the controller's request ID was produced before the request
+// reached the API (an ingress or proxy timeout, a gateway error page), so the
+// controller has no record of it; report it from the browser instead.
+function observeApiResponse(target: string, method: string | undefined, response: Response): void {
+  if (response.status >= 500 && !response.headers.get(REQUEST_ID_HEADER)) {
+    reportClientError(
+      "gateway",
+      `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""} without a controller request ID`,
+      { request_method: method || "GET", request_path: apiRequestPath(target), request_status: response.status },
+    );
+  }
+}
+
+// Network failures (fetch rejects with TypeError) and client-side timeouts
+// never reach the controller. Caller-initiated aborts are not failures.
+function observeApiTransportFailure(target: string, method: string | undefined, error: unknown, timedOut: boolean): void {
+  if (!timedOut && !(error instanceof TypeError)) return;
+  reportClientError("network", error, { request_method: method || "GET", request_path: apiRequestPath(target) });
 }
 
 function mergeAbortSignals(
@@ -445,33 +501,7 @@ export function apiFetch(
   pathOrURL: string,
   options?: ApiRequestOptions,
 ): Promise<Response> {
-  const target = apiUrl(pathOrURL);
-  const isDesktopController =
-    new URL(target).origin === new URL(API_ORIGIN).origin;
-  const { timeoutMs, signal, ...init } = options ?? {};
-  delete init.maxResponseBytes;
-  const timeout = createTimeoutSignal(timeoutMs);
-  const mergedSignal = mergeAbortSignals(signal, timeout.signal);
-  const pendingFetch = fetch(target, {
-    ...init,
-    signal: mergedSignal,
-    credentials: init?.credentials ?? "include",
-    headers: mergeHeaders(
-      init?.headers,
-      isDesktopController ? buildDevPreviewHeaders() : {},
-      isDesktopController,
-    ),
-  });
-  return (timeout.deadline
-    ? Promise.race([pendingFetch, timeout.deadline])
-    : pendingFetch).then(response => isDesktopController ? notifyActivityResponse(response, init.method) : response).catch((error: unknown) => {
-    if (isTimeoutAbort(error, timeout.timedOut())) {
-      throw new Error(`Request timed out after ${timeoutMs}ms`);
-    }
-    throw error;
-  }).finally(() => {
-    timeout.clear();
-  });
+  return apiFetchFromOrigin(API_ORIGIN, pathOrURL, options);
 }
 
 // requestApiNavigation starts an OAuth-style browser navigation through an
@@ -498,6 +528,7 @@ export async function requestApiNavigation(pathOrURL: string): Promise<string> {
         "Authentication navigation failed",
       response.status,
       payload,
+      response.headers.get(REQUEST_ID_HEADER),
     );
   }
   const rawRedirect = payload?.redirect_url?.trim() || "";
@@ -523,7 +554,7 @@ export function apiFetchFromOrigin(
   const target = buildApiUrl(apiOrigin, pathOrURL);
   const isDesktopController =
     new URL(target).origin === new URL(API_ORIGIN).origin;
-  const { timeoutMs, signal, ...init } = options ?? {};
+  const { timeoutMs, signal, silent, ...init } = options ?? {};
   delete init.maxResponseBytes;
   const timeout = createTimeoutSignal(timeoutMs);
   const mergedSignal = mergeAbortSignals(signal, timeout.signal);
@@ -539,11 +570,15 @@ export function apiFetchFromOrigin(
   });
   return (timeout.deadline
     ? Promise.race([pendingFetch, timeout.deadline])
-    : pendingFetch).then(response => isDesktopController ? notifyActivityResponse(response, init.method) : response).catch((error: unknown) => {
-    if (isTimeoutAbort(error, timeout.timedOut())) {
-      throw new Error(`Request timed out after ${timeoutMs}ms`);
-    }
-    throw error;
+    : pendingFetch).then(response => {
+    if (silent) return response;
+    observeApiResponse(target, init.method, response);
+    return isDesktopController ? notifyActivityResponse(response, init.method) : response;
+  }).catch((error: unknown) => {
+    const timedOut = isTimeoutAbort(error, timeout.timedOut());
+    const failure = timedOut ? new Error(`Request timed out after ${timeoutMs}ms`) : error;
+    if (!silent) observeApiTransportFailure(target, init.method, failure, timedOut);
+    throw failure;
   }).finally(() => {
     timeout.clear();
   });
@@ -609,7 +644,7 @@ async function requestEnvelopeFromOrigin<T>(
         isApiErrorPayload(body) && typeof body.error === "string" && body.error
           ? body.error
           : res.statusText;
-      throw new ApiError(message, res.status, body);
+      throw new ApiError(message, res.status, body, res.headers.get(REQUEST_ID_HEADER));
     }
     return { body: (await parseJsonResponse(res, maxResponseBytes)) as T, headers: new Headers(res.headers), status: res.status };
   })();

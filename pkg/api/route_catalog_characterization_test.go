@@ -345,6 +345,7 @@ var accessRequirementGolden = map[string]string{
 	"POST /api/v1/system/settings/notifications/test":               "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=4096 featureID=",
 	"GET /api/v1/system/settings/notifications/deliveries":          "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=4096 featureID=",
 	"POST /api/v1/system/settings/connections/test":                 "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=4096 featureID=",
+	"POST /api/v1/system/client-errors":                             "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=32768 featureID=",
 	"POST /api/v1/system/redaction/preview":                         "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=65536 featureID=",
 	"GET /api/v1/scenarios/traffic-profile/sources":                 "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0 featureID=",
 	"POST /api/v1/scenarios/traffic-profile/analyze":                "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=26214400 featureID=workload_shape.production-replay",
