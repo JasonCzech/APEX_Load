@@ -84705,6 +84705,18 @@ paths:
                                 - net_recv_kbps
                                 - net_sent_kbps
                               nullable: true
+                            run_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_total_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_total_transactions:
+                              type: integer
+                              format: int64
+                              nullable: true
                             soap_operations:
                               type: object
                               additionalProperties:
@@ -85932,6 +85944,18 @@ paths:
                                   format: double
                                 percentile_quality:
                                   type: string
+                                run_error_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                run_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_transactions:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
                                 target_tps:
                                   type: number
                                   format: double
@@ -86402,6 +86426,18 @@ paths:
                               - mem_process_mb
                               - net_recv_kbps
                               - net_sent_kbps
+                            nullable: true
+                          run_error_pct:
+                            type: number
+                            format: double
+                            nullable: true
+                          run_total_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          run_total_transactions:
+                            type: integer
+                            format: int64
                             nullable: true
                           soap_operations:
                             type: object
@@ -90423,6 +90459,18 @@ paths:
                                 - net_recv_kbps
                                 - net_sent_kbps
                               nullable: true
+                            run_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_total_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_total_transactions:
+                              type: integer
+                              format: int64
+                              nullable: true
                             soap_operations:
                               type: object
                               additionalProperties:
@@ -91650,6 +91698,18 @@ paths:
                                   format: double
                                 percentile_quality:
                                   type: string
+                                run_error_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                run_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_transactions:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
                                 target_tps:
                                   type: number
                                   format: double
@@ -92120,6 +92180,18 @@ paths:
                               - mem_process_mb
                               - net_recv_kbps
                               - net_sent_kbps
+                            nullable: true
+                          run_error_pct:
+                            type: number
+                            format: double
+                            nullable: true
+                          run_total_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          run_total_transactions:
+                            type: integer
+                            format: int64
                             nullable: true
                           soap_operations:
                             type: object
@@ -96142,6 +96214,18 @@ paths:
                                 - net_recv_kbps
                                 - net_sent_kbps
                               nullable: true
+                            run_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_total_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_total_transactions:
+                              type: integer
+                              format: int64
+                              nullable: true
                             soap_operations:
                               type: object
                               additionalProperties:
@@ -97369,6 +97453,18 @@ paths:
                                   format: double
                                 percentile_quality:
                                   type: string
+                                run_error_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                run_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_transactions:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
                                 target_tps:
                                   type: number
                                   format: double
@@ -97839,6 +97935,18 @@ paths:
                               - mem_process_mb
                               - net_recv_kbps
                               - net_sent_kbps
+                            nullable: true
+                          run_error_pct:
+                            type: number
+                            format: double
+                            nullable: true
+                          run_total_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          run_total_transactions:
+                            type: integer
+                            format: int64
                             nullable: true
                           soap_operations:
                             type: object
@@ -101873,6 +101981,18 @@ paths:
                                 - net_recv_kbps
                                 - net_sent_kbps
                               nullable: true
+                            run_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_total_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_total_transactions:
+                              type: integer
+                              format: int64
+                              nullable: true
                             soap_operations:
                               type: object
                               additionalProperties:
@@ -103100,6 +103220,18 @@ paths:
                                   format: double
                                 percentile_quality:
                                   type: string
+                                run_error_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                run_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_transactions:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
                                 target_tps:
                                   type: number
                                   format: double
@@ -103570,6 +103702,18 @@ paths:
                               - mem_process_mb
                               - net_recv_kbps
                               - net_sent_kbps
+                            nullable: true
+                          run_error_pct:
+                            type: number
+                            format: double
+                            nullable: true
+                          run_total_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          run_total_transactions:
+                            type: integer
+                            format: int64
                             nullable: true
                           soap_operations:
                             type: object
@@ -107604,6 +107748,18 @@ paths:
                                 - net_recv_kbps
                                 - net_sent_kbps
                               nullable: true
+                            run_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_total_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_total_transactions:
+                              type: integer
+                              format: int64
+                              nullable: true
                             soap_operations:
                               type: object
                               additionalProperties:
@@ -108831,6 +108987,18 @@ paths:
                                   format: double
                                 percentile_quality:
                                   type: string
+                                run_error_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                run_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_transactions:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
                                 target_tps:
                                   type: number
                                   format: double
@@ -109301,6 +109469,18 @@ paths:
                               - mem_process_mb
                               - net_recv_kbps
                               - net_sent_kbps
+                            nullable: true
+                          run_error_pct:
+                            type: number
+                            format: double
+                            nullable: true
+                          run_total_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          run_total_transactions:
+                            type: integer
+                            format: int64
                             nullable: true
                           soap_operations:
                             type: object
@@ -113335,6 +113515,18 @@ paths:
                                 - net_recv_kbps
                                 - net_sent_kbps
                               nullable: true
+                            run_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_total_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_total_transactions:
+                              type: integer
+                              format: int64
+                              nullable: true
                             soap_operations:
                               type: object
                               additionalProperties:
@@ -114562,6 +114754,18 @@ paths:
                                   format: double
                                 percentile_quality:
                                   type: string
+                                run_error_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                run_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_transactions:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
                                 target_tps:
                                   type: number
                                   format: double
@@ -115032,6 +115236,18 @@ paths:
                               - mem_process_mb
                               - net_recv_kbps
                               - net_sent_kbps
+                            nullable: true
+                          run_error_pct:
+                            type: number
+                            format: double
+                            nullable: true
+                          run_total_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          run_total_transactions:
+                            type: integer
+                            format: int64
                             nullable: true
                           soap_operations:
                             type: object
@@ -119066,6 +119282,18 @@ paths:
                                 - net_recv_kbps
                                 - net_sent_kbps
                               nullable: true
+                            run_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_total_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_total_transactions:
+                              type: integer
+                              format: int64
+                              nullable: true
                             soap_operations:
                               type: object
                               additionalProperties:
@@ -120293,6 +120521,18 @@ paths:
                                   format: double
                                 percentile_quality:
                                   type: string
+                                run_error_pct:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                run_errors:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                run_transactions:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
                                 target_tps:
                                   type: number
                                   format: double
@@ -120763,6 +121003,18 @@ paths:
                               - mem_process_mb
                               - net_recv_kbps
                               - net_sent_kbps
+                            nullable: true
+                          run_error_pct:
+                            type: number
+                            format: double
+                            nullable: true
+                          run_total_errors:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          run_total_transactions:
+                            type: integer
+                            format: int64
                             nullable: true
                           soap_operations:
                             type: object
@@ -325834,6 +326086,18 @@ paths:
                                 format: double
                               percentile_quality:
                                 type: string
+                              run_error_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              run_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_transactions:
+                                type: integer
+                                format: int64
+                                nullable: true
                               target_tps:
                                 type: number
                                 format: double
@@ -326340,6 +326604,18 @@ paths:
                             - mem_process_mb
                             - net_recv_kbps
                             - net_sent_kbps
+                          nullable: true
+                        run_error_pct:
+                          type: number
+                          format: double
+                          nullable: true
+                        run_total_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        run_total_transactions:
+                          type: integer
+                          format: int64
                           nullable: true
                         soap_operations:
                           type: object
@@ -329288,6 +329564,18 @@ paths:
                               format: double
                             percentile_quality:
                               type: string
+                            run_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_transactions:
+                              type: integer
+                              format: int64
+                              nullable: true
                             target_tps:
                               type: number
                               format: double
@@ -331165,6 +331453,18 @@ paths:
                           - mem_process_mb
                           - net_recv_kbps
                           - net_sent_kbps
+                        nullable: true
+                      run_error_pct:
+                        type: number
+                        format: double
+                        nullable: true
+                      run_total_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      run_total_transactions:
+                        type: integer
+                        format: int64
                         nullable: true
                       soap_operations:
                         type: object
@@ -338451,6 +338751,18 @@ paths:
                                 format: double
                               percentile_quality:
                                 type: string
+                              run_error_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              run_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_transactions:
+                                type: integer
+                                format: int64
+                                nullable: true
                               target_tps:
                                 type: number
                                 format: double
@@ -338957,6 +339269,18 @@ paths:
                             - mem_process_mb
                             - net_recv_kbps
                             - net_sent_kbps
+                          nullable: true
+                        run_error_pct:
+                          type: number
+                          format: double
+                          nullable: true
+                        run_total_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        run_total_transactions:
+                          type: integer
+                          format: int64
                           nullable: true
                         soap_operations:
                           type: object
@@ -341905,6 +342229,18 @@ paths:
                               format: double
                             percentile_quality:
                               type: string
+                            run_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_transactions:
+                              type: integer
+                              format: int64
+                              nullable: true
                             target_tps:
                               type: number
                               format: double
@@ -343782,6 +344118,18 @@ paths:
                           - mem_process_mb
                           - net_recv_kbps
                           - net_sent_kbps
+                        nullable: true
+                      run_error_pct:
+                        type: number
+                        format: double
+                        nullable: true
+                      run_total_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      run_total_transactions:
+                        type: integer
+                        format: int64
                         nullable: true
                       soap_operations:
                         type: object
@@ -377076,6 +377424,18 @@ paths:
                                 format: double
                               percentile_quality:
                                 type: string
+                              run_error_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              run_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_transactions:
+                                type: integer
+                                format: int64
+                                nullable: true
                               target_tps:
                                 type: number
                                 format: double
@@ -377582,6 +377942,18 @@ paths:
                             - mem_process_mb
                             - net_recv_kbps
                             - net_sent_kbps
+                          nullable: true
+                        run_error_pct:
+                          type: number
+                          format: double
+                          nullable: true
+                        run_total_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        run_total_transactions:
+                          type: integer
+                          format: int64
                           nullable: true
                         soap_operations:
                           type: object
@@ -380530,6 +380902,18 @@ paths:
                               format: double
                             percentile_quality:
                               type: string
+                            run_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_transactions:
+                              type: integer
+                              format: int64
+                              nullable: true
                             target_tps:
                               type: number
                               format: double
@@ -382407,6 +382791,18 @@ paths:
                           - mem_process_mb
                           - net_recv_kbps
                           - net_sent_kbps
+                        nullable: true
+                      run_error_pct:
+                        type: number
+                        format: double
+                        nullable: true
+                      run_total_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      run_total_transactions:
+                        type: integer
+                        format: int64
                         nullable: true
                       soap_operations:
                         type: object
@@ -389637,6 +390033,18 @@ paths:
                                 format: double
                               percentile_quality:
                                 type: string
+                              run_error_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              run_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_transactions:
+                                type: integer
+                                format: int64
+                                nullable: true
                               target_tps:
                                 type: number
                                 format: double
@@ -390143,6 +390551,18 @@ paths:
                             - mem_process_mb
                             - net_recv_kbps
                             - net_sent_kbps
+                          nullable: true
+                        run_error_pct:
+                          type: number
+                          format: double
+                          nullable: true
+                        run_total_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        run_total_transactions:
+                          type: integer
+                          format: int64
                           nullable: true
                         soap_operations:
                           type: object
@@ -393091,6 +393511,18 @@ paths:
                               format: double
                             percentile_quality:
                               type: string
+                            run_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_transactions:
+                              type: integer
+                              format: int64
+                              nullable: true
                             target_tps:
                               type: number
                               format: double
@@ -394968,6 +395400,18 @@ paths:
                           - mem_process_mb
                           - net_recv_kbps
                           - net_sent_kbps
+                        nullable: true
+                      run_error_pct:
+                        type: number
+                        format: double
+                        nullable: true
+                      run_total_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      run_total_transactions:
+                        type: integer
+                        format: int64
                         nullable: true
                       soap_operations:
                         type: object
@@ -409364,6 +409808,18 @@ paths:
                                 format: double
                               percentile_quality:
                                 type: string
+                              run_error_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              run_errors:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              run_transactions:
+                                type: integer
+                                format: int64
+                                nullable: true
                               target_tps:
                                 type: number
                                 format: double
@@ -409870,6 +410326,18 @@ paths:
                             - mem_process_mb
                             - net_recv_kbps
                             - net_sent_kbps
+                          nullable: true
+                        run_error_pct:
+                          type: number
+                          format: double
+                          nullable: true
+                        run_total_errors:
+                          type: integer
+                          format: int64
+                          nullable: true
+                        run_total_transactions:
+                          type: integer
+                          format: int64
                           nullable: true
                         soap_operations:
                           type: object
@@ -412819,6 +413287,18 @@ paths:
                               format: double
                             percentile_quality:
                               type: string
+                            run_error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            run_errors:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            run_transactions:
+                              type: integer
+                              format: int64
+                              nullable: true
                             target_tps:
                               type: number
                               format: double
@@ -414696,6 +415176,18 @@ paths:
                           - mem_process_mb
                           - net_recv_kbps
                           - net_sent_kbps
+                        nullable: true
+                      run_error_pct:
+                        type: number
+                        format: double
+                        nullable: true
+                      run_total_errors:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      run_total_transactions:
+                        type: integer
+                        format: int64
                         nullable: true
                       soap_operations:
                         type: object
@@ -422185,6 +422677,14 @@ paths:
                         type: string
                       verdict_override:
                         type: string
+                      verdict_profile:
+                        type: string
+                      verdict_updated_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      verdict_updated_by:
+                        type: string
                     required:
                       - executive_narrative
                       - prepared_by
@@ -422268,6 +422768,10 @@ paths:
                 expected_updated_at:
                   type: string
                   format: date-time
+                expected_verdict_updated_at:
+                  type: string
+                  format: date-time
+                  nullable: true
                 findings:
                   type: array
                   items:
@@ -422355,6 +422859,14 @@ paths:
                       verdict_explanation:
                         type: string
                       verdict_override:
+                        type: string
+                      verdict_profile:
+                        type: string
+                      verdict_updated_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      verdict_updated_by:
                         type: string
                     required:
                       - executive_narrative

@@ -118,6 +118,9 @@ function reconcileAuthoritativeEntities<T extends { id: string; updated_at: stri
   return { entities, deletedFromResponse, insertedAuthoritative }
 }
 
+const ONBOARD_DRAFT_GUARD_ID = 'access-onboard-user-draft'
+const ACCOUNT_CREATION_DRAFT_GUARD_ID = 'access-service-account-create-draft'
+
 function userDraftSignature(form: UserForm, bindings: UserBindingForm[]): string {
   return dataSignature({
     form,
@@ -208,7 +211,7 @@ export default function AccessPage({
 }: AccessPageProps) {
   const api = useApi()
   const settingsHrefForAuth = settingsHref('authentication')
-  const { runGuarded } = useNavigationGuardRunner()
+  const { runGuarded, markClean: markGuardClean } = useNavigationGuardRunner()
   const canUseUsers = canManageUserLifecycle || canManageUserBindings
   const { view: currentAccessView, setView: setAccessView, activeTab, userSubTab, serviceAccountSubTab, activitySubTab, setActiveTab, setUserSubTab, setServiceAccountSubTab, setActivitySubTab } = useAccessWorkspace(preferredTab(canUseUsers, canManageServiceAccounts, canViewUserActivity), accessView, onViewChange)
   const [accounts, setAccounts] = useState<DashboardServiceAccount[]>([])
@@ -966,8 +969,14 @@ export default function AccessPage({
         if (userMatchesCurrentServerFilters(user)) setUsersTotal(total => total + 1)
         setSelectedUserID(user.id)
         setUserInspectorCollapsed(false)
-        setUserSubTab('existing')
+        // The draft is saved: clear it before switching tabs. The tab switch is a
+        // guarded route change that reads the dirty flag synchronously, before
+        // React re-renders, so a stale flag would raise "Unsaved changes" right
+        // after a successful create (and offer to create the user again).
         resetOnboardDrafts()
+        onboardDraftDirtyRef.current = false
+        markGuardClean(ONBOARD_DRAFT_GUARD_ID)
+        setUserSubTab('existing')
         setSelectedUserEditMode(false)
         setUserActionMessage(`Onboarded ${user.display_name || user.email || user.subject} with ${initialBindings.length} role ${initialBindings.length === 1 ? 'binding' : 'bindings'}.`)
         setUserActionError('')
@@ -1194,8 +1203,12 @@ export default function AccessPage({
         setIssuedKey({ key: response.api_key, accountName: response.service_account.name, mode: 'created' })
         setSelectedAccountID(response.service_account.id)
         setAccountInspectorCollapsed(false)
-        setServiceAccountSubTab('existing')
+        // Clear the saved draft before the guarded tab switch (see createUser);
+        // otherwise the guard dialog stacks over the one-time API-key dialog.
         setForm(buildPresetForm(presetByID('ci'), activeProject?.id))
+        accountCreationDraftDirtyRef.current = false
+        markGuardClean(ACCOUNT_CREATION_DRAFT_GUARD_ID)
+        setServiceAccountSubTab('existing')
         setActionMessage(`Created ${response.service_account.name}. Copy the issued key before closing the dialog.`)
         setActionError('')
         succeeded = true
@@ -1513,7 +1526,7 @@ export default function AccessPage({
   const resetOnboardDraftsRef = useRef(resetOnboardDrafts)
   resetOnboardDraftsRef.current = resetOnboardDrafts
   const onboardNavigationGuard = useMemo<NavigationGuard>(() => ({
-    id: 'access-onboard-user-draft',
+    id: ONBOARD_DRAFT_GUARD_ID,
     label: 'User onboarding form',
     isDirty: () => onboardDraftDirtyRef.current,
     save: () => createUserRef.current(),
@@ -1543,7 +1556,7 @@ export default function AccessPage({
   const resetAccountCreationDraftRef = useRef(resetAccountCreationDraft)
   resetAccountCreationDraftRef.current = resetAccountCreationDraft
   const accountCreationNavigationGuard = useMemo<NavigationGuard>(() => ({
-    id: 'access-service-account-create-draft',
+    id: ACCOUNT_CREATION_DRAFT_GUARD_ID,
     label: 'Service-account creation form',
     isDirty: () => accountCreationDraftDirtyRef.current,
     save: () => createAccountRef.current(),

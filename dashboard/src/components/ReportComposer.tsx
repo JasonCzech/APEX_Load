@@ -1,11 +1,12 @@
 import { createPortal } from 'react-dom'
 import RunOutcomeSummary from './RunOutcomeSummary'
-import { reportAcceptance, formatReportPercent } from './runReport/reportPresentation'
+import { reportAcceptance, formatReportPercent, defaultReportPopulation, populationLabels, reportPopulationOverview } from './runReport/reportPresentation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import Logo from './Logo'
 import MarkdownRenderer from './MarkdownRenderer'
 import ReportCharts from './ReportCharts'
+import { formatMs, formatNumber } from './runReport/runReportModel'
 import ReportRootCauseView from './rca/ReportRootCauseView'
 import { useApi } from '../hooks/useApi'
 import { useModalDialog } from '../hooks/useModalDialog'
@@ -65,6 +66,9 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
   const [verdictExplanation, setVerdictExplanation] = useState('')
   const [findings, setFindings] = useState<ReportFinding[]>([])
   const [annotationsUpdatedAt, setAnnotationsUpdatedAt] = useState('')
+  // The verdict is shared by every report audience; its own revision guards
+  // against reverting a verdict changed from another audience after load.
+  const [verdictUpdatedAt, setVerdictUpdatedAt] = useState<string | undefined>(undefined)
   const [updatedBy, setUpdatedBy] = useState('')
   const [testNotes, setTestNotes] = useState<TestNote[]>([])
   const [testNotesError, setTestNotesError] = useState('')
@@ -92,6 +96,7 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
     setVerdictExplanation(annotations.verdict_explanation || '')
     setFindings(annotations.findings || [])
     setAnnotationsUpdatedAt(annotations.updated_at || '')
+    setVerdictUpdatedAt(annotations.verdict_updated_at)
     setUpdatedBy(annotations.updated_by || '')
     setSavedDraftSnapshot(reportDraftSnapshot(annotations))
   }, [])
@@ -170,6 +175,7 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
         section_comments: comments,
         verdict_override: verdictOverride,
         verdict_explanation: verdictExplanation.trim(),
+        expected_verdict_updated_at: verdictUpdatedAt,
         findings: cleanedFindings,
       })
       applyAnnotations(response.annotations)
@@ -181,7 +187,7 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
     } finally {
       setSaving(false)
     }
-  }, [annotationsUpdatedAt, api, testId, profile, title, preparedBy, narrative, comments, verdictOverride, verdictExplanation, findings, applyAnnotations])
+  }, [annotationsUpdatedAt, api, testId, profile, title, preparedBy, narrative, comments, verdictOverride, verdictExplanation, verdictUpdatedAt, findings, applyAnnotations])
 
   const currentDraftSnapshot = useMemo(() => reportDraftSnapshot({
     title,
@@ -243,6 +249,10 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
   }, [api, editing, loading, report, testId, profile, annotationsUpdatedAt, comparisonId])
 
   const overview = report?.overview
+  // Headline numbers use the run report's default population so the preview
+  // (and the export it renders) matches the on-screen KPI scorecard.
+  const headlinePopulation = defaultReportPopulation(report)
+  const headline = reportPopulationOverview(report, headlinePopulation)
   const manifest = report?.manifest
   const slaBreached = manifest?.sla_breached ?? false
   const profileLabel = PROFILE_LABEL[profile] || profile
@@ -408,11 +418,12 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
             <section className="report-metrics">
               <Metric label="Acceptance" value={reportAcceptance(report).status} tone={reportAcceptance(report).failed ? 'danger' : reportAcceptance(report).conditional ? 'warn' : 'ok'} />
               <Metric label="Archive records" value={formatInt(overview?.transactions)} />
-              <Metric label="Archive record average" value={`${formatNum(overview?.avg_response_ms)} ms`} />
-              <Metric label="Archive record error rate" value={formatReportPercent(overview?.error_pct)} tone={(overview?.error_pct ?? 0) > 0 ? 'warn' : 'ok'} />
-              <Metric label="Peak successful transaction TPS" value={formatNum(overview?.peak_tps)} />
+              <Metric label="Avg latency" value={formatMs(headline?.avg_response_ms)} />
+              <Metric label="Error rate" value={formatReportPercent(headline?.error_pct)} tone={(headline?.error_pct ?? 0) > 0 ? 'warn' : 'ok'} />
+              <Metric label="Peak attempts/s" value={formatNumber(headline?.peak_tps, 1)} />
               <Metric label="Peak VUsers" value={formatInt(overview?.peak_active_vusers)} />
             </section>
+            <p className="report-hint">Headline metrics: {populationLabels[headlinePopulation]} · whole run</p>
 
             <section className="report-section">
               <h2>Analyst assessment</h2>

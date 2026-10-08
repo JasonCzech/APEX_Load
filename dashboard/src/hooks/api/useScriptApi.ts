@@ -973,8 +973,8 @@ export function useScriptApi() {
   const uploadImportAsset = useCallback(
     async (importId: string, file: File, options?: { project_id?: string; name?: string; asset_name?: string; content_type?: string }): Promise<ImportAssetUploadResponse> => {
       const formData = new FormData()
-      formData.append('file', file)
       if (options?.project_id) formData.append('project_id', options.project_id)
+      formData.append('file', file)
       if (options?.name) formData.append('name', options.name)
       if (options?.asset_name) formData.append('asset_name', options.asset_name)
       if (options?.content_type) formData.append('content_type', options.content_type)
@@ -1015,9 +1015,9 @@ export function useScriptApi() {
   const importDevWeb = useCallback(
     async (file: File, options?: { name?: string; base_url?: string; project_id?: string }): Promise<DevWebImportResult> => {
       const formData = new FormData()
+      if (options?.project_id) formData.append('project_id', options.project_id)
       formData.append('file', file)
       if (options?.name) formData.append('name', options.name)
-      if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
 
       const res = await apiFetch('/scripts/import/devweb', { method: 'POST', body: formData })
@@ -1032,8 +1032,8 @@ export function useScriptApi() {
   const importK6 = useCallback(
     async (file: File, options?: { name?: string; base_url?: string; project_id?: string }): Promise<K6ImportResult> => {
       const formData = new FormData()
-      formData.append('file', file)
       if (options?.project_id) formData.append('project_id', options.project_id)
+      formData.append('file', file)
       if (options?.base_url) formData.append('base_url', options.base_url)
       if (options?.name) formData.append('script_name', options.name)
 
@@ -1049,8 +1049,8 @@ export function useScriptApi() {
   const importCloudTest = useCallback(
     async (file: File, options?: { project_id?: string }): Promise<CloudTestImportResult> => {
       const formData = new FormData()
-      formData.append('file', file)
       if (options?.project_id) formData.append('project_id', options.project_id)
+      formData.append('file', file)
 
       const res = await apiFetch('/scripts/import/cloudtest', { method: 'POST', body: formData })
       if (!res.ok) {
@@ -1064,8 +1064,8 @@ export function useScriptApi() {
   const importEventHubsCapture = useCallback(
     async (file: File, options?: { project_id?: string; event_hub?: string; max_events?: number }): Promise<EventHubsCaptureImportResult> => {
       const formData = new FormData()
-      formData.append('file', file)
       if (options?.project_id) formData.append('project_id', options.project_id)
+      formData.append('file', file)
       const query = new URLSearchParams()
       if (options?.event_hub) query.set('event_hub', options.event_hub)
       if (typeof options?.max_events === 'number') query.set('max_events', String(options.max_events))
@@ -1083,8 +1083,8 @@ export function useScriptApi() {
   const importBrokerConfig = useCallback(
     async (file: File, options?: { project_id?: string; format?: string; max_destinations?: number }): Promise<BrokerConfigImportResult> => {
       const formData = new FormData()
-      formData.append('file', file)
       if (options?.project_id) formData.append('project_id', options.project_id)
+      formData.append('file', file)
       const query = new URLSearchParams()
       if (options?.format) query.set('format', options.format)
       if (typeof options?.max_destinations === 'number') query.set('max_destinations', String(options.max_destinations))
@@ -1169,9 +1169,9 @@ export function useScriptApi() {
   const importBrowserRecording = useCallback(
     async (file: File, options?: { name?: string; base_url?: string; project_id?: string }): Promise<BrowserRecordingImportResult> => {
       const formData = new FormData()
+      if (options?.project_id) formData.append('project_id', options.project_id)
       formData.append('file', file)
       if (options?.name) formData.append('name', options.name)
-      if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
 
       const res = await apiFetch('/scripts/import/recorder', { method: 'POST', body: formData })
@@ -1186,9 +1186,9 @@ export function useScriptApi() {
   const validateBrowserRecordingImport = useCallback(
     async (file: File, options?: { name?: string; base_url?: string; project_id?: string }): Promise<BrowserRecordingImportResult> => {
       const formData = new FormData()
+      if (options?.project_id) formData.append('project_id', options.project_id)
       formData.append('file', file)
       if (options?.name) formData.append('name', options.name)
-      if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
 
       const res = await apiFetch('/scripts/import/recorder/validate', { method: 'POST', body: formData })
@@ -1203,9 +1203,9 @@ export function useScriptApi() {
   const replayBrowserRecordingImport = useCallback(
     async (file: File, options?: { name?: string; base_url?: string; project_id?: string }): Promise<BrowserRecordingImportResult & BrowserReplayStartResponse> => {
       const formData = new FormData()
+      if (options?.project_id) formData.append('project_id', options.project_id)
       formData.append('file', file)
       if (options?.name) formData.append('name', options.name)
-      if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
 
       const res = await apiFetch('/scripts/import/recorder/replay', { method: 'POST', body: formData })
@@ -1238,9 +1238,9 @@ export function useScriptApi() {
   const importRAML = useCallback(
     async (file: File, options?: { name?: string; base_url?: string; project_id?: string; agentforce_transform?: boolean }): Promise<RAMLImportResult> => {
       const formData = new FormData()
+      if (options?.project_id) formData.append('project_id', options.project_id)
       formData.append('file', file)
       if (options?.name) formData.append('script_name', options.name)
-      if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
 
       const res = await apiFetch(`/scripts/import/raml${options?.agentforce_transform ? '?agentforce_transform=true' : ''}`, { method: 'POST', body: formData })
@@ -1293,9 +1293,9 @@ export function useScriptApi() {
   const importWSDL = useCallback(
     async (file: File, options?: { name?: string; base_url?: string; soap_version?: string; project_id?: string }): Promise<WSDLImportResult> => {
       const formData = new FormData()
+      if (options?.project_id) formData.append('project_id', options.project_id)
       formData.append('file', file)
       if (options?.name) formData.append('script_name', options.name)
-      if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
       if (options?.soap_version) formData.append('soap_version', options.soap_version)
 
@@ -1323,9 +1323,9 @@ export function useScriptApi() {
       serialization?: string
     }): Promise<AsyncAPIImportResult> => {
       const formData = new FormData()
+      if (options?.project_id) formData.append('project_id', options.project_id)
       formData.append('file', file)
       if (options?.name) formData.append('script_name', options.name)
-      if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.brokers) formData.append('brokers', options.brokers)
       if (options?.channels) formData.append('channels', options.channels)
       if (typeof options?.mock === 'boolean') formData.append('mock', String(options.mock))

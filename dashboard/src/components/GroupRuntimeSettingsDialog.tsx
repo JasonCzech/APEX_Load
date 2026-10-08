@@ -33,6 +33,8 @@ interface Props {
   groupName: string
   onClose: () => void
   onSaved: (result: TestGroupRuntimeSettingsUpdateResult) => void
+  /** Where focus returns when the opener (the group menu item) has unmounted. */
+  returnFocusSelector?: string
 }
 
 const FIELD_SUMMARY_LABELS: Record<(typeof EDITABLE_RUNTIME_FIELD_KEYS)[number], string> = {
@@ -206,7 +208,7 @@ interface ImportedRuntimeSource {
 const IMPORTED_SOURCE_ROW_CAP = 30
 const IMPORTED_SOURCE_SECTION_CAP = 12
 
-export default function GroupRuntimeSettingsDialog({ testId, groupName, onClose, onSaved }: Props) {
+export default function GroupRuntimeSettingsDialog({ testId, groupName, onClose, onSaved, returnFocusSelector }: Props) {
   const api = useTestApi()
   const systemApi = useSystemApi()
   const dialogRef = useRef<HTMLDivElement | null>(null)
@@ -231,6 +233,7 @@ export default function GroupRuntimeSettingsDialog({ testId, groupName, onClose,
     dialogRef,
     initialFocusRef: closeButtonRef,
     onClose: saving ? undefined : requestClose,
+    returnFocusSelector,
   })
 
   // preserveDraft refreshes the lifecycle view (editable flag, reason banner)

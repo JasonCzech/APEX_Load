@@ -88,6 +88,8 @@
   --chart-4: #ef4444;
   --chart-5: #3b82f6;
   --chart-6: #ec4899;
+  --chart-7: #a3e635;
+  --chart-8: #f0abfc;
 
   /* Premium Effects */
   --app-sheen: rgba(139, 92, 246, 0.05);
@@ -192,6 +194,8 @@
   --chart-4: #c70032;
   --chart-5: #009fdb;
   --chart-6: #af29bb;
+  --chart-7: #5533ff;
+  --chart-8: #6b3d00;
 
   /* Effects */
   --app-sheen: transparent;
@@ -268,6 +272,8 @@
   --chart-4: #dc322f;
   --chart-5: #d33682;
   --chart-6: #6c71c4;
+  --chart-7: #2aa198;
+  --chart-8: #f5a3d0;
 
   --app-sheen: rgba(38, 139, 210, 0.04);
   --topbar-bg: rgba(0, 43, 54, 0.75);
@@ -348,6 +354,8 @@
   --chart-4: #dc322f;
   --chart-5: #d33682;
   --chart-6: #657b83;
+  --chart-7: #0f4c81;
+  --chart-8: #6c71c4;
 
   --app-sheen: rgba(133, 153, 0, 0.04);
   --topbar-bg: rgba(253, 246, 227, 0.75);
@@ -424,6 +432,8 @@
   --chart-4: #fc9867;
   --chart-5: #78dce8;
   --chart-6: #ab9df2;
+  --chart-7: #4fa86b;
+  --chart-8: #fcfcfa;
 
   --app-sheen: rgba(255, 97, 136, 0.04);
   --topbar-bg: rgba(30, 31, 28, 0.75);

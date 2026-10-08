@@ -16,6 +16,8 @@ interface Props {
   test: TestSummary
   onClose: () => void
   onApplied: (preview: RuntimeAdjustmentPreview) => void
+  /** Where focus returns when the opener has unmounted (menus, re-rendered shelves). */
+  returnFocusSelector?: string
 }
 
 interface GroupDraft {
@@ -47,7 +49,7 @@ function initialDrafts(test: TestSummary): GroupDraft[] {
   }))
 }
 
-export default function RuntimeAdjustmentDialog({ test, onClose, onApplied }: Props) {
+export default function RuntimeAdjustmentDialog({ test, onClose, onApplied, returnFocusSelector }: Props) {
   const api = useTestApi()
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const closeRef = useRef<HTMLButtonElement | null>(null)
@@ -63,7 +65,7 @@ export default function RuntimeAdjustmentDialog({ test, onClose, onApplied }: Pr
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  useModalDialog({ dialogRef, initialFocusRef: closeRef, onClose: loading ? undefined : onClose })
+  useModalDialog({ dialogRef, initialFocusRef: closeRef, onClose: loading ? undefined : onClose, returnFocusSelector })
 
   const request = useMemo<RuntimeAdjustmentRequest>(() => ({
     groups: groups.filter(group => group.selected).map(group => ({

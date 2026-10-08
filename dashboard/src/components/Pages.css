@@ -2591,7 +2591,7 @@
 
 .authoring-session-status.blocked {
   border-color: rgba(var(--danger-rgb), 0.35);
-  color: #fca5a5;
+  color: var(--danger-text);
   background: rgba(var(--danger-rgb), 0.1);
 }
 
@@ -2730,7 +2730,7 @@
 }
 
 .authoring-correlation-error {
-  color: #fca5a5;
+  color: var(--danger-text);
   font-size: 12px;
 }
 
@@ -6315,7 +6315,7 @@
 }
 
 .settings-error-inline {
-  color: #fca5a5;
+  color: var(--danger-text);
   font-size: 13px;
   margin-top: 0;
 }
@@ -6344,7 +6344,7 @@
 }
 
 .settings-errors p {
-  color: #fca5a5;
+  color: var(--danger-text);
   font-size: 12px;
 }
 

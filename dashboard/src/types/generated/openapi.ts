@@ -34350,6 +34350,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
                 "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
@@ -34731,6 +34734,9 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "run_error_pct"?: (number) | null;
+                  "run_errors"?: (number) | null;
+                  "run_transactions"?: (number) | null;
                   "target_tps"?: number;
                   "throughput_gap_pct"?: number;
                   "throughput_target_missed"?: boolean;
@@ -34870,6 +34876,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -41930,6 +41939,9 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "run_error_pct"?: (number) | null;
+                "run_errors"?: (number) | null;
+                "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -42079,6 +42091,9 @@ export interface operations {
                 "tcp_time_wait"?: number;
                 "thread_count"?: number;
               }) | null;
+              "run_error_pct"?: (number) | null;
+              "run_total_errors"?: (number) | null;
+              "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -42968,6 +42983,9 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "run_error_pct"?: (number) | null;
+                "run_errors"?: (number) | null;
+                "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -43501,6 +43519,9 @@ export interface operations {
                 "tcp_time_wait"?: number;
                 "thread_count"?: number;
               }) | null;
+              "run_error_pct"?: (number) | null;
+              "run_total_errors"?: (number) | null;
+              "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -58979,6 +59000,9 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "run_error_pct"?: (number) | null;
+                "run_errors"?: (number) | null;
+                "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -59128,6 +59152,9 @@ export interface operations {
                 "tcp_time_wait"?: number;
                 "thread_count"?: number;
               }) | null;
+              "run_error_pct"?: (number) | null;
+              "run_total_errors"?: (number) | null;
+              "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -60017,6 +60044,9 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "run_error_pct"?: (number) | null;
+                "run_errors"?: (number) | null;
+                "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -60550,6 +60580,9 @@ export interface operations {
                 "tcp_time_wait"?: number;
                 "thread_count"?: number;
               }) | null;
+              "run_error_pct"?: (number) | null;
+              "run_total_errors"?: (number) | null;
+              "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -62943,6 +62976,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
                 "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
@@ -63324,6 +63360,9 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "run_error_pct"?: (number) | null;
+                  "run_errors"?: (number) | null;
+                  "run_transactions"?: (number) | null;
                   "target_tps"?: number;
                   "throughput_gap_pct"?: number;
                   "throughput_target_missed"?: boolean;
@@ -63463,6 +63502,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -64088,6 +64130,9 @@ export interface operations {
               "updated_by": string;
               "verdict_explanation"?: string;
               "verdict_override"?: string;
+              "verdict_profile"?: string;
+              "verdict_updated_at"?: (string) | null;
+              "verdict_updated_by"?: string;
             }) | null;
             "sections": Array<{
               "id": string;
@@ -77114,6 +77159,9 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "run_error_pct"?: (number) | null;
+                "run_errors"?: (number) | null;
+                "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -77263,6 +77311,9 @@ export interface operations {
                 "tcp_time_wait"?: number;
                 "thread_count"?: number;
               }) | null;
+              "run_error_pct"?: (number) | null;
+              "run_total_errors"?: (number) | null;
+              "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -78152,6 +78203,9 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "run_error_pct"?: (number) | null;
+                "run_errors"?: (number) | null;
+                "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -78685,6 +78739,9 @@ export interface operations {
                 "tcp_time_wait"?: number;
                 "thread_count"?: number;
               }) | null;
+              "run_error_pct"?: (number) | null;
+              "run_total_errors"?: (number) | null;
+              "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -97870,6 +97927,9 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "run_error_pct"?: (number) | null;
+                "run_errors"?: (number) | null;
+                "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -98019,6 +98079,9 @@ export interface operations {
                 "tcp_time_wait"?: number;
                 "thread_count"?: number;
               }) | null;
+              "run_error_pct"?: (number) | null;
+              "run_total_errors"?: (number) | null;
+              "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -98908,6 +98971,9 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "run_error_pct"?: (number) | null;
+                "run_errors"?: (number) | null;
+                "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -99441,6 +99507,9 @@ export interface operations {
                 "tcp_time_wait"?: number;
                 "thread_count"?: number;
               }) | null;
+              "run_error_pct"?: (number) | null;
+              "run_total_errors"?: (number) | null;
+              "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -113360,6 +113429,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
                 "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
@@ -113741,6 +113813,9 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "run_error_pct"?: (number) | null;
+                  "run_errors"?: (number) | null;
+                  "run_transactions"?: (number) | null;
                   "target_tps"?: number;
                   "throughput_gap_pct"?: number;
                   "throughput_target_missed"?: boolean;
@@ -113880,6 +113955,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -115221,6 +115299,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
                 "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
@@ -115602,6 +115683,9 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "run_error_pct"?: (number) | null;
+                  "run_errors"?: (number) | null;
+                  "run_transactions"?: (number) | null;
                   "target_tps"?: number;
                   "throughput_gap_pct"?: number;
                   "throughput_target_missed"?: boolean;
@@ -115741,6 +115825,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -117082,6 +117169,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
                 "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
@@ -117463,6 +117553,9 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "run_error_pct"?: (number) | null;
+                  "run_errors"?: (number) | null;
+                  "run_transactions"?: (number) | null;
                   "target_tps"?: number;
                   "throughput_gap_pct"?: number;
                   "throughput_target_missed"?: boolean;
@@ -117602,6 +117695,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -118943,6 +119039,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
                 "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
@@ -119324,6 +119423,9 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "run_error_pct"?: (number) | null;
+                  "run_errors"?: (number) | null;
+                  "run_transactions"?: (number) | null;
                   "target_tps"?: number;
                   "throughput_gap_pct"?: number;
                   "throughput_target_missed"?: boolean;
@@ -119463,6 +119565,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -120804,6 +120909,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, (Record<string, unknown>) | null>;
                 "statistical_findings"?: Array<Record<string, unknown>>;
                 "target_tps"?: number;
@@ -121185,6 +121293,9 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "run_error_pct"?: (number) | null;
+                  "run_errors"?: (number) | null;
+                  "run_transactions"?: (number) | null;
                   "target_tps"?: number;
                   "throughput_gap_pct"?: number;
                   "throughput_target_missed"?: boolean;
@@ -121324,6 +121435,9 @@ export interface operations {
                   "tcp_time_wait"?: number;
                   "thread_count"?: number;
                 }) | null;
+                "run_error_pct"?: (number) | null;
+                "run_total_errors"?: (number) | null;
+                "run_total_transactions"?: (number) | null;
                 "soap_operations"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -129557,6 +129671,7 @@ export interface operations {
         "application/json": {
           "executive_narrative"?: string;
           "expected_updated_at"?: string;
+          "expected_verdict_updated_at"?: (string) | null;
           "findings"?: Array<{
             "evidence"?: string;
             "id"?: string;
@@ -129598,6 +129713,9 @@ export interface operations {
               "updated_by": string;
               "verdict_explanation"?: string;
               "verdict_override"?: string;
+              "verdict_profile"?: string;
+              "verdict_updated_at"?: (string) | null;
+              "verdict_updated_by"?: string;
             }) | null;
             "sections": Array<{
               "id": string;
@@ -145674,6 +145792,9 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "run_error_pct"?: (number) | null;
+                "run_errors"?: (number) | null;
+                "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -145823,6 +145944,9 @@ export interface operations {
                 "tcp_time_wait"?: number;
                 "thread_count"?: number;
               }) | null;
+              "run_error_pct"?: (number) | null;
+              "run_total_errors"?: (number) | null;
+              "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -146712,6 +146836,9 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "run_error_pct"?: (number) | null;
+                "run_errors"?: (number) | null;
+                "run_transactions"?: (number) | null;
                 "target_tps"?: number;
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
@@ -147245,6 +147372,9 @@ export interface operations {
                 "tcp_time_wait"?: number;
                 "thread_count"?: number;
               }) | null;
+              "run_error_pct"?: (number) | null;
+              "run_total_errors"?: (number) | null;
+              "run_total_transactions"?: (number) | null;
               "soap_operations"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;

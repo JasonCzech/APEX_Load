@@ -175,23 +175,18 @@ func powerBIPublishConflict(latest *storage.PowerBIPublish, datasetID string, fo
 	return false, ""
 }
 
-// applyPowerBIVerdictOverride replaces the auto-derived verdict with the
-// analyst-set override when one has been saved on any report profile, matching
-// what the rendered HTML/PDF/CSV reports display. Executive wins over engineer
-// over audit because the published rows feed executive dashboards.
+// applyPowerBIVerdictOverride replaces the auto-derived verdict with the run's
+// analyst verdict, matching what the rendered HTML/PDF/CSV reports display.
 func applyPowerBIVerdictOverride(store storage.Store, report *RunArchiveReport, testID string) {
 	if store == nil || report == nil || report.Verdict == nil {
 		return
 	}
-	for _, profile := range []string{"executive", "engineer", "audit"} {
-		ann, err := loadReportAnnotations(store, testID, profile)
-		if err != nil || ann == nil || strings.TrimSpace(ann.VerdictOverride) == "" {
-			continue
-		}
-		overridden := applyVerdictOverride(ann.VerdictOverride, ann.VerdictExplanation, *report.Verdict)
-		report.Verdict = &overridden
+	verdict, err := loadRunReportVerdict(store, testID)
+	if err != nil || verdict == nil || strings.TrimSpace(verdict.VerdictOverride) == "" {
 		return
 	}
+	overridden := applyVerdictOverride(verdict.VerdictOverride, verdict.VerdictExplanation, *report.Verdict)
+	report.Verdict = &overridden
 }
 
 type powerBIPublishRequest struct {

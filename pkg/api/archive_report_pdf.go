@@ -103,7 +103,7 @@ func buildRunArchiveReportPDFLines(report *RunArchiveReport, profile RunArchiveR
 	)
 	if profile.ID != "audit" {
 		lines = append(lines,
-			fmt.Sprintf("Captured records: %s; archive errors: %s; peak load: %d VUsers", formatPDFInt(report.Overview.Transactions), formatReportPercentage(report.Overview.ErrorPct), report.Overview.PeakActiveVUsers),
+			fmt.Sprintf("Captured records: %s; error rate: %s (%s); peak load: %d VUsers", formatPDFInt(report.Overview.Transactions), formatReportPercentage(reportHeadline(report).ErrorPct), reportHeadline(report).Label, report.Overview.PeakActiveVUsers),
 		)
 	} else if report.Integrity != nil {
 		lines = append(lines, "Artifact integrity: "+report.Integrity.Status)

@@ -936,6 +936,26 @@ describe('TestHub', () => {
     window.localStorage.removeItem('apexload.scenarioBuilder.draft')
   })
 
+  it('keeps a new scenario as a browser draft until its load has been set', async () => {
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
+    await flushPromises()
+    await chooseLibraryScriptForGroup()
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Checkpoint probe'))
+    expect(container.querySelector('.ux-draft-help')?.textContent).toContain('until its load is set')
+
+    await clickButton('Save draft')
+    await flushPromises()
+
+    expect(apiMock.createScenario).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Draft progress saved in this browser')
+
+    await clickWizardStep('Run Settings')
+    await clickButton('Save draft')
+    await flushPromises()
+
+    expect(apiMock.createScenario).toHaveBeenCalledTimes(1)
+  })
+
   it('creates a scenario from the typed form payload', async () => {
     const onSelectTest = vi.fn()
 
@@ -1136,6 +1156,7 @@ describe('TestHub', () => {
     expect(container.querySelector('.scenario-script-group-card')?.textContent).toContain('Payments Flow')
     expect(document.body.querySelector('[role="dialog"][aria-labelledby="scenario-script-library-dialog-title"]')).toBeNull()
 
+    await clickWizardStep('Run Settings') // a new scenario is saved to the project only once its load is set
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
     expect(saveButton).toBeDefined()
     if (!saveButton) return
@@ -3760,6 +3781,7 @@ describe('TestHub', () => {
     await flushPromises()
     await chooseLibraryScriptForGroup()
     await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Single save'))
+    await clickWizardStep('Run Settings') // a new scenario is saved to the project only once its load is set
     const save = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save draft')!
     await act(async () => { save.click(); save.click() })
     expect(apiMock.createScenario).toHaveBeenCalledTimes(1)
@@ -4011,10 +4033,12 @@ describe('TestHub', () => {
       await flushPromises()
       await chooseLibraryScriptForGroup()
       await act(async () => setInputValue(nameInput(), 'Created'))
+      await clickWizardStep('Run Settings') // a new scenario is saved to the project only once its load is set
       await clickButton('Save draft')
       await flushPromises()
       expect(apiMock.createScenario).toHaveBeenCalledTimes(1)
       expect(panel()).toBeNull()
+      await clickWizardStep('Start')
       await act(async () => setInputValue(nameInput(), 'Edited after create'))
       await clickButton('Save draft')
       await flushPromises()
@@ -4104,6 +4128,7 @@ describe('TestHub', () => {
     await flushPromises()
     await chooseLibraryScriptForGroup()
     await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Incomplete response'))
+    await clickWizardStep('Run Settings') // a new scenario is saved to the project only once its load is set
     await clickButton('Save draft')
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('Check the scenario library before retrying')
     expect(container.querySelector('.scenario-builder')).not.toBeNull()
@@ -4310,6 +4335,7 @@ describe('TestHub', () => {
     expect(initializationSelect.value).toBe('at_once')
 
     await chooseLibraryScriptForGroup()
+    await clickWizardStep('Run Settings') // a new scenario is saved to the project only once its load is set
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
     expect(saveButton).toBeDefined()
     if (!saveButton) return

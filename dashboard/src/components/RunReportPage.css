@@ -84,6 +84,25 @@
 
 .run-report-export-option:disabled { opacity: .6; cursor: wait; }
 
+.run-report-audience {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.run-report-audience-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.run-report-audience-hint {
+  flex-basis: 100%;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
 .run-report-lens {
   display: inline-flex;
   padding: 3px;

@@ -723,9 +723,12 @@ type ManagedTest struct {
 	liveErrorEvidence          map[string][]LiveErrorEvidence
 	vuserScaleRamps            map[string]*vuserScaleRamp
 	openWorkloadSheddingWarned bool
-	ciSLAEvaluated             bool
-	ciSLABreached              bool
-	ciSLADetails               []string
+	// runTotals turns the per-window live samples into run-to-date counters
+	// so dashboards can show a run's error rate instead of the last second's.
+	runTotals      runTotalsAccumulator
+	ciSLAEvaluated bool
+	ciSLABreached  bool
+	ciSLADetails   []string
 	// initialArchiveProvenance is an immutable, masked start-of-run snapshot.
 	// Persisting it keeps distributed finalization honest across restart/failover.
 	initialArchiveProvenance *RunArchiveProvenance
@@ -875,19 +878,28 @@ type LiveMetrics struct {
 	// terminal projections. Values and sample timestamps remain unchanged.
 	// ObservationValidUntil bounds freshness, including the oldest distributed
 	// contributor; reading or relaying a snapshot never extends this deadline.
-	ObservationValidUntil      *time.Time                            `json:"observation_valid_until,omitempty"`
-	ObservationState           string                                `json:"observation_state,omitempty"`
-	CompletedIterations        int64                                 `json:"completed_iterations"`
-	Timestamp                  time.Time                             `json:"timestamp"`
-	ActiveVUsers               int64                                 `json:"active_vusers"`
-	TPS                        float64                               `json:"tps"`
-	TargetTPS                  float64                               `json:"target_tps,omitempty"`
-	ThroughputGapPct           float64                               `json:"throughput_gap_pct,omitempty"`
-	ThroughputTargetMissed     bool                                  `json:"throughput_target_missed,omitempty"`
-	AvgResponseMs              float64                               `json:"avg_response_ms"`
-	ErrorPct                   float64                               `json:"error_pct"`
-	TotalTx                    int64                                 `json:"total_transactions"`
-	TotalErrors                int64                                 `json:"total_errors"`
+	ObservationValidUntil  *time.Time `json:"observation_valid_until,omitempty"`
+	ObservationState       string     `json:"observation_state,omitempty"`
+	CompletedIterations    int64      `json:"completed_iterations"`
+	Timestamp              time.Time  `json:"timestamp"`
+	ActiveVUsers           int64      `json:"active_vusers"`
+	TPS                    float64    `json:"tps"`
+	TargetTPS              float64    `json:"target_tps,omitempty"`
+	ThroughputGapPct       float64    `json:"throughput_gap_pct,omitempty"`
+	ThroughputTargetMissed bool       `json:"throughput_target_missed,omitempty"`
+	AvgResponseMs          float64    `json:"avg_response_ms"`
+	ErrorPct               float64    `json:"error_pct"`
+	TotalTx                int64      `json:"total_transactions"`
+	TotalErrors            int64      `json:"total_errors"`
+	// ErrorPct, TotalTx and TotalErrors describe one sample window
+	// (SampleWindowSeconds, normally 1 s). The Run* fields are the same
+	// counters accumulated from the start of the run, so a run-level error
+	// rate is not dominated by whichever second was sampled last. They are
+	// pointers so samples recorded before run counters existed stay absent
+	// (not a misleading zero) while new samples always carry them.
+	RunTotalTx                 *int64                                `json:"run_total_transactions,omitempty"`
+	RunTotalErrors             *int64                                `json:"run_total_errors,omitempty"`
+	RunErrorPct                *float64                              `json:"run_error_pct,omitempty"`
 	P50Ms                      float64                               `json:"p50_ms"`
 	P90Ms                      float64                               `json:"p90_ms"`
 	P95Ms                      float64                               `json:"p95_ms"`
@@ -1350,19 +1362,22 @@ type LiveDependencyEdge struct {
 }
 
 type GroupLiveMetrics struct {
-	Name                   string  `json:"name"`
-	VUsers                 int     `json:"vusers"`
-	Transactions           int64   `json:"transactions"`
-	Errors                 int64   `json:"errors"`
-	TPS                    float64 `json:"tps"`
-	TargetTPS              float64 `json:"target_tps,omitempty"`
-	ThroughputGapPct       float64 `json:"throughput_gap_pct,omitempty"`
-	ThroughputTargetMissed bool    `json:"throughput_target_missed,omitempty"`
-	AvgResponseMs          float64 `json:"avg_response_ms"`
-	P50Ms                  float64 `json:"p50_ms"`
-	P90Ms                  float64 `json:"p90_ms"`
-	P95Ms                  float64 `json:"p95_ms,omitempty"`
-	P99Ms                  float64 `json:"p99_ms"`
+	Name                   string   `json:"name"`
+	VUsers                 int      `json:"vusers"`
+	Transactions           int64    `json:"transactions"`
+	Errors                 int64    `json:"errors"`
+	RunTransactions        *int64   `json:"run_transactions,omitempty"`
+	RunErrors              *int64   `json:"run_errors,omitempty"`
+	RunErrorPct            *float64 `json:"run_error_pct,omitempty"`
+	TPS                    float64  `json:"tps"`
+	TargetTPS              float64  `json:"target_tps,omitempty"`
+	ThroughputGapPct       float64  `json:"throughput_gap_pct,omitempty"`
+	ThroughputTargetMissed bool     `json:"throughput_target_missed,omitempty"`
+	AvgResponseMs          float64  `json:"avg_response_ms"`
+	P50Ms                  float64  `json:"p50_ms"`
+	P90Ms                  float64  `json:"p90_ms"`
+	P95Ms                  float64  `json:"p95_ms,omitempty"`
+	P99Ms                  float64  `json:"p99_ms"`
 	// PercentileQuality has the same provenance vocabulary as an archived
 	// interval summary. It is normally omitted from live metrics and populated
 	// when distributed archive finalization must distinguish a source-generator

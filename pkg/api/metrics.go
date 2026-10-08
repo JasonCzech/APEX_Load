@@ -553,6 +553,7 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	}
 	live.ActiveRuntimeSeconds = activeRuntimeSecondsLocked(test, now)
 	live.LoadLevels = activeLoadLevelsLocked(test)
+	test.runTotals.apply(live, test.History)
 	tests := make([]*ManagedTest, 0, len(tr.tests))
 	for _, candidate := range tr.tests {
 		tests = append(tests, candidate)

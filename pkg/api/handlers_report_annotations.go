@@ -26,7 +26,11 @@ type reportAnnotationsRequest struct {
 	SectionComments    map[string]string `json:"section_comments"`
 	VerdictOverride    string            `json:"verdict_override"`
 	VerdictExplanation string            `json:"verdict_explanation"`
-	Findings           []ReportFinding   `json:"findings"`
+	// ExpectedVerdictUpdatedAt is the verdict revision the editor loaded. The
+	// verdict is shared by every report audience, so a change is refused when
+	// another audience changed it since. Omitted by older clients.
+	ExpectedVerdictUpdatedAt *time.Time      `json:"expected_verdict_updated_at,omitempty"`
+	Findings                 []ReportFinding `json:"findings"`
 }
 
 // handleGetReportAnnotations returns the analyst commentary for a test+profile,
@@ -78,6 +82,20 @@ func (s *Server) handleSaveReportAnnotations(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	currentVerdict, currentVerdictRaw, err := loadRunReportVerdictRecord(s.store, testID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load report verdict: "+err.Error())
+		return
+	}
+	verdictOverride := strings.TrimSpace(req.VerdictOverride)
+	verdictExplanation := strings.TrimSpace(req.VerdictExplanation)
+	verdictChanged := currentVerdict == nil && (verdictOverride != "" || verdictExplanation != "") ||
+		currentVerdict != nil && (currentVerdict.VerdictOverride != verdictOverride || currentVerdict.VerdictExplanation != verdictExplanation)
+	if verdictChanged && currentVerdict != nil && req.ExpectedVerdictUpdatedAt != nil && !currentVerdict.UpdatedAt.Equal(*req.ExpectedVerdictUpdatedAt) {
+		writeError(w, http.StatusConflict, "the analyst verdict was changed from another report audience since it was loaded; reload the latest revision before saving")
+		return
+	}
+
 	_, actorSubject, actorDisplay := s.resolveAuditActor(r)
 	ann := &ReportAnnotations{
 		TestID:             testID,
@@ -86,8 +104,8 @@ func (s *Server) handleSaveReportAnnotations(w http.ResponseWriter, r *http.Requ
 		PreparedBy:         strings.TrimSpace(req.PreparedBy),
 		ExecutiveNarrative: strings.TrimSpace(req.ExecutiveNarrative),
 		SectionComments:    req.SectionComments,
-		VerdictOverride:    strings.TrimSpace(req.VerdictOverride),
-		VerdictExplanation: strings.TrimSpace(req.VerdictExplanation),
+		VerdictOverride:    verdictOverride,
+		VerdictExplanation: verdictExplanation,
 		Findings:           normalizeReportFindings(req.Findings),
 		UpdatedAt:          time.Now().UTC(),
 		UpdatedBy:          firstNonEmpty(actorDisplay, actorSubject),
@@ -114,9 +132,30 @@ func (s *Server) handleSaveReportAnnotations(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	if verdictChanged {
+		currentVerdict = &runReportVerdict{
+			VerdictOverride:    verdictOverride,
+			VerdictExplanation: verdictExplanation,
+			Profile:            profile,
+			UpdatedAt:          ann.UpdatedAt,
+			UpdatedBy:          ann.UpdatedBy,
+		}
+		saved, err := saveRunReportVerdictIfUnchanged(s.store, testID, *currentVerdict, currentVerdictRaw)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "report commentary was saved but the analyst verdict was not: "+err.Error())
+			return
+		}
+		if !saved {
+			writeError(w, http.StatusConflict, "report commentary was saved, but the analyst verdict changed from another report audience at the same time; reload and set the verdict again")
+			return
+		}
+	}
+	applyRunReportVerdict(ann, currentVerdict)
+
 	projectID, _, _ := resolveTestProjectID(r, s.store)
 	s.recordAuditEvent(r, "report.annotations.update", "success", "test", testID, projectID, map[string]any{
-		"profile": profile,
+		"profile":         profile,
+		"verdict_changed": verdictChanged,
 	})
 
 	writeJSON(w, http.StatusOK, reportAnnotationsResponse{

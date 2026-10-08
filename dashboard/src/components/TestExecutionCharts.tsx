@@ -1450,7 +1450,12 @@ export default function TestExecutionCharts({
   const openChartMenu = (event: MouseEvent<HTMLElement>, chartId: string) => {
     event.preventDefault()
     event.stopPropagation()
-    chartMenuTriggerRef.current = event.currentTarget instanceof HTMLButtonElement ? event.currentTarget : null
+    // A right-click opens the menu from the chart surface; return focus to the
+    // chart's own Actions button so closing the menu never strands focus.
+    chartMenuTriggerRef.current = event.currentTarget instanceof HTMLButtonElement
+      ? event.currentTarget
+      : event.currentTarget.closest<HTMLElement>('[data-chart-id]')?.querySelector<HTMLButtonElement>('.chart-actions-button')
+        ?? event.currentTarget.querySelector<HTMLButtonElement>('.chart-actions-button')
     setAxisLabelPopover(null)
     const menuWidth = 224
     const menuHeight = 340
@@ -3096,7 +3101,7 @@ export default function TestExecutionCharts({
                     )
                   })}
                 {surface === 'command-center' && chartData.some(point => typeof point.targetTps === 'number') && (
-                  <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="targetTps" name="Target" stroke="var(--warning)" dot={false} strokeWidth={1.75} strokeDasharray="5 3" isAnimationActive={false} />
+                  <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey="targetTps" name="Target" stroke="var(--text-secondary)" dot={false} strokeWidth={1.75} strokeDasharray="5 3" isAnimationActive={false} />
                 )}
                 {renderOverlayLines(chart, visibleMetricKeys, displayMetricKey)}
                 {renderSelectedSeriesEmphasis(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
@@ -3303,7 +3308,7 @@ export default function TestExecutionCharts({
                 </div>
                 {renderAccessibleMetricsTable(metricRows, visibleMetricKeys, chartTitle, accessibleTableId, metricSummaries)}
 
-          {(chart.id === 'tps' || chart.id === 'errors') && renderLineMultiSeriesLegend(chart, metricRows, visibleMetricKeys)}
+          {(chart.type === 'line-multi' || chart.type === 'line-impact') && renderLineMultiSeriesLegend(chart, metricRows, visibleMetricKeys)}
           {isLoadImpactChart(chart) && (chart.loadImpactGroupNames?.length ?? 0) > 0 && renderLineMultiSeriesLegend(chart, metricRows, visibleMetricKeys)}
           {chart.id === 'latency' && renderLatencySeriesLegend(metricRows, visibleMetricKeys, includeArtStdDevBand)}
           {chart.id === 'network_latency' && showDetails && renderRouteLatencyDetails()}

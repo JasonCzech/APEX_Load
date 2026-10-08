@@ -3737,7 +3737,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
           <section className="new-test-summary">
             <h3>Run Summary</h3>
             <p>Capacity is an estimate. The proposed window is not reserved until you hold or schedule the run.</p>
-            <p>{generatorInventoryError || (inventoryCheckedAt ? `${generatorInventory.length} live inventory hosts · checked ${inventoryCheckedAt}` : 'Live inventory not yet verified')}</p>
+            <p>{generatorInventoryError || (inventoryCheckedAt ? (generatorInventory.length > 0 ? `${generatorInventory.length} live inventory hosts · checked ${inventoryCheckedAt}` : `No live generator inventory (local or static mode); capacity uses the configured generator count · checked ${inventoryCheckedAt}`) : 'Live inventory not yet verified')}</p>
             <button type="button" className="btn btn-secondary btn-sm" disabled={generatorInventoryLoading} onClick={() => { setInventoryRefresh(value => value + 1); void refreshBindableTimeslots() }}>Refresh capacity and inventory</button>
             <dl className="new-test-summary-list" aria-label="Run settings summary">
               <div><dt>Elastic capture</dt><dd>{elkConnections.find(c => c.id === elkConnectionId)?.name || (elkConnectionId ? 'Selected connection unavailable — review required' : 'Off for this test')}</dd></div>

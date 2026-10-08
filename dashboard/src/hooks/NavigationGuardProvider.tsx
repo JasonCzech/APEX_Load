@@ -18,6 +18,12 @@ export type NavigationGuardRegistrar = (guard: NavigationGuard, dirty: boolean) 
 export interface NavigationGuardRunner {
   hasDirtyGuard: () => boolean
   runGuarded: (proceed: () => void, retainedGuardIds?: readonly string[]) => void
+  /**
+   * Marks a registered guard clean immediately. A guard's rendered `dirty`
+   * snapshot only updates after the next render, so an editor that has just
+   * saved and then navigates in the same handler must clear it explicitly.
+   */
+  markClean: (guardId: string) => void
 }
 
 export interface PendingNavigation {
@@ -30,6 +36,7 @@ export const NavigationGuardRegisterContext = createContext<NavigationGuardRegis
 export const NavigationGuardRunnerContext = createContext<NavigationGuardRunner>({
   hasDirtyGuard: () => false,
   runGuarded: (proceed) => proceed(),
+  markClean: () => undefined,
 })
 
 export function firstDirtyGuard(guards: Map<string, RegisteredNavigationGuard>, retainedGuardIds: readonly string[] = []): RegisteredNavigationGuard | null {

@@ -51,7 +51,11 @@ export function NavigationGuardProvider({ children }: { children: ReactNode }) {
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [hasDirtyGuard, version])
-  const runner = useMemo<NavigationGuardRunner>(() => ({ hasDirtyGuard, runGuarded }), [hasDirtyGuard, runGuarded])
+  const markClean = useCallback((guardId: string) => {
+    const guard = guardsRef.current.get(guardId)
+    if (guard) guardsRef.current.set(guardId, { ...guard, dirty: false })
+  }, [])
+  const runner = useMemo<NavigationGuardRunner>(() => ({ hasDirtyGuard, runGuarded, markClean }), [hasDirtyGuard, runGuarded, markClean])
   const handleCancel = useCallback(() => {
     if (!saving) {
       pendingRef.current = null

@@ -121,7 +121,7 @@
 .validation-evidence-status.blocked,
 .validation-evidence-status.blocker {
   border-color: rgba(var(--danger-rgb), 0.35);
-  color: #fca5a5;
+  color: var(--danger-text);
   background: rgba(var(--danger-rgb), 0.1);
 }
 .validation-evidence-status.needs_review,

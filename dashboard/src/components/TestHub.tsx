@@ -220,6 +220,8 @@ const scenarioWizardSteps: Array<{ id: ScenarioWizardStep, label: string }> = [
   { id: 'review', label: 'Review' },
 ]
 
+const RUN_SETTINGS_STEP_INDEX = scenarioWizardSteps.findIndex(step => step.id === 'run')
+
 const runSettingsTabs: Array<{ id: RunSettingsTab, label: string }> = [
   { id: 'scenario', label: 'Scenario Settings' },
   { id: 'runtime', label: 'Browser/Script Runtime' },
@@ -3119,7 +3121,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   }
   const saveScenario = async (): Promise<boolean> => {
     if (monitorEditorError) { setError(monitorEditorError); return false }
-    if (sourcePending || goalSizingIncomplete || blockedScriptGroups.length || !form.name.trim() || !(form.termination_mode === 'iterations' || isValidDurationInput(form.duration))
+    if (newScenarioLoadUnconfigured || sourcePending || goalSizingIncomplete || blockedScriptGroups.length || !form.name.trim() || !(form.termination_mode === 'iterations' || isValidDurationInput(form.duration))
       || form.groups.some(group => !group.script_id) || blockingStageTimelineMessage || steppedRampBlockingMessage
       || closedVUserBlockingMessage || goalDrivenBlockingMessage || observerEnvelopeError || aggregateEnvelopeError
       || assignmentValidationError || scenarioGroupNameError || bindingErrors.length) return saveBrowserProgress()
@@ -3461,6 +3463,11 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     data: bindingErrors.length === 0,
     review: Boolean(requiredDraftReady && !sourcePending && loadModelValidation && loadModelValidation.status !== 'blocked' && !loadModelValidationError && !blockingStageTimelineMessage),
   }
+  // A new scenario's VUsers and duration start from builder defaults. Until the
+  // author has chosen a model (shape, template, goal or cloned scenario) or
+  // reached Run Settings, Save draft keeps a browser checkpoint rather than
+  // creating a launchable project scenario with load the author never set.
+  const newScenarioLoadUnconfigured = !editingId && !sourceStepComplete && maxVisitedWizardIndex < RUN_SETTINGS_STEP_INDEX
   // Only offer "Start Over" for a new build (not an edit) once there's progress to discard.
   const builderHasProgress = !editingId && hasScenarioBuilderProgress({ form, scenarioStartChoice, maxVisitedWizardIndex })
 
@@ -5016,7 +5023,9 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
             reapplyNote="Reapply carries your draft's changes onto this reviewed scenario. Locally changed fields and group lists take precedence over the current values; review them before saving."
             onLoad={() => void loadScenarioConflictBaseline()} onReload={reloadScenarioFromConflict} onReapply={reapplyScenarioConflictDraft} />}
 
-          <div className="scenario-builder-actions" aria-busy={savePending}><span className="ux-draft-help">Incomplete or blocked drafts are saved in this browser. Configured scenarios are saved to the project; neither launches a run.</span>
+          <div className="scenario-builder-actions" aria-busy={savePending}><span className="ux-draft-help">{newScenarioLoadUnconfigured
+            ? 'Save draft keeps this scenario in this browser until its load is set in Model & Shape or Run Settings; it is not added to the project or launchable yet.'
+            : 'Incomplete or blocked drafts are saved in this browser. Configured scenarios are saved to the project; neither launches a run.'}</span>
             <button className="btn btn-secondary" onClick={guardedOpenScenarioLibrary}>Cancel</button>
             {builderHasProgress && (
               <button

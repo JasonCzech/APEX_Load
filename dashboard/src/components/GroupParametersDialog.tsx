@@ -17,6 +17,8 @@ interface Props {
   groupName: string
   onClose: () => void
   onSaved: (result: TestGroupParametersUpdateResult) => void
+  /** Where focus returns when the opener (the group menu item) has unmounted. */
+  returnFocusSelector?: string
 }
 
 function describeParameterValue(parameter: ScriptParameterDefinition): string {
@@ -37,7 +39,7 @@ function describeParameterPolicy(parameter: ScriptParameterDefinition): string {
   return parts.join(' · ')
 }
 
-export default function GroupParametersDialog({ testId, groupName, onClose, onSaved }: Props) {
+export default function GroupParametersDialog({ testId, groupName, onClose, onSaved, returnFocusSelector }: Props) {
   const api = useTestApi()
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const closeButtonRef = useRef<HTMLButtonElement | null>(null)
@@ -61,6 +63,7 @@ export default function GroupParametersDialog({ testId, groupName, onClose, onSa
     dialogRef,
     initialFocusRef: closeButtonRef,
     onClose: saving ? undefined : requestClose,
+    returnFocusSelector,
   })
 
   // preserveDraft refreshes the lifecycle view (editable flag, reason banner)
