@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -33,6 +34,43 @@ const (
 	evaluationReceiptDigestKeySetting = "security.evaluation_request_digest_hmac_key.v1"
 	evaluationRequestDigestDomain     = "apexload:evaluation-job:request:v1"
 )
+
+// evaluationPrepareError is a Prepare failure that is not the request's
+// fault: a missing run or policy (404), a run not yet finalized or a pin that
+// no longer matches (409), or an unavailable dependency (503). Any other
+// Prepare error is a request error (400).
+type evaluationPrepareError struct {
+	status int
+	err    error
+}
+
+func (e *evaluationPrepareError) Error() string { return e.err.Error() }
+func (e *evaluationPrepareError) Unwrap() error { return e.err }
+
+func evaluationNotFound(err error) error { return &evaluationPrepareError{http.StatusNotFound, err} }
+func evaluationConflict(err error) error { return &evaluationPrepareError{http.StatusConflict, err} }
+func evaluationUnavailable(err error) error {
+	return &evaluationPrepareError{http.StatusServiceUnavailable, err}
+}
+
+// evaluationPolicyLookupError classifies a failed policy revision lookup: a
+// missing revision (or one of another kind) is not found, any other storage
+// failure is a dependency that is unavailable.
+func evaluationPolicyLookupError(err error, message string) error {
+	if err == nil || errors.Is(err, sql.ErrNoRows) {
+		return evaluationNotFound(errors.New(message))
+	}
+	return evaluationUnavailable(fmt.Errorf("analysis policies are unavailable: %w", err))
+}
+
+// evaluationPrepareStatus is the HTTP status a Prepare error answers with.
+func evaluationPrepareStatus(err error) int {
+	var typed *evaluationPrepareError
+	if errors.As(err, &typed) {
+		return typed.status
+	}
+	return http.StatusBadRequest
+}
 
 // evaluationKind is one kind of bounded analytical evaluation. Kinds register
 // themselves (browser intelligence, telemetry acceptance, native derived
@@ -209,7 +247,7 @@ func (s *Server) handleGetEvaluationJob(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, evaluationJobResponse(job))
 }
 
-// OpenAPI-Responses: 409
+// OpenAPI-Responses: 404, 409, 503
 func (s *Server) handleCreateEvaluationJob(w http.ResponseWriter, r *http.Request) {
 	store, ok := s.evaluationJobStore(w)
 	if !ok {
@@ -248,7 +286,7 @@ func (s *Server) handleCreateEvaluationJob(w http.ResponseWriter, r *http.Reques
 	}
 	fingerprint, err := kind.Prepare(s, project, req.Request)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, evaluationPrepareStatus(err), err.Error())
 		return
 	}
 	actor := authoringReceiptActor(r, s)

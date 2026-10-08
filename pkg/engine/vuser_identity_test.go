@@ -403,3 +403,18 @@ func TestGoalRefusalInsideAParallelBranchIsTheBoundarys(t *testing.T) {
 		t.Fatalf("E2E after a branch's goal refusal %+v (all %+v)", e2e, sink.results)
 	}
 }
+
+// A browser context the generator closed or refused to protect itself fails
+// its actions without the target causing it: interrupted.
+func TestResourceLimitFailuresAreInterrupted(t *testing.T) {
+	sink := &identitySink{}
+	vu := &VUser{ID: 9, Group: "web", ResultSink: sink, Metrics: NewMetricsCollector(16), Script: &dsl.Script{Protocol: "browser"}}
+	vu.recordResult(&protocol.Result{ActionName: "limited", Success: false, ErrorMessage: "browser resource limit (memory): the browser context was closed to protect the generator"}, dsl.ErrorHandlingConfig{}, dsl.LogConfig{})
+	vu.recordResult(&protocol.Result{ActionName: "target", Success: false, ErrorMessage: "expected 200, got 500"}, dsl.ErrorHandlingConfig{}, dsl.LogConfig{})
+	if got := resultsNamed(sink, "limited"); len(got) != 1 || !got[0].Interrupted {
+		t.Fatalf("resource limit failure %+v", got)
+	}
+	if got := resultsNamed(sink, "target"); len(got) != 1 || got[0].Interrupted {
+		t.Fatalf("target failure %+v", got)
+	}
+}

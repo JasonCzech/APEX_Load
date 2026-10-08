@@ -679,7 +679,21 @@ type ManagedTest struct {
 	remoteMetricsFlushScheduled                    bool
 	// Accepted/published revisions and the gate make distributed aggregate
 	// publication monotonic when per-target consumers finish out of order.
-	remoteMetricsAcceptedRevision   uint64
+	remoteMetricsAcceptedRevision uint64
+	// pendingJointPublications hold the joint evidence of source batches
+	// accepted since the last published point (B5); the next installed
+	// publication carries them (pendingJointBytes estimates their size).
+	// jointPublicationsDropped counts those dropped past the bound and those
+	// released because no point or archive of this controller will carry
+	// them (the run's archive was committed, none was collected here, or
+	// leadership was lost).
+	// jointHeldFromStart is set when this controller starts the distributed
+	// run, so it has held every batch accepted since; a run it loaded after a
+	// restart, or adopted, cannot know what another controller held.
+	pendingJointPublications        []*storage.NativePublicationEvidence
+	pendingJointBytes               int64
+	jointPublicationsDropped        int64
+	jointHeldFromStart              bool
 	remoteMetricsPublishedRevision  uint64
 	remoteMetricsPublishGate        chan struct{}
 	remoteGoalAcceptedErrorWindows  map[string]distributedGoalErrorAccumulator

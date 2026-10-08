@@ -85,8 +85,25 @@ type telemetryStageRecorder struct {
 // generatorBatchPosition is the newest batch a generator's stages were
 // sampled from, so a re-aggregated or retried batch is sampled once.
 type generatorBatchPosition struct {
-	epoch    string
-	sequence uint64
+	epoch     string
+	sequence  uint64
+	timestamp int64
+}
+
+// covers reports whether a batch at next was already sampled at p: within one
+// epoch, by sequence, or by batch timestamp when both sequences are 0 (an
+// older generator, whose sequence is unknown).
+func (p generatorBatchPosition) covers(next generatorBatchPosition) bool {
+	if p.epoch != next.epoch {
+		return false
+	}
+	if next.sequence > 0 && p.sequence > 0 {
+		return next.sequence <= p.sequence
+	}
+	if next.sequence == 0 && p.sequence == 0 && next.timestamp > 0 && p.timestamp > 0 {
+		return next.timestamp <= p.timestamp
+	}
+	return false
 }
 
 func newTelemetryStageRecorder() *telemetryStageRecorder {
@@ -147,9 +164,9 @@ func (r *telemetryStageRecorder) observeGeneratorBatch(target string, batch gene
 	if r == nil || batch.Telemetry == nil {
 		return
 	}
-	position := generatorBatchPosition{epoch: batch.SourceEpoch, sequence: batch.BatchSequence}
+	position := generatorBatchPosition{epoch: batch.SourceEpoch, sequence: batch.BatchSequence, timestamp: batch.TimestampUnixMs}
 	r.mu.Lock()
-	if last, ok := r.lastSeen[target]; ok && last.epoch == position.epoch && position.sequence <= last.sequence {
+	if last, ok := r.lastSeen[target]; ok && last.covers(position) {
 		r.mu.Unlock()
 		return
 	}
@@ -342,8 +359,10 @@ func cloneTelemetryStageDistributions(in []TelemetryStageDistribution) []Telemet
 // and their digests in the manifest at finalize. A run that started but whose
 // recorder this controller does not hold (a finalize after a restart or
 // failover) records every stage as unavailable with recorder_lost, so it is
-// never mistaken for a run without stage evidence by design.
-func (tr *TestRunner) persistTelemetryStageDistributions(test *ManagedTest, manifest *RunArchiveManifest) {
+// never mistaken for a run without stage evidence by design. An adjunct
+// refresh (refresh) never records recorder_lost: a manifest without stages
+// then predates stage sampling, and the field is written once.
+func (tr *TestRunner) persistTelemetryStageDistributions(test *ManagedTest, manifest *RunArchiveManifest, refresh bool) {
 	if test == nil || manifest == nil || manifest.TelemetryStageDistributions != nil {
 		return
 	}
@@ -351,7 +370,7 @@ func (tr *TestRunner) persistTelemetryStageDistributions(test *ManagedTest, mani
 	recorder, started := test.telemetryStages, test.StartedAt != nil
 	tr.mu.RUnlock()
 	if recorder == nil {
-		if !started {
+		if !started || refresh {
 			return
 		}
 		lost := make([]TelemetryStageDistribution, 0, len(telemetryStageOrder))

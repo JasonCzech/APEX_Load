@@ -153,6 +153,7 @@ func decodeClientRenderReport(w http.ResponseWriter, r *http.Request, report *cl
 	return false
 }
 
+// OpenAPI-Responses: 503
 func (s *Server) handleReportClientRender(w http.ResponseWriter, r *http.Request) {
 	// Only the execution leader publishes a run's live metrics.
 	if !s.requireExecutionLeader(w) {

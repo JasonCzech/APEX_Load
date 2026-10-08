@@ -222,8 +222,8 @@ func TestRunArchiveZipIncludesHARsOnlyForEditors(t *testing.T) {
 		t.Fatalf("an unknown include: %d", reply.Code)
 	}
 	reply = harDownloadRequest(t, server, path+"?include=har", "har-editor", harEditor)
-	if reply.Code != http.StatusOK {
-		t.Fatalf("editor HAR export %d %s", reply.Code, reply.Body.String())
+	if reply.Code != http.StatusOK || reply.Header().Get("Cache-Control") != "no-store" || reply.Header().Get("Vary") != "Cookie, Authorization" {
+		t.Fatalf("editor HAR export %d %v %s", reply.Code, reply.Header(), reply.Body.String())
 	}
 	entries = harZipEntries(t, reply.Body.Bytes())
 	manifest := manifestOf(entries)

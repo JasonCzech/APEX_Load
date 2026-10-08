@@ -41,7 +41,7 @@ puts it back around them, using each transaction's wall-clock span
 | completed | The success boundary succeeded. Failed steps before it are still counted as step failures. |
 | failed | The success boundary failed, or the iteration ended after one of the attempt's steps failed. One failed journey counts once, however many steps failed. |
 | aborted | The iteration ended, or the journey started again, without the outcome and without a failed step. |
-| censored | The outcome is unknown, because the run (or a generator's share of it) ended while the attempt was open, or the stop cut it. |
+| censored | The outcome is unknown, because the run (or a generator's share of it) ended while the attempt was open, or a stop or the generator's own resource limit cut it. |
 | skipped | An iteration of a group that ran the journey somewhere never started it. A possibly cut iteration does not count. |
 
 Eligible attempts are the completed, failed and aborted ones. Censored and
@@ -50,7 +50,8 @@ skipped attempts never enter the index.
 ### Stops and interrupted samples
 
 The engine marks a failure `interrupted` when it was recorded after the VUser
-was told to stop. That covers three cases:
+was told to stop, or when the load generator itself refused it. That covers
+four cases:
 
 - The action in flight was cancelled by a hard stop (or by Run's own context
   when there is no hard-stop context).
@@ -58,10 +59,15 @@ was told to stop. That covers three cases:
   transaction behind.
 - A transaction the VUser still had open when a stop ended it (the run's
   stop or end, a ramp-down or scale-down, a goal boundary).
+- A resource-limit failure (the error class `resource_limit`, for example a
+  browser context closed at its HAR or memory limit): the generator, not the
+  system under test, ended the action.
 
-Cancellation alone cannot establish a failure. An interrupted failure
-therefore censors every attempt it cut and is not counted as a step failure.
-An attempt that still reaches its outcome keeps it.
+Neither cancellation nor a generator limit can establish a failure of the
+system under test. An interrupted failure therefore censors every attempt it
+cut and is not counted as a step failure. An attempt that still reaches its
+outcome keeps it, and a boundary that fails after one of its attempt's steps
+was interrupted is censored rather than counted as failed.
 
 The last iteration of each VUser lifetime is the one a stop may have cut,
 for instance during think time between transactions, where no sample shows

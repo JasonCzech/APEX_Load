@@ -38,6 +38,7 @@ type JointIntervalRecord struct {
 	Timestamp           time.Time `json:"timestamp"`
 	WindowSeconds       float64   `json:"window_seconds"`
 	SourceID            string    `json:"source_id"`
+	SourceEpoch         string    `json:"source_epoch,omitempty"`
 	ExecutionGeneration uint64    `json:"execution_generation,omitempty"`
 	Sequence            uint64    `json:"sequence,omitempty"`
 	Population          string    `json:"population"`
@@ -67,6 +68,7 @@ type parquetJointInterval struct {
 	TimestampUnixMs     int64   `parquet:"name=timestamp_unix_ms, type=INT64"`
 	WindowSeconds       float64 `parquet:"name=window_seconds, type=DOUBLE"`
 	SourceID            string  `parquet:"name=source_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	SourceEpoch         string  `parquet:"name=source_epoch, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	ExecutionGeneration int64   `parquet:"name=execution_generation, type=INT64"`
 	Sequence            int64   `parquet:"name=sequence, type=INT64"`
 	Population          string  `parquet:"name=population, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
@@ -96,7 +98,7 @@ func toParquetJointInterval(row JointIntervalRecord) parquetJointInterval {
 	if row.DurationDigest != nil {
 		digest = mustJSON(row.DurationDigest)
 	}
-	return parquetJointInterval{SchemaVersion: row.SchemaVersion, TimestampUnixMs: row.Timestamp.UnixMilli(), WindowSeconds: row.WindowSeconds, SourceID: row.SourceID, ExecutionGeneration: int64(row.ExecutionGeneration), Sequence: int64(row.Sequence), Population: row.Population, DimensionsJSON: mustJSON(row.Dimensions), Availability: row.Availability, Reason: row.Reason, ValuesJSON: values, Other: row.Other, Count: row.Count, Errors: row.Errors, AvgMs: row.AvgMs, P50Ms: row.P50Ms, P90Ms: row.P90Ms, P95Ms: row.P95Ms, P99Ms: row.P99Ms, DurationDigestJSON: digest, Incomplete: row.Incomplete, OmittedTuples: row.OmittedTuples}
+	return parquetJointInterval{SchemaVersion: row.SchemaVersion, TimestampUnixMs: row.Timestamp.UnixMilli(), WindowSeconds: row.WindowSeconds, SourceID: row.SourceID, SourceEpoch: row.SourceEpoch, ExecutionGeneration: int64(row.ExecutionGeneration), Sequence: int64(row.Sequence), Population: row.Population, DimensionsJSON: mustJSON(row.Dimensions), Availability: row.Availability, Reason: row.Reason, ValuesJSON: values, Other: row.Other, Count: row.Count, Errors: row.Errors, AvgMs: row.AvgMs, P50Ms: row.P50Ms, P90Ms: row.P90Ms, P95Ms: row.P95Ms, P99Ms: row.P99Ms, DurationDigestJSON: digest, Incomplete: row.Incomplete, OmittedTuples: row.OmittedTuples}
 }
 
 func jointIntervalRow(base JointIntervalRecord, metric storage.NativeIntervalMetric) JointIntervalRecord {
@@ -119,24 +121,41 @@ func jointIntervalRows(history []*LiveMetrics) []JointIntervalRecord {
 	return rows
 }
 
-// jointIntervalEvidenceRows turns one interval's evidence into archive rows,
-// unless its source publication was already seen.
+// jointIntervalEvidenceRows turns one interval's evidence into archive rows:
+// its own window (a local window, or the source publication it carries) and
+// the joint evidence of the other source batches accepted since the
+// previous point, each unless already seen.
 func jointIntervalEvidenceRows(timestamp time.Time, evidence *storage.NativeIntervalEvidence, seen map[string]bool) []JointIntervalRecord {
 	if evidence == nil {
 		return nil
 	}
-	base := JointIntervalRecord{SchemaVersion: jointIntervalSchemaVersion, Timestamp: timestamp.UTC(), WindowSeconds: evidence.WindowSeconds, SourceID: "local"}
-	joint, tuples := evidence.Joint, evidence.Dimensions[storage.NativeJointDimension]
-	// A local window is identified by its time at the store's resolution
-	// (PostgreSQL keeps microseconds), so the persisted and the retained copy
-	// of one window are the same window.
-	identity := fmt.Sprintf("local/%d", timestamp.UTC().Truncate(time.Microsecond).UnixNano())
+	var rows []JointIntervalRecord
 	if p := evidence.Publication; p != nil {
-		base.Timestamp, base.WindowSeconds, base.SourceID = p.Timestamp.UTC(), p.WindowSeconds, p.SourceID
-		base.ExecutionGeneration, base.Sequence = p.ExecutionGeneration, p.Sequence
-		joint, tuples = p.Joint, p.Dimensions[storage.NativeJointDimension]
-		identity = fmt.Sprintf("%s/%d/%d", p.SourceID, p.ExecutionGeneration, p.Sequence)
+		rows = append(rows, jointPublicationRows(p, seen)...)
+	} else {
+		base := JointIntervalRecord{SchemaVersion: jointIntervalSchemaVersion, Timestamp: timestamp.UTC(), WindowSeconds: evidence.WindowSeconds, SourceID: "local"}
+		// A local window is identified by its time at the store's resolution
+		// (PostgreSQL keeps microseconds), so the persisted and the retained
+		// copy of one window are the same window.
+		identity := fmt.Sprintf("local/%d", timestamp.UTC().Truncate(time.Microsecond).UnixNano())
+		rows = append(rows, jointRows(base, evidence.Joint, evidence.Dimensions[storage.NativeJointDimension], identity, seen)...)
 	}
+	for _, p := range evidence.JointPublications {
+		if p != nil {
+			rows = append(rows, jointPublicationRows(p, seen)...)
+		}
+	}
+	return rows
+}
+
+// jointPublicationRows is one source publication's rows.
+func jointPublicationRows(p *storage.NativePublicationEvidence, seen map[string]bool) []JointIntervalRecord {
+	base := JointIntervalRecord{SchemaVersion: jointIntervalSchemaVersion, Timestamp: p.Timestamp.UTC(), WindowSeconds: p.WindowSeconds, SourceID: p.SourceID, SourceEpoch: p.SourceEpoch,
+		ExecutionGeneration: p.ExecutionGeneration, Sequence: p.Sequence}
+	return jointRows(base, p.Joint, p.Dimensions[storage.NativeJointDimension], nativePublicationIdentity(p), seen)
+}
+
+func jointRows(base JointIntervalRecord, joint *storage.NativeJointEvidence, tuples map[string]storage.NativeIntervalMetric, identity string, seen map[string]bool) []JointIntervalRecord {
 	if joint == nil || seen[identity] {
 		return nil
 	}
@@ -173,8 +192,10 @@ var errJointIntervalBudget = errors.New("joint interval archive budget exhausted
 
 // persistJointIntervalArchive writes joint_intervals_v4.jsonl and .parquet
 // after finalize for a run with a joint evidence projection. Rows come from
-// the run's persisted interval evidence, which neither history trimming,
-// terminal compaction nor a controller restart shortens. A publication the
+// the run's persisted interval evidence, which neither in-memory history
+// trimming, terminal compaction nor a controller restart shortens; the store
+// itself keeps a bounded number of interval rows per run, so a run that
+// reached that bound is marked truncated. A publication the
 // retained live history holds but the store lacks (a history write that
 // failed, or one still in flight) is added from the history, and the sidecar
 // is then marked truncated, since earlier writes may have failed too. Without
@@ -193,6 +214,12 @@ func (tr *TestRunner) persistJointIntervalArchive(ctx context.Context, test *Man
 	if test.LiveMetrics != nil && (len(history) == 0 || history[len(history)-1] != test.LiveMetrics) {
 		history = append(history, test.LiveMetrics)
 	}
+	// Batches accepted after the last published point, and the count of those
+	// dropped past the pending bound or released because no point of this
+	// controller would carry them (a sidecar written after that lacks them)
+	// (B5).
+	pending := append([]*storage.NativePublicationEvidence(nil), test.pendingJointPublications...)
+	pendingDropped, heldFromStart := test.jointPublicationsDropped, test.jointHeldFromStart
 	tr.mu.RUnlock()
 	budget, err := newEvidenceSidecarBudget(ctx, record, envArchiveJointIntervalsMaxBytes, 64<<20)
 	if err != nil {
@@ -215,7 +242,13 @@ func (tr *TestRunner) persistJointIntervalArchive(ctx context.Context, test *Man
 		}
 	}()
 	var count int64
-	truncated := reader == nil
+	// A distributed run (the manifest names its generator sources) that this
+	// controller did not hold from its start (adopted after a failover, or
+	// reloaded after a restart): the batches another controller held for its
+	// next point are unknown. The store keeps a bounded number of interval
+	// rows per run, so a run that reached that bound may have lost its oldest.
+	distributed := manifest.SourceCoverage != nil && len(manifest.SourceCoverage.Sources) > 0
+	truncated := reader == nil || pendingDropped > 0 || distributed && !heldFromStart || reader != nil && nativeEvidenceTrimmed(ctx, tr.testStore, test.ID)
 	err = writeArchiveArtifactDurableWithWriter(record.ArchivePath, jointIntervalsFileName, nil, 0600, func(file *os.File, _ []byte) (int, error) {
 		out := &archiveOutputFile{file: file, budget: budget}
 		emit := func(row JointIntervalRecord) error {
@@ -262,6 +295,12 @@ func (tr *TestRunner) persistJointIntervalArchive(ctx context.Context, test *Man
 				}
 			}
 		}
+		for _, p := range pending {
+			if err != nil {
+				break
+			}
+			err = emitAll(jointPublicationRows(p, seen))
+		}
 		if errors.Is(err, errJointIntervalBudget) {
 			truncated = true
 			err = nil
@@ -294,4 +333,15 @@ func (tr *TestRunner) persistJointIntervalArchive(ctx context.Context, test *Man
 	}
 	err = updateRunArchiveSingleArtifactIntegrity(record.ArchivePath, manifest, RunArchiveArtifact{Name: jointIntervalsParquetFileName, Kind: "evidence", Format: "parquet", RecordType: jointIntervalRecordType, Count: count})
 	return err
+}
+
+// nativeEvidenceTrimmed reports whether the run's persisted interval rows may
+// have been trimmed (or cannot be checked).
+func nativeEvidenceTrimmed(ctx context.Context, store any, testID string) bool {
+	retention, ok := store.(storage.NativeIntervalEvidenceRetention)
+	if !ok {
+		return false
+	}
+	trimmed, err := retention.NativeIntervalEvidenceTrimmed(ctx, testID)
+	return err != nil || trimmed
 }

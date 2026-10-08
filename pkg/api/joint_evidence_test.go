@@ -535,3 +535,431 @@ func TestJointEvidenceArchiveMatchesLocalWindowsAtStoreResolution(t *testing.T) 
 		t.Fatalf("local window archived %d times, truncated %v", manifest.JointIntervalCount, manifest.JointIntervalsTruncated)
 	}
 }
+
+// A distributed run publishes at most once a second, so most accepted
+// batches are only stored: each keeps its joint evidence until the next
+// installed point carries it, and the archive and the merged live query see
+// every source window (a restarted generator's windows too, by epoch).
+func TestJointEvidenceKeepsEveryAcceptedBatch(t *testing.T) {
+	runner, run, backend := newDistributedThresholdTestRunner(t)
+	run.JointEvidence = jointTestProjection.Clone()
+	start := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	batch := func(source, epoch string, sequence uint64) generatorrpc.MetricsBatch {
+		b := jointBatch(sequence, start.Add(time.Second), jointAggregate(jointKey("login", source, "3g"), 10, 20))
+		b.SourceEpoch, b.SourceEpochStartedUnixMs = epoch, start.UnixMilli()
+		return b
+	}
+	stored := []struct {
+		target string
+		batch  generatorrpc.MetricsBatch
+	}{
+		{"gen-a", batch("gen-a", "a1", 1)},
+		{"gen-b", batch("gen-b", "b1", 1)},
+		{"gen-c", batch("gen-c", "c1", 1)},
+		// gen-a restarted: a new epoch restarts its sequence.
+		{"gen-a", func() generatorrpc.MetricsBatch {
+			b := batch("gen-a", "a2", 1)
+			b.TimestampUnixMs, b.SourceEpochStartedUnixMs = start.Add(2*time.Second).UnixMilli(), start.Add(1500*time.Millisecond).UnixMilli()
+			return b
+		}()},
+	}
+	for _, s := range stored {
+		if !backend.storeRemoteMetricsBatchOnly(runner, run, s.target, s.batch) {
+			t.Fatalf("%s rejected", s.target)
+		}
+	}
+	runner.mu.Lock()
+	if len(run.pendingJointPublications) != 4 {
+		runner.mu.Unlock()
+		t.Fatalf("pending %d", len(run.pendingJointPublications))
+	}
+	// gen-c's batch is the one published; the point carries the others.
+	published := nativePublicationEvidence("gen-c", stored[2].batch, map[string]generatorrpc.MetricsBatch{"gen-a": stored[3].batch, "gen-b": stored[1].batch, "gen-c": stored[2].batch}, jointTestProjection)
+	others := takePendingJointPublicationsLocked(run, published)
+	left := len(run.pendingJointPublications)
+	runner.mu.Unlock()
+	if len(others) != 3 || left != 0 {
+		t.Fatalf("carried %d, left %d", len(others), left)
+	}
+	point := &LiveMetrics{Timestamp: start.Add(time.Second), NativeEvidence: &storage.NativeIntervalEvidence{Publication: published, JointPublications: others}}
+	rows := jointIntervalRows([]*LiveMetrics{point})
+	epochs := map[string]bool{}
+	for _, row := range rows {
+		epochs[row.SourceID+"/"+row.SourceEpoch] = true
+	}
+	if len(rows) != 4 || len(epochs) != 4 {
+		t.Fatalf("archived %d rows from %v", len(rows), epochs)
+	}
+	q := jointQuery()
+	q.Dimensions = []string{"name"}
+	out, err := buildNativeLiveEvidence(context.Background(), start, []*LiveMetrics{point}, q)
+	if err != nil || len(out.Series) != 1 || out.Series[0].Points[0].Count != 8 {
+		t.Fatalf("merged live joint query %+v %v", out.Series, err)
+	}
+}
+
+// Batches accepted after the last published point are archived from the
+// pending list; any dropped past its bound make the sidecar truncated.
+func TestJointEvidenceArchiveIncludesUnpublishedBatches(t *testing.T) {
+	start := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	pending := []*storage.NativePublicationEvidence{
+		jointPublicationEvidence("gen-a", jointBatch(7, start, jointAggregate(jointKey("login", "east", "3g"), 10)), jointTestProjection),
+		jointPublicationEvidence("gen-b", jointBatch(9, start, jointAggregate(jointKey("login", "west", "3g"), 10)), jointTestProjection),
+	}
+	tr := NewTestRunner(1, NewHub(), nil)
+	record, manifest := jointSidecarRecord(t, "joint-pending")
+	test := &ManagedTest{ID: "joint-pending", pendingJointPublications: pending}
+	if err := tr.persistJointIntervalArchive(context.Background(), test, record, manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.JointIntervalCount != 2 {
+		t.Fatalf("pending batches archived %d rows", manifest.JointIntervalCount)
+	}
+}
+
+// With the persisted evidence available, carried batches still held at
+// finalize complete the sidecar; batches dropped past the bound mark it
+// truncated.
+func TestJointEvidenceArchiveTruncatesDroppedBatches(t *testing.T) {
+	server, store := baselineTestServer(t)
+	start := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		id      string
+		dropped int64
+	}{{"joint-pending-kept", 0}, {"joint-pending-dropped", 3}} {
+		comparisonArchiveFixture(t, server, store, tc.id, 100, 100)
+		record := server.runner.archives[tc.id]
+		admitArchiveForTest(t, record)
+		manifest, err := loadRunArchiveManifestFromRecord(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		manifest.Provenance.JointEvidence = jointTestProjection.Clone()
+		test := &ManagedTest{ID: tc.id, jointPublicationsDropped: tc.dropped, pendingJointPublications: []*storage.NativePublicationEvidence{
+			jointPublicationEvidence("gen-a", jointBatch(7, start, jointAggregate(jointKey("login", "east", "3g"), 10)), jointTestProjection),
+		}}
+		if err := server.runner.persistJointIntervalArchive(context.Background(), test, record, manifest); err != nil {
+			t.Fatal(err)
+		}
+		if manifest.JointIntervalCount != 1 || manifest.JointIntervalsTruncated != (tc.dropped > 0) {
+			t.Fatalf("%s: %d rows, truncated %v", tc.id, manifest.JointIntervalCount, manifest.JointIntervalsTruncated)
+		}
+	}
+}
+
+// Through the real publication path, the installed point carries the joint
+// evidence of the batches accepted since the previous point (but not its
+// own), and the pending list is emptied.
+func TestJointEvidencePublishedPointCarriesPendingBatches(t *testing.T) {
+	runner, run, backend := newDistributedThresholdTestRunner(t)
+	run.JointEvidence = jointTestProjection.Clone()
+	runner.mu.Lock()
+	run.remoteClientsByTarget["gen-a"], run.remoteClientsByTarget["gen-b"] = nil, nil
+	delete(run.remoteClientsByTarget, "generator-a")
+	runner.mu.Unlock()
+	start := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	for _, target := range []string{"gen-a", "gen-b"} {
+		b := distributedP99Batch(run.ID, start.Add(time.Second).UnixMilli(), 20)
+		joint := jointBatch(1, start.Add(time.Second), jointAggregate(jointKey("login", target, "3g"), 10, 20))
+		b.ActionMetricsVersion, b.BatchSequence, b.ExecutionGeneration, b.JointMetrics, b.JointInfo = joint.ActionMetricsVersion, 1, joint.ExecutionGeneration, joint.JointMetrics, joint.JointInfo
+		b.SourceEpoch, b.SourceEpochStartedUnixMs = target+"-epoch", start.UnixMilli()
+		if !backend.storeRemoteMetricsBatchOnly(runner, run, target, b) {
+			t.Fatalf("%s rejected", target)
+		}
+	}
+	live, _, _, fresh, publication := backend.applyStoredRemoteMetricsBatch(runner, run, "gen-b")
+	if !fresh || live == nil {
+		t.Fatalf("the stored batch was not accepted: fresh %v", fresh)
+	}
+	backend.publishDistributedMetricsRevision(context.Background(), runner, run, live, publication)
+	runner.mu.RLock()
+	installed, left := run.LiveMetrics, len(run.pendingJointPublications)
+	runner.mu.RUnlock()
+	if installed == nil || installed.NativeEvidence == nil {
+		t.Fatal("no published point with native evidence was installed")
+	}
+	var carried []string
+	for _, p := range installed.NativeEvidence.JointPublications {
+		carried = append(carried, p.SourceID)
+	}
+	if left != 0 || len(carried) != 1 || carried[0] != "gen-a" {
+		t.Fatalf("published point carried %v (own %+v), %d left pending", carried, installed.NativeEvidence.Publication, left)
+	}
+}
+
+// The pending list is bounded by count and by estimated size; the oldest
+// batches go first and are counted.
+func TestJointEvidencePendingBatchesAreBounded(t *testing.T) {
+	start := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	test := &ManagedTest{ID: "bounded", JointEvidence: jointTestProjection.Clone()}
+	for i := 1; i <= maxPendingJointPublications+5; i++ {
+		rememberJointPublicationLocked(test, "gen-a", jointBatch(uint64(i), start.Add(time.Duration(i)*time.Second), jointAggregate(jointKey("login", "east", "3g"), 10)))
+	}
+	if len(test.pendingJointPublications) != maxPendingJointPublications || test.jointPublicationsDropped != 5 || test.pendingJointPublications[0].Sequence != 6 {
+		t.Fatalf("count bound: %d pending, %d dropped, oldest %d", len(test.pendingJointPublications), test.jointPublicationsDropped, test.pendingJointPublications[0].Sequence)
+	}
+	var sum int64
+	for _, p := range test.pendingJointPublications {
+		sum += jointPublicationBytes(p)
+	}
+	if sum != test.pendingJointBytes {
+		t.Fatalf("size accounting %d, want %d", test.pendingJointBytes, sum)
+	}
+
+	previous := maxPendingJointBytes
+	t.Cleanup(func() { maxPendingJointBytes = previous })
+	one := jointPublicationEvidence("gen-a", jointBatch(1, start, jointAggregate(jointKey("login", "east", "3g"), 10)), jointTestProjection)
+	maxPendingJointBytes = 3 * jointPublicationBytes(one)
+	sized := &ManagedTest{ID: "sized", JointEvidence: jointTestProjection.Clone()}
+	for i := 1; i <= 5; i++ {
+		rememberJointPublicationLocked(sized, "gen-a", jointBatch(uint64(i), start.Add(time.Duration(i)*time.Second), jointAggregate(jointKey("login", "east", "3g"), 10)))
+	}
+	if len(sized.pendingJointPublications) != 3 || sized.jointPublicationsDropped != 2 || sized.pendingJointBytes > maxPendingJointBytes {
+		t.Fatalf("size bound: %d pending (%d bytes), %d dropped", len(sized.pendingJointPublications), sized.pendingJointBytes, sized.jointPublicationsDropped)
+	}
+	if taken := takePendingJointPublicationsLocked(sized, nil); len(taken) != 3 || sized.pendingJointBytes != 0 {
+		t.Fatalf("taking the pending batches left %d bytes", sized.pendingJointBytes)
+	}
+}
+
+// A batch carried by one point that a later point publishes as its own (a
+// delayed flush) is one window: counted once live and archived once.
+func TestJointEvidenceCarriedBatchRepublishedOnce(t *testing.T) {
+	start := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	batches := map[string]generatorrpc.MetricsBatch{
+		"gen-a": jointBatch(4, start.Add(time.Second), jointAggregate(jointKey("login", "east", "3g"), 10, 20)),
+		"gen-b": jointBatch(9, start.Add(1500*time.Millisecond), jointAggregate(jointKey("login", "west", "3g"), 10, 20, 30)),
+	}
+	ownA := nativePublicationEvidence("gen-a", batches["gen-a"], batches, jointTestProjection)
+	ownB := nativePublicationEvidence("gen-b", batches["gen-b"], batches, jointTestProjection)
+	carriedB := jointPublicationEvidence("gen-b", batches["gen-b"], jointTestProjection)
+	history := []*LiveMetrics{
+		{Timestamp: start.Add(time.Second), NativeEvidence: &storage.NativeIntervalEvidence{Publication: ownA, JointPublications: []*storage.NativePublicationEvidence{carriedB}}},
+		{Timestamp: start.Add(1500 * time.Millisecond), NativeEvidence: &storage.NativeIntervalEvidence{Publication: ownB}},
+	}
+	q := jointQuery()
+	q.Dimensions = []string{"name"}
+	out, err := buildNativeLiveEvidence(context.Background(), start, history, q)
+	if err != nil || len(out.Series) != 1 || out.Series[0].Points[0].Count != 5 {
+		t.Fatalf("merged live joint query %+v %v", out.Series, err)
+	}
+	if rows := jointIntervalRows(history); len(rows) != 2 {
+		t.Fatalf("archived %d rows, want one per window", len(rows))
+	}
+}
+
+// A distributed run (its manifest names generator sources) that this
+// controller did not hold from its start cannot know what another controller
+// held for its next point: its sidecar is truncated, even with no rows. A run
+// held from its start, or a local run, is not. The batches stay held until
+// the archive is committed.
+func TestJointEvidenceArchiveAfterAdoption(t *testing.T) {
+	server, store := baselineTestServer(t)
+	start := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		id                         string
+		distributed, held, pending bool
+		rows                       int64
+		truncated                  bool
+	}{
+		{"joint-adopted-distributed", true, false, true, 1, true},
+		{"joint-adopted-no-rows", true, false, false, 0, true},
+		{"joint-held-distributed", true, true, true, 1, false},
+		{"joint-local", false, false, false, 1, false},
+	} {
+		comparisonArchiveFixture(t, server, store, tc.id, 100, 100)
+		record := server.runner.archives[tc.id]
+		admitArchiveForTest(t, record)
+		manifest, err := loadRunArchiveManifestFromRecord(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		manifest.Provenance.JointEvidence = jointTestProjection.Clone()
+		if tc.distributed {
+			manifest.SourceCoverage = &RunArchiveSourceCoverage{Mode: "distributed", Sources: []RunArchiveSource{{Target: "gen-a", Collected: true}}}
+		}
+		test := &ManagedTest{ID: tc.id, jointHeldFromStart: tc.held}
+		if tc.pending {
+			test.pendingJointPublications = []*storage.NativePublicationEvidence{
+				jointPublicationEvidence("gen-a", jointBatch(7, start, jointAggregate(jointKey("login", "east", "3g"), 10)), jointTestProjection),
+			}
+		} else if tc.rows > 0 {
+			test.History = []*LiveMetrics{{Timestamp: start, NativeEvidence: &storage.NativeIntervalEvidence{Version: 3, WindowSeconds: 1,
+				Dimensions: map[string]map[string]storage.NativeIntervalMetric{storage.NativeJointDimension: {jointKey("login", "east", "3g"): nativeBucketMetric(10, 20)}},
+				Joint:      &storage.NativeJointEvidence{Population: "action", Dimensions: jointTestProjection.Dimensions, Availability: "measured"}}}}
+			if err := store.SaveHistory(tc.id, start, test.History[0]); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := server.runner.persistJointIntervalArchive(context.Background(), test, record, manifest); err != nil {
+			t.Fatal(err)
+		}
+		if manifest.JointIntervalCount != tc.rows || manifest.JointIntervalsTruncated != tc.truncated {
+			t.Fatalf("%s: %d rows, truncated %v", tc.id, manifest.JointIntervalCount, manifest.JointIntervalsTruncated)
+		}
+		if tc.pending && len(test.pendingJointPublications) != 1 {
+			t.Fatalf("%s: the batches were released before the archive was committed", tc.id)
+		}
+	}
+	// Committing the archive releases the batches held for it and counts them
+	// as dropped, so a sidecar written only later (its first write failed,
+	// then a refresh) is marked truncated.
+	comparisonArchiveFixture(t, server, store, "joint-commit", 100, 100)
+	record := server.runner.archives["joint-commit"]
+	admitArchiveForTest(t, record)
+	run := &ManagedTest{ID: "joint-commit", Status: "COMPLETE", jointHeldFromStart: true, pendingJointBytes: 300,
+		pendingJointPublications: []*storage.NativePublicationEvidence{jointPublicationEvidence("gen-a", jointBatch(7, start, jointAggregate(jointKey("login", "east", "3g"), 10)), jointTestProjection)}}
+	server.runner.mu.Lock()
+	server.runner.tests[run.ID] = run
+	server.runner.mu.Unlock()
+	server.runner.attachFinalizedRunArchive(run.ID, record, nil)
+	server.runner.mu.RLock()
+	released := run.pendingJointPublications == nil && run.pendingJointBytes == 0 && run.jointPublicationsDropped == 1
+	server.runner.mu.RUnlock()
+	if !released {
+		t.Fatal("committing the archive kept or did not count the batches")
+	}
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Provenance.JointEvidence = jointTestProjection.Clone()
+	if err := server.runner.persistJointIntervalArchive(context.Background(), run, record, manifest); err != nil {
+		t.Fatal(err)
+	}
+	if !manifest.JointIntervalsTruncated {
+		t.Fatal("a sidecar written after the held batches were released is not marked truncated")
+	}
+	// A run that held nothing at commit (a local run) releases nothing, so a
+	// sidecar written later is complete.
+	comparisonArchiveFixture(t, server, store, "joint-commit-local", 100, 100)
+	localRecord := server.runner.archives["joint-commit-local"]
+	admitArchiveForTest(t, localRecord)
+	local := &ManagedTest{ID: "joint-commit-local", Status: "COMPLETE"}
+	server.runner.mu.Lock()
+	server.runner.tests[local.ID] = local
+	server.runner.mu.Unlock()
+	server.runner.attachFinalizedRunArchive(local.ID, localRecord, nil)
+	localManifest, err := loadRunArchiveManifestFromRecord(localRecord)
+	if err != nil {
+		t.Fatal(err)
+	}
+	localManifest.Provenance.JointEvidence = jointTestProjection.Clone()
+	if err := server.runner.persistJointIntervalArchive(context.Background(), local, localRecord, localManifest); err != nil {
+		t.Fatal(err)
+	}
+	if local.jointPublicationsDropped != 0 || localManifest.JointIntervalsTruncated {
+		t.Fatalf("a run that held nothing: dropped %d, truncated %v", local.jointPublicationsDropped, localManifest.JointIntervalsTruncated)
+	}
+}
+
+// A distributed start whose RUNNING save is refused (the lease moved to a
+// successor) rolls back, and the run is not held from its start.
+func TestJointEvidenceDistributedStartRollbackClearsTheHold(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	leadership := newExecutionLeadership(store, "joint-controller")
+	leadership.tick()
+	runner := NewTestRunner(1, NewHub(), store, WithExecutionLeadership(leadership))
+	token := leadership.executionFenceToken()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	test := &ManagedTest{ID: "joint-rollback", Name: "Joint rollback", Status: "INITIALIZING", ProjectID: storage.DefaultProjectID, CreatedAt: time.Now().UTC(),
+		Groups: []TestGroup{{Name: "buyers", VUsers: 1}}, executionCtx: ctx, cancel: cancel, executionFence: token}
+	if err := runner.saveManagedTestRecord(test); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	runner.mu.Lock()
+	runner.tests[test.ID] = test
+	runner.mu.Unlock()
+	if err := store.ReleaseSchedulerLease(executionLeaseName, token); err != nil {
+		t.Fatal(err)
+	}
+	successor := newExecutionLeadership(store, "joint-successor")
+	successor.tick()
+	defer successor.relinquish()
+	backend := &distributedExecutionBackend{}
+	started, _, err := backend.prepareDistributedTestRun(runner, test, nil, map[string]generatorClient{"gen-a": nil}, nil)
+	if started || err == nil {
+		t.Fatalf("a fenced start was accepted: started %v err %v", started, err)
+	}
+	runner.mu.RLock()
+	held := test.jointHeldFromStart
+	runner.mu.RUnlock()
+	if held {
+		t.Fatal("a rolled-back start left the run held from its start")
+	}
+}
+
+// A run's history reached the store's retention cap (its oldest rows may be
+// trimmed): both distribution sidecars read from that store say so.
+func TestJointEvidenceArchiveTruncatedAtTheHistoryCap(t *testing.T) {
+	server, store := baselineTestServer(t)
+	start := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	comparisonArchiveFixture(t, server, store, "joint-capped", 100, 100)
+	record := server.runner.archives["joint-capped"]
+	admitArchiveForTest(t, record)
+	evidence := &storage.NativeIntervalEvidence{Version: 3, WindowSeconds: 1,
+		Dimensions: map[string]map[string]storage.NativeIntervalMetric{storage.NativeJointDimension: {jointKey("login", "east", "3g"): nativeBucketMetric(10, 20)}, "transaction": {"Purchase": nativeBucketMetric(10, 20)}},
+		Joint:      &storage.NativeJointEvidence{Population: "action", Dimensions: jointTestProjection.Dimensions, Availability: "measured"}}
+	if err := store.SaveHistory("joint-capped", start, &LiveMetrics{Timestamp: start, NativeEvidence: evidence}); err != nil {
+		t.Fatal(err)
+	}
+	persist := func(test *ManagedTest) *RunArchiveManifest {
+		manifest, err := loadRunArchiveManifestFromRecord(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		manifest.Provenance.JointEvidence = jointTestProjection.Clone()
+		if err := server.runner.persistJointIntervalArchive(context.Background(), test, record, manifest); err != nil {
+			t.Fatal(err)
+		}
+		return manifest
+	}
+	if manifest := persist(&ManagedTest{ID: "joint-capped"}); manifest.JointIntervalsTruncated {
+		t.Fatal("a run below the cap was marked truncated")
+	}
+	server.runner.testStore = cappedHistoryStore{store}
+	manifest := persist(&ManagedTest{ID: "joint-capped"})
+	if !manifest.JointIntervalsTruncated {
+		t.Fatal("a run at the history cap was not marked truncated")
+	}
+	if err := server.runner.persistIntervalDistributionArchive(context.Background(), "joint-capped", record, manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.IntervalDistributionCount == 0 || !manifest.IntervalDistributionsTruncated {
+		t.Fatalf("interval distributions at the history cap: %d, truncated %v", manifest.IntervalDistributionCount, manifest.IntervalDistributionsTruncated)
+	}
+}
+
+// cappedHistoryStore reports every run's history as having reached the cap.
+type cappedHistoryStore struct{ *storage.SQLiteStore }
+
+func (cappedHistoryStore) NativeIntervalEvidenceTrimmed(context.Context, string) (bool, error) {
+	return true, nil
+}
+
+// Starting a distributed run marks it held from its start.
+func TestJointEvidenceDistributedStartHoldsTheRun(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	test := &ManagedTest{ID: "joint-start", Status: "INITIALIZING", Groups: []TestGroup{{Name: "buyers", VUsers: 1}}, executionCtx: ctx, cancel: cancel}
+	runner.mu.Lock()
+	runner.tests[test.ID] = test
+	runner.mu.Unlock()
+	backend := &distributedExecutionBackend{}
+	started, _, err := backend.prepareDistributedTestRun(runner, test, nil, map[string]generatorClient{"gen-a": nil}, nil)
+	if err != nil || !started {
+		t.Fatalf("start: %v %v", started, err)
+	}
+	runner.mu.RLock()
+	held := test.jointHeldFromStart
+	runner.mu.RUnlock()
+	if !held {
+		t.Fatal("a started distributed run is not held from its start")
+	}
+}

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -121,9 +122,25 @@ func (c *ApiClient) downloadBrowserHAR(ctx context.Context, path, output string,
 	}
 	httpClient.Timeout = 0
 	downloader.Client = &httpClient
-	res, err := downloader.doContext(ctx, http.MethodGet, path, nil, "")
-	if err != nil {
-		return err
+	var res *http.Response
+	for attempt := 1; ; attempt++ {
+		var err error
+		res, err = downloader.doContext(ctx, http.MethodGet, path, nil, "")
+		if err != nil {
+			return err
+		}
+		// A replay that was just stopped is still closing its browser: the
+		// controller answers 409 with Retry-After until its HAR is final.
+		wait, retry := browserHARRetryAfter(res)
+		if !retry || attempt >= browserHARDownloadRetries {
+			break
+		}
+		_ = res.Body.Close()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(wait):
+		}
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
@@ -145,4 +162,21 @@ func (c *ApiClient) downloadBrowserHAR(ctx context.Context, path, output string,
 	}
 	_, err = fmt.Fprintf(out, "wrote %d bytes to %s (fidelity %s)\n", written, output, firstNonEmptyCLI(res.Header.Get("X-APEXLoad-HAR-Fidelity"), "evidence"))
 	return err
+}
+
+// browserHARDownloadRetries bounds the requests for a replay download that
+// is not ready yet (the first one included).
+const browserHARDownloadRetries = 10
+
+// browserHARRetryAfter reports whether a response asks for a retry (409 with
+// Retry-After) and how long to wait, at most 10 seconds.
+func browserHARRetryAfter(res *http.Response) (time.Duration, bool) {
+	if res.StatusCode != http.StatusConflict {
+		return 0, false
+	}
+	seconds, err := strconv.Atoi(strings.TrimSpace(res.Header.Get("Retry-After")))
+	if err != nil || seconds < 0 {
+		return 0, false
+	}
+	return min(time.Duration(seconds)*time.Second, 10*time.Second), true
 }

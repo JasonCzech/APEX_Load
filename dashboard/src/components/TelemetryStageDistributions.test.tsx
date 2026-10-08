@@ -46,7 +46,7 @@ describe('TelemetryStageDistributions', () => {
     expect(stageCoverageNote([stage(at(STAGE_ADOPTION_SLACK_MS))], started)).toBe('')
     expect(stageCoverageNote([stage(at(STAGE_ADOPTION_SLACK_MS + 1))], started)).toMatch(/took over the run/)
     expect(stageCoverageNote([stage(at(10 * 60_000))])).toBe('')
-    expect(stageCoverageNote([stage(undefined, 'recorder_lost')], started)).toMatch(/did not sample the run/)
+    expect(stageCoverageNote([stage(undefined, 'recorder_lost')], started)).toMatch(/holds no stage samples for the run/)
     const container = document.createElement('div')
     const root = createRoot(container)
     act(() => {

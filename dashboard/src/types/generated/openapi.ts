@@ -34442,6 +34442,7 @@ export interface operations {
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
                   "joint"?: (Record<string, unknown>) | null;
+                  "joint_publications"?: Array<(Record<string, unknown>) | null>;
                   "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
@@ -34930,6 +34931,7 @@ export interface operations {
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
                   "joint"?: (Record<string, unknown>) | null;
+                  "joint_publications"?: Array<(Record<string, unknown>) | null>;
                   "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
@@ -42152,6 +42154,7 @@ export interface operations {
                   "reason"?: string;
                   "unavailable_sources"?: number;
                 }) | null;
+                "joint_publications"?: Array<(Record<string, unknown>) | null>;
                 "publication"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "execution_generation": number;
@@ -42159,6 +42162,7 @@ export interface operations {
                   "incomplete"?: boolean;
                   "joint"?: (Record<string, unknown>) | null;
                   "sequence": number;
+                  "source_epoch"?: string;
                   "source_id": string;
                   "timestamp": string;
                   "version": number;
@@ -43264,6 +43268,19 @@ export interface operations {
                   "reason"?: string;
                   "unavailable_sources"?: number;
                 }) | null;
+                "joint_publications"?: Array<({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "execution_generation": number;
+                  "expected_sources": Array<string>;
+                  "incomplete"?: boolean;
+                  "joint"?: (Record<string, unknown>) | null;
+                  "sequence": number;
+                  "source_epoch"?: string;
+                  "source_id": string;
+                  "timestamp": string;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null>;
                 "publication"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "execution_generation": number;
@@ -43271,6 +43288,7 @@ export interface operations {
                   "incomplete"?: boolean;
                   "joint"?: (Record<string, unknown>) | null;
                   "sequence": number;
+                  "source_epoch"?: string;
                   "source_id": string;
                   "timestamp": string;
                   "version": number;
@@ -50257,7 +50275,22 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -50276,7 +50309,9 @@ export interface operations {
     requestBody?: never;
     responses: {
       "200": {
-        content?: never;
+        content: {
+          "application/json": unknown;
+        };
       };
       "401": {
         content: {
@@ -50284,6 +50319,26 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -59433,6 +59488,7 @@ export interface operations {
                   "reason"?: string;
                   "unavailable_sources"?: number;
                 }) | null;
+                "joint_publications"?: Array<(Record<string, unknown>) | null>;
                 "publication"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "execution_generation": number;
@@ -59440,6 +59496,7 @@ export interface operations {
                   "incomplete"?: boolean;
                   "joint"?: (Record<string, unknown>) | null;
                   "sequence": number;
+                  "source_epoch"?: string;
                   "source_id": string;
                   "timestamp": string;
                   "version": number;
@@ -60541,6 +60598,19 @@ export interface operations {
                   "reason"?: string;
                   "unavailable_sources"?: number;
                 }) | null;
+                "joint_publications"?: Array<({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "execution_generation": number;
+                  "expected_sources": Array<string>;
+                  "incomplete"?: boolean;
+                  "joint"?: (Record<string, unknown>) | null;
+                  "sequence": number;
+                  "source_epoch"?: string;
+                  "source_id": string;
+                  "timestamp": string;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null>;
                 "publication"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "execution_generation": number;
@@ -60548,6 +60618,7 @@ export interface operations {
                   "incomplete"?: boolean;
                   "joint"?: (Record<string, unknown>) | null;
                   "sequence": number;
+                  "source_epoch"?: string;
                   "source_id": string;
                   "timestamp": string;
                   "version": number;
@@ -63347,6 +63418,7 @@ export interface operations {
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
                   "joint"?: (Record<string, unknown>) | null;
+                  "joint_publications"?: Array<(Record<string, unknown>) | null>;
                   "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
@@ -63835,6 +63907,7 @@ export interface operations {
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
                   "joint"?: (Record<string, unknown>) | null;
+                  "joint_publications"?: Array<(Record<string, unknown>) | null>;
                   "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
@@ -65340,12 +65413,22 @@ export interface operations {
           }) | null;
         };
       };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "401": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -78001,6 +78084,7 @@ export interface operations {
                   "reason"?: string;
                   "unavailable_sources"?: number;
                 }) | null;
+                "joint_publications"?: Array<(Record<string, unknown>) | null>;
                 "publication"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "execution_generation": number;
@@ -78008,6 +78092,7 @@ export interface operations {
                   "incomplete"?: boolean;
                   "joint"?: (Record<string, unknown>) | null;
                   "sequence": number;
+                  "source_epoch"?: string;
                   "source_id": string;
                   "timestamp": string;
                   "version": number;
@@ -79113,6 +79198,19 @@ export interface operations {
                   "reason"?: string;
                   "unavailable_sources"?: number;
                 }) | null;
+                "joint_publications"?: Array<({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "execution_generation": number;
+                  "expected_sources": Array<string>;
+                  "incomplete"?: boolean;
+                  "joint"?: (Record<string, unknown>) | null;
+                  "sequence": number;
+                  "source_epoch"?: string;
+                  "source_id": string;
+                  "timestamp": string;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null>;
                 "publication"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "execution_generation": number;
@@ -79120,6 +79218,7 @@ export interface operations {
                   "incomplete"?: boolean;
                   "joint"?: (Record<string, unknown>) | null;
                   "sequence": number;
+                  "source_epoch"?: string;
                   "source_id": string;
                   "timestamp": string;
                   "version": number;
@@ -98926,6 +99025,7 @@ export interface operations {
                   "reason"?: string;
                   "unavailable_sources"?: number;
                 }) | null;
+                "joint_publications"?: Array<(Record<string, unknown>) | null>;
                 "publication"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "execution_generation": number;
@@ -98933,6 +99033,7 @@ export interface operations {
                   "incomplete"?: boolean;
                   "joint"?: (Record<string, unknown>) | null;
                   "sequence": number;
+                  "source_epoch"?: string;
                   "source_id": string;
                   "timestamp": string;
                   "version": number;
@@ -100038,6 +100139,19 @@ export interface operations {
                   "reason"?: string;
                   "unavailable_sources"?: number;
                 }) | null;
+                "joint_publications"?: Array<({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "execution_generation": number;
+                  "expected_sources": Array<string>;
+                  "incomplete"?: boolean;
+                  "joint"?: (Record<string, unknown>) | null;
+                  "sequence": number;
+                  "source_epoch"?: string;
+                  "source_id": string;
+                  "timestamp": string;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null>;
                 "publication"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "execution_generation": number;
@@ -100045,6 +100159,7 @@ export interface operations {
                   "incomplete"?: boolean;
                   "joint"?: (Record<string, unknown>) | null;
                   "sequence": number;
+                  "source_epoch"?: string;
                   "source_id": string;
                   "timestamp": string;
                   "version": number;
@@ -114372,6 +114487,7 @@ export interface operations {
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
                   "joint"?: (Record<string, unknown>) | null;
+                  "joint_publications"?: Array<(Record<string, unknown>) | null>;
                   "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
@@ -114860,6 +114976,7 @@ export interface operations {
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
                   "joint"?: (Record<string, unknown>) | null;
+                  "joint_publications"?: Array<(Record<string, unknown>) | null>;
                   "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
@@ -116253,6 +116370,7 @@ export interface operations {
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
                   "joint"?: (Record<string, unknown>) | null;
+                  "joint_publications"?: Array<(Record<string, unknown>) | null>;
                   "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
@@ -116741,6 +116859,7 @@ export interface operations {
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
                   "joint"?: (Record<string, unknown>) | null;
+                  "joint_publications"?: Array<(Record<string, unknown>) | null>;
                   "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
@@ -118134,6 +118253,7 @@ export interface operations {
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
                   "joint"?: (Record<string, unknown>) | null;
+                  "joint_publications"?: Array<(Record<string, unknown>) | null>;
                   "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
@@ -118622,6 +118742,7 @@ export interface operations {
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
                   "joint"?: (Record<string, unknown>) | null;
+                  "joint_publications"?: Array<(Record<string, unknown>) | null>;
                   "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
@@ -120015,6 +120136,7 @@ export interface operations {
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
                   "joint"?: (Record<string, unknown>) | null;
+                  "joint_publications"?: Array<(Record<string, unknown>) | null>;
                   "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
@@ -120503,6 +120625,7 @@ export interface operations {
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
                   "joint"?: (Record<string, unknown>) | null;
+                  "joint_publications"?: Array<(Record<string, unknown>) | null>;
                   "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
@@ -121896,6 +122019,7 @@ export interface operations {
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
                   "joint"?: (Record<string, unknown>) | null;
+                  "joint_publications"?: Array<(Record<string, unknown>) | null>;
                   "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
@@ -122384,6 +122508,7 @@ export interface operations {
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "incomplete"?: boolean;
                   "joint"?: (Record<string, unknown>) | null;
+                  "joint_publications"?: Array<(Record<string, unknown>) | null>;
                   "publication"?: (Record<string, unknown>) | null;
                   "version": number;
                   "window_seconds": number;
@@ -124831,6 +124956,11 @@ export interface operations {
         };
       };
       "429": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -147027,6 +147157,7 @@ export interface operations {
                   "reason"?: string;
                   "unavailable_sources"?: number;
                 }) | null;
+                "joint_publications"?: Array<(Record<string, unknown>) | null>;
                 "publication"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "execution_generation": number;
@@ -147034,6 +147165,7 @@ export interface operations {
                   "incomplete"?: boolean;
                   "joint"?: (Record<string, unknown>) | null;
                   "sequence": number;
+                  "source_epoch"?: string;
                   "source_id": string;
                   "timestamp": string;
                   "version": number;
@@ -148139,6 +148271,19 @@ export interface operations {
                   "reason"?: string;
                   "unavailable_sources"?: number;
                 }) | null;
+                "joint_publications"?: Array<({
+                  "dimensions": Record<string, Record<string, Record<string, unknown>>>;
+                  "execution_generation": number;
+                  "expected_sources": Array<string>;
+                  "incomplete"?: boolean;
+                  "joint"?: (Record<string, unknown>) | null;
+                  "sequence": number;
+                  "source_epoch"?: string;
+                  "source_id": string;
+                  "timestamp": string;
+                  "version": number;
+                  "window_seconds": number;
+                }) | null>;
                 "publication"?: ({
                   "dimensions": Record<string, Record<string, Record<string, unknown>>>;
                   "execution_generation": number;
@@ -148146,6 +148291,7 @@ export interface operations {
                   "incomplete"?: boolean;
                   "joint"?: (Record<string, unknown>) | null;
                   "sequence": number;
+                  "source_epoch"?: string;
                   "source_id": string;
                   "timestamp": string;
                   "version": number;

@@ -138,6 +138,12 @@ func (s *Server) handleDownloadRunArchive(w http.ResponseWriter, r *http.Request
 	filename := fmt.Sprintf("%s-%s.zip", sanitizeFilename(test.Name), id)
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	if includeHAR {
+		// The same path serves the viewer-safe export; never let a cache
+		// replay the editor-only one, which embeds scrubbed response content.
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Add("Vary", "Cookie, Authorization")
+	}
 	clearArchiveWriteDeadline(w)
 	http.ServeContent(w, r, filename, record.CompletedAt.UTC(), staged.File)
 }

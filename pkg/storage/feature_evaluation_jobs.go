@@ -41,6 +41,11 @@ const (
 	EvaluationFailureAttemptsExhausted = "attempts_exhausted"
 )
 
+// EvaluationSubjectRequestedSuffix marks the subject of an evaluation of a
+// run under a named revision (the run's ID plus this suffix), which is never
+// the run's own result. A run's deletion removes both subjects' jobs.
+const EvaluationSubjectRequestedSuffix = "#requested"
+
 // EvaluationJob is one bounded analytical evaluation (browser intelligence,
 // telemetry acceptance, derived analysis, export) with its frozen inputs.
 type EvaluationJob struct {

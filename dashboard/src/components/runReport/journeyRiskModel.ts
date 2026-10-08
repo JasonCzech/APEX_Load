@@ -73,7 +73,7 @@ export function journeyIncompleteText(reasons?: string[]): string {
 const unscoredReasons: Record<string, string> = {
   no_weighted_eligible_attempts: 'Unscored: no weighted journey reached an outcome.',
   no_weighted_steps: 'Unscored: no weighted journey recorded a step.',
-  accounting_incomplete: 'Unscored: the accounting is incomplete (tracking bounds were reached).',
+  accounting_incomplete: 'Unscored: the accounting is incomplete.',
 }
 
 export function journeyUnavailableText(reason?: string): string {

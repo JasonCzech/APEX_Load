@@ -170,3 +170,102 @@ func jointEvidenceFromEngine(snapshot *engine.JointMetricsSnapshot, window time.
 	}
 	return &engine.JointProjection{Population: snapshot.Population, Dimensions: append([]string(nil), snapshot.Dimensions...)}, tuples, other, snapshot.OmittedTuples, snapshot.Incomplete
 }
+
+// The source batches whose joint evidence waits for the next published point
+// are bounded by count and by their estimated in-memory size; the oldest are
+// dropped (and counted) first.
+const maxPendingJointPublications = 1024
+
+// maxPendingJointBytes is a variable so tests can bound by size.
+var maxPendingJointBytes int64 = 64 << 20
+
+// jointPublicationBytes estimates a pending publication's in-memory size:
+// its tuple keys, metrics and digest centroids.
+func jointPublicationBytes(p *storage.NativePublicationEvidence) int64 {
+	if p == nil {
+		return 0
+	}
+	size := int64(256 + len(p.SourceID) + len(p.SourceEpoch))
+	for key, metric := range p.Dimensions[storage.NativeJointDimension] {
+		size += int64(len(key)) + 160
+		if metric.DurationDigest != nil {
+			size += int64(len(metric.DurationDigest.Centroids)) * 16
+		}
+	}
+	if p.Joint != nil && p.Joint.Other != nil && p.Joint.Other.DurationDigest != nil {
+		size += int64(len(p.Joint.Other.DurationDigest.Centroids)) * 16
+	}
+	return size
+}
+
+// nativePublicationIdentity identifies one source window across retained
+// and persisted evidence.
+func nativePublicationIdentity(p *storage.NativePublicationEvidence) string {
+	return fmt.Sprintf("%s/%s/%d/%d", p.SourceID, p.SourceEpoch, p.ExecutionGeneration, p.Sequence)
+}
+
+// jointPublicationEvidence is one accepted source batch's joint evidence
+// alone, kept until the next published point carries it.
+func jointPublicationEvidence(source string, batch generatorrpc.MetricsBatch, projection *engine.JointProjection) *storage.NativePublicationEvidence {
+	evidence := &storage.NativeIntervalEvidence{Dimensions: map[string]map[string]storage.NativeIntervalMetric{}}
+	published, tuples, other, omitted, incomplete := jointEvidenceFromBatch(batch)
+	lost := batch.Telemetry != nil && (batch.Telemetry.DroppedResults > 0 || batch.Telemetry.DroppedSubscriberBatches > 0 || batch.Telemetry.MissingMetricWindows > 0)
+	setNativeJointEvidence(evidence, projection, published, tuples, other, omitted, incomplete || lost)
+	dimensions := map[string]map[string]storage.NativeIntervalMetric{}
+	if values, ok := evidence.Dimensions[storage.NativeJointDimension]; ok {
+		dimensions[storage.NativeJointDimension] = values
+	}
+	return &storage.NativePublicationEvidence{SourceID: source, SourceEpoch: batch.SourceEpoch, Sequence: batch.BatchSequence, ExecutionGeneration: batch.ExecutionGeneration,
+		Timestamp: time.UnixMilli(batch.TimestampUnixMs).UTC(), Version: int(batch.ActionMetricsVersion), WindowSeconds: batchWindowSeconds(batch.WindowMs), Dimensions: dimensions, Joint: evidence.Joint}
+}
+
+// rememberJointPublicationLocked keeps an accepted batch's joint evidence
+// for the next published point; tr.mu is held.
+func rememberJointPublicationLocked(test *ManagedTest, source string, batch generatorrpc.MetricsBatch) {
+	projection := runJointProjection(test)
+	if projection == nil || batch.BatchSequence == 0 {
+		return
+	}
+	p := jointPublicationEvidence(source, batch, projection)
+	size := jointPublicationBytes(p)
+	for len(test.pendingJointPublications) > 0 && (len(test.pendingJointPublications) >= maxPendingJointPublications || test.pendingJointBytes+size > maxPendingJointBytes) {
+		test.pendingJointBytes -= jointPublicationBytes(test.pendingJointPublications[0])
+		test.pendingJointPublications[0] = nil
+		test.pendingJointPublications = test.pendingJointPublications[1:]
+		test.jointPublicationsDropped++
+	}
+	test.pendingJointPublications = append(test.pendingJointPublications, p)
+	test.pendingJointBytes += size
+}
+
+// releaseHeldJointPublicationsLocked drops the batches held for the run's
+// joint sidecar once no point of this controller will carry them (its archive
+// was committed, will not be, or another controller holds the run), counting
+// them as dropped so a sidecar written without them is marked truncated;
+// tr.mu is held.
+func releaseHeldJointPublicationsLocked(test *ManagedTest) {
+	test.jointPublicationsDropped += int64(len(test.pendingJointPublications))
+	test.pendingJointPublications, test.pendingJointBytes = nil, 0
+}
+
+// takePendingJointPublicationsLocked hands the pending joint evidence to the
+// point being installed (tr.mu is held), leaving out the published batch
+// itself, which the point carries in full.
+func takePendingJointPublicationsLocked(test *ManagedTest, published *storage.NativePublicationEvidence) []*storage.NativePublicationEvidence {
+	pending := test.pendingJointPublications
+	test.pendingJointPublications, test.pendingJointBytes = nil, 0
+	out := make([]*storage.NativePublicationEvidence, 0, len(pending))
+	for _, p := range pending {
+		if published != nil {
+			if nativePublicationIdentity(p) == nativePublicationIdentity(published) {
+				continue
+			}
+			p.ExpectedSources = append([]string(nil), published.ExpectedSources...)
+		}
+		out = append(out, p)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}

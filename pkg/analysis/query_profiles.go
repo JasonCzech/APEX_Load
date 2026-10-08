@@ -7,14 +7,17 @@ import "slices"
 // aggregations are intersected with AllowedAggregations. Required evidence must
 // still be captured and qualified for the selected run before execution.
 type NativeQueryProfile struct {
-	ID                  string   `json:"id"`
-	Population          string   `json:"population"`
-	EvidenceMode        string   `json:"evidence_mode"`
-	LiveBucketMode      string   `json:"live_bucket_mode,omitempty"`
-	Grouping            string   `json:"grouping,omitempty"`
-	AllowedFilters      []string `json:"allowed_filters"`
-	RequiredFilters     []string `json:"required_filters,omitempty"`
-	PropertyMode        string   `json:"property_mode"` // disabled, optional_exact, required_category
+	ID              string   `json:"id"`
+	Population      string   `json:"population"`
+	EvidenceMode    string   `json:"evidence_mode"`
+	LiveBucketMode  string   `json:"live_bucket_mode,omitempty"`
+	Grouping        string   `json:"grouping,omitempty"`
+	AllowedFilters  []string `json:"allowed_filters"`
+	RequiredFilters []string `json:"required_filters,omitempty"`
+	// PropertyMode is disabled, optional_exact, required_category, or (joint
+	// evidence v4) projected_category: one property:<category> the run's
+	// projection names may be grouped by or filtered on like a dimension.
+	PropertyMode        string   `json:"property_mode"`
 	AllowedAggregations []string `json:"allowed_aggregations"`
 	RequiredEvidence    []string `json:"required_evidence"`
 	MaxSeries           int      `json:"max_series"`
@@ -31,8 +34,8 @@ type NativeQueryProfile struct {
 }
 
 // JointEvidenceDimensions are the dimensions a joint evidence v4
-// projection may name besides one property:<category>; they match the
-// engine's.
+// projection may name besides one property:<category> (PropertyMode
+// projected_category); they match the engine's.
 var JointEvidenceDimensions = []string{"name", "protocol", "group", "region", "dependency", "page", "hierarchy", "phase", "network_profile", "browser_profile", "browser_engine", "browser_platform"}
 
 func nativeQueryProfiles() []NativeQueryProfile {
@@ -105,7 +108,7 @@ func nativeQueryProfiles() []NativeQueryProfile {
 	// Joint evidence v4: up to three dimensions of the run's projection.
 	for _, population := range []string{PopulationAction, PopulationTransaction} {
 		before := len(profiles)
-		add(population, "live", "merged", "projected", "disabled", JointEvidenceDimensions, nil, "native_joint_evidence.v4")
+		add(population, "live", "merged", "projected", "projected_category", JointEvidenceDimensions, nil, "native_joint_evidence.v4")
 		profile := &profiles[before]
 		profile.ID += "/joint_v4"
 		profile.JointEvidence, profile.GroupingDimensions, profile.MaxGroupingDimensions = true, slices.Clone(JointEvidenceDimensions), 3

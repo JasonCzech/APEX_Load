@@ -1,4 +1,4 @@
-import { apiFetch, request } from '../apiClient'
+import { ApiError, apiFetch, REQUEST_ID_HEADER, request } from '../apiClient'
 import { downloadBlob, downloadFilenameFromDisposition } from '../../utils/fileUtils'
 
 /** One downloadable HAR of a run archive (native, or synthetic and derived on request). */
@@ -41,7 +41,9 @@ async function saveDownload(path: string, fallbackName: string) {
   const response = await apiFetch(path, { timeoutMs: harDownloadTimeoutMs, cache: 'no-store' })
   if (!response.ok) {
     const body = await response.json().catch(() => ({ error: response.statusText })) as { error?: string }
-    throw new Error(body.error || response.statusText || `Download failed (${response.status})`)
+    // An ApiError carries the server's reference, so a failed download can be
+    // reported like any other request.
+    throw new ApiError(body.error || response.statusText || `Download failed (${response.status})`, response.status, body, response.headers.get(REQUEST_ID_HEADER))
   }
   const blob = await response.blob()
   await downloadBlob(blob, downloadFilenameFromDisposition(response.headers.get('Content-Disposition'), fallbackName))

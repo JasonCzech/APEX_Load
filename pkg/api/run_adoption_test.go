@@ -265,12 +265,18 @@ func TestKnownCompletedGeneratorSurvivesAnotherAdoption(t *testing.T) {
 	checkpoint.ArchiveTargets = []string{"retired:9091"}
 	encoded, _ := json.Marshal(checkpoint)
 	setStoredAdoptionTestCheckpoint(t, runner, store, test, string(encoded))
+	// This controller once started the run (a standby that led it before):
+	// after another controller held it, its unpublished batches are unknown.
+	test.jointHeldFromStart = true
 	runner.tests[test.ID] = test
 	if err := runner.adoptOrphanedRuns(); err != nil {
 		t.Fatal(err)
 	}
 	if test.adoptedResume == nil || test.adoptedResume.finishStatus != "" || len(test.adoptedResume.completed) != 1 || len(test.remoteArchiveClientsByTarget) != 1 {
 		t.Fatalf("known completed participants were re-adopted or lost: %+v", test.adoptedResume)
+	}
+	if test.jointHeldFromStart {
+		t.Fatal("an adopted run is still held from its start")
 	}
 	checkpoint, _, _ = decodeRunContinuityCheckpoint(test.continuityCheckpoint)
 	if len(checkpoint.CompletedTargets) != 1 || len(checkpoint.ArchiveTargets) != 1 {

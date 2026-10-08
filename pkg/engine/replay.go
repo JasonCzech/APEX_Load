@@ -28,13 +28,15 @@ type ReplayOptions struct {
 	SecretResolver  SecretResolver
 	IgnoreThinkTime bool
 	// RecordHAR records a native HAR of a browser replay through the
-	// browser's own capture (owner, scrub and publication path); the report
-	// hands the published HAR over (TakeHARArtifacts) once the browser has
-	// closed.
+	// browser's own capture (owner, scrub and publication path), whatever the
+	// script's own capture policy.
 	RecordHAR bool
-	// DiscardHAR receives a recorded HAR that no report carries (the replay
-	// returned an error after the recording opened), so the caller can
-	// retire it instead of leaving it in the HAR directory.
+	// DiscardHAR marks a caller that handles a replay's HARs: the report
+	// hands over every HAR the browser published (TakeHARArtifacts) once it
+	// has closed, whether RecordHAR or the script's own capture policy
+	// recorded it, and DiscardHAR receives one that no report carries (the
+	// replay returned an error after the recording opened), so nothing is
+	// left in the HAR directory.
 	DiscardHAR func([]protocol.BrowserHARArtifact)
 	// Seed, when set, makes random data selection and {{fn.random}}/{{fake.*}}
 	// reproducible across replays. Nil uses defaultReplaySeed.
@@ -168,8 +170,9 @@ type ReplayReport struct {
 	Snapshots                   []*protocol.ErrorSnapshot `json:"snapshots,omitempty"`
 
 	messageDetailBudget *replaySnapshotBudget
-	// harArtifacts are the native HARs a replay recorded (RecordHAR); never
-	// serialized, since they name local files.
+	// harArtifacts are the native HARs a replay's browser published (RecordHAR
+	// or the script's own capture policy), for a caller that handles them
+	// (DiscardHAR); never serialized, since they name local files.
 	harArtifacts            []protocol.BrowserHARArtifact
 	totalEventCount         int
 	retainedEventJSONBytes  int
@@ -365,8 +368,11 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	if captureCorrelationEvidence {
 		protoConfig[protocol.CorrelationEvidenceCaptureConfigKey] = true
 	}
-	_, recordsHAR := proto.(protocol.BrowserHARArtifactProvider)
-	recordsHAR = recordsHAR && opts.RecordHAR
+	_, harProvider := proto.(protocol.BrowserHARArtifactProvider)
+	recordsHAR := harProvider && opts.RecordHAR
+	// A caller that handles HARs is handed whatever the browser published,
+	// so a script's own capture policy cannot leave a replay's HAR behind.
+	collectsHAR := harProvider && (opts.RecordHAR || opts.DiscardHAR != nil)
 	if recordsHAR {
 		// Both aliases: the policy key is applied after the plain one, so a
 		// script's own "on_error" policy would otherwise discard the
@@ -377,7 +383,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	// discardUnreportedHAR hands a recording no report carries to the caller.
 	reported := false
 	discardUnreportedHAR := func() {
-		if !recordsHAR || reported || opts.DiscardHAR == nil {
+		if !collectsHAR || reported || opts.DiscardHAR == nil {
 			return
 		}
 		if provider, ok := proto.(protocol.BrowserHARArtifactProvider); ok {
@@ -549,7 +555,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		EventIndex: -1,
 		Report:     cloneReplayReport(report),
 	})
-	if recordsHAR {
+	if collectsHAR {
 		teardownProtocol()
 		if provider, ok := proto.(protocol.BrowserHARArtifactProvider); ok {
 			report.harArtifacts = takeBrowserHARArtifacts(provider)

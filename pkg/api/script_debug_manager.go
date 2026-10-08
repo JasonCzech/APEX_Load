@@ -447,10 +447,16 @@ func (m *ScriptDebugManager) StartChecked(scriptID string, script *dsl.Script, r
 			SecretResolver:  req.SecretResolver,
 			IgnoreThinkTime: ignoreThinkTime,
 			DebugController: scriptDebugController{manager: m, session: session},
+			// Debug sessions offer no HAR: one the script's own capture policy
+			// recorded is retired rather than left in the HAR directory.
+			DiscardHAR: retireReplayHARArtifacts,
 			OnProgress: func(event engine.ReplayProgressEvent) {
 				m.handleReplayProgress(ctx, session, event)
 			},
 		})
+		if report != nil {
+			retireReplayHARArtifacts(report.TakeHARArtifacts())
+		}
 
 		completedAt := m.retention.clock()
 		messageType := "script_debug_completed"

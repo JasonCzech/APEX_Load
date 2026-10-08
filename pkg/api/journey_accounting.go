@@ -30,9 +30,10 @@ import (
 // index is sum(w * failed) / sum(w * eligible), eligible being completed,
 // failed and aborted attempts; a zero denominator is unscored. It is weighted
 // test-journey risk, never revenue or conversion impact. A failure the engine
-// recorded once the VUser was stopping (interrupted) is the stop's, so it
-// censors the attempts it cut rather than failing them, and an iteration that
-// may have been cut short never counts a journey as skipped.
+// marked interrupted (recorded once the VUser was stopping, or refused by the
+// generator's own resource limit) is not the target's, so it censors the
+// attempts it cut rather than failing them, and an iteration that may have
+// been cut short never counts a journey as skipped.
 
 const (
 	journeyRiskSchemaVersion = "apexload.journey_risk.v1"
@@ -131,7 +132,8 @@ type journeyEvent struct {
 	end     int64 // begin + duration
 	step    bool  // an action sample (not a transaction row)
 	success bool
-	// interrupted: a failure recorded once the VUser was stopping.
+	// interrupted: a failure recorded once the VUser was stopping, or one the
+	// generator's own resource limit caused.
 	interrupted bool
 	name        string
 	starts      uint64 // journeys this row is the start boundary of
@@ -158,7 +160,8 @@ type journeyAttempt struct {
 	steps        int64
 	stepFailures int64
 	failedStep   string
-	// interrupted: the stop cut the attempt, so its outcome is unknown.
+	// interrupted: a stop or a generator limit cut the attempt, so its
+	// outcome is unknown.
 	interrupted bool
 }
 
@@ -222,8 +225,8 @@ func (a *journeyAccumulator) censor(j int, state *journeyVUserState, attempt *jo
 }
 
 // settle records an attempt that ended without reaching its success boundary:
-// censored when the stop cut it, failed when one of its steps failed, aborted
-// otherwise.
+// censored when a stop or a generator limit cut it, failed when one of its
+// steps failed, aborted otherwise.
 func (a *journeyAccumulator) settle(j int, state *journeyVUserState, attempt *journeyAttempt) {
 	if attempt.interrupted {
 		a.censor(j, state, attempt)
@@ -244,9 +247,11 @@ func (a *journeyAccumulator) settle(j int, state *journeyVUserState, attempt *jo
 // are archived as they are recorded, so a transaction's row follows its own
 // steps. A start boundary opens an attempt at its start; steps that begin
 // while an attempt is open belong to it; a success boundary decides the
-// attempt at its end. A failure recorded once the VUser was stopping is not
-// the target's: it cuts every attempt open when it ended, and those are
-// censored unless they still reach their outcome. censored says the iteration
+// attempt at its end. An interrupted failure (recorded once the VUser was
+// stopping, or caused by the generator's own resource limit) is not the
+// target's: it cuts every attempt open when it ended, and those are censored
+// unless they still reach their outcome; a success boundary that then fails is
+// censored too. censored says the iteration
 // may have been cut short (a VUser lifetime's last iteration that the engine
 // did not record ending on its own, or an evacuated share's last iteration),
 // so an attempt still open is censored rather than aborted or failed.
@@ -310,8 +315,9 @@ func (a *journeyAccumulator) closeIteration(state *journeyVUserState, censored b
 				}
 				attempt := open[j]
 				open[j] = nil
-				if !event.success && event.interrupted {
-					// The stop, not the target, failed the boundary.
+				if !event.success && (event.interrupted || attempt.interrupted) {
+					// The stop or the generator's resource limit, not the
+					// target, failed the boundary or cut the attempt first.
 					a.censor(j, state, attempt)
 					continue
 				}
@@ -608,6 +614,8 @@ func resolveJourneyPolicy(store storage.AnalysisDefinitionStore, projectID strin
 
 // handleGetRunArchiveJourneys accounts a finalized run's journeys under its
 // pinned journey_policy, or under ?policy=ID[&revision=N].
+//
+// OpenAPI-Responses: 400, 404, 409, 500, 503
 func (s *Server) handleGetRunArchiveJourneys(w http.ResponseWriter, r *http.Request) {
 	test, record, lease, ok := s.requireRunArchiveTest(w, r)
 	if !ok {

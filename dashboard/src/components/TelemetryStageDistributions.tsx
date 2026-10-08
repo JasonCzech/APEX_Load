@@ -41,10 +41,11 @@ export const STAGE_ADOPTION_SLACK_MS = 60_000
 
 // stageCoverageNote describes distributions this controller began sampling
 // well after the run started (it adopted the run after a failover or
-// restart), or ones it never sampled.
+// restart), or ones it never sampled (also a run that ended before
+// publishing anything).
 export function stageCoverageNote(stages: TelemetryStageDistribution[], startedAt?: string): string {
   if (stages.some(stage => stage.reason === 'recorder_lost')) {
-    return 'This controller did not sample the run (it restarted or took over after the run); stage distributions are unavailable.'
+    return 'This controller holds no stage samples for the run (it restarted or took over after the run, or the run ended before publishing any); stage distributions are unavailable.'
   }
   const from = Date.parse(stages.find(stage => stage.sampled_from)?.sampled_from || '')
   const started = Date.parse(startedAt || '')

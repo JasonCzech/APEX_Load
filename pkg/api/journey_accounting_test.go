@@ -702,3 +702,28 @@ func TestJourneyAccountingLifecycleOnlyArchiveRanNoIteration(t *testing.T) {
 		t.Fatalf("legacy archive: %s", got)
 	}
 }
+
+// A boundary that fails after an interruption cut the attempt (a stop, or
+// the generator's resource limit closing the browser) is censored; one that
+// still succeeds keeps its outcome.
+func TestJourneyAccountingCensorsBoundariesFailedAfterAnInterruption(t *testing.T) {
+	policy := JourneyPolicyDefinition{Version: analysisPolicyVersion, Journeys: []JourneyDefinition{
+		{ID: "checkout", Name: "Checkout", Start: JourneyBoundary{Action: "cart"}, Success: JourneyBoundary{Action: "pay"}, Weight: 1},
+	}}
+	l := &journeyTimeline{group: "web", vuser: 1, at: time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)}
+	l.step(1, "cart", true)
+	l.stopped(1, "shipping") // the generator closed the browser context
+	l.step(1, "pay", false)
+	l.ended(1, false)
+	l.step(2, "cart", true)
+	l.stopped(2, "shipping")
+	l.step(2, "pay", true)
+	l.ended(2, true)
+	for i := range l.rows {
+		l.rows[i].VUserLifetime = 7
+	}
+	checkout := journeyByID(t, accountJourneyRows(policy, l.rows), "checkout")
+	if checkout.Failed != 0 || checkout.Censored != 1 || checkout.Completed != 1 {
+		t.Fatalf("checkout %+v", checkout)
+	}
+}

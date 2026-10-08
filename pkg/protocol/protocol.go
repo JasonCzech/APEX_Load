@@ -678,9 +678,10 @@ type Result struct {
 	// VUserID and Iteration identify the VUser iteration that produced the
 	// result: the run-wide VUser ID and the 1-based iteration (0 during init
 	// and teardown). Journey accounting (E5) groups archived rows by them.
-	// Interrupted marks a failure recorded once the VUser was stopping (its
-	// in-flight action cancelled, or a stop or goal boundary abandoning the
-	// iteration): the stop, not the target, may have caused it.
+	// Interrupted marks a failure the target may not have caused: recorded once
+	// the VUser was stopping (its in-flight action cancelled, or a stop or goal
+	// boundary abandoning the iteration), or the generator's own resource limit
+	// closing or refusing a browser context.
 	// VUserLifetime is a random identity of the VUser's lifetime: a VUser ID
 	// is reused by later VUsers (open-workload arrivals, scale-up), a
 	// lifetime never is. WallElapsed is a transaction's wall-clock span when

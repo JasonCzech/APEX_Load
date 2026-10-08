@@ -1940,6 +1940,11 @@ func createTestRequestFromScenarioRevision(req CreateTestRequest, scenario *Stor
 		if req.DataPools == nil {
 			req.DataPools = cloneScenarioDataPoolBindings(revisionSource.DataPools)
 		}
+		// The run's joint evidence projection is a materialized setting too:
+		// a revised copy keeps it unless the request names another.
+		if req.JointEvidence == nil {
+			req.JointEvidence = revisionSource.JointEvidence.Clone()
+		}
 	} else if scenario != nil {
 		req.Name = firstNonEmpty(req.Name, scenario.Name)
 		req.TerminationMode = firstNonEmpty(req.TerminationMode, scenario.TerminationMode)

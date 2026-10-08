@@ -45,7 +45,8 @@ test('browser findings are evaluated on demand and never score absent evidence',
   expect(ready.result!.findings).toEqual([])
 
   const unknown = await request.post(`/api/v1/analysis/evaluations?${scope}`, { data: { kind: 'browser_intelligence', request: { run: id, policy: { id: 'missing', revision: 1 } } } })
-  expect(unknown.status()).toBe(400)
+  // A policy revision that does not exist is not found (a request fault would be 400).
+  expect(unknown.status()).toBe(404)
 
   await page.goto(`/#/report/${id}?section=diagnostics&${scopeQuery(workspace)}`)
   await page.reload()

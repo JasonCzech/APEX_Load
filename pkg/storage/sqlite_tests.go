@@ -1774,6 +1774,15 @@ func deleteTestGraphTx(tx *storeTx, id, projectID string) error {
 	if err := deleteRCAForTestTx(tx, id); err != nil {
 		return err
 	}
+	// Evaluations of this run, pinned (its browser findings) and under a named
+	// revision (a separate subject), go with it; a queued or running one then
+	// completes against no row (its fenced write matches nothing), so it can
+	// never be served for a later run reusing the ID.
+	// Scoped by project so the subject index (project_id, kind, subject_id)
+	// serves it from its leading column, never a scan of every job.
+	if _, err := tx.Exec(`DELETE FROM feature_evaluation_jobs WHERE project_id = ? AND subject_id IN (?, ?)`, normalizeProjectID(projectID), id, id+EvaluationSubjectRequestedSuffix); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM test_notes WHERE test_id = ?`, id); err != nil {
 		return err
 	}

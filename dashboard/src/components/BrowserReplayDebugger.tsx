@@ -1,6 +1,5 @@
 import DialogLayer from './ux/DialogLayer'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { downloadBrowserReplayHAR } from '../hooks/api/useBrowserHARApi'
 
 import {
   BrowserReplayEvent,
@@ -296,7 +295,6 @@ export default function BrowserReplayDebugger({
         </div>
         <span className={`browser-debugger-status ${status}`}>{status}</span>
       </div>
-      {sessionId && !running && ['completed', 'failed', 'stopped'].includes(status) && <BrowserReplayHARDownloads sessionId={sessionId} />}
 
       {mainVariant && (currentAction || failingEvent) && (
         <div className="browser-debugger-state-strip">
@@ -679,20 +677,4 @@ export function BrowserReplayScreenshotDialog({ onClose, src }: BrowserReplayScr
       </div>
     </div></DialogLayer>
   )
-}
-
-/** A finished replay's HAR (native when it was recorded, otherwise synthetic
- * from its network entries) and its evidence ZIP. Editors download them. */
-function BrowserReplayHARDownloads({ sessionId }: { sessionId: string }) {
-  const [busy, setBusy] = useState('')
-  const [error, setError] = useState('')
-  const download = async (evidence: boolean) => {
-    setBusy(evidence ? 'evidence' : 'har'); setError('')
-    try { await downloadBrowserReplayHAR(sessionId, evidence) } catch (reason) { setError(reason instanceof Error ? reason.message : 'Download failed.') } finally { setBusy('') }
-  }
-  return <div className="browser-debugger-har-downloads" aria-label="Replay HAR downloads">
-    <button type="button" className="btn btn-secondary btn-sm" disabled={busy !== ''} onClick={() => void download(false)}>{busy === 'har' ? 'Downloading…' : 'Download HAR'}</button>
-    <button type="button" className="btn btn-secondary btn-sm" disabled={busy !== ''} onClick={() => void download(true)}>{busy === 'evidence' ? 'Downloading…' : 'Download replay evidence'}</button>
-    {error && <p role="alert">{error}</p>}
-  </div>
 }

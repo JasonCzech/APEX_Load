@@ -5,13 +5,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const apiFetch = vi.fn()
 const downloadBlob = vi.fn(async () => 'saved')
-vi.mock('../hooks/apiClient', () => ({ apiFetch: (...args: unknown[]) => apiFetch(...args), request: vi.fn() }))
+vi.mock('../hooks/apiClient', async importOriginal => ({ ...await importOriginal<typeof import('../hooks/apiClient')>(), apiFetch: (...args: unknown[]) => apiFetch(...args), request: vi.fn() }))
 vi.mock('../utils/fileUtils', () => ({ downloadBlob: (...args: unknown[]) => downloadBlob(...(args as [])), downloadFilenameFromDisposition: (_: string | null, fallback: string) => fallback }))
 
 import BrowserHARDownloads from './BrowserHARDownloads'
 import BrowserResourceInspector from './BrowserResourceInspector'
-import BrowserReplayDebugger from './BrowserReplayDebugger'
-import { harForResourceRow, SYNTHETIC_HAR_NAME, type BrowserHARArchiveList } from '../hooks/api/useBrowserHARApi'
+import { downloadBrowserReplayHAR, harForResourceRow, SYNTHETIC_HAR_NAME, type BrowserHARArchiveList } from '../hooks/api/useBrowserHARApi'
 import { RESOURCE_GENERATION, resourcePageFixture } from './browserResourcePage.testFixtures'
 
 const NATIVE = 'browser_har_' + 'a'.repeat(32) + '.har'
@@ -72,16 +71,9 @@ describe('browser HAR downloads', () => {
     } finally { await act(async () => root.unmount()) }
   })
 
-  it('downloads a finished replay’s HAR and evidence from the cockpit', async () => {
-    const node = document.createElement('div'); const root = createRoot(node)
-    apiFetch.mockResolvedValue(okResponse())
-    try {
-      await act(async () => root.render(<BrowserReplayDebugger sessionId="replay-1" running={true} report={null} />))
-      expect(button(node, 'Download HAR')).toBeUndefined()
-      await act(async () => root.render(<BrowserReplayDebugger sessionId="replay-1" running={false} report={{ success: true, events: [] } as never} />))
-      await act(async () => button(node, 'Download HAR')!.click())
-      await act(async () => button(node, 'Download replay evidence')!.click())
-      expect(apiFetch.mock.calls.map(call => call[0])).toEqual(['/browser-replay/sessions/replay-1/har', '/browser-replay/sessions/replay-1/evidence'])
-    } finally { await act(async () => root.unmount()) }
+  it('reports a failed download with the server reference', async () => {
+    apiFetch.mockResolvedValue({ ok: false, status: 503, statusText: 'Service Unavailable', headers: new Headers({ 'X-Request-ID': 'req-123' }), json: async () => ({ error: 'internal server error' }) })
+    await expect(downloadBrowserReplayHAR('replay-1')).rejects.toThrow('internal server error (ref req-123)')
+    expect(downloadBlob).not.toHaveBeenCalled()
   })
 })

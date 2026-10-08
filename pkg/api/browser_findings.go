@@ -234,30 +234,30 @@ func prepareBrowserIntelligence(ctx context.Context, s *Server, projectID string
 		return nil, errors.New("a browser intelligence request names one run")
 	}
 	if s.runner == nil {
-		return nil, errors.New("runs are unavailable")
+		return nil, evaluationUnavailable(errors.New("runs are unavailable"))
 	}
 	test, ok := s.runner.GetTestSummary(runID)
 	if !ok || test == nil || normalizeProjectID(test.ProjectID) != projectID {
-		return nil, fmt.Errorf("run %s is not in this project", runID)
+		return nil, evaluationNotFound(fmt.Errorf("run %s is not in this project", runID))
 	}
 	record, ok := s.archiveDomainService().GetRunArchiveContext(ctx, test.ID)
 	if !ok || record == nil || strings.TrimSpace(record.ManifestSHA256) == "" {
-		return nil, fmt.Errorf("run %s has no finalized archive", runID)
+		return nil, evaluationConflict(fmt.Errorf("run %s has no finalized archive", runID))
 	}
 	store, ok := s.store.(storage.AnalysisDefinitionStore)
 	if !ok {
-		return nil, errors.New("analysis policies are unavailable")
+		return nil, evaluationUnavailable(errors.New("analysis policies are unavailable"))
 	}
 	// Like every archive reader, hold a materialization lease while reading:
 	// an object-backed archive's local source may have been retired.
 	lease, err := acquireArchiveMaterialized(ctx, record)
 	if err != nil {
-		return nil, fmt.Errorf("run %s archive: %w", runID, err)
+		return nil, evaluationUnavailable(fmt.Errorf("run %s archive: %w", runID, err))
 	}
 	manifest, err := loadRunArchiveManifestFromRecord(record)
 	lease.Release()
 	if err != nil {
-		return nil, fmt.Errorf("run %s manifest: %w", runID, err)
+		return nil, evaluationUnavailable(fmt.Errorf("run %s manifest: %w", runID, err))
 	}
 	inputs := &browserIntelligenceInputs{request: request, projectID: projectID, runID: test.ID, record: record}
 	id, revision, source := "", int64(0), "requested"
@@ -280,12 +280,12 @@ func prepareBrowserIntelligence(ctx context.Context, s *Server, projectID string
 	}
 	definition, err := store.GetAnalysisDefinition(projectID, id, revision)
 	if err != nil || definition == nil || definition.Kind != storage.AnalysisDefinitionKindBrowserPolicy {
-		return nil, errors.New("policy is not a browser_policy revision of this project")
+		return nil, evaluationPolicyLookupError(err, "policy is not a browser_policy revision of this project")
 	}
 	digest := sha256.Sum256(definition.Definition)
 	sum := hex.EncodeToString(digest[:])
 	if pin != nil && pin.SHA256 != sum {
-		return nil, errors.New("the pinned browser policy revision no longer matches its pin")
+		return nil, evaluationConflict(errors.New("the pinned browser policy revision no longer matches its pin"))
 	}
 	if _, err := decodeAnalysisPolicy(definition.Kind, definition.Definition); err != nil {
 		return nil, fmt.Errorf("policy revision is invalid: %w", err)
@@ -668,7 +668,7 @@ func browserIntelligenceSubject(s *Server, projectID string, raw json.RawMessage
 	return test.ID
 }
 
-const browserRequestedSubjectSuffix = "#requested"
+const browserRequestedSubjectSuffix = storage.EvaluationSubjectRequestedSuffix
 
 func browserMetricUnitName(metric string) string {
 	if metric == "cls" {

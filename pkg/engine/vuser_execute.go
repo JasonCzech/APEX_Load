@@ -82,7 +82,10 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	scrubSensitiveResultWithOptions(result, publicationConfig, retainResponseBody)
 	boundResultEvidence(result)
 	result.PropertyDimensions = promotedPropertyDimensions(vu.Script, result.Extractions)
-	result.Interrupted = !result.Success && vu.interruptedFailure()
+	// A failure the target did not cause is interrupted: one recorded once the
+	// VUser was stopping, or the generator's own resource limit closing or
+	// refusing a browser context to protect itself.
+	result.Interrupted = !result.Success && (vu.interruptedFailure() || ClassifyError(result.StatusCode, result.ErrorMessage, false) == ErrorClassResourceLimit)
 	metricResult := vu.metricResultWithDeclaredIdentity(result, declaredTransactionName)
 	if result.BusinessTransaction {
 		// Streamed adapters (notably java_vuser) emit completed business

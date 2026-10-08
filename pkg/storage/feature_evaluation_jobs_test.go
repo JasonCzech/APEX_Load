@@ -298,3 +298,62 @@ func TestEvaluationJobsForSubject(t *testing.T) {
 		}
 	}
 }
+
+// A run's evaluations (pinned and under a named revision) go with the run;
+// other runs' stay.
+func TestDeletingARunDeletesItsEvaluations(t *testing.T) {
+	exerciseRunDeletionDeletesEvaluations(t, newAuthoringReceiptTestStore(t))
+}
+
+func exerciseRunDeletionDeletesEvaluations(t *testing.T, store *SQLiteStore) {
+	t.Helper()
+	if err := store.SaveScenario(&Scenario{ID: "scenario", Name: "Scenario", Duration: "1m", CreatedAt: time.Now()}, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"gone", "kept"} {
+		if err := store.SaveTest(&TestRecord{ID: id, Name: id, ProjectID: DefaultProjectID, ScenarioID: "scenario", Status: "COMPLETE", Groups: []any{}, StartTime: time.Now().UTC()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A legacy run without a project: its jobs were stored under the
+	// normalized project, which the deletion uses too.
+	if err := store.SaveTest(&TestRecord{ID: "legacy", Name: "legacy", ScenarioID: "scenario", Status: "COMPLETE", Groups: []any{}, StartTime: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	// SaveTest normalizes the project; a row written before projects existed
+	// has none.
+	if _, err := store.db.Exec(`UPDATE tests SET project_id = NULL WHERE id = ?`, "legacy"); err != nil {
+		t.Fatal(err)
+	}
+	for _, job := range []struct {
+		id, subject string
+		legacy      bool
+	}{{"pinned", "gone", false}, {"named", "gone" + EvaluationSubjectRequestedSuffix, false}, {"other", "kept", false}, {"unrelated", "", false}, {"legacy-job", "legacy", true}} {
+		created := evaluationJob(job.id, "", "fp-"+job.id)
+		created.SubjectID = job.subject
+		if job.legacy {
+			created.ProjectID = ""
+		}
+		if _, _, err := store.CreateEvaluationJob(created, 50); err != nil {
+			t.Fatal(err)
+		}
+	}
+	legacyProject := normalizeProjectID("")
+	if _, err := store.GetEvaluationJob(legacyProject, "legacy-job"); err != nil {
+		t.Fatalf("legacy job: %v", err)
+	}
+	for _, id := range []string{"gone", "legacy"} {
+		if err := store.DeleteTest(id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.GetEvaluationJob(legacyProject, "legacy-job"); err == nil {
+		t.Fatal("a legacy run's evaluation outlived it")
+	}
+	for id, want := range map[string]bool{"pinned": false, "named": false, "other": true, "unrelated": true} {
+		_, err := store.GetEvaluationJob(DefaultProjectID, id)
+		if exists := err == nil; exists != want {
+			t.Fatalf("job %s exists=%v, want %v (%v)", id, exists, want, err)
+		}
+	}
+}

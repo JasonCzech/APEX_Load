@@ -300,9 +300,22 @@ administrator) access to the project.
   with the native HARs kept in the archive inventory and manifest; viewers
   are refused (403). The default export, and library bundles, still omit
   them.
-- A browser replay records a native HAR by default (`record_har: false`
-  turns it off; recording sets both capture aliases to `always`, overriding
-  a script's own capture policy). When the replay's browser closes, the
+- A browser replay started through the browser replay API
+  (`POST /api/v1/scripts/browser-replay/sessions` or
+  `/api/v1/scripts/{id}/browser-replay/sessions`) records a native HAR when
+  asked with `record_har: true`; recording sets both capture aliases to
+  `always`, overriding a script's own capture policy. It is opt-in because a
+  recording runs under the same limits as a load run's: past 100 MiB or
+  100,000 entries, or when the memory watchdog picks it, the browser context
+  is closed and the replay fails, and an owner that cannot be created fails
+  the replay's start. Without it a replay records only when the script's own
+  capture policy does (and serves that HAR as its native one); otherwise it
+  serves the synthetic HAR built from its network entries. The Script
+  Editor's debugger runs replays as script debug sessions, which offer no
+  HAR: one the script's own capture policy records is retired when the
+  session ends. Classic replays (`POST /api/v1/scripts/replay` and
+  `/api/v1/scripts/{id}/replay`) offer none either and retire such a HAR
+  too. When the replay's browser closes, the
   controller copies the published HAR into its own directory (under the
   system temporary directory's `apexload-replay-har`, used only when it is a
   real 0700 directory the controller's user owns; a running controller
@@ -316,7 +329,8 @@ administrator) access to the project.
   `GET /api/v1/browser-replay/sessions/{id}/har` streams it, or a synthetic
   HAR from the replay's network entries when there is none
   (`capture_mode: replay_network_entries`), once the replay has ended (409
-  while it runs). `GET /api/v1/browser-replay/sessions/{id}/evidence` is a
+  while it runs, and 409 with `Retry-After` while a stopped replay is still
+  closing its browser). `GET /api/v1/browser-replay/sessions/{id}/evidence` is a
   streamed ZIP of the session (`report.json`), the HAR (`replay.har`) and
   what the HAR is (`har.json`, written last: fidelity, capture mode,
   completeness, entries, SHA-256 and bytes of the HAR as streamed). Both
@@ -329,8 +343,13 @@ The dashboard lists a run's HARs above the retained resource inspector, with
 a download per HAR and an archive download with its native HARs; each
 retained resource row offers the HAR holding it (the native HAR whose
 evidence generation matches the row's source generation, else the
-synthetic one). The browser replay cockpit offers the replay's HAR and
-evidence ZIP once a replay ends. From the command line:
+synthetic one). The recorder's replay verification, and the replay
+validation of a recorder-export import, offer a finished replay's HAR and
+evidence ZIP (not for a replay run through a paired recording agent, which
+the controller does not hold); the enterprise archive (LoadRunner and
+TruClient) import's replay validation does not offer them yet.
+From the command line (a download of a replay that was just stopped waits
+while the replay closes, honouring `Retry-After`, for at most ten requests):
 
 ```bash
 apexctl analysis browser-har list --id RUN_ID

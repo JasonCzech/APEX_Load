@@ -88,6 +88,13 @@ func TestCatalogQueryProfilesMatchNativeValidators(t *testing.T) {
 						q.PropertyName, q.PropertyValue = "category", "selected"
 						check(q)
 					}
+					// A projected property groups and filters like a dimension.
+					if profile.PropertyMode == "projected_category" {
+						q.Dimensions = append(slices.Clone(q.Dimensions[:profile.MaxGroupingDimensions-1]), "property:category")
+						check(q)
+						q.Filters["property:category"] = "selected"
+						check(q)
+					}
 				}
 			}
 		}
@@ -96,7 +103,7 @@ func TestCatalogQueryProfilesMatchNativeValidators(t *testing.T) {
 
 func TestCatalogDoesNotAdvertiseUnavailableNativeDimensions(t *testing.T) {
 	for _, profile := range analysis.Catalog().QueryProfiles {
-		if profile.Grouping == "protocol" || profile.Grouping == "group" || profile.Population == analysis.PopulationTransaction && profile.PropertyMode != "disabled" {
+		if profile.Grouping == "protocol" || profile.Grouping == "group" || profile.Population == analysis.PopulationTransaction && profile.PropertyMode != "disabled" && !profile.JointEvidence {
 			t.Fatalf("unsupported native dimension advertised: %+v", profile)
 		}
 		if profile.EvidenceMode == "live" && (profile.Grouping == "phase" || profile.Grouping == "hierarchy") && (profile.Population != analysis.PopulationAction || profile.LiveBucketMode != "merged" || !slices.Contains(profile.RequiredEvidence, "native_joint_evidence.v3")) {

@@ -20,6 +20,11 @@ type NativeIntervalEvidence struct {
 	// Joint describes the joint evidence v4 tuples in
 	// Dimensions[NativeJointDimension].
 	Joint *NativeJointEvidence `json:"joint,omitempty"`
+	// JointPublications are the joint evidence (only) of the source batches
+	// accepted since the previous published point: a distributed run publishes
+	// at most once a second, so most batches are stored without being
+	// published, and their joint tuples would otherwise be lost.
+	JointPublications []*NativePublicationEvidence `json:"joint_publications,omitempty"`
 }
 
 // NativeJointDimension holds joint evidence v4 tuples, keyed by the JSON
@@ -62,7 +67,10 @@ func (j *NativeJointEvidence) Clone() *NativeJointEvidence {
 // Publication preserves one accepted generator batch so retaining the latest
 // fleet summary cannot cause the same source window to be counted repeatedly.
 type NativePublicationEvidence struct {
-	SourceID            string                                     `json:"source_id"`
+	SourceID string `json:"source_id"`
+	// SourceEpoch is the generator process the batch came from: sequences
+	// restart with each epoch.
+	SourceEpoch         string                                     `json:"source_epoch,omitempty"`
 	Sequence            uint64                                     `json:"sequence"`
 	ExecutionGeneration uint64                                     `json:"execution_generation"`
 	Timestamp           time.Time                                  `json:"timestamp"`
@@ -89,12 +97,23 @@ func CloneNativeIntervalEvidence(in *NativeIntervalEvidence) *NativeIntervalEvid
 		return nil
 	}
 	out := *in
-	if in.Publication != nil {
-		p := *in.Publication
+	clonePublication := func(in *NativePublicationEvidence) *NativePublicationEvidence {
+		p := *in
 		p.ExpectedSources = append([]string(nil), p.ExpectedSources...)
 		p.Dimensions = CloneNativeIntervalEvidence(&NativeIntervalEvidence{Dimensions: p.Dimensions}).Dimensions
-		p.Joint = in.Publication.Joint.Clone()
-		out.Publication = &p
+		p.Joint = in.Joint.Clone()
+		return &p
+	}
+	if in.Publication != nil {
+		out.Publication = clonePublication(in.Publication)
+	}
+	if in.JointPublications != nil {
+		out.JointPublications = make([]*NativePublicationEvidence, 0, len(in.JointPublications))
+		for _, p := range in.JointPublications {
+			if p != nil {
+				out.JointPublications = append(out.JointPublications, clonePublication(p))
+			}
+		}
 	}
 	out.Joint = in.Joint.Clone()
 	out.Dimensions = make(map[string]map[string]NativeIntervalMetric, len(in.Dimensions))

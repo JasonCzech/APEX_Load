@@ -158,11 +158,11 @@ func prepareTelemetryReevaluation(ctx context.Context, s *Server, projectID stri
 	}
 	store, ok := s.store.(storage.AnalysisDefinitionStore)
 	if !ok {
-		return nil, errors.New("analysis policies are unavailable")
+		return nil, evaluationUnavailable(errors.New("analysis policies are unavailable"))
 	}
 	definition, err := store.GetAnalysisDefinition(projectID, request.Policy.ID, request.Policy.Revision)
 	if err != nil || definition == nil || definition.Kind != storage.AnalysisDefinitionKindTelemetryPolicy {
-		return nil, errors.New("policy is not a telemetry_policy revision of this project")
+		return nil, evaluationPolicyLookupError(err, "policy is not a telemetry_policy revision of this project")
 	}
 	if _, err := decodeAnalysisPolicy(definition.Kind, definition.Definition); err != nil {
 		return nil, fmt.Errorf("policy revision is invalid: %w", err)
@@ -175,7 +175,7 @@ func prepareTelemetryReevaluation(ctx context.Context, s *Server, projectID stri
 	inputs := &telemetryReevaluationInputs{request: request, policy: resolveTelemetryReevaluationPolicy(definition, payload, hex.EncodeToString(digest[:]))}
 	seen := map[string]bool{}
 	if s.runner == nil {
-		return nil, errors.New("runs are unavailable")
+		return nil, evaluationUnavailable(errors.New("runs are unavailable"))
 	}
 	for _, id := range request.Runs {
 		id = strings.TrimSpace(id)
@@ -184,7 +184,7 @@ func prepareTelemetryReevaluation(ctx context.Context, s *Server, projectID stri
 		}
 		test, ok := s.runner.GetTestSummary(id)
 		if !ok || test == nil || normalizeProjectID(test.ProjectID) != projectID {
-			return nil, fmt.Errorf("run %s is not in this project", id)
+			return nil, evaluationNotFound(fmt.Errorf("run %s is not in this project", id))
 		}
 		if seen[test.ID] {
 			return nil, fmt.Errorf("run %s is named twice", id)
@@ -192,7 +192,7 @@ func prepareTelemetryReevaluation(ctx context.Context, s *Server, projectID stri
 		seen[test.ID] = true
 		record, ok := s.archiveDomainService().GetRunArchiveContext(ctx, test.ID)
 		if !ok || record == nil || strings.TrimSpace(record.ManifestSHA256) == "" {
-			return nil, fmt.Errorf("run %s has no finalized archive", id)
+			return nil, evaluationConflict(fmt.Errorf("run %s has no finalized archive", id))
 		}
 		inputs.runs = append(inputs.runs, telemetryReevaluationRunInput{id: test.ID, record: record})
 	}

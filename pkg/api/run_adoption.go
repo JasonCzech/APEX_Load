@@ -167,6 +167,14 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 	if len(tests) == 0 {
 		return nil
 	}
+	// An adopted run's batches were held by another controller (B5): any it
+	// had not published are unknown here, even if this controller once
+	// started the run.
+	tr.mu.Lock()
+	for _, test := range tests {
+		test.jointHeldFromStart = false
+	}
+	tr.mu.Unlock()
 	generation, ownerID, leaseDeadline, err := tr.generatorExecutionClaim()
 	if err != nil {
 		return err

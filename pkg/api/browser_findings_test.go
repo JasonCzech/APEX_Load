@@ -453,18 +453,42 @@ func TestBrowserIntelligenceRequestsAreValidated(t *testing.T) {
 	if next, err := prepare(`{"run":"browser-run","policy":{"id":"browser","revision":2}}`); err != nil || next.fingerprint == pinned.fingerprint {
 		t.Fatalf("revision 2 %v", err)
 	}
-	for request, want := range map[string]string{
-		`{"run":""}`:                                      "names one run",
-		`{"run":"missing"}`:                               "not in this project",
-		`{"run":"browser-tampered"}`:                      "no longer matches its pin",
-		`{"run":"browser-unpinned"}`:                      "pinned no browser_policy",
-		`{"run":"browser-run","policy":{"id":"browser"}}`: "explicit revision",
-		`{"run":"browser-run","policy":{"id":"journeys","revision":1}}`: "not a browser_policy",
-		`{"run":"browser-run","unknown":true}`:                          "invalid browser intelligence request",
+	// Each failure answers with the status that tells a client what to do:
+	// fix the request (400), the run or policy is missing (404), or the run's
+	// state conflicts (409).
+	for request, want := range map[string]struct {
+		message string
+		status  int
+	}{
+		`{"run":""}`:                                      {"names one run", http.StatusBadRequest},
+		`{"run":"missing"}`:                               {"not in this project", http.StatusNotFound},
+		`{"run":"browser-tampered"}`:                      {"no longer matches its pin", http.StatusConflict},
+		`{"run":"browser-unpinned"}`:                      {"pinned no browser_policy", http.StatusBadRequest},
+		`{"run":"browser-run","policy":{"id":"browser"}}`: {"explicit revision", http.StatusBadRequest},
+		`{"run":"browser-run","policy":{"id":"journeys","revision":1}}`: {"not a browser_policy", http.StatusNotFound},
+		`{"run":"browser-run","unknown":true}`:                          {"invalid browser intelligence request", http.StatusBadRequest},
 	} {
-		if _, err := prepare(request); err == nil || !strings.Contains(err.Error(), want) {
-			t.Fatalf("%s: %v, want %q", request, err, want)
+		if _, err := prepare(request); err == nil || !strings.Contains(err.Error(), want.message) {
+			t.Fatalf("%s: %v, want %q", request, err, want.message)
 		}
+		recorder := httptest.NewRecorder()
+		server.handleCreateEvaluationJob(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/analysis/evaluations?project_id="+storage.DefaultProjectID, strings.NewReader(`{"kind":"browser_intelligence","request":`+request+`}`)))
+		if recorder.Code != want.status {
+			t.Fatalf("%s: status %d, want %d (%s)", request, recorder.Code, want.status, recorder.Body)
+		}
+	}
+	// A run without a finalized archive is a conflict: retry after finalize.
+	finalizingStart := time.Now().UTC()
+	if err := store.SaveTest(&storage.TestRecord{ID: "browser-finalizing", Name: "browser-finalizing", ProjectID: storage.DefaultProjectID, ScenarioID: "scenario", Status: "RUNNING", Groups: []any{}, StartTime: finalizingStart}); err != nil {
+		t.Fatal(err)
+	}
+	server.runner.mu.Lock()
+	server.runner.tests["browser-finalizing"] = &ManagedTest{ID: "browser-finalizing", Name: "browser-finalizing", ProjectID: storage.DefaultProjectID, Status: "RUNNING", StartedAt: &finalizingStart}
+	server.runner.mu.Unlock()
+	finalizing := httptest.NewRecorder()
+	server.handleCreateEvaluationJob(finalizing, httptest.NewRequest(http.MethodPost, "/api/v1/analysis/evaluations?project_id="+storage.DefaultProjectID, strings.NewReader(`{"kind":"browser_intelligence","request":{"run":"browser-finalizing","policy":{"id":"browser","revision":1}}}`)))
+	if finalizing.Code != http.StatusConflict || !strings.Contains(finalizing.Body.String(), "no finalized archive") {
+		t.Fatalf("a run still finalizing: %d %s", finalizing.Code, finalizing.Body)
 	}
 	// A queued evaluation whose archive changed before it ran fails.
 	recorder := httptest.NewRecorder()

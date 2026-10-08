@@ -112,6 +112,19 @@ func TestTelemetryStageRecorderSamplesEachGeneratorBatchOnce(t *testing.T) {
 			t.Fatalf("a restarted generator's batch was dropped: %+v", stage)
 		}
 	}
+	// An older generator sends no sequence (0 is unknown): each new batch
+	// timestamp is sampled, a re-read of the same batch is not.
+	old := func(timestamp int64) generatorrpc.MetricsBatch {
+		return generatorrpc.MetricsBatch{TimestampUnixMs: timestamp, Telemetry: &generatorrpc.MetricsTelemetry{GeneratorProcessingLagMs: 7}}
+	}
+	for _, timestamp := range []int64{1000, 1000, 2000, 3000} {
+		recorder.observeGeneratorBatch("gen-old", old(timestamp))
+	}
+	for _, stage := range recorder.snapshot() {
+		if stage.Stage == telemetryStageGeneratorProcessing && stage.Samples != 7 {
+			t.Fatalf("an older generator's batches: %+v", stage)
+		}
+	}
 }
 
 func TestClientRenderSamplesCountOnlyVisibleRenders(t *testing.T) {
@@ -332,7 +345,7 @@ func TestStageDistributionsPersistInTheManifest(t *testing.T) {
 	recorder.observe(telemetryStageControllerFanout, 4)
 	recorder.observe(telemetryStageControllerFanout, 6)
 	manifest := &RunArchiveManifest{}
-	runner.persistTelemetryStageDistributions(test, manifest)
+	runner.persistTelemetryStageDistributions(test, manifest, false)
 	if len(manifest.TelemetryStageDistributions) != len(telemetryStageOrder) || manifest.TelemetryStageDigests[telemetryStageControllerFanout].Count != 2 {
 		t.Fatalf("manifest %+v %+v", manifest.TelemetryStageDistributions, manifest.TelemetryStageDigests)
 	}
@@ -350,7 +363,7 @@ func TestStageDistributionsPersistInTheManifest(t *testing.T) {
 	}
 	// A second finalize keeps the first record.
 	recorder.observe(telemetryStageControllerFanout, 100)
-	runner.persistTelemetryStageDistributions(test, manifest)
+	runner.persistTelemetryStageDistributions(test, manifest, false)
 	if manifest.TelemetryStageDigests[telemetryStageControllerFanout].Count != 2 {
 		t.Fatal("a repeated finalize rewrote the recorded distributions")
 	}
@@ -510,7 +523,7 @@ func TestStageDistributionsDiscloseALostRecorder(t *testing.T) {
 	runner := &TestRunner{}
 	started := time.Now().Add(-time.Hour)
 	manifest := &RunArchiveManifest{}
-	runner.persistTelemetryStageDistributions(&ManagedTest{ID: "restarted", StartedAt: &started}, manifest)
+	runner.persistTelemetryStageDistributions(&ManagedTest{ID: "restarted", StartedAt: &started}, manifest, false)
 	if len(manifest.TelemetryStageDistributions) != len(telemetryStageOrder) || manifest.TelemetryStageDigests != nil {
 		t.Fatalf("lost recorder %+v", manifest)
 	}
@@ -520,9 +533,16 @@ func TestStageDistributionsDiscloseALostRecorder(t *testing.T) {
 		}
 	}
 	never := &RunArchiveManifest{}
-	runner.persistTelemetryStageDistributions(&ManagedTest{ID: "never-started"}, never)
+	runner.persistTelemetryStageDistributions(&ManagedTest{ID: "never-started"}, never, false)
 	if never.TelemetryStageDistributions != nil {
 		t.Fatalf("a run that never started recorded stages %+v", never.TelemetryStageDistributions)
+	}
+	// An adjunct refresh of an archive finalized before stage sampling (a
+	// test note added later) leaves the write-once field unset.
+	legacy := &RunArchiveManifest{}
+	runner.persistTelemetryStageDistributions(&ManagedTest{ID: "legacy", StartedAt: &started}, legacy, true)
+	if legacy.TelemetryStageDistributions != nil {
+		t.Fatalf("a refresh recorded recorder_lost on a legacy archive %+v", legacy.TelemetryStageDistributions)
 	}
 	before := time.Now().UTC()
 	recorder := newTelemetryStageRecorder()

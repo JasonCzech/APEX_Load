@@ -110,7 +110,7 @@ func nativePublicationEvidence(source string, batch generatorrpc.MetricsBatch, p
 		sources = append(sources, id)
 	}
 	sort.Strings(sources)
-	return &storage.NativePublicationEvidence{SourceID: source, Sequence: batch.BatchSequence, ExecutionGeneration: batch.ExecutionGeneration, Timestamp: time.UnixMilli(batch.TimestampUnixMs).UTC(), Version: evidence.Version, WindowSeconds: evidence.WindowSeconds, Dimensions: evidence.Dimensions, Incomplete: evidence.Incomplete, ExpectedSources: sources, Joint: evidence.Joint}
+	return &storage.NativePublicationEvidence{SourceID: source, SourceEpoch: batch.SourceEpoch, Sequence: batch.BatchSequence, ExecutionGeneration: batch.ExecutionGeneration, Timestamp: time.UnixMilli(batch.TimestampUnixMs).UTC(), Version: evidence.Version, WindowSeconds: evidence.WindowSeconds, Dimensions: evidence.Dimensions, Incomplete: evidence.Incomplete, ExpectedSources: sources, Joint: evidence.Joint}
 }
 
 func addNativeDimensionEvidence(out *storage.NativeIntervalEvidence, metrics map[string]*TxMetrics) {

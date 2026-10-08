@@ -38611,8 +38611,26 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
           content:
             application/json:
               schema:
@@ -38637,6 +38655,10 @@ paths:
       responses:
         "200":
           description: OK
+          content:
+            application/json:
+              schema:
+                description: Operation-specific JSON response.
         "401":
           description: Authentication required or invalid.
           content:
@@ -38645,6 +38667,30 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
           content:
             application/json:
               schema:
@@ -85156,6 +85202,13 @@ paths:
                                   description: 'Go type: NativeJointEvidence'
                                   additionalProperties: true
                                   nullable: true
+                                joint_publications:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: NativePublicationEvidence'
+                                    additionalProperties: true
+                                    nullable: true
                                 publication:
                                   type: object
                                   description: 'Go type: NativePublicationEvidence'
@@ -86755,6 +86808,13 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              joint_publications:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativePublicationEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                               publication:
                                 type: object
                                 additionalProperties: true
@@ -90951,6 +91011,13 @@ paths:
                                   description: 'Go type: NativeJointEvidence'
                                   additionalProperties: true
                                   nullable: true
+                                joint_publications:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: NativePublicationEvidence'
+                                    additionalProperties: true
+                                    nullable: true
                                 publication:
                                   type: object
                                   description: 'Go type: NativePublicationEvidence'
@@ -92550,6 +92617,13 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              joint_publications:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativePublicationEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                               publication:
                                 type: object
                                 additionalProperties: true
@@ -96747,6 +96821,13 @@ paths:
                                   description: 'Go type: NativeJointEvidence'
                                   additionalProperties: true
                                   nullable: true
+                                joint_publications:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: NativePublicationEvidence'
+                                    additionalProperties: true
+                                    nullable: true
                                 publication:
                                   type: object
                                   description: 'Go type: NativePublicationEvidence'
@@ -98346,6 +98427,13 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              joint_publications:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativePublicationEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                               publication:
                                 type: object
                                 additionalProperties: true
@@ -102555,6 +102643,13 @@ paths:
                                   description: 'Go type: NativeJointEvidence'
                                   additionalProperties: true
                                   nullable: true
+                                joint_publications:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: NativePublicationEvidence'
+                                    additionalProperties: true
+                                    nullable: true
                                 publication:
                                   type: object
                                   description: 'Go type: NativePublicationEvidence'
@@ -104154,6 +104249,13 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              joint_publications:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativePublicationEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                               publication:
                                 type: object
                                 additionalProperties: true
@@ -108363,6 +108465,13 @@ paths:
                                   description: 'Go type: NativeJointEvidence'
                                   additionalProperties: true
                                   nullable: true
+                                joint_publications:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: NativePublicationEvidence'
+                                    additionalProperties: true
+                                    nullable: true
                                 publication:
                                   type: object
                                   description: 'Go type: NativePublicationEvidence'
@@ -109962,6 +110071,13 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              joint_publications:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativePublicationEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                               publication:
                                 type: object
                                 additionalProperties: true
@@ -114171,6 +114287,13 @@ paths:
                                   description: 'Go type: NativeJointEvidence'
                                   additionalProperties: true
                                   nullable: true
+                                joint_publications:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: NativePublicationEvidence'
+                                    additionalProperties: true
+                                    nullable: true
                                 publication:
                                   type: object
                                   description: 'Go type: NativePublicationEvidence'
@@ -115770,6 +115893,13 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              joint_publications:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativePublicationEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                               publication:
                                 type: object
                                 additionalProperties: true
@@ -119979,6 +120109,13 @@ paths:
                                   description: 'Go type: NativeJointEvidence'
                                   additionalProperties: true
                                   nullable: true
+                                joint_publications:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: NativePublicationEvidence'
+                                    additionalProperties: true
+                                    nullable: true
                                 publication:
                                   type: object
                                   description: 'Go type: NativePublicationEvidence'
@@ -121578,6 +121715,13 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                              joint_publications:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: NativePublicationEvidence'
+                                  additionalProperties: true
+                                  nullable: true
                               publication:
                                 type: object
                                 additionalProperties: true
@@ -327293,6 +327437,12 @@ paths:
                                 - dimensions
                                 - population
                               nullable: true
+                            joint_publications:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             publication:
                               type: object
                               properties:
@@ -327321,6 +327471,8 @@ paths:
                                 sequence:
                                   type: integer
                                   format: int64
+                                source_epoch:
+                                  type: string
                                 source_id:
                                   type: string
                                 timestamp:
@@ -330986,6 +331138,59 @@ paths:
                               - dimensions
                               - population
                             nullable: true
+                          joint_publications:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    additionalProperties:
+                                      type: object
+                                      description: 'Go type: NativeIntervalMetric'
+                                      additionalProperties: true
+                                execution_generation:
+                                  type: integer
+                                  format: int64
+                                expected_sources:
+                                  type: array
+                                  items:
+                                    type: string
+                                incomplete:
+                                  type: boolean
+                                joint:
+                                  type: object
+                                  description: 'Go type: NativeJointEvidence'
+                                  additionalProperties: true
+                                  nullable: true
+                                sequence:
+                                  type: integer
+                                  format: int64
+                                source_epoch:
+                                  type: string
+                                source_id:
+                                  type: string
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                                version:
+                                  type: integer
+                                  format: int64
+                                window_seconds:
+                                  type: number
+                                  format: double
+                              required:
+                                - dimensions
+                                - execution_generation
+                                - expected_sources
+                                - sequence
+                                - source_id
+                                - timestamp
+                                - version
+                                - window_seconds
+                              nullable: true
                           publication:
                             type: object
                             properties:
@@ -331013,6 +331218,8 @@ paths:
                               sequence:
                                 type: integer
                                 format: int64
+                              source_epoch:
+                                type: string
                               source_id:
                                 type: string
                               timestamp:
@@ -340104,6 +340311,12 @@ paths:
                                 - dimensions
                                 - population
                               nullable: true
+                            joint_publications:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             publication:
                               type: object
                               properties:
@@ -340132,6 +340345,8 @@ paths:
                                 sequence:
                                   type: integer
                                   format: int64
+                                source_epoch:
+                                  type: string
                                 source_id:
                                   type: string
                                 timestamp:
@@ -343797,6 +344012,59 @@ paths:
                               - dimensions
                               - population
                             nullable: true
+                          joint_publications:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    additionalProperties:
+                                      type: object
+                                      description: 'Go type: NativeIntervalMetric'
+                                      additionalProperties: true
+                                execution_generation:
+                                  type: integer
+                                  format: int64
+                                expected_sources:
+                                  type: array
+                                  items:
+                                    type: string
+                                incomplete:
+                                  type: boolean
+                                joint:
+                                  type: object
+                                  description: 'Go type: NativeJointEvidence'
+                                  additionalProperties: true
+                                  nullable: true
+                                sequence:
+                                  type: integer
+                                  format: int64
+                                source_epoch:
+                                  type: string
+                                source_id:
+                                  type: string
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                                version:
+                                  type: integer
+                                  format: int64
+                                window_seconds:
+                                  type: number
+                                  format: double
+                              required:
+                                - dimensions
+                                - execution_generation
+                                - expected_sources
+                                - sequence
+                                - source_id
+                                - timestamp
+                                - version
+                                - window_seconds
+                              nullable: true
                           publication:
                             type: object
                             properties:
@@ -343824,6 +344092,8 @@ paths:
                               sequence:
                                 type: integer
                                 format: int64
+                              source_epoch:
+                                type: string
                               source_id:
                                 type: string
                               timestamp:
@@ -351302,6 +351572,12 @@ paths:
                   - schema_version
                   - step_risk_enabled
                 nullable: true
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           description: Authentication required or invalid.
           content:
@@ -351310,6 +351586,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
           content:
             application/json:
               schema:
@@ -380532,6 +380814,12 @@ paths:
                                 - dimensions
                                 - population
                               nullable: true
+                            joint_publications:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             publication:
                               type: object
                               properties:
@@ -380560,6 +380848,8 @@ paths:
                                 sequence:
                                   type: integer
                                   format: int64
+                                source_epoch:
+                                  type: string
                                 source_id:
                                   type: string
                                 timestamp:
@@ -384225,6 +384515,59 @@ paths:
                               - dimensions
                               - population
                             nullable: true
+                          joint_publications:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    additionalProperties:
+                                      type: object
+                                      description: 'Go type: NativeIntervalMetric'
+                                      additionalProperties: true
+                                execution_generation:
+                                  type: integer
+                                  format: int64
+                                expected_sources:
+                                  type: array
+                                  items:
+                                    type: string
+                                incomplete:
+                                  type: boolean
+                                joint:
+                                  type: object
+                                  description: 'Go type: NativeJointEvidence'
+                                  additionalProperties: true
+                                  nullable: true
+                                sequence:
+                                  type: integer
+                                  format: int64
+                                source_epoch:
+                                  type: string
+                                source_id:
+                                  type: string
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                                version:
+                                  type: integer
+                                  format: int64
+                                window_seconds:
+                                  type: number
+                                  format: double
+                              required:
+                                - dimensions
+                                - execution_generation
+                                - expected_sources
+                                - sequence
+                                - source_id
+                                - timestamp
+                                - version
+                                - window_seconds
+                              nullable: true
                           publication:
                             type: object
                             properties:
@@ -384252,6 +384595,8 @@ paths:
                               sequence:
                                 type: integer
                                 format: int64
+                              source_epoch:
+                                type: string
                               source_id:
                                 type: string
                               timestamp:
@@ -393287,6 +393632,12 @@ paths:
                                 - dimensions
                                 - population
                               nullable: true
+                            joint_publications:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             publication:
                               type: object
                               properties:
@@ -393315,6 +393666,8 @@ paths:
                                 sequence:
                                   type: integer
                                   format: int64
+                                source_epoch:
+                                  type: string
                                 source_id:
                                   type: string
                                 timestamp:
@@ -396980,6 +397333,59 @@ paths:
                               - dimensions
                               - population
                             nullable: true
+                          joint_publications:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    additionalProperties:
+                                      type: object
+                                      description: 'Go type: NativeIntervalMetric'
+                                      additionalProperties: true
+                                execution_generation:
+                                  type: integer
+                                  format: int64
+                                expected_sources:
+                                  type: array
+                                  items:
+                                    type: string
+                                incomplete:
+                                  type: boolean
+                                joint:
+                                  type: object
+                                  description: 'Go type: NativeJointEvidence'
+                                  additionalProperties: true
+                                  nullable: true
+                                sequence:
+                                  type: integer
+                                  format: int64
+                                source_epoch:
+                                  type: string
+                                source_id:
+                                  type: string
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                                version:
+                                  type: integer
+                                  format: int64
+                                window_seconds:
+                                  type: number
+                                  format: double
+                              required:
+                                - dimensions
+                                - execution_generation
+                                - expected_sources
+                                - sequence
+                                - source_id
+                                - timestamp
+                                - version
+                                - window_seconds
+                              nullable: true
                           publication:
                             type: object
                             properties:
@@ -397007,6 +397413,8 @@ paths:
                               sequence:
                                 type: integer
                                 format: int64
+                              source_epoch:
+                                type: string
                               source_id:
                                 type: string
                               timestamp:
@@ -413208,6 +413616,12 @@ paths:
                                 - dimensions
                                 - population
                               nullable: true
+                            joint_publications:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             publication:
                               type: object
                               properties:
@@ -413236,6 +413650,8 @@ paths:
                                 sequence:
                                   type: integer
                                   format: int64
+                                source_epoch:
+                                  type: string
                                 source_id:
                                   type: string
                                 timestamp:
@@ -416889,6 +417305,59 @@ paths:
                               - dimensions
                               - population
                             nullable: true
+                          joint_publications:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                dimensions:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    additionalProperties:
+                                      type: object
+                                      description: 'Go type: NativeIntervalMetric'
+                                      additionalProperties: true
+                                execution_generation:
+                                  type: integer
+                                  format: int64
+                                expected_sources:
+                                  type: array
+                                  items:
+                                    type: string
+                                incomplete:
+                                  type: boolean
+                                joint:
+                                  type: object
+                                  description: 'Go type: NativeJointEvidence'
+                                  additionalProperties: true
+                                  nullable: true
+                                sequence:
+                                  type: integer
+                                  format: int64
+                                source_epoch:
+                                  type: string
+                                source_id:
+                                  type: string
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                                version:
+                                  type: integer
+                                  format: int64
+                                window_seconds:
+                                  type: number
+                                  format: double
+                              required:
+                                - dimensions
+                                - execution_generation
+                                - expected_sources
+                                - sequence
+                                - source_id
+                                - timestamp
+                                - version
+                                - window_seconds
+                              nullable: true
                           publication:
                             type: object
                             properties:
@@ -416916,6 +417385,8 @@ paths:
                               sequence:
                                 type: integer
                                 format: int64
+                              source_epoch:
+                                type: string
                               source_id:
                                 type: string
                               timestamp:
@@ -427094,6 +427565,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "429":
           description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
           content:
             application/json:
               schema:

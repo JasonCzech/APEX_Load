@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -124,5 +125,63 @@ func TestBrowserHARDownloadOutlivesTheClientTimeout(t *testing.T) {
 	}
 	if client.Client.Timeout != 20*time.Millisecond {
 		t.Fatal("the shared client was changed")
+	}
+}
+
+// A replay just stopped answers 409 with Retry-After until its HAR is final;
+// the download waits for it. A 409 without Retry-After (a running replay) is
+// not retried.
+func TestBrowserHARDownloadRetriesAReplayStillClosing(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		switch {
+		case r.URL.Path == "/running.har":
+			http.Error(w, `{"error":"the replay is still running"}`, http.StatusConflict)
+		case calls < 3:
+			w.Header().Set("Retry-After", "0")
+			http.Error(w, `{"error":"the replay is still closing"}`, http.StatusConflict)
+		default:
+			_, _ = w.Write([]byte(`{"log":{"version":"1.2","entries":[]}}`))
+		}
+	}))
+	t.Cleanup(server.Close)
+	client := &ApiClient{BaseURL: server.URL, Client: &http.Client{}}
+	var out bytes.Buffer
+	if err := client.downloadBrowserHAR(context.Background(), "/closing.har", "-", &out); err != nil || calls != 3 || !strings.Contains(out.String(), `"1.2"`) {
+		t.Fatalf("closing replay: calls %d %q %v", calls, out.String(), err)
+	}
+	calls = 0
+	if err := client.downloadBrowserHAR(context.Background(), "/running.har", "-", &bytes.Buffer{}); err == nil || calls != 1 || !strings.Contains(err.Error(), "409") {
+		t.Fatalf("running replay: calls %d %v", calls, err)
+	}
+}
+
+// A replay that never finishes closing is asked for at most ten times, and a
+// cancelled download stops waiting.
+func TestBrowserHARDownloadRetryIsBounded(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Retry-After", "0")
+		http.Error(w, `{"error":"the replay is still closing"}`, http.StatusConflict)
+	}))
+	t.Cleanup(server.Close)
+	client := &ApiClient{BaseURL: server.URL, Client: &http.Client{}}
+	if err := client.downloadBrowserHAR(context.Background(), "/stuck.har", "-", &bytes.Buffer{}); err == nil || calls != browserHARDownloadRetries || !strings.Contains(err.Error(), "409") {
+		t.Fatalf("a replay stuck closing: %d calls, %v", calls, err)
+	}
+
+	waiting := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "5")
+		http.Error(w, `{"error":"the replay is still closing"}`, http.StatusConflict)
+	}))
+	t.Cleanup(waiting.Close)
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(100*time.Millisecond, cancel)
+	started := time.Now()
+	err := (&ApiClient{BaseURL: waiting.URL, Client: &http.Client{}}).downloadBrowserHAR(ctx, "/closing.har", "-", &bytes.Buffer{})
+	if !errors.Is(err, context.Canceled) || time.Since(started) > 3*time.Second {
+		t.Fatalf("a cancelled download: %v after %s", err, time.Since(started))
 	}
 }

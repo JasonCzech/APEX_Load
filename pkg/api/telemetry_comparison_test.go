@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -405,16 +406,27 @@ func TestTelemetryReevaluationRefusesForeignOrInvalidInputs(t *testing.T) {
 	if _, err := store.SaveAnalysisDefinition(storage.AnalysisDefinition{ID: "acceptance", ProjectID: storage.DefaultProjectID, Kind: storage.AnalysisDefinitionKindTelemetryAcceptancePolicy, Name: "Acceptance", Revision: 1, Definition: acceptance}, 0); err != nil {
 		t.Fatal(err)
 	}
-	for name, tc := range map[string]struct{ request, project, reason string }{
-		"no runs":          {`{"runs":[],"policy":{"id":"common","revision":1}}`, "", "1 to 10 runs"},
-		"latest revision":  {`{"runs":["reeval-a"],"policy":{"id":"common","revision":0}}`, "", "explicit revision"},
-		"unknown run":      {`{"runs":["missing"],"policy":{"id":"common","revision":1}}`, "", "not in this project"},
-		"duplicate":        {`{"runs":["reeval-a","reeval-a"],"policy":{"id":"common","revision":1}}`, "", "named twice"},
-		"wrong kind":       {`{"runs":["reeval-a"],"policy":{"id":"acceptance","revision":1}}`, "", "not a telemetry_policy"},
-		"unknown policy":   {`{"runs":["reeval-a"],"policy":{"id":"nope","revision":1}}`, "", "not a telemetry_policy"},
-		"unknown field":    {`{"runs":["reeval-a"],"policy":{"id":"common","revision":1},"sql":"x"}`, "", "invalid telemetry re-evaluation request"},
-		"too many runs":    {`{"runs":["reeval-a","b","c","d","e","f","g","h","i","j","k"],"policy":{"id":"common","revision":1}}`, "", "1 to 10 runs"},
-		"other project id": {`{"runs":["reeval-a"],"policy":{"id":"common","revision":1}}`, "other-project", "not a telemetry_policy"},
+	// Through the API each refusal answers with the status that tells a client
+	// what to do: fix the request (400), the run or policy is missing (404),
+	// retry after finalize (409) or later (503).
+	create := func(project, request string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		server.handleCreateEvaluationJob(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/analysis/evaluations?project_id="+project, strings.NewReader(`{"kind":"telemetry_acceptance","request":`+request+`}`)))
+		return recorder
+	}
+	for name, tc := range map[string]struct {
+		request, project, reason string
+		status                   int
+	}{
+		"no runs":          {`{"runs":[],"policy":{"id":"common","revision":1}}`, "", "1 to 10 runs", http.StatusBadRequest},
+		"latest revision":  {`{"runs":["reeval-a"],"policy":{"id":"common","revision":0}}`, "", "explicit revision", http.StatusBadRequest},
+		"unknown run":      {`{"runs":["missing"],"policy":{"id":"common","revision":1}}`, "", "not in this project", http.StatusNotFound},
+		"duplicate":        {`{"runs":["reeval-a","reeval-a"],"policy":{"id":"common","revision":1}}`, "", "named twice", http.StatusBadRequest},
+		"wrong kind":       {`{"runs":["reeval-a"],"policy":{"id":"acceptance","revision":1}}`, "", "not a telemetry_policy", http.StatusNotFound},
+		"unknown policy":   {`{"runs":["reeval-a"],"policy":{"id":"nope","revision":1}}`, "", "not a telemetry_policy", http.StatusNotFound},
+		"unknown field":    {`{"runs":["reeval-a"],"policy":{"id":"common","revision":1},"sql":"x"}`, "", "invalid telemetry re-evaluation request", http.StatusBadRequest},
+		"too many runs":    {`{"runs":["reeval-a","b","c","d","e","f","g","h","i","j","k"],"policy":{"id":"common","revision":1}}`, "", "1 to 10 runs", http.StatusBadRequest},
+		"other project id": {`{"runs":["reeval-a"],"policy":{"id":"common","revision":1}}`, "other-project", "not a telemetry_policy", http.StatusNotFound},
 	} {
 		project := storage.DefaultProjectID
 		if tc.project != "" {
@@ -423,7 +435,17 @@ func TestTelemetryReevaluationRefusesForeignOrInvalidInputs(t *testing.T) {
 		if _, err := prepareTelemetryReevaluation(context.Background(), server, project, json.RawMessage(tc.request)); err == nil || !strings.Contains(err.Error(), tc.reason) {
 			t.Fatalf("%s: %v, want %q", name, err, tc.reason)
 		}
+		if reply := create(project, tc.request); reply.Code != tc.status {
+			t.Fatalf("%s: status %d, want %d (%s)", name, reply.Code, tc.status, reply.Body)
+		}
 	}
+	// A policy store that fails is a dependency to retry, not a missing policy.
+	working := server.store
+	server.store = failingPolicyStore{store}
+	if reply := create(storage.DefaultProjectID, `{"runs":["reeval-a"],"policy":{"id":"common","revision":1}}`); reply.Code != http.StatusServiceUnavailable {
+		t.Fatalf("failing policy store: %d %s", reply.Code, reply.Body)
+	}
+	server.store = working
 	// A run without a finalized archive (no manifest digest) is refused.
 	server.runner.mu.Lock()
 	server.runner.archives["reeval-a"].ManifestSHA256 = ""
@@ -431,6 +453,16 @@ func TestTelemetryReevaluationRefusesForeignOrInvalidInputs(t *testing.T) {
 	if _, err := prepareTelemetryReevaluation(context.Background(), server, storage.DefaultProjectID, json.RawMessage(`{"runs":["reeval-a"],"policy":{"id":"common","revision":1}}`)); err == nil || !strings.Contains(err.Error(), "no finalized archive") {
 		t.Fatalf("unfinalized archive: %v", err)
 	}
+	if reply := create(storage.DefaultProjectID, `{"runs":["reeval-a"],"policy":{"id":"common","revision":1}}`); reply.Code != http.StatusConflict {
+		t.Fatalf("unfinalized archive: status %d %s", reply.Code, reply.Body)
+	}
+}
+
+// failingPolicyStore fails every policy revision lookup with a storage error.
+type failingPolicyStore struct{ *storage.SQLiteStore }
+
+func (failingPolicyStore) GetAnalysisDefinition(string, string, int64) (*storage.AnalysisDefinition, error) {
+	return nil, errors.New("database is locked")
 }
 
 // Through the API: the job is queued, run by the evaluation worker and

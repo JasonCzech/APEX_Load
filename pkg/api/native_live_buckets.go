@@ -146,6 +146,24 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 	seen := map[string]bool{}
 	supported := false
 	publications := 0
+	if jointV4 {
+		// A distributed point also carries the joint evidence of the source
+		// batches accepted since the previous point (publications are
+		// throttled fleet-wide): each is a window of its own.
+		expanded := make([]*LiveMetrics, 0, len(history))
+		for _, h := range history {
+			expanded = append(expanded, h)
+			if h == nil || h.NativeEvidence == nil {
+				continue
+			}
+			for _, p := range h.NativeEvidence.JointPublications {
+				if p != nil {
+					expanded = append(expanded, &LiveMetrics{Timestamp: p.Timestamp, NativeEvidence: &storage.NativeIntervalEvidence{Publication: p}})
+				}
+			}
+		}
+		history = expanded
+	}
 	for _, h := range history {
 		if err := ctx.Err(); err != nil {
 			return out, err
@@ -166,7 +184,7 @@ func buildMergedNativeLiveEvidence(ctx context.Context, start time.Time, history
 			if source == "" || len(source) > 512 || p.Sequence == 0 || len(p.ExpectedSources) > 128 {
 				return out, errors.New("invalid source publication identity")
 			}
-			stamp = fmt.Sprintf("%s/%d/%d", source, p.ExecutionGeneration, p.Sequence)
+			stamp = nativePublicationIdentity(p)
 			sources = p.ExpectedSources
 			distributed = true
 			e = &storage.NativeIntervalEvidence{Version: p.Version, WindowSeconds: p.WindowSeconds, Dimensions: p.Dimensions, Incomplete: p.Incomplete, Joint: p.Joint}

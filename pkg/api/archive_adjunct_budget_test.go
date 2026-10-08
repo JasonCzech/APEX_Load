@@ -182,7 +182,7 @@ func TestArchiveAdjunctFinalManifestSharesAllowance(t *testing.T) {
 	// final manifest while still allowing both adjuncts to be replaced.
 	t.Setenv(envArchiveAdjunctMaxBytes, strconv.FormatInt(total-64, 10))
 	prepared := false
-	err = runner.persistTestManifestArtifactWithPreparation(run, record, func([]byte) error { prepared = true; return nil }, nil)
+	err = runner.persistTestManifestArtifactWithPreparation(run, record, func([]byte) error { prepared = true; return nil }, nil, false)
 	if !prepared || !errors.Is(err, errArchiveAdjunctLimit) {
 		t.Fatal("final manifest did not share the allowance", prepared, err)
 	}
@@ -261,7 +261,7 @@ func TestArchiveAdjunctCancellationAfterPreparationRetainsManifest(t *testing.T)
 		t.Fatal(err)
 	}
 	defer budget.close()
-	err = runner.persistTestManifestArtifactWithPreparation(run, record, func([]byte) error { cancel(); return nil }, budget)
+	err = runner.persistTestManifestArtifactWithPreparation(run, record, func([]byte) error { cancel(); return nil }, budget, false)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatal("cancellation lost", err)
 	}

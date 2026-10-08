@@ -73,6 +73,13 @@ type BrowserReplaySession struct {
 	// harCopy is this record's retained native HAR copy (D7), set with its
 	// terminal state; the copy is removed when the record leaves the manager.
 	harCopy string
+	// workerRecordedTerminal is set when the worker records its final state
+	// (harCopy with it); a Stop makes the session terminal before that.
+	workerRecordedTerminal bool
+	// workerSettled is set on snapshots only: the worker had recorded its
+	// final state, finished or been abandoned when the snapshot was taken, so
+	// harCopy is final.
+	workerSettled bool
 }
 
 // workerWasAbandoned reports whether the abandon backstop orphaned this
@@ -408,7 +415,7 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 			RedactionRules:  req.RedactionRules,
 			SecretResolver:  req.SecretResolver,
 			IgnoreThinkTime: ignoreThinkTime,
-			RecordHAR:       req.RecordHAR == nil || *req.RecordHAR,
+			RecordHAR:       req.RecordHAR != nil && *req.RecordHAR,
 			DiscardHAR:      m.discardReplayHAR,
 			OnProgress: func(event engine.ReplayProgressEvent) {
 				m.handleReplayProgress(ctx, session, event)
@@ -442,6 +449,7 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 			}
 			session.CompletedAt = &completedAt
 			session.terminalFenceEstablished = terminalFenceEstablished
+			session.workerRecordedTerminal = true
 			if terminalFenceEstablished {
 				session.harCopy = harCopy
 			}
@@ -1259,6 +1267,7 @@ func (s *BrowserReplaySession) snapshotBaseLocked() *BrowserReplaySession {
 		DroppedEventCount: s.DroppedEventCount,
 		Error:             s.Error,
 		harCopy:           s.harCopy,
+		workerSettled:     s.workerRecordedTerminal || s.workerHasFinishedLocked(),
 	}
 }
 
