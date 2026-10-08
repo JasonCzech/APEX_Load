@@ -421,10 +421,24 @@ func serveReservedMutation(w http.ResponseWriter, r *http.Request, store Idempot
 		return
 	}
 	rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
+	completed := false
+	defer func() {
+		// The access logger answers a handler panic with a 500, so release the
+		// key like any other failed mutation. A panic after a success status was
+		// sent may follow a committed write; keep that reservation.
+		if !completed && (!rw.wrote || rw.status >= http.StatusBadRequest) {
+			releaseIdempotencyReservation(r, store, reservation, http.StatusInternalServerError)
+		}
+	}()
 	next.ServeHTTP(rw, r)
+	completed = true
 	if rw.status < http.StatusBadRequest {
 		return
 	}
+	releaseIdempotencyReservation(r, store, reservation, rw.status)
+}
+
+func releaseIdempotencyReservation(r *http.Request, store IdempotencyStore, reservation *idempotencyReservation, status int) {
 	// Handlers commonly observe request cancellation while producing an error
 	// response. Releasing through that canceled context would leave the key
 	// reserved for its full TTL, so detach cancellation but retain a short bound.
@@ -435,9 +449,9 @@ func serveReservedMutation(w http.ResponseWriter, r *http.Request, store Idempot
 	defer cancelRelease()
 	released, err := store.ReleaseIdempotencyKey(releaseCtx, reservation.key, reservation.ownerToken)
 	if err != nil {
-		slog.Warn("idempotency-key release failed", "path", r.URL.Path, "status", rw.status, "err", err)
+		slog.Warn("idempotency-key release failed", "path", r.URL.Path, "status", status, "err", err)
 	} else if !released {
-		slog.Warn("idempotency-key reservation ownership changed before release", "path", r.URL.Path, "status", rw.status)
+		slog.Warn("idempotency-key reservation ownership changed before release", "path", r.URL.Path, "status", status)
 	}
 }
 

@@ -333,14 +333,14 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, errStartAdmissionEvidenceStale) || retryableStartSecretRequirement(err) {
 			w.Header().Set("Retry-After", "1")
-			// The client gets the retry guidance; the provider failure behind a
-			// secret requirement is logged under the ref.
-			cause := err
+			// The client gets the retry guidance. Only a provider failure behind a
+			// secret requirement is hidden from it; log that under the ref. An
+			// admission race is a designed retry with nothing more to log.
+			ref := errorReferenceFor(w)
 			var requirementErr *startSecretRequirementError
 			if errors.As(err, &requirementErr) && requirementErr.cause != nil {
-				cause = requirementErr.cause
+				ref = logServerError(w, http.StatusServiceUnavailable, requirementErr.cause, "code", "start_admission_temporarily_unavailable", "test_id", id)
 			}
-			ref := logServerError(w, http.StatusServiceUnavailable, cause, "code", "start_admission_temporarily_unavailable", "test_id", id)
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 				"error":   err.Error(),
 				"code":    "start_admission_temporarily_unavailable",
@@ -2046,22 +2046,19 @@ func wantsCSV(r *http.Request) bool {
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {
-	safeMessage := scrub.Value(msg, scrub.Policy{})
 	// Never leak internal error detail (DB errors, file paths, stack context) to
 	// clients on 5xx responses. Log a credential-scrubbed detail under a
 	// correlation ID and return a generic message referencing that ID. Inside
 	// the access logger the ID is the request ID, so the reported ref also
 	// finds the request's access line.
 	if status >= http.StatusInternalServerError {
-		ref := errorReferenceFor(w)
-		slog.Error("internal server error", "ref", ref, "status", status, "detail", safeMessage)
 		writeJSON(w, status, map[string]string{
 			"error": "internal server error",
-			"ref":   ref,
+			"ref":   logServerErrorDetail(w, status, msg),
 		})
 		return
 	}
-	writeJSON(w, status, map[string]string{"error": safeMessage})
+	writeJSON(w, status, map[string]string{"error": scrub.Value(msg, scrub.Policy{})})
 }
 
 // logServerError records the internal cause of a 5xx answered with a
@@ -2069,10 +2066,20 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 // message and ref writeError uses, and returns the ref for the body. The cause
 // is credential-scrubbed and never sent to the client.
 func logServerError(w http.ResponseWriter, status int, cause error, attrs ...any) string {
+	detail := ""
+	if cause != nil {
+		detail = cause.Error()
+	}
+	return logServerErrorDetail(w, status, detail, attrs...)
+}
+
+// logServerErrorDetail is the one writer of "internal server error" lines,
+// shared by writeError and logServerError so both stay searchable alike.
+func logServerErrorDetail(w http.ResponseWriter, status int, detail string, attrs ...any) string {
 	ref := errorReferenceFor(w)
 	args := append([]any{"ref", ref, "status", status}, attrs...)
-	if cause != nil {
-		args = append(args, "detail", scrub.Value(cause.Error(), scrub.Policy{}))
+	if detail != "" {
+		args = append(args, "detail", scrub.Value(detail, scrub.Policy{}))
 	}
 	slog.Error("internal server error", args...)
 	return ref

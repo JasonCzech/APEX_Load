@@ -36,6 +36,9 @@ type ApiErrorPayload = {
 export type ApiRequestOptions = RequestInit & {
   timeoutMs?: number;
   maxResponseBytes?: number;
+  // Background telemetry (client error reports): no activity notification and
+  // no failure reporting, so a report can never trigger another report.
+  silent?: boolean;
 };
 
 export function trimTrailingSlash(value: string): string {
@@ -261,10 +264,6 @@ function buildApiUrl(apiOrigin: string, pathOrURL: string): string {
   }
   const path = pathOrURL.startsWith("/") ? pathOrURL : `/${pathOrURL}`;
   return `${trimTrailingSlash(apiOrigin)}/api/v1${path}`;
-}
-
-function apiUrl(pathOrURL: string): string {
-  return buildApiUrl(API_ORIGIN, pathOrURL);
 }
 
 export function resolveApiResourceUrl(
@@ -502,39 +501,7 @@ export function apiFetch(
   pathOrURL: string,
   options?: ApiRequestOptions,
 ): Promise<Response> {
-  const target = apiUrl(pathOrURL);
-  const isDesktopController =
-    new URL(target).origin === new URL(API_ORIGIN).origin;
-  const { timeoutMs, signal, ...init } = options ?? {};
-  delete init.maxResponseBytes;
-  const timeout = createTimeoutSignal(timeoutMs);
-  const mergedSignal = mergeAbortSignals(signal, timeout.signal);
-  const pendingFetch = fetch(target, {
-    ...init,
-    signal: mergedSignal,
-    credentials: init?.credentials ?? "include",
-    headers: mergeHeaders(
-      init?.headers,
-      isDesktopController ? buildDevPreviewHeaders() : {},
-      isDesktopController,
-    ),
-  });
-  return (timeout.deadline
-    ? Promise.race([pendingFetch, timeout.deadline])
-    : pendingFetch).then(response => {
-    observeApiResponse(target, init.method, response);
-    return isDesktopController ? notifyActivityResponse(response, init.method) : response;
-  }).catch((error: unknown) => {
-    if (isTimeoutAbort(error, timeout.timedOut())) {
-      const timedOut = new Error(`Request timed out after ${timeoutMs}ms`);
-      observeApiTransportFailure(target, init.method, timedOut, true);
-      throw timedOut;
-    }
-    observeApiTransportFailure(target, init.method, error, false);
-    throw error;
-  }).finally(() => {
-    timeout.clear();
-  });
+  return apiFetchFromOrigin(API_ORIGIN, pathOrURL, options);
 }
 
 // requestApiNavigation starts an OAuth-style browser navigation through an
@@ -587,7 +554,7 @@ export function apiFetchFromOrigin(
   const target = buildApiUrl(apiOrigin, pathOrURL);
   const isDesktopController =
     new URL(target).origin === new URL(API_ORIGIN).origin;
-  const { timeoutMs, signal, ...init } = options ?? {};
+  const { timeoutMs, signal, silent, ...init } = options ?? {};
   delete init.maxResponseBytes;
   const timeout = createTimeoutSignal(timeoutMs);
   const mergedSignal = mergeAbortSignals(signal, timeout.signal);
@@ -604,16 +571,14 @@ export function apiFetchFromOrigin(
   return (timeout.deadline
     ? Promise.race([pendingFetch, timeout.deadline])
     : pendingFetch).then(response => {
+    if (silent) return response;
     observeApiResponse(target, init.method, response);
     return isDesktopController ? notifyActivityResponse(response, init.method) : response;
   }).catch((error: unknown) => {
-    if (isTimeoutAbort(error, timeout.timedOut())) {
-      const timedOut = new Error(`Request timed out after ${timeoutMs}ms`);
-      observeApiTransportFailure(target, init.method, timedOut, true);
-      throw timedOut;
-    }
-    observeApiTransportFailure(target, init.method, error, false);
-    throw error;
+    const timedOut = isTimeoutAbort(error, timeout.timedOut());
+    const failure = timedOut ? new Error(`Request timed out after ${timeoutMs}ms`) : error;
+    if (!silent) observeApiTransportFailure(target, init.method, failure, timedOut);
+    throw failure;
   }).finally(() => {
     timeout.clear();
   });

@@ -47,6 +47,7 @@ async function bootstrap() {
       body: JSON.stringify(report),
       keepalive: true,
       timeoutMs: 10_000,
+      silent: true,
     }).then(response => response.status, () => undefined),
     { appVersion: frontendBuildMetadata.ux.version },
   )

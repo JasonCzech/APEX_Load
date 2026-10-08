@@ -689,6 +689,23 @@ describe('browser-side failure reporting', () => {
     expect(reports).toHaveLength(1)
   })
 
+  it('keeps silent requests out of failure reporting and activity notifications', async () => {
+    const activity = vi.fn()
+    window.addEventListener('apexload:activity-changed', activity)
+    try {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(null, { status: 204 }))
+      await apiFetch('/system/client-errors', { method: 'POST', body: '{}', silent: true })
+      vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      await expect(apiFetch('/system/client-errors', { method: 'POST', body: '{}', silent: true })).rejects.toThrow('Failed to fetch')
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('<html>502</html>', { status: 502 }))
+      await apiFetch('/system/client-errors', { method: 'POST', body: '{}', silent: true })
+    } finally {
+      window.removeEventListener('apexload:activity-changed', activity)
+    }
+    expect(reports).toEqual([])
+    expect(activity).not.toHaveBeenCalled()
+  })
+
   it('reports client-side timeouts', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((_input, init) => new Promise((_resolve, reject) => {
       init?.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')))

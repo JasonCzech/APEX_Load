@@ -3,7 +3,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
-  CLIENT_ERRORS_PATH,
   type ClientErrorReport,
   installClientErrorReporting,
   reportClientError,
@@ -20,11 +19,12 @@ function fakeWindow(): Window {
   return target as unknown as Window
 }
 
-function install(status: number | undefined = 204, clock = { now: 1_000_000 }) {
+// 'undelivered' stands for a send that never got an HTTP response.
+function install(status: number | 'undelivered' = 204, clock = { now: 1_000_000 }) {
   const sent: ClientErrorReport[] = []
   const send = vi.fn(async (report: ClientErrorReport) => {
     sent.push(report)
-    return status
+    return status === 'undelivered' ? undefined : status
   })
   const target = fakeWindow()
   const uninstall = installClientErrorReporting(send, { appVersion: 'test-build', now: () => clock.now, target })
@@ -49,14 +49,14 @@ describe('client error reporting', () => {
     const { sent, uninstall, target } = install()
     uninstallCurrent = uninstall
     const thrown = new TypeError("Cannot read properties of undefined (reading 'actions')")
-    target.dispatchEvent(new ErrorEvent('error', { error: thrown, message: thrown.message, filename: 'https://apexload.test/assets/index.js?v=1', lineno: 10, colno: 4 }))
+    target.dispatchEvent(new ErrorEvent('error', { error: thrown, message: thrown.message, filename: 'https://apexload.test/assets/index.js?v=1', lineno: 120, colno: 7 }))
     const rejection = new Event('unhandledrejection') as PromiseRejectionEvent
     Object.defineProperty(rejection, 'reason', { value: new Error('save failed') })
     target.dispatchEvent(rejection)
     await flush()
 
     expect(sent.map(report => report.kind)).toEqual(['error', 'unhandledrejection'])
-    expect(sent[0]).toMatchObject({ message: thrown.message, name: 'TypeError', source: 'https://apexload.test/assets/index.js', page: 'https://apexload.test/tests/t1', app_version: 'test-build' })
+    expect(sent[0]).toMatchObject({ message: thrown.message, name: 'TypeError', source: 'https://apexload.test/assets/index.js:120:7', page: 'https://apexload.test/tests/t1', app_version: 'test-build' })
     expect(sent[0].stack).toContain('TypeError')
     expect(sent[1].message).toBe('save failed')
   })
@@ -97,13 +97,34 @@ describe('client error reporting', () => {
     expect(sent).toHaveLength(2)
   })
 
-  it('ignores browser noise and its own failed reports', () => {
+  it('ignores browser noise and cancelled work', () => {
     const { sent, uninstall } = install()
     uninstallCurrent = uninstall
     reportClientError('error', 'ResizeObserver loop completed with undelivered notifications.')
     reportClientError('error', 'Script error.')
-    reportClientError('network', new TypeError('Failed to fetch'), { request_path: `/api/v1${CLIENT_ERRORS_PATH}` })
+    reportClientError('unhandledrejection', new DOMException('The user aborted a request.', 'AbortError'))
     expect(sent).toEqual([])
+  })
+
+  it('joins an unhandled API failure to the controller request', () => {
+    const { sent, uninstall } = install()
+    uninstallCurrent = uninstall
+    const apiFailure = Object.assign(new Error('script name already exists'), { name: 'ApiError', status: 409, requestId: 'req-409' })
+    reportClientError('unhandledrejection', apiFailure)
+    expect(sent[0]).toMatchObject({ kind: 'unhandledrejection', request_id: 'req-409', request_status: 409 })
+  })
+
+  it('returns undelivered reports to the budget and pauses', async () => {
+    const { sent, uninstall, clock } = install('undelivered')
+    uninstallCurrent = uninstall
+    // A long offline stretch: more undelivered failures than the page budget.
+    for (let i = 0; i < 60; i++) {
+      reportClientError('network', new TypeError('Failed to fetch'), { request_path: '/api/v1/tests' })
+      await flush()
+      reportClientError('network', new TypeError('Failed to fetch'), { request_path: '/api/v1/tests' })
+      expect(sent).toHaveLength(i + 1) // paused after each undelivered attempt
+      clock.now += 61_000
+    }
   })
 
   it('bounds fields and never throws from a hostile error value', () => {

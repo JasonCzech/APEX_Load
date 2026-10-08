@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // lockedBuffer lets a test capture the process-wide default logger while
@@ -95,6 +97,7 @@ func TestRequestLoggingRecordsClientErrorReasonAtWarn(t *testing.T) {
 }
 
 func TestRequestLoggingServerErrorRefMatchesRequestID(t *testing.T) {
+	detailLogs := captureDefaultLogs(t) // writeError logs the detail through the default logger
 	logger, logs := newCapturedRequestLogger()
 	resp := serveLogged(t, logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "database is locked at /var/lib/apexload/apexload.db")
@@ -114,6 +117,15 @@ func TestRequestLoggingServerErrorRefMatchesRequestID(t *testing.T) {
 	}
 	if strings.Contains(logs.String(), "database is locked") {
 		t.Fatal("access line repeated the internal detail; writeError logs it on its own line")
+	}
+	var detailLine map[string]any
+	for _, record := range logRecords(t, detailLogs) {
+		if record["msg"] == "internal server error" && record["ref"] == requestID {
+			detailLine = record
+		}
+	}
+	if detailLine == nil || detailLine["level"] != "ERROR" || !strings.Contains(detailLine["detail"].(string), "database is locked") {
+		t.Fatalf("no internal detail line under ref %q in:\n%s", requestID, detailLogs.String())
 	}
 }
 
@@ -374,5 +386,42 @@ func TestLogServerErrorLogsScrubbedCauseUnderStampedRef(t *testing.T) {
 	}
 	if detail, _ := line["detail"].(string); !strings.HasPrefix(detail, "provider rejected bearer") || strings.Contains(logs.String(), jwt) {
 		t.Fatalf("detail not logged or not scrubbed: %v", line["detail"])
+	}
+}
+
+func TestRecoveredPanicReleasesIdempotencyReservation(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		handler      http.HandlerFunc
+		wantReserved bool
+	}{
+		{name: "panic before response", handler: func(w http.ResponseWriter, r *http.Request) { panic("store write failed") }},
+		{name: "panic after success response", handler: func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusCreated)
+			panic("post-commit encoder failed")
+		}, wantReserved: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := newMemoryCacheBackend(cacheRuntimeConfig{KeyPrefix: "test", FanoutChannel: "events"})
+			ctx := context.Background()
+			if reserved, err := store.ReserveIdempotencyKey(ctx, "scope", "owner", time.Minute); err != nil || !reserved {
+				t.Fatalf("reserve = %v, %v", reserved, err)
+			}
+			logger, _ := newCapturedRequestLogger()
+			handler := requestLoggingMiddleware(logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				serveReservedMutation(w, r, store, &idempotencyReservation{key: "scope", ownerToken: "owner"}, test.handler)
+			}))
+			func() {
+				defer func() { _ = recover() }() // the post-response case aborts the connection
+				handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/v1/scripts", nil))
+			}()
+			reservedAgain, err := store.ReserveIdempotencyKey(ctx, "scope", "retry", time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stillHeld := !reservedAgain; stillHeld != test.wantReserved {
+				t.Fatalf("reservation held after panic = %v, want %v", stillHeld, test.wantReserved)
+			}
+		})
 	}
 }

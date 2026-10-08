@@ -78,6 +78,24 @@ export function withoutQuery(value: string | undefined): string | undefined {
   return truncate(result, MAX_LOCATION_CHARS)
 }
 
+// A cancelled request or unmounted view rejects with AbortError; that is the
+// caller giving up, not a failure.
+function isAbort(error: unknown): boolean {
+  return (error instanceof DOMException || error instanceof Error) && error.name === 'AbortError'
+}
+
+// An ApiError (duck-typed: importing it would make apiClient's own import of
+// this module circular) carries the controller request ID and status, which
+// join the report to the controller's access line.
+function apiFailureDetails(error: unknown): ClientErrorDetails {
+  if (!error || typeof error !== 'object') return {}
+  const { requestId, status } = error as { requestId?: unknown; status?: unknown }
+  return {
+    request_id: typeof requestId === 'string' ? requestId : undefined,
+    request_status: typeof status === 'number' ? status : undefined,
+  }
+}
+
 function describe(error: unknown): { message: string; name?: string; stack?: string } {
   if (error instanceof Error) {
     return { message: error.message || error.name || 'Error', name: error.name, stack: error.stack }
@@ -95,19 +113,19 @@ function describe(error: unknown): { message: string; name?: string; stack?: str
 
 export function reportClientError(kind: ClientErrorKind, error: unknown, details: ClientErrorDetails = {}): void {
   const current = state
-  if (!current) return
+  if (!current || isAbort(error)) return
   try {
     const described = describe(error)
     const message = truncate(described.message, MAX_MESSAGE_CHARS)
     if (!message || IGNORED_MESSAGES.some(pattern => pattern.test(message))) return
+    details = { ...apiFailureDetails(error), ...details }
     const requestPath = withoutQuery(details.request_path)
-    // A failed report must not report itself.
-    if (requestPath?.endsWith(CLIENT_ERRORS_PATH)) return
+    const requestMethod = truncate(details.request_method?.toUpperCase(), 16)
 
     const now = current.now()
     if (now < current.suspendedUntil || current.sentTotal >= MAX_REPORTS_PER_PAGE_LOAD) return
     const stack = truncate(details.stack ?? described.stack, MAX_STACK_CHARS)
-    const fingerprint = [kind, message, details.request_method ?? '', requestPath ?? '', stack?.split('\n', 2).join('\n') ?? ''].join('|')
+    const fingerprint = [kind, message, requestMethod ?? '', requestPath ?? '', stack?.split('\n', 2).join('\n') ?? ''].join('|')
     const previous = current.lastSentAt.get(fingerprint)
     if (previous !== undefined && now - previous < DUPLICATE_WINDOW_MS) return
     if (now - current.windowStartedAt >= 60_000) {
@@ -127,19 +145,24 @@ export function reportClientError(kind: ClientErrorKind, error: unknown, details
       component_stack: truncate(details.component_stack, MAX_COMPONENT_STACK_CHARS),
       source: withoutQuery(details.source),
       page: withoutQuery(details.page ?? current.location()),
-      request_method: truncate(details.request_method?.toUpperCase(), 16),
+      request_method: requestMethod,
       request_path: requestPath,
       request_status: details.request_status,
       request_id: truncate(details.request_id, 128),
       app_version: current.appVersion,
     }
+    const undelivered = () => {
+      if (state !== current) return
+      // Not delivered: offline, controller unreachable, not signed in, or over
+      // the controller's limit. Give the report back to the page budget so a
+      // sleep/wake cycle cannot exhaust it, and pause instead of hammering.
+      current.sentTotal = Math.max(0, current.sentTotal - 1)
+      current.lastSentAt.delete(fingerprint)
+      current.suspendedUntil = current.now() + REFUSED_BACKOFF_MS
+    }
     void current.sender(report).then(status => {
-      // 4xx: not signed in, not permitted, or over the controller's limit.
-      // Retrying sooner would only add load and noise.
-      if (status !== undefined && status >= 400 && status < 500 && state === current) {
-        current.suspendedUntil = current.now() + REFUSED_BACKOFF_MS
-      }
-    }, () => undefined)
+      if (status === undefined || status < 200 || status >= 300) undelivered()
+    }, undelivered)
   } catch {
     // Reporting is best-effort and must never disturb the caller.
   }
@@ -156,7 +179,9 @@ export interface ClientErrorReportingOptions {
 export function installClientErrorReporting(send: ClientErrorSender, options: ClientErrorReportingOptions = {}): () => void {
   const target = options.target ?? window
   const onError = (event: ErrorEvent) => {
-    const source = event.filename ? `${event.filename}:${event.lineno}:${event.colno}` : undefined
+    // Strip the script URL's query before appending the position, or the
+    // query removal would take the line and column with it.
+    const source = event.filename ? `${withoutQuery(event.filename)}:${event.lineno}:${event.colno}` : undefined
     reportClientError('error', event.error ?? event.message, { source })
   }
   const onRejection = (event: PromiseRejectionEvent) => {
