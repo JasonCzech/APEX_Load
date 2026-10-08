@@ -14,6 +14,14 @@ const ORDERED_MARKER = /^(\s*)(\d+)[.)]\s+(.*)$/
 
 type ListMarker = { indent: number; ordered: boolean; number?: number; text: string }
 
+/** The visible text of inline Markdown: code, bold and link syntax removed. */
+export function markdownPlainText(text: string) {
+  return text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+}
+
 function slugify(text: string) {
   return text
     .toLowerCase()
