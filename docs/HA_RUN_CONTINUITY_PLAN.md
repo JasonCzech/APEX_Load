@@ -680,7 +680,10 @@ The remaining review items are covered in §17.
   journal stay STOPPING and are retried. For generators that are gone,
   SystemAdmins can call `POST /api/v1/tests/{id}/interrupted-stop/resolve`
   with `{"attestation":"all-generator-processes-stopped"}` (audited; the
-  operator and note are recorded on the run).
+  operator and note are recorded on the run). The automatic proof needs HA
+  execution generations: a single controller that restarts during a
+  distributed run holds it STOPPING the same way, and there only the operator
+  override resolves it.
 - **Leader-only routes reach the leader.** The Helm, AKS, EKS and on-prem
   Ingresses also route `/api/v1/fleet`, `/api/v1/projects`, `/api/v1/archives`,
   `/api/v1/system/generators`, `/api/v1/system/restarts` and

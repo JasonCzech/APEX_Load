@@ -20,6 +20,10 @@ import (
 // STOPPING (with its capacity) instead of being reported terminal.
 const interruptedDistributedStopReason = "controller execution ownership was interrupted; distributed generator stop is unproven without a complete durable participant journal; external generator process-fence reconciliation is required"
 
+// errInterruptedRunNotEligible means the run is not (or no longer) an
+// interrupted distributed run awaiting generator stop proof.
+var errInterruptedRunNotEligible = errors.New("test is not an interrupted distributed run awaiting generator stop proof")
+
 const (
 	// interruptedRunResolutionSettle delays the first proof attempt past any
 	// graceful drain the lost leader started just before it went away. A drain
@@ -109,7 +113,10 @@ func (tr *TestRunner) resolveInterruptedDistributedRuns(ctx context.Context, gen
 }
 
 // resolveInterruptedDistributedRun proves, per generator, that the run's load
-// from the lost term is gone and then finalizes the run FAILED.
+// from the lost term is gone and then finalizes the run FAILED. It needs HA
+// execution generations; a single-controller deployment that restarts during
+// a distributed run has no newer term to prove against and relies on the
+// operator override.
 //
 // The run's archive-collection intent is its participant journal: every target
 // is recorded durably before work is dispatched to it, including evacuation
@@ -169,7 +176,7 @@ func (tr *TestRunner) finalizeInterruptedDistributedRun(ctx context.Context, tes
 	tr.mu.Lock()
 	if tr.tests[test.ID] != test || !interruptedDistributedRunLocked(test) {
 		tr.mu.Unlock()
-		return errors.New("run is no longer an interrupted distributed run")
+		return errInterruptedRunNotEligible
 	}
 	fenceErr := tr.claimTestExecutionFence(test)
 	prior := strings.TrimSpace(strings.TrimSuffix(strings.ReplaceAll(test.Error, interruptedDistributedStopReason, ""), "; "))
@@ -231,7 +238,7 @@ func (s *Server) handleResolveInterruptedRun(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if !eligible {
-		writeError(w, http.StatusConflict, "test is not an interrupted distributed run awaiting generator stop proof")
+		writeError(w, http.StatusConflict, errInterruptedRunNotEligible.Error())
 		return
 	}
 	actorType, actorSubject, actorName := s.resolveAuditActor(r)
@@ -242,11 +249,13 @@ func (s *Server) handleResolveInterruptedRun(w http.ResponseWriter, r *http.Requ
 	}
 	if err := s.runner.finalizeInterruptedDistributedRun(r.Context(), test, message); err != nil {
 		s.recordAuditEvent(r, "test.interrupted_run.resolve", "failure", "test", id, projectID, map[string]any{"error": err.Error()})
-		if errors.Is(err, errNotExecutionLeader) {
-			writeError(w, http.StatusServiceUnavailable, err.Error())
+		if errors.Is(err, errInterruptedRunNotEligible) {
+			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
-		writeError(w, http.StatusConflict, err.Error())
+		// Lost leadership, or a terminal write that failed transiently and is
+		// queued for retry: the caller may retry the resolution.
+		writeError(w, http.StatusServiceUnavailable, "could not record the resolution yet; retry: "+err.Error())
 		return
 	}
 	s.recordAuditEvent(r, "test.interrupted_run.resolve", "success", "test", id, projectID, map[string]any{"note_present": strings.TrimSpace(request.Note) != ""})
