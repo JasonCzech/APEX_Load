@@ -1065,3 +1065,27 @@ func TestExecutionLeadershipReconcileCoalesces(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 }
+
+// Local lease deadlines must be compared on the monotonic clock. Converting the
+// request time with UTC() strips the monotonic reading, so a backward
+// wall-clock step on the leader would extend its leadership past the database
+// lease that a successor can already acquire.
+func TestExecutionLeadershipDeadlineKeepsMonotonicReading(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	l := newExecutionLeadership(store, "monotonic-owner")
+	l.tick()
+	if !l.IsLeader() {
+		t.Fatal("leadership should be acquired")
+	}
+	_, _, deadline, ok := l.executionGeneratorClaim()
+	if !ok {
+		t.Fatal("generator claim should be available while leading")
+	}
+	if !strings.Contains(deadline.String(), "m=") {
+		t.Fatalf("lease deadline %s lost its monotonic clock reading", deadline)
+	}
+}

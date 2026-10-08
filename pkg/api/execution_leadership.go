@@ -73,7 +73,10 @@ type executionLeadership struct {
 	ownerID string
 	ttl     time.Duration
 	renew   time.Duration
-	now     func() time.Time
+	// now must keep Go's monotonic clock reading (do not call UTC/In/Round on
+	// its results): every local lease deadline is compared on the monotonic
+	// clock, so a wall-clock step can neither extend nor shorten a lease.
+	now func() time.Time
 
 	leader      atomic.Bool
 	reconciling atomic.Bool
@@ -196,7 +199,7 @@ func (l *executionLeadership) IsLeader() bool {
 	if l == nil {
 		return true
 	}
-	now := l.now().UTC()
+	now := l.now()
 	l.mu.Lock()
 	if !l.leader.Load() || l.pendingLoss > 0 {
 		l.mu.Unlock()
@@ -247,7 +250,7 @@ func (l *executionLeadership) Run(ctx context.Context) {
 			case <-watchdogStop:
 				return
 			case <-ticker.C:
-				now := l.now().UTC()
+				now := l.now()
 				l.mu.Lock()
 				stale := l.leader.Load() && l.leaseExpiredLocked(now)
 				steppedDown := stale && l.transitionToFollowerLocked()
@@ -279,7 +282,7 @@ func (l *executionLeadership) tick() {
 	l.tickMu.Lock()
 	defer l.tickMu.Unlock()
 
-	requestStartedAt := l.now().UTC()
+	requestStartedAt := l.now()
 	l.mu.Lock()
 	if !l.leader.Load() && requestStartedAt.Before(l.acquireNotBefore) {
 		l.mu.Unlock()
@@ -337,7 +340,7 @@ func (l *executionLeadership) tick() {
 		// granted elsewhere. Step down only once our last confirmed hold is
 		// older than the TTL — bounding the split-brain window to the TTL.
 		l.mu.Lock()
-		stale := l.leaseExpiredLocked(l.now().UTC())
+		stale := l.leaseExpiredLocked(l.now())
 		steppedDown := stale && l.transitionToFollowerLocked()
 		l.mu.Unlock()
 		if steppedDown {
@@ -359,7 +362,7 @@ func (l *executionLeadership) tick() {
 	localLeaseDeadline := requestStartedAt.Add(l.ttl)
 	_, generationAwareStore := l.store.(executionLeaseTermStore)
 	invalidGeneration := generationAwareStore && leaseTerm != nil && leaseTerm.Generation == 0
-	if leaseTerm == nil || leaseTerm.OwnerID != leaseOwnerID || leaseTerm.ExpiresAt.IsZero() || invalidGeneration || !l.now().UTC().Before(localLeaseDeadline) {
+	if leaseTerm == nil || leaseTerm.OwnerID != leaseOwnerID || leaseTerm.ExpiresAt.IsZero() || invalidGeneration || !l.now().Before(localLeaseDeadline) {
 		if store, ok := l.store.(executionLeaseReleaseStore); ok {
 			_ = store.ReleaseSchedulerLease(executionLeaseName, leaseOwnerID)
 		}
@@ -461,7 +464,7 @@ func (l *executionLeadership) executionLeaseTerm() (string, uint64) {
 	if !l.leader.Load() || l.pendingLoss > 0 || l.leaseOwnerID == "" {
 		return "", 0
 	}
-	if l.leaseExpiredLocked(l.now().UTC()) {
+	if l.leaseExpiredLocked(l.now()) {
 		l.transitionToFollowerLocked()
 		return "", 0
 	}
@@ -474,7 +477,7 @@ func (l *executionLeadership) executionGeneratorClaim() (uint64, string, time.Ti
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	now := l.now().UTC()
+	now := l.now()
 	if !l.leader.Load() || l.pendingLoss > 0 || l.durableGeneration == 0 || l.leaseExpiredLocked(now) {
 		return 0, "", time.Time{}, false
 	}
@@ -701,7 +704,7 @@ func (l *executionLeadership) relinquishAfterRecoveryFailure(cooldown time.Durat
 		return false
 	}
 	leaseOwnerID := l.leaseOwnerID
-	l.acquireNotBefore = l.now().UTC().Add(cooldown)
+	l.acquireNotBefore = l.now().Add(cooldown)
 	l.transitionToFollowerLocked()
 	if store, ok := l.store.(executionLeaseReleaseStore); ok && leaseOwnerID != "" {
 		l.enqueueLeadershipCallback(leadershipCallbackEvent{
