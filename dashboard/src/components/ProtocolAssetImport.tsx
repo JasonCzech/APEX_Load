@@ -135,9 +135,9 @@ const copy = {
   },
   'eventhubs-capture': {
     title: 'Import Event Hubs Capture',
-    subtitle: 'Upload an Azure Event Hubs Capture Avro file and seed native eventhubs_produce actions in mock mode for review.',
+    subtitle: 'Upload an Azure Event Hubs Capture file or any Avro data file and seed native eventhubs_produce actions in mock mode for review. Records from a non-Capture file each become one event body.',
     accept: '.avro,application/octet-stream',
-    drop: 'Drop an Event Hubs Capture .avro file here',
+    drop: 'Drop an Event Hubs Capture or Avro data .avro file here',
     button: 'Convert Capture',
   },
   'broker-config': {
@@ -282,7 +282,7 @@ function uploadNounForKind(kind: ImportKind): string {
     case 'cloudtest':
       return 'a CloudTest XML or ZIP export'
     case 'eventhubs-capture':
-      return 'an Event Hubs Capture file'
+      return 'an Event Hubs Capture or Avro data file'
     case 'broker-config':
       return 'a broker config file'
     default:
@@ -338,7 +338,7 @@ function generatedFromLabel(kind: ImportKind): string {
     case 'cloudtest':
       return 'CloudTest export elements'
     case 'eventhubs-capture':
-      return 'captured Event Hubs events'
+      return 'Event Hubs Capture events or Avro records'
     case 'broker-config':
       return 'broker destinations'
     default:

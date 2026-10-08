@@ -260,7 +260,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
   {
     id: 'eventhubs_capture',
     title: 'Event Hubs Capture',
-    description: 'Seed native Event Hubs producer actions from Azure Event Hubs Capture Avro files.',
+    description: 'Seed native Event Hubs producer actions from Azure Event Hubs Capture files or any Avro data file.',
     badge: 'EH',
     category: 'Messaging & Cloud Artifacts',
     order: 300,
