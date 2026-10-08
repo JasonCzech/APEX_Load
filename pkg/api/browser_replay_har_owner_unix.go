@@ -11,5 +11,5 @@ import (
 // process's effective user (a root process must not adopt another user's).
 func replayHAROwnedByProcess(info os.FileInfo) bool {
 	stat, ok := info.Sys().(*syscall.Stat_t)
-	return ok && stat.Uid == uint32(os.Geteuid())
+	return ok && stat != nil && stat.Uid == uint32(os.Geteuid())
 }

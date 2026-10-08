@@ -642,8 +642,19 @@ func (vu *VUser) Run(ctx context.Context) {
 		}
 
 		// failIteration ends the iteration on a genuine failure with
-		// continue_on_error off: the VUser ends on its own.
+		// continue_on_error off: the VUser ends on its own. A block's failure
+		// can also be a goal limit refusing one of its slots (a parallel
+		// branch, a WebSocket callback step), which the block cannot tell
+		// apart: once a shared goal is spent, the failure is taken for the
+		// goal boundary's (interrupted, the VUser stopped), never the
+		// target's.
 		failIteration := func() {
+			if vu.ExecutionGoals.spent() {
+				vu.abandoning = true
+				recordIterationTransaction(false)
+				vu.abandoning = false
+				return
+			}
 			genuineExit = true
 			recordIterationTransaction(false)
 		}

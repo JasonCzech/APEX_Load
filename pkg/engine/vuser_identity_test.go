@@ -384,3 +384,22 @@ func TestGoalBoundaryRefusalLeavesOpenTransactionsInterrupted(t *testing.T) {
 		t.Fatalf("pay ran past the goal boundary: %+v", pay)
 	}
 }
+
+// A parallel branch refused a slot by a spent goal fails its block without
+// saying why: the iteration ends at the goal boundary, so the transactions
+// left open are interrupted, not genuine failures.
+func TestGoalRefusalInsideAParallelBranchIsTheBoundarys(t *testing.T) {
+	limiter := NewExecutionGoalLimiter(dsl.RunLogicConfig{MaxTransactions: 1}, func() {})
+	block := dsl.Action{Name: "fanout", Type: "control_parallel", Control: &dsl.ControlFlow{Concurrency: 1, Branches: []dsl.ParallelBranch{
+		{Name: "inner", Steps: []dsl.Action{sourceTx("Inner", "lr_start_transaction"), click("inner-call"), sourceTx("Inner", "lr_end_transaction")}},
+	}}}
+	vu := newControlFlowVUser(&captureProtocol{}, nil, []dsl.Action{sourceTx("E2E", "lr_start_transaction"), block, sourceTx("E2E", "lr_end_transaction")})
+	vu.ExecutionGoals = limiter
+	sink := &identitySink{}
+	vu.ResultSink = sink
+	vu.Run(context.Background())
+	e2e := resultsNamed(sink, "E2E")
+	if len(e2e) != 1 || e2e[0].Success || !e2e[0].Interrupted || e2e[0].EndsIteration {
+		t.Fatalf("E2E after a branch's goal refusal %+v (all %+v)", e2e, sink.results)
+	}
+}

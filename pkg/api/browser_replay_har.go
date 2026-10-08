@@ -108,7 +108,7 @@ func (s *replayHARStore) openLocked() error {
 		return errReplayHARStoreClosed
 	}
 	if s.dir != "" {
-		if _, err := os.Lstat(s.dir); err == nil {
+		if _, err := os.Lstat(s.dir); !os.IsNotExist(err) {
 			return nil
 		}
 		s.dir = ""

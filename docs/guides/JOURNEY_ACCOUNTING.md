@@ -85,7 +85,9 @@ arrival's unsettled attempt is censored. Censoring excludes an attempt from
 the index rather than guessing its outcome. Whether a VUser ended on its own
 (its iterations or data done, a genuine failure with continue on error off)
 or was ended (a stop, ramp-down, scale-down or goal limit) is recorded by
-the engine where its loop ends.
+the engine where its loop ends. A fail-fast failure while a shared
+execution goal is spent is taken for the goal limit's, since a parallel
+branch or WebSocket callback refused a goal slot fails the same way.
 
 Rows without a lifetime (written before lifetimes existed) fall back to the
 VUser ID: their last iteration is always censored, and a replacement
