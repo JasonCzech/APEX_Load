@@ -8839,6 +8839,8 @@ paths:
                               bytes:
                                 type: integer
                                 format: int64
+                              evidence_generation:
+                                type: string
                               fidelity:
                                 type: string
                               kind:
@@ -8870,6 +8872,8 @@ paths:
                             bytes:
                               type: integer
                               format: int64
+                            evidence_generation:
+                              type: string
                             fidelity:
                               type: string
                             kind:
@@ -348979,6 +348983,8 @@ paths:
                         bytes:
                           type: integer
                           format: int64
+                        evidence_generation:
+                          type: string
                         fidelity:
                           type: string
                         kind:
@@ -349018,6 +349024,8 @@ paths:
                       bytes:
                         type: integer
                         format: int64
+                      evidence_generation:
+                        type: string
                       fidelity:
                         type: string
                       kind:
@@ -362375,6 +362383,8 @@ paths:
                             bytes:
                               type: integer
                               format: int64
+                            evidence_generation:
+                              type: string
                             fidelity:
                               type: string
                             kind:
@@ -362414,6 +362424,8 @@ paths:
                           bytes:
                             type: integer
                             format: int64
+                          evidence_generation:
+                            type: string
                           fidelity:
                             type: string
                           kind:

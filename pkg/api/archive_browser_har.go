@@ -47,6 +47,10 @@ type RunArchiveEvidenceArtifact struct {
 	Sequence         int64  `json:"sequence"`
 	SHA256           string `json:"sha256"`
 	Bytes            int64  `json:"bytes"`
+	// EvidenceGeneration is the browser evidence generation of the context
+	// the HAR recorded: its entries are left out of the archive's synthetic
+	// HAR. Absent when unknown (older generators).
+	EvidenceGeneration string `json:"evidence_generation,omitempty"`
 }
 
 const (
@@ -81,7 +85,7 @@ func runArchiveHARGeneration(name string) (string, bool) {
 // validDeclaredHAR checks a generator manifest's HAR entry.
 func validDeclaredHAR(a RunArchiveEvidenceArtifact) bool {
 	generation, ok := runArchiveHARGeneration(a.Name)
-	return ok && generation == a.SourceGeneration && a.Kind == storage.EvidenceKindHARNative && a.Fidelity == "native" && validDeclaredSHA256(a.SHA256) && a.Bytes >= 0 && a.Bytes <= maxRunArchiveHARBytes && a.Sequence > 0
+	return ok && generation == a.SourceGeneration && a.Kind == storage.EvidenceKindHARNative && a.Fidelity == "native" && validDeclaredSHA256(a.SHA256) && a.Bytes >= 0 && a.Bytes <= maxRunArchiveHARBytes && a.Sequence > 0 && (a.EvidenceGeneration == "" || protocol.BrowserEvidenceGeneration(a.EvidenceGeneration))
 }
 
 func validDeclaredSHA256(value string) bool {
@@ -782,6 +786,10 @@ func (w *runArchiveWriter) RecordBrowserHARArtifact(artifact protocol.BrowserHAR
 	defer w.mu.Unlock()
 	w.harSources = append(w.harSources, runArchiveHARSource{path: artifact.Path, identity: identity})
 	w.harBytes += size
-	w.manifest.BrowserHARArtifacts = append(w.manifest.BrowserHARArtifacts, RunArchiveEvidenceArtifact{Name: name, Kind: storage.EvidenceKindHARNative, Fidelity: "native", SourceGeneration: artifact.Generation, Sequence: int64(len(w.manifest.BrowserHARArtifacts) + 1), SHA256: sum, Bytes: size})
+	evidenceGeneration := artifact.EvidenceGeneration
+	if !protocol.BrowserEvidenceGeneration(evidenceGeneration) {
+		evidenceGeneration = ""
+	}
+	w.manifest.BrowserHARArtifacts = append(w.manifest.BrowserHARArtifacts, RunArchiveEvidenceArtifact{Name: name, Kind: storage.EvidenceKindHARNative, Fidelity: "native", SourceGeneration: artifact.Generation, Sequence: int64(len(w.manifest.BrowserHARArtifacts) + 1), SHA256: sum, Bytes: size, EvidenceGeneration: evidenceGeneration})
 	return nil
 }

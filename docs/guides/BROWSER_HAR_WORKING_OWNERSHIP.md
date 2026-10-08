@@ -227,6 +227,41 @@ HARs, which then remain only in that generator's own archive until its
 retention. Run controllers and generators of the same release when HARs
 matter.
 
+## Synthetic HAR
+
+A browser context recorded without native capture, or by a generator older
+than native HAR transfer, still leaves retained network entries in the run
+archive's transactions. A synthetic HAR 1.2 (`harsynth`, algorithm
+`apexload.synthetic_har` version 1) is derived from them on request and never
+stored, so archives written before it existed have one too, and the same
+archive always yields the same bytes. Each native HAR names the browser
+evidence generation of the context it recorded (`evidence_generation` in the
+manifest's HAR entries, from the context's resource evidence); entries of
+those contexts are left out of the synthetic HAR (counted as `native_har`),
+so a context's requests appear in one HAR or the other. Entries whose
+generation is unknown (older peers, malformed evidence) are kept.
+
+Entries first pass the same sanitizer as the safe transaction download, then
+the native HAR scrubber, so a synthetic HAR never shows more than that
+download does. The writer invents nothing: a timing phase the evidence lacks
+is HAR's -1 (HAR's `send` is always -1, since the evidence measures request
+start to response start as one phase, written as `wait`); `startedDateTime`
+is the measured request start, or the transaction's record time labelled
+`started_source: record_time`; `time` is the sum of the measured phases, or
+the entry's duration labelled `entry_duration`, or 0 labelled
+`unavailable`; sizes the evidence lacks are -1; HTTP versions, status text and
+cookies are empty; request and response bodies are never written (body
+policy `omitted`). A Parquet-only archive's projection keeps no headers, so
+its synthetic HAR carries none and says so. The log's `_apexload` block
+records fidelity `synthetic`, capture mode (`retained_network_entries`, or
+`replay_network_entries` for a replay), completeness (`partial`, since
+retained entries are a bounded sample of what the browser issued, or
+`truncated` when the writer's own 100,000-entry or 100 MiB limit left entries
+out), entry count, omitted entries by reason, omitted fields, algorithm and
+schema version and body policy; each entry's `_apexload` names its action,
+page, request, resource type, failure kind and where its start and time came
+from. Downloads and exports arrive with D7.
+
 ## Bounds and compatibility
 
 | Control | Candidate limit |

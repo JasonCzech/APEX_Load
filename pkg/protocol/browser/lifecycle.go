@@ -105,10 +105,14 @@ func (b *Browser) closeWithContext(ctx context.Context) error {
 		b.lastHARArtifactPath = artifactPath
 		b.mu.Lock()
 		if len(b.publishedHARArtifacts) < protocol.MaxBrowserHARArtifactsPerRun {
-			b.publishedHARArtifacts = append(b.publishedHARArtifacts, protocol.BrowserHARArtifact{Path: artifactPath, Generation: owner.generation})
+			b.publishedHARArtifacts = append(b.publishedHARArtifacts, protocol.BrowserHARArtifact{Path: artifactPath, Generation: owner.generation, EvidenceGeneration: b.harEvidenceGeneration})
 		}
 		b.mu.Unlock()
 	}
+	// The next context names its own evidence generation, or none.
+	b.mu.Lock()
+	b.harEvidenceGeneration = ""
+	b.mu.Unlock()
 	b.mu.Lock()
 	b.runtimeTextRedactor = nil
 	b.runtimeSecretsActive = nil

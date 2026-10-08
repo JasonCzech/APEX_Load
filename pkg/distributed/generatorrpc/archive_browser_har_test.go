@@ -289,3 +289,31 @@ func TestArchiveHARsStayWhenRegistrationFails(t *testing.T) {
 		t.Fatal("an unregistered archive retired its HAR's only other copy", err)
 	}
 }
+
+// A generator declares the browser evidence generation a HAR recorded, so
+// the controller's synthetic HAR can leave that context out; a malformed one
+// is declared unknown.
+func TestArchiveRecorderDeclaresHAREvidenceGeneration(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	writer, err := newArchiveRecorder("har-generator", "har-evidence-generation", "har")
+	if err != nil {
+		t.Fatal(err)
+	}
+	harDir := t.TempDir()
+	for k, evidence := range []string{strings.Repeat("e", 32), "Not-Hex"} {
+		artifact := publishedHAR(t, harDir, strings.Repeat(string(rune('5'+k)), 32), `{"log":{"version":"1.2","entries":[]}}`)
+		artifact.EvidenceGeneration = evidence
+		if err := writer.RecordBrowserHARArtifact(artifact); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writer.mu.Lock()
+	declared := append([]archiveEvidenceArtifact(nil), writer.manifest.BrowserHARArtifacts...)
+	writer.mu.Unlock()
+	if len(declared) != 2 || declared[0].EvidenceGeneration != strings.Repeat("e", 32) || declared[1].EvidenceGeneration != "" {
+		t.Fatalf("declared %+v", declared)
+	}
+	if err := writer.Discard(); err != nil {
+		t.Fatal(err)
+	}
+}

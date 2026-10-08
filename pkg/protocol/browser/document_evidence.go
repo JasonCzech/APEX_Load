@@ -109,6 +109,9 @@ func (b *Browser) resetBrowserEvidence(version string) error {
 		cohort.UnavailableReason = "shaping_unavailable"
 	}
 	b.mu.Lock()
+	// The context's native HAR, if it records one, holds this generation's
+	// requests.
+	b.harEvidenceGeneration = generation
 	b.evidence = browserEvidenceState{generation: generation, binding: "__apexEvidence_" + generation, finalizer: "__apexFinalize_" + generation, loaderBinding: "__apexLoader_" + generation, frames: make(map[playwright.Frame]string), documents: make(map[string]*browserDocumentState), requests: make(map[playwright.Request]*browserRequestIdentity), cohort: cohort, shapedPages: make(map[playwright.Page]bool),
 		cdpPages: make(map[playwright.Page]*cdpEvidencePage), pwFrameCDP: make(map[playwright.Frame]string), cdpFramePW: make(map[string]playwright.Frame), loaderDocuments: make(map[string]loaderDocument), timingRequests: make(map[resourceTimingKey]int)}
 	b.mu.Unlock()

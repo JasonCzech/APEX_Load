@@ -1,0 +1,171 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$comment": "HAR 1.2 structure (W3C Web Performance HAR 1.2 draft): required members, types and the -1 convention for unavailable sizes and timings. Written for these tests.",
+  "type": "object",
+  "required": ["log"],
+  "properties": {
+    "log": {
+      "type": "object",
+      "required": ["version", "creator", "entries"],
+      "properties": {
+        "version": { "type": "string", "const": "1.2" },
+        "creator": { "$ref": "#/definitions/creator" },
+        "browser": { "$ref": "#/definitions/creator" },
+        "pages": { "type": "array", "items": { "$ref": "#/definitions/page" } },
+        "entries": { "type": "array", "items": { "$ref": "#/definitions/entry" } },
+        "comment": { "type": "string" }
+      },
+      "patternProperties": { "^_": {} },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "dateTime": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "creator": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "comment": { "type": "string" }
+      },
+      "patternProperties": { "^_": {} },
+      "additionalProperties": false
+    },
+    "page": {
+      "type": "object",
+      "required": ["startedDateTime", "id", "title", "pageTimings"],
+      "properties": {
+        "startedDateTime": { "$ref": "#/definitions/dateTime" },
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "pageTimings": {
+          "type": "object",
+          "properties": {
+            "onContentLoad": { "type": "number", "minimum": -1 },
+            "onLoad": { "type": "number", "minimum": -1 },
+            "comment": { "type": "string" }
+          }
+        },
+        "comment": { "type": "string" }
+      }
+    },
+    "record": {
+      "type": "object",
+      "required": ["name", "value"],
+      "properties": {
+        "name": { "type": "string" },
+        "value": { "type": "string" },
+        "comment": { "type": "string" }
+      }
+    },
+    "cookie": {
+      "type": "object",
+      "required": ["name", "value"],
+      "properties": {
+        "name": { "type": "string" },
+        "value": { "type": "string" },
+        "path": { "type": "string" },
+        "domain": { "type": "string" },
+        "expires": { "type": ["string", "null"] },
+        "httpOnly": { "type": "boolean" },
+        "secure": { "type": "boolean" },
+        "comment": { "type": "string" }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "required": ["startedDateTime", "time", "request", "response", "cache", "timings"],
+      "properties": {
+        "pageref": { "type": "string" },
+        "startedDateTime": { "$ref": "#/definitions/dateTime" },
+        "time": { "type": "number", "minimum": 0 },
+        "request": { "$ref": "#/definitions/request" },
+        "response": { "$ref": "#/definitions/response" },
+        "cache": { "type": "object" },
+        "timings": { "$ref": "#/definitions/timings" },
+        "serverIPAddress": { "type": "string" },
+        "connection": { "type": "string" },
+        "comment": { "type": "string" }
+      },
+      "patternProperties": { "^_": {} },
+      "additionalProperties": false
+    },
+    "request": {
+      "type": "object",
+      "required": ["method", "url", "httpVersion", "cookies", "headers", "queryString", "headersSize", "bodySize"],
+      "properties": {
+        "method": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "minLength": 1 },
+        "httpVersion": { "type": "string" },
+        "cookies": { "type": "array", "items": { "$ref": "#/definitions/cookie" } },
+        "headers": { "type": "array", "items": { "$ref": "#/definitions/record" } },
+        "queryString": { "type": "array", "items": { "$ref": "#/definitions/record" } },
+        "postData": {
+          "type": "object",
+          "required": ["mimeType"],
+          "properties": {
+            "mimeType": { "type": "string" },
+            "text": { "type": "string" },
+            "params": { "type": "array" },
+            "comment": { "type": "string" }
+          }
+        },
+        "headersSize": { "type": "integer", "minimum": -1 },
+        "bodySize": { "type": "integer", "minimum": -1 },
+        "comment": { "type": "string" }
+      },
+      "patternProperties": { "^_": {} },
+      "additionalProperties": false
+    },
+    "response": {
+      "type": "object",
+      "required": ["status", "statusText", "httpVersion", "cookies", "headers", "content", "redirectURL", "headersSize", "bodySize"],
+      "properties": {
+        "status": { "type": "integer", "minimum": 0 },
+        "statusText": { "type": "string" },
+        "httpVersion": { "type": "string" },
+        "cookies": { "type": "array", "items": { "$ref": "#/definitions/cookie" } },
+        "headers": { "type": "array", "items": { "$ref": "#/definitions/record" } },
+        "content": {
+          "type": "object",
+          "required": ["size", "mimeType"],
+          "properties": {
+            "size": { "type": "integer", "minimum": -1 },
+            "compression": { "type": "integer" },
+            "mimeType": { "type": "string" },
+            "text": { "type": "string" },
+            "encoding": { "type": "string" },
+            "comment": { "type": "string" }
+          }
+        },
+        "redirectURL": { "type": "string" },
+        "headersSize": { "type": "integer", "minimum": -1 },
+        "bodySize": { "type": "integer", "minimum": -1 },
+        "comment": { "type": "string" }
+      },
+      "patternProperties": { "^_": {} },
+      "additionalProperties": false
+    },
+    "timings": {
+      "type": "object",
+      "required": ["send", "wait", "receive"],
+      "properties": {
+        "blocked": { "type": "number", "minimum": -1 },
+        "dns": { "type": "number", "minimum": -1 },
+        "connect": { "type": "number", "minimum": -1 },
+        "send": { "type": "number", "minimum": -1 },
+        "wait": { "type": "number", "minimum": -1 },
+        "receive": { "type": "number", "minimum": -1 },
+        "ssl": { "type": "number", "minimum": -1 },
+        "comment": { "type": "string" }
+      },
+      "patternProperties": { "^_": {} },
+      "additionalProperties": false
+    }
+  }
+}

@@ -3150,6 +3150,7 @@ export interface operations {
               "browser_documents_sha256"?: string;
               "browser_har_artifacts"?: Array<{
                 "bytes"?: number;
+                "evidence_generation"?: string;
                 "fidelity"?: string;
                 "kind"?: string;
                 "name"?: string;
@@ -3163,6 +3164,7 @@ export interface operations {
               "browser_interaction_record_count"?: number;
               "browser_interactions_artifact"?: ({
                 "bytes"?: number;
+                "evidence_generation"?: string;
                 "fidelity"?: string;
                 "kind"?: string;
                 "name"?: string;
@@ -64678,6 +64680,7 @@ export interface operations {
             "browser_documents_sha256"?: string;
             "browser_har_artifacts"?: Array<{
               "bytes": number;
+              "evidence_generation"?: string;
               "fidelity": string;
               "kind": string;
               "name": string;
@@ -64691,6 +64694,7 @@ export interface operations {
             "browser_interaction_record_count"?: number;
             "browser_interactions_artifact"?: ({
               "bytes": number;
+              "evidence_generation"?: string;
               "fidelity": string;
               "kind": string;
               "name": string;
@@ -68675,6 +68679,7 @@ export interface operations {
               "browser_documents_sha256"?: string;
               "browser_har_artifacts"?: Array<{
                 "bytes": number;
+                "evidence_generation"?: string;
                 "fidelity": string;
                 "kind": string;
                 "name": string;
@@ -68688,6 +68693,7 @@ export interface operations {
               "browser_interaction_record_count"?: number;
               "browser_interactions_artifact"?: ({
                 "bytes": number;
+                "evidence_generation"?: string;
                 "fidelity": string;
                 "kind": string;
                 "name": string;

@@ -573,21 +573,69 @@ func scanBrowserResourceParquet(ctx context.Context, source *os.File, testID str
 	if ctx == nil || source == nil || q.Limit < 1 || q.Limit > MaxBrowserResourcePageItems {
 		return browserResourceScanResult{}, errBrowserResourceReadMalformed
 	}
-	snapshot, digest, size, cleanup, err := snapshotBrowserResourceParquet(ctx, source)
+	var result browserResourceScanResult
+	digest, size, err := visitBrowserResourceParquet(ctx, source, func(raw []byte, legacyMillisecond bool) error {
+		result.Transactions++
+		items, present, err := browserResourceTransactionRows(raw, result.Transactions, testID)
+		if err != nil {
+			return err
+		}
+		result.SourcePresent = result.SourcePresent || present
+		// A legacy millisecond column remains explicitly millisecond precision.
+		if legacyMillisecond {
+			for i := range items {
+				if items[i].Timestamp != nil {
+					items[i].TimestampPrecision = "unix_millisecond"
+				}
+			}
+		}
+		for _, item := range items {
+			if err := result.observe(item, q, after); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return browserResourceScanResult{}, err
+	}
+	result.SHA256, result.SizeBytes = digest, size
+	result.finish(q)
+	return result, nil
+}
+
+// visitBrowserResourceParquetRows calls visit with each transaction row of a
+// Parquet transaction artifact, as JSON.
+func visitBrowserResourceParquetRows(ctx context.Context, source *os.File, visit func([]byte) error) error {
+	if ctx == nil || source == nil {
+		return errBrowserResourceReadMalformed
+	}
+	_, _, err := visitBrowserResourceParquet(ctx, source, func(raw []byte, _ bool) error { return visit(raw) })
+	return err
+}
+
+// visitBrowserResourceParquet reads a private snapshot of a Parquet
+// transaction artifact row by row: the canonical resource projection when it
+// has one, otherwise the legacy columns rebuilt as a row; legacyMillisecond
+// says a row's timestamp came from the legacy millisecond column. It returns
+// the snapshot's SHA-256 and size.
+func visitBrowserResourceParquet(ctx context.Context, source *os.File, visit func(raw []byte, legacyMillisecond bool) error) (string, int64, error) {
+	snapshot, digest, size, cleanup, err := snapshotBrowserResourceParquet(ctx, source)
+	if err != nil {
+		return "", 0, err
 	}
 	defer cleanup()
 	physical, err := openBrowserResourcePhysicalParquet(ctx, snapshot, size)
 	if err != nil {
-		return browserResourceScanResult{}, browserResourceContextOr(ctx, err)
+		return "", 0, browserResourceContextOr(ctx, err)
 	}
 	selected := []string{"resource_projection_json"}
 	_, canonical := physical.schema[selected[0]]
 	if !canonical {
 		selected = []string{"test_id", "timestamp_rfc3339", "timestamp_unix_ms", "action_name", "group_name", "region", "page_url", "client_metrics_json", "network_entries_json", "snapshot_json"}
 	}
-	result := browserResourceScanResult{SHA256: digest, SizeBytes: size}
+	legacyMillisecond := !canonical && physical.schema["timestamp_rfc3339"] == nil && physical.schema["timestamp_unix_ms"] != nil
+	var rows int64
 	budget := &resourceParquetMemoryBudget{}
 	for _, group := range physical.footer.RowGroups {
 		cursors := map[string]*resourceParquetColumn{}
@@ -596,15 +644,15 @@ func scanBrowserResourceParquet(ctx context.Context, source *os.File, testID str
 			for _, candidate := range selected {
 				if name == candidate {
 					if !resourceParquetSelectedSemantic(physical.schema[name], name) {
-						return browserResourceScanResult{}, errBrowserResourceUnavailable
+						return "", 0, errBrowserResourceUnavailable
 					}
 					kind := chunk.MetaData.Type
 					if name == "timestamp_unix_ms" {
 						if kind != parquet.Type_INT64 {
-							return browserResourceScanResult{}, errBrowserResourceUnavailable
+							return "", 0, errBrowserResourceUnavailable
 						}
 					} else if kind != parquet.Type_BYTE_ARRAY {
-						return browserResourceScanResult{}, errBrowserResourceUnavailable
+						return "", 0, errBrowserResourceUnavailable
 					}
 					cursors[name] = newResourceParquetColumn(ctx, snapshot, chunk.MetaData, budget)
 					defer cursors[name].release()
@@ -613,13 +661,13 @@ func scanBrowserResourceParquet(ctx context.Context, source *os.File, testID str
 		}
 		for row := int64(0); row < group.NumRows; row++ {
 			if err := ctx.Err(); err != nil {
-				return browserResourceScanResult{}, err
+				return "", 0, err
 			}
 			values := map[string]any{}
 			for name, cursor := range cursors {
 				value, err := cursor.next()
 				if err != nil {
-					return browserResourceScanResult{}, browserResourceContextOr(ctx, err)
+					return "", 0, browserResourceContextOr(ctx, err)
 				}
 				values[name] = value
 			}
@@ -627,56 +675,40 @@ func scanBrowserResourceParquet(ctx context.Context, source *os.File, testID str
 			if canonical {
 				projection, ok := values["resource_projection_json"].(string)
 				if !ok {
-					return browserResourceScanResult{}, errBrowserResourceReadMalformed
+					return "", 0, errBrowserResourceReadMalformed
 				}
 				var reason string
 				raw, reason, err = protocol.DecodeBrowserResourceArchiveProjection([]byte(projection))
 				if err != nil {
-					return browserResourceScanResult{}, errBrowserResourceReadMalformed
+					return "", 0, errBrowserResourceReadMalformed
 				}
 				if reason == "resource_projection_limit" {
-					return browserResourceScanResult{}, errBrowserResourceReadLimit
+					return "", 0, errBrowserResourceReadLimit
 				}
 				if reason != "" {
-					return browserResourceScanResult{}, errBrowserResourceReadMalformed
+					return "", 0, errBrowserResourceReadMalformed
 				}
 			} else {
 				raw, err = resourceParquetLegacyRow(values)
 				if err != nil {
-					return browserResourceScanResult{}, err
+					return "", 0, err
 				}
 			}
-			result.Transactions++
-			items, present, err := browserResourceTransactionRows(raw, result.Transactions, testID)
-			if err != nil {
-				return browserResourceScanResult{}, err
-			}
-			result.SourcePresent = result.SourcePresent || present
-			// A legacy millisecond column remains explicitly millisecond precision.
-			if !canonical && physical.schema["timestamp_rfc3339"] == nil && physical.schema["timestamp_unix_ms"] != nil {
-				for i := range items {
-					if items[i].Timestamp != nil {
-						items[i].TimestampPrecision = "unix_millisecond"
-					}
-				}
-			}
-			for _, item := range items {
-				if err := result.observe(item, q, after); err != nil {
-					return browserResourceScanResult{}, err
-				}
+			rows++
+			if err := visit(raw, legacyMillisecond); err != nil {
+				return "", 0, err
 			}
 		}
 		for _, cursor := range cursors {
 			if err := cursor.finish(); err != nil {
-				return browserResourceScanResult{}, err
+				return "", 0, err
 			}
 		}
 	}
-	if result.Transactions != physical.footer.NumRows {
-		return browserResourceScanResult{}, errBrowserResourceReadMalformed
+	if rows != physical.footer.NumRows {
+		return "", 0, errBrowserResourceReadMalformed
 	}
-	result.finish(q)
-	return result, nil
+	return digest, size, nil
 }
 func resourceParquetLegacyRow(values map[string]any) ([]byte, error) {
 	fields := map[string]json.RawMessage{}
