@@ -6816,6 +6816,16 @@
       "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/interrupted-stop/resolve",
+      "operationId": "handleResolveInterruptedRun",
+      "summary": "Resolve Interrupted Run",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: tests:run"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/tests/{id}/manifest",
       "operationId": "handleGetTestManifest",

@@ -685,6 +685,9 @@ func NewServer(cfg ServerConfig) *Server {
 			s.launchBackground(func() {
 				s.runCapacityTakeoverRecovery(generation)
 			})
+			s.launchBackground(func() {
+				s.runInterruptedRunResolution(generation)
+			})
 		})
 	}
 	if err := fileasset.RegisterProjectRoot(s.importAssetDir); err != nil {
@@ -1110,6 +1113,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.registerAPIRouteCatalog(elasticAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(analysisAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(objectActivityAPIRouteCatalog, standardRouteMiddleware)
+	s.registerAPIRouteCatalog(executionRecoveryAPIRouteCatalog, standardRouteMiddleware)
 	s.mux.Handle("GET /api/v1/scenarios/{id}/results", cors(log(auth(http.HandlerFunc(s.handleScenarioResults)))))
 	s.mux.Handle("GET /api/v1/scenarios/{id}/runtime-settings/report", cors(log(auth(http.HandlerFunc(s.handleGetScenarioRuntimeSettingsReport)))))
 	s.mux.Handle("POST /api/v1/scenarios/{id}/runtime/apply-to-groups", cors(log(auth(http.HandlerFunc(s.handleApplyScenarioRuntimeToGroups)))))

@@ -944,7 +944,9 @@ func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) error {
 		if err := tr.claimTestExecutionFence(test); err != nil {
 			return err
 		}
-		const reason = "controller execution ownership was interrupted; distributed generator stop is unproven without a complete durable participant journal; external generator process-fence reconciliation is required"
+		// After admission, runInterruptedRunResolution finalizes the run once
+		// every generator in its participant journal proves the load is gone.
+		const reason = interruptedDistributedStopReason
 		newError := test.Error
 		if !strings.Contains(newError, reason) {
 			if newError == "" {
