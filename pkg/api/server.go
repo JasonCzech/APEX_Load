@@ -314,6 +314,20 @@ type Server struct {
 	shutdownStarted                 bool
 	shutdownDone                    chan struct{}
 	shutdownErr                     error
+
+	// leadershipRelease ends RunExecutionLeadership early and leadershipDone
+	// closes once its lease is released; both are guarded by lifecycleMu.
+	leadershipRelease context.CancelFunc
+	leadershipDone    chan struct{}
+	// executionRecovery and capacitySweep track acquire-time recovery and the
+	// post-takeover provider sweep (execution_recovery.go).
+	executionRecovery executionRecoveryState
+	capacitySweep     capacityTakeoverSweep
+	// executionRecoveryGiveUp and executionRecoveryStep are private fixture
+	// seams; production leaves them zero (executionRecoveryGiveUpAfter and
+	// runExecutionRecoverySteps).
+	executionRecoveryGiveUp time.Duration
+	executionRecoveryStep   func() error
 	// staticFS is the dashboard asset filesystem probed by readiness checks.
 	// It defaults to the compile-time embedded StaticFS; tests override it so
 	// the readiness suite does not depend on a prior `npm run build`.
@@ -658,53 +672,18 @@ func NewServer(cfg ServerConfig) *Server {
 				slog.Error("failed to tear down stale runtimes after execution leadership loss", "err", err)
 			}
 		})
-		leadership.setOnAcquire(func() {
-			for leadership.IsLeader() {
-				if runner.runAdoptionEnabled() {
-					s.publishExecutionEndpoint(true)
-				}
-				if err := s.reloadGeneratorDrainStatesOnLeadershipAcquire(); err != nil {
-					slog.Warn("generator drain-state leadership refresh failed; admission remains closed", "error", err)
-				} else if err := s.repairScriptRecordingsOnLeadershipAcquire(); err != nil {
-					slog.Warn("script recording leadership repair failed; admission remains closed", "error", err)
-				} else if err := runner.reloadAndReconcile(); err != nil {
-					slog.Warn("execution leadership recovery failed; admission remains closed", "error", err)
-				} else {
-					ctx, cancel := leadership.operationContext(context.Background())
-					err := s.reconcileProvisioningRequests(ctx)
-					if err == nil {
-						err = s.reconcileOrphanedCapacity(ctx)
-					}
-					cancel()
-					if err == nil {
-						return
-					}
-					if leadership.IsLeader() {
-						slog.Warn("provisioning leadership recovery failed; admission remains closed", "error", err)
-					}
-				}
-				if !leadership.IsLeader() {
-					return
-				}
-				ctx, cancel := leadership.operationContext(context.Background())
-				timer := time.NewTimer(250 * time.Millisecond)
-				select {
-				case <-ctx.Done():
-					timer.Stop()
-					cancel()
-					return
-				case <-timer.C:
-					cancel()
-				}
-			}
-		})
+		leadership.setOnAcquire(s.recoverExecutionLeadership)
 		leadership.setOnAdmit(func() {
 			// Restore adopted runtimes before publishing normal execution readiness.
 			runner.resumeAdoptedRuns()
 			s.publishActiveExecutionEndpoint()
+			_, generation := leadership.executionLeaseTerm()
 			s.launchBackground(func() {
 				runner.ReconcilePendingTests()
 				s.wakeArchiveFinalizationRetry()
+			})
+			s.launchBackground(func() {
+				s.runCapacityTakeoverRecovery(generation)
 			})
 		})
 	}
@@ -2250,9 +2229,37 @@ func (s *Server) shutdown(ctx context.Context) error {
 	// Keep the hub, cache, and generator clients alive while active tests receive
 	// their stop request. This is also used by the HA lease-loss callback.
 	if s.runner != nil {
+		// A graceful leader shutdown (rolling update, drain, eviction) hands
+		// adoptable continue-policy runs to the next leader instead of stopping
+		// them. They are detached when the lease is released, after this stop
+		// pass, so their generators stay supervised until then.
+		var stopping map[string]*ManagedTest
+		if s.leadership != nil {
+			if _, generation := s.leadership.executionLeaseTerm(); generation > 0 {
+				if handedOff := s.runner.markContinuityHandoff(generation); handedOff > 0 {
+					slog.Info("handing continue-policy runs to the next execution leader", "runs", handedOff, "execution_generation", generation)
+				}
+				stopping = s.runner.ownedActiveRuns()
+			}
+		}
 		if err := s.runner.stopActiveTests(ctx); err != nil {
 			shutdownErr = err
 		}
+		if len(stopping) > 0 {
+			// Stopped runs finalize asynchronously; keep the lease until their
+			// terminal state and archive are durable, leaving time to release
+			// it afterwards.
+			waitUntil := time.Now().Add(shutdownRunFinalizationWait)
+			if deadline, ok := ctx.Deadline(); ok {
+				waitUntil = minTime(waitUntil, deadline.Add(-5*time.Second))
+			}
+			waitCtx, cancelWait := context.WithDeadline(ctx, waitUntil)
+			if !s.runner.awaitRunsFinalized(waitCtx, stopping) {
+				slog.Warn("releasing execution leadership while stopped runs are still finalizing; the successor keeps them STOPPING until their stop is proven")
+			}
+			cancelWait()
+		}
+		s.releaseExecutionLeadershipForShutdown(ctx)
 	}
 	select {
 	case err := <-httpDone:
@@ -2722,6 +2729,19 @@ func (s *Server) RunExecutionLeadership(ctx context.Context) {
 	if s == nil || s.leadership == nil {
 		return
 	}
+	ctx, release := context.WithCancel(ctx)
+	defer release()
+	done := make(chan struct{})
+	defer close(done)
+	s.lifecycleMu.Lock()
+	if s.shutdownStarted {
+		// Shutdown may already have passed its release point; contending now
+		// would hold the lease for the rest of shutdown and block a successor.
+		s.lifecycleMu.Unlock()
+		return
+	}
+	s.leadershipRelease, s.leadershipDone = release, done
+	s.lifecycleMu.Unlock()
 	var activeEndpointDone chan struct{}
 	if s.activeEndpointPublisher != nil {
 		activeEndpointDone = make(chan struct{})
@@ -2752,6 +2772,27 @@ func (s *Server) RunExecutionLeadership(ctx context.Context) {
 	}
 	if activeEndpointDone != nil {
 		<-activeEndpointDone
+	}
+}
+
+// releaseExecutionLeadershipForShutdown ends this replica's leadership once
+// shutdown has stopped or handed off its runs, and waits (bounded by ctx) for
+// the loss cleanup and lease release. Releasing here, not when the process
+// exits, keeps the leaderless window of a rolling update short.
+func (s *Server) releaseExecutionLeadershipForShutdown(ctx context.Context) {
+	if s == nil {
+		return
+	}
+	s.lifecycleMu.Lock()
+	release, done := s.leadershipRelease, s.leadershipDone
+	s.lifecycleMu.Unlock()
+	if release == nil {
+		return
+	}
+	release()
+	select {
+	case <-done:
+	case <-ctx.Done():
 	}
 }
 

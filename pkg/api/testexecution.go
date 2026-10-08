@@ -2670,6 +2670,21 @@ func (tr *TestRunner) reloadAndReconcile() error {
 	if !tr.holdsExecutionLeadership() {
 		return errNotExecutionLeader
 	}
+	_, generation := tr.leadership.executionLeaseTerm()
+	// Adopt orphaned runs before anything else. Their generators keep them alive
+	// only through the orphan grace, and the epoch keeper waits for adoption
+	// (awaitRunAdoptionReconcile); a slow full reload or an unrelated recovery
+	// step must not spend that window. Adoption needs only the in-flight rows.
+	adoptedEarly, err := tr.reloadActiveStoredTests()
+	if err != nil {
+		return fmt.Errorf("reload active tests: %w", err)
+	}
+	if adoptedEarly {
+		if err := tr.adoptOrphanedRuns(); err != nil {
+			return fmt.Errorf("adopt orphaned runs: %w", err)
+		}
+		tr.markRunAdoptionDone(generation)
+	}
 	if err := tr.repairCapacityReservationBindings(); err != nil {
 		return fmt.Errorf("repair capacity timeslot bindings: %w", err)
 	}
@@ -2683,8 +2698,11 @@ func (tr *TestRunner) reloadAndReconcile() error {
 	if err := tr.reloadStoredTests(); err != nil {
 		return fmt.Errorf("reload tests: %w", err)
 	}
-	if err := tr.adoptOrphanedRuns(); err != nil {
-		return fmt.Errorf("adopt orphaned runs: %w", err)
+	if !adoptedEarly {
+		if err := tr.adoptOrphanedRuns(); err != nil {
+			return fmt.Errorf("adopt orphaned runs: %w", err)
+		}
+		tr.markRunAdoptionDone(generation)
 	}
 	if err := tr.cleanupLeakedCIScriptSnapshots(); err != nil {
 		return fmt.Errorf("clean up leaked CI script snapshots: %w", err)

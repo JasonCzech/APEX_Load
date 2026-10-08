@@ -172,7 +172,7 @@ func TestGeneratorEpochKeeperWaitsForAdoptionReconcile(t *testing.T) {
 	leadership.reconciling.Store(true)
 	released := make(chan struct{})
 	go func() {
-		runner.awaitRunAdoptionReconcile(context.Background())
+		runner.awaitRunAdoptionReconcile(context.Background(), 1)
 		close(released)
 	}()
 	select {
@@ -185,6 +185,36 @@ func TestGeneratorEpochKeeperWaitsForAdoptionReconcile(t *testing.T) {
 	case <-released:
 	case <-time.After(2 * time.Second):
 		t.Fatal("keeper stayed blocked after reconcile finished")
+	}
+}
+
+// The keeper must not wait for the rest of acquisition reconcile once this
+// term's adoption claims are done: unrelated recovery can be slow, and every
+// other generator stays unclaimed (and new runs blocked) until the keeper runs.
+func TestGeneratorEpochKeeperReleasesWhenAdoptionPhaseCompletes(t *testing.T) {
+	runner, _, leadership := newAdoptionTestRunner(t)
+	leadership.reconciling.Store(true)
+	defer leadership.reconciling.Store(false)
+	released := make(chan struct{})
+	go func() {
+		runner.awaitRunAdoptionReconcile(context.Background(), 7)
+		close(released)
+	}()
+	runner.markRunAdoptionDone(6)
+	select {
+	case <-released:
+		t.Fatal("an older term's adoption must not release this term's keeper")
+	case <-time.After(200 * time.Millisecond):
+	}
+	runner.markRunAdoptionDone(7)
+	select {
+	case <-released:
+	case <-time.After(2 * time.Second):
+		t.Fatal("keeper stayed blocked after this term's adoption phase finished")
+	}
+	runner.markRunAdoptionDone(5)
+	if got := runner.runAdoptionDoneGeneration.Load(); got != 7 {
+		t.Fatalf("adoption marker regressed to %d", got)
 	}
 }
 

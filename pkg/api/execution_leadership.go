@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"reflect"
@@ -43,6 +45,9 @@ type leadershipCallbackKind uint8
 const (
 	leadershipCallbackAcquire leadershipCallbackKind = iota + 1
 	leadershipCallbackLoss
+	// leadershipCallbackRelease releases one exact durable owner token after
+	// the loss cleanup queued before it has finished.
+	leadershipCallbackRelease
 )
 
 type leadershipCallbackEvent struct {
@@ -103,7 +108,15 @@ type executionLeadership struct {
 	// same process after it reacquires leadership.
 	leaseAttempt uint64
 	leaseOwnerID string
-	tickMu       sync.Mutex
+	// processNonce makes every owner token unique to this process. ownerID can
+	// be operator-configured (APEXLOAD_CONTROLLER_ID) to the same value on every
+	// replica or survive a container restart, and the lease treats an identical
+	// owner token as a renewal rather than a contest.
+	processNonce string
+	// acquireNotBefore holds off contention after a voluntary step-down so a
+	// healthy replica can take over before this one retries.
+	acquireNotBefore time.Time
+	tickMu           sync.Mutex
 }
 
 func newExecutionLeadership(store executionLeaseStore, ownerID string) *executionLeadership {
@@ -117,9 +130,31 @@ func newExecutionLeadership(store executionLeaseStore, ownerID string) *executio
 		now:             time.Now,
 		operationCtx:    ctx,
 		operationCancel: cancel,
+		processNonce:    newExecutionLeaseProcessNonce(),
 	}
 	l.lossDone = sync.NewCond(&l.mu)
 	return l
+}
+
+func newExecutionLeaseProcessNonce() string {
+	var nonce [8]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		// crypto/rand does not fail on supported platforms; keep a distinct
+		// per-process value even if it ever does.
+		return fmt.Sprintf("t%x", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(nonce[:])
+}
+
+// nextLeaseOwnerIDLocked starts a new acquisition epoch and returns its owner
+// token. l.mu must be held.
+func (l *executionLeadership) nextLeaseOwnerIDLocked() string {
+	if l.processNonce == "" {
+		l.processNonce = newExecutionLeaseProcessNonce()
+	}
+	l.leaseAttempt++
+	l.leaseOwnerID = fmt.Sprintf("%s/%s/%d", l.ownerID, l.processNonce, l.leaseAttempt)
+	return l.leaseOwnerID
 }
 
 // setOnAcquire registers the callback invoked once each time leadership is
@@ -246,14 +281,16 @@ func (l *executionLeadership) tick() {
 
 	requestStartedAt := l.now().UTC()
 	l.mu.Lock()
+	if !l.leader.Load() && requestStartedAt.Before(l.acquireNotBefore) {
+		l.mu.Unlock()
+		return
+	}
 	if !l.leader.Load() {
-		l.leaseAttempt++
-		l.leaseOwnerID = fmt.Sprintf("%s/%d", l.ownerID, l.leaseAttempt)
+		l.nextLeaseOwnerIDLocked()
 	} else if l.leaseOwnerID == "" {
 		// Compatibility for tests/bootstrap paths that install leader state
 		// directly. Normal acquisitions always take the branch above.
-		l.leaseAttempt++
-		l.leaseOwnerID = fmt.Sprintf("%s/%d", l.ownerID, l.leaseAttempt)
+		l.nextLeaseOwnerIDLocked()
 	}
 	leaseOwnerID := l.leaseOwnerID
 	transitionGeneration := l.generation
@@ -586,6 +623,12 @@ func (l *executionLeadership) enqueueLeadershipCallback(event leadershipCallback
 				l.invokeLossCallback(event)
 				continue
 			}
+			if event.kind == leadershipCallbackRelease {
+				if panicValue := invokeLeadershipCallback(event.fn); panicValue != nil {
+					slog.Error("execution leadership release callback panicked", "panic", panicValue)
+				}
+				continue
+			}
 			if l.shouldRunLeadershipCallback(event) {
 				if panicValue := invokeLeadershipCallback(event.fn); panicValue != nil {
 					slog.Error("execution leadership acquire callback panicked", "generation", event.generation, "panic", panicValue)
@@ -639,6 +682,38 @@ func (l *executionLeadership) failAcquireCallback(event leadershipCallbackEvent)
 			slog.Warn("failed to release execution lease after recovery callback panic", "owner", leaseOwnerID, "err", err)
 		}
 	}
+}
+
+// relinquishAfterRecoveryFailure steps down voluntarily when acquire-time
+// recovery cannot complete, so another replica can try. Loss cleanup runs
+// first (it decides which runs are handed off rather than stopped), then the
+// exact durable token is released for an immediate takeover. This replica does
+// not contend again until cooldown has passed. It reports whether it stepped
+// down. It is safe to call from the acquire callback: both follow-up events
+// run on the ordered worker after the callback returns.
+func (l *executionLeadership) relinquishAfterRecoveryFailure(cooldown time.Duration) bool {
+	if l == nil {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.leader.Load() {
+		return false
+	}
+	leaseOwnerID := l.leaseOwnerID
+	l.acquireNotBefore = l.now().UTC().Add(cooldown)
+	l.transitionToFollowerLocked()
+	if store, ok := l.store.(executionLeaseReleaseStore); ok && leaseOwnerID != "" {
+		l.enqueueLeadershipCallback(leadershipCallbackEvent{
+			kind: leadershipCallbackRelease,
+			fn: func() {
+				if err := store.ReleaseSchedulerLease(executionLeaseName, leaseOwnerID); err != nil {
+					slog.Warn("failed to release execution lease after recovery failure", "owner", leaseOwnerID, "err", err)
+				}
+			},
+		})
+	}
+	return true
 }
 
 // shouldRunLeadershipCallback drops acquire callbacks superseded before they

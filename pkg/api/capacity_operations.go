@@ -186,6 +186,10 @@ func (s *Server) reconcileAsyncCapacityOperation(requestID string, pool *storage
 				Requested: base.Desired, Draining: pool.DesiredSize - base.Desired,
 				RetryAfter: time.Second, Message: "waiting for active runs to drain before reducing provider capacity",
 			}
+		} else if ready, reason := s.capacitySweep.poolReady(base.FleetPoolID); !ready {
+			// A successor must finish its post-takeover sweep of this pool before
+			// any provider launch into it (capacityTakeoverSweep).
+			observation = compute.Observation{Requested: base.Desired, RetryAfter: 5 * time.Second, Message: reason}
 		} else {
 			observation, reconcileErr = backend.Reconcile(ctx, base)
 		}
@@ -666,6 +670,12 @@ func (s *Server) ensureRunCapacity(ctx context.Context, test *ManagedTest) (runE
 	base.Policy = policy
 	base.TestID = test.ID
 	base.ConnectivityMode = target.ConnectivityMode
+	// A successor must finish its post-takeover sweep of this pool before any
+	// provider launch into it (capacityTakeoverSweep). Waiting spends part of
+	// the run's readiness budget rather than failing the run outright.
+	if err := s.awaitCapacityPoolSweep(ctx, pool.ID, deadline); err != nil {
+		return err
+	}
 	plan, err := backend.Plan(ctx, base)
 	if err != nil {
 		return err
@@ -1080,16 +1090,26 @@ func (s *Server) releaseRunCapacity(test *ManagedTest, archiveTerminal bool) {
 	}
 }
 
-// reconcileOrphanedCapacity enforces the billable-resource safety net after a
-// leader takeover. Normal cleanup remains archive-fenced; a maximum-lifetime
-// expiry is recorded distinctly so an operator can see that the cost guard
-// terminated an instance whose archive path never became durable.
-func (s *Server) reconcileOrphanedCapacity(ctx context.Context) error {
-	if s == nil || s.store == nil || s.capacityBackends == nil || s.runner == nil || !s.runner.holdsExecutionLeadership() {
+// reconcileOrphanedCapacityForTerm enforces the billable-resource safety net
+// after a leader takeover. Normal cleanup remains archive-fenced; a
+// maximum-lifetime expiry is recorded distinctly so an operator can see that
+// the cost guard terminated an instance whose archive path never became
+// durable.
+//
+// A provider failure affects only its own pool: the pool is recorded as failed
+// (keeping its launches gated) and the remaining pools are still swept. The
+// first call classifies every pool; later calls retry only the failed ones.
+func (s *Server) reconcileOrphanedCapacityForTerm(ctx context.Context, generation uint64) error {
+	if s == nil || s.runner == nil || !s.runner.holdsExecutionLeadership() {
+		return nil
+	}
+	required, planned, retry := s.capacitySweep.pending(generation)
+	if !required {
 		return nil
 	}
 	intentStore, ok := s.store.(storage.CapacityInstanceIntentStore)
-	if !ok {
+	if s.store == nil || s.capacityBackends == nil || !ok {
+		s.capacitySweep.markPlanned(generation)
 		return nil
 	}
 	intents, err := intentStore.ListCapacityInstanceIntents("", "")
@@ -1102,134 +1122,174 @@ func (s *Server) reconcileOrphanedCapacity(ctx context.Context) error {
 			byPool[intent.FleetPoolID] = append(byPool[intent.FleetPoolID], intent)
 		}
 	}
-	pools, err := s.store.ListFleetPools(0, 0)
-	if err != nil {
+	var pools []*storage.FleetPool
+	var errs []error
+	if planned {
+		for _, poolID := range retry {
+			pool, getErr := s.store.GetFleetPool(poolID)
+			if errors.Is(getErr, sql.ErrNoRows) {
+				// A deleted pool cannot launch again; nothing remains to gate.
+				s.capacitySweep.markSwept(generation, poolID)
+				continue
+			}
+			if getErr != nil {
+				errs = append(errs, fmt.Errorf("pool %s: load pool: %w", poolID, getErr))
+				continue
+			}
+			pools = append(pools, pool)
+		}
+	} else if pools, err = s.store.ListFleetPools(0, 0); err != nil {
 		return err
 	}
 	for _, pool := range pools {
 		if ctx.Err() != nil || !s.runner.holdsExecutionLeadership() {
 			return firstNonNilError(ctx.Err(), errNotExecutionLeader)
 		}
-		if pool == nil || pool.ExecutionTargetID == "" {
+		if pool == nil || s.capacitySweep.alreadySwept(generation, pool.ID) {
+			continue
+		}
+		if pool.ExecutionTargetID == "" {
+			s.capacitySweep.markSwept(generation, pool.ID)
 			continue
 		}
 		backend, target, resolveErr := s.capacityBackendForMaintenance(ctx, pool)
 		if resolveErr != nil || target.Kind == storage.ExecutionTargetKubernetes {
+			s.capacitySweep.markSwept(generation, pool.ID)
 			continue
 		}
-		poolIntents := byPool[pool.ID]
-		providerIDs := make([]string, 0, len(poolIntents))
-		known := make(map[string]*storage.CapacityInstanceIntent, len(poolIntents))
-		knownLaunches := make(map[string]*storage.CapacityInstanceIntent, len(poolIntents))
-		for _, intent := range poolIntents {
-			if intent.ProviderID != "" {
-				providerIDs = append(providerIDs, intent.ProviderID)
-				known[intent.ProviderID] = intent
+		if sweepErr := s.sweepOrphanedPoolCapacity(ctx, intentStore, backend, target, pool, byPool[pool.ID]); sweepErr != nil {
+			if ctx.Err() != nil || !s.runner.holdsExecutionLeadership() {
+				return firstNonNilError(ctx.Err(), errNotExecutionLeader)
 			}
-			if intent.ProvisioningRequestID != "" && intent.GeneratorID != "" && intent.LaunchNonce != "" {
-				knownLaunches[strings.TrimSpace(intent.GeneratorID)+"\x00"+strings.TrimSpace(intent.LaunchNonce)] = intent
-			}
+			sweepErr = fmt.Errorf("pool %s: %w", pool.ID, sweepErr)
+			s.capacitySweep.markFailed(generation, pool.ID, sweepErr)
+			errs = append(errs, sweepErr)
+			continue
 		}
-		startupOperationID := "startup-reconcile"
-		if len(providerIDs) == 0 {
-			// With no persisted provider identity, discovery must enumerate every
-			// controller-owned instance in the pool so a lost launch response can
-			// be adopted through its durable launch nonce.
-			startupOperationID = ""
+		s.capacitySweep.markSwept(generation, pool.ID)
+	}
+	if !planned {
+		s.capacitySweep.markPlanned(generation)
+	}
+	return errors.Join(errs...)
+}
+
+// sweepOrphanedPoolCapacity reconciles one pool's provider instances against
+// its durable launch intents: it adopts lost launch responses, terminates
+// untracked instances, and drains instances whose run archive is terminal or
+// whose cleanup deadline passed.
+func (s *Server) sweepOrphanedPoolCapacity(ctx context.Context, intentStore storage.CapacityInstanceIntentStore, backend compute.Backend, target *storage.ExecutionTarget, pool *storage.FleetPool, poolIntents []*storage.CapacityInstanceIntent) error {
+	providerIDs := make([]string, 0, len(poolIntents))
+	known := make(map[string]*storage.CapacityInstanceIntent, len(poolIntents))
+	knownLaunches := make(map[string]*storage.CapacityInstanceIntent, len(poolIntents))
+	for _, intent := range poolIntents {
+		if intent.ProviderID != "" {
+			providerIDs = append(providerIDs, intent.ProviderID)
+			known[intent.ProviderID] = intent
 		}
-		request := compute.CapacityRequest{OperationID: startupOperationID, ExecutionTargetID: target.ID, FleetPoolID: pool.ID, ProviderOperationIDs: providerIDs}
-		discovered, discoverErr := backend.Discover(ctx, request)
-		if discoverErr != nil {
-			return fmt.Errorf("discover capacity for pool %s: %w", pool.ID, discoverErr)
+		if intent.ProvisioningRequestID != "" && intent.GeneratorID != "" && intent.LaunchNonce != "" {
+			knownLaunches[strings.TrimSpace(intent.GeneratorID)+"\x00"+strings.TrimSpace(intent.LaunchNonce)] = intent
 		}
-		if len(providerIDs) > 0 {
-			allRequest := request
-			allRequest.ProviderOperationIDs = nil
-			// An empty operation ID deliberately asks provider discovery for every
-			// controller-owned instance in this pool. The ordinary request keeps
-			// its synthetic startup operation only for audit/error context.
-			allRequest.OperationID = ""
-			allDiscovered, allErr := backend.Discover(ctx, allRequest)
-			if allErr != nil {
-				return fmt.Errorf("discover untracked capacity for pool %s: %w", pool.ID, allErr)
-			}
-			seen := make(map[string]struct{}, len(discovered))
-			for _, instance := range discovered {
-				seen[instance.ProviderID] = struct{}{}
-			}
-			for _, instance := range allDiscovered {
-				if _, exists := seen[instance.ProviderID]; !exists {
-					discovered = append(discovered, instance)
-				}
-			}
+	}
+	startupOperationID := "startup-reconcile"
+	if len(providerIDs) == 0 {
+		// With no persisted provider identity, discovery must enumerate every
+		// controller-owned instance in the pool so a lost launch response can
+		// be adopted through its durable launch nonce.
+		startupOperationID = ""
+	}
+	request := compute.CapacityRequest{OperationID: startupOperationID, ExecutionTargetID: target.ID, FleetPoolID: pool.ID, ProviderOperationIDs: providerIDs}
+	discovered, discoverErr := backend.Discover(ctx, request)
+	if discoverErr != nil {
+		return fmt.Errorf("discover capacity for pool %s: %w", pool.ID, discoverErr)
+	}
+	if len(providerIDs) > 0 {
+		allRequest := request
+		allRequest.ProviderOperationIDs = nil
+		// An empty operation ID deliberately asks provider discovery for every
+		// controller-owned instance in this pool. The ordinary request keeps
+		// its synthetic startup operation only for audit/error context.
+		allRequest.OperationID = ""
+		allDiscovered, allErr := backend.Discover(ctx, allRequest)
+		if allErr != nil {
+			return fmt.Errorf("discover untracked capacity for pool %s: %w", pool.ID, allErr)
 		}
+		seen := make(map[string]struct{}, len(discovered))
 		for _, instance := range discovered {
-			intent := known[instance.ProviderID]
-			if intent != nil {
-				delete(knownLaunches, strings.TrimSpace(intent.GeneratorID)+"\x00"+strings.TrimSpace(intent.LaunchNonce))
+			seen[instance.ProviderID] = struct{}{}
+		}
+		for _, instance := range allDiscovered {
+			if _, exists := seen[instance.ProviderID]; !exists {
+				discovered = append(discovered, instance)
 			}
-			if intent == nil {
-				nonce := strings.TrimSpace(instance.Tags["apexload.io/launch-nonce"])
-				launchKey := strings.TrimSpace(instance.GeneratorID) + "\x00" + nonce
-				candidate := knownLaunches[launchKey]
-				if candidate != nil {
-					adopted, adoptErr := backend.Adopt(ctx, compute.AdoptionRequest{
-						ExecutionTargetID: target.ID,
-						FleetPoolID:       pool.ID,
-						ProviderID:        instance.ProviderID,
-						OperationID:       candidate.ProvisioningRequestID,
-						GeneratorID:       candidate.GeneratorID,
-						LaunchNonce:       candidate.LaunchNonce,
-					})
-					if adoptErr != nil {
-						return fmt.Errorf("adopt provider instance %s: %w", instance.ProviderID, adoptErr)
-					}
-					expected := candidate.UpdatedAt
-					candidate.ProviderID = adopted.ProviderID
-					if adopted.Healthy {
-						candidate.State = storage.CapacityIntentReady
-					} else if strings.EqualFold(adopted.State, "failed") || strings.EqualFold(adopted.State, "stopped") {
-						candidate.State = storage.CapacityIntentFailed
-					} else {
-						candidate.State = storage.CapacityIntentLaunching
-					}
-					updated, updateErr := intentStore.UpdateCapacityInstanceIntentIfUnchanged(candidate, expected)
-					if updateErr != nil {
-						return fmt.Errorf("persist adopted provider instance %s: %w", instance.ProviderID, updateErr)
-					}
-					if !updated {
-						return fmt.Errorf("persist adopted provider instance %s: capacity intent changed concurrently", instance.ProviderID)
-					}
-					intent = candidate
-					known[adopted.ProviderID] = candidate
-					delete(knownLaunches, launchKey)
-					instance = adopted
+		}
+	}
+	for _, instance := range discovered {
+		intent := known[instance.ProviderID]
+		if intent != nil {
+			delete(knownLaunches, strings.TrimSpace(intent.GeneratorID)+"\x00"+strings.TrimSpace(intent.LaunchNonce))
+		}
+		if intent == nil {
+			nonce := strings.TrimSpace(instance.Tags["apexload.io/launch-nonce"])
+			launchKey := strings.TrimSpace(instance.GeneratorID) + "\x00" + nonce
+			candidate := knownLaunches[launchKey]
+			if candidate != nil {
+				adopted, adoptErr := backend.Adopt(ctx, compute.AdoptionRequest{
+					ExecutionTargetID: target.ID,
+					FleetPoolID:       pool.ID,
+					ProviderID:        instance.ProviderID,
+					OperationID:       candidate.ProvisioningRequestID,
+					GeneratorID:       candidate.GeneratorID,
+					LaunchNonce:       candidate.LaunchNonce,
+				})
+				if adoptErr != nil {
+					return fmt.Errorf("adopt provider instance %s: %w", instance.ProviderID, adoptErr)
 				}
-			}
-			if intent == nil {
-				instance.ArchiveTerminal = true
-				if err := backend.Deprovision(ctx, request, []compute.Instance{instance}); err != nil {
-					return fmt.Errorf("terminate untracked provider instance %s: %w", instance.ProviderID, err)
+				expected := candidate.UpdatedAt
+				candidate.ProviderID = adopted.ProviderID
+				if adopted.Healthy {
+					candidate.State = storage.CapacityIntentReady
+				} else if strings.EqualFold(adopted.State, "failed") || strings.EqualFold(adopted.State, "stopped") {
+					candidate.State = storage.CapacityIntentFailed
+				} else {
+					candidate.State = storage.CapacityIntentLaunching
 				}
-				continue
+				updated, updateErr := intentStore.UpdateCapacityInstanceIntentIfUnchanged(candidate, expected)
+				if updateErr != nil {
+					return fmt.Errorf("persist adopted provider instance %s: %w", instance.ProviderID, updateErr)
+				}
+				if !updated {
+					return fmt.Errorf("persist adopted provider instance %s: capacity intent changed concurrently", instance.ProviderID)
+				}
+				intent = candidate
+				known[adopted.ProviderID] = candidate
+				delete(knownLaunches, launchKey)
+				instance = adopted
 			}
-			expired := intent.CleanupDeadline != nil && !time.Now().UTC().Before(*intent.CleanupDeadline)
-			archiveTerminal := intent.ArchiveState == storage.CapacityArchiveTerminal || capacityIntentRunArchiveTerminal(s.store, intent)
-			if !expired && !archiveTerminal {
-				continue
-			}
-			instance.ArchiveTerminal = archiveTerminal || expired
-			if err := backend.Drain(ctx, request, []compute.Instance{instance}); err != nil {
-				return err
-			}
+		}
+		if intent == nil {
+			instance.ArchiveTerminal = true
 			if err := backend.Deprovision(ctx, request, []compute.Instance{instance}); err != nil {
-				return err
+				return fmt.Errorf("terminate untracked provider instance %s: %w", instance.ProviderID, err)
 			}
-			if expired && !archiveTerminal {
-				s.markCapacityIntentsTerminated([]*storage.CapacityInstanceIntent{intent}, storage.CapacityArchiveExpired)
-			} else {
-				s.markCapacityIntentsTerminated([]*storage.CapacityInstanceIntent{intent}, storage.CapacityArchiveTerminal)
-			}
+			continue
+		}
+		expired := intent.CleanupDeadline != nil && !time.Now().UTC().Before(*intent.CleanupDeadline)
+		archiveTerminal := intent.ArchiveState == storage.CapacityArchiveTerminal || capacityIntentRunArchiveTerminal(s.store, intent)
+		if !expired && !archiveTerminal {
+			continue
+		}
+		instance.ArchiveTerminal = archiveTerminal || expired
+		if err := backend.Drain(ctx, request, []compute.Instance{instance}); err != nil {
+			return err
+		}
+		if err := backend.Deprovision(ctx, request, []compute.Instance{instance}); err != nil {
+			return err
+		}
+		if expired && !archiveTerminal {
+			s.markCapacityIntentsTerminated([]*storage.CapacityInstanceIntent{intent}, storage.CapacityArchiveExpired)
+		} else {
+			s.markCapacityIntentsTerminated([]*storage.CapacityInstanceIntent{intent}, storage.CapacityArchiveTerminal)
 		}
 	}
 	return nil

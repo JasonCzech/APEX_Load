@@ -337,6 +337,10 @@ type TestRunner struct {
 	// test default), so behavior is unchanged unless election is wired in.
 	leadership            *executionLeadership
 	durableExecutionFence bool
+	// runAdoptionDoneGeneration is the durable execution generation whose
+	// acquire-time run adoption (Phase A) has finished. The generator epoch
+	// keeper waits for it instead of for the whole reconcile.
+	runAdoptionDoneGeneration atomic.Uint64
 	// testOnlyAllowUnfencedDeploymentLeaseStart is never enabled by production
 	// construction. A test-only option defined in a _test.go file enables it for
 	// narrow fault-injection stores that intentionally implement only SaveTest.
@@ -593,6 +597,11 @@ type ManagedTest struct {
 	// stageScheduleResume makes stage schedules started after adoption
 	// fast-forward to the run clock instead of replaying from stage 0.
 	stageScheduleResume bool
+	// continuityHandoff marks a run a successor will adopt when this replica
+	// steps down voluntarily (graceful shutdown or failed recovery): shutdown
+	// does not stop it and leadership-loss teardown detaches it without a
+	// generator Stop. Set only by markContinuityHandoff.
+	continuityHandoff bool
 	// continuityFailovers is the run's failover history: loaded from the
 	// checkpoint, appended on adoption, written into every re-arm. It is the
 	// single source for RunContinuityStatus, so a failed re-arm cannot hide a

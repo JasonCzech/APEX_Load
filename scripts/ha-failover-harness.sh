@@ -1,7 +1,7 @@
 #!/bin/bash
 # ha-failover-harness.sh — HA controller failover evidence harness (docs/HA_RUN_CONTINUITY_PLAN.md).
 #
-# Runs, as local processes: a throwaway Postgres container (127.0.0.1:55432),
+# Runs, as local processes: a throwaway Postgres container (127.0.0.1:$PG_PORT),
 # a Python HTTP target (18999), two generators (19091/19092) and two HA
 # controllers (18081/18082) sharing that Postgres. It starts a 10-VUser
 # distributed run, kill -9s the execution leader at KILL_AT seconds, then
@@ -10,6 +10,7 @@
 #
 # Usage:   scripts/ha-failover-harness.sh            (from the repo root)
 # Env:     KILL_AT (45)  DURATION (150s)  MAX_WAIT (240)  HARNESS_DIR (mktemp)
+#          PG_PORT (55432; change it when another local Postgres already uses that port)
 #          FAILOVER_POLICY (continue | fail; default continue)
 #          RESTART_KILLED_AFTER (seconds after the kill to relaunch the killed
 #            controller as a follower; 0 = never)
@@ -22,6 +23,9 @@
 #          PEAK_VUSERS (group vusers when STAGES_JSON is set; default 5)
 #          SUSPEND_LEADER=1 (SIGSTOP the leader at KILL_AT instead of kill -9: a
 #            paused, not dead, leader) with RESUME_AFTER (seconds later, SIGCONT it)
+#          KILL_SIGNAL (KILL | TERM; default KILL). TERM stops the leader gracefully,
+#            as a rolling update, node drain or eviction does: it hands
+#            continue-policy runs to the successor and releases its lease.
 #          TOLERATE_LOSS=1 (also set assignment.tolerate_generator_loss)
 #          KILL_GENERATOR_AT (seconds after start to kill -9 generator g2; 0 = never)
 #          GENERATOR_BIN (generator binary to run instead of this checkout's, e.g. an
@@ -42,6 +46,7 @@ mkdir -p "$RUN"
 PG="apexload-ha-$$-$(date +%s)"
 PG_CREATED=0
 PIDS=()
+PG_PORT=${PG_PORT:-55432}
 KILL_AT=${KILL_AT:-45}         # seconds after start
 DURATION=${DURATION:-150s}
 MAX_WAIT=${MAX_WAIT:-240}
@@ -50,6 +55,7 @@ RESTART_KILLED_AFTER=${RESTART_KILLED_AFTER:-0}
 SECOND_KILL_AT=${SECOND_KILL_AT:-0}
 STOP_AT=${STOP_AT:-0}
 SUSPEND_LEADER=${SUSPEND_LEADER:-0}
+KILL_SIGNAL=${KILL_SIGNAL:-KILL}
 TOLERATE_LOSS=${TOLERATE_LOSS:-0}
 KILL_GENERATOR_AT=${KILL_GENERATOR_AT:-0}
 RESUME_AFTER=${RESUME_AFTER:-0}
@@ -76,11 +82,11 @@ ts() { python3 -c 'import time;print(f"{time.time():.1f}")'; }
 log() { echo "$(ts) $*" | tee -a "$RUN/timeline.log"; }
 
 # --- postgres
-docker run -d --rm --name "$PG" -e POSTGRES_PASSWORD=p0 -e POSTGRES_DB=apexload -p 127.0.0.1:55432:5432 postgres:16-alpine >/dev/null || { log "PostgreSQL container startup failed"; exit 1; }
+docker run -d --rm --name "$PG" -e POSTGRES_PASSWORD=p0 -e POSTGRES_DB=apexload -p 127.0.0.1:$PG_PORT:5432 postgres:16-alpine >/dev/null || { log "PostgreSQL container startup failed"; exit 1; }
 PG_CREATED=1
 for i in $(seq 1 30); do docker exec "$PG" pg_isready -U postgres >/dev/null 2>&1 && break; sleep 1; done
 sleep 2
-DBURL="postgres://postgres:p0@127.0.0.1:55432/apexload?sslmode=disable"
+DBURL="postgres://postgres:p0@127.0.0.1:$PG_PORT/apexload?sslmode=disable"
 
 # --- target: counts requests per second via access log
 mkdir -p "$RUN/target"; echo ok > "$RUN/target/get"
@@ -172,10 +178,15 @@ while :; do
   if [ $killed -eq 0 ] && [ "$el" -ge "$KILL_AT" ]; then
     if [ "$SUSPEND_LEADER" = "1" ]; then
       kill -STOP "${CPID[$LEADER]}"; log "SUSPENDED leader c$LEADER (SIGSTOP) at +${el}s"
+    elif [ "$KILL_SIGNAL" = "TERM" ]; then
+      kill -TERM "${CPID[$LEADER]}"; term_watch=1; log "TERMINATED leader c$LEADER (SIGTERM, graceful shutdown) at +${el}s"
     else
       kill -9 "${CPID[$LEADER]}"; log "KILLED leader c$LEADER (kill -9) at +${el}s"
     fi
     killed=1; kill_el=$el; ACTIVE="$F"
+  fi
+  if [ "${term_watch:-0}" -eq 1 ] && ! kill -0 "${CPID[$LEADER]}" 2>/dev/null; then
+    term_watch=0; log "old leader c$LEADER exited at +${el}s; $(grep -ho 'handing continue-policy runs[^}]*' "$RUN/c$LEADER.log" | tail -1)"
   fi
   if [ "$SUSPEND_LEADER" = "1" ] && [ $killed -eq 1 ] && [ "$RESUME_AFTER" -gt 0 ] && [ "$el" -ge $((kill_el + RESUME_AFTER)) ] && [ "${resumed:-0}" -eq 0 ]; then
     kill -CONT "${CPID[$LEADER]}"; resumed=1; log "RESUMED old leader c$LEADER (SIGCONT) at +${el}s"

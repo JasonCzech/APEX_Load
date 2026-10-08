@@ -585,3 +585,82 @@ This closes a stale-placement crash window. It does not implement resumable miss
 shard recovery: phase-by-phase reconciliation, positive fencing, exact replacement
 identity and repeated-controller-loss replay are still required before that path can
 be enabled. Ordinary controller-only adoption and fail-policy execution remain unchanged.
+
+## 16. Graceful handoff and takeover liveness (2026-10-07)
+
+A cross-cutting HA review found that continuity covered only a crashed leader,
+and that a new leader could hold the lease indefinitely without accepting work.
+These changes close both.
+
+**Graceful leader shutdown hands runs off.** On SIGTERM (rolling update, node
+drain, eviction) the leader used to stop every run. The signal also released the
+lease in parallel with that stop pass, so fail-policy rows could be left
+RUNNING for the successor to strand. Now:
+
+- `Server.shutdown` marks every adoptable run (`markContinuityHandoff`): a
+  RUNNING or PAUSED continue-policy run whose checkpoint is armed for the
+  current term, with no unresolved evacuation guard and not finalizing.
+- `stopActiveTests` skips marked runs, and leadership-loss teardown detaches
+  them without a generator Stop. Their generators keep running them under the
+  existing epoch and orphan grace until the successor's adoption claim.
+- Stopped runs finalize asynchronously (terminal status first, then generator
+  cleanup and archive collection), so shutdown keeps the lease until the runs it
+  stopped are fully finalized, bounded at 20 seconds and 5 seconds short of the
+  shutdown deadline (`awaitRunsFinalized`). It then releases the lease
+  (`releaseExecutionLeadershipForShutdown`) instead of waiting for the TTL to
+  expire. Releasing it on the signal, as before, raced that stop pass.
+
+The load bound is unchanged: a handed-off run still stops at its generator
+epoch plus adoption grace if no successor adopts it. The harness has a
+`KILL_SIGNAL=TERM` mode for this path (and `PG_PORT` for a busy 55432).
+
+Evidence (harness, Postgres, real processes; 2 controllers, 2 generators, 150s
+run, signal at +45s):
+
+| Scenario | Outcome |
+|---|---|
+| SIGTERM, `continue` | COMPLETE; load continuous for all 151s at a steady 35-40 req/s through the signal; the old leader handed off 1 run and exited within a second; successor acquired about 4.5s after the signal and adopted both generators 43ms later (5s observation gap); archive 11,710 transactions (+0.26% vs the no-failover control), 0.27% errors |
+| `kill -9`, `continue` (crash baseline) | COMPLETE; load continuous; successor acquired 21.7s after the kill (the TTL-bound path); archive 11,476 transactions |
+| SIGTERM, `fail`, before the finalization wait | load stopped at +45s, but the row was left STOPPING ("external generator process-fence reconciliation is required") |
+| SIGTERM, `fail`, with it | ABORTED at +46s with its archive available (3,292 transactions for the 45s run) |
+
+**Acquire-time recovery cannot hold the lease forever.**
+
+- Provisioning recovery and the orphaned-capacity sweep moved from the acquire
+  callback to a post-admission background task (`runCapacityTakeoverRecovery`).
+  A provider error no longer keeps admission closed. Each pool is swept on its
+  own: a pool whose sweep failed refuses provider launches until a retried sweep
+  succeeds (`capacityTakeoverSweep`), and a swept pool is never swept again in
+  the same term, so a fresh launch can't be terminated as untracked.
+- If recovery still fails after two minutes, the leader hands adoptable runs
+  off, steps down (loss cleanup first, then the exact lease token is released),
+  and doesn't contend again for one minute, so a healthy replica can take over.
+- `/api/v1/system/execution-readiness` reports `recovering`,
+  `recovery_started_at`, `recovery_failed_attempts` and
+  `capacity_reconciliation_pending`. Error detail stays in the log because the
+  endpoint is unauthenticated.
+
+**Adoption no longer waits for unrelated recovery.**
+
+- Acquisition reloads only in-flight rows (`ListTestsByStatus`), plus a fresh
+  copy of any in-memory run that still looks active (a copy from an earlier
+  term or a follower refresh may have finished or been deleted since), and runs
+  Phase A before the full script and test reload. Stores without that
+  capability keep the previous order.
+- The generator epoch keeper waits for this term's Phase A
+  (`runAdoptionDoneGeneration`), not the whole reconcile. The 20-second cap
+  remains as a backstop.
+- Phase A re-establishes per-run leases and supervision under the rotated token
+  for every adopted run (`secureAdoptedRuns`). Phase B still restarts streams and
+  drivers after admission, but the run no longer depends on how soon admission
+  follows.
+
+**Lease identity.** The execution lease owner token now includes a per-process
+nonce. `APEXLOAD_CONTROLLER_ID` shared by two replicas, or surviving a container
+restart, previously produced identical owner tokens that the lease treats as one
+holder renewing.
+
+Still open (Phase 2 of the review): automatic resolution of runs that cannot be
+adopted (they stay STOPPING), preparations orphaned by a leadership change,
+leader-only routes missing from the Helm active ingress, a stable installation
+ID for cloud ownership tags, and monotonic lease deadlines.
