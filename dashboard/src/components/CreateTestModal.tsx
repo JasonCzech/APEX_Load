@@ -17,7 +17,7 @@ import TransactionResponseTimeSLASettings from './TransactionResponseTimeSLASett
 import CreateTestRuntimeOverrides from './CreateTestRuntimeOverrides'
 import { getErrorMessage } from '../utils/errorUtils'
 import { buildDefaultScenarioGroup, buildInitialScenarioDraft, scenarioDraftReducer, ScenarioDraftField, ScenarioDraftState } from './scenarioDraftUtils'
-import { buildCreateTestPayload } from './scenarioPayloadUtils'
+import { scenarioCreatePayload, scenarioEstimateRequest } from './scenarioAssembly'
 import DurationField from './DurationField'
 import { NavigationGuardRegisterContext, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { hasGoalModeConfiguration, validateGoalConfig, validateTransactionResponseTimeSLAOverrides } from './goalConfigValidation'
@@ -241,59 +241,12 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
 
     return points
   })()
-  const buildPayload = () => buildCreateTestPayload({
-    name,
-    duration,
-    termination_mode: terminationMode,
-    startDelay,
-    scenarioMode,
-    scriptShakeout,
-    resourceBaseline,
-    groups,
-    goalConfig,
-    runtimeSettings,
-    assignment,
-    applicationId: revisionContext?.applicationId,
-    releaseId: revisionContext?.releaseId,
-    scenarioId: revisionContext?.scenarioId,
-    revisionSourceTestId: revisionContext?.sourceTestId,
-    sourceGoalConfigPresent: revisionContext?.sourceGoalConfigPresent,
-    sourceRuntimeSettingsPresent: revisionContext?.sourceRuntimeSettingsPresent,
-    sourceStartDelayPresent: revisionContext?.sourceStartDelayPresent,
-    projectId: revisionContext?.projectId ?? projectId,
-    folderId: revisionContext ? revisionContext.folderId : folderId,
-    dataPools: revisionContext?.dataPools,
-    elkConnectionId,
-    dynatraceConnectionId,
-    monitorBindings,
-  })
+  const buildPayload = () => scenarioCreatePayload(scenarioDraft, { projectId, folderId, monitorBindings, elkConnectionId, dynatraceConnectionId })
 
-  const buildEstimatePayload = useCallback(() => buildCreateTestPayload({
-    name,
-    duration,
-    termination_mode: terminationMode,
-    startDelay,
-    scenarioMode,
-    scriptShakeout,
-    resourceBaseline,
-    groups,
-    goalConfig,
-    runtimeSettings,
-    assignment: assignment.mode === 'specific_hosts' && (assignment.selected_targets || []).length === 0
-      ? { mode: 'auto', selected_targets: [] }
-      : assignment,
-    applicationId: revisionContext?.applicationId,
-    releaseId: revisionContext?.releaseId,
-    scenarioId: revisionContext?.scenarioId,
-    revisionSourceTestId: revisionContext?.sourceTestId,
-    sourceGoalConfigPresent: revisionContext?.sourceGoalConfigPresent,
-    sourceRuntimeSettingsPresent: revisionContext?.sourceRuntimeSettingsPresent,
-    sourceStartDelayPresent: revisionContext?.sourceStartDelayPresent,
-    projectId: revisionContext?.projectId ?? projectId,
-    folderId: revisionContext ? revisionContext.folderId : folderId,
-    dataPools: revisionContext?.dataPools,
-    monitorBindings,
-  }), [assignment, duration, folderId, goalConfig, groups, monitorBindings, name, projectId, resourceBaseline, revisionContext, runtimeSettings, scenarioMode, scriptShakeout, startDelay, terminationMode])
+  const buildEstimatePayload = useCallback(
+    () => scenarioEstimateRequest(scenarioDraft, { projectId, folderId, monitorBindings }),
+    [folderId, monitorBindings, projectId, scenarioDraft],
+  )
 
   useEffect(() => {
     const canEstimate = (terminationMode === 'iterations' || Boolean(duration.trim())) && groups.every((group) => group.scriptId)

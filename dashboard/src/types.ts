@@ -19,6 +19,7 @@ import type {
 import type { ActiveLoadLevel, ClientMetrics } from './types/metrics'
 import type { BrowserDocumentSummary, BrowserDocumentObservation } from './types/browserDocumentEvidence'
 import type { ScenarioDataPoolBinding } from './types/dataPools'
+import type { TrafficProfile } from './types/trafficProfiles'
 import type {
   RedactionRule,
   RuntimeSettingsOverride,
@@ -2104,6 +2105,10 @@ export interface ScenarioDraft {
   goalConfig: GoalConfig
   groups: ScenarioDraftGroup[]
   runtimeSettings: ScenarioRuntimeSettingsDraft
+  /** Authored production traffic profile (TestHub's production-replay shape). */
+  trafficProfile?: TrafficProfile
+  /** Authored data-pool bindings of a saved scenario (a revision keeps its source's in revisionContext). */
+  dataPools?: ScenarioDataPoolBinding[]
   /** Immutable source-run context carried only when a queued run is revised. */
   revisionContext?: ScenarioDraftRevisionContext
 }

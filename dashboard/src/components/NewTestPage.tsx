@@ -93,6 +93,7 @@ import {
   type RunRuntimeOverrideDraft,
   type ScenarioScriptGroup,
 } from './newTestRunModel'
+import { scenarioDraftFromStoredScenario, scenarioLoadPreview } from './scenarioAssembly'
 import './CreateTestModal.css'
 import './NewTestWorkspace.css'
 import NewTestReadiness from './NewTestReadiness'
@@ -1099,9 +1100,13 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const effectiveRunDuration = useMemo(() => getEffectiveRunDuration(scenario, runDefaultOverrides), [scenario, runDefaultOverrides])
   const effectiveResourceBaseline = useMemo(() => getEffectiveResourceBaseline(scenario, runDefaultOverrides), [scenario, runDefaultOverrides])
   const effectiveScenarioGroups = useMemo(() => buildEffectiveScenarioGroups(scenario, groupRunOverrides), [groupRunOverrides, scenario])
+  // The effective run (saved scenario with this run's overrides) is only
+  // displayed; the launch request still sends just the overrides.
   const runLoadProfilePreview = useMemo(
-    () => buildRunLoadProfilePreview(effectiveScenarioGroups, effectiveRunDuration, scenario?.start_delay, effectiveResourceBaseline, scenario?.traffic_profile, scenario?.scenario_mode, scenario?.goal_config?.target_average_tps),
-    [effectiveResourceBaseline, effectiveRunDuration, effectiveScenarioGroups, scenario?.goal_config?.target_average_tps, scenario?.scenario_mode, scenario?.start_delay, scenario?.traffic_profile],
+    () => scenario
+      ? scenarioLoadPreview(scenarioDraftFromStoredScenario({ ...scenario, scripts: effectiveScenarioGroups, duration: effectiveRunDuration, resource_baseline: effectiveResourceBaseline }, { includeBrowser: true }))
+      : buildRunLoadProfilePreview([], '', undefined, false),
+    [effectiveResourceBaseline, effectiveRunDuration, effectiveScenarioGroups, scenario],
   )
   const runDefaultCards = useMemo(() => buildRunDefaultCards(scenario, runDefaultOverrides), [scenario, runDefaultOverrides])
   const globalRunDefaultCards = useMemo(
