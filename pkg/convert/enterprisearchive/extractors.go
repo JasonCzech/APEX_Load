@@ -36,6 +36,9 @@ func convertRegistration(fn ParsedFunction) registrationConversion {
 	}
 	conversion.findings = append(conversion.findings, scope.findings...)
 	ext.Scope = sourceRegistrationExtractorScope(fn, ext.Source)
+	if dfes, unknown := sourceRegistrationDFEs(fn); len(unknown) == 0 {
+		ext.DFEs = dfes
+	}
 	filterFindings, filter := sourceRegistrationFilters(fn, ext.Name, ext.Source)
 	conversion.findings = append(conversion.findings, filterFindings...)
 	conversion.filter = filter

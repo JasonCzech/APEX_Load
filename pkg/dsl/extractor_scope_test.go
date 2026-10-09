@@ -18,3 +18,14 @@ func TestExtractorScopeValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestExtractorDFEValidation(t *testing.T) {
+	script := &Script{Name: "s", Protocol: "http", Config: ScriptConfig{BaseURL: "https://x.test"}, Actions: []Action{{Type: "http", Name: "a", Method: "GET", Target: "/", Extractors: []Extractor{
+		{Name: "ok", Source: "body", Type: "regex", Expression: "(x)", DFEs: []string{"base64", "JSON_TO_XML"}},
+		{Name: "bad", Source: "body", Type: "regex", Expression: "(x)", DFEs: []string{"gwt"}},
+	}}}}
+	issues := ValidateScriptIssues(script)
+	if !hasIssue(issues, `extractors[1] dfes has unsupported transform "gwt"`) || hasIssue(issues, "extractors[0]") {
+		t.Fatalf("issues = %v", issues)
+	}
+}

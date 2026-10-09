@@ -1,6 +1,0 @@
-{
-  "description": "Data-format extensions transform the response before searching. Until WP1.5 applies them, the saved value would differ, so the import must be gated.",
-  "source": "VuGen 26.1 Function Reference: Attributes for Save Parameter Registration Functions (DFEs).",
-  "outcome": "gated",
-  "gate_reason_codes": ["registration_dfe_unsupported"]
-}

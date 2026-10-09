@@ -44,7 +44,8 @@ func TestRegistrationScopeMapping(t *testing.T) {
 		{"json over cookies is narrowed", `web_reg_save_param_json("ParamName=p", "QueryString=$.id", SEARCH_FILTERS, "Scope=Cookies", LAST);`, "body", registrationScopeNarrowedReasonCode},
 		{"regexp default", `web_reg_save_param_regexp("ParamName=p", "RegExp=id=(\\d+)", LAST);`, "all", ""},
 		{"json reads the body", `web_reg_save_param_json("ParamName=p", "QueryString=$.id", LAST);`, "body", ""},
-		{"dfes gate", `web_reg_save_param_ex("ParamName=p", "LB=a", "RB=b", "DFEs=Base64Decode", LAST);`, "all", registrationDFEReasonCode},
+		{"built-in dfes are applied", `web_reg_save_param_ex("ParamName=p", "LB=a", "RB=b", "DFEs=Base64Decode", LAST);`, "all", ""},
+		{"custom dfes gate", `web_reg_save_param_ex("ParamName=p", "LB=a", "RB=b", "DFEs=Base64Decode,MyDecoder", LAST);`, "all", registrationDFEReasonCode},
 		{"ignore redirections yes is exact", `web_reg_save_param_ex("ParamName=p", "LB=a", "RB=b", SEARCH_FILTERS, "IgnoreRedirections=Yes", LAST);`, "all", ""},
 		{"ignore redirections no searches redirect hops", `web_reg_save_param_ex("ParamName=p", "LB=a", "RB=b", SEARCH_FILTERS, "IgnoreRedirections=No", LAST);`, "all", ""},
 		{"header names narrow the header search", `web_reg_save_param_ex("ParamName=p", "LB=a", "RB=b", SEARCH_FILTERS, "Scope=Headers", "HeaderNames=Location", LAST);`, "header", ""},
@@ -161,5 +162,16 @@ func TestResourceFilterIsExactWhenAnExplicitResourceMatches(t *testing.T) {
 	page.Params = map[string]any{"resources": []any{map[string]any{"url": "https://shop.test/static/token.js"}}}
 	if findings := filter.findingsForAttachedRequest(page, "text/html"); len(findings) != 0 {
 		t.Fatalf("an explicit resource matching the filter makes it exact, got %v", findings)
+	}
+}
+
+func TestRegistrationDFEMapping(t *testing.T) {
+	conversion := convertRegistration(parseSingleCall(t, `web_reg_save_param_ex("ParamName=p", "LB=a", "RB=b", "DFEs=Base64Decode, JSON2XML;URL Encoding", LAST);`))
+	if !reflect.DeepEqual(conversion.extractor.DFEs, []string{"base64", "json_to_xml", "url_decode"}) {
+		t.Fatalf("dfes = %v", conversion.extractor.DFEs)
+	}
+	gated := convertRegistration(parseSingleCall(t, `web_reg_save_param_ex("ParamName=p", "LB=a", "RB=b", "DFEs=GWT", LAST);`))
+	if len(gated.extractor.DFEs) != 0 {
+		t.Fatalf("a chain with an unknown DFE must not be partially applied, got %v", gated.extractor.DFEs)
 	}
 }

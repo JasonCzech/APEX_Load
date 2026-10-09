@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -1435,7 +1436,7 @@ func cometdConnectExtractorsAreEquivalent(actions []dsl.Action) bool {
 			return false
 		}
 		for extractorIndex := range baseline {
-			if candidate[extractorIndex] != baseline[extractorIndex] {
+			if !reflect.DeepEqual(candidate[extractorIndex], baseline[extractorIndex]) {
 				return false
 			}
 		}

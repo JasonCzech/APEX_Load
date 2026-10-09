@@ -37,6 +37,8 @@ export interface ScriptExtractorDefinition {
   convert?: string
   /** HTTP response set to search: redirect hops, resources, URL/Content-Type filters. Absent = final response only. */
   scope?: ScriptExtractorScope
+  /** Data-format transforms applied to each searched response body first (LoadRunner DFEs). */
+  dfes?: string[]
 }
 
 export interface ScriptExtractorScope {

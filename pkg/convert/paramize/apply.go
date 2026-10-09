@@ -3,6 +3,7 @@ package paramize
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -120,7 +121,7 @@ func validateSelectedSuggestionApplication(script *dsl.Script, suggestions []Sug
 				if existing.Name != suggestion.Extractor.Name {
 					continue
 				}
-				if existing != *suggestion.Extractor {
+				if !reflect.DeepEqual(existing, *suggestion.Extractor) {
 					return fmt.Errorf("selected correlation %q conflicts with the existing extractor %q", suggestion.ID, existing.Name)
 				}
 				extractorExists = true
@@ -136,7 +137,7 @@ func validateSelectedSuggestionApplication(script *dsl.Script, suggestions []Sug
 					pendingExtractors[sourceKey] = pending
 				}
 				if sibling, exists := pending[suggestion.Extractor.Name]; exists {
-					if sibling != *suggestion.Extractor {
+					if !reflect.DeepEqual(sibling, *suggestion.Extractor) {
 						return fmt.Errorf("selected correlation %q conflicts with another selected extractor %q", suggestion.ID, suggestion.Extractor.Name)
 					}
 				} else {

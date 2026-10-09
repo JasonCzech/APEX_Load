@@ -11,5 +11,10 @@ Action()
 		"Resource=0",
 		LAST);
 
+	web_url("next",
+		"URL=http://parity.test/app/next?d={Decoded}",
+		"Resource=0",
+		LAST);
+
 	return 0;
 }

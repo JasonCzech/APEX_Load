@@ -9,7 +9,7 @@ import { collectAuthoringIssues } from './scriptAuthoringAssist'
 import AuthHostsField from './AuthHostsField'
 import { parseAuthHosts } from './authHosts'
 import { ProtocolExtractorsSection } from './scriptActionFields'
-import { describeExtractorScope } from './extractorScope'
+import { describeExtractorDFEs, describeExtractorScope } from './extractorScope'
 import { bodyEncodingLabel, knownBodyEncoding } from './bodyEncodings'
 import type { ScriptDefinition } from '../types/scripts'
 
@@ -150,5 +150,7 @@ describe('extractor scope summary', () => {
     expect(describeExtractorScope({ redirects: 'include', resources: 'include' })).toBe('Also searches redirect hops and resources')
     expect(describeExtractorScope({ redirects: 'exclude', resources: 'include', request_url: '*token*' })).toBe('Also searches resources; only URL *token*')
     expect(describeExtractorScope({ header_names: ['Location'] })).toBe('Final response only; only headers Location')
+    expect(describeExtractorDFEs(['base64', 'json_to_xml'])).toBe('Decodes the body first: base64 → json_to_xml')
+    expect(describeExtractorDFEs([])).toBe('')
   })
 })

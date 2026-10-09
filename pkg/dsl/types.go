@@ -1254,6 +1254,11 @@ type Extractor struct {
 	// Scope widens or filters the HTTP responses searched. Without it only
 	// the final response of the request is searched.
 	Scope *ExtractorScope `json:"scope,omitempty"`
+	// DFEs transforms each searched HTTP response body, in order, before the
+	// expression runs (LoadRunner data-format extensions): base64, gzip,
+	// json_to_xml, xml_to_json, url_decode, url_encode, html_unescape,
+	// html_escape.
+	DFEs []string `json:"dfes,omitempty"`
 }
 
 // ExtractorScope is the set of a request's responses an HTTP extractor

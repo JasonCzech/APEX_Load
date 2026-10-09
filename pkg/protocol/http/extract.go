@@ -311,6 +311,10 @@ func extractResponse(ext protocol.Extractor, response responseSurfaces) (string,
 }
 
 func extractRaw(ext protocol.Extractor, response responseSurfaces) (string, error) {
+	response, err := withExtractorDFEs(ext, response)
+	if err != nil {
+		return "", err
+	}
 	headers, body := response.headers, response.body
 	switch ext.Source {
 	case "", "body":
@@ -334,6 +338,13 @@ func extractAll(ext protocol.Extractor, headers http.Header, body []byte) ([]str
 }
 
 func extractAllResponse(ext protocol.Extractor, response responseSurfaces) ([]string, error) {
+	response, dfeErr := withExtractorDFEs(ext, response)
+	if errors.Is(dfeErr, protocol.ErrExtractionMiss) {
+		return nil, nil
+	}
+	if dfeErr != nil {
+		return nil, dfeErr
+	}
 	headers, body := response.headers, response.body
 	content := body
 	var values []string

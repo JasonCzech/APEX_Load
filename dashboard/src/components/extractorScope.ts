@@ -15,3 +15,9 @@ export function describeExtractorScope(scope?: ScriptExtractorScope): string {
   if (scope.header_names?.length) filters.push(`headers ${scope.header_names.join(', ')}`)
   return filters.length > 0 ? `${searched}; only ${filters.join(', ')}` : searched
 }
+
+// describeExtractorDFEs names the data-format transforms an extractor applies
+// to each response body before searching, or returns ''.
+export function describeExtractorDFEs(dfes?: string[]): string {
+  return dfes && dfes.length > 0 ? `Decodes the body first: ${dfes.join(' → ')}` : ''
+}

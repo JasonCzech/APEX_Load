@@ -24,8 +24,9 @@ const (
 	// (RelFrameId, HeaderNames on a body search, or a RequestUrl/ContentType
 	// filter that only a resource APEX may not fetch can match).
 	registrationFilterReasonCode = "registration_filter_unreproduced"
-	// registrationDFEReasonCode: data-format extensions transform the
-	// response before searching, so the saved value would differ.
+	// registrationDFEReasonCode: data-format extensions APEX does not
+	// implement transform the response before searching, so the saved value
+	// would differ.
 	registrationDFEReasonCode = "registration_dfe_unsupported"
 	// textCheckScopeReasonCode: web_reg_find searches a scope APEX does not
 	// check yet (Headers), so the check is not executed.
@@ -94,6 +95,36 @@ func sourceRegistrationScope(fn ParsedFunction, paramName string, textSearch boo
 	}
 }
 
+// loadRunnerDFETypes maps LoadRunner's built-in data-format extension names
+// (case and separators ignored) to APEX extractor transforms.
+var loadRunnerDFETypes = map[string]string{
+	"base64decode": "base64", "base64": "base64",
+	"urlencoding": "url_decode", "urldecode": "url_decode",
+	"json2xml": "json_to_xml", "jsontoxml": "json_to_xml",
+	"xml2json": "xml_to_json", "xmltojson": "xml_to_json",
+	"gzip": "gzip", "gzipdecode": "gzip", "gunzip": "gzip",
+	"htmlunescape": "html_unescape", "htmldecode": "html_unescape",
+}
+
+// sourceRegistrationDFEs maps a registration's DFEs= list to APEX transforms,
+// and returns the names that have no APEX equivalent (custom or GWT DFEs).
+func sourceRegistrationDFEs(fn ParsedFunction) ([]string, []string) {
+	var types, unknown []string
+	for _, name := range strings.FieldsFunc(cleanConfigValue(firstNonEmptyArg(fn, "DFEs")), func(r rune) bool { return r == ',' || r == ';' }) {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		key := strings.NewReplacer(" ", "", "_", "", "-", "").Replace(strings.ToLower(name))
+		if transform, ok := loadRunnerDFETypes[key]; ok {
+			types = append(types, transform)
+		} else {
+			unknown = append(unknown, name)
+		}
+	}
+	return types, unknown
+}
+
 // pendingRegistrationFilter is a search filter checked against the request
 // the registration ends up attached to.
 type pendingRegistrationFilter struct {
@@ -138,9 +169,9 @@ func registrationSourceSearchesHeaders(source string) bool {
 // registration maps to.
 func sourceRegistrationFilters(fn ParsedFunction, paramName, source string) ([]importreview.Finding, *pendingRegistrationFilter) {
 	var findings []importreview.Finding
-	if dfes := strings.TrimSpace(cleanConfigValue(firstNonEmptyArg(fn, "DFEs"))); dfes != "" {
+	if _, unknown := sourceRegistrationDFEs(fn); len(unknown) > 0 {
 		findings = append(findings, registrationFinding(fn, registrationDFEReasonCode, diag.Blocker, importreview.GateExecution,
-			fmt.Sprintf("Parameter %q applies data-format extensions (%s) to the response before searching; APEX searches the raw response, so the saved value would differ.", paramName, dfes)))
+			fmt.Sprintf("Parameter %q applies data-format extensions APEX does not implement (%s) to the response before searching, so the saved value would differ.", paramName, strings.Join(unknown, ", "))))
 	}
 	if value := strings.TrimSpace(cleanConfigValue(firstNonEmptyArg(fn, "HeaderNames"))); value != "" && !registrationSourceSearchesHeaders(source) {
 		findings = append(findings, promotionFinding(fn, registrationFilterReasonCode,

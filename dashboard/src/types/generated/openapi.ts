@@ -12414,6 +12414,7 @@ export interface operations {
             "extractor"?: ({
               "convert"?: string;
               "default_value"?: (string) | null;
+              "dfes"?: Array<string>;
               "expression"?: string;
               "mode"?: string;
               "name"?: string;
@@ -38052,6 +38053,7 @@ export interface operations {
               "extractors"?: Array<{
                 "convert"?: string;
                 "default_value"?: (string) | null;
+                "dfes"?: Array<string>;
                 "expression"?: string;
                 "mode"?: string;
                 "name"?: string;
@@ -38659,6 +38661,7 @@ export interface operations {
               "extractors"?: Array<{
                 "convert"?: string;
                 "default_value"?: (string) | null;
+                "dfes"?: Array<string>;
                 "expression"?: string;
                 "mode"?: string;
                 "name"?: string;
@@ -38808,6 +38811,7 @@ export interface operations {
               "extractors"?: Array<{
                 "convert"?: string;
                 "default_value"?: (string) | null;
+                "dfes"?: Array<string>;
                 "expression"?: string;
                 "mode"?: string;
                 "name"?: string;
@@ -103894,6 +103898,7 @@ export interface operations {
             "extractor": {
               "convert"?: string;
               "default_value"?: (string) | null;
+              "dfes"?: Array<string>;
               "expression": string;
               "mode"?: string;
               "name": string;
@@ -103923,6 +103928,7 @@ export interface operations {
               "extractor": {
                 "convert"?: string;
                 "default_value"?: (string) | null;
+                "dfes"?: Array<string>;
                 "expression": string;
                 "mode"?: string;
                 "name": string;
@@ -106450,6 +106456,7 @@ export interface operations {
             "extractor"?: ({
               "convert"?: string;
               "default_value"?: (string) | null;
+              "dfes"?: Array<string>;
               "expression"?: string;
               "mode"?: string;
               "name"?: string;
@@ -155500,6 +155507,7 @@ export interface operations {
               "extractors"?: Array<{
                 "convert"?: string;
                 "default_value"?: (string) | null;
+                "dfes"?: Array<string>;
                 "expression"?: string;
                 "mode"?: string;
                 "name"?: string;
@@ -156107,6 +156115,7 @@ export interface operations {
               "extractors"?: Array<{
                 "convert"?: string;
                 "default_value"?: (string) | null;
+                "dfes"?: Array<string>;
                 "expression"?: string;
                 "mode"?: string;
                 "name"?: string;
@@ -156256,6 +156265,7 @@ export interface operations {
               "extractors"?: Array<{
                 "convert"?: string;
                 "default_value"?: (string) | null;
+                "dfes"?: Array<string>;
                 "expression"?: string;
                 "mode"?: string;
                 "name"?: string;
@@ -161866,6 +161876,7 @@ export interface operations {
               "extractors"?: Array<{
                 "convert"?: string;
                 "default_value"?: (string) | null;
+                "dfes"?: Array<string>;
                 "expression"?: string;
                 "mode"?: string;
                 "name"?: string;
@@ -162473,6 +162484,7 @@ export interface operations {
               "extractors"?: Array<{
                 "convert"?: string;
                 "default_value"?: (string) | null;
+                "dfes"?: Array<string>;
                 "expression"?: string;
                 "mode"?: string;
                 "name"?: string;
@@ -162622,6 +162634,7 @@ export interface operations {
               "extractors"?: Array<{
                 "convert"?: string;
                 "default_value"?: (string) | null;
+                "dfes"?: Array<string>;
                 "expression"?: string;
                 "mode"?: string;
                 "name"?: string;

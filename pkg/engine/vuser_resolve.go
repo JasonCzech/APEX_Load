@@ -1286,6 +1286,7 @@ func toProtocolExtractors(exts []dsl.Extractor, vu *VUser) []protocol.Extractor 
 			SaveLength:   e.SaveLength,
 			Convert:      e.Convert,
 			Scope:        toProtocolExtractorScope(e.Scope),
+			DFEs:         append([]string(nil), e.DFEs...),
 		}
 	}
 	return out

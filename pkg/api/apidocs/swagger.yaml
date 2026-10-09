@@ -189568,6 +189568,10 @@ paths:
                                 default_value:
                                   type: string
                                   nullable: true
+                                dfes:
+                                  type: array
+                                  items:
+                                    type: string
                                 expression:
                                   type: string
                                 mode:
@@ -191060,6 +191064,10 @@ paths:
                                 default_value:
                                   type: string
                                   nullable: true
+                                dfes:
+                                  type: array
+                                  items:
+                                    type: string
                                 expression:
                                   type: string
                                 mode:
@@ -191442,6 +191450,10 @@ paths:
                                 default_value:
                                   type: string
                                   nullable: true
+                                dfes:
+                                  type: array
+                                  items:
+                                    type: string
                                 expression:
                                   type: string
                                 mode:
@@ -199525,6 +199537,10 @@ paths:
                                 default_value:
                                   type: string
                                   nullable: true
+                                dfes:
+                                  type: array
+                                  items:
+                                    type: string
                                 expression:
                                   type: string
                                 mode:
@@ -201017,6 +201033,10 @@ paths:
                                 default_value:
                                   type: string
                                   nullable: true
+                                dfes:
+                                  type: array
+                                  items:
+                                    type: string
                                 expression:
                                   type: string
                                 mode:
@@ -201399,6 +201419,10 @@ paths:
                                 default_value:
                                   type: string
                                   nullable: true
+                                dfes:
+                                  type: array
+                                  items:
+                                    type: string
                                 expression:
                                   type: string
                                 mode:
@@ -240776,6 +240800,10 @@ paths:
                       default_value:
                         type: string
                         nullable: true
+                      dfes:
+                        type: array
+                        items:
+                          type: string
                       expression:
                         type: string
                       mode:
@@ -240851,6 +240879,10 @@ paths:
                             default_value:
                               type: string
                               nullable: true
+                            dfes:
+                              type: array
+                              items:
+                                type: string
                             expression:
                               type: string
                             mode:
@@ -274258,6 +274290,10 @@ paths:
                             default_value:
                               type: string
                               nullable: true
+                            dfes:
+                              type: array
+                              items:
+                                type: string
                             expression:
                               type: string
                             mode:
@@ -281492,6 +281528,10 @@ paths:
                             default_value:
                               type: string
                               nullable: true
+                            dfes:
+                              type: array
+                              items:
+                                type: string
                             expression:
                               type: string
                             mode:
@@ -309903,6 +309943,10 @@ paths:
                                 default_value:
                                   type: string
                                   nullable: true
+                                dfes:
+                                  type: array
+                                  items:
+                                    type: string
                                 expression:
                                   type: string
                                 mode:
@@ -311395,6 +311439,10 @@ paths:
                                 default_value:
                                   type: string
                                   nullable: true
+                                dfes:
+                                  type: array
+                                  items:
+                                    type: string
                                 expression:
                                   type: string
                                 mode:
@@ -311777,6 +311825,10 @@ paths:
                                 default_value:
                                   type: string
                                   nullable: true
+                                dfes:
+                                  type: array
+                                  items:
+                                    type: string
                                 expression:
                                   type: string
                                 mode:

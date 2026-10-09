@@ -1264,6 +1264,7 @@ func validateExtractorIssues(protocol string, path string, action Action) []stri
 			}
 		}
 		issues = append(issues, validateExtractorScopeIssues(label, i, ext, enforceSourceType)...)
+		issues = append(issues, validateExtractorDFEIssues(label, i, ext, enforceSourceType)...)
 		if ext.SaveOffset < 0 {
 			issues = append(issues, fmt.Sprintf("%s: extractors[%d] save_offset must be zero or greater", label, i))
 		}
@@ -1311,6 +1312,26 @@ func validateExtractorScopeIssues(label string, index int, ext Extractor, httpFa
 			if !httpguts.ValidHeaderFieldName(strings.TrimSpace(name)) {
 				issues = append(issues, fmt.Sprintf("%s: extractors[%d] scope.header_names has an invalid header name %q", label, index, name))
 			}
+		}
+	}
+	return issues
+}
+
+// validateExtractorDFEIssues checks an HTTP extractor's data-format chain.
+func validateExtractorDFEIssues(label string, index int, ext Extractor, httpFamily bool) []string {
+	if len(ext.DFEs) == 0 {
+		return nil
+	}
+	if !httpFamily {
+		return []string{fmt.Sprintf("%s: extractors[%d] dfes are supported only by HTTP-family protocols", label, index)}
+	}
+	var issues []string
+	if len(ext.DFEs) > httpprotocol.MaxExtractorDFEs {
+		issues = append(issues, fmt.Sprintf("%s: extractors[%d] dfes lists more than %d transforms", label, index, httpprotocol.MaxExtractorDFEs))
+	}
+	for _, name := range ext.DFEs {
+		if !httpprotocol.ExtractorDFETypes[strings.ToLower(strings.TrimSpace(name))] {
+			issues = append(issues, fmt.Sprintf("%s: extractors[%d] dfes has unsupported transform %q (use base64, gzip, json_to_xml, xml_to_json, url_decode, url_encode, html_unescape or html_escape)", label, index, name))
 		}
 	}
 	return issues

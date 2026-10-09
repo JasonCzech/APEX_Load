@@ -85,3 +85,26 @@ func TestURLAndStatusSourcesReadTheFinalResponse(t *testing.T) {
 		}
 	}
 }
+
+func TestExtractorDFEs(t *testing.T) {
+	encoded := []byte("eyJpZCI6IkRFQy03In0=") // {"id":"DEC-7"}
+	response := responseSurfaces{headers: http.Header{"Content-Type": {"text/plain"}}, body: encoded}
+	got, err := extractResponse(protocol.Extractor{Source: "body", Type: "jsonpath", Expression: "$.id", DFEs: []string{"base64"}}, response)
+	if err != nil || got != "DEC-7" {
+		t.Fatalf("base64 then jsonpath = %q, %v", got, err)
+	}
+	got, err = extractResponse(protocol.Extractor{Source: "body", Type: "xpath", Expression: "//id", DFEs: []string{"base64", "json_to_xml"}}, response)
+	if err != nil || got != "DEC-7" {
+		t.Fatalf("base64, json_to_xml then xpath = %q, %v", got, err)
+	}
+	if _, err := extractResponse(protocol.Extractor{Source: "body", Type: "regex", Expression: "(x)", DFEs: []string{"base64"}}, responseSurfaces{body: []byte("not base64!")}); !errors.Is(err, protocol.ErrExtractionMiss) {
+		t.Fatalf("a body the chain cannot read must be a miss, got %v", err)
+	}
+	if _, err := extractResponse(protocol.Extractor{Source: "body", Type: "regex", Expression: "(x)", DFEs: []string{"gwt"}}, response); err == nil || errors.Is(err, protocol.ErrExtractionMiss) {
+		t.Fatalf("an unsupported transform must be an error, got %v", err)
+	}
+	values, err := extractAllResponse(protocol.Extractor{Source: "body", Type: "regex", Expression: "(x)", Mode: "all", DFEs: []string{"base64"}}, responseSurfaces{body: []byte("%%%")})
+	if err != nil || len(values) != 0 {
+		t.Fatalf("save-all over an unreadable body = %v, %v; want no matches", values, err)
+	}
+}

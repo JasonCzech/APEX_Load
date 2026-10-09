@@ -636,6 +636,9 @@ type Extractor struct {
 	// Scope widens or filters the HTTP responses searched (see
 	// dsl.ExtractorScope); nil searches the final response only.
 	Scope *ExtractorScope `json:"scope,omitempty"`
+	// DFEs transforms each searched response body before extraction (see
+	// dsl.Extractor.DFEs).
+	DFEs []string `json:"dfes,omitempty"`
 }
 
 // ExtractorScope mirrors dsl.ExtractorScope for the protocol layer.

@@ -1,0 +1,26 @@
+{
+  "description": "A Base64Decode data-format extension decodes the response before the boundaries run, so the decoded value is saved.",
+  "source": "VuGen 26.1 Function Reference: Attributes for Save Parameter Registration Functions (DFEs); Data Format Extensions (Base64Decode).",
+  "outcome": "replay",
+  "responses": [
+    {
+      "method": "GET",
+      "path": "/app/home",
+      "headers": {
+        "Content-Type": "text/plain"
+      },
+      "body": "dj1ERUMtNTU7"
+    }
+  ],
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/app/home"
+    },
+    {
+      "method": "GET",
+      "path": "/app/next",
+      "query": "d=DEC-55"
+    }
+  ]
+}
