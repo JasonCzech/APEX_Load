@@ -6517,6 +6517,16 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/browser-interactions",
+      "operationId": "handleGetRunArchiveBrowserInteractions",
+      "summary": "Get Run Archive Browser Interactions",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/tests/{id}/archive/browser-resources",
       "operationId": "handleGetRunArchiveBrowserResources",
       "summary": "Get Run Archive Browser Resources",

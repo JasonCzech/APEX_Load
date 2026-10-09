@@ -65737,6 +65737,113 @@ export interface operations {
       };
     };
   };
+  "handleGetRunArchiveBrowserInteractions": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": ({
+            "coverage": {
+              "by_provenance": Record<string, number>;
+              "dropped": number;
+              "excluded"?: Record<string, number>;
+              "incomplete": boolean;
+              "interactions": number;
+              "mapped": number;
+              "records": number;
+            };
+            "heatmaps": Array<{
+              "by_kind": Record<string, number>;
+              "by_provenance": Record<string, number>;
+              "cells": Array<Array<number>>;
+              "columns": number;
+              "device_profile": string;
+              "engine": string;
+              "key": string;
+              "layout_revision": string;
+              "notes"?: Array<string>;
+              "orientation": string;
+              "points": number;
+              "route": string;
+              "rows": number;
+              "targets"?: Array<{
+                "count": number;
+                "label_sha256"?: string;
+                "role": string;
+              }>;
+              "viewport_height": number;
+              "viewport_width": number;
+            }>;
+            "limitations"?: Array<string>;
+            "notes": Array<string>;
+            "patterns": Array<{
+              "action_id"?: string;
+              "action_name"?: string;
+              "count": number;
+              "deadline_ms"?: number;
+              "declared"?: string;
+              "detail": string;
+              "end": string;
+              "id": string;
+              "interactions": Array<string>;
+              "kind": string;
+              "layout_revision"?: string;
+              "provenance": string;
+              "route"?: string;
+              "start": string;
+            }>;
+            "run_id": string;
+            "status": string;
+            "thresholds": {
+              "heatmap_grid": number;
+              "repeat_min_gestures": number;
+              "repeat_radius_px": number;
+              "repeat_window_ms": number;
+            };
+            "version": string;
+          }) | null;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleGetRunArchiveBrowserResources": {
     parameters: {
       "path": {
@@ -169043,6 +169150,9 @@ export interface paths {
   };
   "/api/v1/tests/{id}/archive/browser-findings": {
     "get": operations["handleGetRunArchiveBrowserFindings"];
+  };
+  "/api/v1/tests/{id}/archive/browser-interactions": {
+    "get": operations["handleGetRunArchiveBrowserInteractions"];
   };
   "/api/v1/tests/{id}/archive/browser-resources": {
     "get": operations["handleGetRunArchiveBrowserResources"];

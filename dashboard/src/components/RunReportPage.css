@@ -775,3 +775,20 @@
 .run-archive-coverage-table { max-height: 320px; overflow: auto; margin-top: 12px; }
 .run-archive-coverage-table table { width: 100%; table-layout: fixed; }
 .run-archive-coverage-table :is(td, th) { white-space: normal; overflow-wrap: anywhere; }
+
+.interaction-heatmaps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.interaction-heatmaps figure {
+  margin: 0;
+  max-width: 100%;
+}
+
+.interaction-heatmap {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}

@@ -352447,6 +352447,276 @@ paths:
       tags:
         - Tests
       x-handler: handleGetRunArchiveBrowserFindings
+  /api/v1/tests/{id}/archive/browser-interactions:
+    get:
+      summary: Get Run Archive Browser Interactions
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      operationId: handleGetRunArchiveBrowserInteractions
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  coverage:
+                    type: object
+                    properties:
+                      by_provenance:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                          format: int64
+                      dropped:
+                        type: integer
+                        format: int64
+                      excluded:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                          format: int64
+                      incomplete:
+                        type: boolean
+                      interactions:
+                        type: integer
+                        format: int64
+                      mapped:
+                        type: integer
+                        format: int64
+                      records:
+                        type: integer
+                        format: int64
+                    required:
+                      - by_provenance
+                      - dropped
+                      - incomplete
+                      - interactions
+                      - mapped
+                      - records
+                  heatmaps:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        by_kind:
+                          type: object
+                          additionalProperties:
+                            type: integer
+                            format: int64
+                        by_provenance:
+                          type: object
+                          additionalProperties:
+                            type: integer
+                            format: int64
+                        cells:
+                          type: array
+                          items:
+                            type: array
+                            items:
+                              type: integer
+                              format: int64
+                        columns:
+                          type: integer
+                          format: int64
+                        device_profile:
+                          type: string
+                        engine:
+                          type: string
+                        key:
+                          type: string
+                        layout_revision:
+                          type: string
+                        notes:
+                          type: array
+                          items:
+                            type: string
+                        orientation:
+                          type: string
+                        points:
+                          type: integer
+                          format: int64
+                        route:
+                          type: string
+                        rows:
+                          type: integer
+                          format: int64
+                        targets:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              count:
+                                type: integer
+                                format: int64
+                              label_sha256:
+                                type: string
+                              role:
+                                type: string
+                            required:
+                              - count
+                              - role
+                        viewport_height:
+                          type: integer
+                          format: int64
+                        viewport_width:
+                          type: integer
+                          format: int64
+                      required:
+                        - by_kind
+                        - by_provenance
+                        - cells
+                        - columns
+                        - device_profile
+                        - engine
+                        - key
+                        - layout_revision
+                        - orientation
+                        - points
+                        - route
+                        - rows
+                        - viewport_height
+                        - viewport_width
+                  limitations:
+                    type: array
+                    items:
+                      type: string
+                  notes:
+                    type: array
+                    items:
+                      type: string
+                  patterns:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        action_id:
+                          type: string
+                        action_name:
+                          type: string
+                        count:
+                          type: integer
+                          format: int64
+                        deadline_ms:
+                          type: integer
+                          format: int64
+                        declared:
+                          type: string
+                        detail:
+                          type: string
+                        end:
+                          type: string
+                          format: date-time
+                        id:
+                          type: string
+                        interactions:
+                          type: array
+                          items:
+                            type: string
+                        kind:
+                          type: string
+                        layout_revision:
+                          type: string
+                        provenance:
+                          type: string
+                        route:
+                          type: string
+                        start:
+                          type: string
+                          format: date-time
+                      required:
+                        - count
+                        - detail
+                        - end
+                        - id
+                        - interactions
+                        - kind
+                        - provenance
+                        - start
+                  run_id:
+                    type: string
+                  status:
+                    type: string
+                  thresholds:
+                    type: object
+                    properties:
+                      heatmap_grid:
+                        type: integer
+                        format: int64
+                      repeat_min_gestures:
+                        type: integer
+                        format: int64
+                      repeat_radius_px:
+                        type: number
+                        format: double
+                      repeat_window_ms:
+                        type: integer
+                        format: int64
+                    required:
+                      - heatmap_grid
+                      - repeat_min_gestures
+                      - repeat_radius_px
+                      - repeat_window_ms
+                  version:
+                    type: string
+                required:
+                  - coverage
+                  - heatmaps
+                  - notes
+                  - patterns
+                  - run_id
+                  - status
+                  - thresholds
+                  - version
+                nullable: true
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleGetRunArchiveBrowserInteractions
   /api/v1/tests/{id}/archive/browser-resources:
     get:
       summary: Get Run Archive Browser Resources

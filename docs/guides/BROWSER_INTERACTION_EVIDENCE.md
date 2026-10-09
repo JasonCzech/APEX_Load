@@ -124,3 +124,48 @@ does, and that an independent request counter sees no added request.
 Chromium fixtures also cover met, missed and not-reached outcomes, a select's
 target resolved from its selector while focus stays elsewhere, a navigating
 click, and a touch session's taps.
+
+## Patterns and heatmaps
+
+`GET /api/v1/tests/{id}/archive/browser-interactions` reads a finalized run's
+interaction evidence (`browser_interaction_patterns.v1`). Viewer access is
+enough. The run report shows the result under **Browser evidence →
+Interaction patterns**. A run without interaction evidence answers
+`not_captured`. The response states its thresholds and coverage:
+interactions, records, dropped and incomplete evidence, counts by provenance,
+gestures mapped, and gestures left out by reason. Nothing is replayed or
+injected.
+
+Patterns are found per document, in capture order:
+
+| Pattern | Rule |
+| --- | --- |
+| `scripted_repetition` | At least 3 pointer gestures within 2 s and 32 CSS px of the first, on one route and layout, when any of them is scripted or of unknown provenance. |
+| `repeated_gesture` | The same, when every gesture was recorded with consent. It is the only pattern that can suggest human frustration. |
+| `retry` | A failed gesture followed by gestures of the same action, up to the first that succeeded. Retries never count as repetition. |
+| `dead_interaction` | A gesture with an authored outcome (its post-action `sync`) observed as `missed` within its deadline. An unchanged page alone is never one. |
+| `unexpected_navigation` | A gesture that declared an in-page outcome (`element_visible`, `dom_stable` or a pause) but navigated away. |
+
+A double click is one declared gesture, so it is never a repetition. Each
+pattern lists its route, layout, action, count, window and up to 16
+interaction IDs.
+
+Heatmaps place each pointer gesture's first dispatched point on an abstract
+64×64 grid of its viewport. One map is kept per sanitized route, layout
+revision, viewport size and orientation, engine and device profile, so
+incompatible layouts never merge. Engine and profile come from the gesture's
+source generation in the run's document evidence, and are `unknown` without
+it. Keyboard and form gestures fill a per-map table of target roles and
+hashed labels, never positions.
+
+Some gestures are counted, by reason, instead of mapped:
+- those with an unavailable reason (`child_frame_unobserved`,
+  `document_changed`, `synthetic_dispatch`, `page_state_unavailable`);
+- those without points or without a viewport;
+- those outside the viewport;
+- those beyond 64 maps.
+
+At most 200 patterns are kept, and patterns are found among the first 100,000
+interactions (`interactions_truncated` beyond that). Screenshot overlays are
+not produced. Incomplete journeys are E5's journey accounting
+(`/archive/journeys`), not a pattern here.

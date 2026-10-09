@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 728,
+    "routes": 729,
     "public": 31,
-    "protected": 697,
-    "rbac": 692,
+    "protected": 698,
+    "rbac": 693,
     "handler_authenticated": 5,
     "role_metadata_missing": 0,
-    "green": 728,
+    "green": 729,
     "partial": 0,
     "missing": 0
   },
@@ -15141,6 +15141,33 @@
       "method": "GET",
       "path": "/api/v1/tests/{id}/archive/browser-findings",
       "operation_id": "handleGetRunArchiveBrowserFindings",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "results:read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/browser-interactions",
+      "operation_id": "handleGetRunArchiveBrowserInteractions",
       "public": false,
       "authenticated": true,
       "state": "GREEN",
