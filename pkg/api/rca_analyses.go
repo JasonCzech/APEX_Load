@@ -13,6 +13,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/rca"
@@ -30,6 +32,11 @@ const (
 	rcaAnalysisLease = 5 * time.Minute
 	// At most two analyses run at once on one controller.
 	rcaMaxConcurrentAnalyses = 2
+	// rcaMaxEvidenceReadTime bounds reading the archive before the engine's
+	// budget starts: materializing it, its manifest, summaries and resources
+	// and one pass over its rows. It is the archive's size that sets this,
+	// not the analysis, so it is kept apart from the engine's wall time.
+	rcaMaxEvidenceReadTime = 10 * time.Minute
 )
 
 // rcaArchiveAdapterVersion names how this package reads an archive into the
@@ -44,9 +51,12 @@ const (
 // on its exact action-dimension tuple, associated analysis datasets
 // contribute imported series and browser document measurement tuples
 // contribute document series (joint slices ranking last for series and
-// anomalies), and unscored telemetry reads as unknown. It has not been
-// released, so its review fixes keep the name.
-const rcaArchiveAdapterVersion = "archive.3"
+// anomalies), and unscored telemetry reads as unknown.
+// archive.4: the archive input digest covers the manifest fields and
+// artifacts the analysis reads, not the adjunct sidecars, telemetry accounts
+// and test notes a finalize refresh rewrites; a request made while the
+// archive is still being finalized is refused instead of failing later.
+const rcaArchiveAdapterVersion = "archive.4"
 
 // rcaEngineVersion changes whenever the engine's output for the same frozen
 // inputs could change, so it is part of every input digest.
@@ -124,6 +134,14 @@ type rcaAnalysisPayload struct {
 	// name, frozen with it.
 	Excerpts []RCAEvidenceExcerpt `json:"excerpts,omitempty"`
 	Error    string               `json:"error,omitempty"`
+	// ArchiveManifest is the digest of the whole archive manifest when the
+	// inputs were frozen. Inputs.Archive covers only what the analysis reads,
+	// so an unchanged manifest digest says the archive is unchanged without
+	// reading it again.
+	ArchiveManifest string `json:"archive_manifest,omitempty"`
+	// Attempt counts the analyses of these inputs that a budget cut short
+	// before this one; it tells identical requests apart from the cut ones.
+	Attempt int `json:"attempt,omitempty"`
 }
 
 // RCAAnalysisResponse reports an analysis and, once completed, its
@@ -140,6 +158,9 @@ type RCAAnalysisResponse struct {
 	// Presented says whether the project presents v2 in Summary,
 	// Diagnostics and reports.
 	Presented bool `json:"presented"`
+	// AnalysisEnabled says whether the project computes new analyses;
+	// saved ones stay readable when it does not.
+	AnalysisEnabled bool `json:"analysis_enabled"`
 
 	// ArchiveChanged says the run's archive changed after the analysis read
 	// it, as when late monitoring evidence arrives; it is not in the analysis.
@@ -163,14 +184,31 @@ type RCABundle struct {
 	Truncated bool `json:"truncated"`
 }
 
-func rcaInputDigest(inputs rca.InputDigests) string {
-	body, _ := json.Marshal(inputs)
+// rcaInputDigest identifies a request's frozen inputs and which attempt at
+// them it is: the first, or one after an assessment the budget cut short.
+func rcaInputDigest(inputs rca.InputDigests, attempt int) string {
+	body, _ := json.Marshal(struct {
+		Inputs  rca.InputDigests `json:"inputs"`
+		Attempt int              `json:"attempt,omitempty"`
+	}{inputs, attempt})
 	sum := sha256.Sum256(body)
 	return hex.EncodeToString(sum[:])
 }
 
-// rcaArchiveDigest identifies an archive by its manifest.
-func rcaArchiveDigest(record *storage.RunArchiveRecord) (string, error) {
+// rcaAnalysisCutByBudget reports whether a completed analysis's assessment
+// was cut short by the engine's wall-time or heap budget. Such an assessment
+// describes the controller's load when it ran, not the run, so it does not
+// answer an identical request.
+func rcaAnalysisCutByBudget(analysis *storage.RCAAnalysis) bool {
+	if analysis == nil || analysis.State != storage.RCAStateCompleted {
+		return false
+	}
+	payload := rcaAnalysisPayloadOf(analysis)
+	return payload.Assessment != nil && rca.CutByBudget(payload.Assessment.Limitations)
+}
+
+// rcaManifestDigest identifies an archive publication by its whole manifest.
+func rcaManifestDigest(record *storage.RunArchiveRecord) (string, error) {
 	if record == nil {
 		return "", errors.New("run archive unavailable")
 	}
@@ -182,6 +220,85 @@ func rcaArchiveDigest(record *storage.RunArchiveRecord) (string, error) {
 		return "", fmt.Errorf("read archive manifest: %w", err)
 	}
 	return sha256BytesHex(data), nil
+}
+
+// rcaEvidenceDigest identifies the archive evidence an analysis reads: the
+// manifest without the adjunct sidecars, telemetry accounts and test notes
+// that finalize writes after publication and a later refresh rewrites, and
+// only the artifacts the adapters open. An adjunct-only rewrite leaves it
+// unchanged, so a completed analysis stays current and a queued one still
+// runs; a field this package does not know about still changes it, which
+// errs towards re-analysis.
+func rcaEvidenceDigest(manifest *RunArchiveManifest) (string, error) {
+	if manifest == nil {
+		return "", errors.New("run archive manifest unavailable")
+	}
+	read := *manifest
+	read.TestManifestFile, read.TestNotesFile = "", ""
+	read.ProviderLookupsFile, read.ProviderLookupCount, read.ProviderLookupsTruncated = "", 0, false
+	read.ExemplarsFile, read.ExemplarCount, read.ExemplarsTruncated = "", 0, false
+	read.ClockObservationsFile, read.ClockObservationCount, read.ClockObservationsTruncated = "", 0, false
+	read.TelemetrySourcesFile, read.TelemetrySourceEpochCount, read.TelemetrySourcesTruncated = "", 0, false
+	read.JointIntervalsFile, read.JointIntervalsParquetFile, read.JointIntervalCount, read.JointIntervalsTruncated = "", "", 0, false
+	read.TelemetryCoverage, read.TelemetryStageDistributions, read.TelemetryStageDigests, read.TelemetryLoss = nil, nil, nil, nil
+	read.PhaseEventsFile, read.PhaseEventCount, read.PhaseEventsTruncated = "", 0, false
+	read.BrowserHARArtifacts, read.BrowserHARIncomplete, read.BrowserHAROmitted = nil, false, nil
+	read.BrowserInteractionsFile, read.BrowserInteractionRecordCount, read.BrowserInteractionsIncomplete, read.BrowserInteractionsDropped, read.BrowserInteractionsArtifact = "", 0, false, 0, nil
+	inputs := map[string]bool{}
+	for _, name := range []string{manifest.TransactionsFile, manifest.IntervalSummariesFile, manifest.ResourceSamplesFile, manifest.IntervalDistributionsFile, manifest.MonitorEvidenceFile, manifest.BrowserDocumentsFile} {
+		if strings.TrimSpace(name) != "" {
+			inputs[name] = true
+		}
+	}
+	read.Artifacts = nil
+	for _, artifact := range manifest.Artifacts {
+		if inputs[artifact.Name] {
+			read.Artifacts = append(read.Artifacts, artifact)
+		}
+	}
+	body, err := json.Marshal(read)
+	if err != nil {
+		return "", fmt.Errorf("encode archive manifest: %w", err)
+	}
+	return sha256BytesHex(body), nil
+}
+
+// rcaArchiveDigest is the evidence digest of an archive record's current
+// manifest, read from its materialized path.
+func rcaArchiveDigest(record *storage.RunArchiveRecord) (string, error) {
+	if record == nil {
+		return "", errors.New("run archive unavailable")
+	}
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		return "", err
+	}
+	return rcaEvidenceDigest(manifest)
+}
+
+// rcaArchiveFinalizing reports whether the run's archive is still being
+// finalized or refreshed. The sidecars and manifest that work publishes would
+// change the evidence an analysis requested now reads, so the request waits
+// instead of failing when it runs. A finalization that has already failed an
+// attempt is retried a minute at a time and may never succeed, so the
+// request does not wait on it: the archive is analyzed as it stands, and a
+// retry that changes the evidence fails the analysis as archive-changed,
+// which can be requested again.
+func (s *Server) rcaArchiveFinalizing(testID string) bool {
+	if s.runner == nil {
+		return false
+	}
+	if outbox := s.runner.archiveFinalizationOutbox(); outbox != nil {
+		if job, err := outbox.GetArchiveFinalizationJob(testID); err == nil && job != nil {
+			return strings.TrimSpace(job.LastError) == ""
+		}
+	}
+	if refresh := s.runner.archiveRefreshOutbox(); refresh != nil {
+		if job, err := refresh.GetArchiveRefreshJob(testID); err == nil && job != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func sidecarState(file string, truncated bool) string {
@@ -205,7 +322,10 @@ func captureRCAEvidence(store any, project, testID string, record *storage.RunAr
 	if !ok {
 		return nil, errors.New("root-cause storage unavailable")
 	}
-	digest, err := rcaArchiveDigest(record)
+	if record == nil {
+		return nil, errors.New("run archive unavailable")
+	}
+	digest, err := rcaEvidenceDigest(manifest)
 	if err != nil {
 		return nil, err
 	}
@@ -248,8 +368,11 @@ func captureRCAEvidence(store any, project, testID string, record *storage.RunAr
 	return rcaStore.AppendRCAEvidenceRevision(project, testID, payload, now, accept)
 }
 
-// sameEvidence reuses a revision captured from the same archive under the
-// same mapping decisions and associated dataset revisions.
+// sameEvidence reuses a revision captured from the same archive evidence
+// under the same mapping decisions and associated dataset revisions. The
+// sidecar inventory is not compared: a sidecar the assessment reads is in
+// the evidence digest, and one it does not read (exemplars, phase events)
+// must not make identical requests two analyses.
 func sameEvidence(latest, current rcaEvidence) bool {
 	return latest.ArchiveDigest == current.ArchiveDigest && latest.MappingDigest == current.MappingDigest &&
 		rcaDatasetsDigest(latest.Datasets) == rcaDatasetsDigest(current.Datasets) && latest.DatasetsTruncated == current.DatasetsTruncated
@@ -272,12 +395,19 @@ func (tr *TestRunner) autoEnrichRCAEvidence(test *ManagedTest, record *storage.R
 	}
 }
 
-func rcaAnalysisResponse(analysis *storage.RCAAnalysis) RCAAnalysisResponse {
+// rcaAnalysisPayloadOf decodes an analysis row's payload; a row that cannot
+// be decoded reads as empty.
+func rcaAnalysisPayloadOf(analysis *storage.RCAAnalysis) rcaAnalysisPayload {
 	var payload rcaAnalysisPayload
 	_ = json.Unmarshal(analysis.Payload, &payload)
+	return payload
+}
+
+func rcaAnalysisResponse(analysis *storage.RCAAnalysis) RCAAnalysisResponse {
+	payload := rcaAnalysisPayloadOf(analysis)
 	created := analysis.CreatedAt
 	out := RCAAnalysisResponse{AnalysisID: analysis.ID, Revision: analysis.Revision, State: analysis.State, CreatedAt: &created, CompletedAt: analysis.CompletedAt,
-		Inputs: &payload.Inputs, Error: payload.Error, Presented: rcaV2PresentEnabled(analysis.ProjectID)}
+		Inputs: &payload.Inputs, Error: payload.Error, Presented: rcaV2PresentEnabled(analysis.ProjectID), AnalysisEnabled: rcaV2ProjectEnabled(analysis.ProjectID)}
 	if analysis.State == storage.RCAStateCompleted {
 		out.Assessment = payload.Assessment
 	}
@@ -316,12 +446,24 @@ func (s *Server) handleCreateRCAAnalysis(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	request.BaselineTestID = strings.TrimSpace(request.BaselineTestID)
+	// The archive is published before finalize writes its sidecars and the
+	// final manifest; an analysis frozen in that window would read a changed
+	// archive when it runs, so it waits for the archive to settle.
+	if s.rcaArchiveFinalizing(test.ID) {
+		writeError(w, http.StatusConflict, "the run archive is still being finalized; request the analysis once it has settled")
+		return
+	}
 	manifest, err := loadRunArchiveManifestFromRecord(record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to read archive manifest")
 		return
 	}
-	archiveDigest, err := rcaArchiveDigest(record)
+	archiveDigest, err := rcaEvidenceDigest(manifest)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	manifestDigest, err := rcaManifestDigest(record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -357,8 +499,18 @@ func (s *Server) handleCreateRCAAnalysis(w http.ResponseWriter, r *http.Request)
 	if json.Unmarshal(evidence.Payload, &frozen) == nil {
 		inputs.Mapping = frozen.MappingDigest
 	}
-	payload, _ := json.Marshal(rcaAnalysisPayload{Request: request, Inputs: inputs})
-	analysis, created, err := store.CreateRCAAnalysis(project, test.ID, rcaInputDigest(inputs), payload, time.Now())
+	var analysis *storage.RCAAnalysis
+	var created bool
+	for attempt := 0; ; attempt++ {
+		payload, _ := json.Marshal(rcaAnalysisPayload{Request: request, Inputs: inputs, ArchiveManifest: manifestDigest, Attempt: attempt})
+		analysis, created, err = store.CreateRCAAnalysis(project, test.ID, rcaInputDigest(inputs, attempt), payload, time.Now())
+		// An identical request answered by an assessment the budget cut
+		// short is analyzed again: that assessment describes the controller's
+		// load when it ran, not the run.
+		if err != nil || created || !rcaAnalysisCutByBudget(analysis) || attempt >= storage.MaxRCARevisionsPerRun {
+			break
+		}
+	}
 	if errors.Is(err, storage.ErrRCALimit) {
 		writeError(w, http.StatusConflict, err.Error())
 		return
@@ -396,7 +548,11 @@ func (s *Server) rcaBaselineArchive(ctx context.Context, currentID, project, bas
 		return "", http.StatusServiceUnavailable, "baseline archive unavailable"
 	}
 	defer lease.Release()
-	digest, err := rcaArchiveDigest(record)
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		return "", http.StatusServiceUnavailable, "baseline archive unavailable"
+	}
+	digest, err := rcaEvidenceDigest(manifest)
 	if err != nil {
 		return "", http.StatusServiceUnavailable, "baseline archive unavailable"
 	}
@@ -434,21 +590,75 @@ func (s *Server) handleGetRCAAnalysis(w http.ResponseWriter, r *http.Request) {
 // a completed analysis predates the run's current archive.
 func (s *Server) currentRCAAnalysisResponse(ctx context.Context, analysis *storage.RCAAnalysis) RCAAnalysisResponse {
 	out := rcaAnalysisResponse(analysis)
-	if out.Assessment != nil && out.Inputs != nil {
-		out.ArchiveChanged = s.rcaArchiveChanged(ctx, analysis.TestID, *out.Inputs)
+	if out.Assessment != nil {
+		out.ArchiveChanged = s.rcaArchiveChanged(ctx, analysis.TestID, rcaAnalysisPayloadOf(analysis))
 	}
 	return out
 }
 
-// rcaArchiveChanged reports whether the run's archive is no longer the one
-// an analysis read. An archive without a recorded digest is not judged.
-func (s *Server) rcaArchiveChanged(ctx context.Context, testID string, inputs rca.InputDigests) bool {
+// rcaArchiveChanged reports whether the archive evidence an analysis read is
+// no longer the run's: a field or artifact the analysis reads changed. A
+// manifest rewrite that only refreshed adjunct sidecars or test notes is not
+// a change. A run without an archive is not judged; an archive that cannot
+// be read is judged changed, so the caller re-analyzes rather than trusts.
+func (s *Server) rcaArchiveChanged(ctx context.Context, testID string, payload rcaAnalysisPayload) bool {
+	if payload.Inputs.Archive == "" {
+		return false
+	}
 	record, ok := s.archiveDomainService().GetRunArchiveContext(ctx, testID)
 	if !ok || record == nil {
 		return false
 	}
-	current := strings.TrimSpace(record.ManifestSHA256)
-	return current != "" && inputs.Archive != "" && current != inputs.Archive
+	if current := strings.TrimSpace(record.ManifestSHA256); current != "" && current == payload.ArchiveManifest {
+		return false
+	}
+	digest, err := rcaCurrentEvidenceDigest(ctx, record)
+	if err != nil {
+		return true
+	}
+	return digest != payload.Inputs.Archive
+}
+
+// rcaEvidenceDigests caches each archive manifest's evidence digest by the
+// manifest's own digest, so a run's analyses are judged current without
+// re-reading its manifest on every request. Each archive publication adds
+// one entry; the cache is emptied once it holds rcaEvidenceDigestCacheLimit.
+var (
+	rcaEvidenceDigests          sync.Map
+	rcaEvidenceDigestCount      atomic.Int64
+	rcaEvidenceDigestCacheLimit = int64(4096)
+)
+
+// rcaCurrentEvidenceDigest is the evidence digest of the run's current
+// archive manifest.
+func rcaCurrentEvidenceDigest(ctx context.Context, record *storage.RunArchiveRecord) (string, error) {
+	key := strings.TrimSpace(record.ManifestSHA256)
+	if key != "" {
+		if cached, ok := rcaEvidenceDigests.Load(key); ok {
+			return cached.(string), nil
+		}
+	}
+	lease, err := acquireArchiveMaterialized(ctx, record)
+	if err != nil {
+		return "", err
+	}
+	defer lease.Release()
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		return "", err
+	}
+	digest, err := rcaEvidenceDigest(manifest)
+	if err != nil {
+		return "", err
+	}
+	if key != "" {
+		if rcaEvidenceDigestCount.Add(1) > rcaEvidenceDigestCacheLimit {
+			rcaEvidenceDigests.Range(func(k, _ any) bool { rcaEvidenceDigests.Delete(k); return true })
+			rcaEvidenceDigestCount.Store(1)
+		}
+		rcaEvidenceDigests.Store(key, digest)
+	}
+	return digest, nil
 }
 
 // handleGetRCAAssessmentV2 returns the run's latest completed assessment.
@@ -469,7 +679,7 @@ func (s *Server) handleGetRCAAssessmentV2(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if latest == nil {
-		writeJSON(w, http.StatusOK, RCAAnalysisResponse{State: "none", Presented: rcaV2PresentEnabled(project)})
+		writeJSON(w, http.StatusOK, RCAAnalysisResponse{State: "none", Presented: rcaV2PresentEnabled(project), AnalysisEnabled: rcaV2ProjectEnabled(project)})
 		return
 	}
 	writeJSON(w, http.StatusOK, s.currentRCAAnalysisResponse(r.Context(), latest))
@@ -676,39 +886,56 @@ func (s *Server) assessRCAAnalysis(ctx context.Context, analysis *storage.RCAAna
 // assessRCAAnalysisWithExcerpts also takes the evidence excerpts the
 // assessment's references name, from the series it judged.
 func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *storage.RCAAnalysis, payload rcaAnalysisPayload) (*rca.Assessment, []RCAEvidenceExcerpt, error) {
-	budget := rca.DefaultBudget
-	budgeter := rca.NewBudgeter(budget, nil, rca.LiveHeapBytes)
-	record, ok := s.archiveDomainService().GetRunArchiveContext(ctx, analysis.TestID)
+	// Reading the archive is bounded by its size, not by the engine's
+	// budget, which starts once the evidence is in hand: a slow download or
+	// a long pass over the rows must not spend the time the engine's stages
+	// need and turn a sound archive into an insufficient-evidence verdict
+	// that identical requests would then be answered with.
+	readCtx, cancelRead := context.WithTimeout(ctx, rcaMaxEvidenceReadTime)
+	defer cancelRead()
+	readErr := func(err error) error {
+		if readCtx.Err() != nil && ctx.Err() == nil {
+			return fmt.Errorf("reading the run's archive evidence took longer than %s; retry the analysis when the controller is less busy", rcaMaxEvidenceReadTime)
+		}
+		return err
+	}
+	record, ok := s.archiveDomainService().GetRunArchiveContext(readCtx, analysis.TestID)
 	if !ok {
 		return nil, nil, errors.New("run archive not found")
 	}
-	lease, err := acquireArchiveMaterialized(ctx, record)
+	lease, err := acquireArchiveMaterialized(readCtx, record)
 	if err != nil {
-		return nil, nil, fmt.Errorf("materialize archive: %w", err)
+		return nil, nil, readErr(fmt.Errorf("materialize archive: %w", err))
 	}
 	defer lease.Release()
-	digest, err := rcaArchiveDigest(record)
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		return nil, nil, err
+	}
+	digest, err := rcaEvidenceDigest(manifest)
 	if err != nil {
 		return nil, nil, err
 	}
 	if digest != payload.Inputs.Archive {
 		return nil, nil, errRCAArchiveChanged
 	}
-	manifest, err := loadRunArchiveManifestFromRecord(record)
+	summaries, err := readAllArchiveSummariesContext(readCtx, record)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, readErr(err)
 	}
-	summaries, err := readAllArchiveSummaries(record)
+	resources, err := readAllArchiveRecordsContext[ResourceSample](readCtx, record, func(m *RunArchiveManifest) string { return m.ResourceSamplesFile })
 	if err != nil {
-		return nil, nil, err
-	}
-	resources, err := readAllArchiveResources(record)
-	if err != nil {
-		return nil, nil, err
+		return nil, nil, readErr(err)
 	}
 	evidence, frozen := s.frozenRCAEvidence(analysis, payload)
-	// Mapping decisions are frozen inputs: without the revision that holds
-	// them, the analysis cannot judge what it was asked to.
+	// The evidence revision is a frozen input: the mapping decisions and
+	// associated datasets it holds decide what the analysis judges, so an
+	// analysis whose frozen revision cannot be read fails, and can be
+	// requested again, rather than judging less and being reused for that.
+	// An analysis that froze no revision has none to read.
+	if !frozen && payload.Inputs.EvidenceRevision != 0 {
+		return nil, nil, errors.New("the analysis's frozen evidence revision could not be read")
+	}
 	if payload.Inputs.Mapping != "" && (!frozen || evidence.MappingDigest != payload.Inputs.Mapping) {
 		return nil, nil, errors.New("the evidence revision holding the analysis's mapping decisions could not be read")
 	}
@@ -717,14 +944,29 @@ func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *st
 	counter := newValidityResultCounter(archiveValidityIntervals(manifest, summaries))
 	calls := newGraphCallCollector()
 	phases := newNetworkPhaseCollector(summaries, manifest.TransactionsFile)
-	if err := forEachArchiveTransaction(record, func(tx *TransactionEvent) error {
+	if err := forEachArchiveTransactionContext(readCtx, record, func(tx *TransactionEvent) error {
 		counter.add(tx.Timestamp)
 		calls.add(tx)
 		phases.add(tx)
-		return ctx.Err()
+		return readCtx.Err()
 	}); err != nil {
-		return nil, nil, err
+		return nil, nil, readErr(err)
 	}
+	// The baseline run's archive is read now too, for the same reason: a
+	// slow download or a long pass over its rows is the archive's size, not
+	// the analysis. What it could not read, the comparison reports.
+	var baselineArchive *rcaBaselineArchive
+	if baselineID := payload.Request.BaselineTestID; baselineID != "" {
+		baselineArchive = s.readRCABaselineArchive(readCtx, manifest, baselineID, payload.Inputs.Baseline)
+		defer baselineArchive.release()
+		if err := readCtx.Err(); err != nil {
+			return nil, nil, readErr(err)
+		}
+	}
+	// The engine's budget starts here, with the evidence in hand; the
+	// detection reads below check it, as the stages do.
+	budget := rca.DefaultBudget
+	budgeter := rca.NewBudgeter(budget, nil, rca.LiveHeapBytes)
 	input := rca.AnalysisInput{
 		Acceptance: archiveAcceptance(manifest),
 		Validity:   archiveValidityInput(manifest, counter.counted(), summaries, resources),
@@ -787,7 +1029,7 @@ func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *st
 		input.Detection.Limitations = append(input.Detection.Limitations, rca.Limitation{Code: limitationImportedDatasetsCut, Detail: fmt.Sprintf("more than %d analysis datasets are associated with the run; the first %d by ID were judged", rcaMaxImportedDatasets, rcaMaxImportedDatasets)})
 	}
 	input.Graph = archiveGraphInput(manifest, calls, observations, evidence.Mappings)
-	input.Coverage, input.Detection.Baseline = s.rcaCoverage(ctx, payload, manifest, input, evidence, frozen, budgeter, budget)
+	input.Coverage, input.Detection.Baseline = s.rcaCoverage(ctx, baselineArchive, input, evidence, frozen, budgeter, budget)
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
@@ -829,7 +1071,7 @@ func (s *Server) frozenRCAEvidence(analysis *storage.RCAAnalysis, payload rcaAna
 
 // rcaCoverage says how much of each kind of evidence the analysis had, and
 // returns the requested baseline's detection evidence when it qualifies.
-func (s *Server) rcaCoverage(ctx context.Context, payload rcaAnalysisPayload, manifest *RunArchiveManifest, input rca.AnalysisInput, evidence rcaEvidence, frozen bool, budgeter *rca.Budgeter, budget rca.Budget) ([]rca.Coverage, *rca.DetectionBaseline) {
+func (s *Server) rcaCoverage(ctx context.Context, baselineArchive *rcaBaselineArchive, input rca.AnalysisInput, evidence rcaEvidence, frozen bool, budgeter *rca.Budgeter, budget rca.Budget) ([]rca.Coverage, *rca.DetectionBaseline) {
 	validity, detection, graph := input.Validity, input.Detection, input.Graph
 	coverage := []rca.Coverage{}
 	status := rca.CoverageComplete
@@ -866,7 +1108,7 @@ func (s *Server) rcaCoverage(ctx context.Context, payload rcaAnalysisPayload, ma
 	switch {
 	case len(detection.Series) == 0 || len(detection.Levels) == 0:
 		seriesStatus = rca.CoverageMissing
-	case len(detection.Limitations) > 0:
+	case rcaDetectionEvidenceLimited(detection.Limitations):
 		seriesStatus = rca.CoveragePartial
 	}
 	seriesDetail := fmt.Sprintf("%d transaction series, %d dependency timing series, %d provider series, %d load levels", transactions, timing, providers, len(detection.Levels))
@@ -910,65 +1152,125 @@ func (s *Server) rcaCoverage(ctx context.Context, payload rcaAnalysisPayload, ma
 		coverage = append(coverage, rca.Coverage{Evidence: "monitor_sources", Status: monitor, Detail: fmt.Sprintf("%d sources, %d incomplete", len(evidence.MonitorSources), incomplete)})
 	}
 	var baseline *rca.DetectionBaseline
-	if baselineID := payload.Request.BaselineTestID; baselineID != "" {
+	if baselineArchive != nil {
 		var baselineCoverage rca.Coverage
-		baselineCoverage, baseline = s.rcaBaselineEvidence(ctx, manifest, baselineID, payload.Inputs.Baseline, budgeter, budget)
+		baselineCoverage, baseline = s.rcaBaselineEvidence(ctx, baselineArchive, budgeter, budget)
 		coverage = append(coverage, baselineCoverage)
 	}
 	return coverage, baseline
 }
 
-// rcaBaselineEvidence qualifies the requested baseline's workload against
-// the run's and, unless it is unqualified, reads its load levels and series
-// so detection can compare each level with the baseline's same level.
-func (s *Server) rcaBaselineEvidence(ctx context.Context, manifest *RunArchiveManifest, baselineID, digest string, budgeter *rca.Budgeter, budget rca.Budget) (rca.Coverage, *rca.DetectionBaseline) {
-	missing := rca.Coverage{Evidence: "baseline", Status: rca.CoverageMissing, Detail: "baseline archive unavailable"}
+// rcaBaselineArchive is the baseline run's archive as the assessment reads it
+// before the engine's budget starts: the record under its materialization
+// lease, its manifest, the workload qualification against the run, its
+// interval summaries and the network phases of its rows. What could not be
+// read is recorded, so the comparison reports it as the baseline's coverage
+// rather than failing the analysis. The lease is held until release.
+type rcaBaselineArchive struct {
+	testID string
+	// coverage is the baseline's coverage as far as the read got; the
+	// comparison refines it.
+	coverage      rca.Coverage
+	record        *storage.RunArchiveRecord
+	lease         *archiveMaterializationLease
+	manifest      *RunArchiveManifest
+	currentKey    rca.WorkloadKey
+	key           rca.WorkloadKey
+	qualification rca.WorkloadQualification
+	summaries     []IntervalSummaryRecord
+	summariesErr  error
+	phases        *networkPhaseCollector
+	phasesErr     error
+}
+
+// comparable reports whether the baseline's series can be compared with the
+// run's: its archive is the one the analysis froze and its workload is not
+// unqualified.
+func (b *rcaBaselineArchive) comparable() bool {
+	return b != nil && b.manifest != nil && b.qualification.Status != rca.BaselineUnqualified
+}
+
+func (b *rcaBaselineArchive) release() {
+	if b != nil && b.lease != nil {
+		b.lease.Release()
+		b.lease = nil
+	}
+}
+
+// readRCABaselineArchive reads the baseline run's archive: materializing it,
+// its manifest and digest check, the workload qualification against the run
+// and, unless the workload is unqualified, its interval summaries and one
+// pass over its rows for network phases. It is the archive's size that
+// bounds this, as for the run's own archive, so it runs before the engine's
+// budget starts.
+func (s *Server) readRCABaselineArchive(ctx context.Context, manifest *RunArchiveManifest, baselineID, digest string) *rcaBaselineArchive {
+	b := &rcaBaselineArchive{testID: baselineID, coverage: rca.Coverage{Evidence: "baseline", Status: rca.CoverageMissing, Detail: "baseline archive unavailable"}}
 	record, ok := s.archiveDomainService().GetRunArchiveContext(ctx, baselineID)
 	if !ok {
-		return missing, nil
+		return b
 	}
 	lease, err := acquireArchiveMaterialized(ctx, record)
 	if err != nil {
-		return missing, nil
+		return b
 	}
-	defer lease.Release()
-	if current, err := rcaArchiveDigest(record); err != nil || current != digest {
-		missing.Detail = "baseline archive changed after the analysis was requested"
-		return missing, nil
-	}
+	b.record, b.lease = record, lease
 	baselineManifest, err := loadRunArchiveManifestFromRecord(record)
 	if err != nil {
-		return missing, nil
+		return b
 	}
-	baselineKey := comparisonWorkloadKey(&baselineComparisonRun{manifest: baselineManifest}, nil, "")
-	currentKey := comparisonWorkloadKey(&baselineComparisonRun{manifest: manifest}, nil, "")
-	qualification := rca.QualifyBaseline(currentKey, baselineKey)
+	if current, err := rcaEvidenceDigest(baselineManifest); err != nil || current != digest {
+		b.coverage.Detail = "baseline archive changed after the analysis was requested"
+		return b
+	}
+	b.manifest = baselineManifest
+	b.key = comparisonWorkloadKey(&baselineComparisonRun{manifest: baselineManifest}, nil, "")
+	b.currentKey = comparisonWorkloadKey(&baselineComparisonRun{manifest: manifest}, nil, "")
+	b.qualification = rca.QualifyBaseline(b.currentKey, b.key)
 	status := rca.CoverageComplete
-	if qualification.Status != rca.BaselineQualified {
+	if b.qualification.Status != rca.BaselineQualified {
 		status = rca.CoveragePartial
 	}
-	detail := qualification.Status
-	if len(qualification.Reasons) > 0 {
-		detail += ": " + strings.Join(qualification.Reasons, ", ")
+	detail := b.qualification.Status
+	if len(b.qualification.Reasons) > 0 {
+		detail += ": " + strings.Join(b.qualification.Reasons, ", ")
 	}
-	coverage := rca.Coverage{Evidence: "baseline", Status: status, Detail: detail}
-	if qualification.Status == rca.BaselineUnqualified {
+	b.coverage = rca.Coverage{Evidence: "baseline", Status: status, Detail: detail}
+	if b.qualification.Status == rca.BaselineUnqualified {
+		return b
+	}
+	if b.summaries, b.summariesErr = readAllArchiveSummariesContext(ctx, record); b.summariesErr != nil {
+		return b
+	}
+	// The baseline's own connection timing, so network phases can be
+	// compared at the same level too.
+	b.phases = newNetworkPhaseCollector(b.summaries, baselineManifest.TransactionsFile)
+	b.phasesErr = forEachArchiveTransactionContext(ctx, record, func(tx *TransactionEvent) error {
+		b.phases.add(tx)
+		return ctx.Err()
+	})
+	return b
+}
+
+// rcaBaselineEvidence reports the baseline's coverage and, when its archive
+// was read and its workload is not unqualified, reads its load levels and
+// series within the engine's budget, so detection can compare each level
+// with the baseline's same level.
+func (s *Server) rcaBaselineEvidence(ctx context.Context, b *rcaBaselineArchive, budgeter *rca.Budgeter, budget rca.Budget) (rca.Coverage, *rca.DetectionBaseline) {
+	if b == nil {
+		return rca.Coverage{Evidence: "baseline", Status: rca.CoverageMissing, Detail: "baseline archive unavailable"}, nil
+	}
+	coverage := b.coverage
+	if !b.comparable() {
 		return coverage, nil
 	}
-	summaries, err := readAllArchiveSummaries(record)
-	if err == nil {
+	if b.summariesErr == nil {
 		var evidence rca.DetectionInput
-		if evidence, err = archiveDetectionInput(ctx, record, baselineManifest, summaries, archiveArrivalModel(&baselineKey), budgeter, budget, nil); err == nil {
-			// The baseline's own connection timing, so network phases can be
-			// compared at the same level too.
-			phases := newNetworkPhaseCollector(summaries, baselineManifest.TransactionsFile)
-			if scanErr := forEachArchiveTransaction(record, func(tx *TransactionEvent) error {
-				phases.add(tx)
-				return ctx.Err()
-			}); scanErr == nil {
-				evidence.Series = append(evidence.Series, phases.series()...)
+		var err error
+		if evidence, err = archiveDetectionInput(ctx, b.record, b.manifest, b.summaries, archiveArrivalModel(&b.key), budgeter, budget, nil); err == nil {
+			if b.phasesErr == nil {
+				evidence.Series = append(evidence.Series, b.phases.series()...)
 			} else {
-				evidence.Limitations = append(evidence.Limitations, rca.Limitation{Code: limitationPhaseEvidence, Detail: "the baseline's rows could not be read: " + scanErr.Error()})
+				evidence.Limitations = append(evidence.Limitations, rca.Limitation{Code: limitationPhaseEvidence, Detail: "the baseline's rows could not be read: " + b.phasesErr.Error()})
 			}
 			// The baseline's browser document tuples, so a document series
 			// is judged against the same tuple of the baseline run.
@@ -978,7 +1280,7 @@ func (s *Server) rcaBaselineEvidence(ctx context.Context, manifest *RunArchiveMa
 				documentLimit = max(0, budget.MaxSeries-rcaNonJointSeries(evidence.Series))
 			}
 			documentsIncomplete := false
-			if documents, limitations, docErr := rcaBrowserDocumentSeries(ctx, record, baselineManifest, summaries, documentLimit, budget.MaxSeriesPoints); docErr == nil {
+			if documents, limitations, docErr := rcaBrowserDocumentSeries(ctx, b.record, b.manifest, b.summaries, documentLimit, budget.MaxSeriesPoints); docErr == nil {
 				evidence.Series = append(evidence.Series, documents...)
 				evidence.Limitations = append(evidence.Limitations, limitations...)
 				// Each limitation here says document evidence is missing:
@@ -1004,12 +1306,28 @@ func (s *Server) rcaBaselineEvidence(ctx context.Context, manifest *RunArchiveMa
 				coverage.Status = rca.CoveragePartial
 				coverage.Detail += "; baseline evidence: " + strings.Join(slices.Compact(slices.Sorted(slices.Values(codes))), ", ")
 			}
-			return coverage, &rca.DetectionBaseline{TestID: baselineID, Qualification: qualification.Status, QualificationReasons: qualification.Reasons,
-				ScriptChangedGroups: rca.ScriptChangedGroups(currentKey, baselineKey), DocumentsIncomplete: documentsIncomplete, Levels: evidence.Levels, Series: evidence.Series}
+			return coverage, &rca.DetectionBaseline{TestID: b.testID, Qualification: b.qualification.Status, QualificationReasons: b.qualification.Reasons,
+				ScriptChangedGroups: rca.ScriptChangedGroups(b.currentKey, b.key), DocumentsIncomplete: documentsIncomplete, Levels: evidence.Levels, Series: evidence.Series}
 		}
 	}
-	coverage.Status, coverage.Detail = rca.CoveragePartial, detail+"; its series could not be read"
+	coverage.Status, coverage.Detail = rca.CoveragePartial, b.coverage.Detail+"; its series could not be read"
 	return coverage, nil
+}
+
+// rcaInformationalDetectionLimitations say how the series were read, not
+// that evidence was missing or cut, so they do not make the detection
+// coverage partial.
+var rcaInformationalDetectionLimitations = map[string]bool{limitationActionsJudged: true, limitationCumulativeSeriesRated: true}
+
+// rcaDetectionEvidenceLimited reports whether any detection limitation says
+// evidence was missing, cut or unreadable.
+func rcaDetectionEvidenceLimited(limitations []rca.Limitation) bool {
+	for _, l := range limitations {
+		if !rcaInformationalDetectionLimitations[l.Code] {
+			return true
+		}
+	}
+	return false
 }
 
 // rcaNonJointSeries counts the series that are not joint action-dimension

@@ -3,13 +3,16 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/rca"
+	"github.com/jasonczech/apexload/pkg/rca/signatures"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -185,18 +188,197 @@ func TestRCACancellationAndOwnerChange(t *testing.T) {
 	}
 }
 
+// An analysis reads a frozen archive. Evidence that changed before it ran
+// fails it; a finalize refresh that only rewrote adjunct sidecars and test
+// notes, and so the manifest digest, is not a change.
 func TestRCAAnalysisFailsWhenTheArchiveChanged(t *testing.T) {
+	t.Run("evidence changed", func(t *testing.T) {
+		server, _ := rcaTestServer(t)
+		record := server.runner.archives["rca-run"]
+		queued := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{}).Body.Bytes())
+		writeArchiveSidecar(t, record, "resources.jsonl", []ResourceSample{}, func(m *RunArchiveManifest) { m.TransactionCount++ })
+		server.runner.mu.Lock()
+		record.ManifestSHA256 = strings.Repeat("f", 64)
+		server.runner.mu.Unlock()
+		if ran, err := server.runNextRCAAnalysis(context.Background(), nil); err != nil || !ran {
+			t.Fatal(ran, err)
+		}
+		failed := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodGet, rcaRunPath+"/analyses/"+queued.AnalysisID, nil).Body.Bytes())
+		if failed.State != storage.RCAStateFailed || failed.Error != errRCAArchiveChanged.Error() || failed.Assessment != nil {
+			t.Fatalf("changed archive: %+v", failed)
+		}
+	})
+	t.Run("adjuncts refreshed", func(t *testing.T) {
+		server, _ := rcaTestServer(t)
+		record := server.runner.archives["rca-run"]
+		queued := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{}).Body.Bytes())
+		writeArchiveSidecar(t, record, "phase_events.jsonl", []PhaseEvent{}, func(m *RunArchiveManifest) {
+			m.PhaseEventsFile, m.TestNotesFile, m.TestManifestFile = "phase_events.jsonl", "test_notes.json", "test_manifest.json"
+			m.Artifacts = append(m.Artifacts, RunArchiveArtifact{Name: "phase_events.jsonl", SHA256: strings.Repeat("a", 64)})
+		})
+		server.runner.mu.Lock()
+		record.ManifestSHA256 = strings.Repeat("e", 64)
+		server.runner.mu.Unlock()
+		if ran, err := server.runNextRCAAnalysis(context.Background(), nil); err != nil || !ran {
+			t.Fatal(ran, err)
+		}
+		done := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodGet, rcaRunPath+"/analyses/"+queued.AnalysisID, nil).Body.Bytes())
+		if done.State != storage.RCAStateCompleted || done.Assessment == nil || done.ArchiveChanged {
+			t.Fatalf("adjunct refresh: %+v", done)
+		}
+		// The same request after the refresh is still the same analysis.
+		if repeat := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{}).Body.Bytes()); repeat.AnalysisID != queued.AnalysisID {
+			t.Fatalf("adjunct refresh made new inputs: %+v", repeat)
+		}
+	})
+}
+
+// An assessment the budget cut short describes the controller's load when
+// it ran, not the run: an identical request is analyzed again instead of
+// being answered with it, and a sound assessment is reused as before.
+func TestRCABudgetCutAssessmentsAreNotReused(t *testing.T) {
 	server, _ := rcaTestServer(t)
-	queued := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{}).Body.Bytes())
-	server.runner.mu.Lock()
-	server.runner.archives["rca-run"].ManifestSHA256 = strings.Repeat("f", 64)
-	server.runner.mu.Unlock()
+	store := server.store.(storage.RCAStore)
+	first := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{}).Body.Bytes())
+	claimed, err := store.ClaimRCAAnalysis("owner", time.Now(), time.Minute)
+	if err != nil || claimed == nil || claimed.ID != first.AnalysisID {
+		t.Fatal(claimed, err)
+	}
+	cut := rcaAnalysisPayloadOf(claimed)
+	cut.Assessment = &rca.Assessment{SchemaVersion: rca.AssessmentSchemaVersion, AnalysisID: claimed.ID, Revision: claimed.Revision, Inputs: cut.Inputs, Outcome: rca.OutcomeInsufficientEvidence,
+		Limitations: []rca.Limitation{{Code: rca.LimitationBudgetTruncated, Detail: rca.BudgetTruncation{Limit: rca.BudgetWallTime, Allowed: 120000, Offered: 130000}.Detail()}}}
+	body, _ := json.Marshal(cut)
+	if ok, err := store.CompleteRCAAnalysisFenced(claimed.ID, "owner", storage.RCAStateCompleted, body, time.Now(), "", "", 0); err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	again := timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{})
+	second := decodeRCAResponse(t, again.Body.Bytes())
+	if again.Code != http.StatusAccepted || second.AnalysisID == first.AnalysisID || second.Revision != 2 || *second.Inputs != *first.Inputs {
+		t.Fatalf("cut assessment reused: %d %s", again.Code, again.Body.String())
+	}
 	if ran, err := server.runNextRCAAnalysis(context.Background(), nil); err != nil || !ran {
 		t.Fatal(ran, err)
 	}
-	failed := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodGet, rcaRunPath+"/analyses/"+queued.AnalysisID, nil).Body.Bytes())
-	if failed.State != storage.RCAStateFailed || failed.Error != errRCAArchiveChanged.Error() || failed.Assessment != nil {
-		t.Fatalf("changed archive: %+v", failed)
+	if done := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodGet, rcaRunPath+"/analyses/"+second.AnalysisID, nil).Body.Bytes()); done.State != storage.RCAStateCompleted || done.Assessment == nil || rca.CutByBudget(done.Assessment.Limitations) {
+		t.Fatalf("second attempt: %+v", done)
+	}
+	if third := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{}).Body.Bytes()); third.AnalysisID != second.AnalysisID {
+		t.Fatalf("sound assessment not reused: %+v", third)
+	}
+}
+
+// An analysis whose frozen evidence revision cannot be read fails, so it is
+// requested again, instead of judging without the mapping decisions and
+// datasets that revision holds and being reused for it.
+func TestRCAAnalysisFailsWhenItsEvidenceRevisionIsUnreadable(t *testing.T) {
+	server, store := rcaTestServer(t)
+	digest, err := rcaArchiveDigest(server.runner.archives["rca-run"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := rca.InputDigests{Archive: digest, EvidenceRevision: 99, Engine: rcaEngineVersion, SignatureSet: signatures.Version}
+	payload, _ := json.Marshal(rcaAnalysisPayload{Inputs: inputs})
+	queued, _, err := store.CreateRCAAnalysis(storage.DefaultProjectID, "rca-run", rcaInputDigest(inputs, 0), payload, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ran, err := server.runNextRCAAnalysis(context.Background(), nil); err != nil || !ran {
+		t.Fatal(ran, err)
+	}
+	failed := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodGet, rcaRunPath+"/analyses/"+queued.ID, nil).Body.Bytes())
+	if failed.State != storage.RCAStateFailed || !strings.Contains(failed.Error, "evidence revision") || failed.Assessment != nil {
+		t.Fatalf("unreadable evidence: %+v", failed)
+	}
+}
+
+// While finalize is still writing the archive's sidecars and manifest, an
+// analysis request waits rather than freezing evidence that is about to change.
+func TestRCAAnalysisWaitsForArchiveFinalization(t *testing.T) {
+	server, store := rcaTestServer(t)
+	record := server.runner.archives["rca-run"]
+	if err := store.SaveArchiveFinalizationJob(&storage.ArchiveFinalizationJob{TestID: "rca-run", ProjectID: storage.DefaultProjectID, ArchiveRecord: *record, PersistArtifacts: true}); err != nil {
+		t.Fatal(err)
+	}
+	if reply := timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{}); reply.Code != http.StatusConflict || !strings.Contains(reply.Body.String(), "finalized") {
+		t.Fatalf("finalizing archive: %d %s", reply.Code, reply.Body.String())
+	}
+	// A finalization that has failed an attempt may never succeed; the
+	// request does not wait on its retries.
+	job, err := store.GetArchiveFinalizationJob("rca-run")
+	if err != nil || job == nil {
+		t.Fatal(job, err)
+	}
+	if err := store.MarkArchiveFinalizationJobFailedIfToken("rca-run", job.IntentToken, errors.New("object store unavailable"), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	stuck := timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{})
+	if stuck.Code != http.StatusAccepted {
+		t.Fatalf("stuck finalization: %d %s", stuck.Code, stuck.Body.String())
+	}
+	queued := decodeRCAResponse(t, stuck.Body.Bytes())
+	if err := store.DeleteArchiveFinalizationJob("rca-run"); err != nil {
+		t.Fatal(err)
+	}
+	// Once settled, the same request is answered by the analysis already queued.
+	settled := timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{})
+	if settled.Code != http.StatusOK || decodeRCAResponse(t, settled.Body.Bytes()).AnalysisID != queued.AnalysisID {
+		t.Fatalf("settled archive: %d %s", settled.Code, settled.Body.String())
+	}
+}
+
+// Finalize and every adjunct refresh after it rewrite the test manifest, the
+// test notes and the archive manifest. The evidence digest an analysis
+// freezes reads through those rewrites, while the whole-manifest digest moves
+// with each; so an analysis requested at publication stays current, and the
+// same request after a refresh is the same analysis.
+func TestRCAEvidenceDigestSurvivesAdjunctRefresh(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
+	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", archiveBackendFilesystem)
+	t.Setenv(envArchiveAdjunctMinFreeBytes, "1")
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	run, record := createArchiveFinalizationTest(t, store, "rca-adjuncts", root)
+	runner := NewTestRunner(1, nil, store)
+	digests := func(stage string) (string, string) {
+		manifest, err := loadRunArchiveManifestFromRecord(record)
+		if err != nil {
+			t.Fatalf("%s: %v", stage, err)
+		}
+		evidence, err := rcaEvidenceDigest(manifest)
+		if err != nil {
+			t.Fatalf("%s: %v", stage, err)
+		}
+		whole, err := rcaManifestDigest(record)
+		if err != nil {
+			t.Fatalf("%s: %v", stage, err)
+		}
+		return evidence, whole
+	}
+	published, publishedManifest := digests("published")
+	if err := runner.persistTestManifestArtifact(run, record); err != nil {
+		t.Fatal(err)
+	}
+	finalized, finalizedManifest := digests("finalized")
+	if err := store.CreateTestNote(&storage.TestNote{ID: "note-1", TestID: run.ID, Body: "written after the analysis was requested"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runner.persistTestManifestArtifact(run, record); err != nil {
+		t.Fatal(err)
+	}
+	refreshed, refreshedManifest := digests("refreshed")
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil || manifest.TestNotesFile == "" || manifest.TestManifestFile == "" {
+		t.Fatalf("adjuncts not written: %v %+v", err, manifest)
+	}
+	if finalizedManifest == publishedManifest || refreshedManifest == finalizedManifest {
+		t.Fatalf("the manifest was not rewritten: %s %s %s", publishedManifest, finalizedManifest, refreshedManifest)
+	}
+	if finalized != published || refreshed != published {
+		t.Fatalf("the evidence digest moved with the adjuncts: published %s, finalized %s, refreshed %s", published, finalized, refreshed)
 	}
 }
 

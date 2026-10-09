@@ -230,6 +230,15 @@ func pdfRootCauseLines(lines *[]string, view *ReportRootCause, hypotheses []Repo
 	if omitted := len(view.Hypotheses) - len(hypotheses); omitted > 0 {
 		*lines = append(*lines, fmt.Sprintf("%d more ranked in the Detailed Technical report.", omitted))
 	}
+	if b := view.BrowserBaseline; b != nil {
+		*lines = append(*lines, b.Summary)
+		for _, finding := range b.Findings {
+			*lines = append(*lines, "  "+finding)
+		}
+		for _, limitation := range b.Limitations {
+			*lines = append(*lines, "  Limitation: "+limitation)
+		}
+	}
 	for _, limitation := range view.Limitations {
 		*lines = append(*lines, "Limitation: "+limitation)
 	}
@@ -267,6 +276,15 @@ func csvRootCauseRows(write reportCSVWriteFunc, section string, view *ReportRoot
 			[3]string{key, "evidence", strings.Join(h.Evidence, "; ")})
 		if view.Source == reportRootCauseV2 {
 			rows = append(rows, [3]string{key, "contradicting", reportListOr(h.Contradicting, "none found")})
+		}
+	}
+	if b := view.BrowserBaseline; b != nil {
+		rows = append(rows, [3]string{"browser_baseline", "summary", b.Summary})
+		for _, finding := range b.Findings {
+			rows = append(rows, [3]string{"browser_baseline", "finding", finding})
+		}
+		for _, limitation := range b.Limitations {
+			rows = append(rows, [3]string{"browser_baseline", "limitation", limitation})
 		}
 	}
 	for _, c := range view.Coverage {

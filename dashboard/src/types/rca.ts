@@ -238,6 +238,9 @@ export interface RcaAnalysisResponse {
   // presented says whether the project presents v2 in Summary and
   // Diagnostics.
   presented: boolean
+  // analysis_enabled says whether the project computes new analyses; saved
+  // ones stay readable when it does not.
+  analysis_enabled?: boolean
   // archive_changed says the run's archive changed after the analysis read
   // it; evidence archived since is not in the analysis.
   archive_changed?: boolean
@@ -277,6 +280,24 @@ export interface ReportRootCause {
   limitations?: string[]
   next_actions?: string[]
   notes?: string[]
+  // v2's comparison of the run's browser document cohorts with the baseline
+  // run's (browser_baseline.v1), when the run had document series.
+  browser_baseline?: ReportBrowserBaseline
+}
+
+// ReportBrowserBaseline presents the assessment's browser baseline (Go
+// ReportBrowserBaseline): cohorts scored, anomalies and the ones that moved.
+export interface ReportBrowserBaseline {
+  version: string
+  status: string
+  baseline?: string
+  compared: number
+  anomalies: number
+  unscored: number
+  // summary is the one-line account every report format prints.
+  summary: string
+  findings?: string[]
+  limitations?: string[]
 }
 
 export interface ReportRootCauseHypothesis {

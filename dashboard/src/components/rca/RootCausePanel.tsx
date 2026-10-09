@@ -135,6 +135,9 @@ export default function RootCausePanel({ testId, model, report, history, history
   const selected = assessment?.hypotheses.find(h => h.id === route.hypothesis)
   const window = parseRcaWindow(route.window)
   const pending = response?.state === 'queued' || response?.state === 'running'
+  // A project can present saved analyses without computing new ones; the
+  // controls then say so instead of offering a request that is refused.
+  const analysisEnabled = response?.analysis_enabled !== false
 
   const investigate = (h: RcaHypothesis) => {
     const span = assessment ? rcaHypothesisWindow(h, assessment.anomalies) : null
@@ -157,8 +160,9 @@ export default function RootCausePanel({ testId, model, report, history, history
         <div className="rca-panel-actions">
           {assessment && <Badge tone={assessment.outcome === 'supported' ? 'success' : 'warning'}>{rcaOutcomeLabel(assessment.outcome)}</Badge>}
           {route.analysis && <button type="button" className="btn btn-sm btn-ghost" onClick={() => onRouteChange({ analysis: undefined, rev: undefined, hypothesis: undefined, window: undefined })}>Show latest analysis</button>}
-          {canAnalyze && <>
-            <label className="rca-enrich"><input type="checkbox" checked={enrich} onChange={e => setEnrich(e.target.checked)} /> Re-read provider evidence</label>
+          {canAnalyze && !analysisEnabled && <span className="run-report-muted" role="note">New analyses are not enabled for this project; saved ones stay readable.</span>}
+          {canAnalyze && analysisEnabled && <>
+            <label className="rca-enrich" title="Freeze a new evidence revision for this analysis instead of reusing the latest one captured from the same archive and mapping decisions."><input type="checkbox" checked={enrich} onChange={e => setEnrich(e.target.checked)} /> Capture evidence afresh</label>
             {baselineTestId && <span className="rca-enrich">Against baseline {baselineName || baselineTestId}</span>}
             <button type="button" className="btn btn-sm btn-secondary" disabled={model.requesting || pending} onClick={() => void reanalyze()}>{model.requesting ? 'Starting…' : response?.state === 'none' ? 'Analyze' : 'Re-analyze'}</button>
           </>}

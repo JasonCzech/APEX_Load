@@ -4142,6 +4142,17 @@ export interface operations {
             "root_cause_view"?: ({
               "acceptance"?: string;
               "analysis_id"?: string;
+              "browser_baseline"?: ({
+                "anomalies"?: number;
+                "baseline"?: string;
+                "compared"?: number;
+                "findings"?: Array<string>;
+                "limitations"?: Array<string>;
+                "status"?: string;
+                "summary"?: string;
+                "unscored"?: number;
+                "version"?: string;
+              }) | null;
               "completed_at"?: (string) | null;
               "confidence"?: string;
               "coverage"?: Array<Record<string, unknown>>;
@@ -24714,6 +24725,7 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
+            "analysis_enabled": boolean;
             "analysis_id"?: string;
             "archive_changed"?: boolean;
             "assessment"?: (Record<string, unknown>) | null;
@@ -63496,6 +63508,7 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
+            "analysis_enabled": boolean;
             "analysis_id"?: string;
             "archive_changed"?: boolean;
             "assessment"?: (Record<string, unknown>) | null;
@@ -63535,6 +63548,7 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
+            "analysis_enabled": boolean;
             "analysis_id"?: string;
             "archive_changed"?: boolean;
             "assessment"?: (Record<string, unknown>) | null;
@@ -72923,6 +72937,17 @@ export interface operations {
             "root_cause_view"?: ({
               "acceptance"?: string;
               "analysis_id"?: string;
+              "browser_baseline"?: ({
+                "anomalies": number;
+                "baseline"?: string;
+                "compared": number;
+                "findings"?: Array<string>;
+                "limitations"?: Array<string>;
+                "status": string;
+                "summary": string;
+                "unscored": number;
+                "version": string;
+              }) | null;
               "completed_at"?: (string) | null;
               "confidence"?: string;
               "coverage"?: Array<Record<string, unknown>>;

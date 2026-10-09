@@ -137,6 +137,15 @@ func (j *leasedJobRunner[T]) runNext(s *Server, ctx context.Context, claimed fun
 			case <-renewed:
 				return
 			case <-ticker.C:
+				if s.runner == nil || !s.runner.isExecutionLeader() {
+					// Demoted: the fenced completion would not stand, so the
+					// work stops and the lease lapses for the new leader
+					// instead of being renewed by a controller that cannot
+					// record its result.
+					slog.Warn(j.name+" owner lost execution leadership", "job_id", id)
+					cancel()
+					return
+				}
 				ok, err := j.renew(id, owner, time.Now(), j.lease)
 				if err != nil {
 					// The lease survives a missed renewal; retry at the next tick.

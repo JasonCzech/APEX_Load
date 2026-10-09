@@ -5,7 +5,7 @@ import "time"
 // DetectParamsVersion identifies the onset-detection parameters an assessment
 // used. Change it whenever a value below changes; WP3.9 recalibrates them on
 // the calibration split only.
-const DetectParamsVersion = "detect.v2"
+const DetectParamsVersion = "detect.v3"
 
 // DetectParams are onset detection's starting values.
 type DetectParams struct {
@@ -29,13 +29,20 @@ type DetectParams struct {
 	// Two-sided CUSUM on robust z-scores: K is the allowance, H the alarm.
 	K float64 `json:"cusum_k"`
 	H float64 `json:"cusum_h"`
-	// MinBaselineBuckets must precede the first tested bucket; the in-run
-	// baseline stops growing at MaxBaselineBuckets, so a slow drift is
-	// measured against the level's start rather than absorbed. A larger cap
-	// estimates the baseline better: on healthy synthetic series 120 buckets
-	// give about a third of the false onsets 30 do.
-	MinBaselineBuckets int `json:"min_baseline_buckets"`
-	MaxBaselineBuckets int `json:"max_baseline_buckets"`
+	// MinBaselineBuckets must precede the first tested bucket of a series on
+	// the run's own grid. A coarser series (a provider polled every 30 s or
+	// 60 s) needs only as many buckets as span MinBaselineSpan, never fewer
+	// than MinBaselineBucketsFloor: ten 60 s buckets would hold back every
+	// provider onset for ten minutes of each level, and a series not judged
+	// is no evidence at all. The in-run baseline stops growing at
+	// MaxBaselineBuckets, so a slow drift is measured against the level's
+	// start rather than absorbed. A larger cap estimates the baseline better:
+	// on healthy synthetic series 120 buckets give about a third of the false
+	// onsets 30 do.
+	MinBaselineBuckets      int           `json:"min_baseline_buckets"`
+	MinBaselineBucketsFloor int           `json:"min_baseline_buckets_floor"`
+	MinBaselineSpan         time.Duration `json:"min_baseline_span_ns"`
+	MaxBaselineBuckets      int           `json:"max_baseline_buckets"`
 	// ConfirmBuckets consecutive buckets beyond K declare an onset; as many
 	// RecoveryBuckets within K end it. A shorter excursion is a spike.
 	ConfirmBuckets  int `json:"confirm_buckets"`
@@ -59,9 +66,25 @@ var DefaultDetectParams = DetectParams{
 	Version:  DetectParamsVersion,
 	MADScale: 1.4826, RelativeFloor: 0.05, LatencyFloorMs: 5, ErrorRateFloorPct: 0.5, ThroughputFloor: 0.1, UnitFloor: 1, ScoreFloor: 0.01,
 	K: 0.5, H: 5,
-	MinBaselineBuckets: 10, MaxBaselineBuckets: 120,
+	MinBaselineBuckets: 10, MinBaselineBucketsFloor: 5, MinBaselineSpan: 5 * time.Minute, MaxBaselineBuckets: 120,
 	ConfirmBuckets: 3, RecoveryBuckets: 3,
 	LevelSettle: 30 * time.Second, LevelTolerance: 0.05,
 	MaxGapBuckets: 3,
 	MaxAnomalies:  500, MaxSpikes: 200,
+}
+
+// minBaseline is the baseline buckets a series needs before its buckets are
+// judged: MinBaselineBuckets, or for a series whose bucket is wide, enough
+// buckets to span MinBaselineSpan, never fewer than MinBaselineBucketsFloor.
+func (p DetectParams) minBaseline(s Series) int {
+	minimum := p.MinBaselineBuckets
+	if s.Bucket > 0 && p.MinBaselineSpan > 0 {
+		if span := int((p.MinBaselineSpan + s.Bucket - 1) / s.Bucket); span < minimum {
+			minimum = span
+		}
+	}
+	if p.MinBaselineBucketsFloor > 0 && minimum < p.MinBaselineBucketsFloor {
+		minimum = p.MinBaselineBucketsFloor
+	}
+	return max(minimum, 1)
 }

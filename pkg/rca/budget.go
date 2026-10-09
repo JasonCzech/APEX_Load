@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"runtime/metrics"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -157,6 +158,26 @@ func (b *Budgeter) Truncations() []BudgetTruncation {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Limit < out[j].Limit })
 	return out
+}
+
+// CutByBudget reports whether an assessment with these limitations used less
+// evidence, or skipped a stage, because the wall-time or heap budget ran out.
+// Such an assessment describes the load on the controller when it ran, not
+// the run, so identical inputs may be analyzed again rather than answered
+// with it. A series or point count the budget cut is not timing and does not
+// count.
+func CutByBudget(limitations []Limitation) bool {
+	for _, l := range limitations {
+		switch l.Code {
+		case LimitationStageSkipped:
+			return true
+		case LimitationBudgetTruncated:
+			if strings.HasPrefix(l.Detail, BudgetWallTime+":") || strings.HasPrefix(l.Detail, BudgetHeap+":") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Detail describes the truncation with its unit: milliseconds for wall time,

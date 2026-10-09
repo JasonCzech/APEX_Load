@@ -271,7 +271,7 @@ func Detect(input DetectionInput, params DetectParams, budgeter *Budgeter) ([]An
 			baseline[s.ID] = boundedSeries(s, budgeter)
 		}
 	}
-	out := &detectOutput{params: params, judged: JudgedSeries{}}
+	out := &detectOutput{params: params, judged: JudgedSeries{}, insufficient: map[string]bool{}}
 	matched := 0
 	for _, s := range series {
 		if budgeter.Exhausted() {
@@ -292,8 +292,8 @@ func Detect(input DetectionInput, params DetectParams, budgeter *Budgeter) ([]An
 	if baseline != nil && matched == 0 && detection.SeriesEvaluated > 0 {
 		limitations = append(limitations, Limitation{Code: LimitationBaselineUnmatched, Detail: "no series of the baseline run matches one of this run's, so no level was compared with the baseline"})
 	}
-	if out.insufficient > 0 {
-		limitations = append(limitations, Limitation{Code: LimitationInsufficientBaseline, Detail: fmt.Sprintf("%d series had fewer than %d baseline buckets at some level", out.insufficient, params.MinBaselineBuckets)})
+	if len(out.insufficient) > 0 {
+		limitations = append(limitations, Limitation{Code: LimitationInsufficientBaseline, Detail: fmt.Sprintf("%d series had fewer baseline buckets at some level than their resolution needs (%d buckets, or enough to span %s, at least %d)", len(out.insufficient), params.MinBaselineBuckets, params.MinBaselineSpan, params.MinBaselineBucketsFloor)})
 	}
 	anomalies, cut := keepAnomalies(out.anomalies, params.MaxAnomalies)
 	if cut > 0 {
@@ -439,11 +439,13 @@ func strongest[T any](items []T, n int, score func(T) float64, key func(T) strin
 }
 
 type detectOutput struct {
-	judged       JudgedSeries
-	params       DetectParams
-	anomalies    []Anomaly
-	spikes       []Spike
-	insufficient int
+	judged    JudgedSeries
+	params    DetectParams
+	anomalies []Anomaly
+	spikes    []Spike
+	// insufficient names the series that lacked baseline at some level, in
+	// either scope, each once.
+	insufficient map[string]bool
 	// Scratch space for robust references, reused across series.
 	sorted, deviations []float64
 }
@@ -567,6 +569,7 @@ func levelGroups(levels []LoadLevel, tolerance float64) [][]int {
 // measured against where the level began.
 func (o *detectOutput) inRun(s Series, levels []LoadLevel) {
 	p := o.params
+	minimum := p.minBaseline(s)
 	spans := segments(s, levels)
 	short := false
 	for _, group := range levelGroups(levels, p.LevelTolerance) {
@@ -587,7 +590,7 @@ func (o *detectOutput) inRun(s Series, levels []LoadLevel) {
 				}
 				if !judged {
 					baseline = append(baseline, point)
-					if len(baseline) == p.MinBaselineBuckets {
+					if len(baseline) == minimum {
 						ref, judged = rebuild(), true
 					}
 					d.skip(point)
@@ -605,7 +608,7 @@ func (o *detectOutput) inRun(s Series, levels []LoadLevel) {
 						}
 					}
 					baseline = kept
-					if len(baseline) >= p.MinBaselineBuckets {
+					if len(baseline) >= minimum {
 						ref = rebuild()
 					}
 				}
@@ -621,7 +624,7 @@ func (o *detectOutput) inRun(s Series, levels []LoadLevel) {
 		}
 	}
 	if short {
-		o.insufficient++
+		o.insufficient[s.ID] = true
 	}
 }
 
@@ -629,6 +632,7 @@ func (o *detectOutput) inRun(s Series, levels []LoadLevel) {
 // buckets at the same load.
 func (o *detectOutput) againstBaseline(s Series, levels []LoadLevel, b Series, baselineLevels []LoadLevel, ref BaselineRef) {
 	p := o.params
+	minimum := p.minBaseline(s)
 	spans := segments(s, levels)
 	baselineSpans := segments(b, baselineLevels)
 	short := false
@@ -646,7 +650,7 @@ func (o *detectOutput) againstBaseline(s Series, levels []LoadLevel, b Series, b
 				}
 			}
 		}
-		if len(values) < p.MinBaselineBuckets {
+		if len(values) < minimum {
 			short = true
 			continue
 		}
@@ -660,7 +664,7 @@ func (o *detectOutput) againstBaseline(s Series, levels []LoadLevel, b Series, b
 		d.finish()
 	}
 	if short {
-		o.insufficient++
+		o.insufficient[s.ID] = true
 	}
 }
 

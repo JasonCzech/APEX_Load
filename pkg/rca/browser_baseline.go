@@ -257,6 +257,13 @@ func DetectBrowserBaseline(input DetectionInput, params BrowserBaselineParams) *
 	// same configuration: a configuration or workload change refuses every
 	// cohort, a script change only its group's.
 	authored := browserBaselineAuthoredChanges(baseline.QualificationReasons, baseline.ScriptChangedGroups == nil)
+	if authored != "" {
+		// Every cohort below is unscored for this reason; the section says
+		// so once, so a summary of its results does not read as a clean
+		// comparison.
+		out.Status = DetectionPartial
+		out.Limitations = append(out.Limitations, Limitation{Code: BrowserBaselineCohortChanged, Detail: "the baseline's configuration or workload changed or was not recorded (" + authored + "), so no cohort was scored against it"})
+	}
 	if baseline.DocumentsIncomplete {
 		out.Status = DetectionPartial
 		out.Limitations = append(out.Limitations, Limitation{Code: BrowserBaselineEvidenceUnavailable, Detail: "the baseline's browser document evidence was not fully read; a cohort missing from it is unscored as unavailable, not as absent"})
