@@ -1,0 +1,19 @@
+{
+  "name": "ntlm_handshake",
+  "base_url": "http://parity.test",
+  "requests": [
+    {
+      "seq": 1, "method": "GET", "url": "http://parity.test/intranet", "scheme": "http", "path": "/intranet", "host": "parity.test",
+      "headers": {"Authorization": "NTLM TlRMTVNTUAABAAAAB4IIog=="},
+      "status_code": 401,
+      "response_headers": {"WWW-Authenticate": "NTLM TlRMTVNTUAACAAAADAAMADgAAAAFgomi"}
+    },
+    {
+      "seq": 2, "method": "GET", "url": "http://parity.test/intranet", "scheme": "http", "path": "/intranet", "host": "parity.test",
+      "headers": {"Authorization": "NTLM TlRMTVNTUAADAAAAGAAYAEgAAAAYABgAYAAAAAwADAB4"},
+      "status_code": 200,
+      "response_headers": {"Content-Type": "text/html"},
+      "response_body": "<html><title>Intranet</title></html>"
+    }
+  ]
+}

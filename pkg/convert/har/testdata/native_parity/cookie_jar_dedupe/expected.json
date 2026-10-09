@@ -1,0 +1,12 @@
+{
+  "description": "A cookie set by an earlier recorded response is left to the replay cookie jar, so it is sent once with the runtime value; a cookie with no recorded producer (set by page script) is kept from the recording.",
+  "source": "Browser cookie semantics (RFC 6265); VuGen replays with its own cookie jar and does not resend recorded Cookie headers.",
+  "outcome": "replay",
+  "responses": [
+    {"method": "GET", "path": "/app/home", "headers": {"Content-Type": "text/html", "Set-Cookie": "SESSIONID=RuntimeSession42; Path=/"}, "body": "<html>home</html>"}
+  ],
+  "requests": [
+    {"method": "GET", "path": "/app/home", "query": ""},
+    {"method": "GET", "path": "/app/account", "header_counts": {"Cookie:SESSIONID": 1, "Cookie:consent": 1}}
+  ]
+}

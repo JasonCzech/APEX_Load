@@ -1,0 +1,6 @@
+{
+  "description": "An NTLM handshake captured in a HAR (browser recorder or import). Its tokens are single-use, so they must not be replayed; the request is gated until credentials are configured (WP3.3/WP3.4 map it to auth settings).",
+  "source": "NTLM over HTTP (connection-bound challenge/response); VuGen web_set_user negotiates it at replay.",
+  "outcome": "gated",
+  "gate_reason_codes": ["integrated_auth_requires_configuration"]
+}

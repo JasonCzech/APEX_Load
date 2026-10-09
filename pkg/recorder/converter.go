@@ -12,6 +12,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
@@ -77,18 +78,20 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 		))
 	}
 
-	webSocketRequests := includedWebSocketRequests(session.Requests)
-	hasHTTPRequests := hasIncludedHTTPRequests(session.Requests)
+	normalized := normalizeRecordedRequests(session.Requests)
+	recordedRequests := normalized.requests
+	webSocketRequests := includedWebSocketRequests(recordedRequests)
+	hasHTTPRequests := hasIncludedHTTPRequests(recordedRequests)
 	if len(webSocketRequests) > 0 && !hasHTTPRequests {
 		result.Script = convertWebSocketSession(session, name, webSocketRequests)
 		return result
 	}
 
-	correlations, correlationErr := detectCorrelationsChecked(convertibleCorrelationRequests(session.Requests))
+	correlations, correlationErr := detectCorrelationsChecked(convertibleCorrelationRequests(recordedRequests))
 	if correlationErr != nil {
 		result.Warnings = append(result.Warnings, fmt.Sprintf("Correlation analysis was not completed and no automatic correlation rewrites were applied: %v", correlationErr))
 	}
-	correlationApplication := prepareRecorderCorrelationApplication(session.Requests, correlations)
+	correlationApplication := prepareRecorderCorrelationApplication(recordedRequests, correlations)
 	result.Correlations = disclosureSafeCorrelations(correlations)
 
 	script := &dsl.Script{
@@ -108,7 +111,7 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 	recordedResourceURLs := make([]string, 0)
 	recordedResourceSeen := make(map[string]struct{})
 
-	for i, req := range session.Requests {
+	for i, req := range recordedRequests {
 		if req.IsStatic && !req.Excluded {
 			rawURL := strings.TrimSpace(req.URL)
 			if rawURL != "" {
@@ -186,11 +189,21 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 			result.Warnings = append(result.Warnings, "Captured response content requires review before correlation ("+responseCapture.ReasonCode+").")
 		}
 
-		if shouldAssertRecordedStatus(req.StatusCode) {
+		if isRecordedRedirectStep(req) {
+			// The browser followed this redirect itself and the target is the
+			// next recorded step; following it here too would request the
+			// target twice and hide the Location header from extractors.
+			zero := 0
+			action.MaxRedirects = &zero
+			action.Assertions = append(action.Assertions, dsl.Assertion{Type: "status_code", Expected: req.StatusCode})
+		} else if shouldAssertRecordedStatus(req.StatusCode) {
 			action.Assertions = append(action.Assertions, dsl.Assertion{
 				Type:     "status_code",
 				Expected: req.StatusCode,
 			})
+		}
+		if findings := normalized.findings[req.Seq]; len(findings) > 0 {
+			importreview.ApplyToAction(&action, findings)
 		}
 
 		if req.ThinkTimeMs > 500 && len(script.Actions) > 0 {
@@ -492,9 +505,10 @@ func SessionBaseline(session *Session) []correlate.Observation {
 	if session == nil {
 		return nil
 	}
-	observations := make([]correlate.Observation, 0, len(session.Requests))
+	requests := normalizeRecordedRequests(session.Requests).requests
+	observations := make([]correlate.Observation, 0, len(requests))
 	actionIdx := 0
-	for _, req := range session.Requests {
+	for _, req := range requests {
 		if req.IsStatic || req.Excluded || len(req.WebSocketMessages) > 0 {
 			continue
 		}

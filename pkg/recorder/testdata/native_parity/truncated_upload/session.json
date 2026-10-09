@@ -1,0 +1,16 @@
+{
+  "name": "truncated_upload",
+  "base_url": "http://parity.test",
+  "requests": [
+    {
+      "seq": 1, "method": "POST", "url": "http://parity.test/upload", "scheme": "http", "path": "/upload", "host": "parity.test",
+      "headers": {"Content-Type": "application/octet-stream"},
+      "body": "AAAAAAAAAAAAAAAA",
+      "body_size_bytes": 5242880,
+      "body_truncated": true,
+      "status_code": 200,
+      "response_headers": {"Content-Type": "application/json"},
+      "response_body": "{}"
+    }
+  ]
+}

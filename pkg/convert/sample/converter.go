@@ -12,6 +12,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -93,6 +94,9 @@ type exchange struct {
 	HasStartedAt  bool
 	DurationMs    float64
 	TimeoutMs     int
+	// ReviewFindings attach to the action generated from this exchange (for
+	// example the integrated-auth gate from normalizeRecordedExchanges).
+	ReviewFindings []importreview.Finding
 	// SourceSecrets retains source-only values that do not survive in a
 	// projected request surface (for example cURL -u input or arguments of an
 	// unsupported option). It is consumed only by source-review redaction.
@@ -148,6 +152,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(exchanges) == 0 {
+		return nil, errors.New("no requests found in sample input")
+	}
+	exchanges, normalizationWarnings := normalizeRecordedExchanges(exchanges, format)
+	warnings = append(warnings, normalizationWarnings...)
 	if len(exchanges) == 0 {
 		return nil, errors.New("no requests found in sample input")
 	}
@@ -294,6 +303,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			zero := 0
 			action.MaxRedirects = &zero
 		}
+		applyExchangeReviewFindings(&action, ex)
 		if thinkTimeMs, ok := thinkTimeAfter(exchanges, idx); ok {
 			action.ThinkTimeAfter = true
 			action.ThinkTime = dsl.ThinkTimeConfig{

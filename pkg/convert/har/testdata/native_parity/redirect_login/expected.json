@@ -1,0 +1,13 @@
+{
+  "description": "A recorded login that redirects with a code in the Location header. The redirect step must not follow the redirect itself (the next recorded step is the target), so the Location value is correlated and the target is requested exactly once.",
+  "source": "Browser redirect semantics as recorded by a proxy: each hop is a separate recorded request; VuGen records the same as separate steps.",
+  "outcome": "replay",
+  "responses": [
+    {"method": "POST", "path": "/app/login", "status": 302, "headers": {"Location": "http://parity.test/sso/cb?code=RuntimeCodeValue77&state=1"}},
+    {"method": "GET", "path": "/sso/cb", "headers": {"Content-Type": "text/html"}, "body": "<html><title>Welcome</title></html>"}
+  ],
+  "requests": [
+    {"method": "POST", "path": "/app/login", "body": "user=jojo&pass=bean"},
+    {"method": "GET", "path": "/sso/cb", "query": "code=RuntimeCodeValue77&state=1"}
+  ]
+}
