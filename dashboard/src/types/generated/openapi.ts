@@ -27171,7 +27171,9 @@ export interface operations {
       content: {
         "application/json": {
           "name"?: string;
+          "page_title_checks"?: (boolean) | null;
           "parameterize"?: boolean;
+          "resource_mode"?: string;
         };
       };
     };
@@ -84790,6 +84792,8 @@ export interface operations {
             "include_assertions"?: (boolean) | null;
             "include_static_assets"?: (boolean) | null;
             "infer_extractors"?: (boolean) | null;
+            "page_title_checks"?: (boolean) | null;
+            "resource_mode"?: string;
             "sanitize_sensitive"?: (boolean) | null;
           };
           "project_id"?: string;
@@ -109302,7 +109306,9 @@ export interface operations {
       content: {
         "application/json": {
           "name"?: string;
+          "page_title_checks"?: (boolean) | null;
           "parameterize"?: boolean;
+          "resource_mode"?: string;
         };
       };
     };

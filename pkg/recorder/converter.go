@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/jasonczech/apexload/pkg/convert/clienttimestamps"
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
@@ -17,6 +18,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 type Correlation struct {
@@ -53,6 +55,13 @@ type ConvertOptions struct {
 	// into a generated data source so the script is data-driven instead of
 	// replaying hard-coded values.
 	Parameterize bool
+	// PageTitleChecks adds a body_contains check on each recorded HTML page's
+	// <title>, as VuGen does by default. Nil means on.
+	PageTitleChecks *bool
+	// ResourceMode is "runtime" (default: static resources are dropped and
+	// discovered at replay) or "in_step" (each static resource is attached to
+	// the page that requested it as an explicit resource).
+	ResourceMode string
 }
 
 // ConvertSession converts a recording with default options.
@@ -111,6 +120,9 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 	recordedResourceURLs := make([]string, 0)
 	recordedResourceSeen := make(map[string]struct{})
 
+	inStep := strings.EqualFold(strings.TrimSpace(opts.ResourceMode), "in_step")
+	pageActionByURL := map[string]int{}
+	lastPageAction := -1
 	for i, req := range recordedRequests {
 		if req.IsStatic && !req.Excluded {
 			rawURL := strings.TrimSpace(req.URL)
@@ -118,6 +130,9 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 				if _, ok := recordedResourceSeen[rawURL]; !ok {
 					recordedResourceSeen[rawURL] = struct{}{}
 					recordedResourceURLs = append(recordedResourceURLs, rawURL)
+				}
+				if inStep {
+					attachRecordedResource(script, pageActionByURL, lastPageAction, rawURL, recordedRequestHeader(req, "Referer"))
 				}
 			}
 		}
@@ -202,6 +217,11 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 				Expected: req.StatusCode,
 			})
 		}
+		if opts.PageTitleChecks == nil || *opts.PageTitleChecks {
+			if title := requestimport.RecordedPageTitle(recordedResponseHeader(req, "Content-Type"), req.StatusCode, decodedRecordedResponseBody(req), correlationLiteralValues(correlations)); title != "" {
+				action.Assertions = append(action.Assertions, dsl.Assertion{Type: "body_contains", Value: title})
+			}
+		}
 		if findings := normalized.findings[req.Seq]; len(findings) > 0 {
 			importreview.ApplyToAction(&action, findings)
 		}
@@ -216,6 +236,10 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 		}
 
 		script.Actions = append(script.Actions, action)
+		if inStep && strings.Contains(strings.ToLower(recordedResponseHeader(req, "Content-Type")), "text/html") {
+			lastPageAction = len(script.Actions) - 1
+			pageActionByURL[strings.TrimSpace(req.URL)] = lastPageAction
+		}
 	}
 
 	if len(script.Actions) == 0 {
@@ -244,11 +268,39 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 		}
 	}
 
+	if warning := clienttimestamps.Apply(script, recordedTimestampEvidence(recordedRequests)).Warning(); warning != "" {
+		result.Warnings = append(result.Warnings, warning)
+	}
 	if _, _, err := requestimport.ApplyRuntimeFidelityReview(script, requestimport.RuntimeFidelityOptions{SourceProfile: "recording"}); err != nil {
 		result.Warnings = append(result.Warnings, "Recording HTTP fidelity review could not inspect the script; repair its structure before replay.")
 	}
 	result.Script = script
 	return result
+}
+
+// recordedTimestampEvidence collects what the recorded responses say about
+// client timestamps: the capture window and every number a response carried.
+func recordedTimestampEvidence(requests []RecordedRequest) clienttimestamps.Evidence {
+	evidence := clienttimestamps.Evidence{}
+	for _, request := range requests {
+		evidence.Observe(request.Timestamp)
+		body := request.ResponseBody
+		if strings.EqualFold(request.ResponseBodyEncoding, "base64") {
+			if decoded, err := base64.StdEncoding.DecodeString(body); err == nil {
+				body = string(decoded)
+			}
+		}
+		evidence.AddServerText(body)
+		for _, value := range request.ResponseHeaders {
+			evidence.AddServerText(value)
+		}
+		for _, values := range request.ResponseHeadersMulti {
+			for _, value := range values {
+				evidence.AddServerText(value)
+			}
+		}
+	}
+	return evidence
 }
 
 func convertibleCorrelationRequests(requests []RecordedRequest) []RecordedRequest {
@@ -1769,4 +1821,77 @@ func simplifyPath(path string) string {
 
 func truncate(s string, maxLen int) string {
 	return correlate.Truncate(s, maxLen)
+}
+
+// recordedResponseHeader returns a recorded response header, ignoring case.
+func recordedResponseHeader(req RecordedRequest, name string) string {
+	for key, value := range req.ResponseHeaders {
+		if strings.EqualFold(key, name) {
+			return value
+		}
+	}
+	for key, values := range req.ResponseHeadersMulti {
+		if strings.EqualFold(key, name) && len(values) > 0 {
+			return values[0]
+		}
+	}
+	return ""
+}
+
+func decodedRecordedResponseBody(req RecordedRequest) string {
+	if strings.EqualFold(req.ResponseBodyEncoding, "base64") {
+		if decoded, err := base64.StdEncoding.DecodeString(req.ResponseBody); err == nil {
+			return string(decoded)
+		}
+	}
+	return req.ResponseBody
+}
+
+// correlationLiteralValues lists the recorded values the correlation pass found.
+func correlationLiteralValues(correlations []Correlation) []string {
+	values := make([]string, 0, len(correlations))
+	for _, corr := range correlations {
+		values = append(values, corr.Value)
+	}
+	return values
+}
+
+// attachRecordedResource adds a static request to the page that requested
+// it: the page whose URL matches the Referer, otherwise the most recent page.
+func attachRecordedResource(script *dsl.Script, pageActionByURL map[string]int, lastPage int, rawURL, referer string) {
+	page := lastPage
+	if index, ok := pageActionByURL[referer]; ok && referer != "" {
+		page = index
+	}
+	if page < 0 || page >= len(script.Actions) {
+		return
+	}
+	action := &script.Actions[page]
+	if action.Params == nil {
+		action.Params = map[string]any{}
+	}
+	resources, _ := action.Params["resources"].([]any)
+	if len(resources) >= httpprotocol.MaxPageResources {
+		return
+	}
+	resource := map[string]any{"url": rawURL}
+	if referer != "" {
+		resource["referer"] = referer
+	}
+	action.Params["resources"] = append(resources, resource)
+}
+
+// recordedRequestHeader returns a recorded request header, ignoring case.
+func recordedRequestHeader(req RecordedRequest, name string) string {
+	for key, value := range req.Headers {
+		if strings.EqualFold(key, name) {
+			return strings.TrimSpace(value)
+		}
+	}
+	for key, values := range req.HeadersMulti {
+		if strings.EqualFold(key, name) && len(values) > 0 {
+			return strings.TrimSpace(values[0])
+		}
+	}
+	return ""
 }

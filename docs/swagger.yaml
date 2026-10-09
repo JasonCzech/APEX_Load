@@ -78231,8 +78231,13 @@ paths:
               properties:
                 name:
                   type: string
+                page_title_checks:
+                  type: boolean
+                  nullable: true
                 parameterize:
                   type: boolean
+                resource_mode:
+                  type: string
       responses:
         2XX:
           description: Successful response; exact status is selected by the handler.
@@ -78307,8 +78312,13 @@ paths:
               properties:
                 name:
                   type: string
+                page_title_checks:
+                  type: boolean
+                  nullable: true
                 parameterize:
                   type: boolean
+                resource_mode:
+                  type: string
       responses:
         2XX:
           description: Successful response; exact status is selected by the handler.
@@ -288900,6 +288910,11 @@ paths:
                     infer_extractors:
                       type: boolean
                       nullable: true
+                    page_title_checks:
+                      type: boolean
+                      nullable: true
+                    resource_mode:
+                      type: string
                     sanitize_sensitive:
                       type: boolean
                       nullable: true

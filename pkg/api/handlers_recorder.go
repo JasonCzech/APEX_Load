@@ -339,12 +339,16 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 	var req struct {
 		Name         string `json:"name"`
 		Parameterize bool   `json:"parameterize"`
+		// PageTitleChecks (default on) and ResourceMode (runtime | in_step)
+		// mirror VuGen's recording options.
+		PageTitleChecks *bool  `json:"page_title_checks,omitempty"`
+		ResourceMode    string `json:"resource_mode,omitempty"`
 	}
 	if !decodeOptionalJSONBody(w, r, &req) {
 		return
 	}
 
-	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize})
+	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize, PageTitleChecks: req.PageTitleChecks, ResourceMode: req.ResourceMode})
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(session.ProjectID)
 		ensureCredentialPreservingImportMetadata(result.Script, "recorder")
@@ -413,12 +417,16 @@ func (s *Server) handlePreviewRecordingConversion(w http.ResponseWriter, r *http
 	var req struct {
 		Name         string `json:"name"`
 		Parameterize bool   `json:"parameterize"`
+		// PageTitleChecks (default on) and ResourceMode (runtime | in_step)
+		// mirror VuGen's recording options.
+		PageTitleChecks *bool  `json:"page_title_checks,omitempty"`
+		ResourceMode    string `json:"resource_mode,omitempty"`
 	}
 	if !decodeOptionalJSONBody(w, r, &req) {
 		return
 	}
 
-	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize})
+	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize, PageTitleChecks: req.PageTitleChecks, ResourceMode: req.ResourceMode})
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(session.ProjectID)
 		ensureCredentialPreservingImportMetadata(result.Script, "recorder")

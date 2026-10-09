@@ -1,0 +1,46 @@
+{
+  "description": "Recorded with resources in the step: the static image replays as the page's explicit resource; the page carries a title check that passes; the recorded poll timestamp is replaced with a fresh one.",
+  "source": "VuGen recording options: Record non-HTML elements in the current step; automatic page text checks; web_save_timestamp_param for client timestamps.",
+  "outcome": "replay",
+  "responses": [
+    {
+      "method": "GET",
+      "path": "/app/home",
+      "headers": {
+        "Content-Type": "text/html"
+      },
+      "body": "<html><head><title>Home Page</title></head><body><img src=\"/static/logo.png\"></body></html>"
+    },
+    {
+      "method": "GET",
+      "path": "/static/logo.png",
+      "headers": {
+        "Content-Type": "image/png"
+      },
+      "body": "PNG"
+    },
+    {
+      "method": "GET",
+      "path": "/api/poll",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"ok\":true}"
+    }
+  ],
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/app/home"
+    },
+    {
+      "method": "GET",
+      "path": "/static/logo.png"
+    },
+    {
+      "method": "GET",
+      "path": "/api/poll",
+      "query_pattern": "_=(?:17[7-9]|1[89][0-9]|[2-9][0-9]{2})[0-9]{10}"
+    }
+  ]
+}

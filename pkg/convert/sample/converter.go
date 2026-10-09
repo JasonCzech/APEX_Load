@@ -33,6 +33,14 @@ type ConvertOptions struct {
 	InferExtractors     *bool  `json:"infer_extractors,omitempty"`
 	SanitizeSensitive   *bool  `json:"sanitize_sensitive,omitempty"`
 	IncludeStaticAssets *bool  `json:"include_static_assets,omitempty"`
+	// PageTitleChecks adds a body_contains check on each recorded HTML page's
+	// <title>, as VuGen does by default. Nil means on.
+	PageTitleChecks *bool `json:"page_title_checks,omitempty"`
+	// ResourceMode mirrors VuGen's resource recording choices for HAR input:
+	// "runtime" (default) drops static resources for discovery at replay,
+	// "in_step" attaches them to the page that requested them as explicit
+	// resources, and "separate" keeps them as their own steps.
+	ResourceMode string `json:"resource_mode,omitempty"`
 }
 
 type ConvertStats struct {
@@ -137,6 +145,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		skipped     int
 	)
 
+	var pageResources map[int][]any
 	switch format {
 	case "raw_http":
 		exchanges, warnings, err = parseRawHTTP(req.Content, req.ResponseContent, req.Options.BaseURL)
@@ -145,7 +154,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	case "rest_json":
 		exchanges, warnings, err = parseRESTJSON(req.Content)
 	case "har":
-		exchanges, warnings, filtered, skipped, err = parseHAR(req.Content, convertutil.BoolOption(req.Options.IncludeStaticAssets, false), &diagnostics)
+		includeStatic := convertutil.BoolOption(req.Options.IncludeStaticAssets, false) || strings.EqualFold(req.Options.ResourceMode, "separate")
+		exchanges, warnings, filtered, skipped, err = parseHAR(req.Content, includeStatic, &diagnostics)
+		if err == nil && !includeStatic && strings.EqualFold(req.Options.ResourceMode, "in_step") {
+			pageResources = harInStepResources(req.Content)
+		}
 	default:
 		return nil, fmt.Errorf("unsupported format %q", req.Format)
 	}
@@ -163,6 +176,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 
 	includeAssertions := convertutil.BoolOption(req.Options.IncludeAssertions, true)
 	inferExtractors := convertutil.BoolOption(req.Options.InferExtractors, true)
+	pageTitleChecks := includeAssertions && convertutil.BoolOption(req.Options.PageTitleChecks, true)
 	baseURL := strings.TrimSpace(req.Options.BaseURL)
 	if baseURL == "" {
 		baseURL = detectBaseURL(exchanges)
@@ -285,7 +299,12 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		headers = applyCorrelationVarsToHeaders(headers, stepVars)
 		headerList = applyCorrelationVarsToHeaderList(headerList, stepVars)
 
+		var actionParams map[string]any
+		if resources := pageResources[ex.SourceEntryID]; len(resources) > 0 {
+			actionParams = map[string]any{"resources": resources}
+		}
 		action := dsl.Action{
+			Params:       actionParams,
 			Name:         actionName(idx, ex.Method, ex.URL),
 			Type:         "request",
 			Method:       strings.ToUpper(ex.Method),
@@ -334,6 +353,12 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 					})
 				}
 				result.Stats.Assertions++
+			}
+			if pageTitleChecks {
+				if title := requestimport.RecordedPageTitle(responseHeaderValue(ex.Response, "Content-Type"), ex.Response.Status, ex.Response.Body, correlationValues(correlations)); title != "" {
+					action.Assertions = append(action.Assertions, dsl.Assertion{Type: "body_contains", Value: title})
+					result.Stats.Assertions++
+				}
 			}
 			if inferExtractors {
 				for _, corr := range correlations {
@@ -586,4 +611,31 @@ func (result *ConvertResult) Accounting() convertresult.Accounting {
 		result.Stats.FilteredAssets+result.Stats.SkippedRequests,
 		result.SourceReview.ReviewOnlyActionCount(),
 	)
+}
+
+// responseHeaderValue returns a recorded response header, ignoring case.
+func responseHeaderValue(resp *response, name string) string {
+	if resp == nil {
+		return ""
+	}
+	for key, value := range resp.Headers {
+		if strings.EqualFold(key, name) {
+			return value
+		}
+	}
+	for _, header := range resp.HeaderList {
+		if strings.EqualFold(header.Name, name) {
+			return header.Value
+		}
+	}
+	return ""
+}
+
+// correlationValues lists the recorded values the correlation pass found.
+func correlationValues(correlations []Correlation) []string {
+	values := make([]string, 0, len(correlations))
+	for _, corr := range correlations {
+		values = append(values, corr.Value)
+	}
+	return values
 }

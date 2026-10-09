@@ -1,6 +1,9 @@
 package requestimport
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestIntegratedAuthScheme(t *testing.T) {
 	for value, want := range map[string]string{
@@ -47,6 +50,28 @@ func TestRecordedTrafficFindingsAreExecutionGates(t *testing.T) {
 	} {
 		if finding.gate != "execution" {
 			t.Fatalf("%s gate = %q, want execution", finding.code, finding.gate)
+		}
+	}
+}
+
+func TestRecordedPageTitle(t *testing.T) {
+	tests := []struct {
+		contentType string
+		status      int
+		body        string
+		dynamic     []string
+		want        string
+	}{
+		{"text/html", 200, "<html><head><TITLE lang=en>\n Orders \n</TITLE>", nil, "Orders"},
+		{"application/json", 200, "<title>x</title>", nil, ""},
+		{"text/html", 302, "<title>Moved</title>", nil, ""},
+		{"text/html", 200, "<title>Order 99172</title>", []string{"99172"}, ""},
+		{"text/html", 200, "<title></title>", nil, ""},
+		{"text/html", 200, "<title>" + strings.Repeat("x", 201) + "</title>", nil, ""},
+	}
+	for _, tt := range tests {
+		if got := RecordedPageTitle(tt.contentType, tt.status, tt.body, tt.dynamic); got != tt.want {
+			t.Errorf("RecordedPageTitle(%q, %d, %q) = %q, want %q", tt.contentType, tt.status, tt.body, got, tt.want)
 		}
 	}
 }

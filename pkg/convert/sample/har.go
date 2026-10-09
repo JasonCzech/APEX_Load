@@ -16,6 +16,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 const maxHARDecodedContentBytes = requestimport.MaxResponseContentStorageBytes
@@ -877,4 +878,59 @@ func mergeHARCookies(value any, ex *exchange, diagnostics *diag.Collector, locat
 	ex.Headers["Cookie"] = cookieValue
 	ex.HeaderList = append(ex.HeaderList, dsl.HeaderEntry{Name: "Cookie", Value: cookieValue})
 	diagnostics.Add(diag.Info, "HAR cookies[]", location, "recorded request cookies[] were serialized in source order into a Cookie header for exact replay")
+}
+
+// harInStepResources attaches each static HAR entry to the page that
+// requested it, as VuGen's "record resources in the step" option does: the
+// earlier page whose URL matches the entry's Referer, otherwise the most
+// recent page before it. It returns the explicit resources per page entry
+// (keyed by SourceEntryID), bounded per page.
+func harInStepResources(content string) map[int][]any {
+	var payload any
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(content, "\uFEFF")), &payload); err != nil {
+		return nil
+	}
+	items, err := extractHARItems(payload)
+	if err != nil {
+		return nil
+	}
+	resources := map[int][]any{}
+	pageByURL := map[string]int{}
+	lastPage := 0
+	for index, item := range items {
+		requestData, _ := item["request"].(map[string]any)
+		rawURL := strings.TrimSpace(stringValue(requestData["url"]))
+		if !isStaticHAREntry(item) {
+			if !isHARWebSocketUpgrade(item) && !strings.EqualFold(strings.TrimSpace(stringValue(requestData["method"])), http.MethodConnect) {
+				lastPage = index + 1
+				pageByURL[rawURL] = index + 1
+			}
+			continue
+		}
+		referer := harRequestHeader(requestData, "Referer")
+		page := lastPage
+		if byReferer, ok := pageByURL[referer]; ok && referer != "" {
+			page = byReferer
+		}
+		if page == 0 || rawURL == "" || len(resources[page]) >= httpprotocol.MaxPageResources {
+			continue
+		}
+		resource := map[string]any{"url": rawURL}
+		if referer != "" {
+			resource["referer"] = referer
+		}
+		resources[page] = append(resources[page], resource)
+	}
+	return resources
+}
+
+func harRequestHeader(requestData map[string]any, name string) string {
+	headers, _ := requestData["headers"].([]any)
+	for _, raw := range headers {
+		header, _ := raw.(map[string]any)
+		if strings.EqualFold(stringValue(header["name"]), name) {
+			return strings.TrimSpace(stringValue(header["value"]))
+		}
+	}
+	return ""
 }

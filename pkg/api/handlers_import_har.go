@@ -64,6 +64,7 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	applyClientGeneratedUUIDs(script, importReq.Data, result)
+	applyClientTimestamps(script, importReq.Data, result)
 
 	draft := importDraft{
 		Source:           source,

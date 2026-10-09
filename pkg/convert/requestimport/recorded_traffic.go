@@ -3,6 +3,7 @@ package requestimport
 import (
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
@@ -166,4 +167,34 @@ func hostOnly(hostport string) string {
 		return host
 	}
 	return hostport
+}
+
+// maxPageTitleCheckBytes bounds a recorded title used as a page check.
+const maxPageTitleCheckBytes = 200
+
+var pageTitlePattern = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
+
+// RecordedPageTitle returns the text a recorded HTML page's title check
+// looks for, as VuGen adds a text check on each page's title: the raw text
+// between the page's first <title> and </title>, trimmed. It returns "" when
+// the response is not a successful HTML page, has no usable title, or the
+// title contains one of the dynamic values the correlation pass found.
+func RecordedPageTitle(contentType string, status int, body string, dynamic []string) string {
+	if status < 200 || status >= 300 || !strings.Contains(strings.ToLower(contentType), "text/html") {
+		return ""
+	}
+	match := pageTitlePattern.FindStringSubmatch(body)
+	if match == nil {
+		return ""
+	}
+	title := strings.TrimSpace(match[1])
+	if title == "" || len(title) > maxPageTitleCheckBytes || strings.ContainsAny(title, "<>\r\n") {
+		return ""
+	}
+	for _, value := range dynamic {
+		if value = strings.TrimSpace(value); len(value) >= 3 && strings.Contains(title, value) {
+			return ""
+		}
+	}
+	return title
 }

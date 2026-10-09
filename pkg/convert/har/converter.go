@@ -33,7 +33,11 @@ type ConvertOptions struct {
 	InferExtractors     *bool  `json:"infer_extractors,omitempty"`
 	SanitizeSensitive   *bool  `json:"sanitize_sensitive,omitempty"`
 	IncludeStaticAssets *bool  `json:"include_static_assets,omitempty"`
-	DefaultThinkTimeMs  int    `json:"default_think_time_ms,omitempty"`
+	// PageTitleChecks adds a check on each HTML page's recorded <title>
+	// (default on); ResourceMode is runtime (default), in_step or separate.
+	PageTitleChecks    *bool  `json:"page_title_checks,omitempty"`
+	ResourceMode       string `json:"resource_mode,omitempty"`
+	DefaultThinkTimeMs int    `json:"default_think_time_ms,omitempty"`
 	// SalvageTruncated imports the complete entries of a HAR file that was cut
 	// off partway through (see SalvageTruncated); the import warns what is lost.
 	SalvageTruncated *bool `json:"salvage_truncated,omitempty"`
@@ -96,6 +100,8 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			InferExtractors:     opts.InferExtractors,
 			SanitizeSensitive:   boolPointer(false),
 			IncludeStaticAssets: opts.IncludeStaticAssets,
+			PageTitleChecks:     opts.PageTitleChecks,
+			ResourceMode:        opts.ResourceMode,
 		},
 	})
 	if err != nil {
