@@ -627,6 +627,12 @@ func (s *Server) handleAnalysisCommit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 422, "mapping exceeds the 1024 normalized partition limit")
 		return
 	}
+	if first, second, ok := duplicateAnalysisImportFiles(in.Files); ok {
+		// Every file's rows are imported, so the same content twice would be
+		// counted twice; refuse it here rather than fail during publication.
+		writeError(w, 422, fmt.Sprintf("files %q and %q have the same content; remove one before committing", first, second))
+		return
+	}
 	if !admitAnalysisPipeline(w) {
 		return
 	}
@@ -911,4 +917,35 @@ func points0Population(points []analysis.MetricPoint) string {
 		return points[0].Population
 	}
 	return ""
+}
+
+// duplicateAnalysisImportFiles finds two files of an import with the same
+// content: the same whole-file digest when one was recorded, else the same
+// size and the same ordered chunk digests. Identical content chunked
+// differently is not found here; normalization still fails closed on it.
+func duplicateAnalysisImportFiles(files []storage.AnalysisImportFile) (string, string, bool) {
+	seen := make(map[string]string, len(files))
+	for _, file := range files {
+		var key strings.Builder
+		if file.SHA256 != "" {
+			key.WriteString("sha256:" + file.SHA256)
+		} else {
+			fmt.Fprintf(&key, "size:%d", file.Size)
+			for _, chunk := range file.Chunks {
+				if chunk.SHA256 == "" {
+					key.Reset()
+					break
+				}
+				fmt.Fprintf(&key, "|%d:%d:%s", chunk.Offset, chunk.Size, chunk.SHA256)
+			}
+		}
+		if key.Len() == 0 {
+			continue
+		}
+		if earlier, found := seen[key.String()]; found {
+			return earlier, file.RelativePath, true
+		}
+		seen[key.String()] = file.RelativePath
+	}
+	return "", "", false
 }

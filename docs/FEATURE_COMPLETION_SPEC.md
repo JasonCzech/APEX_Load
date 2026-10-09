@@ -472,6 +472,25 @@ Golden fixtures cover long/wide/nested mappings, decimals, timezones/DST, nulls,
 
 Use a reproducible 1 GiB compressed, multi-file partition fixture on 4 vCPU/16 GiB RAM with at least 32 GiB scratch plus admission-verified output/spill reserve. Record hashes, rows, import/query durations, scan/pruned object/byte counts, peak combined RSS, spill, cancellation and simultaneous live telemetry lag. Test selective projection/partition pruning, repeated cached query, cold replica, worker crash, disk exhaustion and contention. Proposed bounded interactive-query P95 target is five seconds for the documented selected-window workload; imports have the existing 15-minute per-job deadline unless explicitly configured. Fail on controller failure, unexplained data loss, breached headroom or sustained reference telemetry-SLA violation. No result from this fixture closes the waived 10 GB benchmark.
 
+Delivery progress, 2026-10-09 (Wave 5, B8): [ANALYTICS_ACCEPTANCE.md](qa/ANALYTICS_ACCEPTANCE.md), generated and checked by `docs/qa/analytics_acceptance_test.go`, maps every NA-6 golden behavior to the tests that accept it and the build they run in, and lists NA-5's five platform lanes with the native checks each runs. A listed test's file must carry the DuckDB build tag exactly when it is listed for the DuckDB build; a missing lane or check fails it; and the generator and collector must not depend on DuckDB.
+- **New goldens:** long, wide and nested mappings give the same series; DECIMAL values; schema drift across the files of one import; conflicting files; and source non-mutation. Their expected values come from DuckDB's own SQL over the source files.
+- **Duplicate files:** an import whose files have the same content (the same digest, or the same size and ordered chunk digests) is refused at commit with a 422 naming both files. Previously it failed during normalization with the generic stored message.
+- **Reference workload:** the opt-in `TestNativeAnalyticsReferenceBenchmark` generates a reproducible day-partitioned, ZSTD-compressed fixture and imports it through the API. It then times a selected-window query, a full-range query and a cancellation, and records hashes, rows, pruning, peak RSS and failures. With a commit, it writes one F4 request: `pending` when it had no failure and met the five-second P95, `failed` otherwise. A local run on darwin-arm64 (10 CPUs, 24 GiB: not the reference shape):
+  - fixture: 60 files, 1.08 GB, 207,360,000 rows;
+  - upload 6.9 s and normalization 93 s;
+  - selected window (one hour of one day): cold 2.8 s, P95 2.9 s over 20 repeats, with 119 of 120 objects pruned;
+  - cancellation returned in 26 ms;
+  - peak RSS: controller 187 MiB, worker 784 MiB (2 GiB memory and 8 GiB spill limits);
+  - the full-range query reached the series endpoint's one-minute bound (422).
+
+Deviations:
+- Measurements are doubles: a DECIMAL beyond about 15 significant digits is rounded to the nearest double (12345678901234567.89 becomes 1.2345678901234568e16), not refused.
+- A file whose schema drifted (a mapped column missing) fails the import closed, with the fixed stored message; the message names neither the file nor the column.
+- Conflicting files keep every observation (two values at one instant average), and identical content chunked differently is not refused at commit; normalization still fails closed on it.
+- The selected-window time is about 2.5 s at 64 MiB and at 1 GiB: it is dominated by starting a worker per query, not by scanning.
+- The benchmark does not measure spill bytes, live telemetry lag under a concurrent run, a cold replica, a worker crash, disk exhaustion or contention.
+- The platform lanes are CI evidence that this repository cannot produce locally; no acceptance record is published, and the 10 GB waiver stands.
+
 ## 10. Authoring cleanup completion
 
 ### AUTH-1: Two shared owners and revision safety
