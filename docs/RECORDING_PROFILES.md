@@ -69,7 +69,7 @@ recording.
 | Recording level: HTML-based | `http_script_level: html` | Browser recorder only. The proxy recorder and HAR import see requests but not the user actions that HTML-mode steps describe |
 | Recording level: URL-based | `http_script_level: url` (default) | Every recorder |
 | Advanced HTML: user actions vs explicit URLs | `http_script_level` | The two choices are the `html` and `url` levels |
-| Advanced HTML: non-HTML resources in step, in concurrent groups, or not recorded | `resource_mode`: `in_step`, `separate`, `runtime` | The proxy recorder records `separate` as `in_step` with a warning. Its replay baseline lines up recorded steps with non-static requests |
+| Advanced HTML: non-HTML resources in step, in concurrent groups, or not recorded | `resource_mode: in_step, separate, runtime` | The proxy recorder records `separate` as `in_step` with a warning. Its replay baseline lines up recorded steps with non-static requests |
 | Advanced URL: concurrent groups; `web_custom_request` only | Not a recording choice | Native scripts are always explicit requests, which is what `web_custom_request` gives VuGen. Resources a page fetches in parallel replay as that step's resources (`in_step`) |
 | HTTP properties: `web_reg_find` for page titles | `page_title_checks` | |
 | HTTP properties: generate `web_add_cookie` | `capture_cookies` | Off: replay's cookie jar sends cookies, the equivalent of not generating cookie steps. On: the recorded `Cookie` headers are kept |
