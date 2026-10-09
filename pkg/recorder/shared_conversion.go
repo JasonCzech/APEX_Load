@@ -96,9 +96,10 @@ func convertThroughSharedPipeline(session *Session, name string, opts ConvertOpt
 		if item.Severity != diag.Warning && item.Severity != diag.Blocker {
 			continue
 		}
-		if item.Severity == diag.Warning && (item.Element == "HTTP version" || item.Element == "HAR correlation analysis incomplete") {
+		if item.Severity == diag.Warning && (item.Element == "HTTP version" || item.Element == "HAR correlation analysis incomplete" || item.Code == sample.ClientTimestampsDiagnosticCode) {
 			// A proxy capture without a replayable version keeps the
-			// script's policy, and incomplete analysis is already a warning.
+			// script's policy, and incomplete analysis and fresh client
+			// timestamps are already warnings.
 			continue
 		}
 		where := item.Location

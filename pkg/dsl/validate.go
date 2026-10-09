@@ -973,10 +973,17 @@ func validateHTMLStepIssues(label, protocol string, raw any) []string {
 		issues = append(issues, fmt.Sprintf("%s: params.html_step kind must be link, image, image_check or form (got %q)", label, kind))
 	}
 	if ordinal, present := step["ordinal"]; present {
-		if number, ok := ordinal.(float64); !ok || number < 0 || number != float64(int(number)) {
-			if _, isInt := ordinal.(int); !isInt {
-				issues = append(issues, fmt.Sprintf("%s: params.html_step ordinal must be a whole number", label))
-			}
+		whole := false
+		switch number := ordinal.(type) {
+		case float64:
+			whole = number >= 0 && number == float64(int(number))
+		case int:
+			whole = number >= 0
+		case int64:
+			whole = number >= 0
+		}
+		if !whole {
+			issues = append(issues, fmt.Sprintf("%s: params.html_step ordinal must be a whole number", label))
 		}
 	}
 	return issues

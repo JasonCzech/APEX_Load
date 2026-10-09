@@ -79816,6 +79816,7 @@ paths:
                   format: int64
                 capture_cookies:
                   type: boolean
+                  nullable: true
                 exclude_hosts:
                   type: array
                   items:

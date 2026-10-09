@@ -286,7 +286,12 @@ func (vu *VUser) Run(ctx context.Context) {
 	// actions. The explicit teardown label calls the same once-only closure on
 	// the normal path; the defer covers every early return and panic unwind.
 	defer func() {
+		// A background conversation must not outlive the virtual user, also
+		// when init fails or a panic unwinds before the teardown label, or
+		// when teardown itself started one.
+		vu.stopAllAsyncConversations(iterCtx, "virtual user end")
 		runTeardown()
+		vu.stopAllAsyncConversations(iterCtx, "virtual user end")
 		vu.finalizeOpenSourceTransactions("source transaction ended without a matching end marker")
 	}()
 

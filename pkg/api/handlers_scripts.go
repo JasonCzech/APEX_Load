@@ -113,7 +113,7 @@ func applyClientTimestamps(script *dsl.Script, harData []byte, result *har.Conve
 		return
 	}
 	result.Warnings = append(result.Warnings, note)
-	result.Unsupported = append(result.Unsupported, diag.Diagnostic{Code: "client_generated_timestamps", Element: "Client-generated timestamps", Location: "HAR requests", Detail: note, Severity: diag.Warning})
+	result.Unsupported = append(result.Unsupported, diag.Diagnostic{Code: sample.ClientTimestampsDiagnosticCode, Element: "Client-generated timestamps", Location: "HAR requests", Detail: note, Severity: diag.Warning})
 }
 
 // noteSalvage records on a converted import that its HAR was truncated.

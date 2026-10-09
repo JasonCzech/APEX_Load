@@ -547,7 +547,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if gap := result.Stats.TotalRequests - result.Stats.FilteredAssets - result.Stats.SkippedRequests - result.Stats.ConvertedActions; gap > 0 {
 		diagnostics.Add(diag.Warning, "Sample completeness guard", format, fmt.Sprintf("%d request(s) were parsed but not converted into actions", gap))
 	}
+	var timestampsNote string
 	if format == "har" {
+		if timestampsNote = applyRecordedClientTimestamps(result.Script, req.Content); timestampsNote != "" {
+			result.Warnings = append(result.Warnings, timestampsNote)
+		}
 		var shapeWarnings []string
 		var newIndex []int
 		sourceMappings, newIndex, shapeWarnings = shapeRecordedHAR(result.Script, exchanges, req.Content, convertutil.BoolOption(req.Options.AsyncScan, true), sourceMappings)
@@ -563,12 +567,19 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		}
 	}
 	result.Unsupported = append(diagnostics.Items(), finalized.Diagnostics...)
+	if timestampsNote != "" {
+		result.Unsupported = append(result.Unsupported, diag.Diagnostic{Code: ClientTimestampsDiagnosticCode, Element: "Client-generated timestamps", Location: "HAR requests", Detail: timestampsNote, Severity: diag.Warning})
+	}
 	result.Stats.CorrelationsDetected = len(correlations)
 	if !req.Options.OmitSourceReview {
 		result.SourceReview = sourceview.Build(sourceFiles, sourceMappings)
 	}
 	return result, nil
 }
+
+// ClientTimestampsDiagnosticCode marks the note that recorded client
+// timestamps get a fresh value at replay.
+const ClientTimestampsDiagnosticCode = "client_generated_timestamps"
 
 // exchangeEntry is the source entry of a 1-based step.
 func exchangeEntry(exchanges []exchange, step int) int {

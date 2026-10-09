@@ -311,7 +311,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				appendTrackedSourceAction(fn, asyncReviewAction(fn, notes), SourceFunctionSupportReviewOnly, notes)
 				continue
 			}
-			appendTrackedSourceAction(fn, dsl.Action{Name: "Stop " + id, Type: "http_async_stop", Params: map[string]any{"id": id}}, SourceFunctionSupportExecutable,
+			appendTrackedSourceAction(fn, dsl.Action{Name: "Stop " + id, Type: "http_async_stop", Params: map[string]any{"id": id}, Metadata: sourceFunctionMetadata(fn)}, SourceFunctionSupportExecutable,
 				"Converted to http_async_stop, which ends the background conversation and applies its last responses.")
 
 		case "web_websocket_connect":

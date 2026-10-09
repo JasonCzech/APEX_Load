@@ -143,3 +143,33 @@ func TestImportRunLogicLeavesOutEmptyActions(t *testing.T) {
 		t.Fatalf("only the random block's change of odds is worth a note: %v", result.Warnings)
 	}
 }
+
+// WebSocket, sync and async-stop steps belong to the run-logic action of
+// the file they come from, like every other step.
+func TestImportRunLogicTagsWebSocketAndSyncSteps(t *testing.T) {
+	archive := zipFilesForTest(t, map[string]string{
+		"S.usr":        "[General]\nType=Web\nRuntimeSettings=default.cfg\n[Actions]\nvuser_init=vuser_init.c\nBrowse=Browse.c\nChat=Chat.c\nvuser_end=vuser_end.c\n[RunLogicFiles]\nDefault Profile=default.usp\n",
+		"default.cfg":  "[General]\n",
+		"default.usp":  "[RunLogicRunRoot]\nRunLogicObjectKind=\"Group\"\nMercIniTreeSons=\"Browse,Chat\"\n[RunLogicRunRoot:Browse]\nRunLogicObjectKind=\"Action\"\n[RunLogicRunRoot:Chat]\nRunLogicObjectKind=\"Action\"\n",
+		"vuser_init.c": "vuser_init()\n{\n\treturn 0;\n}\n",
+		"vuser_end.c":  "vuser_end()\n{\n\treturn 0;\n}\n",
+		"Browse.c":     "Browse()\n{\n\tweb_url(\"browse\", \"URL=https://shop.test/browse\", LAST);\n\treturn 0;\n}\n",
+		"Chat.c":       "Chat()\n{\n\tweb_websocket_connect(\"ID=0\", \"URI=wss://shop.test/chat\", LAST);\n\tweb_websocket_send(\"ID=0\", \"Buffer=hi\", LAST);\n\tweb_sync(\"ParamExists=Reply\", LAST);\n\tweb_websocket_close(\"ID=0\", LAST);\n\treturn 0;\n}\n",
+	})
+	result, err := ConvertZip(archive, ConvertOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocks := result.Script.Config.RunLogic.Blocks
+	if len(blocks) != 1 || len(blocks[0].Children) != 2 {
+		t.Fatalf("blocks = %+v; want Browse and Chat", blocks)
+	}
+	order := dsl.RunLogicOrder(result.Script.Actions, blocks, func(int) int { return 0 })
+	var types []string
+	for _, index := range order {
+		types = append(types, result.Script.Actions[index].Type)
+	}
+	if strings.Join(types, ",") != "GET,ws_connect,ws_send,http_sync,ws_close" {
+		t.Fatalf("one iteration runs %v", types)
+	}
+}

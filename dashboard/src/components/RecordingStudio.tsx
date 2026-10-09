@@ -627,6 +627,8 @@ export default function RecordingStudio({
     (id: string, profile?: RecordingProfile) => {
       setRecordingProfileId(id);
       setRecordingProfileLevel(profile?.http_script_level || undefined);
+      // Show the profile's cookie capture; the session records what is shown.
+      setCaptureCookies(profile?.capture_cookies === true);
     },
     [],
   );

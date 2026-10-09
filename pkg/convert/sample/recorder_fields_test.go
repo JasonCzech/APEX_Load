@@ -116,3 +116,31 @@ func TestHAREpochSecondsReadsRFC3339(t *testing.T) {
 		t.Fatalf("epoch frame time = %v", got)
 	}
 }
+
+// Client timestamps get a fresh value whether or not the async scan runs,
+// and the import review carries the same diagnostic either way.
+func TestRecordedClientTimestampsWithAndWithoutAsyncScan(t *testing.T) {
+	content := recorderHAR(t,
+		recorderEntry("2026-01-01T00:00:00Z", "GET", "https://shop.test/home", 200, "text/html", "<p>home</p>", nil),
+		recorderEntry("2026-01-01T00:00:02Z", "GET", "https://shop.test/data?_=1767225602000", 200, "application/json", `{}`, nil),
+	)
+	for _, asyncScan := range []bool{true, false} {
+		scan := asyncScan
+		result, err := Convert(ImportRequest{Format: "har", Content: content, Options: ConvertOptions{OmitSourceReview: true, AsyncScan: &scan}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if target := result.Script.Actions[1].Target; !strings.Contains(target, "{{fn.timestamp.unix_ms}}") {
+			t.Fatalf("async scan %v: target = %q", asyncScan, target)
+		}
+		diagnostics := 0
+		for _, item := range result.Unsupported {
+			if item.Code == ClientTimestampsDiagnosticCode {
+				diagnostics++
+			}
+		}
+		if diagnostics != 1 {
+			t.Fatalf("async scan %v: %d client timestamp diagnostics, want 1", asyncScan, diagnostics)
+		}
+	}
+}

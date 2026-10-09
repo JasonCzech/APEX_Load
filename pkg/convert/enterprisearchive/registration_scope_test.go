@@ -173,3 +173,13 @@ func TestRegistrationDFEMapping(t *testing.T) {
 		t.Fatalf("a chain with an unknown DFE must not be partially applied, got %v", gated.extractor.DFEs)
 	}
 }
+
+// An HTML-mode step's URL is known only at replay, so a RequestUrl filter is
+// not judged against its placeholder target.
+func TestResourceFilterIsNotJudgedOnHTMLSteps(t *testing.T) {
+	_, filter := sourceRegistrationFilters(parseSingleCall(t, `web_reg_save_param_ex("ParamName=p", "LB=a", "RB=b", SEARCH_FILTERS, "RequestUrl=*orders*", LAST);`), "p", "all")
+	step := &dsl.Action{Target: htmlStepTarget, Params: map[string]any{"html_step": map[string]any{"kind": "link", "text": "Orders"}}}
+	if findings := filter.findingsForAttachedRequest(step, "text/html"); len(findings) != 0 {
+		t.Fatalf("findings = %v", findings)
+	}
+}

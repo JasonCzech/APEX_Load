@@ -74,8 +74,11 @@ export function ActionBodyWorkspace({ action, index, path, parameters, script, o
   }
   const fileSources = (script?.data_sources || []).filter(source => source.type === 'file').map(source => source.name)
   if (action.body_multipart) {
+    // A multipart body needs at least one field; removing the last one goes
+    // back to a plain body.
     return <section className="center-document author-body-document" aria-label="Request body editor"><h3>{action.name} · Request body (multipart form)</h3><p>{path} · Changes are included in Save script.</p>
-      <MultipartPartsEditor parts={action.body_multipart.parts || []} fileSources={fileSources} onChange={parts => onUpdate('body_multipart', { ...action.body_multipart, parts })} />
+      <MultipartPartsEditor parts={action.body_multipart.parts || []} fileSources={fileSources} onChange={parts => onUpdate('body_multipart', parts.length > 0 ? { ...action.body_multipart, parts } : undefined)} />
+      <p><button className="btn btn-sm btn-secondary" type="button" onClick={() => onUpdate('body_multipart', undefined)}>Use a plain body instead</button></p>
     </section>
   }
   return <section className="center-document author-body-document" aria-label="Request body editor"><h3>{action.name} · Request body</h3><p>{path} · Changes are included in Save script.</p>

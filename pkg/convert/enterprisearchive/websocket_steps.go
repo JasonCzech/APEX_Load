@@ -53,7 +53,7 @@ func convertWebSocketConnect(fn ParsedFunction, state *sourceWebSockets, files m
 	case state.open && id != state.id:
 		return nil, nil, fmt.Sprintf("connection %q opens while connection %q is open, and APEX runs one WebSocket per virtual user", id, state.id)
 	}
-	connect := dsl.Action{Name: webSocketStepName("connect", id), Type: "ws_connect", Target: convertParamReferences(uri)}
+	connect := dsl.Action{Name: webSocketStepName("connect", id), Type: "ws_connect", Target: convertParamReferences(uri), Metadata: sourceFunctionMetadata(fn)}
 	if origin := asyncCallArg(fn, "Origin"); origin != "" {
 		connect.Headers = map[string]string{"Origin": convertParamReferences(origin)}
 	}
@@ -106,7 +106,7 @@ func convertWebSocketConnect(fn ParsedFunction, state *sourceWebSockets, files m
 	}
 	actions := []dsl.Action{connect}
 	if len(onMessage) > 0 {
-		actions = append(actions, dsl.Action{Name: webSocketStepName("messages", id), Type: "ws_on_message", Control: &dsl.ControlFlow{Steps: onMessage}})
+		actions = append(actions, dsl.Action{Name: webSocketStepName("messages", id), Type: "ws_on_message", Control: &dsl.ControlFlow{Steps: onMessage}, Metadata: sourceFunctionMetadata(fn)})
 	}
 	state.id, state.open = id, true
 	return actions, warnings, ""
@@ -120,7 +120,7 @@ func convertWebSocketSend(fn ParsedFunction, state *sourceWebSockets) (dsl.Actio
 	if !state.open || id != state.id {
 		return dsl.Action{}, fmt.Sprintf("no converted WebSocket %q is open", id)
 	}
-	action := dsl.Action{Name: webSocketStepName("send", id), Type: "ws_send"}
+	action := dsl.Action{Name: webSocketStepName("send", id), Type: "ws_send", Metadata: sourceFunctionMetadata(fn)}
 	switch buffer, escaped := asyncCallArgRaw(fn, "Buffer"), asyncCallArgRaw(fn, "Buffer/Binary"); {
 	case escaped != "":
 		templated := convertParamReferences(escaped)
@@ -166,7 +166,7 @@ func convertWebSocketClose(fn ParsedFunction, state *sourceWebSockets) (dsl.Acti
 	if !state.open || id != state.id {
 		return dsl.Action{}, fmt.Sprintf("no converted WebSocket %q is open", id)
 	}
-	action := dsl.Action{Name: webSocketStepName("close", id), Type: "ws_close"}
+	action := dsl.Action{Name: webSocketStepName("close", id), Type: "ws_close", Metadata: sourceFunctionMetadata(fn)}
 	params := map[string]any{}
 	if raw := asyncCallArg(fn, "Code"); raw != "" {
 		code, err := strconv.Atoi(raw)

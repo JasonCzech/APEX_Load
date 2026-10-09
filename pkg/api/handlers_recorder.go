@@ -23,7 +23,8 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 		IncludeHosts          []string `json:"include_hosts,omitempty"`
 		BodyCaptureLimitBytes int      `json:"body_capture_limit_bytes,omitempty"`
 		RedactHeaders         []string `json:"redact_headers,omitempty"`
-		CaptureCookies        bool     `json:"capture_cookies,omitempty"`
+		// CaptureCookies, when set, wins over the recording profile's.
+		CaptureCookies *bool `json:"capture_cookies,omitempty"`
 		// RecordingProfileID names a project recording profile: its host
 		// filters, capture limit and cookie capture fill the options left
 		// unset here, and conversions of the session apply it.
@@ -54,9 +55,6 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 		if req.BodyCaptureLimitBytes == 0 {
 			req.BodyCaptureLimitBytes = profile.BodyCaptureLimitBytes
 		}
-		if !req.CaptureCookies && profile.CaptureCookies != nil {
-			req.CaptureCookies = *profile.CaptureCookies
-		}
 	}
 	notify := func(evt recorder.SessionEvent) {
 		s.broadcastRecorderSessionEvent(projectID, evt)
@@ -67,7 +65,7 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 		IncludeHosts:          req.IncludeHosts,
 		BodyCaptureLimitBytes: req.BodyCaptureLimitBytes,
 		RedactHeaders:         req.RedactHeaders,
-		CaptureCookies:        req.CaptureCookies,
+		CaptureCookies:        recorderCaptureCookies(req.CaptureCookies, profile),
 		RecordingProfileID:    req.RecordingProfileID,
 	}
 	if req.ExcludeStatic != nil {
@@ -630,4 +628,13 @@ func (s *Server) sessionRecordingProfile(session *recorder.Session, profileID st
 		profileID = session.Filters.RecordingProfileID
 	}
 	return s.projectRecordingProfile(normalizeProjectID(session.ProjectID), profileID)
+}
+
+// recorderCaptureCookies is a proxy session's cookie capture: the request's
+// explicit choice, else the recording profile's, else off.
+func recorderCaptureCookies(requested *bool, profile *recordingprofile.Profile) bool {
+	if requested != nil {
+		return *requested
+	}
+	return profile != nil && profile.CaptureCookies != nil && *profile.CaptureCookies
 }

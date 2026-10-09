@@ -207,7 +207,7 @@ func sourceWebSyncAction(fn ParsedFunction) (dsl.Action, bool) {
 		return dsl.Action{}, false
 	}
 	params["timeout_ms"] = timeoutMs
-	return dsl.Action{Name: "Sync " + params["variable"].(string), Type: "http_sync", Params: params}, true
+	return dsl.Action{Name: "Sync " + params["variable"].(string), Type: "http_sync", Params: params, Metadata: sourceFunctionMetadata(fn)}, true
 }
 
 // asyncUnsupportedReasonCode: an async call the importer cannot turn into a

@@ -47,15 +47,6 @@ func shapeRecordedHAR(script *dsl.Script, exchanges []exchange, content string, 
 		}
 	}
 	var warnings []string
-	if asyncScan {
-		// Client timestamps are found by changing on every request; folding
-		// a poll's repeats would hide that, so they are replaced first.
-		if evidence, err := clienttimestamps.FromHAR([]byte(content)); err == nil {
-			if warning := clienttimestamps.Apply(script, evidence).Warning(); warning != "" {
-				warnings = append(warnings, warning)
-			}
-		}
-	}
 	original := cloneScriptActions(script.Actions)
 	shaped := recordedshape.Shape(script, steps, sockets, recordedshape.Options{AsyncScan: asyncScan})
 	if !shaped.Changed() {
@@ -73,6 +64,18 @@ func shapeRecordedHAR(script *dsl.Script, exchanges []exchange, content string, 
 		}
 	}
 	return remapped, shaped.NewIndex, append(warnings, shaped.Warnings...)
+}
+
+// applyRecordedClientTimestamps gives the epoch timestamps a recorded client
+// made up (cache-busters, poll times) a fresh value at replay. It runs
+// before the async scan: a timestamp is found by changing on every request,
+// which folding a poll's repeats would hide.
+func applyRecordedClientTimestamps(script *dsl.Script, content string) string {
+	evidence, err := clienttimestamps.FromHAR([]byte(content))
+	if err != nil {
+		return ""
+	}
+	return clienttimestamps.Apply(script, evidence).Warning()
 }
 
 func cloneScriptActions(actions []dsl.Action) []dsl.Action {

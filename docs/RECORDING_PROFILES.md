@@ -23,7 +23,9 @@ profiles.
   `recording_profile_id`. The profile fills any host filters, body capture
   limit and cookie capture the request leaves unset. The session remembers the
   profile, and converting or previewing the session applies it, unless the
-  convert request names a different `recording_profile_id`.
+  convert request names a different `recording_profile_id`. Cookie capture
+  is decided when recording starts (an explicit `capture_cookies` wins over
+  the profile); only a different profile at conversion changes it.
 - **Browser recorder.** The convert and preview requests take
   `recording_profile_id`. It applies to the HTTP script made from the side-car
   HAR (`also_create_http_script`). The profile's `http_script_level` is the

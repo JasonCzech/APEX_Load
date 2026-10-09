@@ -38,6 +38,18 @@ describe('ActionBodyWorkspace', () => {
     expect(onUpdate).toHaveBeenLastCalledWith('body_multipart', { parts: [action.body_multipart!.parts[1]] })
   })
 
+  it('goes back to a plain body when the last field is removed or on request', () => {
+    const action: ScriptActionDefinition = { name: 'upload', type: 'request', method: 'POST', target: '/upload', body_multipart: { parts: [{ name: 'only', value: 'x' }] } }
+    const onUpdate = vi.fn()
+    act(() => root.render(<ActionBodyWorkspace action={action} index={0} path="script.actions[0]" parameters={[]} onUpdate={onUpdate} onParameterize={vi.fn()} />))
+    act(() => (container.querySelector('button[aria-label="Remove Field 1"]') as HTMLButtonElement).click())
+    expect(onUpdate).toHaveBeenLastCalledWith('body_multipart', undefined)
+    onUpdate.mockClear()
+    const plain = Array.from(container.querySelectorAll('button')).find(candidate => candidate.textContent === 'Use a plain body instead')!
+    act(() => plain.click())
+    expect(onUpdate).toHaveBeenLastCalledWith('body_multipart', undefined)
+  })
+
   it('switches an empty body to multipart fields', () => {
     const action: ScriptActionDefinition = { name: 'upload', type: 'request', method: 'POST', target: '/upload' }
     const onUpdate = vi.fn()

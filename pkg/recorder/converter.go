@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/convert/clienttimestamps"
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
@@ -111,8 +110,11 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 			opts.AsyncScan = profile.AsyncScan
 		}
 	}
+	// The session's cookie capture already reflects the profile it was
+	// started with (or an explicit choice over it); converting with a
+	// different profile applies that profile's choice.
 	policy := headerPolicy{cookies: session.Filters.CaptureCookies, profile: profile}
-	if profile != nil && profile.CaptureCookies != nil {
+	if profile != nil && profile.CaptureCookies != nil && !strings.EqualFold(profile.ID, session.Filters.RecordingProfileID) {
 		policy.cookies = *profile.CaptureCookies
 	}
 
@@ -151,11 +153,6 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 			target[key] = value
 		}
 	}
-	// The shared pipeline replaces client timestamps only with the async
-	// scan on; a recording always gets them.
-	if warning := clienttimestamps.Apply(script, recordedTimestampEvidence(session.Requests)).Warning(); warning != "" {
-		result.Warnings = append(result.Warnings, warning)
-	}
 	return result
 }
 
@@ -183,31 +180,6 @@ func recordedAt(req RecordedRequest) time.Time {
 		return req.Timestamp
 	}
 	return time.Unix(0, 0).Add(time.Duration(req.Seq) * time.Millisecond)
-}
-
-// recordedTimestampEvidence collects what the recorded responses say about
-// client timestamps: the capture window and every number a response carried.
-func recordedTimestampEvidence(requests []RecordedRequest) clienttimestamps.Evidence {
-	evidence := clienttimestamps.Evidence{}
-	for _, request := range requests {
-		evidence.Observe(request.Timestamp)
-		body := request.ResponseBody
-		if strings.EqualFold(request.ResponseBodyEncoding, "base64") {
-			if decoded, err := base64.StdEncoding.DecodeString(body); err == nil {
-				body = string(decoded)
-			}
-		}
-		evidence.AddServerText(body)
-		for _, value := range request.ResponseHeaders {
-			evidence.AddServerText(value)
-		}
-		for _, values := range request.ResponseHeadersMulti {
-			for _, value := range values {
-				evidence.AddServerText(value)
-			}
-		}
-	}
-	return evidence
 }
 
 func disclosureSafeCorrelations(correlations []Correlation) []Correlation {

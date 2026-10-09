@@ -351,3 +351,30 @@ func TestHTTPAsyncPushRunsChunkCallbacksAsEventsArrive(t *testing.T) {
 		t.Fatalf("push must re-open the stream when it ends: %d streams", streams.Load())
 	}
 }
+
+// A conversation init started stops when init fails and the virtual user
+// returns early.
+func TestHTTPAsyncConversationStopsWhenInitFails(t *testing.T) {
+	proto := &asyncPollProtocol{}
+	stop := false
+	vu := &VUser{ID: 1, Group: "g", Proto: proto, Metrics: NewMetricsCollector(64), Script: &dsl.Script{
+		Name: "poll", Protocol: "http",
+		Config: dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 1}, ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: &stop}},
+		Init: []dsl.Action{
+			asyncPollStart(nil),
+			{Name: "never ready", Type: "http_sync", Params: map[string]any{"variable": "never", "timeout_ms": 50}},
+		},
+		Actions: []dsl.Action{{Name: "unreached", Type: "request", Method: "GET", Target: "/unreached"}},
+	}}
+	vu.Run(context.Background())
+	stopped := proto.pollCount()
+	time.Sleep(300 * time.Millisecond)
+	if proto.pollCount() != stopped {
+		t.Fatal("a conversation started in init kept running after init failed")
+	}
+	for _, target := range proto.requests {
+		if target == "/unreached" {
+			t.Fatal("the actions ran although init failed")
+		}
+	}
+}

@@ -135010,7 +135010,7 @@ export interface operations {
       content: {
         "application/json": {
           "body_capture_limit_bytes"?: number;
-          "capture_cookies"?: boolean;
+          "capture_cookies"?: (boolean) | null;
           "exclude_hosts"?: Array<string>;
           "exclude_static"?: (boolean) | null;
           "include_hosts"?: Array<string>;

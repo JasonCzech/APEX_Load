@@ -71,3 +71,28 @@ func TestProxyRecorderRecordsSeparateResourcesAsSteps(t *testing.T) {
 		t.Fatalf("baseline = %+v, want one observation per step", result.Baseline)
 	}
 }
+
+// A session's cookie capture (its profile's, or an explicit choice over it)
+// stands when it is converted with the same profile; converting with a
+// different profile applies that profile's choice.
+func TestConvertSessionCookieCaptureFollowsTheSession(t *testing.T) {
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	headers := map[string]string{"Cookie": "pref=dark", "Accept": "text/html"}
+	session := &Session{ID: "c", Name: "Cookies", BaseURL: "https://shop.test", Filters: SessionFilters{CaptureCookies: true, RecordingProfileID: "default"}, Requests: []RecordedRequest{
+		{Seq: 1, Timestamp: t0, Method: "GET", URL: "https://shop.test/start", Path: "/start", Host: "shop.test", StatusCode: 200,
+			Headers: headers, RawHeaders: headers, HeadersMulti: multiFromSingle(headers), RawHeadersMulti: multiFromSingle(headers),
+			ResponseHeaders: map[string]string{"Content-Type": "text/html"}, ResponseBody: "<html>ok</html>"},
+	}}
+	off := false
+	cookie := func(profileID string) string {
+		profile := &recordingprofile.Profile{ID: profileID, Name: profileID, CaptureCookies: &off}
+		result := ConvertSessionWithOptions(session, "", ConvertOptions{Profile: profile})
+		return result.Script.Actions[0].Headers["Cookie"]
+	}
+	if got := cookie("default"); got != "pref=dark" {
+		t.Fatalf("same profile: Cookie = %q, want the captured cookie", got)
+	}
+	if got := cookie("strict"); got != "" {
+		t.Fatalf("a different profile that drops cookies: Cookie = %q", got)
+	}
+}

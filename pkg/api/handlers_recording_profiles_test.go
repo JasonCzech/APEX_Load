@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -68,5 +69,26 @@ func TestRecordingProfileEndpoints(t *testing.T) {
 
 	if missing := do(http.MethodPost, "/api/v1/recorder/start", `{"project_id":"`+project.ID+`","recording_profile_id":"nope"}`); missing.Code != http.StatusBadRequest {
 		t.Fatalf("an unknown profile must be refused: %d %s", missing.Code, missing.Body.String())
+	}
+}
+
+// An explicit capture_cookies wins over the recording profile's; without
+// one the profile decides.
+func TestRecorderCaptureCookiesPrecedence(t *testing.T) {
+	on, off := true, false
+	profile := &recordingprofile.Profile{ID: "p", Name: "P", CaptureCookies: &on}
+	for _, tt := range []struct {
+		requested *bool
+		profile   *recordingprofile.Profile
+		want      bool
+	}{
+		{nil, nil, false},
+		{nil, profile, true},
+		{&off, profile, false},
+		{&on, nil, true},
+	} {
+		if got := recorderCaptureCookies(tt.requested, tt.profile); got != tt.want {
+			t.Errorf("recorderCaptureCookies(%v, %v) = %v, want %v", tt.requested, tt.profile != nil, got, tt.want)
+		}
 	}
 }

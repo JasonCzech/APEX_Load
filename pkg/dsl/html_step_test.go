@@ -19,6 +19,8 @@ func TestHTMLStepValidation(t *testing.T) {
 		{map[string]any{"kind": "form", "fields": []any{map[string]any{"value": "x"}}}, "fields entries need a name"},
 		{map[string]any{"kind": "click"}, "kind must be link, image, image_check or form"},
 		{map[string]any{"kind": "link", "text": "x", "ordinal": 1.5}, "ordinal must be a whole number"},
+		{map[string]any{"kind": "link", "text": "x", "ordinal": -1}, "ordinal must be a whole number"},
+		{map[string]any{"kind": "link", "text": "x", "ordinal": float64(-2)}, "ordinal must be a whole number"},
 		{"link", "html_step must be an object"},
 	} {
 		if issues := ValidateScriptIssues(script("http", tt.step)); !hasIssue(issues, tt.want) {

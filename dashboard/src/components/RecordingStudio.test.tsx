@@ -2521,7 +2521,7 @@ describe("RecordingStudio", () => {
 
   it("threads the selected recording profile into the proxy start request", async () => {
     apiMock.getRecordingProfiles.mockResolvedValue({
-      profiles: [{ id: "checkout", name: "Checkout profile", http_script_level: "html" }],
+      profiles: [{ id: "checkout", name: "Checkout profile", http_script_level: "html", capture_cookies: true }],
       rules: [],
       updated_at: "2026-10-09T00:00:00Z",
     });
@@ -2558,8 +2558,9 @@ describe("RecordingStudio", () => {
     });
     await flushPromises();
 
+    // The cookie checkbox shows the profile's choice, and that is what is sent.
     expect(apiMock.startRecording).toHaveBeenCalledWith(
-      expect.objectContaining({ project_id: "proj-1", recording_profile_id: "checkout" }),
+      expect.objectContaining({ project_id: "proj-1", recording_profile_id: "checkout", capture_cookies: true }),
     );
   });
 

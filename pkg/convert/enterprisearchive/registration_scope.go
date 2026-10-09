@@ -213,7 +213,13 @@ func (p *pendingRegistrationFilter) findingsForAttachedRequest(action *dsl.Actio
 	}
 	explicit := explicitResourceURLs(action)
 	var findings []importreview.Finding
-	if p.requestURL != "" {
+	// An HTML-mode step's URL comes from the page at replay, where the
+	// extractor scope applies the filter exactly; there is nothing to judge.
+	htmlStep := false
+	if action != nil {
+		_, htmlStep = action.Params[httpprotocol.HTMLStepParam]
+	}
+	if p.requestURL != "" && !htmlStep {
 		url := ""
 		if action != nil {
 			url = metadataString(action.Metadata, "original_url")
