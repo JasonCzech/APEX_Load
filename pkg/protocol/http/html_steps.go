@@ -79,6 +79,11 @@ func (s *pageContextState) observeMainDocument(action *protocol.Action, resp *ht
 	if isResourceStep(action) || !stepHTMLMode(action) {
 		return
 	}
+	// A background conversation's response never replaces the page the
+	// script is on.
+	if id, _ := action.Params["async_conversation"].(string); id != "" {
+		return
+	}
 	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if err != nil || (mediaType != "text/html" && mediaType != "application/xhtml+xml") {
 		return

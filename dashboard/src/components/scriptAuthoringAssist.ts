@@ -208,6 +208,9 @@ function legacyActionNeedsExplicitTarget(actionType: string): boolean {
     'review_required',
     'cookie_clear',
     'cookie_set',
+    'http_async_start',
+    'http_async_stop',
+    'http_sync',
     'cache_clear',
     'http_connections_close',
   ].includes(actionType)

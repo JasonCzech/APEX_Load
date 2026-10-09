@@ -131,6 +131,7 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 	var current sseEvent
 	var dataLines []string
 	var dispatchErr error
+	observe := protocol.StreamChunkObserver(ctx)
 	dispatch := func() bool {
 		if current.Event == "" && current.ID == "" && len(dataLines) == 0 {
 			return false
@@ -146,6 +147,9 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 			return true
 		}
 		writeSSEEvent(&out, current)
+		if observe != nil {
+			observe(current.Data)
+		}
 		result.EventCount++
 		if result.FirstEvent == 0 {
 			result.FirstEvent = time.Since(start)

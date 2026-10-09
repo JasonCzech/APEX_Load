@@ -63,6 +63,8 @@ const LOADRUNNER_PARITY_ISSUE_TITLES: Record<string, string> = {
   web_set_user_credentials_conflict: 'Reconcile web_set_user credentials',
   integrated_auth_requires_configuration: 'Configure NTLM or Kerberos credentials',
   recorded_body_truncated: 'Re-record or supply the full request body',
+  async_callbacks_not_executed: 'Rebuild async callbacks that do not run',
+  async_conversation_unsupported: 'Review async conversation APEX cannot run',
 }
 
 export function issueTitle(code: string): string {

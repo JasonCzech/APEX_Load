@@ -571,6 +571,11 @@ func sampleSourceFunctionCall(def SourceFunctionDefinition) string {
 		return "\tlr_json_stringify(\"JsonObject=Doc\", \"OutputParam=DocText\", LAST);"
 	case "lr_aws_get_secret", "lr_azure_ad_client_get_token", "lr_azure_kv_get_secret", "lr_azure_set_service_port", "lr_cyberark_get_vault":
 		return "\t" + def.Name + "(\"SecretName\", \"SecretParam\");"
+	case "web_reg_async_attributes":
+		return "\tweb_reg_async_attributes(\"ID=poll\", \"Pattern=Poll\", LAST);"
+	case "web_stop_async":
+		// A stop converts only for a conversation the script started.
+		return "\tweb_reg_async_attributes(\"ID=poll\", \"Pattern=Poll\", LAST);\n\tweb_url(\"Poll\", \"URL=https://example.test/poll\", LAST);\n\tweb_stop_async(\"ID=poll\", LAST);"
 	default:
 		return "\t" + def.Name + "(\"Arg1\", \"Arg2\");"
 	}

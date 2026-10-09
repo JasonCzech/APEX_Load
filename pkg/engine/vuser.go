@@ -138,6 +138,11 @@ type VUser struct {
 	userWorkStarted    bool
 	resultPhase        string
 	resultSequence     uint64
+	// async holds the running background HTTP conversations (http_async.go);
+	// onAsyncResult lets replay report each conversation response.
+	async           *asyncConversations
+	inAsyncDispatch bool
+	onAsyncResult   func(*protocol.Result)
 }
 
 // resolvedActionCredentialComposites pins credential spellings to the exact
@@ -1131,6 +1136,10 @@ func (vu *VUser) Run(ctx context.Context) {
 			}
 		}
 
+		// LoadRunner ends an async conversation the script did not stop at
+		// the end of the iteration.
+		vu.stopAllAsyncConversations(iterCtx, "iteration end")
+
 		// Record iteration-level transaction
 		recordIterationTransaction(iterSuccess)
 		releaseReservedActionTransaction()
@@ -1143,6 +1152,7 @@ func (vu *VUser) Run(ctx context.Context) {
 	}
 
 teardown:
+	vu.stopAllAsyncConversations(iterCtx, "virtual user end")
 	releasePreIterationReservations()
 	runTeardown()
 }

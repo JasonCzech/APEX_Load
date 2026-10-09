@@ -1,0 +1,61 @@
+{
+  "description": "The ResponseCB ends the conversation from C logic (strstr on the response body, then WEB_ASYNC_CB_RC_ABORT_ASYNC_NOT_ERROR), which the callback translation does not take on. The conversation still runs and web_stop_async still ends it, so the wire traffic matches, but the callback's lr_save_string does not run either: the import carries a promotion finding and the result URL keeps the unresolved parameter.",
+  "source": "VuGen 26.1 Function Reference: web_reg_async_attributes (ID, Pattern, URL, PollIntervalMs, RequestCB, ResponseCB, ResponseBodyBufferCB), web_stop_async, web_sync (ParamValueEquals, Timeout); Asynchronous communication: callbacks in AsyncCallbacks.c.",
+  "outcome": "review",
+  "responses": [
+    {
+      "method": "GET",
+      "path": "/api/status",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"status\":\"queued\"}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/status",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"status\":\"running\"}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/status",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"status\":\"done\"}"
+    },
+    {
+      "method": "GET",
+      "path": "/app/result",
+      "headers": {
+        "Content-Type": "text/html"
+      },
+      "body": "<html>result</html>"
+    }
+  ],
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/api/status"
+    },
+    {
+      "method": "GET",
+      "path": "/api/status"
+    },
+    {
+      "method": "GET",
+      "path": "/api/status",
+      "extra_repeats": 1
+    },
+    {
+      "method": "GET",
+      "path": "/app/result"
+    }
+  ],
+  "gate_reason_codes": [
+    "async_callbacks_not_executed"
+  ]
+}

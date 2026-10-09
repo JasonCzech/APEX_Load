@@ -44,11 +44,25 @@ func TestEngineDispatchCoversCatalogEngineActions(t *testing.T) {
 			Variables: map[string]string{},
 		}
 		action := dsl.Action{Name: "step", Type: spec.Type}
-		if spec.Type == "source_verification" {
+		switch spec.Type {
+		case "source_verification":
 			vu.Proto = &httpprotocol.HTTP{}
 			action.Params = map[string]any{"operation": "register", "id": "check", "text": "error", "scope": "all", "fail_if_found": true}
+		case "http_async_start":
+			vu.Proto = &asyncPollProtocol{}
+			action.Params = asyncPollStart(nil).Params
+		case "http_async_stop":
+			vu.Proto = &asyncPollProtocol{}
+			if _, err := vu.handleEngineAction(context.Background(), asyncPollStart(nil)); err != nil {
+				t.Fatal(err)
+			}
+			action.Params = map[string]any{"id": "poll"}
+		case "http_sync":
+			vu.Variables["ready"] = "1"
+			action.Params = map[string]any{"variable": "ready"}
 		}
 		handled, err := vu.handleEngineAction(context.Background(), action)
+		vu.stopAllAsyncConversations(context.Background(), "cross-check end")
 		if !handled {
 			t.Errorf("%s: catalog engine action not handled by handleEngineAction", spec.Type)
 		}

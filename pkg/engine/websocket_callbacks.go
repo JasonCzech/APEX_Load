@@ -47,6 +47,11 @@ func (vu *VUser) dispatchWebSocketCallbacks(ctx context.Context, wait bool) erro
 }
 
 func (vu *VUser) beforeWebSocketAction(ctx context.Context, kind string) error {
+	// Background HTTP conversation results are applied at the same action
+	// boundaries as WebSocket callbacks.
+	if err := vu.dispatchAsyncResults(ctx); err != nil {
+		return err
+	}
 	if kind == "ws_on_message" || kind == "ws_connect" || kind == "ws_close" {
 		return nil
 	}

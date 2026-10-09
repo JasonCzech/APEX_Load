@@ -244,6 +244,10 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	unmodelledRequestArgs := make(map[string]int)
 	var pendingFindings []importreview.Finding
 	var pendingFilters []*pendingRegistrationFilter
+	// pendingAsync is a web_reg_async_attributes waiting for its step;
+	// startedAsync holds the conversation IDs that became http_async_start.
+	var pendingAsync *sourceAsync
+	startedAsync := map[string]bool{}
 	trackLastExecutable := func(fn ParsedFunction) {
 		lastExecutablePhase = fn.Phase
 		lastExecutableIndex = actionCountForPhase(result.Script, fn.Phase) - 1
@@ -278,7 +282,42 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			))
 			continue
 		}
+		reviewAsync := func(async *sourceAsync, reason string) {
+			notes := "The async conversation is preserved and not executed: " + reason + "."
+			appendTrackedSourceAction(async.fn, asyncReviewAction(async.fn, notes), SourceFunctionSupportReviewOnly, notes)
+			result.Warnings = append(result.Warnings, fmt.Sprintf("%s:%d web_reg_async_attributes requires review: %s", async.fn.Filename, async.fn.LineNumber, reason))
+		}
 		switch fn.Name {
+		case "web_reg_async_attributes":
+			if pendingAsync != nil {
+				reviewAsync(pendingAsync, "another web_reg_async_attributes replaced it before a step")
+			}
+			async, reason := parseSourceAsync(fn)
+			if async == nil {
+				pendingAsync = nil
+				reviewAsync(&sourceAsync{fn: fn}, reason)
+				continue
+			}
+			pendingAsync = async
+
+		case "web_stop_async":
+			id := sourceStopAsyncID(fn)
+			if !startedAsync[id] {
+				notes := fmt.Sprintf("No background conversation %q was converted, so there is nothing to stop; preserved and not executed.", id)
+				appendTrackedSourceAction(fn, asyncReviewAction(fn, notes), SourceFunctionSupportReviewOnly, notes)
+				continue
+			}
+			appendTrackedSourceAction(fn, dsl.Action{Name: "Stop " + id, Type: "http_async_stop", Params: map[string]any{"id": id}}, SourceFunctionSupportExecutable,
+				"Converted to http_async_stop, which ends the background conversation and applies its last responses.")
+
+		case "web_sync":
+			if action, ok := sourceWebSyncAction(fn); ok {
+				appendTrackedSourceAction(fn, action, SourceFunctionSupportExecutable, "Converted to http_sync, which waits for a background conversation to set the parameter.")
+				continue
+			}
+			notes := "Only web_sync ParamExists= and ParamValueEquals= (with Timeout=) are converted; preserved and not executed."
+			appendTrackedSourceAction(fn, asyncReviewAction(fn, notes), SourceFunctionSupportReviewOnly, notes)
+
 		case "web_reg_save_param", "web_reg_save_param_regexp", "web_reg_save_param_json", "web_reg_save_param_xpath", "web_reg_save_param_ex", "web_reg_save_param_attrib":
 			registration := convertRegistration(fn)
 			ext := registration.extractor
@@ -812,8 +851,26 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 					action.Name = fmt.Sprintf("%s_%d", action.Name, actionNameCounts[action.Name])
 				}
 
+				var asyncWrap *sourceAsync
+				if pendingAsync != nil && fn.Name != "web_image_check" {
+					async := pendingAsync
+					pendingAsync = nil
+					switch {
+					case argumentGated || metadataBool(action.Metadata, "masked_body") || metadataString(action.Metadata, "source_itemdata_encoding") == "review_required":
+						reviewAsync(async, "the step it applies to is gated for review")
+					case !async.appliesTo(fn, action):
+						reviewAsync(async, "its URL names a request inside the step, which cannot run apart from the step")
+					default:
+						asyncWrap = async
+					}
+				}
+
 				actionIndex := actionCountForPhase(result.Script, fn.Phase)
 				targetPath := sourceReviewActionPath(fn.Phase, actionIndex)
+				contributorPath := targetPath
+				if asyncWrap != nil {
+					contributorPath = targetPath + ".params.request"
+				}
 				mappingStatus := "converted"
 				mappingNotes := "Converted to a generated APEX Load action."
 				mappingMode := SourceFunctionSupportExecutable
@@ -851,7 +908,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 						contributorIndex = assertionIndex
 						assertionIndex++
 					}
-					pendingMapping.TargetPath = sourceReviewContributorTargetPath(targetPath, pendingMapping.TargetKind, contributorIndex)
+					pendingMapping.TargetPath = sourceReviewContributorTargetPath(contributorPath, pendingMapping.TargetKind, contributorIndex)
 					if pendingMapping.TargetName == "" {
 						pendingMapping.TargetName = action.Name
 					}
@@ -860,6 +917,18 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				pendingSourceMappings = retainedMappings
 
 				tagSourceFlowMetadata(result, fn, action)
+				if asyncWrap != nil {
+					wrapped, err := wrapAsyncConversation(asyncWrap, *action, translateAsyncCallbacks(asyncWrap, opts.archiveFiles))
+					if err != nil {
+						return nil, fmt.Errorf("wrap async conversation %q: %w", asyncWrap.id, err)
+					}
+					*action = wrapped
+					startedAsync[asyncWrap.id] = true
+					appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(asyncWrap.fn, targetPath, action.Name, "action", "contributor",
+						"Runs this step as a background conversation (http_async_start) until web_stop_async or the end of the iteration.", SourceFunctionSupportExecutable))
+					result.Stats.ContributorFunctions++
+					recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
+				}
 				appendActionForPhase(result.Script, fn.Phase, *action)
 				if fn.Name != "web_image_check" {
 					lastRequestPhase = fn.Phase
@@ -923,6 +992,10 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			result.Stats.UnsupportedFuncs = append(result.Stats.UnsupportedFuncs, fn.Name)
 			appendSourceReviewMapping(result, sourceReviewMappingForFunction(fn, "metadata.import.preserved.unsupported_functions", fn.Name, "unsupported", "review_only", "No executable APEX Load mapping exists for this source function yet."))
 		}
+	}
+	if pendingAsync != nil {
+		notes := "The async conversation is preserved and not executed: no step follows it."
+		appendTrackedSourceAction(pendingAsync.fn, asyncReviewAction(pendingAsync.fn, notes), SourceFunctionSupportReviewOnly, notes)
 	}
 	if warning := unmodelledRequestArgumentsWarning(unmodelledRequestArgs); warning != "" {
 		result.Warnings = append(result.Warnings, warning)

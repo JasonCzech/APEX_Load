@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"sort"
@@ -456,6 +457,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		Ignore:     script.Config.ThinkTime.Ignore,
 	}
 
+	vu.onAsyncResult = func(result *protocol.Result) { appendReplayAsyncEvent(vu, report, result) }
 	shouldContinue := runReplayPhase(ctx, vu, script.Init, "init", false, opts.IgnoreThinkTime, globalThinkCfg, report, onProgress, opts.DebugController)
 	if shouldContinue {
 		if controller, ok := vu.Proto.(protocol.IterationController); ok {
@@ -469,9 +471,11 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 			shouldContinue = runReplayPhase(ctx, vu, script.Actions, "action", continueOnError, opts.IgnoreThinkTime, globalThinkCfg, report, onProgress, opts.DebugController)
 		}
 	}
+	vu.stopAllAsyncConversations(ctx, "replay end")
 	teardownCtx, teardownCancel := teardownContext()
 	runReplayPhase(teardownCtx, vu, script.Teardown, "teardown", true, opts.IgnoreThinkTime, globalThinkCfg, report, onProgress, opts.DebugController)
 	teardownCancel()
+	vu.stopAllAsyncConversations(teardownCtx, "replay end")
 	finalizedSourceTransactions := vu.finalizeOpenSourceTransactions("source transaction ended without a matching end marker during replay")
 	appendReplaySourceTransactionFinalizations(report, finalizedSourceTransactions, vu.RedactionConfig, onProgress)
 
@@ -505,6 +509,33 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	})
 
 	return report, nil
+}
+
+// appendReplayAsyncEvent reports one background conversation response
+// (http_async_start) as an "async" replay event. A failed response fails the
+// replay without stopping it, as a failed response does in a load test.
+func appendReplayAsyncEvent(vu *VUser, report *ReplayReport, result *protocol.Result) {
+	event := ReplayActionEvent{
+		EventIndex:  report.nextEventIndex(),
+		ActionIndex: -1,
+		Phase:       "async",
+		ActionName:  result.ActionName,
+		ActionType:  "http_async",
+		StartedAt:   result.StartTime,
+		CompletedAt: result.StartTime.Add(result.Duration),
+		DurationMs:  float64(result.Duration.Microseconds()) / 1000,
+		StatusCode:  result.StatusCode,
+		Success:     result.Success,
+	}
+	if !result.Success {
+		report.Success = false
+		message := result.ErrorMessage
+		if message == "" {
+			message = "async response failed"
+		}
+		event.ErrorMessage = scrubSensitiveError(errors.New(message), vu.resultPublicationRedactionConfig()).Error()
+	}
+	appendReplayReportEvent(report, event)
 }
 
 // appendReplaySourceTransactionFinalizations exposes the same failed logical

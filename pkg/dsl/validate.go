@@ -1407,6 +1407,8 @@ func validateEngineActionIssues(protocol string, path string, index int, action 
 		return rebaseActionIssues(fmt.Sprintf("actions[%d]", index), path, validateRendezvousActionIssues(index, action))
 	case "ws_on_message", "control_if", "control_switch", "control_loop", "control_parallel":
 		return validateControlFlowIssues(protocol, path, action)
+	case "http_async_start", "http_async_stop", "http_sync":
+		return validateHTTPAsyncIssues(protocol, path, action)
 	case "error_message":
 		label := actionLabel(path, action)
 		if strings.TrimSpace(action.Value) == "" {
@@ -1546,7 +1548,7 @@ func validateParallelBranchScope(actions []Action, path string, loopDepth int) [
 		actionPath := fmt.Sprintf("%s[%d]", path, index)
 		actionType := CanonicalActionType(strings.ToLower(strings.TrimSpace(action.Type)))
 		switch actionType {
-		case "control_parallel", "rendezvous":
+		case "control_parallel", "rendezvous", "http_async_start", "http_async_stop", "http_sync":
 			issues = append(issues, fmt.Sprintf("%s: %s is not permitted inside control_parallel", actionPath, actionType))
 		}
 		if (actionType == "control_break" || actionType == "control_continue") && loopDepth == 0 {

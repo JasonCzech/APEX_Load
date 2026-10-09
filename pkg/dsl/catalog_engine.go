@@ -93,6 +93,36 @@ func engineActionSpecs() []ActionSpec {
 			},
 		},
 		{
+			Type:      "http_async_start",
+			Protocols: []string{"*"},
+			Summary:   "Starts a background HTTP conversation (imported from web_reg_async_attributes): params.request is sent repeatedly while the script continues, until http_async_stop or the end of the iteration. Responses are recorded as \"async <id>\" and their extractors and callbacks run on the virtual user between actions. HTTP scripts only.",
+			Fields: []FieldSpec{
+				{Name: "params.id", Kind: FieldKindString, Required: true, Doc: "Conversation ID used by http_async_stop; at most 8 conversations run per virtual user."},
+				{Name: "params.pattern", Kind: FieldKindEnum, Enum: []string{"poll", "long_poll", "push"}, Doc: "poll sends the request every interval_ms; long_poll re-sends it as soon as a response arrives; push re-opens a streaming response (read as server-sent events, see params.stream on HTTP requests) when it ends. Defaults to poll."},
+				{Name: "params.interval_ms", Kind: FieldKindInt, Doc: "Poll interval in milliseconds; at least 100. Ignored by long_poll and push, which wait at least 100 ms between requests."},
+				{Name: "params.request", Kind: FieldKindObject, Required: true, Doc: "The HTTP request action to repeat. Templates are resolved again after each response, so a value one response extracts is sent by the next request."},
+				{Name: "control.branches", Kind: FieldKindArray, Doc: "Callback branches {name, steps} run on the virtual user, at most 64 steps each: on_request before the request is resolved again (at start and after each dispatch of responses), on_response after each response (var.async_response_status, var.async_response_success, var.async_response_body), on_body_chunk for each chunk of a streamed response (var.async_chunk: one server-sent event's data, or the whole body of a response that is not an event stream). var.async_conversation_id names the conversation; http_async_stop inside a callback ends the conversation after the callback."},
+			},
+		},
+		{
+			Type:      "http_async_stop",
+			Protocols: []string{"*"},
+			Summary:   "Stops a background HTTP conversation and applies its last responses (imported from web_stop_async).",
+			Fields: []FieldSpec{
+				{Name: "params.id", Kind: FieldKindString, Required: true, Doc: "Conversation ID given to http_async_start."},
+			},
+		},
+		{
+			Type:      "http_sync",
+			Protocols: []string{"*"},
+			Summary:   "Waits until a background conversation sets a variable (imported from web_sync), applying conversation responses while it waits.",
+			Fields: []FieldSpec{
+				{Name: "params.variable", Kind: FieldKindString, Required: true, Doc: "Variable to wait for (without the var. prefix)."},
+				{Name: "params.value", Kind: FieldKindString, Doc: "Value to wait for; without it any non-empty value ends the wait."},
+				{Name: "params.timeout_ms", Kind: FieldKindInt, Doc: "Maximum wait in milliseconds; defaults to 10000. The step fails when it passes."},
+			},
+		},
+		{
 			Type:      "cache_clear",
 			Protocols: []string{"*"},
 			Summary:   "Clears the VUser's simulated HTTP response cache at this point. Protocols without a response cache treat it as a no-op.",

@@ -39,6 +39,12 @@ func (vu *VUser) handleEngineAction(ctx context.Context, action dsl.Action) (boo
 		return true, vu.clearProtocolCookies(ctx)
 	case "cookie_set":
 		return true, vu.setProtocolCookie(ctx, action)
+	case "http_async_start":
+		return true, vu.startAsyncConversation(ctx, action)
+	case "http_async_stop":
+		return true, vu.stopAsyncConversation(ctx, vu.interpolate(asyncParamString(action, "id")))
+	case "http_sync":
+		return true, vu.waitForAsyncCondition(ctx, action)
 	case "cache_clear":
 		return true, vu.clearProtocolCache(ctx)
 	case "http_connections_close":

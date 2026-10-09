@@ -53,7 +53,21 @@ describe('LoadRunner web parity UI', () => {
     expect(issueTitle('integrated_auth_requires_configuration')).toBe('Configure NTLM or Kerberos credentials')
     expect(issueTitle('registration_dfe_unsupported')).toBe('Apply data-format extensions before extraction')
     expect(issueTitle('request_body_file_missing')).toBe('Add the missing request body file')
+    expect(issueTitle('async_callbacks_not_executed')).toBe('Rebuild async callbacks that do not run')
     expect(issueTitle('some_future_code')).toBe('some future code')
+  })
+
+  it('does not ask async conversation actions for a target', () => {
+    const script = {
+      name: 'async', protocol: 'http', config: { base_url: 'https://shop.test' },
+      actions: [
+        { name: 'Start poll', type: 'http_async_start', params: { id: 'poll', request: { name: 'poll', type: 'GET', method: 'GET', target: '/poll' } } },
+        { name: 'Sync status', type: 'http_sync', params: { variable: 'status' } },
+        { name: 'Stop poll', type: 'http_async_stop', params: { id: 'poll' } },
+      ],
+    } as unknown as ScriptDefinition
+    const messages = collectAuthoringIssues(script).map(issue => issue.message)
+    expect(messages.some(message => /target is required/i.test(message))).toBe(false)
   })
 
   it('does not ask cookie_set for a target', () => {

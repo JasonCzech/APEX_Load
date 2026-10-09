@@ -51,7 +51,7 @@ web_js_run,web,review_only
 web_link,web,executable
 web_load_cache,web,native_noop
 web_reg_add_cookie,web,executable
-web_reg_async_attributes,web,review_only
+web_reg_async_attributes,web,executable
 web_reg_find,web,executable
 web_reg_save_param,web,executable
 web_reg_save_param_attrib,web,executable
@@ -82,7 +82,7 @@ web_set_sockets_option,web,executable
 web_set_timeout,web,executable
 web_set_user,web,executable
 web_sjis_to_euc_param,parameter,review_only
-web_stop_async,web,review_only
+web_stop_async,web,executable
 web_stream_close,web,review_only
 web_stream_get_param_double,web,review_only
 web_stream_get_param_int,web,review_only
@@ -97,7 +97,7 @@ web_stream_stop,web,review_only
 web_stream_wait,web,review_only
 web_submit_data,web,executable
 web_submit_form,web,executable
-web_sync,web,review_only
+web_sync,web,executable
 web_url,web,executable
 web_util_set_request_body,parameter,review_only
 web_util_set_request_url,parameter,review_only

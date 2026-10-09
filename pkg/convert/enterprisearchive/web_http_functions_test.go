@@ -49,7 +49,7 @@ var publishedWebHTTPFunctionExpectations = map[string]struct {
 	"web_link":                       {"web", SourceFunctionSupportExecutable},
 	"web_load_cache":                 {"web", SourceFunctionSupportNativeNoop},
 	"web_reg_add_cookie":             {"web", SourceFunctionSupportExecutable},
-	"web_reg_async_attributes":       {"web", SourceFunctionSupportReviewOnly},
+	"web_reg_async_attributes":       {"web", SourceFunctionSupportExecutable},
 	"web_reg_find":                   {"web", SourceFunctionSupportExecutable},
 	"web_reg_save_param":             {"web", SourceFunctionSupportExecutable},
 	"web_reg_save_param_attrib":      {"web", SourceFunctionSupportExecutable},
@@ -80,7 +80,7 @@ var publishedWebHTTPFunctionExpectations = map[string]struct {
 	"web_set_timeout":                {"web", SourceFunctionSupportExecutable},
 	"web_set_user":                   {"web", SourceFunctionSupportExecutable},
 	"web_sjis_to_euc_param":          {"parameter", SourceFunctionSupportReviewOnly},
-	"web_stop_async":                 {"web", SourceFunctionSupportReviewOnly},
+	"web_stop_async":                 {"web", SourceFunctionSupportExecutable},
 	"web_stream_close":               {"web", SourceFunctionSupportReviewOnly},
 	"web_stream_get_param_double":    {"web", SourceFunctionSupportReviewOnly},
 	"web_stream_get_param_int":       {"web", SourceFunctionSupportReviewOnly},
@@ -95,7 +95,7 @@ var publishedWebHTTPFunctionExpectations = map[string]struct {
 	"web_stream_wait":                {"web", SourceFunctionSupportReviewOnly},
 	"web_submit_data":                {"web", SourceFunctionSupportExecutable},
 	"web_submit_form":                {"web", SourceFunctionSupportExecutable},
-	"web_sync":                       {"web", SourceFunctionSupportReviewOnly},
+	"web_sync":                       {"web", SourceFunctionSupportExecutable},
 	"web_url":                        {"web", SourceFunctionSupportExecutable},
 	"web_util_set_request_body":      {"parameter", SourceFunctionSupportReviewOnly},
 	"web_util_set_request_url":       {"parameter", SourceFunctionSupportReviewOnly},
@@ -260,13 +260,14 @@ func sampleWebFunctionCall(name string) string {
 	case "web_reg_async_attributes":
 		return `web_reg_async_attributes("ID=poll", "Pattern=Poll", LAST);`
 	case "web_stop_async":
-		return `web_stop_async("poll");`
+		// A stop converts only for a conversation the script started.
+		return "web_reg_async_attributes(\"ID=poll\", \"Pattern=Poll\", LAST);\n\tweb_url(\"Poll\", \"URL=https://example.test/poll\", LAST);\n\tweb_stop_async(\"ID=poll\", LAST);"
 	case "web_js_run":
 		return `web_js_run("Code=return 1;", "ResultParam=R", LAST);`
 	case "web_js_reset":
 		return `web_js_reset(LAST);`
 	case "web_sync":
-		return `web_sync("WaitForResponse=https://example.test/ready", LAST);`
+		return `web_sync("ParamExists=status", "Timeout=5", LAST);`
 	}
 	if strings.HasPrefix(name, "web_stream_") {
 		return name + `("StreamName");`

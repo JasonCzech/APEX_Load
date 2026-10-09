@@ -12,9 +12,9 @@ Evaluation of the complete published OpenText/Micro Focus VuGen 26.1 **Web (HTTP
 
 | Disposition | Count | Meaning |
 |---|---|---|
-| `executable` | 49 | Translated to an executable DSL action or config mapping. |
+| `executable` | 52 | Translated to an executable DSL action or config mapping. |
 | `native_noop` | 6 | Preserved as a runtime-compatibility attribute; a guaranteed no-op in APEX Load (no client cache / no auto-resource fetch). |
-| `review_only` | 26 | Preserved in the import-review artifact; no APEX runtime equivalent, so it is not executed (never fabricated). |
+| `review_only` | 23 | Preserved in the import-review artifact; no APEX runtime equivalent, so it is not executed (never fabricated). |
 
 Every published function resolves to one of the dispositions above — none falls through to a `custom_call` review stub. This is enforced by `TestWebHTTPFunctionRegistryResolvesEveryPublishedFunction`.
 
@@ -51,7 +51,7 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_link` | web | `executable` | HTTP link step (page context) | Follows the link on the current page whose visible text matches Text= (Ordinal=, /IC). A non-VuGen explicit URL= becomes a GET. Frame-targeted links keep the navigation gate. |
 | `web_load_cache` | web | `native_noop` | config.web_runtime attribute | No client cache; native no-op. |
 | `web_reg_add_cookie` | web | `executable` | Cookie headers | Registered cookie attached downstream. |
-| `web_reg_async_attributes` | web | `review_only` | Import review | Async polling/push has no APEX runtime equivalent. |
+| `web_reg_async_attributes` | web | `executable` | http_async_start | The next step runs as a background Poll/LongPoll/Push conversation; C callbacks are not executed (promotion finding); a URL naming a resource inside the step keeps review. |
 | `web_reg_find` | web | `executable` | Assertion / count extractor | Text= + optional SaveCount extractor; SaveCount without Fail is non-failing. |
 | `web_reg_save_param` | web | `executable` | Extractor (boundary/regex) | LB=/RB= + ORD= on the next request. |
 | `web_reg_save_param_attrib` | web | `executable` | Extractor (xpath) | TagName=+Extract= (or Tag=/Attribute=) → //tag/@attr; element attributes before SEARCH_FILTERS become [@name='value'] predicates. |
@@ -82,7 +82,7 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_set_timeout` | web | `executable` | config.http timeouts | Connect/receive/SSL timeouts. |
 | `web_set_user` | web | `executable` | config.http.auth (hosts-scoped) | negotiate_any credentials answer the Basic, Digest, NTLM or Negotiate challenge of the host:port it names (config.http.auth.hosts) and are never sent before a challenge; a second, different credential set is execution-gated. |
 | `web_sjis_to_euc_param` | parameter | `review_only` | Import review | SJIS to EUC conversion is preserved for review; no APEX runtime equivalent yet. |
-| `web_stop_async` | web | `review_only` | Import review | Async polling/push has no APEX runtime equivalent. |
+| `web_stop_async` | web | `executable` | http_async_stop | Ends a converted conversation; an ID that was not converted keeps review. |
 | `web_stream_close` | web | `review_only` | Import review | Media streaming has no APEX runtime equivalent. |
 | `web_stream_get_param_double` | web | `review_only` | Import review | Media streaming has no APEX runtime equivalent. |
 | `web_stream_get_param_int` | web | `review_only` | Import review | Media streaming has no APEX runtime equivalent. |
@@ -97,7 +97,7 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_stream_wait` | web | `review_only` | Import review | Media streaming has no APEX runtime equivalent. |
 | `web_submit_data` | web | `executable` | HTTP request action | Method= + ITEMDATA form body. |
 | `web_submit_form` | web | `executable` | HTTP form step (page context) | Submits the form on the current page that has every scripted field (then Action=, then Ordinal=): the page's live hidden fields, action URL, method and encoding, with scripted values overriding and STARTHIDDENS values filling names the page lacks. Frame-targeted forms keep the navigation gate. |
-| `web_sync` | web | `review_only` | Import review | Async page-sync has no APEX runtime equivalent. |
+| `web_sync` | web | `executable` | http_sync | ParamExists= and ParamValueEquals= (with Timeout=, default 120 s) wait for a conversation to set the parameter; other forms keep review. |
 | `web_url` | web | `executable` | HTTP request action | GET/POST request from URL=. |
 | `web_util_set_request_body` | parameter | `review_only` | Import review | Next-request body overrides are preserved for review; no APEX runtime equivalent yet. |
 | `web_util_set_request_url` | parameter | `review_only` | Import review | Next-request URL overrides are preserved for review; no APEX runtime equivalent yet. |

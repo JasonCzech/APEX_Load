@@ -11,7 +11,7 @@ export const HTTP_ACTION_VERSION_OPTIONS = [
 ] as const
 const HTTP_FAMILIES = new Set(['http', 'http/1.1', 'http/2', 'soap', 'java_http'])
 const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'])
-const NON_REQUEST_TYPES = new Set(['http_sequence', 'http_oauth2_token', 'cookie_clear', 'cookie_set', 'cache_clear', 'http_connections_close', 'rendezvous', 'error_message', 'review_required'])
+const NON_REQUEST_TYPES = new Set(['http_sequence', 'http_oauth2_token', 'cookie_clear', 'cookie_set', 'http_async_start', 'http_async_stop', 'http_sync', 'cache_clear', 'http_connections_close', 'rendezvous', 'error_message', 'review_required'])
 const own = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key)
 
 export function isHTTPActionVersion(value: unknown): value is HTTPActionVersion {

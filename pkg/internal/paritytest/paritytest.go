@@ -103,6 +103,10 @@ type ExpectedRequest struct {
 	// Multipart compares a multipart body part by part. The boundary is not
 	// compared: it is generated per sender and carries no meaning.
 	Multipart []ExpectedPart `json:"multipart,omitempty"`
+	// ExtraRepeats allows up to this many further identical requests right
+	// after this one, for a background conversation whose last poll may
+	// already be on the wire when the script stops it.
+	ExtraRepeats int `json:"extra_repeats,omitempty"`
 }
 
 // ExpectedPart is one multipart part, in order.
@@ -340,14 +344,19 @@ func ReplayOnce(ctx context.Context, script *dsl.Script, variables map[string]st
 func (s *Server) Compare(expected []ExpectedRequest) []string {
 	recorded := s.Recorded()
 	var problems []string
+	next := 0
 	for i, want := range expected {
-		if i >= len(recorded) {
+		if next >= len(recorded) {
 			problems = append(problems, fmt.Sprintf("request %d: expected %s %s, but only %d request(s) arrived", i+1, want.Method, want.Path, len(recorded)))
 			continue
 		}
-		problems = append(problems, s.compareOne(i+1, want, recorded[i])...)
+		problems = append(problems, s.compareOne(next+1, want, recorded[next])...)
+		next++
+		for repeat := 0; repeat < want.ExtraRepeats && next < len(recorded) && len(s.compareOne(next+1, want, recorded[next])) == 0; repeat++ {
+			next++
+		}
 	}
-	for i := len(expected); i < len(recorded); i++ {
+	for i := next; i < len(recorded); i++ {
 		problems = append(problems, fmt.Sprintf("request %d: unexpected extra request %s %s?%s", i+1, recorded[i].Method, recorded[i].Path, recorded[i].Query))
 	}
 	return problems
