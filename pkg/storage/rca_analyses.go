@@ -22,16 +22,20 @@ const (
 	RCAStateCancelled = "cancelled"
 )
 
-// Bounds on a run's analytical history: 50 analyses of at most 2 MiB each
-// keep a run's stored assessments near 100 MiB at worst.
+// Bounds on a run's analytical history: 50 live analyses (queued, running or
+// completed) of at most 2 MiB each keep a run's stored assessments near 100
+// MiB at worst. Failed and cancelled analyses do not count against the cap;
+// the oldest beyond MaxRCARevisionsPerRun are pruned when a new one is
+// queued. Evidence revisions are capped too, but a revision no live analysis
+// cites is pruned before the cap refuses a new one.
 const (
 	MaxRCARevisionsPerRun = 50
 	MaxRCAPayloadBytes    = 2 << 20
 )
 
-// ErrRCALimit means a run already holds the maximum analyses or evidence
-// revisions.
-var ErrRCALimit = errors.New("run root-cause revision limit reached")
+// ErrRCALimit means a run already holds the maximum live analyses or cited
+// evidence revisions.
+var ErrRCALimit = errors.New("run root-cause revision limit reached: cancel or wait for its queued analyses, or delete older runs' analyses")
 
 // RCAEvidenceRevision is one frozen set of evidence an analysis can read.
 // Revisions are append-only per run.
@@ -131,8 +135,8 @@ func (s *SQLiteStore) AppendRCAEvidenceRevision(project, test string, payload []
 	if err := tx.QueryRow(`SELECT COALESCE(MAX(revision), 0) FROM rca_evidence_revisions WHERE test_id = ?`, test).Scan(&latest); err != nil {
 		return nil, err
 	}
-	if latest >= MaxRCARevisionsPerRun {
-		return nil, ErrRCALimit
+	if err := pruneRCAEvidenceRevisionsTx(tx, test); err != nil {
+		return nil, err
 	}
 	revision := &RCAEvidenceRevision{ID: uuid.NewString(), ProjectID: project, TestID: test, Revision: latest + 1, CreatedAt: now.UTC(), Payload: append(json.RawMessage(nil), payload...)}
 	if _, err := tx.Exec(`INSERT INTO rca_evidence_revisions(id, project_id, test_id, revision, created_at, payload) VALUES(?,?,?,?,?,?)`,
@@ -140,6 +144,86 @@ func (s *SQLiteStore) AppendRCAEvidenceRevision(project, test string, payload []
 		return nil, err
 	}
 	return revision, tx.Commit()
+}
+
+// rcaLiveStates are the analysis states that hold their inputs: queued and
+// running ones will read them, completed ones cite them.
+var rcaLiveStates = []any{RCAStateQueued, RCAStateRunning, RCAStateCompleted}
+
+// pruneRCAEvidenceRevisionsTx makes room for one more evidence revision when
+// the run holds MaxRCARevisionsPerRun: it deletes the oldest revisions that
+// no live analysis cites (the api freezes the cited revision at
+// payload.inputs.evidence_revision), and returns ErrRCALimit when every
+// revision is cited.
+func pruneRCAEvidenceRevisionsTx(tx *storeTx, test string) error {
+	var count int64
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM rca_evidence_revisions WHERE test_id = ?`, test).Scan(&count); err != nil {
+		return err
+	}
+	if count < MaxRCARevisionsPerRun {
+		return nil
+	}
+	cited, err := rcaCitedEvidenceRevisionsTx(tx, test)
+	if err != nil {
+		return err
+	}
+	rows, err := tx.Query(`SELECT revision FROM rca_evidence_revisions WHERE test_id = ? ORDER BY revision ASC`, test)
+	if err != nil {
+		return err
+	}
+	var prunable []int64
+	for rows.Next() {
+		var revision int64
+		if err := rows.Scan(&revision); err != nil {
+			rows.Close()
+			return err
+		}
+		if !cited[revision] {
+			prunable = append(prunable, revision)
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, revision := range prunable {
+		if count < MaxRCARevisionsPerRun {
+			break
+		}
+		if _, err := tx.Exec(`DELETE FROM rca_evidence_revisions WHERE test_id = ? AND revision = ?`, test, revision); err != nil {
+			return err
+		}
+		count--
+	}
+	if count >= MaxRCARevisionsPerRun {
+		return ErrRCALimit
+	}
+	return nil
+}
+
+// rcaCitedEvidenceRevisionsTx lists the evidence revisions a run's live
+// analyses cite.
+func rcaCitedEvidenceRevisionsTx(tx *storeTx, test string) (map[int64]bool, error) {
+	rows, err := tx.Query(`SELECT payload FROM rca_analyses WHERE test_id = ? AND state IN (?, ?, ?)`, append([]any{test}, rcaLiveStates...)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	cited := map[int64]bool{}
+	for rows.Next() {
+		var payload string
+		if err := rows.Scan(&payload); err != nil {
+			return nil, err
+		}
+		var frozen struct {
+			Inputs struct {
+				EvidenceRevision int64 `json:"evidence_revision"`
+			} `json:"inputs"`
+		}
+		if json.Unmarshal([]byte(payload), &frozen) == nil {
+			cited[frozen.Inputs.EvidenceRevision] = true
+		}
+	}
+	return cited, rows.Err()
 }
 
 func scanRCAEvidence(row interface{ Scan(...any) error }) (*RCAEvidenceRevision, error) {
@@ -216,12 +300,23 @@ func (s *SQLiteStore) CreateRCAAnalysis(project, test, inputDigest string, paylo
 	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, false, err
 	}
+	// The cap counts the analyses that hold their inputs; failed and cancelled
+	// ones are history, bounded by pruning the oldest.
+	var live int64
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM rca_analyses WHERE test_id = ? AND state IN (?, ?, ?)`, append([]any{test}, rcaLiveStates...)...).Scan(&live); err != nil {
+		return nil, false, err
+	}
+	if live >= MaxRCARevisionsPerRun {
+		return nil, false, ErrRCALimit
+	}
+	if _, err := tx.Exec(`DELETE FROM rca_analyses WHERE test_id = ? AND state IN (?, ?) AND id NOT IN (
+			SELECT id FROM rca_analyses WHERE test_id = ? AND state IN (?, ?) ORDER BY revision DESC LIMIT ?)`,
+		test, RCAStateFailed, RCAStateCancelled, test, RCAStateFailed, RCAStateCancelled, MaxRCARevisionsPerRun-1); err != nil {
+		return nil, false, err
+	}
 	var latest int64
 	if err := tx.QueryRow(`SELECT COALESCE(MAX(revision), 0) FROM rca_analyses WHERE test_id = ?`, test).Scan(&latest); err != nil {
 		return nil, false, err
-	}
-	if latest >= MaxRCARevisionsPerRun {
-		return nil, false, ErrRCALimit
 	}
 	analysis := &RCAAnalysis{ID: uuid.NewString(), ProjectID: project, TestID: test, Revision: latest + 1, State: RCAStateQueued, CreatedAt: now.UTC(), InputDigest: inputDigest, Payload: append(json.RawMessage(nil), payload...)}
 	if _, err := tx.Exec(`INSERT INTO rca_analyses(id, project_id, test_id, revision, state, created_at, input_digest, payload, owner) VALUES(?,?,?,?,?,?,?,?, '')`,
@@ -335,8 +430,18 @@ func (s *SQLiteStore) CancelRCAAnalysis(project, test, id string, now time.Time)
 	return n == 1, err
 }
 
+// endRCAForArchiveTx ends the root-cause work a deleted archive leaves
+// without evidence: its queued and running analyses are cancelled. Completed
+// assessments, the critiques analysts wrote about them and the evidence
+// revisions they cite are the run's history and stay until the run goes.
+func endRCAForArchiveTx(tx *storeTx, test string, now time.Time) error {
+	_, err := tx.Exec(`UPDATE rca_analyses SET state = ?, completed_at = ?, lease_expires_at = NULL WHERE test_id = ? AND state IN (?, ?)`,
+		RCAStateCancelled, now.UTC(), test, RCAStateQueued, RCAStateRunning)
+	return err
+}
+
 // deleteRCAForTestTx removes a run's root-cause history; it follows the run
-// and its archive.
+// and its project.
 func deleteRCAForTestTx(tx *storeTx, test string) error {
 	if _, err := tx.Exec(`DELETE FROM rca_critiques WHERE test_id = ?`, test); err != nil {
 		return err

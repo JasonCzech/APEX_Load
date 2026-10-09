@@ -223,8 +223,9 @@ func (s *SQLiteStore) DeleteRunArchive(testID string) error {
 	if _, err := tx.Exec(`UPDATE run_evidence_receipts SET state = ?, updated_at = ? WHERE test_id = ?`, EvidenceReceiptTombstoned, time.Now().UTC(), testID); err != nil {
 		return err
 	}
-	// Root-cause analyses read the archive; they go with it.
-	if err := deleteRCAForTestTx(tx, testID); err != nil {
+	// Root-cause analyses still to run read the archive, so they end with it;
+	// completed assessments and their critiques stay as the run's history.
+	if err := endRCAForArchiveTx(tx, testID, time.Now()); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -279,8 +280,9 @@ func (s *SQLiteStore) DeleteRunArchiveIfUnchanged(expected *RunArchiveRecord) (b
 	if err != nil || affected == 0 {
 		return false, err
 	}
-	// Root-cause analyses read the archive; they go with it.
-	if err := deleteRCAForTestTx(tx, expected.TestID); err != nil {
+	// Root-cause analyses still to run read the archive, so they end with it;
+	// completed assessments and their critiques stay as the run's history.
+	if err := endRCAForArchiveTx(tx, expected.TestID, time.Now()); err != nil {
 		return false, err
 	}
 	// The archive held the run's evidence: its receipts end with it, as on

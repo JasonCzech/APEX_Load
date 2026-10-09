@@ -2,6 +2,7 @@ package storage
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -185,13 +186,88 @@ func TestRCAHistoryFollowsTheRunTheProjectAndTheArchive(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// A completed assessment and its critique are the run's history; the
+		// queued analysis, which would have read the archive, is cancelled.
+		if _, _, err := s.CreateRCAAnalysis("rca-p", "rca-run", digestB, []byte(`{"inputs":{"evidence_revision":1}}`), now); err != nil {
+			t.Fatal(err)
+		}
+		// The claim takes the oldest queued analysis, the seed's.
+		claimed, err := s.ClaimRCAAnalysis("owner", now, time.Minute)
+		if err != nil || claimed == nil {
+			t.Fatal(claimed, err)
+		}
+		if ok, err := s.CompleteRCAAnalysisFenced(claimed.ID, "owner", RCAStateCompleted, []byte(`{"assessment":{}}`), now, "", "", 0); err != nil || !ok {
+			t.Fatal(ok, err)
+		}
+		if _, err := s.CreateRCACritique(RCACritique{ID: "critique-1", ProjectID: "rca-p", TestID: "rca-run", AnalysisID: claimed.ID, CreatedBy: "analyst", Payload: []byte(`{"narrative":"kept"}`)}); err != nil {
+			t.Fatal(err)
+		}
 		if ok, err := s.DeleteRunArchiveIfUnchanged(saved); err != nil || !ok {
 			t.Fatal(ok, err)
 		}
-		if n := countRCARows(t, s, "rca-run"); n != 0 {
-			t.Fatalf("%d rows survived the archive", n)
+		states := map[string]int{}
+		rows, err := s.db.Query(`SELECT state FROM rca_analyses WHERE test_id = ?`, "rca-run")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for rows.Next() {
+			var state string
+			_ = rows.Scan(&state)
+			states[state]++
+		}
+		rows.Close()
+		var critiques, revisions int
+		_ = s.db.QueryRow(`SELECT COUNT(*) FROM rca_critiques WHERE test_id = ?`, "rca-run").Scan(&critiques)
+		_ = s.db.QueryRow(`SELECT COUNT(*) FROM rca_evidence_revisions WHERE test_id = ?`, "rca-run").Scan(&revisions)
+		if states[RCAStateCompleted] != 1 || states[RCAStateCancelled] != 1 || states[RCAStateQueued] != 0 || critiques != 1 || revisions != 1 {
+			t.Fatalf("after the archive: states %v, %d critiques, %d revisions", states, critiques, revisions)
 		}
 	})
+}
+
+// Failed and cancelled analyses are history, not cap: a run keeps queuing
+// after fifty failures, and the oldest failures are pruned. Evidence
+// revisions no live analysis cites are pruned before the cap refuses one.
+func TestRCACapsCountLiveAnalysesAndCitedEvidence(t *testing.T) {
+	s, now := rcaFixture(t)
+	for i := 0; i < MaxRCARevisionsPerRun+5; i++ {
+		digest := fmt.Sprintf("%064x", i+1)
+		analysis, created, err := s.CreateRCAAnalysis("rca-p", "rca-run", digest, []byte(`{"inputs":{"evidence_revision":1}}`), now)
+		if err != nil || !created {
+			t.Fatalf("analysis %d: %v %v", i, created, err)
+		}
+		if ok, err := s.CancelRCAAnalysis("rca-p", "rca-run", analysis.ID, now); err != nil || !ok {
+			t.Fatal(ok, err)
+		}
+	}
+	var ended int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM rca_analyses WHERE test_id = ? AND state = ?`, "rca-run", RCAStateCancelled).Scan(&ended); err != nil || ended > MaxRCARevisionsPerRun {
+		t.Fatalf("%d cancelled analyses kept (%v)", ended, err)
+	}
+	// Live analyses do count; they cite revisions 1 and 2.
+	for i := 0; i < MaxRCARevisionsPerRun; i++ {
+		if _, created, err := s.CreateRCAAnalysis("rca-p", "rca-run", fmt.Sprintf("%064x", 1000+i), []byte(fmt.Sprintf(`{"inputs":{"evidence_revision":%d}}`, 1+i%2)), now); err != nil || !created {
+			t.Fatalf("live analysis %d: %v %v", i, created, err)
+		}
+	}
+	if _, _, err := s.CreateRCAAnalysis("rca-p", "rca-run", fmt.Sprintf("%064x", 2000), []byte(`{}`), now); !errors.Is(err, ErrRCALimit) {
+		t.Fatalf("live cap: %v", err)
+	}
+	// Evidence revisions: 1 and 2 are cited; the rest are pruned to make room.
+	for i := 0; i < MaxRCARevisionsPerRun+3; i++ {
+		if _, err := s.AppendRCAEvidenceRevision("rca-p", "rca-run", []byte(fmt.Sprintf(`{"n":%d}`, i)), now, nil); err != nil {
+			t.Fatalf("evidence %d: %v", i, err)
+		}
+	}
+	var revisions int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM rca_evidence_revisions WHERE test_id = ?`, "rca-run").Scan(&revisions); err != nil || revisions > MaxRCARevisionsPerRun {
+		t.Fatalf("%d evidence revisions kept (%v)", revisions, err)
+	}
+	for _, cited := range []int64{1, 2} {
+		if _, err := s.GetRCAEvidenceRevision("rca-p", "rca-run", cited); err != nil {
+			t.Fatalf("cited revision %d pruned: %v", cited, err)
+		}
+	}
 }
 
 func TestRCAEvidenceReuseAndLeaseRenewal(t *testing.T) {
