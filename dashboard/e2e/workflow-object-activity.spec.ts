@@ -1,5 +1,12 @@
 import { test, expect, seedScript, seedScenario, json, login, signOut } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
+import type { Locator } from '@playwright/test'
+
+/** Archive and Restore live in a library row's More menu. */
+async function rowMenuAction(row: Locator, action: RegExp) {
+  await row.getByRole('button', { name: /^More actions for/ }).click()
+  await row.getByRole('button', { name: action }).click()
+}
 
 test('archive, restore, dependency admission and retained deleted history', async ({ page }) => {
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
@@ -16,7 +23,7 @@ test('archive, restore, dependency admission and retained deleted history', asyn
   await page.goto(`/#/scripts?${scopeQuery(workspace)}`); await page.reload()
   const row = page.getByRole('row').filter({ hasText: name })
   await expect(row).toBeVisible()
-  await row.getByRole('button', { name: /^Archive\b/ }).click()
+  await rowMenuAction(row, /^Archive\b/)
   await expect(row).toHaveCount(0)
   await page.getByLabel('Script archive state').selectOption('archived')
   await expect(row).toContainText('Archived')
@@ -27,17 +34,17 @@ test('archive, restore, dependency admission and retained deleted history', asyn
   await expect(page.getByRole('button', { name: 'Start Now', exact: true })).toBeDisabled()
   await page.goto(`/#/scripts?${scopeQuery(workspace)}`)
   await page.getByLabel('Script archive state').selectOption('archived')
-  await row.getByRole('button', { name: /^Restore\b/ }).click()
+  await rowMenuAction(row, /^Restore\b/)
   await page.getByLabel('Script archive state').selectOption('active'); await expect(row).toBeVisible()
   const current = await json(await request.get(`/api/v1/scripts/${scriptId}`))
   expect(current.activity).toBeTruthy()
   await page.goto(`/#/tests?view=library&${scopeQuery(workspace)}`)
   const scenarioRow = page.getByRole('row').filter({ hasText: `${name} scenario` })
-  await scenarioRow.getByRole('button', { name: /^Archive\b/ }).click()
+  await rowMenuAction(scenarioRow, /^Archive\b/)
   await expect(scenarioRow).toHaveCount(0)
   await page.getByLabel('Scenario archive state').selectOption('archived')
   await expect(scenarioRow).toContainText('Archived')
-  await scenarioRow.getByRole('button', { name: /^Restore\b/ }).click()
+  await rowMenuAction(scenarioRow, /^Restore\b/)
   await json(await request.delete(`/api/v1/scenarios/${scenarioId}`))
   await json(await request.delete(`/api/v1/scripts/${scriptId}`))
   await page.goto(`/#/activity?${scopeQuery(workspace)}`); await page.reload()
@@ -60,7 +67,7 @@ test('saved changes show audit warnings without implying failure', async ({ page
     const response = await route.fetch()
     await route.fulfill({ response, headers: { ...response.headers(), 'X-APEXLOAD-Audit-Status': 'unavailable' } })
   })
-  await page.getByRole('row').filter({ hasText: 'Warning saved' }).getByRole('button', { name: /^Archive\b/ }).click()
+  await rowMenuAction(page.getByRole('row').filter({ hasText: 'Warning saved' }), /^Archive\b/)
   await expect(page.getByRole('status').filter({ hasText: 'Change saved; activity history could not be recorded.' })).toBeVisible()
   const saved = await json(await request.get(`/api/v1/scripts/${id}`)); expect(saved.archived_at).toBeTruthy()
 })

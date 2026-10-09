@@ -2589,9 +2589,9 @@ fieldset.scenario-builder { min-width: 0; border: 0; margin-inline: 0; }
 .scenario-picker-selection input { flex: 0 0 auto; margin-top: 3px; }
 .scenario-clone-table table { width: 100%; min-width: 0; table-layout: fixed; }
 .scenario-clone-table th:first-child { width: 40%; }
-.scenario-clone-table th:last-child { width: 100px; }
+.scenario-clone-table th:last-child { width: 136px; }
 .scenario-clone-table td { white-space: normal; overflow-wrap: anywhere; }
-.scenario-clone-table details { margin-top: 8px; }
+.scenario-clone-table td:last-child .btn { white-space: nowrap; }
 .scenario-picker-filters { display: grid; }
 @media (max-width: 640px) {
   .scenario-script-library-dialog .data-table th:first-child { width: 50%; }

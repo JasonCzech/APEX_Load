@@ -1390,13 +1390,10 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
         <td className="cell-muted">{row.duration || '-'}{!row.test && <small> (source-reported)</small>}</td>
         <td className="cell-muted">
           {test
-            ? (test.archive ? <span title="Raw archive rows: each request and each named transaction that wraps it is a separate row, so this exceeds the transaction count.">{test.archive.transaction_count.toLocaleString()} archive rows (requests + transactions)</span> : 'Unavailable')
+            ? (test.archive ? <span title="Raw archive rows (requests + transactions): each request and each named transaction that wraps it is a separate row, so this exceeds the transaction count.">{test.archive.transaction_count.toLocaleString()} rows</span> : 'Unavailable')
             : (externalImport && row.archiveCount !== undefined ? `${row.archiveCount} tx` : (row.hasArchive ? 'Ready' : '-'))}
           {test?.baseline_pinned && (
-            <>
-              <br />
-              <span title={formatBaselinePin(test.baseline_pinned_at)}>Pinned baseline</span>
-            </>
+            <div><span className="script-health-token healthy" title={`Pinned comparison baseline${test.baseline_pinned_at ? ` · ${formatBaselinePin(test.baseline_pinned_at)}` : ''}`}>Baseline</span></div>
           )}
         </td>
         <td>

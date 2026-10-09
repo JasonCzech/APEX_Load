@@ -394,16 +394,16 @@ describe('ScriptsAuthoringShell', () => {
     expect(container.textContent).toContain('PI30')
     expect(container.textContent).toContain('PI31')
     const headers = Array.from(container.querySelectorAll('.script-create-existing-table th')).map(header => header.textContent || '')
-    expect(headers.some(header => header.includes('Source'))).toBe(true)
+    // Every script here is local, so there is no Source column.
+    expect(headers.some(header => header.includes('Source'))).toBe(false)
     expect(headers.some(header => header.includes('Script'))).toBe(true)
     expect(headers.some(header => header.includes('Health'))).toBe(true)
     expect(headers.some(header => header.includes('Usage'))).toBe(true)
     expect(headers.some(header => header.includes('Run releases'))).toBe(true)
-    expect(headers.some(header => header.includes('Create Date'))).toBe(true)
-    expect(headers.some(header => header.includes('Last Run'))).toBe(true)
+    expect(headers.some(header => header.includes('Created'))).toBe(true)
+    expect(headers.some(header => header.includes('Last run'))).toBe(true)
     expect(headers.some(header => header.includes('Actions'))).toBe(true)
-    const firstSourceCell = container.querySelector('.script-create-existing-table tbody tr td:first-child')
-    expect(firstSourceCell?.textContent?.trim()).toBe('Local')
+    expect(container.querySelector('.script-create-existing-table tbody tr td:first-child')?.classList.contains('cell-name')).toBe(true)
 
     const searchInput = container.querySelector('input[aria-label="Search existing scripts"]') as HTMLInputElement | null
     expect(searchInput).not.toBeNull()

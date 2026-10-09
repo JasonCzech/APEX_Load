@@ -46,6 +46,8 @@ import {
   summarizeRepositoryRows,
 } from './repositoryCatalogUtils'
 import { drainBoundedOffsetCatalog } from './catalogPagination'
+import BadgeIcon from './ux/BadgeIcon'
+import InfoPopover from './ux/InfoPopover'
 import {
   createRepositoryCatalogTaskLimiter,
   type RepositoryCatalogTaskLimiter,
@@ -213,7 +215,7 @@ function statusTone(status?: string) {
   const value = (status || '').toLowerCase()
   if (/(failed|aborted|blocked|error|danger)/.test(value)) return 'danger'
   if (/(running|complete|active|ready|passed|healthy)/.test(value)) return 'healthy'
-  if (/(queued|pending|paused|warning|archived|shakeout)/.test(value)) return 'warning'
+  if (/(queued|pending|paused|warning|review|archived|shakeout)/.test(value)) return 'warning'
   return 'neutral'
 }
 
@@ -224,12 +226,29 @@ function splitProtocols(value?: string) {
     .filter(Boolean)
 }
 
+/** Scripts and scenarios are library assets: saved is not the same as ready to run. */
+const LIBRARY_READINESS_NOTE = 'Validation, debug and approval evidence must be checked before execution.'
+
 function renderStatus(row: RepositoryAssetRow) {
   if (row.kind === 'test' && row.status) {
     return <StatusBadge status={row.status} />
   }
-  return <><span className={`repository-status-pill ${statusTone(row.status)}`}>{row.kind === 'script' ? `Authoring: ${row.status || 'Not assessed'}` : row.kind === 'scenario' ? 'Saved' : row.status || 'Unknown'}</span>
-    {(row.kind === 'script' || row.kind === 'scenario') && <span className="repository-readiness-note">Validation, debug and approval evidence must be checked before execution.</span>}</>
+  if (row.kind === 'script') {
+    const label = row.status ? row.status.charAt(0).toUpperCase() + row.status.slice(1).replace(/_/g, ' ') : 'Not assessed'
+    return <span className={`repository-status-pill ${statusTone(row.status)}`} title={`Authoring health: ${label}. ${LIBRARY_READINESS_NOTE}`}>{label}</span>
+  }
+  if (row.kind === 'scenario') return <span className={`repository-status-pill ${statusTone(row.status)}`} title={LIBRARY_READINESS_NOTE}>Saved</span>
+  return <span className={`repository-status-pill ${statusTone(row.status)}`}>{row.status || 'Unknown'}</span>
+}
+
+function RepositoryRowInfo({ row }: { row: RepositoryAssetRow }) {
+  return <InfoPopover label={`Details for ${row.name}`} title={row.name} triggerClassName="script-health-token script-info-badge" trigger={<BadgeIcon kind="info" />}>
+    <dl className="ux-info-list">
+      <div><dt>Identifier</dt><dd><code>{row.id}</code></dd></div>
+      {row.facts?.map(fact => <div key={fact.label}><dt>{fact.label}</dt><dd>{fact.value}</dd></div>)}
+      {(row.kind === 'script' || row.kind === 'scenario') && <div><dt>Before running</dt><dd>{LIBRARY_READINESS_NOTE}</dd></div>}
+    </dl>
+  </InfoPopover>
 }
 
 function repositoryRowKey(row: RepositoryAssetRow) {
@@ -1548,9 +1567,11 @@ export default function ApplicationRepositoryPage({
                     </td>
                         <td aria-label="Repository asset">
                       <div className="repository-asset-name">
-                        <button type="button" className="btn btn-sm btn-secondary" onClick={() => setInspectedKey(repositoryRowKey(row))}>{row.name}</button>
+                        <div className="repository-asset-title">
+                          <button type="button" className="btn btn-sm btn-secondary" onClick={() => setInspectedKey(repositoryRowKey(row))}>{row.name}</button>
+                          <RepositoryRowInfo row={row} />
+                        </div>
                         <span>{row.summary}</span>
-                        <details><summary>Identifier</summary><code>{row.id}</code></details>
                       </div>
                     </td>
                     <td><span className="repository-kind-pill">{repositoryKindLabel(row.kind)}</span></td>
@@ -1582,7 +1603,7 @@ export default function ApplicationRepositoryPage({
                     <td>
                       <div className="repository-table-stack">
                         <strong>{formatCompactDate(row.lastActivityAt || row.updatedAt || row.createdAt)}</strong>
-                        {row.detail && <span>{row.detail}</span>}
+                        {row.detail && !row.facts && <span>{row.detail}</span>}
                       </div>
                     </td>
                     <td><div className="repository-row-actions"><button type="button" className="btn btn-sm btn-secondary" aria-label={`Inspect ${row.name}`} onClick={() => setInspectedKey(repositoryRowKey(row))}>Inspect</button>{renderRowAction(row)}</div></td>

@@ -2282,41 +2282,37 @@
   color: var(--accent-text);
 }
 
+/* Script · Health · Usage · Run releases · Created · Last run · Actions */
 .script-create-existing-table th:nth-child(1),
 .script-create-existing-table td:nth-child(1) {
-  width: 9%;
+  width: 27%;
 }
 
 .script-create-existing-table th:nth-child(2),
 .script-create-existing-table td:nth-child(2) {
-  width: 23%;
+  width: 19%;
 }
 
 .script-create-existing-table th:nth-child(3),
 .script-create-existing-table td:nth-child(3) {
-  width: 17%;
+  width: 16%;
 }
 
 .script-create-existing-table th:nth-child(4),
 .script-create-existing-table td:nth-child(4) {
-  width: 15%;
+  width: 14%;
 }
 
 .script-create-existing-table th:nth-child(5),
-.script-create-existing-table td:nth-child(5) {
-  width: 17%;
+.script-create-existing-table td:nth-child(5),
+.script-create-existing-table th:nth-child(6),
+.script-create-existing-table td:nth-child(6) {
+  width: 9%;
 }
 
-.script-create-existing-table th:nth-child(6),
-.script-create-existing-table td:nth-child(6),
 .script-create-existing-table th:nth-child(7),
 .script-create-existing-table td:nth-child(7) {
-  width: 10%;
-}
-
-.script-create-existing-table th:nth-child(8),
-.script-create-existing-table td:nth-child(8) {
-  width: 9%;
+  width: 6%;
 }
 
 .script-create-existing-table tbody tr:hover {
@@ -2881,6 +2877,17 @@
   text-decoration: none;
 }
 
+/* The chevron stays beside the first line of a long name. */
+.script-row-toggle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.script-table-usage strong {
+  white-space: nowrap;
+}
+
 .script-row-toggle:hover,
 .script-row-toggle:focus-visible,
 .script-run-link:hover,
@@ -3109,6 +3116,114 @@
   border-color: rgba(var(--danger-rgb), 0.3);
   color: var(--danger-text);
   background: rgba(var(--danger-rgb), 0.12);
+}
+
+/* Room for a row's badges on one line: the name's protocol, version and info
+   badges, and the health status plus its count badges. */
+.scripts-library-table td.cell-name,
+.scenario-library-table td.cell-name {
+  min-width: 220px;
+}
+
+.scripts-library-table td[aria-label="Authoring health"] {
+  min-width: 180px;
+}
+
+/* A row's actions stay on one line; the rest are behind More. */
+.library-row-actions-cell {
+  white-space: nowrap;
+}
+
+.library-row-actions-cell .ux-row-actions-menu {
+  white-space: normal;
+}
+
+/* Library row badges: colour-coded, clickable, an icon plus a number. */
+.script-health-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.script-health-badge {
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: var(--font-size-xs, 11px);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.script-health-badge:hover {
+  filter: brightness(0.96);
+}
+
+/* A count with no issue list to open (pickers): informative, not clickable. */
+.script-health-badge.static {
+  cursor: default;
+}
+
+.script-health-badge.static:hover {
+  filter: none;
+}
+
+/* The overall status (icon + score) outweighs the count badges beside it. */
+.script-health-badge.script-health-status {
+  border-width: 1.5px;
+  font-weight: 800;
+}
+
+.script-info-badge {
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.script-info-badge:hover {
+  color: var(--text-primary);
+}
+
+.script-health-popover-status,
+.script-health-popover-secrets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.script-health-popover-secrets {
+  color: var(--text-secondary);
+}
+
+.script-health-popover-inputs {
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.script-health-popover-inputs li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.script-health-popover-inputs strong {
+  text-transform: capitalize;
+}
+
+.script-health-popover-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .script-health-detail {
@@ -7993,7 +8108,14 @@ col.results-actions-col {
   word-break: break-word;
 }
 
-.repository-asset-name span,
+.repository-asset-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.repository-asset-name > span,
 .repository-table-stack span {
   color: var(--text-muted);
   font-size: 12px;

@@ -7,7 +7,8 @@ import { type ScriptDefinition } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
 import { useHasTopbarContributionProvider } from '../hooks/TopbarContributionProvider'
 import PageViewToggle from './PageViewToggle'
-import ReferenceKeyBadge from './ReferenceKeyBadge'
+import { HealthCountBadge, ObjectInfoBadge, ScriptHealthBadge } from './LibraryRowBadges'
+import { authoringHealthCounts, prioritizeHealthInputs } from './authoringHealthInputs'
 import { SortIndicator } from './SortIndicator'
 import './ImportWorkflowGuide.css'
 
@@ -61,43 +62,16 @@ function getScriptReleaseNames(script: StoredScript) {
 }
 
 function releaseList(script: StoredScript) {
-  const releases = script.associated_releases || []
-  if (releases.length === 0) return 'No releases yet'
-  return releases.map(release => release.name).join(', ')
+  return (script.associated_releases || []).map(release => release.name).join(', ')
 }
 
 function scenarioRunReleaseList(script: StoredScript) {
-  const releases = script.scenario_run_releases || []
-  if (releases.length === 0) return 'No scenario-run releases yet'
-  return releases.map(release => release.name).join(', ')
+  return (script.scenario_run_releases || []).map(release => release.name).join(', ')
 }
 
 function formatScenarioCount(script: StoredScript) {
   const count = script.scenario_count || 0
   return `${count} scenario${count === 1 ? '' : 's'}`
-}
-
-function authoringHealthLabel(script: StoredScript) {
-  const health = script.authoring_health
-  if (!health) return 'Unknown'
-  const status = health.status === 'needs_review' ? 'Needs Review' : health.status === 'ready' ? 'Ready' : health.status.charAt(0).toUpperCase() + health.status.slice(1)
-  return `${status} · ${health.score}`
-}
-
-function authoringHealthClass(script: StoredScript) {
-  const status = script.authoring_health?.status
-  if (status === 'blocked') return 'danger'
-  if (status === 'needs_review') return 'warning'
-  if (status === 'healthy' || status === 'ready') return 'healthy'
-  return ''
-}
-
-function authoringHealthSummary(script: StoredScript) {
-  const inputs = script.authoring_health?.inputs || []
-  const blockers = inputs.filter(input => input.status === 'blocker').length
-  const warnings = inputs.filter(input => input.status === 'warning').length
-  const reviews = inputs.filter(input => input.status === 'needs_review').length
-  return { blockers, warnings: warnings + reviews }
 }
 
 function defaultImportMode(surface: AuthoringImportSurface): string | null {
@@ -812,22 +786,22 @@ export default function ScriptCreateOptions({
                 <table className="script-create-existing-table">
                   <thead>
                     <tr>
-                      <th>Source</th>
                       <th aria-sort={existingAriaSort('name')}><button type="button" onClick={() => requestExistingScriptSort('name')}>{renderExistingSortLabel('name', 'Script')}</button></th>
                       <th aria-sort={existingAriaSort('health')}><button type="button" onClick={() => requestExistingScriptSort('health')}>{renderExistingSortLabel('health', 'Health')}</button></th>
                       <th aria-sort={existingAriaSort('usage')}><button type="button" onClick={() => requestExistingScriptSort('usage')}>{renderExistingSortLabel('usage', 'Usage')}</button></th>
                       <th aria-sort={existingAriaSort('associated_releases')}><button type="button" onClick={() => requestExistingScriptSort('associated_releases')}>{renderExistingSortLabel('associated_releases', 'Run releases')}</button></th>
-                      <th aria-sort={existingAriaSort('created_at')}><button type="button" onClick={() => requestExistingScriptSort('created_at')}>{renderExistingSortLabel('created_at', 'Create Date')}</button></th>
-                      <th aria-sort={existingAriaSort('last_run')}><button type="button" onClick={() => requestExistingScriptSort('last_run')}>{renderExistingSortLabel('last_run', 'Last Run')}</button></th>
+                      <th aria-sort={existingAriaSort('created_at')}><button type="button" onClick={() => requestExistingScriptSort('created_at')}>{renderExistingSortLabel('created_at', 'Created')}</button></th>
+                      <th aria-sort={existingAriaSort('last_run')}><button type="button" onClick={() => requestExistingScriptSort('last_run')}>{renderExistingSortLabel('last_run', 'Last run')}</button></th>
                       <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {visibleExistingScripts.map(script => {
-                      const healthSummary = authoringHealthSummary(script)
+                      const healthCounts = authoringHealthCounts(script)
+                      const scenarioRunReleases = scenarioRunReleaseList(script)
+                      const runReleases = releaseList(script)
                       return (
                         <tr key={script.id}>
-                          <td><span className="script-health-token">Local</span></td>
                           <td className="cell-name">
                             <button type="button" className="script-create-existing-name" onClick={() => startExistingScript(script)}>
                               {script.name}
@@ -835,29 +809,24 @@ export default function ScriptCreateOptions({
                             <div className="script-table-meta">
                               <span className="protocol-badge">{script.protocol}</span>
                               <span className="script-health-token">v{script.version || '—'}</span>
-                              <ReferenceKeyBadge value={script.ref_key} />
+                              <ObjectInfoBadge name={script.name} refKey={script.ref_key} createdAt={script.created_at} activity={script.activity} />
                             </div>
                           </td>
-                    <td aria-label="Scenario usage">
-                            <span className={`protocol-badge ${authoringHealthClass(script)}`}>{authoringHealthLabel(script)}</span>
-                            {script.authoring_health && (
-                              <div className="script-health-inline">
-                                {healthSummary.blockers > 0 && <span className="script-health-token danger">{healthSummary.blockers} blockers</span>}
-                                {healthSummary.warnings > 0 && <span className="script-health-token warning">{healthSummary.warnings} warnings</span>}
-                                {healthSummary.blockers === 0 && healthSummary.warnings === 0 && <span className="script-health-token healthy">ready</span>}
-                              </div>
-                            )}
+                          <td aria-label="Authoring health">
+                            <div className="script-health-badges">
+                              <ScriptHealthBadge name={script.name} health={script.authoring_health} inputs={prioritizeHealthInputs(script.authoring_health?.inputs || [])} />
+                              {healthCounts.blockers > 0 && <HealthCountBadge tone="danger" icon="cross" count={healthCounts.blockers} label={`${healthCounts.blockers} ${healthCounts.blockers === 1 ? 'blocker' : 'blockers'}`} />}
+                              {healthCounts.warnings > 0 && <HealthCountBadge tone="warning" icon="alert" count={healthCounts.warnings} label={`${healthCounts.warnings} ${healthCounts.warnings === 1 ? 'warning' : 'warnings'}`} />}
+                            </div>
                           </td>
-                    <td aria-label="Scenario usage">
+                          <td aria-label="Scenario usage">
                             <div className="script-table-usage">
                               <strong>{formatScenarioCount(script)}</strong>
-                              <span>{scenarioRunReleaseList(script)}</span>
+                              {scenarioRunReleases && <span>{scenarioRunReleases}</span>}
                             </div>
                           </td>
                           <td aria-label="Associated releases">
-                            <div className="script-table-usage">
-                              <span>{releaseList(script)}</span>
-                            </div>
+                            {runReleases ? <div className="script-table-usage"><span>{runReleases}</span></div> : <span className="cell-muted">—</span>}
                           </td>
                           <td className="cell-muted">{formatShortDate(script.created_at)}</td>
                           <td className="cell-muted">{formatShortDate(script.last_run_at)}</td>
