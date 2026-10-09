@@ -1,0 +1,6 @@
+{
+  "description": "web_submit_form submits a form on the previous page, merging the page's hidden fields. Until page-context replay lands (WP2.3), the import must carry a promotion gate while debug replay stays available.",
+  "source": "VuGen 26.1 Function Reference: web_submit_form (form identified by data fields, then Action, then Ordinal; hidden fields).",
+  "outcome": "review",
+  "gate_reason_codes": ["html_form_requires_page_context"]
+}

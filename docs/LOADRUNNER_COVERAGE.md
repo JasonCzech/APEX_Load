@@ -12,9 +12,9 @@ Evaluation of the complete published OpenText/Micro Focus VuGen 26.1 **Web (HTTP
 
 | Disposition | Count | Meaning |
 |---|---|---|
-| `executable` | 46 | Translated to an executable DSL action or config mapping. |
+| `executable` | 44 | Translated to an executable DSL action or config mapping. |
 | `native_noop` | 6 | Preserved as a runtime-compatibility attribute; a guaranteed no-op in APEX Load (no client cache / no auto-resource fetch). |
-| `review_only` | 29 | Preserved in the import-review artifact; no APEX runtime equivalent, so it is not executed (never fabricated). |
+| `review_only` | 31 | Preserved in the import-review artifact; no APEX runtime equivalent, so it is not executed (never fabricated). |
 
 Every published function resolves to one of the dispositions above — none falls through to a `custom_call` review stub. This is enforced by `TestWebHTTPFunctionRegistryResolvesEveryPublishedFunction`.
 
@@ -44,11 +44,11 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_global_verification` | web | `executable` | source_verification action | Positional per-VUser registration with LR scope, case, failure mode and ID. |
 | `web_global_verification_pause` | web | `executable` | source_verification action | Positional pause/resume of named per-VUser verification checks. |
 | `web_global_verification_resume` | web | `executable` | source_verification action | Positional pause/resume of named per-VUser verification checks. |
-| `web_image` | web | `executable` | HTTP GET request action | From Src=/URL=; review_only fallback when no Src. |
+| `web_image` | web | `review_only` | Execution-gated review step | Clicks the hyperlink around an image on the previous page (Src=/Alt= are selectors, not targets); gated with html_navigation_requires_page_context until page-context replay. |
 | `web_image_check` | web | `executable` | HTTP GET request action | Image presence check mapped to a GET of Src=. |
 | `web_js_reset` | web | `review_only` | Import review | TruClient JavaScript step is not executed. |
 | `web_js_run` | web | `review_only` | Import review | TruClient JavaScript step is not executed. |
-| `web_link` | web | `executable` | HTTP GET request action | From URL=; review_only fallback + warning when the target is resolved from page context. |
+| `web_link` | web | `review_only` | Execution-gated review step | Clicks a link on the previous page; gated with html_navigation_requires_page_context until page-context replay. A non-VuGen explicit URL= still becomes a GET. |
 | `web_load_cache` | web | `native_noop` | config.web_runtime attribute | No client cache; native no-op. |
 | `web_reg_add_cookie` | web | `executable` | Cookie headers | Registered cookie attached downstream. |
 | `web_reg_async_attributes` | web | `review_only` | Import review | Async polling/push has no APEX runtime equivalent. |
@@ -96,7 +96,7 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_stream_stop` | web | `review_only` | Import review | Media streaming has no APEX runtime equivalent. |
 | `web_stream_wait` | web | `review_only` | Import review | Media streaming has no APEX runtime equivalent. |
 | `web_submit_data` | web | `executable` | HTTP request action | Method= + ITEMDATA form body. |
-| `web_submit_form` | web | `executable` | HTTP request action | URL inferred from form context/Referer. |
+| `web_submit_form` | web | `executable` | HTTP request action (promotion gate) | Built without its page: URL inferred from the step name and Referer, only the listed fields; html_form_requires_page_context blocks promotion until page-context replay. |
 | `web_sync` | web | `review_only` | Import review | Async page-sync has no APEX runtime equivalent. |
 | `web_url` | web | `executable` | HTTP request action | GET/POST request from URL=. |
 | `web_util_set_request_body` | parameter | `review_only` | Import review | Next-request body overrides are preserved for review; no APEX runtime equivalent yet. |

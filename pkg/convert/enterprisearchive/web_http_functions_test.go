@@ -1,6 +1,7 @@
 package enterprisearchive
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -40,11 +41,11 @@ var publishedWebHTTPFunctionExpectations = map[string]struct {
 	"web_global_verification":        {"web", SourceFunctionSupportExecutable},
 	"web_global_verification_pause":  {"web", SourceFunctionSupportExecutable},
 	"web_global_verification_resume": {"web", SourceFunctionSupportExecutable},
-	"web_image":                      {"web", SourceFunctionSupportExecutable},
+	"web_image":                      {"web", SourceFunctionSupportReviewOnly},
 	"web_image_check":                {"web", SourceFunctionSupportExecutable},
 	"web_js_reset":                   {"web", SourceFunctionSupportReviewOnly},
 	"web_js_run":                     {"web", SourceFunctionSupportReviewOnly},
-	"web_link":                       {"web", SourceFunctionSupportExecutable},
+	"web_link":                       {"web", SourceFunctionSupportReviewOnly},
 	"web_load_cache":                 {"web", SourceFunctionSupportNativeNoop},
 	"web_reg_add_cookie":             {"web", SourceFunctionSupportExecutable},
 	"web_reg_async_attributes":       {"web", SourceFunctionSupportReviewOnly},
@@ -134,7 +135,7 @@ func sampleWebFunctionCall(name string) string {
 	case "web_url":
 		return `web_url("Home", "URL=https://example.test/home", LAST);`
 	case "web_link":
-		return `web_link("Catalog", "Text=Catalog", "URL=https://example.test/catalog", LAST);`
+		return `web_link("Catalog", "Text=Catalog", LAST);`
 	case "web_image":
 		return `web_image("Logo", "Alt=Logo", "Src=https://example.test/logo.png", LAST);`
 	case "web_image_check":
@@ -323,23 +324,59 @@ func convertSingleWebSource(t *testing.T, body string) *ConvertResult {
 	return result
 }
 
-func TestWebLinkImageConvertToGetRequests(t *testing.T) {
+func TestWebLinkWithExplicitURLConvertsAndWebImageSrcIsGated(t *testing.T) {
 	result := convertSingleWebSource(t, `
 	web_link("Catalog", "Text=Catalog", "URL=https://example.test/catalog", LAST);
 	web_image("Logo", "Alt=Logo", "Src=https://example.test/logo.png", LAST);`)
 	if len(result.Script.Actions) != 2 {
-		t.Fatalf("actions = %d, want 2 GET requests", len(result.Script.Actions))
+		t.Fatalf("actions = %d, want the explicit-URL GET plus one gated review step", len(result.Script.Actions))
 	}
+	link := result.Script.Actions[0]
+	if link.Method != "GET" || !strings.Contains(link.Target, "/catalog") {
+		t.Errorf("web_link with an explicit URL = %s %q, want GET of the catalog URL", link.Method, link.Target)
+	}
+	image := result.Script.Actions[1]
+	if image.Type != "source_review" || image.Target != "" {
+		t.Fatalf("web_image Src must not become a request target, got type=%q target=%q", image.Type, image.Target)
+	}
+	if blockers, _ := image.Metadata["execution_blockers"].([]string); len(blockers) != 1 || blockers[0] != htmlNavigationReasonCode {
+		t.Fatalf("web_image gate = %v, want %s", image.Metadata["execution_blockers"], htmlNavigationReasonCode)
+	}
+	args := fmt.Sprint(image.Params["args"])
+	if !strings.Contains(args, "Alt=Logo") || !strings.Contains(args, "Src=https://example.test/logo.png") {
+		t.Fatalf("review args = %s, want the recorded Alt and Src selectors", args)
+	}
+}
+
+func TestWebImageCheckKeepsItsSrcAsTheVerifiedImage(t *testing.T) {
+	result := convertSingleWebSource(t, `
+	web_url("Home", "URL=https://example.test/home", LAST);
+	web_image_check("LogoCheck", "Src=https://example.test/logo.png", LAST);`)
+	var found bool
 	for _, action := range result.Script.Actions {
-		if action.Method != "GET" || action.Type != "GET" {
-			t.Errorf("action %q method/type = %s/%s, want GET", action.Name, action.Method, action.Type)
+		if strings.Contains(action.Target, "/logo.png") {
+			found = true
+			if action.Params["legacy_html_check"] != true {
+				t.Fatalf("web_image_check must stay a legacy check, params=%v", action.Params)
+			}
 		}
 	}
-	if got := result.Script.Actions[0].Target; !strings.Contains(got, "/catalog") {
-		t.Errorf("web_link target = %q, want catalog URL", got)
+	if !found {
+		t.Fatalf("web_image_check Src was dropped: %+v", result.Script.Actions)
 	}
-	if got := result.Script.Actions[1].Target; !strings.Contains(got, "/logo.png") {
-		t.Errorf("web_image target = %q, want image Src URL", got)
+}
+
+func TestWebSubmitFormCarriesAPromotionGate(t *testing.T) {
+	result := convertSingleWebSource(t, `
+	web_url("Home", "URL=https://example.test/WebTours/", LAST);
+	web_submit_form("login.pl", ITEMDATA, "Name=username", "Value=jojo", ENDITEM, LAST);`)
+	form := result.Script.Actions[1]
+	reasons, _ := form.Metadata["review_reasons"].([]string)
+	if len(reasons) == 0 || reasons[0] != htmlFormReasonCode {
+		t.Fatalf("review_reasons = %v, want %s", form.Metadata["review_reasons"], htmlFormReasonCode)
+	}
+	if _, blocked := form.Metadata["execution_blockers"]; blocked {
+		t.Fatalf("web_submit_form must stay replayable for debugging, metadata = %v", form.Metadata)
 	}
 }
 

@@ -14,6 +14,9 @@
 # web_reg_save_param*, web_add_header, web_set_timeout, ...) are listed here too so the
 # coverage doc and completeness test see the full published library; the rich handler
 # owns their behavior and this row supplies classification metadata.
+# web_link and web_image click a hyperlink found on the page the previous step
+# loaded; VuGen never records a URL for them. They stay review_only (an
+# execution-gated review step) until page-context replay can resolve them.
 # web_concurrent_start/end are executable only for validated, same-scope explicit
 # HTTP groups with at most 256 safe independent requests (each optionally wrapped in its
 # own LR_AUTO transaction); all other spans require review.
@@ -41,11 +44,11 @@ web_get_int_property,parameter,review_only
 web_global_verification,web,executable
 web_global_verification_pause,web,executable
 web_global_verification_resume,web,executable
-web_image,web,executable
+web_image,web,review_only
 web_image_check,web,executable
 web_js_reset,web,review_only
 web_js_run,web,review_only
-web_link,web,executable
+web_link,web,review_only
 web_load_cache,web,native_noop
 web_reg_add_cookie,web,executable
 web_reg_async_attributes,web,review_only

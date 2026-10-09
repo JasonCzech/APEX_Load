@@ -1,0 +1,6 @@
+{
+  "description": "HTML-mode clicks resolved from the previous page. Until page-context replay lands (WP2.2), the import must be execution-gated; web_image must never fetch its Src image as if it were the click target.",
+  "source": "VuGen 26.1 Function Reference: web_link (Text, Ordinal) and web_image (Src, Alt) emulate clicking a hyperlink on the current page.",
+  "outcome": "gated",
+  "gate_reason_codes": ["html_navigation_requires_page_context"]
+}

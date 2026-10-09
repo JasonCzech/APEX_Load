@@ -69,6 +69,7 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 		action.Metadata["inferred_url_from"] = "source_form_context"
 		action.Metadata["inferred_url_source"] = convertutil.FirstNonEmpty(firstNonEmptyArg(fn, "Referer"), previousRequestURL)
 	}
+	applyHTMLFormReview(action, fn)
 
 	target := makeRelative(rawURL, baseURL)
 	action.Target = target

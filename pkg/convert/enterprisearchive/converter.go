@@ -786,13 +786,13 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				result.Stats.RawRequestActions++
 				recordSourceFunctionSupport(result, mappingMode)
 			} else if isHTMLModeNavigationFunction(fn.Name) {
-				// HTML-mode web_link/web_image/web_image_check whose absolute target was
-				// resolved from page context at record time (no URL=/Src= in the static
-				// source). Preserve honestly as review_only instead of dropping it or
-				// inventing a URL. convertAction already appended the "no URL" warning.
-				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "metadata.import.preserved.unresolved_html_navigation", convertutil.FirstNonEmpty(fn.StepName, fn.Name), "review", "review_only", "HTML-mode navigation whose absolute URL is resolved from page context at replay; re-record in URL mode or add an explicit URL/Src to execute it. Preserved for manual review.", SourceFunctionSupportReviewOnly))
-				result.Stats.ContributorFunctions++
-				recordSourceFunctionSupport(result, SourceFunctionSupportReviewOnly)
+				// HTML-mode web_link/web_image/web_image_check whose target VuGen
+				// resolves from the previous page at replay. Dropping the click would
+				// replay a flow the server never sees, and inventing a URL would be
+				// wrong, so an execution-gated review action holds its position.
+				// convertAction already appended the "no URL" warning.
+				appendTrackedSourceAction(fn, htmlNavigationGateAction(fn), SourceFunctionSupportReviewOnly,
+					"HTML-mode click resolved from the previous page at replay; execution is gated until it is replaced with an explicit request or the script is re-recorded in URL mode.")
 			}
 			result.Warnings = append(result.Warnings, warnings...)
 

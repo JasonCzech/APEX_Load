@@ -108,6 +108,14 @@ func TestLoadExpectationValidatesAndPrefersTheReplayCapture(t *testing.T) {
 	if _, err := LoadExpectation(dir); err == nil || !strings.Contains(err.Error(), "reason codes") {
 		t.Fatalf("a gated case without reason codes must be rejected, got %v", err)
 	}
+	write("expected.json", `{"description":"d","outcome":"review","source":"s"}`)
+	if _, err := LoadExpectation(dir); err == nil || !strings.Contains(err.Error(), "reason codes") {
+		t.Fatalf("a review case without reason codes must be rejected, got %v", err)
+	}
+	write("expected.json", `{"description":"d","outcome":"maybe","source":"s"}`)
+	if _, err := LoadExpectation(dir); err == nil {
+		t.Fatal("an unknown outcome must be rejected")
+	}
 	write("expected.json", `{"description":"d","outcome":"replay","source":"s","typo":1}`)
 	if _, err := LoadExpectation(dir); err == nil {
 		t.Fatal("unknown fields must be rejected")
@@ -142,8 +150,14 @@ func TestGateReasonCodesFindsNestedCodes(t *testing.T) {
 			{Name: "inner", Metadata: map[string]any{"import_review": map[string]any{"reason_codes": []string{"a_code", "c_code"}}}},
 		}}},
 	}}
-	got := strings.Join(GateReasonCodes(script), ",")
-	if got != "a_code,b_code,c_code" {
-		t.Fatalf("codes = %s", got)
+	script.Actions = append(script.Actions, dsl.Action{Name: "review", Metadata: map[string]any{"review_gate": "r_code", "review_reasons": []string{"r_code", "s_code"}, "execution_blocker": "x_code"}})
+	if got := strings.Join(GateReasonCodes(script), ","); got != "a_code,b_code,c_code,r_code,s_code,x_code" {
+		t.Fatalf("all codes = %s", got)
+	}
+	if got := strings.Join(ExecutionBlockerCodes(script), ","); got != "a_code,b_code,c_code,x_code" {
+		t.Fatalf("execution codes = %s", got)
+	}
+	if got := strings.Join(ReviewReasonCodes(script), ","); got != "r_code,s_code" {
+		t.Fatalf("review codes = %s", got)
 	}
 }

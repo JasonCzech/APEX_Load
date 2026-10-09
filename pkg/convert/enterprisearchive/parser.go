@@ -703,9 +703,10 @@ func parseWebURL(fn *ParsedFunction, inner string) {
 // parseWebLinkImage parses the HTML-mode navigation steps web_link/web_image/
 // web_image_check. In HTML mode the absolute target is resolved from page context
 // at record time, so the static .c usually carries only the element label
-// ("Text="/"Alt="). An explicit "URL=" (URL-mode recording) or an image "Src="
-// gives a usable target; otherwise fn.URL is left empty and the converter
-// preserves the step for review instead of fabricating a request.
+// ("Text="/"Alt="/"Src="). Only an explicit "URL=" gives a usable target (and
+// web_image_check's "Src=", which names the image it verifies); otherwise
+// fn.URL is left empty and the converter gates the step instead of
+// fabricating a request.
 func parseWebLinkImage(fn *ParsedFunction, inner string) {
 	if len(fn.RawArgs) > 0 {
 		fn.StepName = fn.RawArgs[0]
@@ -714,7 +715,10 @@ func parseWebLinkImage(fn *ParsedFunction, inner string) {
 	extractNamedArgs(fn, inner)
 	if v := fn.Args["URL"]; v != "" {
 		fn.URL = v
-	} else if v := fn.Args["Src"]; v != "" {
+	} else if v := fn.Args["Src"]; v != "" && fn.Name == "web_image_check" {
+		// web_image_check verifies that an image is present, so its Src names
+		// that image. web_image instead clicks the hyperlink wrapping the image:
+		// its Src is a selector, never the request target.
 		fn.URL = v
 	}
 }

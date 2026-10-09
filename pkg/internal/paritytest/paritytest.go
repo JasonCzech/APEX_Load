@@ -47,6 +47,10 @@ const (
 	// must carry an execution gate with the listed reason codes and replay must
 	// refuse to run. A silent conversion is the failure this outcome catches.
 	OutcomeGated = "gated"
+	// OutcomeReview means the import is an approximation that may still work:
+	// it must carry the listed promotion-gate reason codes, and replay must be
+	// allowed so testers can debug it. Requests are compared only when listed.
+	OutcomeReview = "review"
 )
 
 // Expectation is the parsed expected.json of one corpus case.
@@ -114,12 +118,12 @@ func LoadExpectation(dir string) (*Expectation, error) {
 		return nil, fmt.Errorf("%s/expected.json: %w", filepath.Base(dir), err)
 	}
 	switch exp.Outcome {
-	case OutcomeReplay, OutcomeGated:
+	case OutcomeReplay, OutcomeGated, OutcomeReview:
 	default:
-		return nil, fmt.Errorf("%s/expected.json: outcome must be %q or %q", filepath.Base(dir), OutcomeReplay, OutcomeGated)
+		return nil, fmt.Errorf("%s/expected.json: outcome must be %q, %q or %q", filepath.Base(dir), OutcomeReplay, OutcomeGated, OutcomeReview)
 	}
-	if exp.Outcome == OutcomeGated && len(exp.GateReasonCodes) == 0 {
-		return nil, fmt.Errorf("%s/expected.json: a gated case must name its gate reason codes", filepath.Base(dir))
+	if (exp.Outcome == OutcomeGated || exp.Outcome == OutcomeReview) && len(exp.GateReasonCodes) == 0 {
+		return nil, fmt.Errorf("%s/expected.json: a %s case must name its gate reason codes", filepath.Base(dir), exp.Outcome)
 	}
 	if strings.TrimSpace(exp.Source) == "" {
 		return nil, fmt.Errorf("%s/expected.json: source is required", filepath.Base(dir))
@@ -393,8 +397,25 @@ func truncate(value string) string {
 	return value
 }
 
-// GateReasonCodes collects every import-review reason code in the script.
+// GateReasonCodes collects every import-review code in the script: execution
+// blockers and promotion review reasons alike.
 func GateReasonCodes(script *dsl.Script) []string {
+	return collectMetadataCodes(script, "reason_codes", "execution_blockers", "execution_blocker", "review_reasons", "review_gate")
+}
+
+// ExecutionBlockerCodes collects the codes that block execution.
+func ExecutionBlockerCodes(script *dsl.Script) []string {
+	return collectMetadataCodes(script, "reason_codes", "execution_blockers", "execution_blocker")
+}
+
+// ReviewReasonCodes collects the promotion review codes (replay allowed).
+func ReviewReasonCodes(script *dsl.Script) []string {
+	return collectMetadataCodes(script, "review_reasons", "review_gate")
+}
+
+// collectMetadataCodes walks the script's JSON form and gathers the string or
+// string-list values stored under any of the given metadata keys.
+func collectMetadataCodes(script *dsl.Script, keys ...string) []string {
 	raw, err := json.Marshal(script)
 	if err != nil {
 		return nil
@@ -403,16 +424,25 @@ func GateReasonCodes(script *dsl.Script) []string {
 	if err := json.Unmarshal(raw, &generic); err != nil {
 		return nil
 	}
+	wanted := make(map[string]bool, len(keys))
+	for _, key := range keys {
+		wanted[key] = true
+	}
 	seen := map[string]struct{}{}
 	var walk func(value any)
 	walk = func(value any) {
 		switch typed := value.(type) {
 		case map[string]any:
 			for key, child := range typed {
-				if key == "reason_codes" {
-					if list, ok := child.([]any); ok {
-						for _, item := range list {
-							if code, ok := item.(string); ok {
+				if wanted[key] {
+					switch codes := child.(type) {
+					case string:
+						if codes != "" {
+							seen[codes] = struct{}{}
+						}
+					case []any:
+						for _, item := range codes {
+							if code, ok := item.(string); ok && code != "" {
 								seen[code] = struct{}{}
 							}
 						}
@@ -448,15 +478,20 @@ func CheckOutcome(ctx context.Context, server *Server, exp *Expectation, script 
 		}
 	}
 	codes := GateReasonCodes(script)
-	has := map[string]bool{}
-	for _, code := range codes {
-		has[code] = true
+	contains := func(list []string, code string) bool {
+		for _, item := range list {
+			if item == code {
+				return true
+			}
+		}
+		return false
 	}
 	switch exp.Outcome {
 	case OutcomeGated:
+		blockers := ExecutionBlockerCodes(script)
 		for _, code := range exp.GateReasonCodes {
-			if !has[code] {
-				problems = append(problems, fmt.Sprintf("gate reason code %q missing; script carries %v", code, codes))
+			if !contains(blockers, code) {
+				problems = append(problems, fmt.Sprintf("execution gate %q missing; script carries %v", code, codes))
 			}
 		}
 		if _, err := ReplayOnce(ctx, script, exp.Variables); err == nil {
@@ -464,6 +499,19 @@ func CheckOutcome(ctx context.Context, server *Server, exp *Expectation, script 
 		}
 		if recorded := server.Recorded(); len(recorded) > 0 {
 			problems = append(problems, fmt.Sprintf("a gated import sent %d request(s)", len(recorded)))
+		}
+	case OutcomeReview:
+		reviews := ReviewReasonCodes(script)
+		for _, code := range exp.GateReasonCodes {
+			if !contains(reviews, code) {
+				problems = append(problems, fmt.Sprintf("review gate %q missing; script carries %v", code, codes))
+			}
+		}
+		if _, err := ReplayOnce(ctx, script, exp.Variables); err != nil {
+			problems = append(problems, fmt.Sprintf("a review-gated import must still replay for debugging, but replay refused: %v", err))
+		}
+		if len(exp.Requests) > 0 {
+			problems = append(problems, server.Compare(exp.Requests)...)
 		}
 	case OutcomeReplay:
 		report, err := ReplayOnce(ctx, script, exp.Variables)
