@@ -170,6 +170,7 @@ type extractorInputWorkBudget struct {
 	bodyBytes         int64
 	headerBytes       int64
 	directHeaderBytes map[string]int64
+	setCookieBytes    int64
 }
 
 func newExtractorInputWorkBudget(headers http.Header, body []byte) *extractorInputWorkBudget {
@@ -186,6 +187,7 @@ func newExtractorInputWorkBudget(headers http.Header, body []byte) *extractorInp
 		bodyBytes:         int64(len(body)),
 		headerBytes:       flattenedHeadersByteSize(headers),
 		directHeaderBytes: directHeaderBytes,
+		setCookieBytes:    int64(len(setCookieSurface(headers))),
 	}
 }
 
@@ -226,6 +228,14 @@ func (budget *extractorInputWorkBudget) charge(ext protocol.Extractor) error {
 		if extractorTypeScansText(ext.Type) {
 			cost += budget.headerBytes
 		}
+	case "cookies":
+		cost = budget.setCookieBytes
+		if budget.directHeaderBytes == nil {
+			// Manually constructed budgets carry no header index.
+			cost = budget.headerBytes
+		}
+	case "url", "status":
+		// One request URL or status code; bounded by the request itself.
 	case "header":
 		// Direct MIME-header lookup is bounded by the map implementation. Regex,
 		// and boundary paths flatten and scan the whole header surface
@@ -289,14 +299,19 @@ type boundaryExpressionConfig struct {
 }
 
 func extract(ext protocol.Extractor, headers http.Header, body []byte) (string, error) {
-	value, err := extractRaw(ext, headers, body)
+	return extractResponse(ext, responseSurfaces{headers: headers, body: body})
+}
+
+func extractResponse(ext protocol.Extractor, response responseSurfaces) (string, error) {
+	value, err := extractRaw(ext, response)
 	if err != nil {
 		return "", err
 	}
 	return postProcessExtractedValue(ext, value)
 }
 
-func extractRaw(ext protocol.Extractor, headers http.Header, body []byte) (string, error) {
+func extractRaw(ext protocol.Extractor, response responseSurfaces) (string, error) {
+	headers, body := response.headers, response.body
 	switch ext.Source {
 	case "", "body":
 		return extractFromBody(ext, body)
@@ -304,6 +319,8 @@ func extractRaw(ext protocol.Extractor, headers http.Header, body []byte) (strin
 		return extractFromBody(ext, headersAndBodySurface(ext, headers, body))
 	case "header":
 		return extractFromHeaders(ext, headers)
+	case "cookies", "url", "status":
+		return extractFromSurface(ext, response.textSurface(ext.Source))
 	default:
 		return "", fmt.Errorf("unsupported extraction source: %s", ext.Source)
 	}
@@ -313,6 +330,11 @@ func extractRaw(ext protocol.Extractor, headers http.Header, body []byte) (strin
 // per-value post-processing applied. Zero matches return an empty slice and no
 // error; the caller decides whether that counts as a miss.
 func extractAll(ext protocol.Extractor, headers http.Header, body []byte) ([]string, error) {
+	return extractAllResponse(ext, responseSurfaces{headers: headers, body: body})
+}
+
+func extractAllResponse(ext protocol.Extractor, response responseSurfaces) ([]string, error) {
+	headers, body := response.headers, response.body
 	content := body
 	var values []string
 	directHeaderLookup := false
@@ -327,6 +349,15 @@ func extractAll(ext protocol.Extractor, headers http.Header, body []byte) ([]str
 			break
 		}
 		content = []byte(flattenHeaders(headers))
+	case "cookies", "url", "status":
+		content = response.textSurface(ext.Source)
+		if ext.Type == "" {
+			// A whole-value surface holds at most one value.
+			directHeaderLookup = true
+			if len(content) > 0 {
+				values = append(values, string(content))
+			}
+		}
 	default:
 		return nil, fmt.Errorf("unsupported extraction source: %s", ext.Source)
 	}

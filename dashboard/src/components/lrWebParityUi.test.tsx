@@ -3,11 +3,12 @@
 import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { headersAndBodySurface } from './extractorSurface'
+import { headersAndBodySurface, setCookieSurface } from './extractorSurface'
 import { issueTitle } from './importReviewIssues'
 import { collectAuthoringIssues } from './scriptAuthoringAssist'
 import AuthHostsField from './AuthHostsField'
 import { parseAuthHosts } from './authHosts'
+import { ProtocolExtractorsSection } from './scriptActionFields'
 import { bodyEncodingLabel, knownBodyEncoding } from './bodyEncodings'
 import type { ScriptDefinition } from '../types/scripts'
 
@@ -105,5 +106,39 @@ describe('request body encodings', () => {
     expect(knownBodyEncoding('gzip')).toBeUndefined()
     expect(bodyEncodingLabel('base64')).toBe('Base64-encoded wire bytes')
     expect(bodyEncodingLabel('gzip')).toBe('Unknown encoding: gzip')
+  })
+})
+
+describe('cookie extractor surface', () => {
+  it('lists each Set-Cookie header line as the runtime does', () => {
+    expect(setCookieSurface({ 'Set-Cookie': 'sid=1; Path=/\npref=dark', 'Content-Type': 'text/html' })).toBe('Set-Cookie: sid=1; Path=/\r\nSet-Cookie: pref=dark\r\n')
+    expect(setCookieSurface(undefined)).toBe('')
+  })
+})
+
+describe('HTTP extractor rows', () => {
+  function selectFor(label: string) {
+    return document.querySelector(`select[aria-label="${label}"]`) as HTMLSelectElement
+  }
+  function selectedLabel(label: string) {
+    const select = selectFor(label)
+    return select.options[select.selectedIndex]?.textContent
+  }
+
+  it('offers the source-specific types and keeps unsupported stored values visible', () => {
+    const action = {
+      name: 'a', type: 'http', method: 'GET', target: '/',
+      extractors: [
+        { name: 'final', source: 'url', type: '', expression: '' },
+        { name: 'sid', source: 'cookies', type: 'boundary', expression: 'sid=|||;' },
+        { name: 'legacy', source: 'cookie', type: 'regex', expression: 'sid=(.+)' },
+      ],
+    }
+    render(<ProtocolExtractorsSection action={action as never} index={0} protocol="http" onAddExtractor={vi.fn()} onRemoveExtractor={vi.fn()} onUpdateExtractor={vi.fn()} />)
+    expect(selectedLabel('Extractor 1 source')).toBe('Final URL')
+    expect(selectedLabel('Extractor 1 type')).toBe('Whole value')
+    expect(selectedLabel('Extractor 2 source')).toBe('Set-Cookie lines')
+    expect([...selectFor('Extractor 2 type').options].map(option => option.value)).toEqual(['regex', 'boundary', 'regex_count', 'regex_ordinal'])
+    expect(selectedLabel('Extractor 3 source')).toBe('Unsupported: cookie')
   })
 })

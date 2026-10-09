@@ -1,9 +1,19 @@
 {
-  "description": "Scope=Cookies is approximated by searching all headers, and a RequestUrl filter that only matches a resource cannot be honoured; both must carry promotion gates while replay stays available.",
+  "description": "Scope=Cookies now searches the Set-Cookie lines exactly, but a RequestUrl filter that only matches a resource cannot be honoured; it carries a promotion gate while replay stays available.",
   "source": "VuGen 26.1 Function Reference: web_reg_save_param_ex SEARCH_FILTERS (Scope=Cookies, RequestUrl).",
   "outcome": "review",
-  "gate_reason_codes": ["registration_scope_narrowed", "registration_filter_unreproduced"],
+  "gate_reason_codes": [
+    "registration_filter_unreproduced"
+  ],
   "responses": [
-    {"method": "GET", "path": "/app/home", "headers": {"Content-Type": "text/html", "Set-Cookie": "sid=S-1; Path=/"}, "body": "<script>var rt=R-2;</script>"}
+    {
+      "method": "GET",
+      "path": "/app/home",
+      "headers": {
+        "Content-Type": "text/html",
+        "Set-Cookie": "sid=S-1; Path=/"
+      },
+      "body": "<script>var rt=R-2;</script>"
+    }
   ]
 }

@@ -1056,11 +1056,12 @@ function extractorSourceOptions(protocol: string): Array<[string, string]> {
     case 'websocket':
       return [['body', 'Message Body'], ['header', 'Handshake Header'], ['message', 'Message'], ['close_code', 'Close Code']]
     default:
-      return [['body', 'Body'], ['header', 'Header'], ['all', 'Headers and body'], ['cookie', 'Cookie']]
+      return [['body', 'Body'], ['header', 'Header'], ['all', 'Headers and body'], ['cookies', 'Set-Cookie lines'], ['url', 'Final URL'], ['status', 'Status code']]
   }
 }
 
-function extractorTypeOptions(protocol: string): Array<[string, string]> {
+function extractorTypeOptions(protocol: string, source = ''): Array<[string, string]> {
+  if (HTTP_EXTRACTOR_TEXT_SOURCES[source] && !isNonHTTPExtractorProtocol(protocol)) return HTTP_EXTRACTOR_TEXT_SOURCES[source]
   if (protocol === 'database' || protocol === 'network' || protocol === 'grpc') {
     return [['jsonpath', 'JSONPath'], ['jmespath', 'JMESPath'], ['regex', 'Regex'], ['boundary', 'Boundary']]
   }
@@ -1072,19 +1073,46 @@ function extractorTypeOptions(protocol: string): Array<[string, string]> {
   return [['jsonpath', 'JSONPath'], ['jmespath', 'JMESPath'], ['regex', 'Regex'], ['boundary', 'Boundary'], ['xpath', 'XPath'], ['css', 'CSS'], ['sse_concat', 'SSE concat'], ['sse_event', 'SSE event']]
 }
 
+// HTTP extractor sources that are searched as text accept only the text
+// extractor types (the DSL validator enforces the same lists).
+const HTTP_TEXT_TYPES: Array<[string, string]> = [['regex', 'Regex'], ['boundary', 'Boundary'], ['regex_count', 'Regex count'], ['regex_ordinal', 'Regex ordinal']]
+const HTTP_EXTRACTOR_TEXT_SOURCES: Record<string, Array<[string, string]>> = {
+  header: [['', 'Named header'], ['regex', 'Regex'], ['boundary', 'Boundary']],
+  all: HTTP_TEXT_TYPES,
+  cookies: HTTP_TEXT_TYPES,
+  url: [['', 'Whole value'], ...HTTP_TEXT_TYPES],
+  status: [['', 'Whole value'], ...HTTP_TEXT_TYPES],
+}
+
+function isNonHTTPExtractorProtocol(protocol: string) {
+  return protocol === 'database' || protocol === 'network' || protocol === 'grpc' || protocol === 'websocket' || protocol.startsWith('jms')
+}
+
+// withCurrentOption keeps a stored value visible when it is not one of the
+// offered options, instead of the select silently showing the first option.
+function withCurrentOption(options: Array<[string, string]>, current: string | undefined): Array<[string, string]> {
+  const value = current ?? ''
+  if (options.some(([option]) => option === value)) return options
+  if (value === '' && options.some(([option]) => option === 'body')) return options
+  return [...options, [value, value ? `Unsupported: ${value}` : 'Not set']]
+}
+
 function extractorExpressionPlaceholder(protocol: string, source: string) {
   if (protocol === 'database') return source === 'scalar' ? '$.scalar' : '$.rows[0].id'
   if (protocol === 'network') return source === 'record_count' ? '$.record_count' : '$.response'
   if (protocol === 'grpc') return '$.id'
   if (protocol === 'websocket') return '$.type'
   if (protocol.startsWith('jms')) return '$.orderId'
+  if (source === 'header') return 'Location'
+  if (source === 'cookies') return 'sid=|||;'
+  if (source === 'url') return 'code=([^&]+)'
+  if (source === 'status') return 'Leave empty for the status code'
   return '$.data.id'
 }
 
 export function ProtocolExtractorsSection({ action, index, protocol, onAddExtractor, onRemoveExtractor, onUpdateExtractor }: ProtocolExtractorsSectionProps) {
   const managed = useContext(ManagedActionChecks)
   const sourceOptions = extractorSourceOptions(protocol)
-  const typeOptions = extractorTypeOptions(protocol)
   if (managed) return null
   return (
     <div className="sub-section">
@@ -1093,10 +1121,10 @@ export function ProtocolExtractorsSection({ action, index, protocol, onAddExtrac
         <div key={extractorIndex} className="extractor-row">
           <input aria-label={`Extractor ${extractorIndex + 1} variable name`} value={extractor.name} onChange={e => onUpdateExtractor(index, extractorIndex, 'name', e.target.value)} placeholder="Variable name" />
           <select aria-label={`Extractor ${extractorIndex + 1} source`} value={extractor.source} onChange={e => onUpdateExtractor(index, extractorIndex, 'source', e.target.value)}>
-            {sourceOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            {withCurrentOption(sourceOptions, extractor.source).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
-          <select aria-label={`Extractor ${extractorIndex + 1} type`} value={extractor.type} onChange={e => onUpdateExtractor(index, extractorIndex, 'type', e.target.value)}>
-            {typeOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          <select aria-label={`Extractor ${extractorIndex + 1} type`} value={extractor.type ?? ''} onChange={e => onUpdateExtractor(index, extractorIndex, 'type', e.target.value)}>
+            {withCurrentOption(extractorTypeOptions(protocol, extractor.source), extractor.type).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
           <input aria-label={`Extractor ${extractorIndex + 1} expression`} value={extractor.expression} onChange={e => onUpdateExtractor(index, extractorIndex, 'expression', e.target.value)} placeholder={extractorExpressionPlaceholder(protocol, extractor.source)} className="ext-expr" />
           <button aria-label={`Remove extractor ${extractorIndex + 1}`} className="btn-icon danger" onClick={() => onRemoveExtractor(index, extractorIndex)}>✕</button>

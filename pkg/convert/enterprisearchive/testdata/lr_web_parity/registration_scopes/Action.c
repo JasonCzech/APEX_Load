@@ -20,6 +20,19 @@ Action()
 		"RequestUrl=*orders*",
 		LAST);
 
+	web_reg_save_param_ex("ParamName=CookieSid",
+		"LB=sid=",
+		"RB=;",
+		SEARCH_FILTERS,
+		"Scope=Cookies",
+		LAST);
+
+	web_reg_save_param("SecondRef",
+		"LB=ref=",
+		"RB=;",
+		"Ord=2",
+		LAST);
+
 	web_url("orders",
 		"URL=http://parity.test/app/orders",
 		"Resource=0",
@@ -27,7 +40,7 @@ Action()
 		LAST);
 
 	web_url("confirm",
-		"URL=http://parity.test/app/confirm?h={HeaderRef}&d={DefaultRef}&b={BodyTok}",
+		"URL=http://parity.test/app/confirm?h={HeaderRef}&d={DefaultRef}&b={BodyTok}&c={CookieSid}&o={SecondRef}",
 		"Resource=0",
 		LAST);
 

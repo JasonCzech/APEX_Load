@@ -17,7 +17,8 @@ import (
 // place silently.
 const (
 	// registrationScopeNarrowedReasonCode: the registration searches a scope
-	// APEX approximates (Cookies, an unrecognized scope).
+	// APEX approximates (an unrecognized scope, or Cookies with a structured
+	// JSON/XPath query).
 	registrationScopeNarrowedReasonCode = "registration_scope_narrowed"
 	// registrationFilterReasonCode: a search filter (RequestUrl, ContentType,
 	// HeaderNames, RelFrameId, IgnoreRedirections=No) APEX cannot honour.
@@ -72,8 +73,12 @@ func sourceRegistrationScope(fn ParsedFunction, paramName string, textSearch boo
 		// what APEX extractors read.
 		return registrationScope{source: "body"}
 	case "cookies", "cookie":
-		return registrationScope{source: "header", findings: []importreview.Finding{promotionFinding(fn, registrationScopeNarrowedReasonCode,
-			fmt.Sprintf("Parameter %q searches cookies (Scope=Cookies); APEX searches all response headers instead, which includes Set-Cookie but can match an earlier header first.", paramName))}}
+		if textSearch {
+			// The cookies source searches the Set-Cookie header lines only.
+			return registrationScope{source: "cookies"}
+		}
+		return registrationScope{source: "body", findings: []importreview.Finding{promotionFinding(fn, registrationScopeNarrowedReasonCode,
+			fmt.Sprintf("Parameter %q searches cookies (Scope=Cookies) with a structured query; APEX runs structured queries against the response body.", paramName))}}
 	case "all", "":
 		// LoadRunner's default (and explicit ALL) searches headers and body of
 		// every response of the step. "all" covers the main response's headers

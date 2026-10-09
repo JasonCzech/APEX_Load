@@ -848,6 +848,10 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		h.unavailableResponseContentEvidence(result, result.Success)
 	}
 	extractorWork := newExtractorInputWorkBudget(resp.Header, respBody)
+	surfaces := responseSurfaces{headers: resp.Header, body: respBody, status: resp.StatusCode}
+	if resp.Request != nil && resp.Request.URL != nil {
+		surfaces.url = resp.Request.URL.String()
+	}
 extractors:
 	for _, ext := range action.Extractors {
 		if err := extractorWork.charge(ext); err != nil {
@@ -858,7 +862,7 @@ extractors:
 			break
 		}
 		if ext.Mode == "all" {
-			values, err := extractAll(ext, resp.Header, respBody)
+			values, err := extractAllResponse(ext, surfaces)
 			if errors.Is(err, errExtractorResourceLimit) {
 				result.Success = false
 				result.Extractions = nil
@@ -912,7 +916,7 @@ extractors:
 			}
 			continue
 		}
-		val, err := extract(ext, resp.Header, respBody)
+		val, err := extractResponse(ext, surfaces)
 		if errors.Is(err, errExtractorResourceLimit) {
 			result.Success = false
 			result.Extractions = nil

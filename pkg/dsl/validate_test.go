@@ -1628,7 +1628,35 @@ func TestValidateExtractorIssuesRejectsUnsupportedTypes(t *testing.T) {
 	}
 	issues := ValidateScriptIssues(script)
 	assertIssueContains(t, issues, `extractors[0] type "header_query" is not supported for header extraction`)
-	assertIssueContains(t, issues, `extractors[1] source must be "", "body", "header", or "all"`)
+	assertIssueContains(t, issues, `extractors[1] source must be "", "body", "header", "all", "cookies", "url", or "status"`)
+}
+
+func TestValidateExtractorCookiesURLAndStatusSources(t *testing.T) {
+	script := &Script{
+		Protocol: "http",
+		Config:   ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []Action{{
+			Name: "a", Type: "GET", Method: "GET", Target: "/a",
+			Extractors: []Extractor{
+				{Name: "sid", Source: "cookies", Type: "boundary", Expression: "sid=|||;"},
+				{Name: "final_url", Source: "url"},
+				{Name: "code", Source: "url", Type: "regex", Expression: "code=(\\w+)"},
+				{Name: "status", Source: "status"},
+				{Name: "cookie_whole", Source: "cookies"},
+				{Name: "url_json", Source: "url", Type: "jsonpath", Expression: "$.x"},
+			},
+		}},
+	}
+	issues := ValidateScriptIssues(script)
+	assertIssueContains(t, issues, `extractors[4] type "" is not supported for cookie extraction`)
+	assertIssueContains(t, issues, `extractors[5] type "jsonpath" is not supported for url extraction`)
+	for _, issue := range issues {
+		for _, ok := range []string{"extractors[0]", "extractors[1]", "extractors[2]", "extractors[3]"} {
+			if strings.Contains(issue, ok) {
+				t.Fatalf("supported extractor was rejected: %s", issue)
+			}
+		}
+	}
 }
 
 func TestValidateExtractorAllSourceAcceptsTextTypesOnly(t *testing.T) {

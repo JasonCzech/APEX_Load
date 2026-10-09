@@ -1248,12 +1248,17 @@ func validateExtractorIssues(protocol string, path string, action Action) []stri
 				if !isAllowedValue(strings.TrimSpace(ext.Type), "", "header", "regex", "boundary") {
 					issues = append(issues, fmt.Sprintf("%s: extractors[%d] type %q is not supported for header extraction", label, i, ext.Type))
 				}
-			case "all":
+			case "all", "cookies":
 				if !isAllowedValue(strings.TrimSpace(ext.Type), "regex", "regex_count", "regex_ordinal", "boundary") {
-					issues = append(issues, fmt.Sprintf("%s: extractors[%d] type %q is not supported for headers-and-body extraction (use regex, regex_count, regex_ordinal or boundary)", label, i, ext.Type))
+					surface := map[string]string{"all": "headers-and-body", "cookies": "cookie"}[strings.TrimSpace(ext.Source)]
+					issues = append(issues, fmt.Sprintf("%s: extractors[%d] type %q is not supported for %s extraction (use regex, regex_count, regex_ordinal or boundary)", label, i, ext.Type, surface))
+				}
+			case "url", "status":
+				if !isAllowedValue(strings.TrimSpace(ext.Type), "", "regex", "regex_count", "regex_ordinal", "boundary") {
+					issues = append(issues, fmt.Sprintf("%s: extractors[%d] type %q is not supported for %s extraction (use \"\" for the whole value, regex, regex_count, regex_ordinal or boundary)", label, i, ext.Type, strings.TrimSpace(ext.Source)))
 				}
 			default:
-				issues = append(issues, fmt.Sprintf("%s: extractors[%d] source must be \"\", \"body\", \"header\", or \"all\" (got %q)", label, i, ext.Source))
+				issues = append(issues, fmt.Sprintf("%s: extractors[%d] source must be \"\", \"body\", \"header\", \"all\", \"cookies\", \"url\", or \"status\" (got %q)", label, i, ext.Source))
 			}
 		}
 		if ext.SaveOffset < 0 {
