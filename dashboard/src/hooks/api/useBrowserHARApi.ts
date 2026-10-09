@@ -70,3 +70,18 @@ export function harForResourceRow(list: BrowserHARArchiveList | null | undefined
   const native = sourceGeneration ? list.artifacts.find(item => item.fidelity === 'native' && item.available && item.evidence_generation === sourceGeneration) : undefined
   return native ?? list.artifacts.find(item => item.name === SYNTHETIC_HAR_NAME && item.available)
 }
+
+/** One retained browser request as a HAR entry (synthetic), or the native HAR
+ * that holds it. Needs the HAR download permission. */
+export interface BrowserHAREntryResponse {
+  request_id: string
+  source_generation?: string
+  fidelity: string
+  artifact?: string
+  entry?: unknown
+  headers_omitted?: boolean
+}
+
+export function readArchiveBrowserHAREntry(testID: string, requestID: string, signal?: AbortSignal): Promise<BrowserHAREntryResponse> {
+  return request<BrowserHAREntryResponse>(`/tests/${encodeURIComponent(testID)}/archive/browser/har-entry?request_id=${encodeURIComponent(requestID)}`, { signal, timeoutMs: 30_000, maxResponseBytes: 2 << 20 })
+}

@@ -93,7 +93,7 @@ export function rootCauseRouteState(params: URLSearchParams): RootCauseRouteStat
   }
 }
 
-export const REPORT_SECTIONS = ['summary', 'performance', 'comparison', 'diagnostics', 'evidence', 'execution'] as const
+export const REPORT_SECTIONS = ['summary', 'performance', 'comparison', 'diagnostics', 'browser', 'evidence', 'execution'] as const
 export type ReportSection = typeof REPORT_SECTIONS[number]
 export const REPORT_LENSES = ['executive', 'engineer', 'audit'] as const
 

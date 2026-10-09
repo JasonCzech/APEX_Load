@@ -16,6 +16,7 @@ The server exposes structured tools for the documented API surface:
 - `script_*`: library CRUD, validation, replay, imports, authoring sessions, runtime reports, and support matrices.
 - `scenario_*`, `schedule_*`, `data_pool_*`: scenario assembly, load model validation, schedules, and shared data.
 - `run_*`, `archive_*`: run lifecycle, live metrics, archive reports, comparisons, and retention.
+- `run_archive_browser_*`, `run_archive_journeys`, `analysis_policy_*`: browser findings, interaction patterns, one request's HAR entry, journey accounting, and revisioned browser and journey policies.
 - `ai_*`, `integrations_*`, `monitoring_*`, `report_*`, `results_*`: AI assistance, integrations, monitoring packs, report profiles, and external imports.
 
 Stable resources are also available:

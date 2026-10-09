@@ -727,6 +727,8 @@ export interface RunArchiveProvenance {
     memory_limit_bytes?: number
     max_vusers?: number
   }>
+  // Analysis policy revisions pinned when the run started.
+  policy_pins?: Array<{ kind?: string; id?: string; name?: string; revision?: number; source?: string }> | null
 }
 
 export interface RunArchiveGovernanceSnapshot {

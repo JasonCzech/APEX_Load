@@ -555,6 +555,58 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 {{end}}
 
+{{define "browser_findings"}}
+<h2>Browser Findings</h2>
+{{with .BrowserFindingsView}}
+<p class="section-copy">{{.Summary}}</p>
+{{if .Findings}}<table><thead><tr><th>Finding</th><th>State</th><th>Severity</th><th>Observed</th><th>Summary</th></tr></thead><tbody>
+{{range .Findings}}<tr><td>{{.Title}}</td><td>{{.State}}</td><td>{{.Severity}}</td><td>{{.Observed}}</td><td>{{.Summary}}</td></tr>{{end}}
+</tbody></table>{{end}}
+{{if .More}}<p class="section-copy">{{.More}} more findings are in the run report.</p>{{end}}
+{{if .Notes}}<ul>{{range .Notes}}<li>{{.}}</li>{{end}}</ul>{{end}}
+{{end}}
+{{end}}
+
+{{define "browser_baseline"}}
+<h2>Browser Baseline</h2>
+{{with .BrowserBaselineView}}
+<p class="section-copy">{{.Summary}}</p>
+{{if .Results}}<table><thead><tr><th>Metric</th><th>Cohort</th><th>Level</th><th>Result</th><th class="num">Current</th><th>Expected range</th><th>Detail</th></tr></thead><tbody>
+{{range .Results}}<tr><td>{{.Metric}}</td><td>{{.Cohort}}</td><td>{{.Level}}</td><td>{{.State}}</td><td class="num">{{.Current}}</td><td>{{.Expected}}</td><td>{{.Detail}}</td></tr>{{end}}
+</tbody></table>{{end}}
+{{if .More}}<p class="section-copy">{{.More}} more results are in the root-cause analysis.</p>{{end}}
+{{if .Excluded}}<p class="section-copy">Excluded: {{range $i, $e := .Excluded}}{{if $i}}; {{end}}{{$e}}{{end}}.</p>{{end}}
+{{if .Limitations}}<ul>{{range .Limitations}}<li>{{.}}</li>{{end}}</ul>{{end}}
+{{end}}
+{{end}}
+
+{{define "interaction_map"}}
+<h2>Interaction Patterns and Heatmaps</h2>
+{{with .InteractionMapView}}
+<p class="section-copy">{{.Summary}}</p>
+{{if .Patterns}}<table><thead><tr><th>Pattern</th><th>Provenance</th><th>Route</th><th>Action</th><th class="num">Gestures</th><th>Detail</th></tr></thead><tbody>
+{{range .Patterns}}<tr><td>{{.Kind}}</td><td>{{.Provenance}}</td><td>{{.Route}}</td><td>{{.Action}}</td><td class="num">{{.Count}}</td><td>{{.Detail}}</td></tr>{{end}}
+</tbody></table>{{end}}
+{{if .More}}<p class="section-copy">{{.More}} more patterns are in the run report.</p>{{end}}
+{{if .Heatmaps}}<table><thead><tr><th>Route</th><th>Layout</th><th>Viewport</th><th>Engine</th><th>Profile</th><th class="num">Gestures</th><th>Occupied cells</th></tr></thead><tbody>
+{{range .Heatmaps}}<tr><td>{{.Route}}</td><td>{{.Layout}}</td><td>{{.Viewport}}</td><td>{{.Engine}}</td><td>{{.Profile}}</td><td class="num">{{.Gestures}}</td><td>{{.Cells}}</td></tr>{{end}}
+</tbody></table>{{end}}
+{{if .MoreMaps}}<p class="section-copy">{{.MoreMaps}} more heatmaps are in the run report.</p>{{end}}
+{{if .Notes}}<ul>{{range .Notes}}<li>{{.}}</li>{{end}}</ul>{{end}}
+{{end}}
+{{end}}
+
+{{define "journey_risk"}}
+<h2>Journey Risk</h2>
+{{with .JourneyRiskView}}
+<p class="section-copy">{{.Summary}}</p>
+{{if .Journeys}}<table><thead><tr><th>Journey</th><th class="num">Eligible</th><th class="num">Completed</th><th class="num">Failed</th><th class="num">Aborted</th><th class="num">Skipped</th><th class="num">Censored</th><th class="num">Failure rate</th></tr></thead><tbody>
+{{range .Journeys}}<tr><td>{{.Name}}</td><td class="num">{{.Eligible}}</td><td class="num">{{.Completed}}</td><td class="num">{{.Failed}}</td><td class="num">{{.Aborted}}</td><td class="num">{{.Skipped}}</td><td class="num">{{.Censored}}</td><td class="num">{{.FailureRate}}</td></tr>{{end}}
+</tbody></table>{{end}}
+{{if .Notes}}<ul>{{range .Notes}}<li>{{.}}</li>{{end}}</ul>{{end}}
+{{end}}
+{{end}}
+
 {{define "completeness"}}
 <h2>Completeness Score</h2>
 <p class="section-copy">{{formatFloat .Report.Completeness.ScorePct}}% — {{.Report.Completeness.Status}}</p>

@@ -48,8 +48,7 @@ import ReleaseReadinessSummary from './runReport/ReleaseReadinessSummary'
 import ImportedDashboardPanels from './runReport/ImportedDashboardPanels'
 import TransactionSlaScoreboard from './runReport/TransactionSlaScoreboard'
 import JourneyRiskPanel from './runReport/JourneyRiskPanel'
-import BrowserFindingsPanel from './runReport/BrowserFindingsPanel'
-import BrowserInteractionsPanel from './runReport/BrowserInteractionsPanel'
+import BrowserIntelligenceView from './runReport/BrowserIntelligenceView'
 import TransactionResponseTimeSLATable from './TransactionResponseTimeSLATable'
 import {
   alignBaselineTimeline,
@@ -116,7 +115,7 @@ export default function RunReportPage({
   const api = useApi()
   const { runGuarded } = useNavigationGuardRunner()
   const [activeLens, setActiveLens] = useState<ReportLens>(initialLens || 'executive')
-  const [area, setAreaState] = useState<'Summary' | 'Performance' | 'Comparison' | 'Diagnostics' | 'Evidence' | 'Execution'>('Summary')
+  const [area, setAreaState] = useState<'Summary' | 'Performance' | 'Comparison' | 'Diagnostics' | 'Browser' | 'Evidence' | 'Execution'>('Summary')
   const [showExport, setShowExport] = useState(false)
   const [showNotes, setShowNotes] = useState(false)
   const [showCompare, setShowCompare] = useState(Boolean(initialCompare))
@@ -221,7 +220,7 @@ export default function RunReportPage({
     if (stats?.[initialTransaction]) archiveModel.onSelectedArchiveActionChange(initialTransaction)
     appliedAnalysisSelection.current = stamp
   }, [testId, initialTransaction, initialPopulation, archiveModel])
-  useEffect(() => { setAreaState(({ summary: 'Summary', performance: 'Performance', comparison: 'Comparison', diagnostics: 'Diagnostics', evidence: 'Evidence', execution: 'Execution' } as const)[initialSection ?? 'summary']) }, [testId, initialSection])
+  useEffect(() => { setAreaState(({ summary: 'Summary', performance: 'Performance', comparison: 'Comparison', diagnostics: 'Diagnostics', browser: 'Browser', evidence: 'Evidence', execution: 'Execution' } as const)[initialSection ?? 'summary']) }, [testId, initialSection])
   const focusHandledRef = useRef('')
   useEffect(() => {
     pinCompareStamp.current += 1
@@ -501,7 +500,7 @@ export default function RunReportPage({
     loadImpactData={timelineHistory} loadImpactLoading={archiveSummariesLoading || archiveResourcesLoading}
     loadImpactError={archiveSummaryError || archiveResourceError}
   />
-  const setArea = (next: 'Summary' | 'Performance' | 'Comparison' | 'Diagnostics' | 'Evidence' | 'Execution') => {
+  const setArea = (next: 'Summary' | 'Performance' | 'Comparison' | 'Diagnostics' | 'Browser' | 'Evidence' | 'Execution') => {
     // The route changes only after the navigation guard accepts. Keep the
     // current section visible if the user cancels an unsaved-assessment prompt.
     onNavigateReport({ lens: activeLens, compare: compareId || undefined, comparisonId: initialComparisonId, section: next.toLowerCase() as ReportSection })
@@ -523,7 +522,11 @@ export default function RunReportPage({
     const span = hypothesis && assessment ? rcaHypothesisWindow(hypothesis, assessment.anomalies) : null
     navigateRootCause({ analysis: rootCauseView.analysis_id, rev: rootCauseView.revision ? String(rootCauseView.revision) : undefined, hypothesis: top?.id, window: span ? formatRcaWindow(span) : undefined })
   }
-  const areas = ['Summary', 'Performance', 'Comparison', 'Diagnostics', 'Evidence', 'Execution'] as const
+  // The Browser area appears for runs with browser groups or document
+  // evidence, and for runs that pinned a browser or journey policy.
+  const hasBrowserEvidence = Boolean(test.groups?.some(group => group.protocol === 'browser') || report?.browser_documents || report?.browser_document_evidence !== undefined || report?.overview?.browser
+    || report?.manifest?.provenance?.policy_pins?.some(pin => pin.kind === 'browser_policy' || pin.kind === 'journey_policy'))
+  const areas = (['Summary', 'Performance', 'Comparison', 'Diagnostics', 'Browser', 'Evidence', 'Execution'] as const).filter(name => name !== 'Browser' || hasBrowserEvidence)
   const facts = executionFacts(test, report, manifestModel.manifest)
   const failed = resolvedStatus === 'FAILED'
   const hasArchive = Boolean(test.archive)
@@ -642,9 +645,12 @@ export default function RunReportPage({
           <RunReportDiagnostics report={report} loading={archiveModel.archiveAnalysisLoading} error={archiveModel.archiveAnalysisError} />
           {renderEvidence('report-error-patterns')}
           <div data-report-focus="transaction-drilldown">{renderEvidence('transactions')}</div>
-          <details><summary>Browser evidence</summary><BrowserFindingsPanel testId={testId} projectId={test.project_id || 'default'} canEvaluate={canPublishConfluence} /><BrowserInteractionsPanel testId={testId} />{renderEvidence('report-browser-summary')}{renderEvidence('report-browser-resources')}</details>
+          <details><summary>Browser evidence</summary>{hasBrowserEvidence && <p>Browser findings, the baseline comparison, interaction patterns and the resource drill-down are under <button type="button" className="btn btn-ghost btn-sm" onClick={() => setArea('Browser')}>Browser</button>.</p>}{renderEvidence('report-browser-summary')}{renderEvidence('report-browser-resources')}</details>
           <details><summary>Execution path analysis</summary>{renderEvidence('report-analysis')}</details>
         </>}
+        {area === 'Browser' && hasArchive && <BrowserIntelligenceView testId={testId} projectId={test.project_id || 'default'} canEvaluate={canPublishConfluence}
+          baseline={rootCause.response?.assessment?.browser_baseline} onOpenDiagnostics={() => setArea('Diagnostics')} hasArchive={hasArchive} test={test} report={report} />}
+        {!hasArchive && area === 'Browser' && <p>Browser intelligence reads the run's archive. Check archive availability above.</p>}
         {area === 'Evidence' && hasArchive && <>
           {renderEvidence('report-completeness')}
           {report && <section className="run-outcome-summary"><h2>Metric populations</h2><RunMetricPopulations report={report} /></section>}

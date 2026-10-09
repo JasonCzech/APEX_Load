@@ -14,8 +14,10 @@ function findingTitle(finding: BrowserFinding): string {
 }
 
 // BrowserFindingsPanel shows a run's server-side browser findings and
-// qualified score, and lets an editor evaluate the run on demand.
-export default function BrowserFindingsPanel({ testId, projectId, canEvaluate }: { testId: string; projectId: string; canEvaluate: boolean }) {
+// qualified score, and lets an editor evaluate the run on demand. With
+// onInspectDocument, a finding's worst documents open that document's
+// retained resources (finding → document → resources → HAR entry).
+export default function BrowserFindingsPanel({ testId, projectId, canEvaluate, onInspectDocument }: { testId: string; projectId: string; canEvaluate: boolean; onInspectDocument?: (documentId: string) => void }) {
   const [state, setState] = useState<RunBrowserFindings | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -88,7 +90,10 @@ export default function BrowserFindingsPanel({ testId, projectId, canEvaluate }:
       {findings.length > 0 && <ul className="browser-findings-list">{findings.map(finding => <li key={finding.id} data-state={finding.state} data-category={finding.category}>
         <strong>{findingTitle(finding)}</strong> — {finding.state === 'active' ? (finding.severity || 'active').replace(/_/g, ' ') : `${finding.state}: ${browserFindingReasonText(finding.reason)}`}
         {finding.category === 'collection_health' ? ' (collection health)' : ''}. {finding.summary}
-        {finding.evidence.documents?.length ? <> Worst documents: {finding.evidence.documents.map(document => `${formatBrowserMetric(finding.metric, document.value)} (document …${document.document_id.slice(-8)})`).join(', ')}.</> : null}
+        {finding.evidence.documents?.length ? <> Worst documents: {onInspectDocument
+          ? finding.evidence.documents.map((document, index) => <span key={document.document_id}>{index > 0 ? ', ' : ''}{formatBrowserMetric(finding.metric, document.value)}{' '}
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => onInspectDocument(document.document_id)} aria-label={`Inspect the resources of document …${document.document_id.slice(-8)}`}>(document …{document.document_id.slice(-8)})</button></span>)
+          : finding.evidence.documents.map(document => `${formatBrowserMetric(finding.metric, document.value)} (document …${document.document_id.slice(-8)})`).join(', ')}.</> : null}
       </li>)}</ul>}
       <ul className="browser-findings-notes">{result.notes.map(note => <li key={note}>{note}</li>)}</ul>
     </>}

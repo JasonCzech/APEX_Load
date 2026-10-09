@@ -726,6 +726,11 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 
 	// --- Completeness ------------------------------------------------------
 	add(reportSectionRenderer{ID: "telemetry_acceptance", Label: "Telemetry Acceptance", PDF: telemetryAcceptanceReportPDF, CSV: telemetryAcceptanceReportCSV})
+	// --- Browser intelligence (BI-4) ---------------------------------------
+	add(reportSectionRenderer{ID: reportSectionBrowserFindings, Label: "Browser Findings", PDF: browserFindingsReportPDF, CSV: browserFindingsReportCSV})
+	add(reportSectionRenderer{ID: reportSectionBrowserBaseline, Label: "Browser Baseline", PDF: browserBaselineReportPDF, CSV: browserBaselineReportCSV})
+	add(reportSectionRenderer{ID: reportSectionInteractionMap, Label: "Interaction Patterns and Heatmaps", PDF: interactionMapReportPDF, CSV: interactionMapReportCSV})
+	add(reportSectionRenderer{ID: reportSectionJourneyRisk, Label: "Journey Risk", PDF: journeyRiskReportPDF, CSV: journeyRiskReportCSV})
 	add(reportSectionRenderer{ID: "completeness", Label: "Completeness Score",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
 			pdfHeading(lines, "Completeness")

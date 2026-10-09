@@ -6577,6 +6577,16 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/browser/har-entry",
+      "operationId": "handleGetRunArchiveBrowserHAREntry",
+      "summary": "Get Run Archive Browser HAR Entry",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/tests/{id}/archive/browser/har/{artifact}",
       "operationId": "handleDownloadRunArchiveBrowserHAR",
       "summary": "Download Run Archive Browser HAR",

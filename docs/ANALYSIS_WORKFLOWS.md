@@ -1148,7 +1148,8 @@ or its project.
 `apexctl analysis` covers the same workflows. A command that prints the
 controller's response as it is streams it to standard output instead of
 loading it whole. Commands that read the response first still read it within
-a response limit: `journeys`, `browser-findings`, `browser-har list`,
+a response limit: `journeys`, `browser-findings`, `interactions`, `har-entry`,
+`policies`, `browser-har list`,
 `browser-documents`, `telemetry-policy`, `telemetry-reevaluate`,
 `panel --revision` and `baseline --fail-on-regression` (8 MiB), and
 `browser-resources` (one 2 MiB page at a time):
@@ -1162,6 +1163,9 @@ a response limit: `journeys`, `browser-findings`, `browser-har list`,
 | `update-panel --id ID --file patch.json` | Edits a definition; the patch carries the expected `revision`. |
 | `delete-panel --id ID --revision N` | Deletes a definition at revision N. |
 | `run-query --id RUN --file query.json` | Runs a native archive query of one run (and its `comparison_run_id`). |
+| `interactions --run RUN` | A finalized run's interaction patterns and heatmaps. |
+| `har-entry --run RUN --request-id ID` | One retained browser request as a synthetic HAR entry, or the native HAR that holds it (HAR download permission). |
+| `policies list\|get\|save\|delete --project P …` | Lists, reads (a past `--revision`), saves (an existing one at the `--revision` it was read at) or deletes analysis policies. |
 
 The `list`, `create`, `upload`, `map`, `commit`, `query`, `compare`,
 `mappings` and `comparisons` commands keep covering imports and comparisons.
@@ -1210,6 +1214,8 @@ Limits: the projection is set only when creating a run through the test API (`PO
 Journey accounting counts how a finished run's declared journeys turned out under its pinned `journey_policy` (or a named revision): completed, failed, aborted, skipped and censored attempts per journey, step failures separately, and the weighted failure index, which is test-journey risk and never revenue. Every archived row carries its VUser and iteration; a failure recorded once its VUser was stopping (the run's stop or end, a ramp-down or scale-down, a goal boundary), or caused by the generator's own resource limit, is marked `interrupted` and censors the attempts it cut instead of failing them. Read it from the run report's Journey risk panel, `GET /api/v1/tests/{id}/archive/journeys` or `apexctl analysis journeys`; see the [journey accounting guide](guides/JOURNEY_ACCOUNTING.md).
 
 Browser findings judge a run's archived document metrics against its pinned `browser_policy` as a `browser_intelligence` evaluation job (automatically at finalize for runs that pinned one and captured document evidence, or on demand): threshold findings per engine and device profile at the qualified p75 (active, suppressed outside applicability, or unscored with a reason), collection-health findings kept apart, and a weighted `browser_score.v1` that is withheld when a required metric is missing. Read them in the report's Browser findings panel, `GET /api/v1/tests/{id}/archive/browser-findings` or `apexctl analysis browser-findings`; see the [browser findings guide](guides/BROWSER_FINDINGS.md).
+
+The run report's Browser area, the policy editors in Settings, the browser intelligence report sections, saved browser-document panels, the HAR-entry drill-down and the matching CLI and MCP tools are described in [Browser intelligence workflows](guides/BROWSER_INTELLIGENCE_WORKFLOWS.md).
 
 Select a grouped archive bucket to inspect up to 25 raw observations per page. The selection retains population, property, time and exact group identity, including capitalization. The timing waterfall shows retained DNS/connect/TLS durations, TTFB as an elapsed milestone, and total observation duration. Unrecorded timing phases remain unavailable.
 

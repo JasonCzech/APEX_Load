@@ -6,13 +6,22 @@ import { useBrowserResourcePage, type BrowserResourcePageLoader } from './useBro
 import { browserDocumentWaterfall, browserResourceRowKey } from './browserResourceEvidenceModel'
 import BrowserNativeRequestEvidence from './BrowserNativeRequestEvidence'
 import BrowserHARDownloads from './BrowserHARDownloads'
+import BrowserHAREntryView from './BrowserHAREntryView'
 import Notice from './ux/Notice'
 import { useBrowserHARList } from '../hooks/useBrowserHARList'
 import { downloadArchiveBrowserHAR, harForResourceRow, listArchiveBrowserHARs } from '../hooks/api/useBrowserHARApi'
 import './BrowserResourceInspector.css'
 import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
 
-interface Props { testID: string; projectID: string; sourceIdentity: string; loadPage?: BrowserResourcePageLoader; loadHARList?: typeof listArchiveBrowserHARs }
+interface Props {
+  testID: string
+  projectID: string
+  sourceIdentity: string
+  loadPage?: BrowserResourcePageLoader
+  loadHARList?: typeof listArchiveBrowserHARs
+  /** Opens filtered to one document's requests (a browser finding's drill-down). */
+  initialDocumentId?: string
+}
 const textFilters = [
   ['action_name', 'Capturing action', 256], ['group', 'Group', 256], ['region', 'Region', 256], ['resource_type', 'Resource type', 64],
   ['source_generation', 'Source generation', 32], ['request_id', 'Native request identity', 128], ['redirect_chain_id', 'Redirect chain identity', 128],
@@ -24,14 +33,14 @@ const number = (value: number | undefined, suffix: string) => value === undefine
 /** A scope change remounts draft controls as well as retiring asynchronous
  * reads; project/run filters can never carry into another selected archive. */
 export default function BrowserResourceInspector(props: Props) {
-  return <ResourceInspectorBody key={JSON.stringify([props.testID, props.projectID, props.sourceIdentity])} {...props} />
+  return <ResourceInspectorBody key={JSON.stringify([props.testID, props.projectID, props.sourceIdentity, props.initialDocumentId || ''])} {...props} />
 }
-function ResourceInspectorBody({ testID, projectID, sourceIdentity, loadPage = readArchiveBrowserResourcePage, loadHARList }: Props) {
-  const [draft, setDraft] = useState<Record<string, string>>({})
+function ResourceInspectorBody({ testID, projectID, sourceIdentity, loadPage = readArchiveBrowserResourcePage, loadHARList, initialDocumentId }: Props) {
+  const [draft, setDraft] = useState<Record<string, string>>(() => (initialDocumentId ? { document_id: initialDocumentId } : {}) as Record<string, string>)
   const [sort, setSort] = useState<BrowserResourcePageQuery['sort_by']>('capture_order')
   const [direction, setDirection] = useState<BrowserResourcePageQuery['sort_dir']>('asc')
   const [limit, setLimit] = useState<BrowserResourcePageQuery['limit']>(50)
-  const [query, setQuery] = useState<BrowserResourcePageQuery>({ ...DEFAULT_BROWSER_RESOURCE_QUERY })
+  const [query, setQuery] = useState<BrowserResourcePageQuery>(() => ({ ...DEFAULT_BROWSER_RESOURCE_QUERY, ...(initialDocumentId ? { document_id: initialDocumentId } : {}) }))
   const [refreshRevision, setRefreshRevision] = useState(0)
   const [pageNumber, setPageNumber] = useState(1)
   const { page, loading, error } = useBrowserResourcePage({ testID, projectID, sourceIdentity, query, loadPage, refreshRevision })
@@ -119,6 +128,7 @@ function ResourceInspectorBody({ testID, projectID, sourceIdentity, loadPage = r
               const item = harForResourceRow(har.list, row.browser_evidence?.source_generation)
               return item && <button type="button" className="btn btn-secondary btn-sm" disabled={harBusy !== ''} onClick={() => void downloadRowHAR(item.name)}>{harBusy === item.name ? 'Downloading…' : `Download the ${item.fidelity} HAR holding this request`}</button>
             })()}
+            {har.list?.can_download && row.browser_evidence?.request_id && <BrowserHAREntryView testID={testID} requestID={row.browser_evidence.request_id} onDownload={name => void downloadRowHAR(name)} />}
           </details></td>
         </tr>)}</tbody></table></div> : <p>{page.population.availability === 'unavailable' ? 'No resource projection was retained.' : 'No retained observations match these filters.'}</p>}
       </>}

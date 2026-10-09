@@ -21,6 +21,7 @@ export const SETTINGS_DESTINATIONS: readonly SettingsDestination[] = [
   { id: 'limits', group: 'Workspaces', title: 'Project limits & quotas', section: 'projects', subsection: 'limits', scope: 'project' },
   { id: 'usage', group: 'Workspaces', title: 'Usage accounting', section: 'general', subsection: 'usage', scope: 'project' },
   { id: 'github-policy', group: 'Workspaces', title: 'Project GitHub policy', section: 'projects', subsection: 'github', scope: 'project' },
+  { id: 'analysis-policies', group: 'Workspaces', title: 'Browser & journey policies', section: 'projects', subsection: 'analysis-policies', scope: 'project' },
   { id: 'github', group: 'Connections', title: 'GitHub', section: 'integrations', subsection: 'github', scope: 'deployment' },
   { id: 'elk-capture', group: 'Connections', title: 'Elastic test capture', section: 'integrations', subsection: 'elk-capture', scope: 'project' },
   { id: 'dynatrace-capture', group: 'Connections', title: 'Dynatrace test capture', section: 'integrations', subsection: 'dynatrace-capture', scope: 'project' },

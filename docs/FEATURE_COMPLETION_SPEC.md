@@ -277,6 +277,31 @@ Provide device/engine/page comparison, finding list and evidence drill-down, bas
 
 Golden browser fixtures reproduce known layout shifts, interactions and regressions, missing/unsupported metrics, repeated publications, synthetic repeated taps, layout mismatch and failed journey steps. Assert measured ground truth and scoring/exclusion rules; test no additional target traffic. Verify both engines' support differences and both auth profiles' configuration, finding→resource navigation, comparison and exports. Baseline intelligence cannot release before BE document-metric qualification passes.
 
+Delivery progress, 2026-10-09 (Wave 5, E6): the workflows are described in the [browser intelligence workflows guide](guides/BROWSER_INTELLIGENCE_WORKFLOWS.md).
+- **Run report Browser area:** a run with browser groups or document evidence has a **Browser** area. It holds:
+  - the engine × device profile × group comparison: each document metric's p75 over final qualified main-frame navigation documents, computed as the controller computes a distribution quantile, with one row per runtime cohort;
+  - the findings and qualified score;
+  - the latest root-cause analysis's browser baseline, or a link to root-cause analysis;
+  - interaction patterns and heatmaps;
+  - journey risk;
+  - the retained resource inspector.
+
+  Diagnostics' browser evidence points to it. The live execution page shows the comparison over the documents published so far.
+- **Drill-down:** finding → document → resources → HAR entry. A finding's worst document opens the inspector filtered to that document. A request opens its HAR entry through `GET /api/v1/tests/{id}/archive/browser/har-entry?request_id=` (HAR download permission): a synthetic HAR 1.2 entry scrubbed and bounded as the downloadable synthetic HAR is, or, for a context that recorded a native HAR, that HAR's name.
+- **Policy editor:** **Settings → Workspaces → Browser & journey policies** lists, creates, edits and deletes a project's browser and journey policies. It presents the revision it read; a 409 offers the current revision; and any past revision can be shown read-only. Viewers read them. Run pins and finding revisions are unchanged by edits.
+- **Saved panels:** the project panel editor offers the **Archived browser documents** population (`document_*` metrics at p50–p99), which reads one measurement tuple.
+- **Reports:** the engineer profile adds Browser Findings, Browser Baseline, Interaction Patterns and Heatmaps, and Journey Risk sections (HTML, PDF, CSV and DOCX through HTML). Their results are read at export, and a section without a result says why.
+- **CLI and MCP:** `apexctl analysis interactions`, `har-entry` and `policies list|get|save|delete` (a save of an existing policy needs the revision it was read at), and MCP tools for findings, interactions, journeys, the HAR entry and the policies.
+
+Deviations:
+- Pages are compared by scenario group, because documents record no page or route.
+- The comparison shows p75 and its document count only.
+- Findings, interaction patterns and journeys read the finalized archive, so the live page shows only the comparison.
+- A saved panel reads one tuple, so the comparison table offers no "save as panel"; panels are authored in the panel editor.
+- The report sections are in the engineer profile only.
+- The baseline section reads the latest completed root-cause analysis; reports do not run one.
+- The drill-down workflow test runs a real HTTP run (its archive, policy pin, HAR list and HAR-entry API are real), but its document summary, findings result and resource page are transport fixtures; no live browser run proves the drill-down end to end.
+
 ## 8. Telemetry reporting completion
 
 ### TEL-1: Immutable policy and time coverage

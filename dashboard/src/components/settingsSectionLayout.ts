@@ -55,6 +55,7 @@ export const PROJECT_SETTINGS_SUBSECTIONS = [
   { id: 'github', title: 'GitHub policy' },
   { id: 'redaction', title: 'Redaction rules' },
   { id: 'secrets', title: 'Project secrets' },
+  { id: 'analysis-policies', title: 'Browser & journey policies' },
 ] as const
 
 export type ProjectSettingsSubsectionId = typeof PROJECT_SETTINGS_SUBSECTIONS[number]['id']

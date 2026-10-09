@@ -163,6 +163,7 @@ vi.mock('./runReport/RunReportCompareBar', () => ({
   ),
 }))
 vi.mock('./runReport/RunReportExportActions', () => ({ default: () => <section data-testid="exports" /> }))
+vi.mock('./runReport/BrowserIntelligenceView', () => ({ default: ({ onOpenDiagnostics }: { onOpenDiagnostics: () => void }) => <section data-testid="browser-intelligence"><button onClick={onOpenDiagnostics}>Open root-cause analysis</button></section> }))
 
 function buildTest(status: TestSummary['status'], archive = true): TestSummary {
   return {
@@ -484,6 +485,26 @@ describe('RunReportPage', () => {
     await act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })))
     expect(onNavigateReport).toHaveBeenLastCalledWith(expect.objectContaining({ section: 'summary' }))
     expect(onOpenCommandCenter).not.toHaveBeenCalled()
+  })
+
+  it('offers the Browser area only for runs with browser evidence (BI-4)', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    await act(async () => { root.render(<NavigationGuardProvider><RunReportPage testId="run-1" initialSection="summary" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} /></NavigationGuardProvider>) })
+    expect(container.querySelector('#result-tab-Browser')).toBeNull()
+    // A run that pinned a browser policy offers it even without browser evidence.
+    mocks.archiveModel.archiveReport = { manifest: { provenance: { policy_pins: [{ kind: 'telemetry_policy', id: 't' }] } }, overview: {} } as unknown as RunArchiveReport
+    await act(async () => { root.render(<NavigationGuardProvider><RunReportPage testId="run-1" initialSection="summary" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} /></NavigationGuardProvider>) })
+    expect(container.querySelector('#result-tab-Browser')).toBeNull()
+    mocks.archiveModel.archiveReport = { manifest: { provenance: { policy_pins: [{ kind: 'browser_policy', id: 'p' }] } }, overview: {} } as unknown as RunArchiveReport
+    await act(async () => { root.render(<NavigationGuardProvider><RunReportPage testId="run-1" initialSection="summary" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} /></NavigationGuardProvider>) })
+    expect(container.querySelector('#result-tab-Browser')).not.toBeNull()
+    mocks.archiveModel.archiveReport = null
+    mocks.polling.test = { ...buildTest('COMPLETE'), groups: [{ name: 'Shop', script_id: 's', script_name: 'Shop', protocol: 'browser', vusers: 1 }] }
+    await act(async () => { root.render(<NavigationGuardProvider><RunReportPage testId="run-1" initialSection="browser" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} /></NavigationGuardProvider>) })
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Browser')
+    expect(container.querySelector('[data-testid="browser-intelligence"]')).not.toBeNull()
+    await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Open root-cause analysis')!.click() })
+    expect(onNavigateReport).toHaveBeenCalledWith(expect.objectContaining({ section: 'diagnostics' }))
   })
 
   it('restores the requested report section when navigation changes', async () => {

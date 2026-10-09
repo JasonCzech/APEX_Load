@@ -1713,6 +1713,51 @@ export interface operations {
               }>) | null;
               "version"?: number;
             }) | null;
+            "browser_intelligence"?: ({
+              "baseline"?: ({
+                "analysis_id"?: string;
+                "baseline"?: (Record<string, unknown>) | null;
+                "completed_at"?: (string) | null;
+              }) | null;
+              "findings"?: ({
+                "completed_at"?: (string) | null;
+                "failure"?: string;
+                "job_id"?: string;
+                "pending"?: boolean;
+                "result"?: (Record<string, unknown>) | null;
+                "run_id"?: string;
+                "status"?: string;
+              }) | null;
+              "interactions"?: ({
+                "coverage"?: Record<string, unknown>;
+                "heatmaps"?: Array<Record<string, unknown>>;
+                "limitations"?: Array<string>;
+                "notes"?: Array<string>;
+                "patterns"?: Array<Record<string, unknown>>;
+                "run_id"?: string;
+                "status"?: string;
+                "thresholds"?: Record<string, unknown>;
+                "version"?: string;
+              }) | null;
+              "journeys"?: ({
+                "availability"?: string;
+                "incomplete"?: boolean;
+                "incomplete_reasons"?: Array<string>;
+                "index_unscored"?: string;
+                "journeys"?: Array<Record<string, unknown>>;
+                "notes"?: Array<string>;
+                "policy"?: Record<string, unknown>;
+                "reason"?: string;
+                "rows_outside_iterations"?: number;
+                "run_id"?: string;
+                "schema_version"?: string;
+                "step_risk_enabled"?: boolean;
+                "step_risk_index"?: (number) | null;
+                "step_risk_unscored"?: string;
+                "weighted_failure_index"?: (number) | null;
+              }) | null;
+              "unavailable"?: Record<string, string>;
+            }) | null;
             "browser_resources"?: Array<{
               "action_name"?: string;
               "browser_engine"?: string;
@@ -66328,6 +66373,59 @@ export interface operations {
       };
     };
   };
+  "handleGetRunArchiveBrowserHAREntry": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "request_id"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": ({
+            "artifact"?: string;
+            "entry"?: unknown;
+            "fidelity": string;
+            "headers_omitted"?: boolean;
+            "request_id": string;
+            "source_generation"?: string;
+          }) | null;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleGetRunArchiveBrowserInteractions": {
     parameters: {
       "path": {
@@ -69640,6 +69738,132 @@ export interface operations {
                 "unqualified_final": number;
               }>) | null;
               "version": number;
+            }) | null;
+            "browser_intelligence"?: ({
+              "baseline"?: ({
+                "analysis_id": string;
+                "baseline"?: (Record<string, unknown>) | null;
+                "completed_at"?: (string) | null;
+              }) | null;
+              "findings"?: ({
+                "completed_at"?: (string) | null;
+                "failure"?: string;
+                "job_id"?: string;
+                "pending"?: boolean;
+                "result"?: ({
+                  "counts": Record<string, number>;
+                  "findings": Array<Record<string, unknown>>;
+                  "input_fingerprint": string;
+                  "notes": Array<string>;
+                  "policy": Record<string, unknown>;
+                  "rule_set": string;
+                  "run_id": string;
+                  "schema_version": string;
+                  "score": Record<string, unknown>;
+                  "window": Record<string, unknown>;
+                }) | null;
+                "run_id": string;
+                "status": string;
+              }) | null;
+              "interactions"?: ({
+                "coverage": {
+                  "by_provenance": Record<string, number>;
+                  "dropped": number;
+                  "excluded"?: Record<string, number>;
+                  "incomplete": boolean;
+                  "interactions": number;
+                  "mapped": number;
+                  "records": number;
+                };
+                "heatmaps": Array<{
+                  "by_kind": Record<string, number>;
+                  "by_provenance": Record<string, number>;
+                  "cells": Array<Array<number>>;
+                  "columns": number;
+                  "coordinate_space": string;
+                  "device_profile": string;
+                  "device_scale_factor"?: number;
+                  "engine": string;
+                  "key": string;
+                  "layout_revision": string;
+                  "notes"?: Array<string>;
+                  "orientation": string;
+                  "points": number;
+                  "route": string;
+                  "rows": number;
+                  "scroll"?: (Record<string, unknown>) | null;
+                  "targets"?: Array<Record<string, unknown>>;
+                  "viewport_height": number;
+                  "viewport_width": number;
+                }>;
+                "limitations"?: Array<string>;
+                "notes": Array<string>;
+                "patterns": Array<{
+                  "action_id"?: string;
+                  "action_name"?: string;
+                  "count": number;
+                  "deadline_ms"?: number;
+                  "declared"?: string;
+                  "detail": string;
+                  "end": string;
+                  "id": string;
+                  "interactions": Array<string>;
+                  "kind": string;
+                  "layout_revision"?: string;
+                  "provenance": string;
+                  "route"?: string;
+                  "start": string;
+                }>;
+                "run_id": string;
+                "status": string;
+                "thresholds": {
+                  "heatmap_grid": number;
+                  "repeat_min_gestures": number;
+                  "repeat_radius_px": number;
+                  "repeat_window_ms": number;
+                };
+                "version": string;
+              }) | null;
+              "journeys"?: ({
+                "availability": string;
+                "incomplete"?: boolean;
+                "incomplete_reasons"?: Array<string>;
+                "index_unscored"?: string;
+                "journeys": Array<{
+                  "aborted": number;
+                  "censored": number;
+                  "completed": number;
+                  "eligible": number;
+                  "examples"?: Array<Record<string, unknown>>;
+                  "failed": number;
+                  "failure_rate"?: (number) | null;
+                  "id": string;
+                  "name": string;
+                  "skipped": number;
+                  "start": Record<string, unknown>;
+                  "step_failures": number;
+                  "steps": number;
+                  "success": Record<string, unknown>;
+                  "weight": number;
+                }>;
+                "notes": Array<string>;
+                "policy": {
+                  "id": string;
+                  "name": string;
+                  "revision": number;
+                  "sha256": string;
+                  "source": string;
+                };
+                "reason"?: string;
+                "rows_outside_iterations": number;
+                "run_id": string;
+                "schema_version": string;
+                "step_risk_enabled": boolean;
+                "step_risk_index"?: (number) | null;
+                "step_risk_unscored"?: string;
+                "weighted_failure_index"?: (number) | null;
+              }) | null;
+              "unavailable"?: Record<string, string>;
             }) | null;
             "browser_resources"?: Array<{
               "action_name"?: string;
@@ -170515,6 +170739,9 @@ export interface paths {
   };
   "/api/v1/tests/{id}/archive/browser/har": {
     "get": operations["handleListRunArchiveBrowserHARs"];
+  };
+  "/api/v1/tests/{id}/archive/browser/har-entry": {
+    "get": operations["handleGetRunArchiveBrowserHAREntry"];
   };
   "/api/v1/tests/{id}/archive/browser/har/{artifact}": {
     "get": operations["handleDownloadRunArchiveBrowserHAR"];

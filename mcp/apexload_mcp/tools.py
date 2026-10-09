@@ -293,6 +293,16 @@ ENDPOINT_TOOLS: tuple[EndpointTool, ...] = (
     EndpointTool("run_rca_critiques", "GET", "/tests/{id}/archive/root-cause/analyses/{analysis_id}/critiques", f"{READ} List the critiques stored for a v2 analysis."),
     EndpointTool("run_rca_critique_add", "POST", "/tests/{id}/archive/root-cause/analyses/{analysis_id}/critiques", f"{WRITE} Store a critique of a v2 analysis; payload {{narrative, author_kind: agent|analyst, model}}. It must pass the narration check, is stored apart from the analysis and never changes it.", True),
     EndpointTool("run_archive_comparison", "GET", "/tests/{id}/archive/comparison", f"{READ} Get archive comparison report."),
+    # Browser intelligence (BI-4): findings, interaction patterns, journeys and the HAR-entry drill-down.
+    EndpointTool("run_archive_browser_findings", "GET", "/tests/{id}/archive/browser-findings", f"{READ} Get a run's latest ready browser findings and qualified score under its pinned browser_policy (status pending, failed or not_evaluated without one)."),
+    EndpointTool("run_archive_browser_interactions", "GET", "/tests/{id}/archive/browser-interactions", f"{READ} Get a finalized run's interaction patterns and heatmaps (browser_interaction_patterns.v1) with coverage."),
+    EndpointTool("run_archive_journeys", "GET", "/tests/{id}/archive/journeys", f"{READ} Account a finalized run's journeys under its pinned journey_policy, or query policy and revision."),
+    EndpointTool("run_archive_browser_har_entry", "GET", "/tests/{id}/archive/browser/har-entry", f"{READ} Get one retained browser request (query request_id) as a synthetic HAR entry, or the native HAR that holds it. Needs the HAR download (editor) role."),
+    EndpointTool("analysis_policy_list", "GET", "/analysis/policies", f"{READ} List a project's analysis policies of one kind (query kind: browser_policy, journey_policy, telemetry_policy, telemetry_acceptance_policy or derived_operation).", default_project=True),
+    EndpointTool("analysis_policy_get", "GET", "/analysis/policies/{id}", f"{READ} Get an analysis policy, or one revision of it (query revision).", default_project=True),
+    EndpointTool("analysis_policy_create", "POST", "/analysis/policies", f"{WRITE} Create an analysis policy: payload kind, name and definition.", True, False, True),
+    EndpointTool("analysis_policy_update", "PUT", "/analysis/policies/{id}", f"{WRITE} Save a new revision of an analysis policy: payload kind, name, definition and the revision it was read at (a changed policy is refused with 409).", True, False, True),
+    EndpointTool("analysis_policy_delete", "DELETE", "/analysis/policies/{id}", f"{DESTRUCTIVE} Delete an analysis policy at a revision (query revision); runs that pinned it keep it.", True, True, True),
     EndpointTool("archive_retention_plan", "POST", "/archives/retention/plan", f"{DESTRUCTIVE} Plan archive retention pruning.", True, True),
     EndpointTool("archive_retention_apply", "POST", "/archives/retention/apply", f"{DESTRUCTIVE} Apply archive retention pruning.", True, True),
 
