@@ -52,6 +52,42 @@ func detect(t *testing.T, input DetectionInput) ([]Anomaly, Detection, []Limitat
 
 func bucketOf(at time.Time) int { return int(at.Sub(detectStart) / detectBucket) }
 
+// A coarse series needs only as many baseline buckets as span
+// MinBaselineSpan, never fewer than the floor: a provider polled every 60 s
+// is judged after five minutes of a level, not ten. On the run's own grid
+// the minimum stays ten buckets.
+func TestDetectMinimumBaselineFollowsTheBucketWidth(t *testing.T) {
+	params := DefaultDetectParams
+	for bucket, want := range map[time.Duration]int{10 * time.Second: 10, 30 * time.Second: 10, time.Minute: 5, 2 * time.Minute: 5, 0: 10} {
+		if got := params.minBaseline(Series{Bucket: bucket}); got != want {
+			t.Fatalf("minimum at %s: %d, want %d", bucket, got, want)
+		}
+	}
+	coarse := Series{ID: "monitor/prometheus/src/cpu/abc", Kind: SeriesProvider, Unit: "%", Observation: ObservationSnapshot, Bucket: time.Minute, Evidence: EvidenceRef{Kind: "monitor_series", Locator: "monitor_points.jsonl#cpu"}}
+	for i := 0; i < 9; i++ {
+		value := 40.0
+		if i >= 5 {
+			value = 90
+		}
+		coarse.Points = append(coarse.Points, SeriesPoint{At: detectStart.Add(time.Duration(i) * time.Minute), Value: value, Valid: true})
+	}
+	levels := []LoadLevel{{Start: detectStart, End: detectStart.Add(9 * time.Minute), VUsers: 50}}
+	anomalies, detection, limitations := detect(t, DetectionInput{Levels: levels, Series: []Series{coarse}})
+	if len(anomalies) != 1 || !detection.Judged.Judged(ScopeTime, coarse.ID) || hasLimitation(limitations, LimitationInsufficientBaseline) {
+		t.Fatalf("coarse series: %d anomalies, judged %v, %+v", len(anomalies), detection.Judged, limitations)
+	}
+	if onset := anomalies[0].Onset; !onset.Equal(detectStart.Add(5 * time.Minute)) {
+		t.Fatalf("onset %s, want %s", onset, detectStart.Add(5*time.Minute))
+	}
+	// Under a count-only minimum the same series is never judged.
+	count := DefaultDetectParams
+	count.MinBaselineSpan, count.MinBaselineBucketsFloor = 0, 0
+	anomalies, detection, limitations = Detect(DetectionInput{Levels: levels, Series: []Series{coarse}}, count, NewBudgeter(DefaultBudget, nil, nil))
+	if len(anomalies) != 0 || detection.Judged.Judged(ScopeTime, coarse.ID) || !hasLimitation(limitations, LimitationInsufficientBaseline) {
+		t.Fatalf("count-only minimum: %d anomalies, judged %v, %+v", len(anomalies), detection.Judged, limitations)
+	}
+}
+
 func TestDetectStepOnsetWithinOneBucket(t *testing.T) {
 	for seed := int64(1); seed <= 25; seed++ {
 		rng := rand.New(rand.NewSource(seed))
