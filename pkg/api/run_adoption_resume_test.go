@@ -113,6 +113,15 @@ func runAdoptedResumeScenario(t *testing.T, lossTolerant bool) {
 	if err := runner.adoptOrphanedRuns(); err != nil {
 		t.Fatalf("Phase A: %v", err)
 	}
+	// Phase A itself re-establishes supervision under the rotated token, so the
+	// run no longer depends on how soon admission (Phase B) follows.
+	runner.mu.RLock()
+	secured := test.adoptedResume != nil && test.adoptedResume.secured
+	keeperRunning := test.remoteRunSupervisionCancel != nil
+	runner.mu.RUnlock()
+	if !secured || !keeperRunning {
+		t.Fatalf("Phase A left generator supervision to Phase B: secured=%v keeper=%v", secured, keeperRunning)
+	}
 	runner.resumeAdoptedRuns()
 
 	_, newGeneration := successor.executionLeaseTerm()

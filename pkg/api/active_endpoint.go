@@ -27,7 +27,16 @@ type ExecutionReadinessResponse struct {
 	ExecutionLeader           bool      `json:"execution_leader"`
 	EndpointRoutingConfigured bool      `json:"endpoint_routing_configured"`
 	EndpointPublished         bool      `json:"endpoint_published"`
-	Message                   string    `json:"message"`
+	// Recovering distinguishes a lease holder that has not finished
+	// acquire-time recovery (and so refuses execution) from a follower. Error
+	// detail stays in the controller log: this endpoint is unauthenticated.
+	Recovering             bool       `json:"recovering"`
+	RecoveryStartedAt      *time.Time `json:"recovery_started_at,omitempty"`
+	RecoveryFailedAttempts int        `json:"recovery_failed_attempts,omitempty"`
+	// CapacityReconciliationPending counts fleet pools whose provider sweep
+	// after a takeover has not yet succeeded; they refuse new launches.
+	CapacityReconciliationPending int    `json:"capacity_reconciliation_pending,omitempty"`
+	Message                       string `json:"message"`
 }
 
 // handleExecutionReadiness is deliberately separate from the ordinary pod
@@ -54,6 +63,17 @@ func (s *Server) handleExecutionReadiness(w http.ResponseWriter, _ *http.Request
 		status = http.StatusOK
 	} else if leader && configured {
 		response.Message = "execution leader has not published its active routing endpoint"
+	}
+	if s != nil && s.leadership != nil && s.leadership.IsLeader() {
+		if recovering, startedAt, attempts := s.executionRecovery.snapshot(); recovering && !leader {
+			response.Recovering = true
+			response.RecoveryStartedAt = &startedAt
+			response.RecoveryFailedAttempts = attempts
+			response.Message = "controller holds the execution lease but has not finished recovery"
+		}
+	}
+	if s != nil {
+		response.CapacityReconciliationPending = s.capacitySweep.pendingCount()
 	}
 	writeJSON(w, status, response)
 }

@@ -90,11 +90,14 @@ data-handling details.
 
 Set `controller.ha.enabled=true` before setting more than one controller
 replica; the chart fails rendering otherwise. HA also requires PostgreSQL and
-Redis. In HA, CI run mutations use the selectorless
-`apexload-controller-active` Service. Its EndpointSlice records the durable
-execution-lease owner/generation so an old leader cannot replace a successor;
-OIDC exchange and read traffic continue through the ordinary all-replica
-Service.
+Redis. In HA, CI run mutations and every other leader-only route (test,
+script, fleet, project, archive-retention and restart controls, and the
+reverse-generator gateway) use the selectorless `apexload-controller-active`
+Service; `deployments/k8s/leader_routes_test.go` derives the leader-only set
+from the controller source and fails if the Ingress leaves one on the
+all-replica Service. Its EndpointSlice records the durable execution-lease
+owner/generation so an old leader cannot replace a successor; OIDC exchange
+and other read traffic continue through the ordinary all-replica Service.
 
 Each generator ordinal receives a retained PVC for its execution-fencing
 high-water and generator-side run evidence awaiting controller ingestion.

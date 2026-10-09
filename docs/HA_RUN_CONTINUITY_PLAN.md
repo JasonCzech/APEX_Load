@@ -507,7 +507,9 @@ old participant set from the current fleet DNS list or elapsed leases; an
 unreachable generator might still be executing. An operator must establish
 positive process-fence evidence for all possible old generator instances before
 terminal/capacity cleanup. There is not yet an automatic reconciliation path
-for runs without a complete durable participant journal.
+for runs without a complete durable participant journal. *(Superseded 2026-10-08,
+§17: supervised runs now resolve automatically from their archive-collection
+intent, with an audited operator override for generators that are gone.)*
 
 The harness now keeps every archive under its run directory (`APEXLOAD_ARCHIVE_DIR`). Earlier runs had written generator archives into the user cache.
 
@@ -585,3 +587,141 @@ This closes a stale-placement crash window. It does not implement resumable miss
 shard recovery: phase-by-phase reconciliation, positive fencing, exact replacement
 identity and repeated-controller-loss replay are still required before that path can
 be enabled. Ordinary controller-only adoption and fail-policy execution remain unchanged.
+
+## 16. Graceful handoff and takeover liveness (2026-10-07)
+
+A cross-cutting HA review found that continuity covered only a crashed leader,
+and that a new leader could hold the lease indefinitely without accepting work.
+These changes close both.
+
+**Graceful leader shutdown hands runs off.** On SIGTERM (rolling update, node
+drain, eviction) the leader used to stop every run. The signal also released the
+lease in parallel with that stop pass, so fail-policy rows could be left
+RUNNING for the successor to strand. Now:
+
+- `Server.shutdown` marks every adoptable run (`markContinuityHandoff`): a
+  RUNNING or PAUSED continue-policy run whose checkpoint is armed for the
+  current term, with no unresolved evacuation guard and not finalizing.
+- `stopActiveTests` skips marked runs, and leadership-loss teardown detaches
+  them without a generator Stop. Their generators keep running them under the
+  existing epoch and orphan grace until the successor's adoption claim.
+- Stopped runs finalize asynchronously (terminal status first, then generator
+  cleanup and archive collection), so shutdown keeps the lease until the runs it
+  stopped are fully finalized, bounded at 20 seconds and 5 seconds short of the
+  shutdown deadline (`awaitRunsFinalized`). It then releases the lease
+  (`releaseExecutionLeadershipForShutdown`) instead of waiting for the TTL to
+  expire. Releasing it on the signal, as before, raced that stop pass.
+
+The load bound is unchanged: a handed-off run still stops at its generator
+epoch plus adoption grace if no successor adopts it. The harness has a
+`KILL_SIGNAL=TERM` mode for this path (and `PG_PORT` for a busy 55432).
+
+Evidence (harness, Postgres, real processes; 2 controllers, 2 generators, 150s
+run, signal at +45s):
+
+| Scenario | Outcome |
+|---|---|
+| SIGTERM, `continue` | COMPLETE; load continuous for all 151s at a steady 35-40 req/s through the signal; the old leader handed off 1 run and exited within a second; successor acquired about 4.5s after the signal and adopted both generators 43ms later (5s observation gap); archive 11,710 transactions (+0.26% vs the no-failover control), 0.27% errors |
+| `kill -9`, `continue` (crash baseline) | COMPLETE; load continuous; successor acquired 21.7s after the kill (the TTL-bound path); archive 11,476 transactions |
+| SIGTERM, `fail`, before the finalization wait | load stopped at +45s, but the row was left STOPPING ("external generator process-fence reconciliation is required") |
+| SIGTERM, `fail`, with it | ABORTED at +46s with its archive available (3,292 transactions for the 45s run) |
+
+**Acquire-time recovery cannot hold the lease forever.**
+
+- Provisioning recovery and the orphaned-capacity sweep moved from the acquire
+  callback to a post-admission background task (`runCapacityTakeoverRecovery`).
+  A provider error no longer keeps admission closed. Each pool is swept on its
+  own: a pool whose sweep failed refuses provider launches until a retried sweep
+  succeeds (`capacityTakeoverSweep`), and a swept pool is never swept again in
+  the same term, so a fresh launch can't be terminated as untracked.
+- If recovery still fails after two minutes, the leader hands adoptable runs
+  off, steps down (loss cleanup first, then the exact lease token is released),
+  and doesn't contend again for one minute, so a healthy replica can take over.
+- `/api/v1/system/execution-readiness` reports `recovering`,
+  `recovery_started_at`, `recovery_failed_attempts` and
+  `capacity_reconciliation_pending`. Error detail stays in the log because the
+  endpoint is unauthenticated.
+
+**Adoption no longer waits for unrelated recovery.**
+
+- Acquisition reloads only in-flight rows (`ListTestsByStatus`), plus a fresh
+  copy of any in-memory run that still looks active (a copy from an earlier
+  term or a follower refresh may have finished or been deleted since), and runs
+  Phase A before the full script and test reload. Stores without that
+  capability keep the previous order.
+- The generator epoch keeper waits for this term's Phase A
+  (`runAdoptionDoneGeneration`), not the whole reconcile. The 20-second cap
+  remains as a backstop.
+- Phase A re-establishes per-run leases and supervision under the rotated token
+  for every adopted run (`secureAdoptedRuns`). Phase B still restarts streams and
+  drivers after admission, but the run no longer depends on how soon admission
+  follows.
+
+**Lease identity.** The execution lease owner token now includes a per-process
+nonce. `APEXLOAD_CONTROLLER_ID` shared by two replicas, or surviving a container
+restart, previously produced identical owner tokens that the lease treats as one
+holder renewing.
+
+The remaining review items are covered in §17.
+
+## 17. Review Phase 2 (2026-10-08)
+
+- **Interrupted runs no longer stay STOPPING forever.** After admission the
+  successor proves, per generator, that a run it could not adopt has stopped
+  (`runInterruptedRunResolution`). The participant journal is the run's
+  archive-collection intent (every target is recorded before work is
+  dispatched to it, including evacuation replacements). An epoch claim of the
+  new term that a target accepts proves it holds no older-term assignment and
+  no unfinished fence. When every journaled target confirms, the run ends
+  FAILED through the ordinary terminal path (capacity released, CI notified);
+  the archive retry worker then collects the retained generator archives. The
+  first attempt waits 30 seconds past admission so a graceful drain the lost
+  leader started cannot be missed. Unreachable targets and runs without a
+  journal stay STOPPING and are retried. For generators that are gone,
+  SystemAdmins can call `POST /api/v1/tests/{id}/interrupted-stop/resolve`
+  with `{"attestation":"all-generator-processes-stopped"}` (audited; the
+  operator and note are recorded on the run). The automatic proof needs HA
+  execution generations: a single controller that restarts during a
+  distributed run holds it STOPPING the same way, and there only the operator
+  override resolves it. The held run's error now names that override instead
+  of asking for manual process-fence reconciliation; rows written with the
+  earlier text are still recognised, and reconcile rewrites them.
+- **The override also covers interrupted evacuations.** A run whose generator
+  evacuation was cut off by a leadership change is fenced automatically only
+  while every possible participant (the evacuated source included) can
+  acknowledge the successor's epoch. When one is gone for good, the same
+  endpoint records the administrator's attestation as the evacuation's fence
+  proof; evacuation recovery then performs only its archive and pod-capacity
+  cleanup.
+- **Leader-only routes reach the leader.** The Helm, AKS, EKS and on-prem
+  Ingresses also route `/api/v1/fleet`, `/api/v1/projects`, `/api/v1/archives`,
+  `/api/v1/system/generators`, `/api/v1/system/restarts` and
+  `/api/v1/generator-gateway` to the active endpoint.
+  `deployments/k8s/leader_routes_test.go` derives the leader-only routes from
+  the controller source and fails if any Ingress leaves one out.
+- **Cloud capacity has an installation-wide owner.** AWS and Azure backends
+  tag and trust instances by an identity stored once in `app_settings`, shared
+  by every replica and stable across restarts (an explicit
+  `APEXLOAD_CONTROLLER_ID` still wins), so a successor can see, adopt and clean
+  up its predecessor's instances.
+- **Lease deadlines use the monotonic clock**, so a wall-clock step cannot
+  extend or shorten a lease.
+- **Preparations needed no change.** The review flagged preparations as
+  stranded by a leadership change. In fact `LatestPreparation` (used by GET
+  and DELETE) already marks a preparation `failed` once its run is terminal and
+  `expired` past its deadline, without the old owner fence, and takeover always
+  fails the prepared (INITIALIZING) run. `TestPreparationTakeoverAndExpiredAuditRecovery`
+  pins this; a successor deliberately never adopts the old term's reservation.
+- **Harness evidence (2026-10-09, branch merged with main 23b81fe36).**
+  kill -9 of the leader with the `fail` policy: the generators' epoch deadman
+  stopped the load about 19 seconds after the kill, the successor acquired
+  about 24 seconds after it, and after the 30-second settle it finalized the
+  run FAILED from generator proof at +100s (55 seconds after the kill).
+  Before this phase the run stayed STOPPING indefinitely. With
+  `ARCHIVE_WAIT=240` a repeat run showed the archive collection retry worker
+  publishing the archive (2,677 transactions from both generators) 103
+  seconds after the run was finalized. SIGTERM with the
+  `continue` policy: COMPLETE, the old leader handed the run off and exited
+  within a second, and the target saw load in every one of the 151 seconds
+  (about 40 requests per second throughout). The successor's observation gap
+  was 8.0 seconds on a heavily loaded machine.

@@ -183,12 +183,20 @@ func runController() (runErr error) {
 	if err := server.StartScheduler(ctx); err != nil {
 		return fmt.Errorf("start scenario scheduler: %w", err)
 	}
+	// The execution lease deliberately outlives the signal. Graceful Shutdown
+	// stops fail-policy runs and hands continue-policy runs to the successor
+	// while this replica still holds the lease (lease-fenced writes and generator
+	// stops need the live term), then releases it. Cancelling leadership on the
+	// signal raced that stop pass and stopped every run; leadershipCtx is only a
+	// fallback for when Shutdown never reaches its release point.
+	leadershipCtx, stopLeadership := context.WithCancel(context.Background())
+	defer stopLeadership()
 	var background sync.WaitGroup
 	background.Add(2)
 	go func() {
 		defer background.Done()
 		if waitForControllerListener(ctx, server, 25*time.Millisecond) {
-			server.RunExecutionLeadership(ctx)
+			server.RunExecutionLeadership(leadershipCtx)
 		}
 	}()
 	go func() {
@@ -201,6 +209,7 @@ func runController() (runErr error) {
 	// and pod-watcher loops. Wait for them before the deferred storage close so
 	// none can continue using the database after cleanup.
 	stop()
+	stopLeadership()
 	workersDone := make(chan struct{})
 	go func() {
 		background.Wait()

@@ -606,6 +606,96 @@ func TestExecutionLeadershipLeaseIsExclusiveOnRealStore(t *testing.T) {
 	}
 }
 
+// APEXLOAD_CONTROLLER_ID may be set to the same value on every replica (or
+// survive a container restart). The lease treats an identical owner token as a
+// renewal, so the owner must still be unique per process.
+func TestExecutionLeadershipSharedControllerIDStaysExclusive(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	a := newExecutionLeadership(store, "shared-controller-id")
+	b := newExecutionLeadership(store, "shared-controller-id")
+	a.tick()
+	b.tick()
+
+	if !a.IsLeader() {
+		t.Fatal("first replica should win the lease")
+	}
+	if b.IsLeader() {
+		t.Fatal("a replica sharing the configured controller id must not also hold the lease")
+	}
+	ownerA, _ := a.executionLeaseTerm()
+	if ownerA == "" || !strings.HasPrefix(ownerA, "shared-controller-id/") {
+		t.Fatalf("owner token %q must keep the configured controller id as its prefix", ownerA)
+	}
+	if b.processNonce == a.processNonce {
+		t.Fatal("process nonces must differ")
+	}
+}
+
+func TestExecutionLeadershipRecoveryFailureReleasesAfterLossAndCoolsDown(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	a := newExecutionLeadership(store, "replica-a")
+	b := newExecutionLeadership(store, "replica-b")
+	lossStarted := make(chan struct{})
+	allowLoss := make(chan struct{})
+	a.setOnLoss(func() {
+		close(lossStarted)
+		<-allowLoss
+	})
+	a.tick()
+	if !a.IsLeader() {
+		t.Fatal("replica a should lead")
+	}
+	if !a.relinquishAfterRecoveryFailure(time.Minute) {
+		t.Fatal("leader should step down")
+	}
+	if a.IsLeader() {
+		t.Fatal("replica a must stop leading immediately")
+	}
+	select {
+	case <-lossStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("loss cleanup did not run")
+	}
+	b.tick()
+	if b.IsLeader() {
+		t.Fatal("the lease must not be released before loss cleanup completes")
+	}
+	close(allowLoss)
+	deadline := time.Now().Add(2 * time.Second)
+	for !b.IsLeader() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+		b.tick()
+	}
+	if !b.IsLeader() {
+		t.Fatal("another replica should acquire the released lease")
+	}
+
+	// During cooldown the stepped-down replica does not contend, even for a
+	// lease that becomes free.
+	b.relinquish()
+	a.tick()
+	if a.IsLeader() {
+		t.Fatal("replica a must not reacquire during its cooldown")
+	}
+	a.mu.Lock()
+	a.acquireNotBefore = time.Time{}
+	a.mu.Unlock()
+	a.tick()
+	if !a.IsLeader() {
+		t.Fatal("replica a should contend again after its cooldown")
+	}
+}
+
 // --- runner gating ---
 
 func notLeaderRunner(t *testing.T) *TestRunner {
@@ -974,5 +1064,29 @@ func TestExecutionLeadershipReconcileCoalesces(t *testing.T) {
 	case <-started:
 		t.Fatal("an extra reconcile ran; mid-flight triggers did not coalesce")
 	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+// Local lease deadlines must be compared on the monotonic clock. Converting the
+// request time with UTC() strips the monotonic reading, so a backward
+// wall-clock step on the leader would extend its leadership past the database
+// lease that a successor can already acquire.
+func TestExecutionLeadershipDeadlineKeepsMonotonicReading(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	l := newExecutionLeadership(store, "monotonic-owner")
+	l.tick()
+	if !l.IsLeader() {
+		t.Fatal("leadership should be acquired")
+	}
+	_, _, deadline, ok := l.executionGeneratorClaim()
+	if !ok {
+		t.Fatal("generator claim should be available while leading")
+	}
+	if !strings.Contains(deadline.String(), "m=") {
+		t.Fatalf("lease deadline %s lost its monotonic clock reading", deadline)
 	}
 }

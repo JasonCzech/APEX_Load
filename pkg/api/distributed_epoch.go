@@ -285,7 +285,7 @@ func (b *distributedExecutionBackend) maintainGeneratorExecutionEpoch(ctx contex
 
 		// The first claim of a new generation fences every orphaned run it does
 		// not adopt; let acquisition reconcile send the adoption claims first.
-		tr.awaitRunAdoptionReconcile(epochCtx)
+		tr.awaitRunAdoptionReconcile(epochCtx, generation)
 		clients := tr.retainAdoptedEpochClients()
 		b.maintainGeneratorExecutionTerm(epochCtx, tr, generation, leaseOwnerID, clients)
 		closeGeneratorEpochKeeperClients(clients)

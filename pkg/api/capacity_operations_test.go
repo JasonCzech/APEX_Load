@@ -26,6 +26,8 @@ type fakeCapacityBackend struct {
 	deprovision      int
 	lastRequest      compute.CapacityRequest
 	discovered       []compute.Instance
+	discoverErr      error
+	discoverCalls    int
 	adopted          map[string]compute.Instance
 	adoptRequests    []compute.AdoptionRequest
 	reconcileStarted chan<- struct{}
@@ -78,6 +80,12 @@ func (b *fakeCapacityBackend) Deprovision(context.Context, compute.CapacityReque
 	return nil
 }
 func (b *fakeCapacityBackend) Discover(context.Context, compute.CapacityRequest) ([]compute.Instance, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.discoverCalls++
+	if b.discoverErr != nil {
+		return nil, b.discoverErr
+	}
 	return append([]compute.Instance(nil), b.discovered...), nil
 }
 func (b *fakeCapacityBackend) Adopt(_ context.Context, request compute.AdoptionRequest) (compute.Instance, error) {
@@ -726,6 +734,13 @@ func TestDirectCapacityReadinessRequiresGeneratorHeartbeat(t *testing.T) {
 	}
 }
 
+// runTakeoverCapacitySweep runs the first post-takeover provider sweep pass
+// for a fresh leadership term.
+func runTakeoverCapacitySweep(server *Server) error {
+	server.capacitySweep.begin(1)
+	return server.reconcileOrphanedCapacityForTerm(context.Background(), 1)
+}
+
 func TestOrphanReconcileHardExpiresTrackedCapacity(t *testing.T) {
 	t.Setenv(generatorMaxInstanceLifetimeEnv, "30m")
 	if got := generatorMaxInstanceLifetime(); got != 30*time.Minute {
@@ -745,7 +760,7 @@ func TestOrphanReconcileHardExpiresTrackedCapacity(t *testing.T) {
 	}
 	backend := &fakeCapacityBackend{discovered: []compute.Instance{{ProviderID: intent.ProviderID, State: "running", Healthy: true}}}
 	server.capacityBackends = fakeCapacityResolver{backend: backend, target: &storage.ExecutionTarget{ID: pool.ExecutionTargetID, Kind: storage.ExecutionTargetAWSECSFargate}}
-	if err := server.reconcileOrphanedCapacity(context.Background()); err != nil {
+	if err := runTakeoverCapacitySweep(server); err != nil {
 		t.Fatal(err)
 	}
 	backend.mu.Lock()
@@ -789,7 +804,7 @@ func TestOrphanReconcileAdoptsLostProviderIdentityByDurableLaunchIntent(t *testi
 	backend := &fakeCapacityBackend{discovered: []compute.Instance{instance}, adopted: map[string]compute.Instance{instance.ProviderID: instance}}
 	server.capacityBackends = fakeCapacityResolver{backend: backend, target: &storage.ExecutionTarget{ID: pool.ExecutionTargetID, Kind: storage.ExecutionTargetAWSECSFargate}}
 
-	if err := server.reconcileOrphanedCapacity(context.Background()); err != nil {
+	if err := runTakeoverCapacitySweep(server); err != nil {
 		t.Fatal(err)
 	}
 	got, err := store.GetCapacityInstanceIntent(intent.ID)
@@ -821,7 +836,7 @@ func TestOrphanReconcileReapsUntrackedProviderCapacity(t *testing.T) {
 	}}}
 	server.capacityBackends = fakeCapacityResolver{backend: backend, target: &storage.ExecutionTarget{ID: pool.ExecutionTargetID, Kind: storage.ExecutionTargetAWSECSFargate}}
 
-	if err := server.reconcileOrphanedCapacity(context.Background()); err != nil {
+	if err := runTakeoverCapacitySweep(server); err != nil {
 		t.Fatal(err)
 	}
 	backend.mu.Lock()
@@ -865,7 +880,7 @@ func TestOrphanReconcileAdoptsLaunchIntentOnlyOnce(t *testing.T) {
 	}
 	server.capacityBackends = fakeCapacityResolver{backend: backend, target: &storage.ExecutionTarget{ID: pool.ExecutionTargetID, Kind: storage.ExecutionTargetAWSECSFargate}}
 
-	if err := server.reconcileOrphanedCapacity(context.Background()); err != nil {
+	if err := runTakeoverCapacitySweep(server); err != nil {
 		t.Fatal(err)
 	}
 	got, err := store.GetCapacityInstanceIntent(intent.ID)

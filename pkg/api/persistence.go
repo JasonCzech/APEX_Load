@@ -539,11 +539,88 @@ func (tr *TestRunner) reloadStoredTests() error {
 	return tr.reloadStoredTestsLocked()
 }
 
+// activeTestRecordLister is the optional store capability behind
+// reloadActiveStoredTests.
+type activeTestRecordLister interface {
+	ListTestsByStatus(statuses []string) ([]*storage.TestRecord, error)
+}
+
+// reloadActiveStatuses are the stored statuses reconcileStoredActiveTest
+// handles: every run that may still own live execution.
+var reloadActiveStatuses = []string{"INITIALIZING", "SHAKEOUT", "RUNNING", "PAUSED", "STOPPING"}
+
+// reloadActiveStoredTests refreshes and reconciles only the stored runs that
+// may still own live execution. A successor runs it first so run adoption is
+// not delayed by hydrating every historical run (history and archives can sit
+// in object storage); the full reload follows. It reports false when the store
+// cannot list by status, in which case the caller keeps the full-reload order.
+func (tr *TestRunner) reloadActiveStoredTests() (bool, error) {
+	if tr.testStore == nil {
+		return false, nil
+	}
+	if _, ok := tr.testStore.(activeTestRecordLister); !ok {
+		return false, nil
+	}
+	tr.testReloadMu.Lock()
+	defer tr.testReloadMu.Unlock()
+	return true, tr.reloadStoredTestSnapshotLocked(true)
+}
+
+// appendStaleActiveRecordsLocked adds the current stored row of every
+// in-memory run that looks active, has no live runtime in this execution
+// epoch, and is missing from an active-only listing. It returns the ids it
+// looked up; a looked-up id with no row is left for the caller to prune.
+func (tr *TestRunner) appendStaleActiveRecordsLocked(records []*storage.TestRecord, executionFence string) ([]*storage.TestRecord, map[string]bool, error) {
+	listed := make(map[string]bool, len(records))
+	for _, record := range records {
+		if record != nil {
+			listed[record.ID] = true
+		}
+	}
+	stale := make(map[string]bool)
+	tr.mu.RLock()
+	for id, test := range tr.tests {
+		if test == nil || listed[id] || liveTestRuntimeForExecutionEpoch(test, tr.durableExecutionFence, executionFence) {
+			continue
+		}
+		for _, status := range reloadActiveStatuses {
+			if test.Status == status {
+				stale[id] = true
+				break
+			}
+		}
+	}
+	tr.mu.RUnlock()
+	for id := range stale {
+		record, err := tr.testStore.GetTest(id)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return nil, nil, fmt.Errorf("re-read stale active test %s: %w", id, err)
+		}
+		if record != nil {
+			records = append(records, record)
+		}
+	}
+	return records, stale, nil
+}
+
 // reloadStoredTestsLocked performs the durable reconciliation while the caller
 // holds testReloadMu. Keeping the implementation separate lets follower reads
 // make their freshness decision and perform the refresh atomically, preventing
 // a burst of waiters from each repeating the same full scan.
 func (tr *TestRunner) reloadStoredTestsLocked() error {
+	return tr.reloadStoredTestSnapshotLocked(false)
+}
+
+// reloadStoredTestSnapshotLocked refreshes from the full table, or with
+// activeOnly from the rows that may still own live execution. An active-only
+// snapshot also re-reads every in-memory run that still looks active without a
+// live runtime here: a copy left by an earlier term or a follower refresh may
+// have finished or been deleted since, and run adoption must never act on it.
+// It prunes only those re-read runs whose rows are gone.
+func (tr *TestRunner) reloadStoredTestSnapshotLocked(activeOnly bool) error {
 	if tr.testStore == nil {
 		return nil
 	}
@@ -555,9 +632,23 @@ func (tr *TestRunner) reloadStoredTestsLocked() error {
 		}
 		return !tr.durableExecutionFence || tr.currentExecutionFenceToken() == executionFenceAtStart
 	}
-	records, err := tr.testStore.ListTests("", nil)
+	var records []*storage.TestRecord
+	var err error
+	if lister, ok := tr.testStore.(activeTestRecordLister); activeOnly && ok {
+		records, err = lister.ListTestsByStatus(reloadActiveStatuses)
+	} else if activeOnly {
+		return nil
+	} else {
+		records, err = tr.testStore.ListTests("", nil)
+	}
 	if err != nil {
 		return err
+	}
+	var staleActive map[string]bool
+	if activeOnly {
+		if records, staleActive, err = tr.appendStaleActiveRecordsLocked(records, executionFenceAtStart); err != nil {
+			return err
+		}
 	}
 	seen := make(map[string]struct{}, len(records))
 	for _, record := range records {
@@ -684,6 +775,9 @@ func (tr *TestRunner) reloadStoredTestsLocked() error {
 	deleteCandidates := make(map[string]*ManagedTest)
 	for id, current := range tr.tests {
 		if _, ok := seen[id]; ok || liveTestRuntimeForExecutionEpoch(current, tr.durableExecutionFence, executionFenceAtStart) {
+			continue
+		}
+		if activeOnly && !staleActive[id] {
 			continue
 		}
 		deleteCandidates[id] = current
@@ -842,16 +936,18 @@ func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) error {
 		return nil
 	}
 	if _, distributed := tr.execution.(*distributedExecutionBackend); distributed && runAdoptionStatus(test.Status) {
-		// A fail-policy run has no durable participant journal. A continue-policy
-		// run reaching here has a missing or unusable adoption checkpoint. The
-		// current fleet list cannot identify a vanished old target, which may
-		// still run through its process lease or supervision grace. Preserve the
-		// timeslot until external process-fence reconciliation supplies proof.
+		// A fail-policy run has no adoption checkpoint. A continue-policy run
+		// reaching here has a missing or unusable one. The current fleet list
+		// cannot identify a vanished old target, which may still run through
+		// its process lease or supervision grace. Preserve the timeslot until
+		// the generators prove the load stopped or an administrator attests it.
 		if err := tr.claimTestExecutionFence(test); err != nil {
 			return err
 		}
-		const reason = "controller execution ownership was interrupted; distributed generator stop is unproven without a complete durable participant journal; external generator process-fence reconciliation is required"
-		newError := test.Error
+		// After admission, runInterruptedRunResolution finalizes the run once
+		// every generator in its participant journal proves the load is gone.
+		const reason = interruptedDistributedStopReason
+		newError := strings.ReplaceAll(test.Error, legacyInterruptedDistributedStopReason, reason)
 		if !strings.Contains(newError, reason) {
 			if newError == "" {
 				newError = reason

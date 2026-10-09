@@ -28,6 +28,20 @@ func (s *SQLiteStore) SaveSetting(key string, value string) error {
 	return err
 }
 
+// EnsureSetting stores candidate under key only when the key is absent and
+// returns the stored value. The single upsert makes the first writer win
+// across controller replicas, on both SQLite and PostgreSQL.
+func (s *SQLiteStore) EnsureSetting(key string, candidate string) (string, error) {
+	var value string
+	err := s.db.QueryRow(`INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET value=app_settings.value
+		RETURNING value`, key, candidate, time.Now()).Scan(&value)
+	if err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
 func (s *SQLiteStore) GetSetting(key string) (string, error) {
 	return s.GetSettingContext(context.Background(), key)
 }

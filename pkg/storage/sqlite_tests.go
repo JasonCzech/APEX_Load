@@ -1022,6 +1022,35 @@ func (s *SQLiteStore) ListTests(projectID string, folderID *string) ([]*TestReco
 	return tests, rows.Err()
 }
 
+// ListTestsByStatus returns the tests in any of statuses, newest first. An HA
+// successor uses it to reach in-flight runs before hydrating every historical
+// run, so run adoption does not wait on a full reload.
+func (s *SQLiteStore) ListTestsByStatus(statuses []string) ([]*TestRecord, error) {
+	if len(statuses) == 0 {
+		return nil, nil
+	}
+	args := make([]any, 0, len(statuses))
+	for _, status := range statuses {
+		args = append(args, status)
+	}
+	query := testSelectColumns() + ` FROM tests WHERE status IN (` + strings.TrimSuffix(strings.Repeat("?, ", len(statuses)), ", ") + `) ORDER BY start_time DESC`
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tests []*TestRecord
+	for rows.Next() {
+		test, err := scanTest(rows)
+		if err != nil {
+			return nil, err
+		}
+		tests = append(tests, &test)
+	}
+	return tests, rows.Err()
+}
+
 func (s *SQLiteStore) ListTestsByContext(applicationID string, releaseID string, scenarioID string) ([]*TestRecord, error) {
 	args := []any{}
 	query := testSelectColumns() + ` FROM tests`

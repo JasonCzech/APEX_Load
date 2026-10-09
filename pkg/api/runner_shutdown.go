@@ -57,6 +57,11 @@ func (tr *TestRunner) stopActiveTests(ctx context.Context) error {
 		if test == nil {
 			continue
 		}
+		if test.continuityHandoff {
+			// A successor adopts this run; stopping it here would defeat the
+			// continue policy on every rolling restart.
+			continue
+		}
 		switch test.Status {
 		case "INITIALIZING", "RUNNING", "PAUSED", "STOPPING", "SHAKEOUT":
 			ids = append(ids, id)
@@ -102,7 +107,10 @@ func (tr *TestRunner) stopActiveTests(ctx context.Context) error {
 }
 
 type leadershipLossRuntime struct {
-	testID               string
+	testID string
+	// handoff detaches the run without a generator Stop so a successor can
+	// adopt it (markContinuityHandoff).
+	handoff              bool
 	executionGeneration  uint64
 	runSupervisionToken  []byte
 	runSupervisionKeeper runSupervisionKeeperHandle
@@ -155,6 +163,7 @@ func (tr *TestRunner) teardownActiveTestsAfterLeadershipLoss(ctx context.Context
 		}
 		runtime := leadershipLossRuntime{
 			testID:               test.ID,
+			handoff:              test.continuityHandoff,
 			executionGeneration:  test.executionGeneration,
 			runSupervisionToken:  cloneRunSupervisionToken(test.remoteRunSupervisionToken),
 			runSupervisionKeeper: detachRunSupervisionKeeperLocked(test),
@@ -170,6 +179,7 @@ func (tr *TestRunner) teardownActiveTestsAfterLeadershipLoss(ctx context.Context
 			runtime.stopLocal = engine.Stop
 		}
 		tr.cancelAllVUserScaleRampsLocked(test)
+		test.continuityHandoff = false
 		// Another controller may now hold the run's batches (B5).
 		test.jointHeldFromStart = false
 		test.cancel = nil
@@ -241,14 +251,17 @@ func (tr *TestRunner) teardownActiveTestsAfterLeadershipLoss(ctx context.Context
 	jobs := make([]remoteStop, 0)
 	for runtimeIndex := range runtimes {
 		runtime := &runtimes[runtimeIndex]
+		// A handed-off run keeps its generators running for the successor's
+		// adoption; its clients are only closed.
+		stop := !runtime.handoff
 		if len(runtime.clientsByTarget) > 0 {
 			for _, client := range runtime.clientsByTarget {
 				if client != nil {
-					jobs = append(jobs, remoteStop{testID: runtime.testID, executionGeneration: runtime.executionGeneration, runSupervisionToken: append([]byte(nil), runtime.runSupervisionToken...), client: client, stop: true})
+					jobs = append(jobs, remoteStop{testID: runtime.testID, executionGeneration: runtime.executionGeneration, runSupervisionToken: append([]byte(nil), runtime.runSupervisionToken...), client: client, stop: stop})
 				}
 			}
 		} else if runtime.singleClient != nil {
-			jobs = append(jobs, remoteStop{testID: runtime.testID, executionGeneration: runtime.executionGeneration, runSupervisionToken: append([]byte(nil), runtime.runSupervisionToken...), client: runtime.singleClient, stop: true})
+			jobs = append(jobs, remoteStop{testID: runtime.testID, executionGeneration: runtime.executionGeneration, runSupervisionToken: append([]byte(nil), runtime.runSupervisionToken...), client: runtime.singleClient, stop: stop})
 		}
 		for _, client := range runtime.archiveClients {
 			if client != nil {
@@ -311,6 +324,137 @@ func (tr *TestRunner) teardownActiveTestsAfterLeadershipLoss(ctx context.Context
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// shutdownRunFinalizationWait bounds how long graceful shutdown waits for runs
+// it stopped to finish finalizing before it releases the execution lease.
+const shutdownRunFinalizationWait = 20 * time.Second
+
+// ownedActiveRuns snapshots the active runs whose live runtime this replica
+// owns, excluding runs handed off to the successor: the runs graceful shutdown
+// stops and must see finalized before it releases the execution lease.
+func (tr *TestRunner) ownedActiveRuns() map[string]*ManagedTest {
+	owned := make(map[string]*ManagedTest)
+	if tr == nil {
+		return owned
+	}
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	for id, test := range tr.tests {
+		if test == nil || test.continuityHandoff || (test.cancel == nil && test.executionCtx == nil) {
+			continue
+		}
+		switch test.Status {
+		case "INITIALIZING", "RUNNING", "PAUSED", "STOPPING", "SHAKEOUT":
+			owned[id] = test
+		}
+	}
+	return owned
+}
+
+// awaitRunsFinalized waits, bounded by ctx, until every run in runs has been
+// finalized. Graceful shutdown stops runs asynchronously: the stop is
+// dispatched and STOPPING persisted, then the terminal status is committed and
+// the generators' archives are collected and recorded. Releasing the lease
+// before that leaves the successor a STOPPING row it cannot prove stopped, or
+// an archive it must recover from retained generator sources. It reports
+// whether every run finished.
+func (tr *TestRunner) awaitRunsFinalized(ctx context.Context, runs map[string]*ManagedTest) bool {
+	if tr == nil {
+		return true
+	}
+	for {
+		pending := false
+		for id, test := range runs {
+			if !tr.runFinalized(id, test) {
+				pending = true
+				break
+			}
+		}
+		if !pending {
+			return true
+		}
+		timer := time.NewTimer(100 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return false
+		case <-timer.C:
+		}
+	}
+}
+
+// runFinalized reports whether test no longer needs the lease: it is terminal
+// with its generator cleanup and archive commit complete, it is no longer owned
+// by this runner, or the stop pass left it RUNNING/PAUSED because its stop
+// failed (waiting cannot finalize it; lease-loss teardown detaches it). A run
+// already finalizing on its own stays RUNNING (the stop pass leaves it to the
+// finalizer), so it is still waited for.
+func (tr *TestRunner) runFinalized(id string, test *ManagedTest) bool {
+	tr.mu.RLock()
+	if tr.tests[id] != test || ((test.Status == "RUNNING" || test.Status == "PAUSED") && !test.remoteFinalizing) {
+		tr.mu.RUnlock()
+		return true
+	}
+	finished := isTerminalTestStatus(test.Status) && test.remoteClient == nil &&
+		len(test.remoteClientsByTarget) == 0 && len(test.remoteArchiveClientsByTarget) == 0
+	tr.mu.RUnlock()
+	if !finished {
+		return false
+	}
+	// Distributed finalization collects and records the archive under the
+	// run's archive commit fence after the terminal status is visible.
+	tr.archiveCommitMu.Lock()
+	_, committing := tr.archiveCommitGates[id]
+	tr.archiveCommitMu.Unlock()
+	return !committing
+}
+
+// markContinuityHandoff marks every run a successor can adopt so a voluntary
+// step-down (graceful shutdown or failed acquire-time recovery) detaches it
+// instead of stopping it. The generators keep running it under their execution
+// epoch and orphan grace until the successor's adoption claim. It returns the
+// number of runs marked; all other runs keep the ordinary stop behaviour.
+func (tr *TestRunner) markContinuityHandoff(generation uint64) int {
+	if tr == nil || generation == 0 || !tr.runAdoptionEnabled() {
+		return 0
+	}
+	if _, distributed := tr.execution.(*distributedExecutionBackend); !distributed {
+		return 0
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	marked := 0
+	for _, test := range tr.tests {
+		if test == nil {
+			continue
+		}
+		test.continuityHandoff = continuityHandoffEligibleLocked(test, generation)
+		if test.continuityHandoff {
+			marked++
+		}
+	}
+	return marked
+}
+
+// continuityHandoffEligibleLocked reports whether a successor can adopt test.
+// Its adoption checkpoint must be armed for this exact term, so the successor
+// can prove the token the generators currently hold. Runs that are stopping,
+// finalizing, or carrying an unresolved evacuation guard are stopped instead.
+func continuityHandoffEligibleLocked(test *ManagedTest, generation uint64) bool {
+	if test.Status != "RUNNING" && test.Status != "PAUSED" {
+		return false
+	}
+	if effectiveFailoverPolicy(test.Assignment) != failoverPolicyContinue {
+		return false
+	}
+	if test.continuityArmedGeneration != generation || test.executionCtx == nil || test.remoteFinalizing {
+		return false
+	}
+	if len(test.remoteClientsByTarget) == 0 && test.remoteClient == nil {
+		return false
+	}
+	return !interruptedRunEvacuation(test.continuityCheckpoint)
 }
 
 func (tr *TestRunner) cancelDurablyStoppingTests(ids []string) {
