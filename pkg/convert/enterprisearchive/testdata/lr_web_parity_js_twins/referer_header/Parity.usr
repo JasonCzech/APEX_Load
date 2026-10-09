@@ -1,0 +1,8 @@
+[General]
+Type=Multi
+AdditionalTypes=QTWeb
+ScriptLanguage=JavaScript
+RuntimeSettings=default.cfg
+
+[Actions]
+Action1=Action.js

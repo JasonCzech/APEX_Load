@@ -10,9 +10,9 @@ import (
 )
 
 // javaScriptWebReasonCode marks a VuGen Web HTTP/HTML script written in
-// JavaScript (Action.js with web.url({...}) calls). The importer converts
-// C-language web scripts only, so these archives become review artifacts
-// instead of being misread as Java Vuser projects or failing C parsing.
+// JavaScript (Action.js with web.url({...}) calls) that could not be
+// translated into C (see js_parser.go); such archives become review
+// artifacts instead of being misread as Java Vuser projects.
 const javaScriptWebReasonCode = "javascript_web_script_unsupported"
 
 // javaScriptWebCallRe recognizes the VuGen JavaScript web API: web.<function>(
@@ -149,8 +149,8 @@ func javaScriptWebSourceFiles(files map[string]string) []string {
 }
 
 // newJavaScriptWebReviewResult builds the review-only result for a JavaScript
-// web script: no executable script, the action files preserved for review,
-// and a stable reason code.
+// web script that could not be translated: no executable script, the action
+// files preserved for review, and a stable reason code.
 func newJavaScriptWebReviewResult(files map[string]string, cfg *ProjectConfig, actionFiles []string) *ConvertResult {
 	signals := []string{"JavaScript web API calls (web.<function>({...}))"}
 	sourceType, language := "", ""
@@ -170,7 +170,7 @@ func newJavaScriptWebReviewResult(files map[string]string, cfg *ProjectConfig, a
 		SourceType:              sourceType,
 		Signals:                 signals,
 		Warnings: []string{
-			"This Web HTTP/HTML script is written in JavaScript; APEX Load imports C-language web scripts only, so no executable script was generated (" + javaScriptWebReasonCode + "). Its action files are preserved for review; re-record the script in C to import it now.",
+			"This Web HTTP/HTML script is written in JavaScript and could not be translated into the C form APEX Load imports, so no executable script was generated (" + javaScriptWebReasonCode + "). Its action files are preserved for review; fix the JavaScript or re-record the script in C.",
 		},
 	}
 	return newEnterpriseArchiveReviewResult(detected, files, nil, map[string]any{

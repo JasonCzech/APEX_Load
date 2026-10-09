@@ -127,7 +127,7 @@ func TestJavaScriptWebActionFiles(t *testing.T) {
 	}
 }
 
-func TestJavaScriptWebArchiveIsReviewOnlyNotJavaVuser(t *testing.T) {
+func TestJavaScriptWebArchiveImportsAsHTTPNotJavaVuser(t *testing.T) {
 	archive := zipFilesForTest(t, map[string]string{
 		"S.usr":     "[General]\nType=Multi\nScriptLanguage=JavaScript\n[Actions]\nAction=Action.js\n",
 		"Action.js": "function Action()\n{\n\tweb.url({ name: 'home', url: 'http://x.test/' });\n\treturn 0;\n}\n",
@@ -136,19 +136,30 @@ func TestJavaScriptWebArchiveIsReviewOnlyNotJavaVuser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Script != nil {
-		t.Fatalf("a JavaScript web script must not produce a script, got protocol %q", result.Script.Protocol)
+	if result.Script == nil || result.Script.Protocol != "http" || len(result.Script.Actions) != 1 || result.Script.Actions[0].Target != "/" {
+		t.Fatalf("a JavaScript web script imports through the C pipeline as HTTP (WP4.3): %+v", result.Script)
 	}
-	if result.DetectedProtocol == nil || result.DetectedProtocol.ImportMode != ImportModeReviewOnly || result.DetectedProtocol.APEXLoadProtocol != "http" {
+	if result.DetectedProtocol == nil || result.DetectedProtocol.DisplayName != "Web - HTTP/HTML (JavaScript)" {
 		t.Fatalf("detected protocol = %+v", result.DetectedProtocol)
 	}
-	if result.ReviewArtifact == nil || !reflect.DeepEqual(result.ReviewArtifact.Metadata["reason_codes"], []string{javaScriptWebReasonCode}) {
-		t.Fatalf("review artifact = %+v", result.ReviewArtifact)
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), "Imported from VuGen JavaScript (Action.js)") {
+		t.Fatalf("warnings = %v", result.Warnings)
 	}
-	if files, _ := result.ReviewArtifact.Metadata["javascript_action_files"].([]string); !reflect.DeepEqual(files, []string{"Action.js"}) {
-		t.Fatalf("javascript_action_files = %v", result.ReviewArtifact.Metadata["javascript_action_files"])
+}
+
+func TestJavaScriptWebArchiveThatCannotBeTranslatedStaysReviewOnly(t *testing.T) {
+	archive := zipFilesForTest(t, map[string]string{
+		"S.usr":     "[General]\nType=Multi\nScriptLanguage=JavaScript\n[Actions]\nAction=Action.js\n",
+		"Action.js": "function Action()\n{\n\tweb.url({ name: 'home', url: 'http://x.test/' }\n}\n",
+	})
+	result, err := ConvertZip(archive, ConvertOptions{})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(strings.Join(result.Warnings, "\n"), "written in JavaScript") {
+	if result.Script != nil || result.ReviewArtifact == nil || !reflect.DeepEqual(result.ReviewArtifact.Metadata["reason_codes"], []string{javaScriptWebReasonCode}) {
+		t.Fatalf("an untranslatable JavaScript script stays a review artifact: %+v", result)
+	}
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), "could not be translated") {
 		t.Fatalf("warnings = %v", result.Warnings)
 	}
 }

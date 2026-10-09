@@ -125,7 +125,16 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		}
 	}
 	if actionFiles, ok := javaScriptWebActionFiles(files, projectConfig, projectSections); ok {
-		return newJavaScriptWebReviewResult(files, projectConfig, actionFiles), nil
+		result, reason, err := convertJavaScriptWebZip(files, projectFileName, actionFiles, opts)
+		if err != nil {
+			return nil, err
+		}
+		if result != nil {
+			return result, nil
+		}
+		review := newJavaScriptWebReviewResult(files, projectConfig, actionFiles)
+		review.Warnings = append(review.Warnings, "The JavaScript could not be translated: "+reason+".")
+		return review, nil
 	}
 	javaArchive := isJavaProtocolsProject(projectConfig) ||
 		isJavaVuserArchive(files, projectConfig)
