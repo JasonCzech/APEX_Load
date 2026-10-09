@@ -15,6 +15,13 @@ import (
 )
 
 func TestBrowserProtocolExecutesFrameScopedActions(t *testing.T) {
+	// BE-4: controlled pages in Chromium and WebKit.
+	for _, engine := range []string{"chromium", "webkit"} {
+		t.Run(engine, func(t *testing.T) { testFrameScopedActions(t, engine) })
+	}
+}
+
+func testFrameScopedActions(t *testing.T, engine string) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/frame":
@@ -46,7 +53,7 @@ func TestBrowserProtocolExecutesFrameScopedActions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	b := newChromiumIntegrationBrowser(t, server.URL)
+	b := newIntegrationBrowser(t, engine, server.URL)
 	defer b.Teardown(context.Background())
 
 	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Open frame checkout", Type: "browser_navigate", Target: "/"})
@@ -92,6 +99,13 @@ func TestBrowserProtocolExecutesFrameScopedActions(t *testing.T) {
 }
 
 func TestBrowserProtocolExecutesNestedFramePathActions(t *testing.T) {
+	// BE-4: controlled pages in Chromium and WebKit.
+	for _, engine := range []string{"chromium", "webkit"} {
+		t.Run(engine, func(t *testing.T) { testNestedFramePathActions(t, engine) })
+	}
+}
+
+func testNestedFramePathActions(t *testing.T, engine string) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/inner":
@@ -117,7 +131,7 @@ func TestBrowserProtocolExecutesNestedFramePathActions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	b := newChromiumIntegrationBrowser(t, server.URL)
+	b := newIntegrationBrowser(t, engine, server.URL)
 	defer b.Teardown(context.Background())
 
 	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Open nested frame checkout", Type: "browser_navigate", Target: "/"})
@@ -467,13 +481,18 @@ func TestBrowserProtocolExecutesWindowSwitchActions(t *testing.T) {
 
 func newChromiumIntegrationBrowser(t *testing.T, baseURL string) *Browser {
 	t.Helper()
+	return newIntegrationBrowser(t, "chromium", baseURL)
+}
+
+func newIntegrationBrowser(t *testing.T, engine, baseURL string) *Browser {
+	t.Helper()
 	b := &Browser{}
 	if err := b.Init(context.Background(), map[string]any{
 		"base_url":         baseURL,
-		"browser_engine":   "chromium",
+		"browser_engine":   engine,
 		"browser_headless": true,
 	}); err != nil {
-		requireBrowserRuntime(t, "", err)
+		requireBrowserRuntime(t, engine, err)
 	}
 	return b
 }

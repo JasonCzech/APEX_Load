@@ -151,6 +151,12 @@ run_suite "browser native HAR qualifications (real Chromium replay recording and
   env APEXLOAD_BROWSER_TESTS=require TZ=America/New_York go test -count=1 -timeout 15m \
     -run '^(TestBrowserReplayActualNativeHAR|TestBrowserResourceActualChromiumAcquisitionArchiveAndPagination)$' ./pkg/api
 
+run_suite "browser acceptance (BE-4: the browser package with Chromium and WebKit required, and its benchmarks)" \
+  "--all and installed Playwright Chromium and WebKit (a missing runtime FAILS)" "[[ ${run_all} == 1 ]]" \
+  env APEXLOAD_BROWSER_TESTS=require APEXLOAD_BROWSER_BENCHMARKS=1 \
+    APEXLOAD_COMMIT_SHA="${APEXLOAD_COMMIT_SHA:-$(git rev-parse HEAD 2>/dev/null)}" \
+    go test -count=1 -timeout 30m -v ./pkg/protocol/browser
+
 run_suite "root-cause v2 end to end (real local runs, about eight minutes)" \
   "--all" "[[ ${run_all} == 1 ]]" \
   env APEXLOAD_RCA_E2E=1 go test -count=1 -timeout 30m -run TestRCAEndToEnd ./pkg/api

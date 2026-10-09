@@ -78,6 +78,7 @@ func (s *Server) handleGetBrowserBenchmarkEvidence(w http.ResponseWriter, r *htt
 func buildBrowserBenchmarkEvidence(now time.Time) BrowserBenchmarkEvidenceResponse {
 	const benchmarkCommand = "APEXLOAD_BROWSER_BENCHMARKS=1 go test ./pkg/protocol/browser -run '^$' -bench 'BenchmarkBrowser(InitWithDeviceProfile|TouchOrClickActionLatency|RSSPerChromiumDeviceProfile)' -benchmem -count 5 -timeout 30m"
 	compileCommand := "go test ./pkg/protocol/browser"
+	acceptanceCommand := "APEXLOAD_BROWSER_BENCHMARKS=1 APEXLOAD_BROWSER_BENCHMARK_OUT=<dir> APEXLOAD_COMMIT_SHA=<commit> go test ./pkg/protocol/browser -run '^TestBrowserBenchmark$' -v -timeout 30m"
 	hardware := BrowserBenchmarkHardware{
 		ID:          "generator-canary-4vcpu-8gb",
 		Name:        "4 vCPU / 8 GB browser canary generator",
@@ -199,11 +200,14 @@ func buildBrowserBenchmarkEvidence(now time.Time) BrowserBenchmarkEvidenceRespon
 		Commands: []string{
 			compileCommand,
 			benchmarkCommand,
+			acceptanceCommand,
 		},
 		Evidence: []string{
 			"/api/v1/system/browser-benchmarks",
 			browserBenchmarkArtifactEvidence,
 			"pkg/protocol/browser/mobile_benchmark_test.go",
+			"pkg/protocol/browser/browser_benchmark_test.go",
+			"docs/qa/BROWSER_ACCEPTANCE.md",
 		},
 	}
 }

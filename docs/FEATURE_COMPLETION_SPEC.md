@@ -185,6 +185,22 @@ Use controlled Chromium and WebKit pages covering cache/service workers, redirec
 
 Publish benchmark artifacts for supported engine/profile/platform combinations: host/browser/driver versions, launch time, CPU/RSS, action/metric overhead, capture overhead, throttled timing separation, cleanup and stability. The current five-browser-VUser published ceiling remains until measured evidence authorizes an increase. Synthetic shaping is calibrated approximation, not a real-device equivalence claim.
 
+Delivery progress, 2026-10-08 (Wave 4, D8): [BROWSER_ACCEPTANCE.md](qa/BROWSER_ACCEPTANCE.md), generated and checked by `docs/qa/browser_acceptance_test.go`, maps every BE-4 behavior to the tests that accept it and where each runs. A listed test must exist, a test listed for both engines must name both, a unit test must not start a browser, and each end-to-end spec must run in both authentication profiles. New controlled-page fixtures run in Chromium and WebKit:
+- Waterfall timing: the server holds a response's first byte for 300 ms and streams its body over 200 ms. The request-wait and response phases match the server's own clock (at most 5 ms shorter, 250 ms longer) and the native HAR's wait and receive (within 50 ms).
+- A redirect chain keeps one identity with ordered hops, an HTTP error is a finished response with its status, and a connection closed mid-response is a failed transport.
+- A cross-origin resource without Timing-Allow-Origin keeps its network phases.
+- A page registers its service worker; under a CI target policy the session refuses to start.
+
+Frames, never-finishing requests, never-ending chunked bodies, killed native recordings, failed subresources, cache disabling and revalidation, and runtime-secret route redaction ran in Chromium only and now run in both engines.
+
+The opt-in `TestBrowserBenchmark` (gate `APEXLOAD_BROWSER_BENCHMARKS`) measures each engine with a desktop and a mobile profile it accepts. It records host, driver and browser versions; cold launch and session start; navigation time, capture overhead and throttled separation; peak RSS and CPU; teardown time and leftover processes; and failures. It writes `browser-benchmark.json` and, given the measured commit, F4 acceptance requests (`BE-4`, `browser-benchmark`) that pass the endpoint's validation. `scripts/run-optin-suites.sh --all` runs the browser package with both engines required, with its benchmarks, as the "browser acceptance" suite. A local run (darwin-arm64, Chromium 149, WebKit 26.5) had no failures and no leftover processes; throttled navigations were 194–207 ms slower for 200 ms of latency.
+
+Deviations:
+- No benchmark results are published or recorded; an operator records them per engine, profile and platform, and the five-browser-VUser ceiling stands.
+- Metadata floods, flush-time quota exhaustion, recorder limits and old-archive fallback are tested without a browser.
+- WebKit has no desktop device profile, so its desktop benchmark sets a 1920x1080 viewport.
+- Cold launch is timed against a closed browser pool, not a cold host.
+
 ## 7. Browser intelligence completion
 
 ### BI-1: Explainable findings and applicability
