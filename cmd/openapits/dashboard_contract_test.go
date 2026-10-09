@@ -116,6 +116,16 @@ var dynamicDashboardCallRules = []dynamicCallRule{
 		Reason:         "export path is assembled immediately before controller/record-agent dispatch",
 	},
 	{
+		File:           "useBrowserHARApi.ts",
+		Callee:         "apiFetch",
+		ArgumentPrefix: "path",
+		Routes: []routeKey{
+			{Method: "GET", Path: "/api/v1/tests/{param}/archive/browser/har/{param}"},
+			{Method: "GET", Path: "/api/v1/tests/{param}/archive"},
+		},
+		Reason: "saveDownload serves the native HAR download and the HAR-keeping archive export",
+	},
+	{
 		File:           "useScriptApi.ts",
 		Callee:         "apiFetch",
 		ArgumentPrefix: "${endpoint}",

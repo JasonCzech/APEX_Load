@@ -443,6 +443,19 @@ For every row, prove ownership/destination, warnings/provenance, secret referenc
 
 Enumerate supported launchers from actual routes: Enterprise Archive, JMeter, Bruno/native requests, HAR, recorder, OpenAPI/RAML/Postman/WSDL/AsyncAPI, DevWeb/k6/CloudTest, sample/Java HTTP/Java-family, broker configuration, Event Hubs Capture and supported YAML selection. Exact source-runtime certification is outside cleanup; unsupported imports remain governed drafts. Expand parity fixtures across valid/invalid HTTP, browser engine/profile, gRPC modes, Kafka and Event Hubs modes, each JMS provider, nested control flow, selectors, templates/secrets and governed runtimes. Static findings match; contextual authorization/security/runtime findings retain distinct causes.
 
+Delivery progress, 2026-10-08 (Wave 4, A7): `pkg/api/lifecycle_parity_matrix_test.go` holds the lifecycle parity matrix and generates [docs/qa/LIFECYCLE_PARITY_MATRIX.md](qa/LIFECYCLE_PARITY_MATRIX.md). It has three parts:
+- **Static findings.** The parser, the disk parser and twelve routes must report exactly each fixture's static findings. The routes are create, update, validate draft and stored, debug, replay-session, replay and browser replay draft and stored (browser fixtures only). The fixtures cover valid and invalid HTTP, browser engine, profile and selector, gRPC, Kafka and Event Hubs modes, each JMS provider (Solace, IBM MQ, Service Bus), nested control flow, and clean templates and secrets.
+- **Import inventory.** Every script import route that takes a POST, as the server registers it, is inventoried with its role (launcher, commit, validate, shared review, assets), its AUTH-2 row and its proof. A new import route without a row fails the build.
+- **AUTH-2 rows.** Every row names the Playwright tests that prove it. The test checks the rows against this table, that each named test exists, and that its spec runs in the local-auth profile as well as the default one. The Template/component/clone row gained `workflow-lifecycle-template.spec.ts`: a starter template opens an independent draft that saves, reopens exactly, and leaves the template unchanged.
+
+The matrix found and fixed one parity gap: `dsl.Parse`/`ParseFile` reported only a script's first static finding, while the validation routes report all of them. The parser now reports every finding.
+
+Deviations:
+- Contextual runtime, install, policy and approval outcomes are left to the existing replay and browser tests, not given new cause-code fixtures.
+- Import saves persist governed drafts, so they appear through their stored-validation row and the inventory rather than as refusing entry points.
+- No governed-runtime fixture.
+
+
 ### AUTH-3: Adapter retirement inventory
 
 | Current seam | Decision and removal gate |

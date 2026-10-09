@@ -1645,7 +1645,9 @@ func ValidateScriptError(script *Script) error {
 	if len(issues) == 0 {
 		return nil
 	}
-	return fmt.Errorf("%s", issues[0])
+	// Every static finding, as the API's validation routes report them, so
+	// the parser and the routes agree on what is wrong (AUTH-2 parity).
+	return fmt.Errorf("%s", strings.Join(issues, "; "))
 }
 
 // visitScriptActions walks every executable section and nested control-flow
