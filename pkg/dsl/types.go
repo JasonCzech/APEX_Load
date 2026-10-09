@@ -896,6 +896,10 @@ type AuthConfig struct {
 	Password string `json:"password,omitempty"`
 	Token    string `json:"token,omitempty"`  // for bearer
 	Domain   string `json:"domain,omitempty"` // for ntlm
+	// Hosts limits script-level auth to these hosts ("host" matches any
+	// port, "host:port" one port). Empty sends it to every host. Imported
+	// web_set_user calls fill it from their host argument.
+	Hosts []string `json:"hosts,omitempty"`
 }
 
 // ErrorHandlingConfig controls how execution errors are handled.

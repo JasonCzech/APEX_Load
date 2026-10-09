@@ -2046,6 +2046,9 @@ func validateWebRuntimeIssues(script *Script) []string {
 	if err := httpprotocol.ValidateAuthType(httpCfg.Auth.Type); err != nil {
 		issues = append(issues, fmt.Sprintf("config.http.auth.type: %v", err))
 	}
+	if err := httpprotocol.ValidateAuthHosts(httpCfg.Auth.Hosts); err != nil {
+		issues = append(issues, fmt.Sprintf("config.http.auth.hosts: %v", err))
+	}
 	if httpCfg.TLS.MinVersion != "" && !isAllowedValue(httpCfg.TLS.MinVersion, "1.0", "1.1", "1.2", "1.3") {
 		issues = append(issues, "config.http.tls.min_version must be 1.0, 1.1, 1.2, or 1.3")
 	}

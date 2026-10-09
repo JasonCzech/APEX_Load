@@ -626,7 +626,18 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 		case "web_set_user":
 			sourceRuntimeControls = append(sourceRuntimeControls, fn)
 			details := applySourceWebSetUser(result, fn)
-			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.http.auth", convertutil.FirstNonEmpty(stringMapValue(details, "username", ""), fn.Name), "config", "converted", "Mapped from source web_set_user authentication.", SourceFunctionSupportExecutable))
+			if conflict, _ := details["conflict"].(bool); conflict {
+				// APEX keeps one script-level credential set; a second set for
+				// another host cannot be expressed yet, so execution is gated
+				// rather than sending the wrong credentials.
+				appendTrackedSourceAction(fn, webSetUserConflictGate(fn, stringMapValue(details, "host", "")), SourceFunctionSupportReviewOnly,
+					"A second web_set_user credential set cannot be expressed; execution is gated.")
+				break
+			}
+			if unscoped, _ := details["host_unscoped"].(bool); unscoped {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("%s:%d web_set_user host %q is parameterized or not a plain host, so its credentials apply to every host", fn.Filename, fn.LineNumber, stringMapValue(details, "host", "")))
+			}
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.http.auth", convertutil.FirstNonEmpty(stringMapValue(details, "username", ""), fn.Name), "config", "converted", "Mapped from source web_set_user authentication, scoped to its host.", SourceFunctionSupportExecutable))
 			result.Stats.ContributorFunctions++
 			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 

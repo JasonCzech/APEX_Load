@@ -6697,6 +6697,12 @@
         "domain": {
           "type": "string"
         },
+        "hosts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "password": {
           "type": "string"
         },

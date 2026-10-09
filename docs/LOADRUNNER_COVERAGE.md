@@ -80,7 +80,7 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_set_secure_proxy` | web | `executable` | config.http.proxy | Custom HTTPS proxy URL. |
 | `web_set_sockets_option` | web | `executable` | config.http (TLS/conns) | SSL version, keep-alive, max connections. |
 | `web_set_timeout` | web | `executable` | config.http timeouts | Connect/receive/SSL timeouts. |
-| `web_set_user` | web | `executable` | config.http.auth | Basic auth credentials. |
+| `web_set_user` | web | `executable` | config.http.auth (hosts-scoped) | Basic credentials sent only to the host:port it names (config.http.auth.hosts); a second, different credential set is execution-gated. |
 | `web_sjis_to_euc_param` | parameter | `review_only` | Import review | SJIS to EUC conversion is preserved for review; no APEX runtime equivalent yet. |
 | `web_stop_async` | web | `review_only` | Import review | Async polling/push has no APEX runtime equivalent. |
 | `web_stream_close` | web | `review_only` | Import review | Media streaming has no APEX runtime equivalent. |

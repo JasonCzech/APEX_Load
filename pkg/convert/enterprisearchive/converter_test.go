@@ -873,8 +873,11 @@ Action()
 	if len(requirements) != 0 {
 		t.Fatalf("protected auth requirements = %#v, want no re-entry requirement for an imported executable password", requirements)
 	}
-	if result.Script.Config.WebRuntime.AdditionalAttributes["web_set_user.host"] != "secure.example.com:443" {
-		t.Fatalf("web runtime attrs = %#v, want web_set_user host", result.Script.Config.WebRuntime.AdditionalAttributes)
+	if len(auth.Hosts) != 1 || auth.Hosts[0] != "secure.example.com:443" {
+		t.Fatalf("auth hosts = %#v, want the web_set_user host scope", auth.Hosts)
+	}
+	if _, kept := result.Script.Config.WebRuntime.AdditionalAttributes["web_set_user.host"]; kept {
+		t.Fatalf("a scoped host must not also linger as a compatibility attribute: %#v", result.Script.Config.WebRuntime.AdditionalAttributes)
 	}
 	preserved := result.Script.Metadata.Import.Preserved
 	authControls, ok := preserved["source_authentication"].([]map[string]any)
@@ -912,8 +915,8 @@ func TestConvertPreservesWebSetUserAcrossRuntimeConfigMerge(t *testing.T) {
 	if auth.Type != "basic" || auth.Username != "perfuser" || auth.Password != "perfpass" {
 		t.Fatalf("http auth = %#v, want web_set_user basic auth after config merge", auth)
 	}
-	if got := result.Script.Config.WebRuntime.AdditionalAttributes["web_set_user.host"]; got != "secure.example.com:443" {
-		t.Fatalf("web_set_user.host = %q, want preserved host", got)
+	if len(auth.Hosts) != 1 || auth.Hosts[0] != "secure.example.com:443" {
+		t.Fatalf("auth hosts = %#v, want the web_set_user host scope after config merge", auth.Hosts)
 	}
 }
 

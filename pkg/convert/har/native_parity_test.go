@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/internal/paritytest"
@@ -40,7 +39,7 @@ func TestNativeHARParityCorpus(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			raw = []byte(strings.ReplaceAll(string(raw), paritytest.Origin, server.URL))
+			raw = []byte(server.Expand(string(raw)))
 			result, err := Convert(raw, ConvertOptions{})
 			if err != nil {
 				t.Fatalf("Convert: %v", err)

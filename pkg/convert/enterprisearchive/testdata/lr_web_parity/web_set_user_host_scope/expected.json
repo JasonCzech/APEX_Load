@@ -1,0 +1,9 @@
+{
+  "description": "web_set_user credentials apply to the host it names; a request to another host must not carry them.",
+  "source": "VuGen 26.1 Function Reference: web_set_user (user name, password, host:port).",
+  "outcome": "replay",
+  "requests": [
+    {"method": "GET", "path": "/secure/home", "headers": {"Authorization": "Basic YWxpY2U6czNjcmV0"}},
+    {"method": "GET", "path": "/public/asset", "absent_headers": ["Authorization"]}
+  ]
+}

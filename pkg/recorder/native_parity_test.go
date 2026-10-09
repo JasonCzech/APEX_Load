@@ -59,7 +59,7 @@ func loadParitySession(t *testing.T, dir string, server *paritytest.Server) *Ses
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw = []byte(strings.ReplaceAll(string(raw), paritytest.Origin, server.URL))
+	raw = []byte(server.Expand(string(raw)))
 	host := strings.TrimPrefix(server.URL, "http://")
 	raw = []byte(strings.ReplaceAll(string(raw), "parity.test", host))
 	var session Session

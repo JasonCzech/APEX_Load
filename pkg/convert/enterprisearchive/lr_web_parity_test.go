@@ -113,7 +113,7 @@ func zipParityArchive(t *testing.T, dir string, server *paritytest.Server) []byt
 			return err
 		}
 		if utf8.Valid(content) {
-			content = []byte(strings.ReplaceAll(string(content), paritytest.Origin, server.URL))
+			content = []byte(server.Expand(string(content)))
 		}
 		file, err := writer.Create(filepath.ToSlash(rel))
 		if err != nil {

@@ -38,6 +38,11 @@ import (
 // replace it with the fixture server's origin before converting.
 const Origin = "http://parity.test"
 
+// AliasOrigin is a second placeholder origin that reaches the same fixture
+// server under a different host name ("localhost" instead of 127.0.0.1), for
+// cases that must prove something is sent to one host and not another.
+const AliasOrigin = "http://alias.parity.test"
+
 // Outcome values for Expectation.Outcome.
 const (
 	// OutcomeReplay means the converted script must be executable and must put
@@ -278,10 +283,18 @@ func (s *Server) Recorded() []Recorded {
 	return append([]Recorded(nil), s.recorded...)
 }
 
-// Expand replaces the placeholder origin with the server's origin.
-func (s *Server) expand(value string) string { return strings.ReplaceAll(value, Origin, s.URL) }
+// expand replaces the placeholder origins with the server's origins.
+func (s *Server) expand(value string) string {
+	value = strings.ReplaceAll(value, AliasOrigin, s.AliasURL())
+	return strings.ReplaceAll(value, Origin, s.URL)
+}
 
-// Expand replaces the placeholder origin with the server's origin.
+// AliasURL is the server's origin under the "localhost" host name.
+func (s *Server) AliasURL() string {
+	return strings.Replace(s.URL, "127.0.0.1", "localhost", 1)
+}
+
+// Expand replaces the placeholder origins with the server's origins.
 func (s *Server) Expand(value string) string { return s.expand(value) }
 
 // ReplayOnce runs one iteration of script through the engine's replay path,

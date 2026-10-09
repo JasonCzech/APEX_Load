@@ -74,6 +74,7 @@ type HTTP struct {
 	traceparentEnabled         bool
 	traceparentSampled         bool
 	authConfig                 *protocol.AuthConfig
+	authHosts                  []authHostScope // empty = script-level auth applies to every host
 	cache                      *httpResponseCache
 	cacheContentURLsOnly       bool
 	cacheCheckNewerVersions    bool
@@ -215,6 +216,11 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	if err := ValidateAuthWireValues(h.authConfig); err != nil {
 		return err
 	}
+	authHosts, err := parseAuthHostScopes(config["auth_hosts"])
+	if err != nil {
+		return err
+	}
+	h.authHosts = authHosts
 
 	// Protocol instances are per-VUser, so the bounded pool must be shared at
 	// process scope; a per-instance pool would still retain one backing array per
@@ -354,6 +360,12 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 
 	authHeader := h.authHeader
 	digestAuth := digestAuthConfig(h.authConfig)
+	if !authHostScopesAllow(h.authHosts, targetURL) {
+		// Script-level credentials are scoped to their hosts; an action-level
+		// auth override below still applies.
+		authHeader = ""
+		digestAuth = nil
+	}
 	actionAuthHeader, actionAuthOverride, actionAuthErr := buildActionAuthHeader(action.Auth)
 	if actionAuthErr != nil {
 		result.StatusCode = http.StatusBadRequest

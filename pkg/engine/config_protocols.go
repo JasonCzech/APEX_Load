@@ -908,4 +908,7 @@ func appendHTTPSecurityConfig(cfg map[string]any, script *dsl.Script) {
 	if auth.Domain != "" {
 		cfg["auth_domain"] = auth.Domain
 	}
+	if len(auth.Hosts) > 0 {
+		cfg["auth_hosts"] = append([]string(nil), auth.Hosts...)
+	}
 }
