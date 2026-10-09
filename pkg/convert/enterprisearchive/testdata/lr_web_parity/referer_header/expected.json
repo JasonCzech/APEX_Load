@@ -1,0 +1,10 @@
+{
+  "description": "Referer= on a step is sent as the Referer header; an empty Referer= sends none.",
+  "source": "VuGen 26.1 Function Reference: web_url, web_submit_data and web_custom_request Referer attribute.",
+  "outcome": "replay",
+  "requests": [
+    {"method": "GET", "path": "/app/home", "absent_headers": ["Referer"]},
+    {"method": "POST", "path": "/app/search", "headers": {"Referer": "http://parity.test/app/home"}, "body": "q=widgets"},
+    {"method": "GET", "path": "/api/results", "headers": {"Referer": "http://parity.test/app/search?q=widgets"}}
+  ]
+}

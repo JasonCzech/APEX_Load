@@ -97,6 +97,7 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 		}
 		action.Headers[k] = convertParamReferences(v)
 	}
+	applySourceRefererHeader(action, fn)
 	if contentType := requestContentTypeFromFunction(fn); contentType != "" {
 		if _, exists := headerValueCaseInsensitive(action.Headers, "Content-Type"); !exists {
 			value := convertParamReferences(contentType)
@@ -182,6 +183,31 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 	action.Target = convertParamReferences(action.Target)
 
 	return action, warnings
+}
+
+// applySourceRefererHeader sends a step's Referer= argument as the Referer
+// header, as LoadRunner does. An empty Referer= sends none, and a Referer the
+// step already sets explicitly (HEADERS or the header list) is kept.
+func applySourceRefererHeader(action *dsl.Action, fn ParsedFunction) {
+	if action == nil {
+		return
+	}
+	referer, ok := sourceNamedArg(fn.Args, "Referer")
+	referer = strings.TrimSpace(referer)
+	if !ok || referer == "" {
+		return
+	}
+	if _, exists := headerValueCaseInsensitive(action.Headers, "Referer"); exists {
+		return
+	}
+	value := convertParamReferences(referer)
+	if action.Headers == nil {
+		action.Headers = make(map[string]string)
+	}
+	action.Headers["Referer"] = value
+	if len(action.HeaderList) > 0 {
+		action.HeaderList = append(action.HeaderList, dsl.HeaderEntry{Name: "Referer", Value: value})
+	}
 }
 
 func filterHeaderListCaseInsensitive(headers dsl.HeaderList, name string) dsl.HeaderList {
