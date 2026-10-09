@@ -327,7 +327,8 @@ test('Retained retired-provider evidence remains readable in generic archive tab
     const archive = page.getByRole('region', { name: 'Archived AppDynamics evidence', exact: true }).first()
     await expect(archive).toContainText('Retained legacy diagnostic')
     await expect(archive).toContainText('retained-request-guid')
-    await expect(archive.getByRole('link', { name: 'Open in AppDynamics', exact: true })).toHaveAttribute('href', 'https://controller.example.test/evidence/retained-error')
+    // A link that opens a new tab says so in its accessible name.
+    await expect(archive.getByRole('link', { name: 'Open in AppDynamics (opens in a new tab)', exact: true })).toHaveAttribute('href', 'https://controller.example.test/evidence/retained-error')
     await expect(archive.getByRole('link', { name: 'Download retained monitoring diagnostics', exact: true })).toBeVisible()
     await expect(archive.getByRole('link', { name: 'Download retained monitoring metrics', exact: true })).toBeVisible()
     await archive.getByRole('button', { name: 'Load archived metric timeline', exact: true }).click()
