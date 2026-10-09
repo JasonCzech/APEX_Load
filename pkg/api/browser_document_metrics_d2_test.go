@@ -513,7 +513,9 @@ func TestRCABaselineEvidenceCarriesBrowserDocumentSeries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	coverage, evidence := server.rcaBaselineEvidence(context.Background(), manifest, baseline.ID, digest, rca.NewBudgeter(rca.DefaultBudget, nil, nil), rca.DefaultBudget)
+	read := server.readRCABaselineArchive(context.Background(), manifest, baseline.ID, digest)
+	defer read.release()
+	coverage, evidence := server.rcaBaselineEvidence(context.Background(), read, rca.NewBudgeter(rca.DefaultBudget, nil, nil), rca.DefaultBudget)
 	if evidence == nil {
 		t.Fatalf("no baseline evidence: %+v", coverage)
 	}
@@ -551,7 +553,9 @@ func TestRCABaselineEvidenceCarriesBrowserDocumentSeries(t *testing.T) {
 	if digest, err = rcaArchiveDigest(baselineRecord); err != nil {
 		t.Fatal(err)
 	}
-	if _, unread := server.rcaBaselineEvidence(context.Background(), manifest, baseline.ID, digest, rca.NewBudgeter(rca.DefaultBudget, nil, nil), rca.DefaultBudget); unread == nil || !unread.DocumentsIncomplete {
+	reread := server.readRCABaselineArchive(context.Background(), manifest, baseline.ID, digest)
+	defer reread.release()
+	if _, unread := server.rcaBaselineEvidence(context.Background(), reread, rca.NewBudgeter(rca.DefaultBudget, nil, nil), rca.DefaultBudget); unread == nil || !unread.DocumentsIncomplete {
 		t.Fatalf("an unreadable baseline document sidecar = %+v", unread)
 	}
 }

@@ -952,6 +952,17 @@ func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *st
 	}); err != nil {
 		return nil, nil, readErr(err)
 	}
+	// The baseline run's archive is read now too, for the same reason: a
+	// slow download or a long pass over its rows is the archive's size, not
+	// the analysis. What it could not read, the comparison reports.
+	var baselineArchive *rcaBaselineArchive
+	if baselineID := payload.Request.BaselineTestID; baselineID != "" {
+		baselineArchive = s.readRCABaselineArchive(readCtx, manifest, baselineID, payload.Inputs.Baseline)
+		defer baselineArchive.release()
+		if err := readCtx.Err(); err != nil {
+			return nil, nil, readErr(err)
+		}
+	}
 	// The engine's budget starts here, with the evidence in hand; the
 	// detection reads below check it, as the stages do.
 	budget := rca.DefaultBudget
@@ -1018,7 +1029,7 @@ func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *st
 		input.Detection.Limitations = append(input.Detection.Limitations, rca.Limitation{Code: limitationImportedDatasetsCut, Detail: fmt.Sprintf("more than %d analysis datasets are associated with the run; the first %d by ID were judged", rcaMaxImportedDatasets, rcaMaxImportedDatasets)})
 	}
 	input.Graph = archiveGraphInput(manifest, calls, observations, evidence.Mappings)
-	input.Coverage, input.Detection.Baseline = s.rcaCoverage(ctx, payload, manifest, input, evidence, frozen, budgeter, budget)
+	input.Coverage, input.Detection.Baseline = s.rcaCoverage(ctx, baselineArchive, input, evidence, frozen, budgeter, budget)
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
@@ -1060,7 +1071,7 @@ func (s *Server) frozenRCAEvidence(analysis *storage.RCAAnalysis, payload rcaAna
 
 // rcaCoverage says how much of each kind of evidence the analysis had, and
 // returns the requested baseline's detection evidence when it qualifies.
-func (s *Server) rcaCoverage(ctx context.Context, payload rcaAnalysisPayload, manifest *RunArchiveManifest, input rca.AnalysisInput, evidence rcaEvidence, frozen bool, budgeter *rca.Budgeter, budget rca.Budget) ([]rca.Coverage, *rca.DetectionBaseline) {
+func (s *Server) rcaCoverage(ctx context.Context, baselineArchive *rcaBaselineArchive, input rca.AnalysisInput, evidence rcaEvidence, frozen bool, budgeter *rca.Budgeter, budget rca.Budget) ([]rca.Coverage, *rca.DetectionBaseline) {
 	validity, detection, graph := input.Validity, input.Detection, input.Graph
 	coverage := []rca.Coverage{}
 	status := rca.CoverageComplete
@@ -1141,65 +1152,125 @@ func (s *Server) rcaCoverage(ctx context.Context, payload rcaAnalysisPayload, ma
 		coverage = append(coverage, rca.Coverage{Evidence: "monitor_sources", Status: monitor, Detail: fmt.Sprintf("%d sources, %d incomplete", len(evidence.MonitorSources), incomplete)})
 	}
 	var baseline *rca.DetectionBaseline
-	if baselineID := payload.Request.BaselineTestID; baselineID != "" {
+	if baselineArchive != nil {
 		var baselineCoverage rca.Coverage
-		baselineCoverage, baseline = s.rcaBaselineEvidence(ctx, manifest, baselineID, payload.Inputs.Baseline, budgeter, budget)
+		baselineCoverage, baseline = s.rcaBaselineEvidence(ctx, baselineArchive, budgeter, budget)
 		coverage = append(coverage, baselineCoverage)
 	}
 	return coverage, baseline
 }
 
-// rcaBaselineEvidence qualifies the requested baseline's workload against
-// the run's and, unless it is unqualified, reads its load levels and series
-// so detection can compare each level with the baseline's same level.
-func (s *Server) rcaBaselineEvidence(ctx context.Context, manifest *RunArchiveManifest, baselineID, digest string, budgeter *rca.Budgeter, budget rca.Budget) (rca.Coverage, *rca.DetectionBaseline) {
-	missing := rca.Coverage{Evidence: "baseline", Status: rca.CoverageMissing, Detail: "baseline archive unavailable"}
+// rcaBaselineArchive is the baseline run's archive as the assessment reads it
+// before the engine's budget starts: the record under its materialization
+// lease, its manifest, the workload qualification against the run, its
+// interval summaries and the network phases of its rows. What could not be
+// read is recorded, so the comparison reports it as the baseline's coverage
+// rather than failing the analysis. The lease is held until release.
+type rcaBaselineArchive struct {
+	testID string
+	// coverage is the baseline's coverage as far as the read got; the
+	// comparison refines it.
+	coverage      rca.Coverage
+	record        *storage.RunArchiveRecord
+	lease         *archiveMaterializationLease
+	manifest      *RunArchiveManifest
+	currentKey    rca.WorkloadKey
+	key           rca.WorkloadKey
+	qualification rca.WorkloadQualification
+	summaries     []IntervalSummaryRecord
+	summariesErr  error
+	phases        *networkPhaseCollector
+	phasesErr     error
+}
+
+// comparable reports whether the baseline's series can be compared with the
+// run's: its archive is the one the analysis froze and its workload is not
+// unqualified.
+func (b *rcaBaselineArchive) comparable() bool {
+	return b != nil && b.manifest != nil && b.qualification.Status != rca.BaselineUnqualified
+}
+
+func (b *rcaBaselineArchive) release() {
+	if b != nil && b.lease != nil {
+		b.lease.Release()
+		b.lease = nil
+	}
+}
+
+// readRCABaselineArchive reads the baseline run's archive: materializing it,
+// its manifest and digest check, the workload qualification against the run
+// and, unless the workload is unqualified, its interval summaries and one
+// pass over its rows for network phases. It is the archive's size that
+// bounds this, as for the run's own archive, so it runs before the engine's
+// budget starts.
+func (s *Server) readRCABaselineArchive(ctx context.Context, manifest *RunArchiveManifest, baselineID, digest string) *rcaBaselineArchive {
+	b := &rcaBaselineArchive{testID: baselineID, coverage: rca.Coverage{Evidence: "baseline", Status: rca.CoverageMissing, Detail: "baseline archive unavailable"}}
 	record, ok := s.archiveDomainService().GetRunArchiveContext(ctx, baselineID)
 	if !ok {
-		return missing, nil
+		return b
 	}
 	lease, err := acquireArchiveMaterialized(ctx, record)
 	if err != nil {
-		return missing, nil
+		return b
 	}
-	defer lease.Release()
+	b.record, b.lease = record, lease
 	baselineManifest, err := loadRunArchiveManifestFromRecord(record)
 	if err != nil {
-		return missing, nil
+		return b
 	}
 	if current, err := rcaEvidenceDigest(baselineManifest); err != nil || current != digest {
-		missing.Detail = "baseline archive changed after the analysis was requested"
-		return missing, nil
+		b.coverage.Detail = "baseline archive changed after the analysis was requested"
+		return b
 	}
-	baselineKey := comparisonWorkloadKey(&baselineComparisonRun{manifest: baselineManifest}, nil, "")
-	currentKey := comparisonWorkloadKey(&baselineComparisonRun{manifest: manifest}, nil, "")
-	qualification := rca.QualifyBaseline(currentKey, baselineKey)
+	b.manifest = baselineManifest
+	b.key = comparisonWorkloadKey(&baselineComparisonRun{manifest: baselineManifest}, nil, "")
+	b.currentKey = comparisonWorkloadKey(&baselineComparisonRun{manifest: manifest}, nil, "")
+	b.qualification = rca.QualifyBaseline(b.currentKey, b.key)
 	status := rca.CoverageComplete
-	if qualification.Status != rca.BaselineQualified {
+	if b.qualification.Status != rca.BaselineQualified {
 		status = rca.CoveragePartial
 	}
-	detail := qualification.Status
-	if len(qualification.Reasons) > 0 {
-		detail += ": " + strings.Join(qualification.Reasons, ", ")
+	detail := b.qualification.Status
+	if len(b.qualification.Reasons) > 0 {
+		detail += ": " + strings.Join(b.qualification.Reasons, ", ")
 	}
-	coverage := rca.Coverage{Evidence: "baseline", Status: status, Detail: detail}
-	if qualification.Status == rca.BaselineUnqualified {
+	b.coverage = rca.Coverage{Evidence: "baseline", Status: status, Detail: detail}
+	if b.qualification.Status == rca.BaselineUnqualified {
+		return b
+	}
+	if b.summaries, b.summariesErr = readAllArchiveSummariesContext(ctx, record); b.summariesErr != nil {
+		return b
+	}
+	// The baseline's own connection timing, so network phases can be
+	// compared at the same level too.
+	b.phases = newNetworkPhaseCollector(b.summaries, baselineManifest.TransactionsFile)
+	b.phasesErr = forEachArchiveTransactionContext(ctx, record, func(tx *TransactionEvent) error {
+		b.phases.add(tx)
+		return ctx.Err()
+	})
+	return b
+}
+
+// rcaBaselineEvidence reports the baseline's coverage and, when its archive
+// was read and its workload is not unqualified, reads its load levels and
+// series within the engine's budget, so detection can compare each level
+// with the baseline's same level.
+func (s *Server) rcaBaselineEvidence(ctx context.Context, b *rcaBaselineArchive, budgeter *rca.Budgeter, budget rca.Budget) (rca.Coverage, *rca.DetectionBaseline) {
+	if b == nil {
+		return rca.Coverage{Evidence: "baseline", Status: rca.CoverageMissing, Detail: "baseline archive unavailable"}, nil
+	}
+	coverage := b.coverage
+	if !b.comparable() {
 		return coverage, nil
 	}
-	summaries, err := readAllArchiveSummaries(record)
-	if err == nil {
+	if b.summariesErr == nil {
 		var evidence rca.DetectionInput
-		if evidence, err = archiveDetectionInput(ctx, record, baselineManifest, summaries, archiveArrivalModel(&baselineKey), budgeter, budget, nil); err == nil {
-			// The baseline's own connection timing, so network phases can be
-			// compared at the same level too.
-			phases := newNetworkPhaseCollector(summaries, baselineManifest.TransactionsFile)
-			if scanErr := forEachArchiveTransaction(record, func(tx *TransactionEvent) error {
-				phases.add(tx)
-				return ctx.Err()
-			}); scanErr == nil {
-				evidence.Series = append(evidence.Series, phases.series()...)
+		var err error
+		if evidence, err = archiveDetectionInput(ctx, b.record, b.manifest, b.summaries, archiveArrivalModel(&b.key), budgeter, budget, nil); err == nil {
+			if b.phasesErr == nil {
+				evidence.Series = append(evidence.Series, b.phases.series()...)
 			} else {
-				evidence.Limitations = append(evidence.Limitations, rca.Limitation{Code: limitationPhaseEvidence, Detail: "the baseline's rows could not be read: " + scanErr.Error()})
+				evidence.Limitations = append(evidence.Limitations, rca.Limitation{Code: limitationPhaseEvidence, Detail: "the baseline's rows could not be read: " + b.phasesErr.Error()})
 			}
 			// The baseline's browser document tuples, so a document series
 			// is judged against the same tuple of the baseline run.
@@ -1209,7 +1280,7 @@ func (s *Server) rcaBaselineEvidence(ctx context.Context, manifest *RunArchiveMa
 				documentLimit = max(0, budget.MaxSeries-rcaNonJointSeries(evidence.Series))
 			}
 			documentsIncomplete := false
-			if documents, limitations, docErr := rcaBrowserDocumentSeries(ctx, record, baselineManifest, summaries, documentLimit, budget.MaxSeriesPoints); docErr == nil {
+			if documents, limitations, docErr := rcaBrowserDocumentSeries(ctx, b.record, b.manifest, b.summaries, documentLimit, budget.MaxSeriesPoints); docErr == nil {
 				evidence.Series = append(evidence.Series, documents...)
 				evidence.Limitations = append(evidence.Limitations, limitations...)
 				// Each limitation here says document evidence is missing:
@@ -1235,11 +1306,11 @@ func (s *Server) rcaBaselineEvidence(ctx context.Context, manifest *RunArchiveMa
 				coverage.Status = rca.CoveragePartial
 				coverage.Detail += "; baseline evidence: " + strings.Join(slices.Compact(slices.Sorted(slices.Values(codes))), ", ")
 			}
-			return coverage, &rca.DetectionBaseline{TestID: baselineID, Qualification: qualification.Status, QualificationReasons: qualification.Reasons,
-				ScriptChangedGroups: rca.ScriptChangedGroups(currentKey, baselineKey), DocumentsIncomplete: documentsIncomplete, Levels: evidence.Levels, Series: evidence.Series}
+			return coverage, &rca.DetectionBaseline{TestID: b.testID, Qualification: b.qualification.Status, QualificationReasons: b.qualification.Reasons,
+				ScriptChangedGroups: rca.ScriptChangedGroups(b.currentKey, b.key), DocumentsIncomplete: documentsIncomplete, Levels: evidence.Levels, Series: evidence.Series}
 		}
 	}
-	coverage.Status, coverage.Detail = rca.CoveragePartial, detail+"; its series could not be read"
+	coverage.Status, coverage.Detail = rca.CoveragePartial, b.coverage.Detail+"; its series could not be read"
 	return coverage, nil
 }
 
