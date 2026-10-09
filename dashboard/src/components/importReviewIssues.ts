@@ -44,10 +44,29 @@ export function findingCategory(code: string): IssueCategory {
   if (/tls|ssl|runtime|allocation/.test(code)) return 'runtime'
   return 'review'
 }
+// Titles for the LoadRunner web parity review codes (pkg/convert/enterprisearchive,
+// pkg/convert/requestimport). Unlisted codes fall back to their words.
+const LOADRUNNER_PARITY_ISSUE_TITLES: Record<string, string> = {
+  html_navigation_requires_page_context: 'Replace HTML-mode click with an explicit request',
+  html_form_requires_page_context: 'Verify form submitted without its page',
+  request_body_variant_unsupported: 'Rebuild unsupported request body',
+  request_argument_unsupported: 'Review unsupported request attributes',
+  request_argument_review: 'Review request side effects',
+  registration_scope_narrowed: 'Review narrowed extraction scope',
+  registration_filter_unreproduced: 'Review extraction filter APEX cannot apply',
+  registration_dfe_unsupported: 'Apply data-format extensions before extraction',
+  text_check_scope_unsupported: 'Review header text check',
+  text_check_scope_narrowed: 'Review narrowed text check',
+  text_check_unsupported: 'Review text check APEX cannot express',
+  web_set_user_credentials_conflict: 'Reconcile web_set_user credentials',
+  integrated_auth_requires_configuration: 'Configure NTLM or Kerberos credentials',
+  recorded_body_truncated: 'Re-record or supply the full request body',
+}
+
 export function issueTitle(code: string): string {
   if (code.startsWith('missing_producer:')) return `Missing value: ${code.slice(17)}`
   if (code.startsWith('conditional_producer:')) return `Check producer order: ${code.slice(21)}`
-  return ({ 'diagnostic:warnings': 'Review conversion warnings', 'diagnostic:credential_bindings': 'Configure unresolved credential bindings', 'diagnostic:validation': 'Resolve draft validation checks', 'diagnostic:execution': 'Review execution prerequisites', 'diagnostic:runtime_settings_parity': 'Review runtime behavior differences', 'diagnostic:runtime_settings_migration_readiness': 'Review runtime migration coverage', restored_body_required: 'Restore protected request body', encrypted_proxy_password: 'Replace encrypted proxy password', legacy_tls_replacement: 'Choose supported TLS settings', import_review_required: 'Review imported behavior' } as Record<string, string>)[code] || (code.startsWith('diagnostic:') ? 'Review import requirement' : code.replace(/_/g, ' '))
+  return ({ 'diagnostic:warnings': 'Review conversion warnings', 'diagnostic:credential_bindings': 'Configure unresolved credential bindings', 'diagnostic:validation': 'Resolve draft validation checks', 'diagnostic:execution': 'Review execution prerequisites', 'diagnostic:runtime_settings_parity': 'Review runtime behavior differences', 'diagnostic:runtime_settings_migration_readiness': 'Review runtime migration coverage', restored_body_required: 'Restore protected request body', encrypted_proxy_password: 'Replace encrypted proxy password', legacy_tls_replacement: 'Choose supported TLS settings', import_review_required: 'Review imported behavior', ...LOADRUNNER_PARITY_ISSUE_TITLES } as Record<string, string>)[code] || (code.startsWith('diagnostic:') ? 'Review import requirement' : code.replace(/_/g, ' '))
 }
 export function groupImportFindings(findings: ImportFinding[], script: ScriptDefinition): ImportIssue[] {
   const actions = new Map(importActionEntries(script).map(entry => [entry.path, entry.action]))

@@ -1058,7 +1058,7 @@ function extractorSourceOptions(protocol: string): Array<[string, string]> {
     case 'websocket':
       return [['body', 'Message Body'], ['header', 'Handshake Header'], ['message', 'Message'], ['close_code', 'Close Code']]
     default:
-      return [['body', 'Body'], ['header', 'Header'], ['cookie', 'Cookie']]
+      return [['body', 'Body'], ['header', 'Header'], ['all', 'Headers and body'], ['cookie', 'Cookie']]
   }
 }
 

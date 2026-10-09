@@ -1,4 +1,5 @@
 import PropertyAnalyticsFields from './PropertyAnalyticsFields'
+import AuthHostsField from './AuthHostsField'
 import { requiresScriptBaseURL } from './scriptAuthoringAssist'
 import { MessageDetailFields } from './MessageDetailFields'
 import { HTTPReplayPolicyFields } from './HTTPReplayPolicyFields'
@@ -1321,6 +1322,12 @@ export function ScriptRuntimeSettingsView({
                 <input value={script.config.http?.auth?.token || ''} placeholder="eyJhbGciOiJIUzI1NiIs..."
                   onChange={e => updateField('config.http', { ...script.config.http, auth: { ...script.config.http?.auth, token: e.target.value } })} /></label>
             )}
+            {Boolean(script.config.http?.auth?.type) && (
+              <AuthHostsField
+                hosts={script.config.http?.auth?.hosts}
+                onChange={hosts => updateField('config.http', { ...script.config.http, auth: { ...script.config.http?.auth, hosts } })}
+              />
+            )}
           </div>
         </div>}
         {effectiveHTTPTransportTab === 'browser' && <div
@@ -1805,3 +1812,4 @@ export function ScriptRuntimeSettingsView({
 
   )
 }
+

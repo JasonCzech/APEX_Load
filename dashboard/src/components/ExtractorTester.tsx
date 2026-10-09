@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { ScriptExtractorDefinition, ScriptReplayActionEvent } from '../types/scripts'
 import { evaluateExtractor } from './extractorMatch'
+import { headersAndBodySurface } from './extractorSurface'
 
 interface ExtractorTesterProps {
   event: ScriptReplayActionEvent
@@ -9,7 +10,7 @@ interface ExtractorTesterProps {
   onAddExtractor: (actionIndex: number, extractor: ScriptExtractorDefinition) => void
 }
 
-type SourceKey = 'body' | 'header'
+type SourceKey = 'body' | 'header' | 'all'
 
 const TYPE_OPTIONS: Array<[string, string]> = [
   ['regex', 'Regex'],
@@ -40,7 +41,13 @@ export function ExtractorTester({ event, actionIndex, onAddExtractor }: Extracto
 
   const responseBody = event.snapshot?.response_body ?? ''
   const responseHeaders = formatHeaders(event.snapshot?.response_headers ?? event.headers)
-  const sourceText = source === 'body' ? responseBody : responseHeaders
+  // "all" mirrors the runtime surface: header lines ending in CRLF, a blank
+  // line, then the body (LoadRunner's default search scope).
+  const sourceText = source === 'body'
+    ? responseBody
+    : source === 'all'
+      ? `${headersAndBodySurface(event.snapshot?.response_headers ?? event.headers)}${responseBody}`
+      : responseHeaders
 
   const result = useMemo(() => evaluateExtractor(type, expression, sourceText), [type, expression, sourceText])
 
@@ -67,6 +74,7 @@ export function ExtractorTester({ event, actionIndex, onAddExtractor }: Extracto
           <select value={source} onChange={event => { setSource(event.target.value as SourceKey); setAdded(null) }}>
             <option value="body">Response body</option>
             <option value="header">Response headers</option>
+            <option value="all">Headers and body</option>
           </select>
         </label>
         <label>

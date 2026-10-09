@@ -54,6 +54,8 @@ export interface ScriptAuthConfig {
   password?: string
   token?: string
   domain?: string
+  /** Hosts (host or host:port) that receive these credentials; empty means every host. */
+  hosts?: string[]
 }
 
 export interface ScriptHeaderEntry {
@@ -352,6 +354,7 @@ export interface HTTPConfig {
     password?: string
     token?: string
     domain?: string
+    hosts?: string[]
   }
 }
 

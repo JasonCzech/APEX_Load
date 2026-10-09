@@ -1660,6 +1660,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -2907,6 +2911,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -3255,6 +3263,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -11776,6 +11788,10 @@ paths:
                           properties:
                             domain:
                               type: string
+                            hosts:
+                              type: array
+                              items:
+                                type: string
                             password:
                               type: string
                             token:
@@ -13361,6 +13377,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -14577,6 +14597,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -14915,6 +14939,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -15429,6 +15457,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -16645,6 +16677,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -16983,6 +17019,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -17296,6 +17336,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -18543,6 +18587,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -18891,6 +18939,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -49583,6 +49635,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -139765,6 +139821,10 @@ paths:
                           properties:
                             domain:
                               type: string
+                            hosts:
+                              type: array
+                              items:
+                                type: string
                             password:
                               type: string
                             token:
@@ -141715,6 +141775,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -144847,6 +144911,10 @@ paths:
                                 properties:
                                   domain:
                                     type: string
+                                  hosts:
+                                    type: array
+                                    items:
+                                      type: string
                                   password:
                                     type: string
                                   token:
@@ -148958,6 +149026,10 @@ paths:
                           properties:
                             domain:
                               type: string
+                            hosts:
+                              type: array
+                              items:
+                                type: string
                             password:
                               type: string
                             token:
@@ -150908,6 +150980,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -153938,6 +154014,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -157776,6 +157856,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -173564,6 +173648,10 @@ paths:
                           properties:
                             domain:
                               type: string
+                            hosts:
+                              type: array
+                              items:
+                                type: string
                             password:
                               type: string
                             token:
@@ -189386,6 +189474,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -189967,6 +190059,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -190865,6 +190961,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -191238,6 +191338,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -192463,6 +192567,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -193710,6 +193818,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -194058,6 +194170,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -195475,6 +195591,10 @@ paths:
                                   properties:
                                     domain:
                                       type: string
+                                    hosts:
+                                      type: array
+                                      items:
+                                        type: string
                                     password:
                                       type: string
                                     token:
@@ -196722,6 +196842,10 @@ paths:
                                   properties:
                                     domain:
                                       type: string
+                                    hosts:
+                                      type: array
+                                      items:
+                                        type: string
                                     password:
                                       type: string
                                     token:
@@ -197070,6 +197194,10 @@ paths:
                                   properties:
                                     domain:
                                       type: string
+                                    hosts:
+                                      type: array
+                                      items:
+                                        type: string
                                     password:
                                       type: string
                                     token:
@@ -197358,6 +197486,10 @@ paths:
                                   properties:
                                     domain:
                                       type: string
+                                    hosts:
+                                      type: array
+                                      items:
+                                        type: string
                                     password:
                                       type: string
                                     token:
@@ -198598,6 +198730,10 @@ paths:
                                   properties:
                                     domain:
                                       type: string
+                                    hosts:
+                                      type: array
+                                      items:
+                                        type: string
                                     password:
                                       type: string
                                     token:
@@ -198946,6 +199082,10 @@ paths:
                                   properties:
                                     domain:
                                       type: string
+                                    hosts:
+                                      type: array
+                                      items:
+                                        type: string
                                     password:
                                       type: string
                                     token:
@@ -199276,6 +199416,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -199857,6 +200001,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -200755,6 +200903,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -201128,6 +201280,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -202351,6 +202507,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -203598,6 +203758,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -203946,6 +204110,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -205291,6 +205459,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -206538,6 +206710,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -206886,6 +207062,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -207378,6 +207558,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -208594,6 +208778,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -208932,6 +209120,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -211578,6 +211770,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -212794,6 +212990,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -213132,6 +213332,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -216457,6 +216661,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -217673,6 +217881,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -218011,6 +218223,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -218542,6 +218758,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -219758,6 +219978,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -220096,6 +220320,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -223471,6 +223699,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -224718,6 +224950,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -225066,6 +225302,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -226091,6 +226331,10 @@ paths:
                         properties:
                           domain:
                             type: string
+                          hosts:
+                            type: array
+                            items:
+                              type: string
                           password:
                             type: string
                           token:
@@ -226357,6 +226601,10 @@ paths:
                         properties:
                           domain:
                             type: string
+                          hosts:
+                            type: array
+                            items:
+                              type: string
                           password:
                             type: string
                           token:
@@ -226680,6 +226928,10 @@ paths:
                         properties:
                           domain:
                             type: string
+                          hosts:
+                            type: array
+                            items:
+                              type: string
                           password:
                             type: string
                           token:
@@ -227103,6 +227355,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -228350,6 +228606,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -228698,6 +228958,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -228998,6 +229262,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -230245,6 +230513,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -230593,6 +230865,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -230984,6 +231260,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -232231,6 +232511,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -232579,6 +232863,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -232898,6 +233186,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -234114,6 +234406,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -234452,6 +234748,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -234724,6 +235024,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -235971,6 +236275,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -236319,6 +236627,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -238594,6 +238906,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -239841,6 +240157,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -240189,6 +240509,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -240825,6 +241149,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -242041,6 +242369,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -242379,6 +242711,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -244720,6 +245056,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -245936,6 +246276,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -246274,6 +246618,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -246558,6 +246906,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -247805,6 +248157,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -248153,6 +248509,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -248651,6 +249011,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -249898,6 +250262,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -250246,6 +250614,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -250783,6 +251155,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -251999,6 +252375,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -252337,6 +252717,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -254735,6 +255119,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -255951,6 +256339,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -256289,6 +256681,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -259266,6 +259662,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -260482,6 +260882,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -260820,6 +261224,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -265301,6 +265709,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -266517,6 +266929,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -266855,6 +267271,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -268273,6 +268693,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -269489,6 +269913,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -269827,6 +270255,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -270621,6 +271053,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -271837,6 +272273,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -272175,6 +272615,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -274047,6 +274491,10 @@ paths:
                                   properties:
                                     domain:
                                       type: string
+                                    hosts:
+                                      type: array
+                                      items:
+                                        type: string
                                     password:
                                       type: string
                                     token:
@@ -275294,6 +275742,10 @@ paths:
                                   properties:
                                     domain:
                                       type: string
+                                    hosts:
+                                      type: array
+                                      items:
+                                        type: string
                                     password:
                                       type: string
                                     token:
@@ -275642,6 +276094,10 @@ paths:
                                   properties:
                                     domain:
                                       type: string
+                                    hosts:
+                                      type: array
+                                      items:
+                                        type: string
                                     password:
                                       type: string
                                     token:
@@ -275913,6 +276369,10 @@ paths:
                                   properties:
                                     domain:
                                       type: string
+                                    hosts:
+                                      type: array
+                                      items:
+                                        type: string
                                     password:
                                       type: string
                                     token:
@@ -277160,6 +277620,10 @@ paths:
                                   properties:
                                     domain:
                                       type: string
+                                    hosts:
+                                      type: array
+                                      items:
+                                        type: string
                                     password:
                                       type: string
                                     token:
@@ -277508,6 +277972,10 @@ paths:
                                   properties:
                                     domain:
                                       type: string
+                                    hosts:
+                                      type: array
+                                      items:
+                                        type: string
                                     password:
                                       type: string
                                     token:
@@ -281241,6 +281709,10 @@ paths:
                                   properties:
                                     domain:
                                       type: string
+                                    hosts:
+                                      type: array
+                                      items:
+                                        type: string
                                     password:
                                       type: string
                                     token:
@@ -282488,6 +282960,10 @@ paths:
                                   properties:
                                     domain:
                                       type: string
+                                    hosts:
+                                      type: array
+                                      items:
+                                        type: string
                                     password:
                                       type: string
                                     token:
@@ -282836,6 +283312,10 @@ paths:
                                   properties:
                                     domain:
                                       type: string
+                                    hosts:
+                                      type: array
+                                      items:
+                                        type: string
                                     password:
                                       type: string
                                     token:
@@ -283107,6 +283587,10 @@ paths:
                                   properties:
                                     domain:
                                       type: string
+                                    hosts:
+                                      type: array
+                                      items:
+                                        type: string
                                     password:
                                       type: string
                                     token:
@@ -284354,6 +284838,10 @@ paths:
                                   properties:
                                     domain:
                                       type: string
+                                    hosts:
+                                      type: array
+                                      items:
+                                        type: string
                                     password:
                                       type: string
                                     token:
@@ -284702,6 +285190,10 @@ paths:
                                   properties:
                                     domain:
                                       type: string
+                                    hosts:
+                                      type: array
+                                      items:
+                                        type: string
                                     password:
                                       type: string
                                     token:
@@ -288477,6 +288969,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -289693,6 +290189,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -290031,6 +290531,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -290290,6 +290794,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -291537,6 +292045,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -291885,6 +292397,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -292253,6 +292769,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -293469,6 +293989,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -293807,6 +294331,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -295615,6 +296143,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -296831,6 +297363,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -297169,6 +297705,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -297682,6 +298222,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -298898,6 +299442,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -299236,6 +299784,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -301638,6 +302190,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -302854,6 +303410,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -303192,6 +303752,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -303493,6 +304057,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -304709,6 +305277,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -305047,6 +305619,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -305304,6 +305880,10 @@ paths:
                                   properties:
                                     domain:
                                       type: string
+                                    hosts:
+                                      type: array
+                                      items:
+                                        type: string
                                     password:
                                       type: string
                                     token:
@@ -306544,6 +307124,10 @@ paths:
                                   properties:
                                     domain:
                                       type: string
+                                    hosts:
+                                      type: array
+                                      items:
+                                        type: string
                                     password:
                                       type: string
                                     token:
@@ -306892,6 +307476,10 @@ paths:
                                   properties:
                                     domain:
                                       type: string
+                                    hosts:
+                                      type: array
+                                      items:
+                                        type: string
                                     password:
                                       type: string
                                     token:
@@ -307158,6 +307746,10 @@ paths:
                                   properties:
                                     domain:
                                       type: string
+                                    hosts:
+                                      type: array
+                                      items:
+                                        type: string
                                     password:
                                       type: string
                                     token:
@@ -308405,6 +308997,10 @@ paths:
                                   properties:
                                     domain:
                                       type: string
+                                    hosts:
+                                      type: array
+                                      items:
+                                        type: string
                                     password:
                                       type: string
                                     token:
@@ -308753,6 +309349,10 @@ paths:
                                   properties:
                                     domain:
                                       type: string
+                                    hosts:
+                                      type: array
+                                      items:
+                                        type: string
                                     password:
                                       type: string
                                     token:
@@ -309115,6 +309715,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -309696,6 +310300,10 @@ paths:
                               properties:
                                 domain:
                                   type: string
+                                hosts:
+                                  type: array
+                                  items:
+                                    type: string
                                 password:
                                   type: string
                                 token:
@@ -310594,6 +311202,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -310967,6 +311579,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -321609,6 +322225,10 @@ paths:
                           properties:
                             domain:
                               type: string
+                            hosts:
+                              type: array
+                              items:
+                                type: string
                             password:
                               type: string
                             token:
@@ -333845,6 +334465,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -346516,6 +347140,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -385317,6 +385945,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -397932,6 +398564,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -400253,6 +400889,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -401025,6 +401665,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -401755,6 +402399,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -402485,6 +403133,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -403274,6 +403926,10 @@ paths:
                           properties:
                             domain:
                               type: string
+                            hosts:
+                              type: array
+                              items:
+                                type: string
                             password:
                               type: string
                             token:
@@ -404000,6 +404656,10 @@ paths:
                             properties:
                               domain:
                                 type: string
+                              hosts:
+                                type: array
+                                items:
+                                  type: string
                               password:
                                 type: string
                               token:
@@ -425681,6 +426341,10 @@ paths:
                           properties:
                             domain:
                               type: string
+                            hosts:
+                              type: array
+                              items:
+                                type: string
                             password:
                               type: string
                             token:

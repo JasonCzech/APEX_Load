@@ -550,6 +550,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -1026,6 +1027,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -1154,6 +1156,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -4242,6 +4245,7 @@ export interface operations {
               "aura_recorded_failures"?: string;
               "auth"?: {
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -4831,6 +4835,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -5307,6 +5312,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -5435,6 +5441,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -5648,6 +5655,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -6124,6 +6132,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -6252,6 +6261,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -6367,6 +6377,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -6843,6 +6854,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -6971,6 +6983,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -11653,6 +11666,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -12129,6 +12143,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -12257,6 +12272,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -12524,6 +12540,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -13000,6 +13017,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -13128,6 +13146,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -13220,6 +13239,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -13696,6 +13716,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -13824,6 +13845,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -15062,6 +15084,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -15538,6 +15561,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -15666,6 +15690,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -17081,6 +17106,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -17557,6 +17583,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -17685,6 +17712,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -18926,6 +18954,7 @@ export interface operations {
                 "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -19999,6 +20028,7 @@ export interface operations {
                 "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -20969,6 +20999,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -21445,6 +21476,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -21573,6 +21605,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -22026,6 +22059,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -22502,6 +22536,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -22630,6 +22665,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -22838,6 +22874,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -23314,6 +23351,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -23442,6 +23480,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -26486,6 +26525,7 @@ export interface operations {
                 "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -27417,6 +27457,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -27893,6 +27934,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -28021,6 +28063,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -28125,6 +28168,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -28601,6 +28645,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -28729,6 +28774,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -35562,6 +35608,7 @@ export interface operations {
             }) | null;
             "auth"?: ({
               "domain"?: string;
+              "hosts"?: Array<string>;
               "password"?: string;
               "token"?: string;
               "type"?: string;
@@ -35661,6 +35708,7 @@ export interface operations {
             }) | null;
             "auth"?: ({
               "domain"?: string;
+              "hosts"?: Array<string>;
               "password"?: string;
               "token"?: string;
               "type"?: string;
@@ -35781,6 +35829,7 @@ export interface operations {
             }) | null;
             "auth"?: ({
               "domain"?: string;
+              "hosts"?: Array<string>;
               "password"?: string;
               "token"?: string;
               "type"?: string;
@@ -36408,6 +36457,7 @@ export interface operations {
               "aura_recorded_failures"?: string;
               "auth"?: {
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -37123,6 +37173,7 @@ export interface operations {
                 "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -37963,6 +38014,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -38200,6 +38252,7 @@ export interface operations {
                 "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -38567,6 +38620,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -38714,6 +38768,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -39129,6 +39184,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -39605,6 +39661,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -39733,6 +39790,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -40421,6 +40479,7 @@ export interface operations {
               "aura_recorded_failures"?: string;
               "auth"?: {
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -44193,6 +44252,7 @@ export interface operations {
                 "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -51516,6 +51576,7 @@ export interface operations {
               "aura_recorded_failures"?: string;
               "auth"?: {
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -52674,6 +52735,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -53150,6 +53212,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -53278,6 +53341,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -54578,6 +54642,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -55054,6 +55119,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -55182,6 +55248,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -71239,6 +71306,7 @@ export interface operations {
                 "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -72655,6 +72723,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -73131,6 +73200,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -73259,6 +73329,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -73356,6 +73427,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -73830,6 +73902,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -73958,6 +74031,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -79473,6 +79547,7 @@ export interface operations {
                 "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -80088,6 +80163,7 @@ export interface operations {
                 "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -80389,6 +80465,7 @@ export interface operations {
                 "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -80676,6 +80753,7 @@ export interface operations {
                 "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -80963,6 +81041,7 @@ export interface operations {
                 "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -84752,6 +84831,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -85228,6 +85308,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -85356,6 +85437,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -85452,6 +85534,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -85928,6 +86011,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -86056,6 +86140,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -100295,6 +100380,7 @@ export interface operations {
                 "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -103111,6 +103197,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -103587,6 +103674,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -103715,6 +103803,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -104018,6 +104107,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -104494,6 +104584,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -104622,6 +104713,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -104727,6 +104819,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -105203,6 +105296,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -105331,6 +105425,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -105505,6 +105600,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -105981,6 +106077,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -106109,6 +106206,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -106454,6 +106552,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -106930,6 +107029,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -107058,6 +107158,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -107150,6 +107251,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -107626,6 +107728,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -107754,6 +107857,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -110372,6 +110476,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -110848,6 +110953,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -110976,6 +111082,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -111073,6 +111180,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -111547,6 +111655,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -111675,6 +111784,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -111765,6 +111875,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -112241,6 +112352,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -112369,6 +112481,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -122267,6 +122380,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -122743,6 +122857,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -122871,6 +122986,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -123061,6 +123177,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -123537,6 +123654,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -123665,6 +123783,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -126218,6 +126337,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -126694,6 +126814,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -126822,6 +126943,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -128848,6 +128970,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -129324,6 +129447,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -129452,6 +129576,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -131348,6 +131473,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -131824,6 +131950,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -131952,6 +132079,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -132785,6 +132913,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -133261,6 +133390,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -133389,6 +133519,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -134299,6 +134430,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -134775,6 +134907,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -134903,6 +135036,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -135836,6 +135970,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -136312,6 +136447,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -136440,6 +136576,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -137374,6 +137511,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -137850,6 +137988,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -137978,6 +138117,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -138911,6 +139051,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -139387,6 +139528,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -139515,6 +139657,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -148235,6 +148378,7 @@ export interface operations {
                 "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -148882,6 +149026,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -149358,6 +149503,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -149486,6 +149632,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -149589,6 +149736,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -150065,6 +150213,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -150193,6 +150342,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -153612,6 +153762,7 @@ export interface operations {
               "aura_recorded_failures"?: string;
               "auth"?: {
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -154326,6 +154477,7 @@ export interface operations {
                 "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -155286,6 +155438,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -155523,6 +155676,7 @@ export interface operations {
                 "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -155890,6 +156044,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -156037,6 +156192,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -156450,6 +156606,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -156926,6 +157083,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -157054,6 +157212,7 @@ export interface operations {
                 }) | null;
                 "auth"?: ({
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -160794,6 +160953,7 @@ export interface operations {
               "aura_recorded_failures"?: string;
               "auth"?: {
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -161091,6 +161251,7 @@ export interface operations {
                 "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -161640,6 +161801,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -161877,6 +162039,7 @@ export interface operations {
                 "aura_recorded_failures"?: string;
                 "auth"?: {
                   "domain"?: string;
+                  "hosts"?: Array<string>;
                   "password"?: string;
                   "token"?: string;
                   "type"?: string;
@@ -162244,6 +162407,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -162391,6 +162555,7 @@ export interface operations {
               }) | null;
               "auth"?: ({
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;
@@ -163234,6 +163399,7 @@ export interface operations {
               "aura_recorded_failures"?: string;
               "auth"?: {
                 "domain"?: string;
+                "hosts"?: Array<string>;
                 "password"?: string;
                 "token"?: string;
                 "type"?: string;

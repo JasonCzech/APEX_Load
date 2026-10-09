@@ -206,6 +206,10 @@ function legacyActionNeedsExplicitTarget(actionType: string): boolean {
     'rendezvous',
     'error_message',
     'review_required',
+    'cookie_clear',
+    'cookie_set',
+    'cache_clear',
+    'http_connections_close',
   ].includes(actionType)
 }
 
