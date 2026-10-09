@@ -1,5 +1,6 @@
 import type {
   GeneratorAssignmentSettings,
+  GoalConfig,
   RuntimeSettingsOverride,
   ScenarioRuntimeSettingsDraft,
   StoredScenario,
@@ -102,166 +103,107 @@ export function reseedScenarioGroups(
   return ensureScenarioGroups([...seededGroups, ...preservedExtraGroups])
 }
 
-function browserRuntimeFromForm(form: ScenarioFormState) {
-  const browser = {
-    ...(form.browser_device_profile ? { device_profile: form.browser_device_profile } : {}),
-    ...(form.browser_orientation ? { orientation: form.browser_orientation } : {}),
-    ...(form.browser_touch_mode ? { touch_mode: form.browser_touch_mode === 'true' } : {}),
-    ...(form.browser_headless ? { headless: form.browser_headless === 'true' } : {}),
-  }
-  return Object.keys(browser).length > 0 ? browser : undefined
-}
-
-function pacingFromForm(form: ScenarioFormState): RuntimeSettingsOverride['pacing'] | undefined {
-  const preserved = form.runtime_settings?.pacing
-  if (!form.runtime_pacing_type) return preserved ? { ...preserved } : undefined
-  const sameType = preserved?.type === form.runtime_pacing_type
-  if (form.runtime_pacing_type === 'none') {
-    return sameType ? { ...preserved, type: 'none' } : { type: 'none' }
-  }
-  if (form.runtime_pacing_type === 'fixed_interval') {
-    return { ...(sameType ? preserved : {}), type: 'fixed_interval', interval_ms: form.runtime_pacing_interval_ms }
-  }
-  if (form.runtime_pacing_type === 'random_interval') {
-    return {
-      ...(sameType ? preserved : {}),
-      type: 'random_interval',
-      min_interval_ms: form.runtime_pacing_min_interval_ms,
-      max_interval_ms: form.runtime_pacing_max_interval_ms,
-    }
-  }
-  if (form.runtime_pacing_type === 'tps') {
-    return { ...(sameType ? preserved : {}), type: 'tps', tps: form.runtime_pacing_tps }
-  }
-  if (form.runtime_pacing_type === 'fixed_delay') {
-    return { ...(sameType ? preserved : {}), type: 'fixed_delay', delay_ms: form.runtime_pacing_delay_ms }
-  }
-  if (form.runtime_pacing_type === 'random_delay') {
-    return {
-      ...(sameType ? preserved : {}),
-      type: 'random_delay',
-      min_delay_ms: form.runtime_pacing_min_delay_ms,
-      max_delay_ms: form.runtime_pacing_max_delay_ms,
-    }
-  }
-  return undefined
-}
-
-function thinkTimeFromForm(form: ScenarioFormState): RuntimeSettingsOverride['think_time'] | undefined {
-  const preserved = form.runtime_settings?.think_time
-  const type = canonicalThinkTimeType(form.runtime_think_time_type || preserved?.type)
-  if (!type) return undefined
-  const sameType = canonicalThinkTimeType(preserved?.type) === type
-  const next = {
-    ...(sameType ? preserved : {}),
-    type,
-    multiplier: form.runtime_think_time_multiplier,
-    limit_ms: form.runtime_think_time_limit_ms,
-    ignore: form.runtime_ignore_think_time,
-    ...(type === 'recorded' ? {} : { mean_ms: form.runtime_think_time_ms ?? 0 }),
-    ...(type === 'gaussian' ? {
-      std_ms: form.runtime_think_time_std_ms,
-      min_ms: form.runtime_think_time_min_ms,
-      max_ms: form.runtime_think_time_max_ms,
-    } : {}),
-    ...(type === 'random_percentage' ? {
-      min_percent: form.runtime_think_time_min_percent ?? preserved?.min_percent,
-      max_percent: form.runtime_think_time_max_percent ?? preserved?.max_percent,
-    } : {}),
-    ...(type === 'uniform' ? {
-      min_ms: form.runtime_think_time_min_ms,
-      max_ms: form.runtime_think_time_max_ms,
-    } : {}),
-  }
-  return thinkTimeConfigForType(next, type)
-}
-
-export function runtimeSettingsFromForm(
-  form: ScenarioFormState,
-  includeBrowser: boolean,
-): ScenarioRuntimeSettingsDraft {
-  const preserved = runtimeDraftFromOverride(form.runtime_settings)
-  const hasCanonicalRunLogic = form.runtime_settings?.run_logic !== undefined
-  const hasCanonicalLog = form.runtime_settings?.log !== undefined
-  const hasCanonicalBrowser = form.runtime_settings?.browser_config !== undefined
-  const runLogic = hasCanonicalRunLogic
-    ? {
-        ...preserved?.run_logic,
-        iterations: form.runtime_iterations,
-        auto_transactions: form.runtime_auto_transactions || undefined,
-      }
-    : preserved?.run_logic
-  const log = hasCanonicalLog
-    ? { ...preserved?.log, level: form.runtime_log_level || undefined }
-    : preserved?.log
-  const browserConfig = includeBrowser && hasCanonicalBrowser
-    ? {
-        ...preserved?.browser_config,
-        device_profile: form.browser_device_profile || undefined,
-        orientation: form.browser_orientation || undefined,
-        touch_mode: form.browser_touch_mode ? form.browser_touch_mode === 'true' : undefined,
-        headless: form.browser_headless ? form.browser_headless === 'true' : undefined,
-      }
-    : preserved?.browser_config
-  return {
-    ...preserved,
-    iterations: hasCanonicalRunLogic ? undefined : form.runtime_iterations,
-    pacing: pacingFromForm(form) ?? undefined,
-    think_time: thinkTimeFromForm(form) ?? undefined,
-    browser: includeBrowser ? (hasCanonicalBrowser ? undefined : browserRuntimeFromForm(form)) : preserved?.browser,
-    browser_config: browserConfig,
-    log_level: hasCanonicalLog ? '' : form.runtime_log_level,
-    log,
-    auto_transactions: hasCanonicalRunLogic ? '' : form.runtime_auto_transactions,
-    run_logic: runLogic,
-    continue_on_error: form.continue_on_error,
-    snapshot_on_error: form.snapshot_on_error,
-  }
-}
-
 /**
- * Replaces the scenario-default runtime profile while keeping the legacy flat
- * form mirrors synchronized. runtimeSettingsFromForm still reads those mirrors
- * when producing the save payload, so leaving them blank would otherwise
- * overwrite canonical pacing/think-time values during an unrelated edit.
+ * The scenario-wide runtime defaults a form authors, as the runtime editor's
+ * draft. The form keeps only the canonical override (runtime_settings): every
+ * editor writes it directly, so nothing is reconstructed from display fields.
+ * A legacy alias is dropped where its canonical section is authored (the
+ * controller refuses the two disagreeing): top-level iterations and
+ * auto_transactions under run_logic, log_level under log, and the legacy
+ * browser block under browser_config.
  */
+export function runtimeSettingsFromForm(form: ScenarioFormState): ScenarioRuntimeSettingsDraft {
+  const draft = runtimeDraftFromOverride(form.runtime_settings)
+  if (!draft) return { log_level: '', auto_transactions: '' }
+  return {
+    ...draft,
+    ...(draft.run_logic !== undefined ? { iterations: undefined, auto_transactions: '' } : {}),
+    ...(draft.log !== undefined ? { log_level: '' } : {}),
+    ...(draft.browser_config !== undefined ? { browser: undefined } : {}),
+  }
+}
+
+/** Replaces the scenario-wide runtime defaults with the runtime editor's draft. */
 export function replaceScenarioRuntimeDefaults(
   form: ScenarioFormState,
   next?: ScenarioRuntimeSettingsDraft,
 ): ScenarioFormState {
-  const pacing = next?.pacing
-  const thinkTime = next?.think_time
-  return {
-    ...form,
-    runtime_settings: overrideFromRuntimeDraft(next),
-    runtime_pacing_type: (pacing?.type || '') as ScenarioFormState['runtime_pacing_type'],
-    runtime_pacing_delay_ms: pacing?.delay_ms,
-    runtime_pacing_min_delay_ms: pacing?.min_delay_ms,
-    runtime_pacing_max_delay_ms: pacing?.max_delay_ms,
-    runtime_pacing_interval_ms: pacing?.interval_ms,
-    runtime_pacing_min_interval_ms: pacing?.min_interval_ms,
-    runtime_pacing_max_interval_ms: pacing?.max_interval_ms,
-    runtime_pacing_tps: pacing?.tps,
-    runtime_think_time_type: canonicalThinkTimeType(thinkTime?.type) as ScenarioFormState['runtime_think_time_type'],
-    runtime_think_time_ms: thinkTime?.mean_ms,
-    runtime_think_time_std_ms: thinkTime?.std_ms,
-    runtime_think_time_min_ms: thinkTime?.min_ms,
-    runtime_think_time_max_ms: thinkTime?.max_ms,
-    runtime_think_time_min_percent: thinkTime?.min_percent,
-    runtime_think_time_max_percent: thinkTime?.max_percent,
-    runtime_think_time_multiplier: thinkTime?.multiplier,
-    runtime_think_time_limit_ms: thinkTime?.limit_ms,
-    runtime_ignore_think_time: thinkTime?.ignore ?? false,
-    runtime_iterations: next?.run_logic?.iterations ?? next?.iterations,
-    runtime_log_level: next?.log?.level ?? next?.log_level ?? '',
-    runtime_auto_transactions: next?.run_logic?.auto_transactions ?? next?.auto_transactions ?? '',
-    continue_on_error: next?.continue_on_error,
-    snapshot_on_error: next?.snapshot_on_error,
-    browser_device_profile: next?.browser_config?.device_profile ?? next?.browser?.device_profile ?? '',
-    browser_orientation: next?.browser_config?.orientation ?? next?.browser?.orientation ?? '',
-    browser_touch_mode: booleanSelectValue(next?.browser_config?.touch_mode ?? next?.browser?.touch_mode),
-    browser_headless: booleanSelectValue(next?.browser_config?.headless ?? next?.browser?.headless),
+  return { ...form, runtime_settings: overrideFromRuntimeDraft(next) }
+}
+
+export type ScenarioErrorHandlingFlag = 'continue_on_error' | 'snapshot_on_error'
+
+/** An error-handling default as authored: undefined inherits the script's. */
+export function scenarioErrorHandlingFlag(form: ScenarioFormState, flag: ScenarioErrorHandlingFlag): boolean | undefined {
+  return form.runtime_settings?.error_handling?.[flag]
+}
+
+/** Sets an error-handling default (undefined clears it back to inherit). */
+export function withScenarioErrorHandlingFlag(form: ScenarioFormState, flag: ScenarioErrorHandlingFlag, value: boolean | undefined): ScenarioFormState {
+  const runtime = form.runtime_settings ? structuredClone(form.runtime_settings) : {}
+  const errorHandling = { ...(runtime.error_handling ?? {}) }
+  if (value === undefined) delete errorHandling[flag]
+  else errorHandling[flag] = value
+  runtime.error_handling = Object.keys(errorHandling).length > 0 ? errorHandling : undefined
+  return { ...form, runtime_settings: Object.values(runtime).some(entry => entry !== undefined) ? runtime : undefined }
+}
+
+const GOAL_BOUNDS = ['target_average_tps', 'min_vusers', 'max_vusers', 'p95_latency_ms', 'max_error_pct'] as const
+
+/**
+ * The goal after a load-model adaptation: each throughput, VUser, latency or
+ * error bound the adaptation sets replaces the authored one; every other goal
+ * field is kept.
+ */
+export function withAdaptedGoalBounds(current: GoalConfig | undefined, adapted: GoalConfig | undefined): GoalConfig | undefined {
+  if (!adapted) return current
+  const next: GoalConfig = { ...(current || {}) }
+  for (const key of GOAL_BOUNDS) {
+    if (adapted[key] !== undefined) next[key] = adapted[key] as never
   }
+  return Object.keys(next).length > 0 ? next : undefined
+}
+
+/** The runtime fragments a starter template, workload shape or adapted load model seeds. */
+export type ScenarioSeedRuntime = Pick<ScenarioSeed, 'pacing' | 'think_time' | 'runtime_settings' | 'iterations' | 'log_level' | 'auto_transactions' | 'continue_on_error' | 'snapshot_on_error'>
+
+/**
+ * The scenario runtime defaults after a seed: a seed's runtime_settings
+ * replaces the current defaults, and its pacing, think time, iterations,
+ * logging, auto-transaction and error-handling fragments are then applied over
+ * them. A fragment of the same pacing or think-time type keeps the current
+ * section's other fields; a different type replaces the section. Iterations,
+ * log level and auto transactions go where the defaults already author them
+ * (run_logic and log), else to their top-level fields.
+ */
+export function seededScenarioRuntime(current: RuntimeSettingsOverride | undefined, seed: ScenarioSeedRuntime): RuntimeSettingsOverride | undefined {
+  const runtime: RuntimeSettingsOverride = structuredClone(seed.runtime_settings ?? current ?? {})
+  if (seed.pacing?.type) {
+    const sameType = runtime.pacing?.type === seed.pacing.type
+    runtime.pacing = { ...(sameType ? runtime.pacing : {}), ...seed.pacing, type: seed.pacing.type } as NonNullable<RuntimeSettingsOverride['pacing']>
+  }
+  const thinkTimeType = canonicalThinkTimeType(seed.think_time?.type)
+  if (seed.think_time && thinkTimeType) {
+    const sameType = canonicalThinkTimeType(runtime.think_time?.type ?? undefined) === thinkTimeType
+    runtime.think_time = thinkTimeConfigForType({ ...(sameType ? runtime.think_time : {}), ...seed.think_time }, thinkTimeType)
+  }
+  if (seed.iterations !== undefined) {
+    if (runtime.run_logic) runtime.run_logic = { ...runtime.run_logic, iterations: seed.iterations }
+    else runtime.iterations = seed.iterations
+  }
+  if (seed.log_level !== undefined) {
+    if (runtime.log) runtime.log = { ...runtime.log, level: seed.log_level || undefined }
+    else runtime.log_level = seed.log_level || undefined
+  }
+  if (seed.auto_transactions !== undefined) {
+    if (runtime.run_logic) runtime.run_logic = { ...runtime.run_logic, auto_transactions: seed.auto_transactions || undefined }
+    else runtime.auto_transactions = seed.auto_transactions || undefined
+  }
+  for (const flag of ['continue_on_error', 'snapshot_on_error'] as const) {
+    if (seed[flag] === undefined) continue
+    runtime.error_handling = { ...(runtime.error_handling ?? {}), [flag]: seed[flag] }
+  }
+  return Object.values(runtime).some(entry => entry !== undefined) ? runtime : undefined
 }
 
 export function assignmentFromForm(form: ScenarioFormState): GeneratorAssignmentSettings {
@@ -273,13 +215,16 @@ export function assignmentFromForm(form: ScenarioFormState): GeneratorAssignment
     ...(preserved?.failover_policy === 'continue' ? { failover_policy: 'continue' as const } : {}),
     ...(preserved?.recovery_spare_vusers !== undefined ? { recovery_spare_vusers: preserved?.recovery_spare_vusers } : {}),
   }
-  if (form.assignment_mode === 'specific_hosts') {
-    return { ...common, mode: 'specific_hosts', selected_targets: [...form.assignment_targets] }
+  // The form's assignment is its only placement store (AUTH-3); only the
+  // fields its mode uses are sent.
+  const mode = preserved?.mode || 'auto'
+  if (mode === 'specific_hosts') {
+    return { ...common, mode: 'specific_hosts', selected_targets: [...(preserved?.selected_targets || [])] }
   }
-  if (form.assignment_mode === 'region_weighted' && preserved?.region_weights) {
+  if (mode === 'region_weighted' && preserved?.region_weights) {
     return { ...common, mode: 'region_weighted', region_weights: { ...preserved.region_weights } }
   }
-  if (form.assignment_mode === 'load_zone_weighted' && preserved?.load_zone_weights) {
+  if (mode === 'load_zone_weighted' && preserved?.load_zone_weights) {
     return { ...common, mode: 'load_zone_weighted', load_zone_weights: { ...preserved.load_zone_weights } }
   }
   return { ...common, mode: 'auto' }
@@ -335,9 +280,6 @@ export function scenarioFormStateFromStoredScenario(
   const groups = [...(scenario.scripts || [])]
     .sort((left, right) => (left.order ?? 0) - (right.order ?? 0))
     .map(group => scenarioFormGroupFromStored(group, fallbackScriptId))
-  const runtimeSettings = scenario.runtime_settings
-  const pacing = runtimeSettings?.pacing
-  const thinkTime = runtimeSettings?.think_time
 
   return {
     name: cloneDraft ? `${scenario.name} (Copy)` : scenario.name,
@@ -348,11 +290,6 @@ export function scenarioFormStateFromStoredScenario(
     scenario_mode: scenario.scenario_mode || 'vuser_driven',
     script_shakeout: Boolean(scenario.script_shakeout),
     resource_baseline: Boolean(scenario.resource_baseline),
-    goal_target_average_tps: scenario.goal_config?.target_average_tps,
-    goal_min_vusers: scenario.goal_config?.min_vusers,
-    goal_max_vusers: scenario.goal_config?.max_vusers,
-    goal_p95_latency_ms: scenario.goal_config?.p95_latency_ms,
-    goal_max_error_pct: scenario.goal_config?.max_error_pct,
     goal_config: scenario.goal_config ? {
       ...scenario.goal_config,
       transaction_rules: scenario.goal_config.transaction_rules?.map(rule => ({ ...rule })),
@@ -362,36 +299,7 @@ export function scenarioFormStateFromStoredScenario(
 			: undefined,
     } : undefined,
     traffic_profile: scenario.traffic_profile ? structuredClone(scenario.traffic_profile) : undefined,
-    continue_on_error: runtimeSettings?.error_handling?.continue_on_error,
-    snapshot_on_error: runtimeSettings?.error_handling?.snapshot_on_error,
-    runtime_iterations: runtimeSettings?.run_logic?.iterations ?? runtimeSettings?.iterations,
-    runtime_pacing_type: (pacing?.type || '') as ScenarioFormState['runtime_pacing_type'],
-    runtime_pacing_delay_ms: pacing?.delay_ms,
-    runtime_pacing_min_delay_ms: pacing?.min_delay_ms,
-    runtime_pacing_max_delay_ms: pacing?.max_delay_ms,
-    runtime_pacing_interval_ms: pacing?.interval_ms,
-    runtime_pacing_min_interval_ms: pacing?.min_interval_ms,
-    runtime_pacing_max_interval_ms: pacing?.max_interval_ms,
-    runtime_pacing_tps: pacing?.tps,
-    runtime_think_time_type: canonicalThinkTimeType(thinkTime?.type) as ScenarioFormState['runtime_think_time_type'],
-    runtime_think_time_ms: thinkTime?.mean_ms,
-    runtime_think_time_std_ms: thinkTime?.std_ms,
-    runtime_think_time_min_ms: thinkTime?.min_ms,
-    runtime_think_time_max_ms: thinkTime?.max_ms,
-    runtime_think_time_min_percent: thinkTime?.min_percent,
-    runtime_think_time_max_percent: thinkTime?.max_percent,
-    runtime_think_time_multiplier: thinkTime?.multiplier,
-    runtime_think_time_limit_ms: thinkTime?.limit_ms,
-    runtime_ignore_think_time: Boolean(thinkTime?.ignore),
-    runtime_log_level: runtimeSettings?.log?.level ?? runtimeSettings?.log_level ?? '',
-    runtime_auto_transactions: runtimeSettings?.run_logic?.auto_transactions ?? runtimeSettings?.auto_transactions ?? '',
-    runtime_settings: runtimeSettings,
-    browser_device_profile: runtimeSettings?.browser_config?.device_profile ?? runtimeSettings?.browser?.device_profile ?? '',
-    browser_orientation: runtimeSettings?.browser_config?.orientation ?? runtimeSettings?.browser?.orientation ?? '',
-    browser_touch_mode: booleanSelectValue(runtimeSettings?.browser_config?.touch_mode ?? runtimeSettings?.browser?.touch_mode),
-    browser_headless: booleanSelectValue(runtimeSettings?.browser_config?.headless ?? runtimeSettings?.browser?.headless),
-    assignment_mode: scenario.assignment?.mode || 'auto',
-    assignment_targets: scenario.assignment?.selected_targets ? [...scenario.assignment.selected_targets] : [],
+    runtime_settings: scenario.runtime_settings ? structuredClone(scenario.runtime_settings) : undefined,
     assignment: cloneAssignment(scenario.assignment),
     data_pools: scenario.data_pools?.map(binding => cloneDraft ? {
       pool_id: binding.pool_id,

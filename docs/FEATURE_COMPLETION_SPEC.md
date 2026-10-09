@@ -511,6 +511,20 @@ Deviations:
 
 No broad deletion precedes caller inventory, fixtures and passing parity. Library filters/selection and project refresh remain page concerns; mutable session orchestration moves to its shared owner. Cleanup ends when one canonical owner resolves each mutation/validation/payload and every supported route/old deep link has a tested destination.
 
+Delivery progress, 2026-10-09 (Wave 5, A8): every seam above has a decision, an owner and parity proof in [ADAPTER_RETIREMENT.md](qa/ADAPTER_RETIREMENT.md), and `dashboard/src/adapterRetirement.test.ts` fails when a retired adapter or one of its mirror fields comes back.
+- **Import launchers:** importers are opened by launcher descriptor. An import route names its launcher, so a reload reopens it. The old `#/scripts?mode=import` address still opens the LoadRunner archive importer, and an unknown launcher opens the create options; ten unreachable alias sub-views were removed.
+- **Debug start request:** `CompatibleDebugStartRequest` is gone. The request is the generated body, with only the script typed by the DSL.
+- **Scenario form:** TestHub's form keeps only the canonical runtime override, goal config and assignment. Its 27 mirror fields and the save-time reconstruction were removed, and a stored override's conflicting legacy aliases are dropped where the canonical section is authored.
+  - A corpus of stored scenarios projects into the same save, estimate, timeline and preview as before, except two corrections: a think-time section saved without `ignore` no longer gains `ignore: false`, and an unchanged save no longer re-normalizes a stored section.
+  - Version 2 browser checkpoints are read once into the canonical values; new checkpoints are version 3.
+- **Load previews:** stage peak and stage-level semantics are shared (`workloadStages`), following the controller's stage schedule: the next stage applies at a stage's end, and a ramp starts from the group's level. The execution page's queued-run preview and the create dialog's chart use the shared run projection, which now draws group start offsets.
+
+Deviations:
+- TestHub keeps a form as its editing view (its groups, name and other scalar fields), now holding only canonical values; it does not hold a `ScenarioDraft` itself.
+- The wizard's model chart keeps its own chart builder (series metadata, TPS stages, draft placeholders); it shares stage semantics but draws neither baselines nor start offsets.
+- A queued run's summary carries no traffic profile, so its preview draws profile-mapped groups from their ramps.
+- `NewTestPage`'s group edit draft remains a run-only projection.
+
 ## 11. Proposed public contracts and persistence
 
 Extend existing generated API contracts rather than copying endpoint catalogs into prose. Proposed additions must be marked as new until implemented:

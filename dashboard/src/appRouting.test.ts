@@ -103,6 +103,24 @@ describe('appRouting', () => {
     expect(viewToLocationHash({ page: 'results' })).toBe('#/results')
   })
 
+  it('names the importer in script import routes and translates the old import address', () => {
+    // An address written before import routes named their launcher still
+    // opens the LoadRunner archive importer it always opened.
+    expect(parseAppViewFromHash('#/scripts?mode=import')).toEqual({ page: 'scripts', mode: 'import', importLauncher: 'enterprise_archive' })
+    expect(parseAppViewFromHash('#/scripts?mode=import&projectId=p1')).toEqual({ page: 'scripts', mode: 'import', importLauncher: 'enterprise_archive', projectId: 'p1' })
+    // A named launcher and mode round-trip.
+    const har = { page: 'scripts', mode: 'import', importLauncher: 'traffic_har', importMode: 'auto_detect', projectId: 'p1' } as const
+    expect(viewToLocationHash(har)).toBe('#/scripts?mode=import&launcher=traffic_har&importMode=auto_detect&projectId=p1')
+    expect(parseAppViewFromHash(viewToLocationHash(har))).toEqual(har)
+    expect(parseAppViewFromHash('#/scripts?mode=import&launcher=jmeter')).toEqual({ page: 'scripts', mode: 'import', importLauncher: 'jmeter' })
+    // An unknown launcher opens the create options, which list every importer;
+    // a malformed mode is dropped.
+    expect(parseAppViewFromHash('#/scripts?mode=import&launcher=har-import')).toEqual({ page: 'scripts', mode: 'create' })
+    expect(parseAppViewFromHash('#/scripts?mode=import&launcher=sample&importMode=Java%20HTTP')).toEqual({ page: 'scripts', mode: 'import', importLauncher: 'sample' })
+    // Changing project keeps the open importer.
+    expect(resetProjectScopedAssetView(har, 'p2')).toEqual({ page: 'scripts', mode: 'import', importLauncher: 'traffic_har', importMode: 'auto_detect', projectId: 'p2' })
+  })
+
   it('round-trips deep links for runs, scenario launches, and scripts', () => {
     expect(parseAppViewFromHash(viewToLocationHash({ page: 'test', testId: 'run/123' }))).toEqual({
       page: 'test',

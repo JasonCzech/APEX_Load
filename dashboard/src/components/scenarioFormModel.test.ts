@@ -28,7 +28,7 @@ describe('reseedScenarioGroups', () => {
 it('retains percentage bounds through scenario runtime replacement and form serialization', () => {
  const form = { runtime_settings: {}, groups: [] } as unknown as ScenarioFormState
  const next = replaceScenarioRuntimeDefaults(form, { log_level: '', auto_transactions: '', think_time: { type: 'random_percentage', min_percent: 0, max_percent: 125 } })
- expect(runtimeSettingsFromForm(next, false)?.think_time).toMatchObject({ type: 'random_percentage', min_percent: 0, max_percent: 125 })
+ expect(runtimeSettingsFromForm(next).think_time).toMatchObject({ type: 'random_percentage', min_percent: 0, max_percent: 125 })
 })
 
 it('preserves group SLA overrides when applying a new load shape', () => {

@@ -6,6 +6,7 @@ import { assignmentFromForm, runtimeSettingsFromForm, scenarioFormStateFromStore
 import { buildCreateTestPayload, buildScenarioUpsertPayload, type CreateTestPayload, type ScenarioUpsertPayload } from './scenarioPayloadUtils'
 import { buildRunLoadProfilePreview, type RunLoadProfilePreview, type ScenarioScriptGroup } from './newTestRunModel'
 import { scenarioDraftReducer } from './scenarioDraftUtils'
+import { maxStageVUsers } from './workloadStages'
 
 // Scenario assembly (A6). ScenarioDraft is the one owner of an authored
 // scenario: every surface that creates or edits one (CreateTestModal, the
@@ -18,9 +19,8 @@ import { scenarioDraftReducer } from './scenarioDraftUtils'
 
 // ---- Constructors ----------------------------------------------------------
 
-export function maxStageVUsers(stages: LoadStageDraft[]) {
-  return stages.reduce((max, stage) => Math.max(max, Number(stage.target_vusers) || 0), 0)
-}
+// The stage peak is shared workload semantics (workloadStages).
+export { maxStageVUsers } from './workloadStages'
 
 function normalizeStage(stage: LoadStageDraft): LoadStageDraft {
   return {
@@ -60,31 +60,16 @@ export function scenarioDraftGroupFromForm(group: ScenarioFormGroup): ScenarioDr
   }
 }
 
-/** The goal configuration a TestHub form authors. */
+/** The goal configuration a TestHub form authors (a copy of its goal_config). */
 export function goalConfigFromForm(form: ScenarioFormState): GoalConfig {
-  // Preserve authored absence and explicit nested values during unrelated edits.
-  const goal: GoalConfig = structuredClone(form.goal_config || {})
-  const setNumber = (field: keyof GoalConfig, value: number | undefined) => {
-    if (value === undefined || value === null) {
-      delete goal[field]
-      return
-    }
-    goal[field] = Number(value) as never
-  }
-  setNumber('target_average_tps', form.goal_target_average_tps)
-  setNumber('min_vusers', form.goal_min_vusers)
-  setNumber('max_vusers', form.goal_max_vusers)
-  setNumber('p95_latency_ms', form.goal_p95_latency_ms)
-  setNumber('max_error_pct', form.goal_max_error_pct)
-  return goal
+  return structuredClone(form.goal_config || {})
 }
 
 /**
- * The draft a TestHub form authors. TestHub keeps its flat form as the
- * editing view; this is the only way its values become a scenario.
- * includeBrowser says whether the browser runtime controls apply.
+ * The draft a TestHub form authors. TestHub keeps its form as the editing
+ * view; this is the only way its values become a scenario.
  */
-export function scenarioDraftFromForm(form: ScenarioFormState, options: { includeBrowser: boolean }): ScenarioDraft {
+export function scenarioDraftFromForm(form: ScenarioFormState): ScenarioDraft {
   return {
     name: form.name,
     duration: form.termination_mode === 'iterations' ? '' : form.duration || '1m',
@@ -95,7 +80,7 @@ export function scenarioDraftFromForm(form: ScenarioFormState, options: { includ
     resourceBaseline: form.resource_baseline,
     assignment: assignmentFromForm(form),
     goalConfig: goalConfigFromForm(form),
-    runtimeSettings: runtimeSettingsFromForm(form, options.includeBrowser),
+    runtimeSettings: runtimeSettingsFromForm(form),
     groups: form.groups.map(scenarioDraftGroupFromForm),
     ...(form.traffic_profile ? { trafficProfile: form.traffic_profile } : {}),
     dataPools: (form.data_pools || []).map(binding => ({ ...binding, access_mode: 'read_only' as const })),
@@ -107,8 +92,8 @@ export function scenarioDraftFromForm(form: ScenarioFormState, options: { includ
  * scenario without groups stays without groups (the editor's starter group is
  * an editing aid, not part of the scenario).
  */
-export function scenarioDraftFromStoredScenario(scenario: StoredScenario, options: { fallbackScriptId?: string; includeBrowser: boolean }): ScenarioDraft {
-  const draft = scenarioDraftFromForm(scenarioFormStateFromStoredScenario(scenario, options.fallbackScriptId || ''), options)
+export function scenarioDraftFromStoredScenario(scenario: StoredScenario, options: { fallbackScriptId?: string } = {}): ScenarioDraft {
+  const draft = scenarioDraftFromForm(scenarioFormStateFromStoredScenario(scenario, options.fallbackScriptId || ''))
   return scenario.scripts?.length ? draft : { ...draft, groups: [] }
 }
 

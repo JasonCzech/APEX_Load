@@ -9,7 +9,7 @@ import { useApi } from '../hooks/useApi'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { DraftCapacityEstimate, DynatraceConnection, ELKConnection, ScenarioDraft, ScenarioDraftGroup, StoredScript, SystemInventoryGenerator, TestSummary } from '../types'
 import './CreateTestModal.css'
-import { isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
+import { isValidDurationInput } from '../utils/timeUtils'
 import CreateTestCapacityPreview from './CreateTestCapacityPreview'
 import CreateTestGoalSettings from './CreateTestGoalSettings'
 import CreateTestGroupsEditor from './CreateTestGroupsEditor'
@@ -17,7 +17,7 @@ import TransactionResponseTimeSLASettings from './TransactionResponseTimeSLASett
 import CreateTestRuntimeOverrides from './CreateTestRuntimeOverrides'
 import { getErrorMessage } from '../utils/errorUtils'
 import { buildDefaultScenarioGroup, buildInitialScenarioDraft, scenarioDraftReducer, ScenarioDraftField, ScenarioDraftState } from './scenarioDraftUtils'
-import { scenarioCreatePayload, scenarioEstimateRequest } from './scenarioAssembly'
+import { scenarioCreatePayload, scenarioEstimateRequest, scenarioLoadPreview } from './scenarioAssembly'
 import DurationField from './DurationField'
 import { NavigationGuardRegisterContext, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { hasGoalModeConfiguration, validateGoalConfig, validateTransactionResponseTimeSLAOverrides } from './goalConfigValidation'
@@ -36,17 +36,11 @@ interface Props {
   mode?: 'create-queued-run' | 'revise-queued-run'
 }
 
-type LoadProfilePoint = {
-  time: number
-  total: number
-} & Record<`group${number}`, number>
-
 export default function CreateTestModal({ scripts, projectId, folderId, onClose, onCreated, initialScenario, mode = 'create-queued-run' }: Props) {
   const api = useApi()
   const { runGuarded } = useNavigationGuardRunner()
   const registerGuard = useContext(NavigationGuardRegisterContext)
   const releaseOwnGuardRef = useRef<(() => void) | null>(null)
-  const baselineSeconds = 5 * 60
   const [scenarioDraft, dispatchScenarioDraft] = useReducer(
     scenarioDraftReducer,
     buildInitialScenarioDraft(initialScenario, scripts),
@@ -188,59 +182,9 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     return () => { active = false }
   }, [api, effectiveProjectId, captureRetry])
 
-  // Calculate chart data
-  const chartData = (() => {
-    const durSec = parseDurationToSeconds(duration)
-    let maxRampDown = 0
-    groups.forEach(g => {
-      const rd = parseDurationToSeconds(g.rampDown)
-      if (rd > maxRampDown) maxRampDown = rd
-    })
-
-    const startDelaySeconds = parseDurationToSeconds(startDelay)
-    const preBaseline = (resourceBaseline ? baselineSeconds : 0) + startDelaySeconds
-    const postBaseline = resourceBaseline ? baselineSeconds : 0
-    const totalSec = preBaseline + durSec + maxRampDown + postBaseline
-    if (totalSec === 0) return []
-
-    const points: LoadProfilePoint[] = []
-    const step = Math.max(1, Math.floor(totalSec / 30)) // More points for clarity
-
-    for (let t = 0; t <= totalSec; t += step) {
-      const point: LoadProfilePoint = { time: t, total: 0 }
-      groups.forEach((g, idx) => {
-        const gVUsers = g.vusers
-        const gRampUp = parseDurationToSeconds(g.rampUp)
-        const gRampDown = parseDurationToSeconds(g.rampDown)
-
-        let v = 0
-        const loadSecond = Math.max(0, t - preBaseline)
-        if (t < preBaseline) {
-          v = 0
-        } else if (loadSecond < gRampUp) {
-          v = gRampUp > 0 ? (loadSecond / gRampUp) * gVUsers : gVUsers
-        } else if (loadSecond < durSec) {
-          v = gVUsers
-        } else if (loadSecond < durSec + gRampDown) {
-          v = gRampDown > 0 ? (1 - (loadSecond - durSec) / gRampDown) * gVUsers : 0
-        }
-
-        const roundedV = Math.round(v)
-        point[`group${idx}`] = roundedV
-        point.total += roundedV
-      })
-      points.push(point)
-    }
-
-    // Ensure last point
-    if (points[points.length - 1].time < totalSec) {
-        const last: LoadProfilePoint = { time: totalSec, total: 0 }
-        groups.forEach((_, idx) => last[`group${idx}`] = 0)
-        points.push(last)
-    }
-
-    return points
-  })()
+  // The chart draws the draft's load preview: the projection every scenario
+  // editor shares (AUTH-3), so offsets, stages and baselines match.
+  const chartData = scenarioLoadPreview(scenarioDraft).points.map(({ second, ...point }) => ({ ...point, time: second }))
   const buildPayload = () => scenarioCreatePayload(scenarioDraft, { projectId, folderId, monitorBindings, elkConnectionId, dynatraceConnectionId })
 
   const buildEstimatePayload = useCallback(

@@ -78,9 +78,9 @@ function testFromCreate(payload: CreateTestPayload, id: string): TestSummary {
 describe('scenario assembly', () => {
   it('round-trips every field of a saved scenario through save and reload (TestHub)', () => {
     const stored = kitchenSinkScenario()
-    const first = scenarioUpsertPayload(scenarioDraftFromStoredScenario(stored, { includeBrowser: true }), { projectId: 'proj', workloadShapeId: 'custom' })
+    const first = scenarioUpsertPayload(scenarioDraftFromStoredScenario(stored, ), { projectId: 'proj', workloadShapeId: 'custom' })
     const reloaded = storedFromUpsert(first, stored.id)
-    const second = scenarioUpsertPayload(scenarioDraftFromStoredScenario(reloaded, { includeBrowser: true }), { projectId: 'proj', workloadShapeId: 'custom' })
+    const second = scenarioUpsertPayload(scenarioDraftFromStoredScenario(reloaded, ), { projectId: 'proj', workloadShapeId: 'custom' })
     expect(second).toEqual(first)
     // Authored values survive, including explicit false and zero.
     expect(first).toMatchObject({
@@ -101,22 +101,24 @@ describe('scenario assembly', () => {
 
   it('assembles TestHub edits the way the form shows them', () => {
     const form = scenarioFormStateFromStoredScenario(kitchenSinkScenario(), '')
-    // An edited compact goal field wins over the loaded goal config; a
-    // cleared one removes the value.
-    const edited = scenarioDraftFromForm({ ...form, goal_p95_latency_ms: 600, goal_max_error_pct: undefined }, { includeBrowser: true })
+    // The goal fields edit the form's goal config, its only goal store
+    // (AUTH-3): an edited value is assembled, a cleared one is absent.
+    const goal = { ...form.goal_config, p95_latency_ms: 600 }
+    delete goal.max_error_pct
+    const edited = scenarioDraftFromForm({ ...form, goal_config: goal })
     expect(edited.goalConfig.p95_latency_ms).toBe(600)
     expect(edited.goalConfig).not.toHaveProperty('max_error_pct')
     // A scenario that ends by iterations has no duration.
-    const iterations = scenarioUpsertPayload(scenarioDraftFromForm({ ...form, termination_mode: 'iterations', duration: '10m' }, { includeBrowser: true }))
+    const iterations = scenarioUpsertPayload(scenarioDraftFromForm({ ...form, termination_mode: 'iterations', duration: '10m' }))
     expect(iterations).toMatchObject({ termination_mode: 'iterations', duration: '' })
     // An unnamed draft saves under the caller's fallback name.
-    expect(scenarioUpsertPayload(scenarioDraftFromForm({ ...form, name: '' }, { includeBrowser: true }), { fallbackName: 'Draft scenario' }).name).toBe('Draft scenario')
+    expect(scenarioUpsertPayload(scenarioDraftFromForm({ ...form, name: '' }), { fallbackName: 'Draft scenario' }).name).toBe('Draft scenario')
   })
 
   it('keeps absent values absent so they inherit', () => {
     const stored: StoredScenario = { ...kitchenSinkScenario(), goal_config: undefined, runtime_settings: undefined, start_delay: undefined, traffic_profile: undefined, assignment: undefined,
       scripts: [{ order: 0, script_id: 'script-a', vusers: 5 }] }
-    const payload = scenarioUpsertPayload(scenarioDraftFromStoredScenario(stored, { includeBrowser: true }))
+    const payload = scenarioUpsertPayload(scenarioDraftFromStoredScenario(stored, ))
     expect(payload).not.toHaveProperty('goal_config')
     expect(payload).not.toHaveProperty('runtime_settings')
     expect(payload).not.toHaveProperty('start_delay')
@@ -127,7 +129,7 @@ describe('scenario assembly', () => {
   })
 
   it('round-trips a new run through create and its queued revision (CreateTestModal, revision editor)', () => {
-    const draft = scenarioDraftFromStoredScenario(kitchenSinkScenario(), { includeBrowser: true })
+    const draft = scenarioDraftFromStoredScenario(kitchenSinkScenario(), )
     const created = scenarioCreatePayload(buildInitialScenarioDraft(draft, []), { projectId: 'proj', folderId: null })
     expect(created).toMatchObject({ project_id: 'proj', folder_id: null, name: 'Checkout' })
     // A new run keeps the scenario's traffic profile and pool bindings: it
@@ -149,7 +151,7 @@ describe('scenario assembly', () => {
   })
 
   it('sends a revision clear for a source value the draft emptied, and inherits an untouched one', () => {
-    const test = testFromCreate(scenarioCreatePayload(scenarioDraftFromStoredScenario(kitchenSinkScenario(), { includeBrowser: true })), 'run-1')
+    const test = testFromCreate(scenarioCreatePayload(scenarioDraftFromStoredScenario(kitchenSinkScenario(), )), 'run-1')
     const draft = buildScenarioDraftFromTest(test)
     const emptied: ScenarioDraft = { ...draft, goalConfig: {}, startDelay: '' }
     const payload = scenarioCreatePayload(emptied)
@@ -162,7 +164,7 @@ describe('scenario assembly', () => {
   })
 
   it('keeps group identity across rename, reorder, add and remove (revision)', () => {
-    const base = scenarioDraftFromStoredScenario(kitchenSinkScenario(), { includeBrowser: true })
+    const base = scenarioDraftFromStoredScenario(kitchenSinkScenario(), )
     const three = { ...base, groups: [...base.groups, { ...base.groups[0], name: 'Search', scriptId: 'script-c' }] }
     const test = testFromCreate(scenarioCreatePayload(three), 'run-1')
     let draft = buildScenarioDraftFromTest(test)
@@ -180,7 +182,7 @@ describe('scenario assembly', () => {
   })
 
   it('estimates the run the draft would create', () => {
-    const draft = scenarioDraftFromStoredScenario(kitchenSinkScenario(), { includeBrowser: true })
+    const draft = scenarioDraftFromStoredScenario(kitchenSinkScenario(), )
     // A new run's pool bindings are left out: the estimate never reads pool
     // content, and binding them would load every pool on each edit.
     const estimate = scenarioEstimateRequest(draft, { projectId: 'proj' })
@@ -203,14 +205,14 @@ describe('scenario assembly', () => {
     expect(buildRuntimeSettingsForRun(stored, none)).toBeUndefined()
     expect(buildGroupsForRunPayload(stored, {})).toBeUndefined()
     // The displayed preview is the stored scenario's own load profile.
-    const preview = scenarioLoadPreview(scenarioDraftFromStoredScenario(stored, { includeBrowser: true }))
+    const preview = scenarioLoadPreview(scenarioDraftFromStoredScenario(stored, ))
     expect(preview).toEqual(buildRunLoadProfilePreview(stored.scripts, stored.duration, stored.start_delay, Boolean(stored.resource_baseline), stored.traffic_profile, stored.scenario_mode, stored.goal_config?.target_average_tps))
     // A scenario without groups previews nothing (no starter group).
-    expect(scenarioLoadPreview(scenarioDraftFromStoredScenario({ ...stored, scripts: [] }, { includeBrowser: true })).points).toEqual([])
+    expect(scenarioLoadPreview(scenarioDraftFromStoredScenario({ ...stored, scripts: [] }, )).points).toEqual([])
   })
 
   it('times the composition timeline from the groups as they would be saved', () => {
-    const draft = scenarioDraftFromStoredScenario(kitchenSinkScenario(), { includeBrowser: true })
+    const draft = scenarioDraftFromStoredScenario(kitchenSinkScenario(), )
     expect(scenarioTimelineGroups(draft.groups)).toEqual([
       { name: 'Browse', script_id: 'script-a', start_offset: '0s', ramp_up: '1m', ramp_down: '30s', vusers: 20 },
       { name: 'Watch', script_id: 'script-b', vusers: 2, stages: draft.groups[1].stages, role: 'observer' },

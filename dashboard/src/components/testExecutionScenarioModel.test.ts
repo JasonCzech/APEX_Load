@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
+import { SCENARIO_PARITY_FIXTURES } from '../test/scenarioAssemblyParityFixtures'
+import type { TestSummary } from '../types'
+import { scenarioDraftFromStoredScenario, scenarioLoadPreview } from './scenarioAssembly'
 import { buildQueuedScenarioPreview, buildQueuedScenarioRows } from './testExecutionScenarioModel'
 
 describe('testExecutionScenarioModel', () => {
@@ -31,6 +34,58 @@ describe('testExecutionScenarioModel', () => {
     expect(preview.totalSeconds).toBe(735)
     expect(preview.points[0]).toEqual({ second: 0, total: 0, group0: 0 })
     expect(preview.points[preview.points.length - 1]).toEqual({ second: 735, total: 0, group0: 0 })
+  })
+
+  it('draws a queued run exactly as the scenario editors draw its scenario (AUTH-3)', () => {
+    // The execution preview and the editors share one projection, so start
+    // offsets, stages, baselines and goal TPS agree for every corpus scenario.
+    for (const scenario of SCENARIO_PARITY_FIXTURES.filter(fixture => !fixture.traffic_profile)) {
+      const groups = [...scenario.scripts].sort((left, right) => left.order - right.order)
+      const queued = buildQueuedScenarioPreview({
+        id: scenario.id,
+        name: scenario.name,
+        status: 'QUEUED',
+        created_at: '',
+        total_vusers: groups.reduce((sum, group) => sum + group.vusers, 0),
+        duration: scenario.duration,
+        start_delay: scenario.start_delay,
+        resource_baseline: scenario.resource_baseline,
+        scenario_mode: scenario.scenario_mode,
+        goal_config: scenario.goal_config,
+        groups: groups.map(group => ({
+          name: group.name || '',
+          script_id: group.script_id,
+          script_name: group.script_name || '',
+          protocol: group.protocol || 'http',
+          vusers: group.vusers,
+          ramp_up: group.ramp_up,
+          ramp_down: group.ramp_down,
+          start_offset: group.start_offset,
+          stages: group.stages,
+          role: group.role,
+          initialization: group.initialization,
+        })),
+      } as TestSummary)
+      const edited = scenarioLoadPreview(scenarioDraftFromStoredScenario(scenario))
+      expect(queued.points, scenario.id).toEqual(edited.points)
+      expect(queued.totalSeconds, scenario.id).toBe(edited.totalSeconds)
+      expect(queued.preBaselineSeconds, scenario.id).toBe(edited.preBaselineSeconds)
+    }
+  })
+
+  it('starts a delayed group at its offset and holds it to the shared deadline', () => {
+    const preview = buildQueuedScenarioPreview({
+      id: 'offset', name: 'Offset', status: 'QUEUED', created_at: '', total_vusers: 30, duration: '2m',
+      groups: [
+        { name: 'Now', script_id: 'a', script_name: 'A', protocol: 'http', vusers: 10 },
+        { name: 'Later', script_id: 'b', script_name: 'B', protocol: 'http', vusers: 20, start_offset: '30s', ramp_up: '20s' },
+      ],
+    } as TestSummary)
+    const at = (second: number) => preview.points.find(point => point.second === second)
+    expect(at(30)).toMatchObject({ group0: 10, group1: 0 })
+    expect(at(50)).toMatchObject({ group0: 10, group1: 20 })
+    expect(preview.points.filter(point => point.second > 30 && point.second < 50).every(point => point.group1 > 0 && point.group1 < 20)).toBe(true)
+    expect(at(120)).toMatchObject({ group0: 0, group1: 0 })
   })
 
   it('builds queued scenario rows from script details without page-level mapping', () => {

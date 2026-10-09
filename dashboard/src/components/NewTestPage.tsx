@@ -1108,7 +1108,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   // displayed; the launch request still sends just the overrides.
   const runLoadProfilePreview = useMemo(
     () => scenario
-      ? scenarioLoadPreview(scenarioDraftFromStoredScenario({ ...scenario, scripts: effectiveScenarioGroups, duration: effectiveRunDuration, resource_baseline: effectiveResourceBaseline }, { includeBrowser: true }))
+      ? scenarioLoadPreview(scenarioDraftFromStoredScenario({ ...scenario, scripts: effectiveScenarioGroups, duration: effectiveRunDuration, resource_baseline: effectiveResourceBaseline }))
       : buildRunLoadProfilePreview([], '', undefined, false),
     [effectiveResourceBaseline, effectiveRunDuration, effectiveScenarioGroups, scenario],
   )

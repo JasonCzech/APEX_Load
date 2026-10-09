@@ -416,6 +416,12 @@ function AppShell({
   const isDevUserPreview = authStatus?.mode === "dev" && devViewMode === "user";
   const scriptMode =
     view.page === "scripts" && "mode" in view ? view.mode : undefined;
+  // An import route names its importer (the route boundary translates older
+  // addresses); the page opens it by launcher descriptor.
+  const scriptImport =
+    view.page === "scripts" && view.mode === "import" && view.importLauncher
+      ? { launcher: view.importLauncher, mode: view.importMode || null }
+      : null;
   const scriptEditId =
     view.page === "scripts" && "scriptId" in view ? view.scriptId : undefined;
   const [scriptsNavigationVersion, setScriptsNavigationVersion] = useState(0);
@@ -424,6 +430,7 @@ function AppShell({
     subView: ScriptsAuthoringSubView;
     editingId: string | null;
     importLauncher?: string | null;
+    importMode?: string | null;
   } | null>(null);
   const [effectiveAccessResources, setEffectiveAccessResources] = useState<
     import("./types").DashboardAuthEffectiveAccessResource[]
@@ -2399,7 +2406,7 @@ function AppShell({
   useDockBadge(desktopShellActiveRunCount);
 
   const handleScriptsAuthoringStateChange = useCallback(
-    (state: { subView: ScriptsAuthoringSubView; editingId: string | null; importLauncher?: string | null }) => {
+    (state: { subView: ScriptsAuthoringSubView; editingId: string | null; importLauncher?: string | null; importMode?: string | null }) => {
       setScriptsTopbarState(state);
       // Keep the URL naming what is open (library, editor, import) so a
       // refresh or a shared link returns to it. replaceState, not setView:
@@ -2417,6 +2424,10 @@ function AppShell({
         page: "scripts",
         mode,
         ...(mode === "edit" && state.editingId ? { scriptId: state.editingId } : {}),
+        // Name the open importer, so a refresh or shared link reopens it.
+        ...(mode === "import" && state.importLauncher
+          ? { importLauncher: state.importLauncher, ...(state.importMode ? { importMode: state.importMode } : {}) }
+          : {}),
         ...workspaceScopeForAppView(current),
       });
       if (next !== window.location.hash) window.history.replaceState(window.history.state, "", next);
@@ -3617,9 +3628,10 @@ function AppShell({
               {view.page === "scripts" && !routeAssetScopeBlocked && (
                 <ScriptsPage
                   featurePolicySignal={featurePolicySignal}
-                  key={`scripts-${scriptsNavigationVersion}-${scriptMode || "list"}-${scriptEditId || ""}`}
+                  key={`scripts-${scriptsNavigationVersion}-${scriptMode || "list"}-${scriptEditId || ""}-${scriptImport ? `${scriptImport.launcher}:${scriptImport.mode || ""}` : ""}`}
                   applicationRepository={applicationRepository}
-                  initialMode={scriptMode}
+                  initialMode={scriptMode === "import" ? undefined : scriptMode}
+                  initialImport={scriptImport}
                   initialEditId={scriptEditId}
                   nativeImportRequest={nativeImportRequest}
                   onNativeImportRequestHandled={() =>

@@ -1682,8 +1682,10 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     expect(apiMock.getScript).toHaveBeenCalledWith('script-1')
-    expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
-    expect(onAuthoringStateChange).toHaveBeenCalledWith({ subView: 'edit', editingId: 'script-1', importLauncher: null })
+    // The authoring surface is loaded lazily; wait for it rather than for a
+    // fixed number of ticks, which only held when an earlier test had loaded it.
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull(), { timeout: 5000 })
+    expect(onAuthoringStateChange).toHaveBeenCalledWith({ subView: 'edit', editingId: 'script-1', importLauncher: null, importMode: null })
   })
 
   it('filters the script library by authoring health categories', async () => {

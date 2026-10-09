@@ -2,8 +2,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ScenarioFormState } from './TestHub'
 import { assertDraftHasNoInlineCredentials, clearScenarioAuthoringDraft, migrateScenarioAuthoringDraft, readScenarioAuthoringDraft, saveScenarioAuthoringDraft, type ScenarioAuthoringDraft } from './scenarioAuthoringDraft'
-const draft = (): ScenarioAuthoringDraft => ({ version: 2, projectId: 'project-a', savedAt: '2026-09-12T12:00:00Z', editingId: null, editingUpdatedAt: '', form: { name: '', duration: '', start_delay: '', scenario_mode: 'vuser_driven', script_shakeout: false, resource_baseline: false, runtime_pacing_type: '', runtime_ignore_think_time: false, runtime_log_level: '', runtime_auto_transactions: '', assignment_mode: 'auto', assignment_targets: [], groups: [{ name: '', script_id: '', stages: [], vusers: 0, ramp_up: '', ramp_down: '', initialization: 'at_runtime' }] } as ScenarioFormState, source: 'existing', startChoice: 'existing', shapeId: '', templateId: '', cloneId: '', step: 'source', visited: 1 })
+const draft = (): ScenarioAuthoringDraft => ({ version: 3, projectId: 'project-a', savedAt: '2026-09-12T12:00:00Z', editingId: null, editingUpdatedAt: '', form: { name: '', duration: '', start_delay: '', scenario_mode: 'vuser_driven', script_shakeout: false, resource_baseline: false, groups: [{ name: '', script_id: '', stages: [], vusers: 0, ramp_up: '', ramp_down: '', initialization: 'at_runtime' }] } as ScenarioFormState, source: 'existing', startChoice: 'existing', shapeId: '', templateId: '', cloneId: '', step: 'source', visited: 1 })
 afterEach(() => { localStorage.clear(); vi.restoreAllMocks() })
+const flatMirrors = () => ({ runtime_pacing_type: '', runtime_ignore_think_time: false, runtime_log_level: '', runtime_auto_transactions: '', assignment_mode: 'auto', assignment_targets: [] as string[] })
 describe('explicit scenario authoring checkpoints', () => {
   it('round trips incomplete work only within its project and clears it explicitly', () => {
     const value = draft(); saveScenarioAuthoringDraft(value)
@@ -24,20 +25,61 @@ describe('explicit scenario authoring checkpoints', () => {
     expect(() => assertDraftHasNoInlineCredentials({ env: { KEY: '{{secret.api_key}}' } })).not.toThrow()
   })
   it('upgrades six-step checkpoints to the scripts-first step order', () => {
-    const legacy = (step: string, visited: number) => ({ ...draft(), version: 1, step, visited })
-    expect(migrateScenarioAuthoringDraft(legacy('start', 0))).toMatchObject({ version: 2, step: 'scripts', visited: 0 })
-    expect(migrateScenarioAuthoringDraft(legacy('scripts', 1))).toMatchObject({ version: 2, step: 'scripts', visited: 0 })
-    expect(migrateScenarioAuthoringDraft(legacy('source', 2))).toMatchObject({ version: 2, step: 'source', visited: 1 })
-    expect(migrateScenarioAuthoringDraft(legacy('review', 5))).toMatchObject({ version: 2, step: 'review', visited: 4 })
+    // Version 1 and 2 forms carried the flat runtime mirrors.
+    const legacy = (step: string, visited: number) => ({ ...draft(), form: { ...draft().form, ...flatMirrors() }, version: 1, step, visited })
+    expect(migrateScenarioAuthoringDraft(legacy('start', 0))).toMatchObject({ version: 3, step: 'scripts', visited: 0 })
+    expect(migrateScenarioAuthoringDraft(legacy('scripts', 1))).toMatchObject({ version: 3, step: 'scripts', visited: 0 })
+    expect(migrateScenarioAuthoringDraft(legacy('source', 2))).toMatchObject({ version: 3, step: 'source', visited: 1 })
+    expect(migrateScenarioAuthoringDraft(legacy('review', 5))).toMatchObject({ version: 3, step: 'review', visited: 4 })
     expect(migrateScenarioAuthoringDraft(legacy('source', 6))).toBeNull()
     saveScenarioAuthoringDraft(draft())
     localStorage.setItem(localStorage.key(0)!, JSON.stringify(legacy('run', 3)))
-    expect(readScenarioAuthoringDraft('project-a')).toMatchObject({ version: 2, step: 'run', visited: 2 })
+    expect(readScenarioAuthoringDraft('project-a')).toMatchObject({ version: 3, step: 'run', visited: 2 })
+  })
+  it('composes a version 2 form\'s flat mirrors into its runtime override, goal config and assignment (AUTH-3)', () => {
+    const v2 = {
+      ...draft(),
+      version: 2,
+      form: {
+        ...draft().form,
+        ...flatMirrors(),
+        runtime_pacing_type: 'fixed_delay', runtime_pacing_delay_ms: 1500,
+        runtime_think_time_type: 'gaussian', runtime_think_time_ms: 800, runtime_think_time_std_ms: 100,
+        runtime_iterations: 12, runtime_log_level: 'debug', runtime_auto_transactions: 'per_action',
+        continue_on_error: false,
+        browser_device_profile: 'iphone_15', browser_headless: 'true',
+        // Canonical sections the mirrors compose into, and an advanced one they never touched.
+        runtime_settings: { run_logic: { iterations: 1 }, log: { level: 'info' }, http: { request_timeout_ms: 9000 } },
+        // A flat bound replaced its goal value and an absent one removed it.
+        goal_target_average_tps: 120, goal_p95_latency_ms: 800,
+        goal_config: { target_average_tps: 50, max_error_pct: 3, early_stop: { enabled: true } },
+        assignment_mode: 'specific_hosts', assignment_targets: ['gen-1'],
+        assignment: { mode: 'auto', pool_id: 'pool-a' },
+      },
+    }
+    const migrated = migrateScenarioAuthoringDraft(v2) as unknown as ScenarioAuthoringDraft
+    expect(migrated.version).toBe(3)
+    expect(migrated.form.runtime_settings).toEqual({
+      pacing: { type: 'fixed_delay', delay_ms: 1500 },
+      think_time: { type: 'gaussian', mean_ms: 800, std_ms: 100, ignore: false },
+      run_logic: { iterations: 12, auto_transactions: 'per_action' },
+      log: { level: 'debug' },
+      http: { request_timeout_ms: 9000 },
+      error_handling: { continue_on_error: false },
+      browser: { device_profile: 'iphone_15', headless: true },
+    })
+    expect(migrated.form.goal_config).toEqual({ target_average_tps: 120, p95_latency_ms: 800, early_stop: { enabled: true } })
+    expect(migrated.form.assignment).toEqual({ mode: 'specific_hosts', pool_id: 'pool-a', selected_targets: ['gen-1'] })
+    for (const mirror of ['runtime_pacing_type', 'runtime_iterations', 'runtime_log_level', 'continue_on_error', 'browser_device_profile', 'runtime_ignore_think_time', 'goal_target_average_tps', 'goal_p95_latency_ms', 'assignment_mode', 'assignment_targets']) {
+      expect(migrated.form, mirror).not.toHaveProperty(mirror)
+    }
+    // A version 2 form whose mirrors are not the types its reader required is refused.
+    expect(migrateScenarioAuthoringDraft({ ...v2, form: { ...v2.form, runtime_log_level: 3 } })).toBeNull()
   })
   it('ignores corrupted, wrong-version and cross-project checkpoints', () => {
     saveScenarioAuthoringDraft(draft())
     const storageKey = localStorage.key(0)!
-    for (const invalid of ['{', JSON.stringify({ ...draft(), version: 3 }), JSON.stringify({ ...draft(), step: 'start' }), JSON.stringify({ ...draft(), visited: 5 }), JSON.stringify({ ...draft(), projectId: 'project-b' }), JSON.stringify({ ...draft(), form: { groups: [null] } })]) {
+    for (const invalid of ['{', JSON.stringify({ ...draft(), version: 4 }), JSON.stringify({ ...draft(), step: 'start' }), JSON.stringify({ ...draft(), visited: 5 }), JSON.stringify({ ...draft(), projectId: 'project-b' }), JSON.stringify({ ...draft(), form: { groups: [null] } })]) {
       localStorage.setItem(storageKey, invalid)
       expect(readScenarioAuthoringDraft('project-a')).toBeNull()
     }

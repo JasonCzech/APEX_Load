@@ -20,7 +20,8 @@ import {
   type CapturedRequest,
   type RequiredKeysOf,
 } from './contractGuards'
-import type { BrowserReplayStartRequest } from './replay'
+import type { BrowserReplayStartRequest, ScriptDebugStartRequest } from './replay'
+import type { ScriptDefinition } from './scripts'
 
 type StartBody = JsonRequestBody<'handleStartScriptDebugScript'>
 type StepBody = JsonRequestBody<'handleStepScriptDebugSession'>
@@ -134,6 +135,16 @@ describe('generated OpenAPI transport helpers', () => {
         },
       },
     })
+  })
+
+  it('types debug session starts by the generated contract, with only the script narrowed (AUTH-3)', () => {
+    // The request has exactly the generated fields; the draft route takes the
+    // same fields as the stored-script route.
+    expectTypeOf<keyof ScriptDebugStartRequest>().toEqualTypeOf<keyof StartBody>()
+    expectTypeOf<keyof JsonRequestBody<'handleStartScriptDebugDraftScript'>>().toEqualTypeOf<keyof StartBody>()
+    // Every field but the script is the transport's own type.
+    expectTypeOf<Omit<ScriptDebugStartRequest, 'script'>>().toEqualTypeOf<Omit<StartBody, 'script'>>()
+    expectTypeOf<ScriptDebugStartRequest['script']>().toEqualTypeOf<ScriptDefinition | undefined>()
   })
 
   it('keeps the handwritten browser replay request aligned with the generated contract', () => {

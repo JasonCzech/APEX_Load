@@ -1,0 +1,167 @@
+import type { StoredScenario } from '../types'
+
+// Stored scenarios covering what a scenario editor must carry through a load
+// and save unchanged (AUTH-3 parity corpus): advanced runtime fields the
+// compact editor never shows, tri-state booleans (absent, explicit false,
+// true), legacy top-level runtime fields beside canonical sections, both
+// browser blocks, goal and traffic settings, and per-group overrides.
+const base = { created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z' }
+
+export const SCENARIO_PARITY_FIXTURES: StoredScenario[] = [
+  {
+    ...base,
+    id: 'minimal',
+    name: 'Minimal',
+    duration: '5m',
+    scripts: [{ order: 0, script_id: 'script-a', vusers: 5 }],
+  } as unknown as StoredScenario,
+  {
+    ...base,
+    id: 'canonical-runtime',
+    name: 'Canonical runtime',
+    duration: '10m',
+    start_delay: '30s',
+    scenario_mode: 'vuser_driven',
+    script_shakeout: true,
+    resource_baseline: true,
+    runtime_settings: {
+      pacing: { type: 'fixed_delay', delay_ms: 1500 },
+      think_time: { type: 'gaussian', mean_ms: 800, std_ms: 120, min_ms: 200, max_ms: 2000, multiplier: 1.5, limit_ms: 5000 },
+      run_logic: { iterations: 12, auto_transactions: 'per_action' },
+      log: { level: 'debug' },
+      error_handling: { continue_on_error: false, snapshot_on_error: true, max_retries: 2, retry_delay_ms: 250, retry_backoff: 'exponential' },
+      http: { request_timeout_ms: 9000 },
+      base_url: 'https://checkout.example.test',
+      env: { REGION: 'us-east' },
+    },
+    scripts: [
+      { order: 1, name: 'Browse', script_id: 'script-b', vusers: 20, ramp_up: '1m', ramp_down: '30s', start_offset: '15s', initialization: 'at_once', transaction_response_time_sla_ms: 1200 },
+      { order: 0, name: 'Checkout', script_id: 'script-a', vusers: 10, ramp_up: '30s', role: 'load' },
+    ],
+  } as unknown as StoredScenario,
+  {
+    ...base,
+    id: 'legacy-top-level',
+    name: 'Legacy top-level runtime',
+    duration: '15m',
+    runtime_settings: {
+      iterations: 7,
+      log_level: 'warn',
+      auto_transactions: 'none',
+      pacing: { type: 'random_interval', min_interval_ms: 1000, max_interval_ms: 3000 },
+      think_time: { type: 'random_percentage', mean_ms: 0, min_percent: 50, max_percent: 150 },
+    },
+    scripts: [{ order: 0, script_id: 'script-a', vusers: 3, iterations: 4 }],
+  } as unknown as StoredScenario,
+  {
+    ...base,
+    id: 'browser-blocks',
+    name: 'Browser blocks',
+    duration: '8m',
+    runtime_settings: {
+      browser: { device_profile: 'iphone_15', orientation: 'landscape', touch_mode: false, headless: true },
+      think_time: { type: 'recorded', multiplier: 0.5, limit_ms: 3000, ignore: true },
+      error_handling: { continue_on_error: true },
+    },
+    scripts: [{ order: 0, script_id: 'script-browser', vusers: 2, protocol: 'browser' }],
+  } as unknown as StoredScenario,
+  {
+    ...base,
+    id: 'browser-config',
+    name: 'Canonical browser config',
+    duration: '8m',
+    runtime_settings: {
+      browser_config: { device_profile: 'pixel_8', orientation: 'portrait', touch_mode: true, headless: false, capture_document_metrics: true } as never,
+      pacing: { type: 'none' },
+    },
+    scripts: [{ order: 0, script_id: 'script-browser', vusers: 2, protocol: 'browser' }],
+  } as unknown as StoredScenario,
+  {
+    ...base,
+    id: 'group-overrides',
+    name: 'Group overrides',
+    duration: '20m',
+    assignment: { mode: 'specific_hosts', selected_targets: ['gen-1', 'gen-2'], pool_id: 'pool-a', required_labels: { zone: 'a' }, tolerate_generator_loss: true, failover_policy: 'continue', recovery_spare_vusers: 3 },
+    scripts: [
+      {
+        order: 0,
+        name: 'Staged',
+        script_id: 'script-a',
+        vusers: 40,
+        stages: [{ type: 'ramp', duration: '2m', target_vusers: 40 }, { type: 'hold', duration: '10m', target_vusers: 40 }],
+        runtime_settings: { run_logic: { iterations: 3 }, pacing: { type: 'tps', tps: 5 }, error_handling: { snapshot_on_error: false } },
+        assignment: { mode: 'region_weighted', region_weights: { east: 2, west: 1 } },
+      },
+      {
+        order: 1,
+        name: 'Iterations',
+        script_id: 'script-b',
+        vusers: 4,
+        iterations: 9,
+        runtime_settings: { log_level: 'info', think_time: { type: 'uniform', mean_ms: 0, min_ms: 100, max_ms: 900 } },
+      },
+      { order: 2, name: 'Observer', script_id: 'script-c', vusers: 1, role: 'observer', start_offset: '1m' },
+    ],
+  } as unknown as StoredScenario,
+  {
+    ...base,
+    id: 'goal-oriented',
+    name: 'Goal oriented',
+    duration: '30m',
+    scenario_mode: 'goal_oriented',
+    termination_mode: 'duration',
+    goal_config: {
+      target_average_tps: 120,
+      min_vusers: 5,
+      max_vusers: 200,
+      p95_latency_ms: 800,
+      max_error_pct: 2,
+      transaction_rules: [{ transaction: 'Checkout', p95_ms: 900 }],
+      early_stop: { enabled: true, after: '5m' },
+      workload_shape_config: { kind: 'steady', params: { level: 3 } },
+    } as never,
+    runtime_settings: { pacing: { type: 'fixed_interval', interval_ms: 2000 }, think_time: { type: 'fixed', mean_ms: 0 } },
+    scripts: [{ order: 0, script_id: 'script-a', vusers: 10 }],
+  } as unknown as StoredScenario,
+  {
+    ...base,
+    id: 'iterations-traffic-data',
+    name: 'Iterations, traffic and data',
+    duration: '',
+    termination_mode: 'iterations',
+    traffic_profile: { source: 'csv', points: [{ offset: '0s', tps: 10 }, { offset: '5m', tps: 40 }] } as never,
+    data_pools: [{ pool_id: 'pool-users', pool_name: 'Users', alias: 'users', access_mode: 'read_write', selection_strategy: 'unique' } as never],
+    runtime_settings: {
+      pacing: { type: 'random_delay', min_delay_ms: 100, max_delay_ms: 400 },
+      run_logic: { iterations: 25 },
+      results: { capture_responses: 'failures' } as never,
+      redaction_rules: [{ pattern: 'token=[^&]+', replacement: 'token=***' } as never],
+    },
+    scripts: [{ order: 0, script_id: 'script-a', vusers: 6, ramp_up: '10s' }],
+  } as unknown as StoredScenario,
+  {
+    ...base,
+    id: 'conflicting-aliases',
+    name: 'Legacy aliases beside canonical sections',
+    duration: '5m',
+    runtime_settings: {
+      // The canonical sections win; the conflicting legacy aliases are dropped at save.
+      iterations: 99,
+      auto_transactions: 'none',
+      log_level: 'disabled',
+      browser: { device_profile: 'legacy-device', headless: true },
+      run_logic: { iterations: 4, auto_transactions: 'per_action' },
+      log: { level: 'extended' },
+      browser_config: { device_profile: 'pixel_8', headless: false } as never,
+    },
+    scripts: [{ order: 0, script_id: 'script-browser', vusers: 1, protocol: 'browser' }],
+  } as unknown as StoredScenario,
+  {
+    ...base,
+    id: 'no-groups',
+    name: 'Saved without groups',
+    duration: '1m',
+    runtime_settings: { log: { level: 'error' } },
+    scripts: [],
+  } as unknown as StoredScenario,
+]
