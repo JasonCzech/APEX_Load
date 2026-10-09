@@ -1,0 +1,10 @@
+{
+  "description": "Multiple Body= segments are concatenated in order; a POST without EncType is sent as application/x-www-form-urlencoded; an empty EncType= sends no Content-Type; UserAgent= sets the step's User-Agent.",
+  "source": "VuGen 26.1 Function Reference: web_custom_request (Body segments concatenated in order; EncType defaults and suppression; UserAgent).",
+  "outcome": "replay",
+  "requests": [
+    {"method": "POST", "path": "/api/form", "headers": {"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "OrderAgent/2.1"}, "body": "a=1&b=2&c=3"},
+    {"method": "POST", "path": "/api/json", "absent_headers": ["Content-Type"], "body": "{\"k\":1}"},
+    {"method": "GET", "path": "/api/lookup", "query": "id=7", "absent_headers": ["Content-Type"]}
+  ]
+}

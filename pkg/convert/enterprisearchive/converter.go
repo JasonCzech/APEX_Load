@@ -237,6 +237,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	var sourceRuntimeControls []ParsedFunction
 
 	actionNameCounts := make(map[string]int)
+	unmodelledRequestArgs := make(map[string]int)
 	trackLastExecutable := func(fn ParsedFunction) {
 		lastExecutablePhase = fn.Phase
 		lastExecutableIndex = actionCountForPhase(result.Script, fn.Phase) - 1
@@ -663,6 +664,14 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 		case "web_url", "web_submit_data", "web_submit_form", "web_custom_request", "web_rest", "web_service_call",
 			"web_link", "web_image", "web_image_check":
 			action, warnings := convertAction(fn, baseURL, currentTransaction, currentSubTransaction, opts, lastRequestURL)
+			argumentGated := false
+			if action != nil {
+				var unknownArgs []string
+				unknownArgs, argumentGated = applyRequestArgumentReview(action, fn)
+				for _, name := range unknownArgs {
+					unmodelledRequestArgs[name]++
+				}
+			}
 			if opts.BaseURL != "" && action != nil && (strings.HasPrefix(action.Target, "http://") || strings.HasPrefix(action.Target, "https://")) {
 				overrideMissedTargets++
 			}
@@ -717,6 +726,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				applyPersistentCookies(action, persistentCookies, rawURLForCookieMatch(fn, lastRequestURL))
 
 				applySOAPImportHints(action, fn)
+				applyDefaultCustomRequestContentType(action, fn)
 
 				// Default assertions
 				if opts.IncludeAssertions {
@@ -737,7 +747,11 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				mappingStatus := "converted"
 				mappingNotes := "Converted to a generated APEX Load action."
 				mappingMode := SourceFunctionSupportExecutable
-				if metadataBool(action.Metadata, "masked_body") {
+				if argumentGated {
+					mappingStatus = "review_only"
+					mappingNotes = "The step uses request attributes the importer cannot reproduce yet; execution is gated until the request is rebuilt (see the action's import review)."
+					mappingMode = SourceFunctionSupportReviewOnly
+				} else if metadataBool(action.Metadata, "masked_body") {
 					mappingStatus = "review_only"
 					mappingNotes = fmt.Sprintf("Request argument is produced by %s(...); APEX has no verified decoder for this payload; supply a restored body through protected import repair — the action requires manual review.", metadataString(action.Metadata, "masked_body_function"))
 					mappingMode = SourceFunctionSupportReviewOnly
@@ -839,6 +853,9 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			result.Stats.UnsupportedFuncs = append(result.Stats.UnsupportedFuncs, fn.Name)
 			appendSourceReviewMapping(result, sourceReviewMappingForFunction(fn, "metadata.import.preserved.unsupported_functions", fn.Name, "unsupported", "review_only", "No executable APEX Load mapping exists for this source function yet."))
 		}
+	}
+	if warning := unmodelledRequestArgumentsWarning(unmodelledRequestArgs); warning != "" {
+		result.Warnings = append(result.Warnings, warning)
 	}
 	preserveTrailingRequestContributors(
 		result,

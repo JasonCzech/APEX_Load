@@ -767,6 +767,7 @@ func parseWebCustomRequest(fn *ParsedFunction, inner string) {
 		fn.Body = fn.Args["Body"]
 		fn.RawBody = rawSourceArgument(fn, "Body", fn.Body)
 	}
+	concatenateSourceBodySegments(fn)
 	applyMaskedBodyReference(fn)
 }
 
@@ -794,6 +795,7 @@ func parseWebREST(fn *ParsedFunction, inner string) {
 		fn.Body = rawSourceStringContent(m[1])
 		fn.RawBody = m[1]
 	}
+	concatenateSourceBodySegments(fn)
 	applyMaskedBodyReference(fn)
 	extractWebRESTHeaders(fn)
 }

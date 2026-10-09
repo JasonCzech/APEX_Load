@@ -1,0 +1,6 @@
+{
+  "description": "ContentEncoding=gzip compresses the request body. Not reproduced yet, so the import must be gated rather than send an uncompressed body under the wrong semantics.",
+  "source": "VuGen 26.1 Function Reference: web_custom_request ContentEncoding.",
+  "outcome": "gated",
+  "gate_reason_codes": ["request_argument_unsupported"]
+}
