@@ -96,6 +96,9 @@ var publishedWebHTTPFunctionExpectations = map[string]struct {
 	"web_submit_data":                {"web", SourceFunctionSupportExecutable},
 	"web_submit_form":                {"web", SourceFunctionSupportExecutable},
 	"web_sync":                       {"web", SourceFunctionSupportExecutable},
+	"web_websocket_close":            {"websocket", SourceFunctionSupportExecutable},
+	"web_websocket_connect":          {"websocket", SourceFunctionSupportExecutable},
+	"web_websocket_send":             {"websocket", SourceFunctionSupportExecutable},
 	"web_url":                        {"web", SourceFunctionSupportExecutable},
 	"web_util_set_request_body":      {"parameter", SourceFunctionSupportReviewOnly},
 	"web_util_set_request_url":       {"parameter", SourceFunctionSupportReviewOnly},
@@ -266,6 +269,13 @@ func sampleWebFunctionCall(name string) string {
 		return `web_js_run("Code=return 1;", "ResultParam=R", LAST);`
 	case "web_js_reset":
 		return `web_js_reset(LAST);`
+	case "web_websocket_connect":
+		return `web_websocket_connect("ID=0", "URI=wss://example.test/socket", "Origin=https://example.test", LAST);`
+	case "web_websocket_send":
+		// A send or close converts only on a connection the script opened.
+		return "web_websocket_connect(\"ID=0\", \"URI=wss://example.test/socket\", LAST);\n\tweb_websocket_send(\"ID=0\", \"Buffer=hello\", \"IsBinary=0\", LAST);"
+	case "web_websocket_close":
+		return "web_websocket_connect(\"ID=0\", \"URI=wss://example.test/socket\", LAST);\n\tweb_websocket_close(\"ID=0\", \"Code=1000\", \"Reason=done\", LAST);"
 	case "web_sync":
 		return `web_sync("ParamExists=status", "Timeout=5", LAST);`
 	}

@@ -84,6 +84,8 @@ type HTTP struct {
 	// page is the virtual user's HTML page context, shared with the
 	// per-version clones; nil unless the script has HTML-mode steps.
 	page *pageContextState
+	// webSockets runs the script's WebSocket steps (websocket_steps.go).
+	webSockets *webSocketSession
 }
 
 const (
@@ -206,6 +208,7 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	} else {
 		h.page = nil
 	}
+	h.webSockets = &webSocketSession{config: config}
 	h.dataFormattingChain = parseDataFormattingChain(config)
 	h.streaming = parseStreamingProfile(config)
 	if parseHTTPCacheEnabled(config) {
@@ -240,6 +243,9 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 }
 
 func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
+	if action != nil && IsWebSocketStep(action.Type) {
+		return h.executeWebSocketStep(ctx, action)
+	}
 	ctx, verification := h.verificationContext(ctx)
 	result := &protocol.Result{
 		ActionName:     protocol.ActionName(action),
@@ -1352,7 +1358,8 @@ func deleteRequestHeaders(req *http.Request, names map[string]struct{}) {
 	}
 }
 
-func (h *HTTP) Teardown(_ context.Context) error {
+func (h *HTTP) Teardown(ctx context.Context) error {
+	h.teardownWebSockets(ctx)
 	if h.cache != nil {
 		h.cache.clear()
 	}

@@ -843,6 +843,10 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 	}
 	var issues []string
 	protocol = ProtocolFamily(protocol)
+	if protocol == "http" && isWebSocketStepType(action.Type) {
+		// WebSocket steps inside an HTTP script follow the websocket rules.
+		return validateHTTPScriptWebSocketStep(path, index, action)
+	}
 	if action.HTTPVersion.IsPresent() {
 		if err := action.HTTPVersion.Validate(); err != nil {
 			issues = append(issues, actionLabel(path, action)+": "+err.Error())

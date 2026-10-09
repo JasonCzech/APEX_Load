@@ -1,0 +1,54 @@
+{
+  "description": "A chat socket opened after an HTTP login: the handshake carries the session cookie the login set, the message is sent over the socket, OnMessageCB saves each reply with lr_save_string, web_sync waits until the reply is saved, and a later HTTP step sends it. VuGen's generated logging in the callbacks reads arguments APEX has no value for and is not reproduced. The saved value is substituted into the URL verbatim, as VuGen does.",
+  "source": "VuGen 26.1 Function Reference: web_websocket_connect (ID, URI, Origin, OnOpenCB, OnMessageCB, OnErrorCB, OnCloseCB), web_websocket_send (Buffer, IsBinary), web_websocket_close (Code, Reason), web_sync (ParamExists); WebSocket callbacks in the script's callbacks file.",
+  "outcome": "replay",
+  "responses": [
+    {
+      "method": "POST",
+      "path": "/login",
+      "headers": {
+        "Content-Type": "text/html",
+        "Set-Cookie": "SESSION=s-42; Path=/"
+      },
+      "body": "<html>welcome</html>"
+    },
+    {
+      "method": "GET",
+      "path": "/chat",
+      "websocket": {
+        "reply_prefix": "reply:"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/history",
+      "headers": {
+        "Content-Type": "text/html"
+      },
+      "body": "<html>history</html>"
+    }
+  ],
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/login",
+      "body": "user=ada"
+    },
+    {
+      "method": "GET",
+      "path": "/chat",
+      "header_contains": {
+        "Cookie": "SESSION=s-42",
+        "Origin": "http://parity.test"
+      },
+      "messages": [
+        "{\"type\":\"say\",\"text\":\"hello\"}"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/history",
+      "query": "last=reply:{\"type\":\"say\",\"text\":\"hello\"}"
+    }
+  ]
+}

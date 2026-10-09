@@ -448,8 +448,8 @@ func (vu *VUser) stopAllAsyncConversations(ctx context.Context, why string) {
 }
 
 // waitForAsyncCondition handles http_sync: it applies conversation results
-// until params.variable holds a value (or params.value, when given), or
-// params.timeout_ms (default 10 s) passes.
+// and WebSocket message callbacks until params.variable holds a value (or
+// params.value, when given), or params.timeout_ms (default 10 s) passes.
 func (vu *VUser) waitForAsyncCondition(ctx context.Context, action dsl.Action) error {
 	name := strings.ToLower(asyncParamString(action, "variable"))
 	if name == "" {
@@ -463,6 +463,9 @@ func (vu *VUser) waitForAsyncCondition(ctx context.Context, action dsl.Action) e
 	deadline := time.Now().Add(timeout)
 	for {
 		if err := vu.dispatchAsyncResults(ctx); err != nil {
+			return err
+		}
+		if err := vu.dispatchWebSocketCallbacks(ctx, false); err != nil {
 			return err
 		}
 		value, ok := vu.Variables[name]

@@ -115,7 +115,7 @@ func engineActionSpecs() []ActionSpec {
 		{
 			Type:      "http_sync",
 			Protocols: []string{"*"},
-			Summary:   "Waits until a background conversation sets a variable (imported from web_sync), applying conversation responses while it waits.",
+			Summary:   "Waits until a background conversation or a WebSocket message callback sets a variable (imported from web_sync), applying conversation responses and dispatching ws_on_message callbacks while it waits.",
 			Fields: []FieldSpec{
 				{Name: "params.variable", Kind: FieldKindString, Required: true, Doc: "Variable to wait for (without the var. prefix)."},
 				{Name: "params.value", Kind: FieldKindString, Doc: "Value to wait for; without it any non-empty value ends the wait."},

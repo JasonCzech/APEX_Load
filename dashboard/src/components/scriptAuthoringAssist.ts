@@ -211,6 +211,12 @@ function legacyActionNeedsExplicitTarget(actionType: string): boolean {
     'http_async_start',
     'http_async_stop',
     'http_sync',
+    'ws_send',
+    'ws_receive',
+    'ws_close',
+    'ws_ping',
+    'ws_on_message',
+    'ws_dispatch',
     'cache_clear',
     'http_connections_close',
   ].includes(actionType)

@@ -248,6 +248,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	// startedAsync holds the conversation IDs that became http_async_start.
 	var pendingAsync *sourceAsync
 	startedAsync := map[string]bool{}
+	var webSockets sourceWebSockets
 	trackLastExecutable := func(fn ParsedFunction) {
 		lastExecutablePhase = fn.Phase
 		lastExecutableIndex = actionCountForPhase(result.Script, fn.Phase) - 1
@@ -309,6 +310,38 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			}
 			appendTrackedSourceAction(fn, dsl.Action{Name: "Stop " + id, Type: "http_async_stop", Params: map[string]any{"id": id}}, SourceFunctionSupportExecutable,
 				"Converted to http_async_stop, which ends the background conversation and applies its last responses.")
+
+		case "web_websocket_connect":
+			actions, warnings, reason := convertWebSocketConnect(fn, &webSockets, opts.archiveFiles)
+			if reason != "" {
+				notes := "The WebSocket connection is preserved and not executed: " + reason + "."
+				appendTrackedSourceAction(fn, webSocketReviewAction(fn, notes), SourceFunctionSupportReviewOnly, notes)
+				result.Warnings = append(result.Warnings, fmt.Sprintf("%s:%d web_websocket_connect requires review: %s", fn.Filename, fn.LineNumber, reason))
+				continue
+			}
+			result.Warnings = append(result.Warnings, warnings...)
+			appendTrackedSourceAction(fn, actions[0], SourceFunctionSupportExecutable, "Converted to ws_connect; the socket shares the HTTP session's cookies and TLS settings.")
+			if len(actions) > 1 {
+				tagSourceFlowMetadata(result, fn, &actions[1])
+				appendActionForPhase(result.Script, fn.Phase, actions[1])
+				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, sourceReviewActionPath(fn.Phase, actionCountForPhase(result.Script, fn.Phase)-1), actions[1].Name, "action", "contributor",
+					"OnMessageCB translated to ws_on_message steps run for each received message.", SourceFunctionSupportExecutable))
+			}
+
+		case "web_websocket_send", "web_websocket_close":
+			var action dsl.Action
+			var reason string
+			if fn.Name == "web_websocket_send" {
+				action, reason = convertWebSocketSend(fn, &webSockets)
+			} else {
+				action, reason = convertWebSocketClose(fn, &webSockets)
+			}
+			if reason != "" {
+				notes := "Preserved and not executed: " + reason + "."
+				appendTrackedSourceAction(fn, webSocketReviewAction(fn, notes), SourceFunctionSupportReviewOnly, notes)
+				continue
+			}
+			appendTrackedSourceAction(fn, action, SourceFunctionSupportExecutable, "Converted to "+action.Type+" on the script's WebSocket.")
 
 		case "web_sync":
 			if action, ok := sourceWebSyncAction(fn); ok {
@@ -918,10 +951,12 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 
 				tagSourceFlowMetadata(result, fn, action)
 				if asyncWrap != nil {
-					wrapped, err := wrapAsyncConversation(asyncWrap, *action, translateAsyncCallbacks(asyncWrap, opts.archiveFiles))
+					callbacks := translateAsyncCallbacks(asyncWrap, opts.archiveFiles)
+					wrapped, err := wrapAsyncConversation(asyncWrap, *action, callbacks)
 					if err != nil {
 						return nil, fmt.Errorf("wrap async conversation %q: %w", asyncWrap.id, err)
 					}
+					result.Warnings = append(result.Warnings, droppedCallbackLogsWarnings(asyncWrap.fn, callbacks)...)
 					*action = wrapped
 					startedAsync[asyncWrap.id] = true
 					appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(asyncWrap.fn, targetPath, action.Name, "action", "contributor",

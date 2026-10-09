@@ -101,3 +101,6 @@ web_sync,web,executable
 web_url,web,executable
 web_util_set_request_body,parameter,review_only
 web_util_set_request_url,parameter,review_only
+web_websocket_close,websocket,executable
+web_websocket_connect,websocket,executable
+web_websocket_send,websocket,executable

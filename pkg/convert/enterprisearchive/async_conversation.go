@@ -3,8 +3,6 @@ package enterprisearchive
 import (
 	"encoding/json"
 	"fmt"
-	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -101,7 +99,7 @@ func (a *sourceAsync) appliesTo(fn ParsedFunction, action *dsl.Action) bool {
 
 // wrapAsyncConversation turns the converted step into the http_async_start
 // that runs it in the background, with each translated callback as a branch.
-func wrapAsyncConversation(async *sourceAsync, action dsl.Action, callbacks []asyncCallbackTranslation) (dsl.Action, error) {
+func wrapAsyncConversation(async *sourceAsync, action dsl.Action, callbacks []sourceCallbackTranslation) (dsl.Action, error) {
 	payload, err := json.Marshal(action)
 	if err != nil {
 		return dsl.Action{}, err
@@ -206,12 +204,18 @@ const asyncUnsupportedReasonCode = "async_conversation_unsupported"
 // asyncReviewAction preserves an async call that cannot run as an
 // execution-gated review action.
 func asyncReviewAction(fn ParsedFunction, detail string) dsl.Action {
+	return sourceReviewActionWithCode(fn, asyncUnsupportedReasonCode, detail)
+}
+
+// sourceReviewActionWithCode preserves a call that cannot run as an
+// execution-gated review action carrying the reason code.
+func sourceReviewActionWithCode(fn ParsedFunction, code, detail string) dsl.Action {
 	def, _ := lookupSourceFunction(fn.Name)
 	action := convertGenericSourceAction(fn, "source_review", def)
 	action.Type = "source_review"
 	makeSourceReviewActionDisclosureSafe(&action, fn, SourceFunctionSupportReviewOnly)
 	importreview.ApplyToAction(&action, []importreview.Finding{{
-		Code: asyncUnsupportedReasonCode, ReasonCode: asyncUnsupportedReasonCode, Severity: diag.Warning,
+		Code: code, ReasonCode: code, Severity: diag.Warning,
 		Element: fn.Name, Source: "enterprise_script_archive", SourceRef: fmt.Sprintf("%s:%d", fn.Filename, fn.LineNumber),
 		Detail: detail, Gate: importreview.GateExecution,
 	}})
@@ -226,167 +230,23 @@ var asyncCallbackBranches = map[string]string{
 	"responsebodybuffercb": "on_body_chunk",
 }
 
-// asyncCallbackTranslation is one callback of a conversation: the steps it
-// becomes, or why it does not run.
-type asyncCallbackTranslation struct {
-	attribute, name string
-	branch          string
-	steps           []dsl.Action
-	trivial         bool
-	reason          string
+// asyncCallbackArguments are the callback arguments with an APEX value, by
+// position: ResponseCB's response body and ResponseBodyBufferCB's latest
+// chunk.
+var asyncCallbackArguments = map[string]map[int]string{
+	"responsecb":           {2: `lr_eval_string("{async_response_body}")`},
+	"responsebodybuffercb": {0: `lr_eval_string("{async_chunk}")`},
 }
-
-var asyncCallbackCallStatement = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*\s*\(.*\)$`)
 
 // translateAsyncCallbacks finds each callback the registration names in the
 // archive's C files (VuGen writes them to AsyncCallbacks.c) and translates
-// its body through the C pipeline. VuGen's generated stub, which only returns
-// WEB_ASYNC_CB_RC_OK, needs nothing. A body made of plain calls that all
-// convert to executable steps becomes the callback branch; anything else (C
-// control flow or variables, reading the callback's arguments, returning an
-// abort code) keeps the conversation running without that callback.
-func translateAsyncCallbacks(async *sourceAsync, files map[string]string) []asyncCallbackTranslation {
-	var out []asyncCallbackTranslation
+// it (see translateSourceCallback).
+func translateAsyncCallbacks(async *sourceAsync, files map[string]string) []sourceCallbackTranslation {
+	var out []sourceCallbackTranslation
 	for _, entry := range async.callbacks {
 		attribute, name, _ := strings.Cut(entry, "=")
-		translation := asyncCallbackTranslation{attribute: attribute, name: name, branch: asyncCallbackBranches[strings.ToLower(attribute)]}
-		file, params, body, line, found := locateAsyncCallback(files, name)
-		switch {
-		case !found:
-			translation.reason = "its definition was not found in the archive"
-		default:
-			translation.steps, translation.trivial, translation.reason = translateAsyncCallbackBody(file, params, body, line)
-			if translation.reason == "" && !translation.trivial && translation.branch == "" {
-				translation.reason = "APEX has no " + attribute + " callback point"
-			}
-		}
-		if translation.reason != "" {
-			translation.steps = nil
-		}
-		out = append(out, translation)
+		key := strings.ToLower(attribute)
+		out = append(out, translateSourceCallback(files, attribute, name, asyncCallbackBranches[key], asyncCallbackArguments[key]))
 	}
 	return out
-}
-
-// locateAsyncCallback finds a C function definition in the archive's .c and
-// .h files.
-func locateAsyncCallback(files map[string]string, name string) (file string, params []string, body string, line int, found bool) {
-	header := regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\s*\(([^()]*)\)\s*\{`)
-	names := make([]string, 0, len(files))
-	for candidate := range files {
-		lower := strings.ToLower(candidate)
-		if strings.HasSuffix(lower, ".c") || strings.HasSuffix(lower, ".h") {
-			names = append(names, candidate)
-		}
-	}
-	sort.Strings(names)
-	for _, candidate := range names {
-		code := blankCComments(files[candidate])
-		for _, match := range header.FindAllStringSubmatchIndex(code, -1) {
-			if cBraceDepthAt(code, match[0]) != 0 {
-				continue
-			}
-			end := cMatchingBrace(code, match[1]-1)
-			if end < 0 {
-				continue
-			}
-			for _, param := range strings.Split(code[match[2]:match[3]], ",") {
-				tokens := cIdentifierTokenRe.FindAllString(param, -1)
-				if len(tokens) > 0 && tokens[len(tokens)-1] != "void" {
-					params = append(params, tokens[len(tokens)-1])
-				}
-			}
-			return candidate, params, code[match[1]:end], 1 + strings.Count(code[:match[1]], "\n"), true
-		}
-	}
-	return "", nil, "", 0, false
-}
-
-// translateAsyncCallbackBody converts a callback body, reporting whether it
-// is VuGen's empty stub or why it cannot run.
-func translateAsyncCallbackBody(file string, params []string, body string, line int) ([]dsl.Action, bool, string) {
-	statements, reason := splitAsyncCallbackStatements(body)
-	if reason != "" {
-		return nil, false, reason
-	}
-	var calls []string
-	for _, statement := range statements {
-		switch {
-		case statement == "return WEB_ASYNC_CB_RC_OK" || statement == "return 0" || statement == "return":
-		case strings.HasPrefix(statement, "return"):
-			return nil, false, "it returns " + strings.TrimSpace(strings.TrimPrefix(statement, "return")) + ", which decides the conversation in C"
-		case asyncCallbackCallStatement.MatchString(statement):
-			calls = append(calls, statement)
-		default:
-			return nil, false, "it uses C variables or expressions"
-		}
-	}
-	if len(calls) == 0 {
-		return nil, true, ""
-	}
-	for _, param := range params {
-		if regexp.MustCompile(`\b` + regexp.QuoteMeta(param) + `\b`).MatchString(strings.Join(calls, ";")) {
-			return nil, false, "it reads the callback argument " + param
-		}
-	}
-	source := "AsyncCallback()\n{\n" + strings.Repeat("\n", max(0, line-2)) + strings.Join(calls, ";\n") + ";\n}\n"
-	parsed, err := ParseActionFile(file, source)
-	if err != nil || len(parsed.Functions) != len(calls) {
-		return nil, false, "its calls could not be parsed"
-	}
-	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{})
-	if err != nil || result.Script == nil {
-		return nil, false, "its calls could not be converted"
-	}
-	for _, mapping := range result.SourceReview.Mappings {
-		if mapping.SupportMode != string(SourceFunctionSupportExecutable) && mapping.SupportMode != string(SourceFunctionSupportNativeNoop) {
-			return nil, false, mapping.Function + " in it does not convert to an executable step"
-		}
-	}
-	steps := append(append([]dsl.Action(nil), result.Script.Init...), result.Script.Actions...)
-	if len(steps) == 0 || len(steps) > dsl.MaxHTTPAsyncCallbackSteps {
-		return nil, false, "it does not convert to between 1 and 64 steps"
-	}
-	return steps, false, ""
-}
-
-// splitAsyncCallbackStatements splits a callback body into its top-level
-// statements; a nested block (if, loop) is C control flow the callback
-// translation does not take on.
-func splitAsyncCallbackStatements(body string) ([]string, string) {
-	var statements []string
-	var current strings.Builder
-	inString, escaped := false, false
-	var quote byte
-	depth := 0
-	for index := 0; index < len(body); index++ {
-		ch := body[index]
-		switch {
-		case inString && escaped:
-			escaped = false
-		case inString && ch == '\\':
-			escaped = true
-		case inString && ch == quote:
-			inString = false
-		case !inString && (ch == '"' || ch == '\''):
-			inString, quote = true, ch
-		case !inString && (ch == '{' || ch == '}'):
-			return nil, "it uses C control flow"
-		case !inString && ch == '(':
-			depth++
-		case !inString && ch == ')':
-			depth--
-		case !inString && ch == ';' && depth == 0:
-			if statement := strings.Join(strings.Fields(current.String()), " "); statement != "" {
-				statements = append(statements, statement)
-			}
-			current.Reset()
-			continue
-		}
-		current.WriteByte(ch)
-	}
-	if strings.TrimSpace(current.String()) != "" {
-		return nil, "its body ends without a semicolon"
-	}
-	return statements, ""
 }

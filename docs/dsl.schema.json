@@ -3868,7 +3868,7 @@
             ]
           },
           "then": {
-            "description": "Waits until a background conversation sets a variable (imported from web_sync), applying conversation responses while it waits.",
+            "description": "Waits until a background conversation or a WebSocket message callback sets a variable (imported from web_sync), applying conversation responses and dispatching ws_on_message callbacks while it waits.",
             "properties": {
               "params": {
                 "properties": {
@@ -6486,7 +6486,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "WebSocket URL (ws:// or wss://); relative paths resolve against config.base_url.",
+                "description": "WebSocket URL (ws:// or wss://); relative paths resolve against config.base_url. In an HTTP script the handshake shares the script's cookie jar and TLS settings, so a socket opened after an HTTP login carries the session cookie.",
                 "type": "string"
               }
             },

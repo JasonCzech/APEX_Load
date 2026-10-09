@@ -8,11 +8,11 @@ Generated evaluation of LoadRunner import coverage against the APEX Load convers
 
 Evaluation of the complete published OpenText/Micro Focus VuGen 26.1 **Web (HTTP/HTML)** protocol function library against the APEX Load conversion engine (`pkg/convert/enterprisearchive`). Source: VuGen Function Reference, "Alphabetical Listing of Web Functions".
 
-**Total published functions:** 81
+**Total published functions:** 84
 
 | Disposition | Count | Meaning |
 |---|---|---|
-| `executable` | 52 | Translated to an executable DSL action or config mapping. |
+| `executable` | 55 | Translated to an executable DSL action or config mapping. |
 | `native_noop` | 6 | Preserved as a runtime-compatibility attribute; a guaranteed no-op in APEX Load (no client cache / no auto-resource fetch). |
 | `review_only` | 23 | Preserved in the import-review artifact; no APEX runtime equivalent, so it is not executed (never fabricated). |
 
@@ -101,6 +101,9 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_url` | web | `executable` | HTTP request action | GET/POST request from URL=. |
 | `web_util_set_request_body` | parameter | `review_only` | Import review | Next-request body overrides are preserved for review; no APEX runtime equivalent yet. |
 | `web_util_set_request_url` | parameter | `review_only` | Import review | Next-request URL overrides are preserved for review; no APEX runtime equivalent yet. |
+| `web_websocket_close` | websocket | `executable` | ws_close | Code and Reason are sent in the close frame. |
+| `web_websocket_connect` | websocket | `executable` | ws_connect | Opens the script's WebSocket with URI and Origin, sharing the HTTP session; OnMessageCB becomes ws_on_message steps, other callbacks and attributes carry promotion findings; a second concurrent connection ID keeps review. |
+| `web_websocket_send` | websocket | `executable` | ws_send | Buffer is sent as text with parameters; IsBinary=1 or Buffer/Binary send a binary frame. |
 
 ## Java LR function coverage
 

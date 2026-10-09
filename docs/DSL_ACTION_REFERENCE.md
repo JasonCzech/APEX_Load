@@ -143,7 +143,7 @@ Closes the VUser's idle pooled HTTP connections without interrupting active requ
 
 ### `http_sync`
 
-Waits until a background conversation sets a variable (imported from web_sync), applying conversation responses while it waits.
+Waits until a background conversation or a WebSocket message callback sets a variable (imported from web_sync), applying conversation responses and dispatching ws_on_message callbacks while it waits.
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
@@ -1064,6 +1064,69 @@ Composite HTTP step with sequential execution by default or bounded concurrent r
 | `params.execution_mode` | enum |  | Sequential when absent. Concurrent requests share the parent HTTP session; debugger pause and step occur at the group boundary. One of: `sequential`, `concurrent`. |
 | `params.max_concurrency` | int |  | Integer 1..16. Concurrent default is min(8, child count). Concurrent preparation is bounded to 16 MiB of source and prepared surfaces and 64 MiB of work. Duplicate extractor names and nonzero child think time are rejected before traffic. |
 
+### `ws_close`
+
+Closes the WebSocket connection.
+
+Protocols: websocket, http
+
+### `ws_connect`
+
+Opens the WebSocket connection.
+
+Protocols: websocket, http
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string | yes | WebSocket URL (ws:// or wss://); relative paths resolve against config.base_url. In an HTTP script the handshake shares the script's cookie jar and TLS settings, so a socket opened after an HTTP login carries the session cookie. |
+| `headers` | object |  | Handshake request headers. |
+
+### `ws_dispatch`
+
+Waits until the next callback interval and dispatches queued messages serially.
+
+Protocols: websocket, http
+
+### `ws_on_message`
+
+Registers serial per-VUser message callbacks for the current connection; reconnect requires registration again.
+
+Protocols: websocket, http
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `control` | object | yes | control.steps executes for each queued message; var.ws_message and var.ws_message_type contain the event. |
+
+### `ws_ping`
+
+Sends a ping control frame.
+
+Protocols: websocket, http
+
+### `ws_receive`
+
+Waits for the next inbound message.
+
+Protocols: websocket, http
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.timeout_ms` | int |  | Receive timeout in milliseconds; zero through 3600000. |
+
+### `ws_send`
+
+Sends a message over the open connection.
+
+Protocols: websocket, http
+
+Requires one of: `body`, `body_file`
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `body` | string |  | Message payload; template variables are expanded. |
+| `body_file` | string |  | Local file containing the message payload. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
+| `params.type` | enum |  | Message frame type; defaults to text. One of: `text`, `binary`. |
+
 ## Protocol: java_http
 
 ### `DELETE`
@@ -1949,22 +2012,30 @@ Protocols: http, soap, java_http
 
 Closes the WebSocket connection.
 
+Protocols: websocket, http
+
 ### `ws_connect`
 
 Opens the WebSocket connection.
 
+Protocols: websocket, http
+
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | WebSocket URL (ws:// or wss://); relative paths resolve against config.base_url. |
+| `target` | string | yes | WebSocket URL (ws:// or wss://); relative paths resolve against config.base_url. In an HTTP script the handshake shares the script's cookie jar and TLS settings, so a socket opened after an HTTP login carries the session cookie. |
 | `headers` | object |  | Handshake request headers. |
 
 ### `ws_dispatch`
 
 Waits until the next callback interval and dispatches queued messages serially.
 
+Protocols: websocket, http
+
 ### `ws_on_message`
 
 Registers serial per-VUser message callbacks for the current connection; reconnect requires registration again.
+
+Protocols: websocket, http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
@@ -1974,9 +2045,13 @@ Registers serial per-VUser message callbacks for the current connection; reconne
 
 Sends a ping control frame.
 
+Protocols: websocket, http
+
 ### `ws_receive`
 
 Waits for the next inbound message.
+
+Protocols: websocket, http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
@@ -1985,6 +2060,8 @@ Waits for the next inbound message.
 ### `ws_send`
 
 Sends a message over the open connection.
+
+Protocols: websocket, http
 
 Requires one of: `body`, `body_file`
 

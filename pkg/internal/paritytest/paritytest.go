@@ -27,19 +27,28 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	gorillawebsocket "github.com/gorilla/websocket"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	// WebSocket steps inside HTTP scripts run on the registered websocket
+	// protocol.
+	_ "github.com/jasonczech/apexload/pkg/protocol/websocket"
 )
 
 // Origin is the placeholder origin corpus sources and expectations use. Tests
 // replace it with the fixture server's origin before converting.
 const Origin = "http://parity.test"
+
+// WebSocketOrigin is the placeholder origin of WebSocket URIs; it reaches
+// the fixture server too.
+const WebSocketOrigin = "ws://parity.test"
 
 // AliasOrigin is a second placeholder origin that reaches the same fixture
 // server under a different host name ("localhost" instead of 127.0.0.1), for
@@ -107,6 +116,9 @@ type ExpectedRequest struct {
 	// after this one, for a background conversation whose last poll may
 	// already be on the wire when the script stops it.
 	ExtraRepeats int `json:"extra_repeats,omitempty"`
+	// Messages are the WebSocket messages the client must send over this
+	// handshake's connection, in order.
+	Messages []string `json:"messages,omitempty"`
 }
 
 // ExpectedPart is one multipart part, in order.
@@ -125,6 +137,14 @@ type Response struct {
 	Status  int               `json:"status,omitempty"`
 	Headers map[string]string `json:"headers,omitempty"`
 	Body    string            `json:"body,omitempty"`
+	// WebSocket upgrades the request and answers each message.
+	WebSocket *WebSocketBehavior `json:"websocket,omitempty"`
+}
+
+// WebSocketBehavior scripts a fixture WebSocket endpoint: each received text
+// message is answered with ReplyPrefix followed by the message.
+type WebSocketBehavior struct {
+	ReplyPrefix string `json:"reply_prefix"`
 }
 
 // Recorded is one request the fixture server received.
@@ -134,6 +154,9 @@ type Recorded struct {
 	Query  string
 	Header http.Header
 	Body   []byte
+	// Messages are the WebSocket messages received over this request's
+	// connection.
+	Messages []string
 }
 
 // LoadExpectation reads dir/expected.json and, when dir/replay.har exists,
@@ -276,6 +299,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	s.recorded = append(s.recorded, Recorded{
 		Method: r.Method, Path: r.URL.EscapedPath(), Query: r.URL.RawQuery, Header: r.Header.Clone(), Body: body,
 	})
+	recordedIndex := len(s.recorded) - 1
 	key := r.Method + " " + r.URL.Path
 	var response *Response
 	if list := s.responses[key]; len(list) > 0 {
@@ -292,6 +316,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
+	if response.WebSocket != nil {
+		s.serveWebSocket(w, r, recordedIndex, *response.WebSocket)
+		return
+	}
 	for name, value := range response.Headers {
 		w.Header().Set(name, s.expand(value))
 	}
@@ -303,15 +331,42 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, s.expand(response.Body))
 }
 
+// serveWebSocket upgrades the request, records each message the client
+// sends, and answers it.
+func (s *Server) serveWebSocket(w http.ResponseWriter, r *http.Request, recordedIndex int, behavior WebSocketBehavior) {
+	conn, err := (&gorillawebsocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}).Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	for {
+		kind, message, err := conn.ReadMessage()
+		if err != nil {
+			return
+		}
+		s.mu.Lock()
+		s.recorded[recordedIndex].Messages = append(s.recorded[recordedIndex].Messages, string(message))
+		s.mu.Unlock()
+		if err := conn.WriteMessage(kind, append([]byte(behavior.ReplyPrefix), message...)); err != nil {
+			return
+		}
+	}
+}
+
 // Recorded returns a copy of the requests received so far.
 func (s *Server) Recorded() []Recorded {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]Recorded(nil), s.recorded...)
+	recorded := append([]Recorded(nil), s.recorded...)
+	for i := range recorded {
+		recorded[i].Messages = append([]string(nil), recorded[i].Messages...)
+	}
+	return recorded
 }
 
 // expand replaces the placeholder origins with the server's origins.
 func (s *Server) expand(value string) string {
+	value = strings.ReplaceAll(value, WebSocketOrigin, "ws"+strings.TrimPrefix(s.URL, "http"))
 	value = strings.ReplaceAll(value, AliasOrigin, s.AliasURL())
 	return strings.ReplaceAll(value, Origin, s.URL)
 }
@@ -372,6 +427,9 @@ func (s *Server) compareOne(n int, want ExpectedRequest, got Recorded) []string 
 	}
 	if want.Path != got.Path {
 		add("path = %s", got.Path)
+	}
+	if want.Messages != nil && !reflect.DeepEqual(want.Messages, got.Messages) {
+		add("WebSocket messages = %q, want %q", got.Messages, want.Messages)
 	}
 	if want.Query != nil && s.expand(*want.Query) != got.Query {
 		add("query = %q, want %q", got.Query, s.expand(*want.Query))

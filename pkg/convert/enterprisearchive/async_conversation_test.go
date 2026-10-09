@@ -137,6 +137,16 @@ int Args_ResponseCB(const char * aResponseHeadersStr, int aResponseHeadersLen, c
 	lr_save_string(aResponseBodyStr, "Body");
 	return WEB_ASYNC_CB_RC_OK;
 }
+int Status_ResponseCB(const char * aResponseHeadersStr, int aResponseHeadersLen, const char * aResponseBodyStr, int aResponseBodyLen, int aHttpStatusCode)
+{
+	lr_save_int(aHttpStatusCode, "Status");
+	return WEB_ASYNC_CB_RC_OK;
+}
+int Log_ResponseCB(const char * aResponseHeadersStr, int aResponseHeadersLen, const char * aResponseBodyStr, int aResponseBodyLen, int aHttpStatusCode)
+{
+	lr_output_message("status %d, body %s", aHttpStatusCode, aResponseBodyStr);
+	return WEB_ASYNC_CB_RC_OK;
+}
 int Abort_ResponseCB(const char * aResponseHeadersStr, int aResponseHeadersLen, const char * aResponseBodyStr, int aResponseBodyLen, int aHttpStatusCode)
 {
 	return WEB_ASYNC_CB_RC_ABORT_ASYNC_NOT_ERROR;
@@ -158,18 +168,22 @@ int Headers_ResponseHeadersCB(int aHttpStatusCode, const char * aAccumulatedHead
 }
 `}
 	async := &sourceAsync{id: "A", callbacks: []string{
-		"RequestCB=Stub_RequestCB", "ResponseCB=Save_ResponseCB", "ResponseCB=Args_ResponseCB", "ResponseCB=Abort_ResponseCB",
+		"RequestCB=Stub_RequestCB", "ResponseCB=Save_ResponseCB", "ResponseCB=Args_ResponseCB", "ResponseCB=Status_ResponseCB", "ResponseCB=Log_ResponseCB", "ResponseCB=Abort_ResponseCB",
 		"ResponseCB=Flow_ResponseCB", "ResponseCB=Var_ResponseCB", "ResponseHeadersCB=Headers_ResponseHeadersCB", "ResponseCB=Missing_ResponseCB",
 	}}
 	got := translateAsyncCallbacks(async, files)
 	want := []struct {
 		trivial bool
 		steps   int
+		dropped int
 		reason  string
 	}{
 		{trivial: true},
 		{steps: 2},
-		{reason: "reads the callback argument aResponseBodyStr"},
+		// The response body stands for {async_response_body}.
+		{steps: 1},
+		{reason: "reads the callback argument aHttpStatusCode"},
+		{trivial: true, dropped: 1},
 		{reason: "returns WEB_ASYNC_CB_RC_ABORT_ASYNC_NOT_ERROR"},
 		{reason: "C control flow"},
 		{reason: "C variables"},
@@ -178,11 +192,14 @@ int Headers_ResponseHeadersCB(int aHttpStatusCode, const char * aAccumulatedHead
 	}
 	for i, translation := range got {
 		w := want[i]
-		if translation.trivial != w.trivial || len(translation.steps) != w.steps || (w.reason == "") != (translation.reason == "") || !strings.Contains(translation.reason, w.reason) {
-			t.Errorf("%s: trivial=%v steps=%d reason=%q, want %+v", async.callbacks[i], translation.trivial, len(translation.steps), translation.reason, w)
+		if translation.trivial != w.trivial || len(translation.steps) != w.steps || translation.droppedLogs != w.dropped || (w.reason == "") != (translation.reason == "") || !strings.Contains(translation.reason, w.reason) {
+			t.Errorf("%s: trivial=%v steps=%d dropped=%d reason=%q, want %+v", async.callbacks[i], translation.trivial, len(translation.steps), translation.droppedLogs, translation.reason, w)
 		}
 	}
 	if got[1].branch != "on_response" || got[1].steps[0].Type != "source_parameter" {
 		t.Fatalf("ResponseCB steps = %+v", got[1])
+	}
+	if raw, _ := json.Marshal(got[2].steps); !strings.Contains(string(raw), "{{var.async_response_body}}") {
+		t.Fatalf("the response body argument must read var.async_response_body: %s", raw)
 	}
 }

@@ -235,6 +235,7 @@ func (h *HTTP) metaRefreshClient() *HTTP {
 		authConfig:                 h.authConfig,
 		authHosts:                  h.authHosts,
 		page:                       h.page,
+		webSockets:                 h.webSockets,
 		cache:                      h.cache,
 		cacheContentURLsOnly:       h.cacheContentURLsOnly,
 		cacheCheckNewerVersions:    h.cacheCheckNewerVersions,

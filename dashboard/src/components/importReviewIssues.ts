@@ -65,6 +65,9 @@ const LOADRUNNER_PARITY_ISSUE_TITLES: Record<string, string> = {
   recorded_body_truncated: 'Re-record or supply the full request body',
   async_callbacks_not_executed: 'Rebuild async callbacks that do not run',
   async_conversation_unsupported: 'Review async conversation APEX cannot run',
+  websocket_callbacks_not_executed: 'Rebuild WebSocket callbacks that do not run',
+  websocket_attribute_unsupported: 'Review WebSocket connect attributes',
+  websocket_step_unsupported: 'Review WebSocket step APEX cannot run',
 }
 
 export function issueTitle(code: string): string {

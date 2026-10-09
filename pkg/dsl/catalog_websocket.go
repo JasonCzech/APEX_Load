@@ -16,17 +16,19 @@ func validateWebSocketActionIssues(index int, action Action) []string {
 	return spec.Validate(index, action)
 }
 
-// websocketActionSpecs declares the websocket protocol action types.
+// websocketActionSpecs declares the websocket protocol action types. HTTP
+// scripts accept them too (LoadRunner web_websocket_*), running on a socket
+// that shares the HTTP session.
 func websocketActionSpecs() []ActionSpec {
 	return []ActionSpec{
-		{Type: "ws_on_message", Protocols: []string{"websocket"}, Summary: "Registers serial per-VUser message callbacks for the current connection; reconnect requires registration again.", Fields: []FieldSpec{{Name: "control", Kind: FieldKindObject, Required: true, Doc: "control.steps executes for each queued message; var.ws_message and var.ws_message_type contain the event."}}},
-		{Type: "ws_dispatch", Protocols: []string{"websocket"}, Summary: "Waits until the next callback interval and dispatches queued messages serially."},
+		{Type: "ws_on_message", Protocols: []string{"websocket", "http"}, Summary: "Registers serial per-VUser message callbacks for the current connection; reconnect requires registration again.", Fields: []FieldSpec{{Name: "control", Kind: FieldKindObject, Required: true, Doc: "control.steps executes for each queued message; var.ws_message and var.ws_message_type contain the event."}}},
+		{Type: "ws_dispatch", Protocols: []string{"websocket", "http"}, Summary: "Waits until the next callback interval and dispatches queued messages serially."},
 		{
 			Type:      "ws_connect",
-			Protocols: []string{"websocket"},
+			Protocols: []string{"websocket", "http"},
 			Summary:   "Opens the WebSocket connection.",
 			Fields: []FieldSpec{
-				{Name: "target", Required: true, Kind: FieldKindString, Doc: "WebSocket URL (ws:// or wss://); relative paths resolve against config.base_url."},
+				{Name: "target", Required: true, Kind: FieldKindString, Doc: "WebSocket URL (ws:// or wss://); relative paths resolve against config.base_url. In an HTTP script the handshake shares the script's cookie jar and TLS settings, so a socket opened after an HTTP login carries the session cookie."},
 				{Name: "headers", Kind: FieldKindObject, Doc: "Handshake request headers."},
 			},
 			Validate: func(index int, action Action) []string {
@@ -38,7 +40,7 @@ func websocketActionSpecs() []ActionSpec {
 		},
 		{
 			Type:      "ws_send",
-			Protocols: []string{"websocket"},
+			Protocols: []string{"websocket", "http"},
 			Summary:   "Sends a message over the open connection.",
 			Fields: []FieldSpec{
 				{Name: "body", Kind: FieldKindString, Doc: "Message payload; template variables are expanded."},
@@ -60,7 +62,7 @@ func websocketActionSpecs() []ActionSpec {
 		},
 		{
 			Type:      "ws_receive",
-			Protocols: []string{"websocket"},
+			Protocols: []string{"websocket", "http"},
 			Summary:   "Waits for the next inbound message.",
 			Fields: []FieldSpec{
 				{Name: "params.timeout_ms", Kind: FieldKindInt, Maximum: MaxConfiguredProtocolTimeoutMS, Doc: "Receive timeout in milliseconds; zero through 3600000."},
@@ -79,13 +81,32 @@ func websocketActionSpecs() []ActionSpec {
 		},
 		{
 			Type:      "ws_close",
-			Protocols: []string{"websocket"},
+			Protocols: []string{"websocket", "http"},
 			Summary:   "Closes the WebSocket connection.",
 		},
 		{
 			Type:      "ws_ping",
-			Protocols: []string{"websocket"},
+			Protocols: []string{"websocket", "http"},
 			Summary:   "Sends a ping control frame.",
 		},
 	}
+}
+
+func isWebSocketStepType(actionType string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(actionType)), "ws_")
+}
+
+// validateHTTPScriptWebSocketStep validates a ws_* step of an HTTP script as
+// a websocket script would, with ws_on_message callback steps validated
+// against the HTTP protocol they run in.
+func validateHTTPScriptWebSocketStep(path string, index int, action Action) []string {
+	var issues []string
+	if strings.TrimSpace(action.Name) == "" {
+		issues = append(issues, fmt.Sprintf("%s: missing name", path))
+	}
+	issues = append(issues, validateExtractorIssues("websocket", path, action)...)
+	if action.Type == "ws_on_message" {
+		return append(issues, validateControlFlowIssues("http", path, action)...)
+	}
+	return append(issues, rebaseActionIssues(fmt.Sprintf("actions[%d]", index), path, validateWebSocketActionIssues(index, action))...)
 }

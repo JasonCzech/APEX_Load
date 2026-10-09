@@ -54,16 +54,20 @@ describe('LoadRunner web parity UI', () => {
     expect(issueTitle('registration_dfe_unsupported')).toBe('Apply data-format extensions before extraction')
     expect(issueTitle('request_body_file_missing')).toBe('Add the missing request body file')
     expect(issueTitle('async_callbacks_not_executed')).toBe('Rebuild async callbacks that do not run')
+    expect(issueTitle('websocket_callbacks_not_executed')).toBe('Rebuild WebSocket callbacks that do not run')
     expect(issueTitle('some_future_code')).toBe('some future code')
   })
 
-  it('does not ask async conversation actions for a target', () => {
+  it('does not ask async conversation or WebSocket steps for a target', () => {
     const script = {
       name: 'async', protocol: 'http', config: { base_url: 'https://shop.test' },
       actions: [
         { name: 'Start poll', type: 'http_async_start', params: { id: 'poll', request: { name: 'poll', type: 'GET', method: 'GET', target: '/poll' } } },
         { name: 'Sync status', type: 'http_sync', params: { variable: 'status' } },
         { name: 'Stop poll', type: 'http_async_stop', params: { id: 'poll' } },
+        { name: 'Connect', type: 'ws_connect', target: 'wss://shop.test/socket' },
+        { name: 'Send', type: 'ws_send', body: 'hello' },
+        { name: 'Close', type: 'ws_close' },
       ],
     } as unknown as ScriptDefinition
     const messages = collectAuthoringIssues(script).map(issue => issue.message)
