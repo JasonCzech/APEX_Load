@@ -22,8 +22,8 @@ Every published function resolves to one of the dispositions above — none fall
 |---|---|---|---|---|
 | `web_add_auto_filter` | web | `native_noop` | config.web_runtime attribute | No auto-resource fetch; native no-op. |
 | `web_add_auto_header` | web | `executable` | Request headers | Persistent until reverted. |
-| `web_add_cookie` | web | `executable` | Cookie headers | Attached to matching downstream requests. |
-| `web_add_cookie_ex` | web | `executable` | Cookie headers | Attached to matching downstream requests. |
+| `web_add_cookie` | web | `executable` | cookie_set action | Positional write to the VUser's cookie jar; a later Set-Cookie from the server replaces it. |
+| `web_add_cookie_ex` | web | `executable` | cookie_set action | Positional write to the VUser's cookie jar; a later Set-Cookie from the server replaces it. |
 | `web_add_filter` | web | `native_noop` | config.web_runtime attribute | No auto-resource fetch; native no-op. |
 | `web_add_header` | web | `executable` | Request headers | Applied to the next request. |
 | `web_cache_cleanup` | web | `executable` | source_runtime action | Executable positional clear of the simulated HTTP response cache. |
@@ -61,7 +61,7 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_reg_save_param_xpath` | web | `executable` | Extractor (xpath) | QueryString=/XPath=. |
 | `web_remove_auto_filter` | web | `native_noop` | config.web_runtime attribute | No auto-resource fetch; native no-op. |
 | `web_remove_auto_header` | web | `executable` | Request headers | Removes one persistent auto header. |
-| `web_remove_cookie` | web | `executable` | Cookie headers | Stops a named cookie (or ALL) attaching downstream. |
+| `web_remove_cookie` | web | `executable` | cookie_set action (remove) | Expires a cookie added with web_add_cookie; other names (or ALL) stop a registered cookie attaching downstream. |
 | `web_report_data_point` | metric | `executable` | source_metric action | Custom data point, like lr_user_data_point. |
 | `web_rest` | web | `executable` | HTTP request action | REST method/body/HEADERS block. |
 | `web_revert_auto_header` | web | `executable` | Request headers | Removes one persistent auto header. |

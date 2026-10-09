@@ -1954,13 +1954,17 @@ EnableModemSpeed=0
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
-	if len(result.Script.Init) != 1 {
-		t.Fatalf("init actions = %d, want 1: %#v", len(result.Script.Init), result.Script.Init)
+	if len(result.Script.Init) != 2 {
+		t.Fatalf("init actions = %d, want the cookie_set and the login request: %#v", len(result.Script.Init), result.Script.Init)
 	}
 	if len(result.Script.Actions) != 4 {
 		t.Fatalf("main actions = %d, want 3: %#v", len(result.Script.Actions), result.Script.Actions)
 	}
-	init := result.Script.Init[0]
+	if cookie := result.Script.Init[0]; cookie.Type != "cookie_set" || cookie.Params["name"] != "sid" ||
+		cookie.Params["value"] != "{{var.c_lightning_sid}}" || cookie.Params["domain"] != "attone--perfhyper2.sandbox.lightning.force.com" {
+		t.Fatalf("web_add_cookie = %#v, want a positional cookie_set for sid", cookie)
+	}
+	init := result.Script.Init[1]
 	if init.Target != "/login" {
 		t.Fatalf("init target = %q, want /login", init.Target)
 	}
@@ -1981,8 +1985,8 @@ EnableModemSpeed=0
 	if got := lightning.Headers["X-B3-TraceId"]; got != "{{var.traceid}}" {
 		t.Fatalf("auto header on lightning = %q, want parameterized trace id", got)
 	}
-	if got := lightning.Headers["Cookie"]; got != "sid={{var.c_lightning_sid}}" {
-		t.Fatalf("cookie header = %q, want response-derived session variable preserved", got)
+	if got := lightning.Headers["Cookie"]; got != "" {
+		t.Fatalf("cookie header = %q, want the sid cookie left to the cookie_set jar entry", got)
 	}
 	if _, ok := result.Script.Actions[2].Headers["X-B3-TraceId"]; ok {
 		t.Fatalf("auto header should be removed after web_revert_auto_header: %#v", result.Script.Actions[2].Headers)
@@ -2353,8 +2357,17 @@ vuser_end()
 	if address.Target != "https://acme.lightning.force.com/aura" {
 		t.Fatalf("address target = %q, want absolute lightning URL", address.Target)
 	}
-	if got := address.Headers["Cookie"]; got != "sid={{var.sessionid}}" {
-		t.Fatalf("address cookie = %q, want response-derived session variable preserved", got)
+	if got := address.Headers["Cookie"]; got != "" {
+		t.Fatalf("address cookie header = %q, want web_add_cookie in the cookie jar instead", got)
+	}
+	foundCookieSet := false
+	for _, action := range append(append([]dsl.Action(nil), result.Script.Init...), result.Script.Actions...) {
+		if action.Type == "cookie_set" && action.Params["name"] == "sid" && action.Params["value"] == "{{var.sessionid}}" && action.Params["domain"] == "acme.lightning.force.com" {
+			foundCookieSet = true
+		}
+	}
+	if !foundCookieSet {
+		t.Fatalf("want a cookie_set preserving the response-derived session variable: init %#v actions %#v", result.Script.Init, result.Script.Actions)
 	}
 	if got := address.Headers["X-SFDC-Page-Scope-Id"]; got != "{{var.pagescopeid}}" {
 		t.Fatalf("auto header = %q, want persistent parameterized page scope", got)
@@ -2414,7 +2427,7 @@ vuser_end()
 	if convertParam.Params["source_string"] != "{{var.pkceverifier}}" || convertParam.Params["target_encoding"] != "URL" {
 		t.Fatalf("web_convert_param params = %#v, want source string and URL target encoding", convertParam.Params)
 	}
-	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_custom_request", "init[2]", "converted")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_custom_request", "init[3]", "converted")
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_submit_data", "actions[3]", "converted")
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_url", "teardown[0]", "converted")
 }

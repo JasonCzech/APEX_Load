@@ -216,6 +216,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	var pendingHeaders map[string]string
 	var autoHeaders map[string]string
 	var persistentCookies []ParsedCookie
+	addedCookies := map[string]ParsedCookie{}
 	var pendingSourceMappings []SourceReviewMapping
 	var currentTransaction string
 	var currentSubTransaction string
@@ -416,7 +417,21 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			result.Stats.ContributorFunctions++
 			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 
-		case "web_add_cookie", "web_add_cookie_ex", "web_reg_add_cookie":
+		case "web_add_cookie", "web_add_cookie_ex":
+			// The cookie goes into the VUser's cookie jar at this point, as
+			// LoadRunner adds it to its cookie cache: a later Set-Cookie from the
+			// server replaces it instead of both being sent.
+			for _, cookie := range fn.Cookies {
+				if cookie.Name == "" {
+					continue
+				}
+				appendTrackedSourceAction(fn, cookieSetAction(fn, cookie, false), SourceFunctionSupportExecutable, "Converted to a positional cookie_set action on the VUser's cookie jar.")
+				addedCookies[strings.ToLower(cookie.Name)] = cookie
+			}
+
+		case "web_reg_add_cookie":
+			// Registered (conditional) cookies keep their downstream Cookie-header
+			// approximation.
 			for _, cookie := range fn.Cookies {
 				if cookie.Name == "" {
 					continue
@@ -429,6 +444,13 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 
 		case "web_remove_cookie":
+			if name := strings.ToLower(sourceCookieRemovalName(fn)); name != "" && name != "all" {
+				if added, ok := addedCookies[name]; ok {
+					appendTrackedSourceAction(fn, cookieSetAction(fn, added, true), SourceFunctionSupportExecutable, "Converted to a positional cookie_set action that expires the cookie added earlier.")
+					delete(addedCookies, name)
+					break
+				}
+			}
 			// Drop a previously-added cookie (or ALL) from the persistent set so it
 			// stops attaching to downstream requests.
 			removed := removePersistentCookie(&persistentCookies, fn)

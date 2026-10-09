@@ -295,6 +295,27 @@ type CookieController interface {
 	ClearCookies(ctx context.Context) error
 }
 
+// ScriptCookie is a cookie the script sets or removes in the VUser's cookie
+// store (imported web_add_cookie / web_remove_cookie). An empty Domain means
+// the script's base host; an empty Path means "/".
+type ScriptCookie struct {
+	Name   string
+	Value  string
+	Domain string
+	Path   string
+	Secure bool
+	// Remove expires the cookie instead of setting it.
+	Remove bool
+}
+
+// CookieSetter is an optional capability for protocols whose per-VUser cookie
+// store accepts cookies from the script, so a server that later sets the same
+// cookie replaces it as a browser would. Protocols without a cookie store
+// treat cookie_set as a no-op.
+type CookieSetter interface {
+	SetCookie(ctx context.Context, cookie ScriptCookie) error
+}
+
 // CacheController is an optional capability for protocols that maintain a
 // per-VUser response cache. The engine invokes ClearCache at the start of an
 // iteration when browser emulation's "simulate a new user on each iteration"

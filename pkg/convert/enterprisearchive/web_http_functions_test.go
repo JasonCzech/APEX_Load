@@ -572,15 +572,30 @@ func actionTypes(actions []dsl.Action) []string {
 
 // Re-adding a cookie with the same name, domain and path replaces it, as the
 // source cookie jar does; distinct domains keep their own cookie.
-func TestWebAddCookieReplacesTheSameCookie(t *testing.T) {
-	action := convertSingleAction(t, ""+
-		`web_add_cookie("rxvt=1|first; DOMAIN=app.example.com");`+"\n\t"+
-		`web_add_cookie("rxvt=2|second; DOMAIN=.app.example.com");`+"\n\t"+
-		`web_add_cookie("rxvt=other; DOMAIN=other.example.com");`+"\n\t"+
-		`web_add_cookie("dtPC=abc; DOMAIN=app.example.com");`+"\n\t"+
-		`web_url("Home", "URL=https://app.example.com/home", LAST);`, ConvertOptions{})
-	cookie := action.Headers["Cookie"]
-	if cookie != "rxvt=2|second; dtPC=abc" {
-		t.Fatalf("Cookie = %q, want one rxvt with the latest value and dtPC", cookie)
+func TestWebAddCookieBecomesPositionalCookieSets(t *testing.T) {
+	result := convertSingleWebSource(t, `
+	web_add_cookie("rxvt=1|first; DOMAIN=app.example.com");
+	web_add_cookie("rxvt=2|second; DOMAIN=.app.example.com; SECURE");
+	web_add_cookie("dtPC={PC}; DOMAIN=app.example.com; PATH=/app");
+	web_url("Home", "URL=https://app.example.com/home", LAST);
+	web_remove_cookie("dtPC");`)
+	actions := result.Script.Actions
+	if len(actions) != 5 {
+		t.Fatalf("actions = %d, want three cookie_set steps, the request and the removal: %#v", len(actions), actions)
+	}
+	if actions[0].Type != "cookie_set" || actions[0].Params["value"] != "1|first" {
+		t.Fatalf("first cookie = %#v", actions[0])
+	}
+	if actions[1].Params["value"] != "2|second" || actions[1].Params["domain"] != ".app.example.com" || actions[1].Params["secure"] != true {
+		t.Fatalf("second cookie = %#v, want the later value (the jar replaces the first)", actions[1])
+	}
+	if actions[2].Params["value"] != "{{var.pc}}" || actions[2].Params["path"] != "/app" {
+		t.Fatalf("third cookie = %#v", actions[2])
+	}
+	if cookie := actions[3].Headers["Cookie"]; cookie != "" {
+		t.Fatalf("the request must not carry a literal Cookie header, got %q", cookie)
+	}
+	if actions[4].Type != "cookie_set" || actions[4].Params["remove"] != true || actions[4].Params["name"] != "dtPC" || actions[4].Params["path"] != "/app" {
+		t.Fatalf("removal = %#v, want cookie_set remove matching the added cookie", actions[4])
 	}
 }

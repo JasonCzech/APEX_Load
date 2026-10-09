@@ -83,6 +83,19 @@ Ordered conditional branches: executes the first matching case, or the default b
 
 Clears every cookie in the VUser's HTTP session at this point (imported from web_cleanup_cookies). Protocols without a cookie store treat it as a no-op.
 
+### `cookie_set`
+
+Sets (or, with params.remove, expires) one cookie in the VUser's HTTP cookie store at this point (imported from web_add_cookie and web_remove_cookie). A later Set-Cookie from the server replaces it. Protocols without a cookie store treat it as a no-op.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.name` | string | yes | Cookie name. |
+| `params.value` | string |  | Cookie value; templates are resolved at run time. |
+| `params.domain` | string |  | Domain the cookie is sent to, including subdomains; empty means host-only for the script's base URL host. |
+| `params.path` | string |  | Cookie path; defaults to /. |
+| `params.secure` | bool |  | Send only over HTTPS. |
+| `params.remove` | bool |  | Expire the cookie instead of setting it. |
+
 ### `custom_call`
 
 Imported custom/user C function; logged for manual review during replay.

@@ -686,3 +686,43 @@ func webSetUserConflictGate(fn ParsedFunction, host string) dsl.Action {
 	}})
 	return action
 }
+
+// cookieSetAction builds the positional cookie_set action for an imported
+// web_add_cookie (or, with remove, for the web_remove_cookie that expires it).
+func cookieSetAction(fn ParsedFunction, cookie ParsedCookie, remove bool) dsl.Action {
+	params := map[string]any{"name": cookie.Name}
+	if !remove {
+		params["value"] = convertParamReferences(cookie.Value)
+	}
+	if domain := strings.TrimSpace(cookie.Domain); domain != "" {
+		params["domain"] = convertParamReferences(domain)
+	}
+	if path := strings.TrimSpace(cookie.Path); path != "" && path != "/" {
+		params["path"] = path
+	}
+	if sourceCookieIsSecure(cookie.Raw) {
+		params["secure"] = true
+	}
+	verb := "Set"
+	if remove {
+		params["remove"] = true
+		verb = "Remove"
+	}
+	return dsl.Action{
+		Name:     sanitizeName(verb + " cookie " + cookie.Name),
+		Type:     "cookie_set",
+		Params:   params,
+		Metadata: sourceFunctionMetadata(fn),
+	}
+}
+
+// sourceCookieIsSecure reports whether a LoadRunner cookie string carries the
+// bare SECURE attribute.
+func sourceCookieIsSecure(raw string) bool {
+	for index, segment := range strings.Split(raw, ";") {
+		if index > 0 && strings.EqualFold(strings.TrimSpace(segment), "secure") {
+			return true
+		}
+	}
+	return false
+}

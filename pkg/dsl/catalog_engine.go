@@ -80,6 +80,19 @@ func engineActionSpecs() []ActionSpec {
 			Summary:   "Clears every cookie in the VUser's HTTP session at this point (imported from web_cleanup_cookies). Protocols without a cookie store treat it as a no-op.",
 		},
 		{
+			Type:      "cookie_set",
+			Protocols: []string{"*"},
+			Summary:   "Sets (or, with params.remove, expires) one cookie in the VUser's HTTP cookie store at this point (imported from web_add_cookie and web_remove_cookie). A later Set-Cookie from the server replaces it. Protocols without a cookie store treat it as a no-op.",
+			Fields: []FieldSpec{
+				{Name: "params.name", Kind: FieldKindString, Required: true, Doc: "Cookie name."},
+				{Name: "params.value", Kind: FieldKindString, Doc: "Cookie value; templates are resolved at run time."},
+				{Name: "params.domain", Kind: FieldKindString, Doc: "Domain the cookie is sent to, including subdomains; empty means host-only for the script's base URL host."},
+				{Name: "params.path", Kind: FieldKindString, Doc: "Cookie path; defaults to /."},
+				{Name: "params.secure", Kind: FieldKindBool, Doc: "Send only over HTTPS."},
+				{Name: "params.remove", Kind: FieldKindBool, Doc: "Expire the cookie instead of setting it."},
+			},
+		},
+		{
 			Type:      "cache_clear",
 			Protocols: []string{"*"},
 			Summary:   "Clears the VUser's simulated HTTP response cache at this point. Protocols without a response cache treat it as a no-op.",

@@ -2598,6 +2598,60 @@
             "properties": {
               "type": {
                 "enum": [
+                  "cookie_set"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Sets (or, with params.remove, expires) one cookie in the VUser's HTTP cookie store at this point (imported from web_add_cookie and web_remove_cookie). A later Set-Cookie from the server replaces it. Protocols without a cookie store treat it as a no-op.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "domain": {
+                    "description": "Domain the cookie is sent to, including subdomains; empty means host-only for the script's base URL host.",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "Cookie name.",
+                    "type": "string"
+                  },
+                  "path": {
+                    "description": "Cookie path; defaults to /.",
+                    "type": "string"
+                  },
+                  "remove": {
+                    "description": "Expire the cookie instead of setting it.",
+                    "type": "boolean"
+                  },
+                  "secure": {
+                    "description": "Send only over HTTPS.",
+                    "type": "boolean"
+                  },
+                  "value": {
+                    "description": "Cookie value; templates are resolved at run time.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "params"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
                   "custom_call"
                 ]
               }
@@ -6517,6 +6571,7 @@
             "control_parallel",
             "control_switch",
             "cookie_clear",
+            "cookie_set",
             "custom_call",
             "database_begin",
             "database_commit",

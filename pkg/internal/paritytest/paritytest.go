@@ -82,6 +82,8 @@ type ExpectedRequest struct {
 	Query         *string           `json:"query,omitempty"`
 	Headers       map[string]string `json:"headers,omitempty"`
 	AbsentHeaders []string          `json:"absent_headers,omitempty"`
+	// HeaderContains asserts that a header's joined values contain a substring.
+	HeaderContains map[string]string `json:"header_contains,omitempty"`
 	// HeaderCounts asserts how many comma- or semicolon-separated values a
 	// header carries for a given name, for example {"Cookie:SESSIONID": 1}.
 	HeaderCounts map[string]int `json:"header_counts,omitempty"`
@@ -358,6 +360,17 @@ func (s *Server) compareOne(n int, want ExpectedRequest, got Recorded) []string 
 		}
 		if strings.Join(gotValues, ", ") != wantValue {
 			add("header %s = %q, want %q", name, strings.Join(gotValues, ", "), wantValue)
+		}
+	}
+	containNames := make([]string, 0, len(want.HeaderContains))
+	for name := range want.HeaderContains {
+		containNames = append(containNames, name)
+	}
+	sort.Strings(containNames)
+	for _, name := range containNames {
+		fragment := s.expand(want.HeaderContains[name])
+		if joined := strings.Join(got.Header.Values(name), ", "); !strings.Contains(joined, fragment) {
+			add("header %s = %q, want it to contain %q", name, joined, fragment)
 		}
 	}
 	for _, name := range want.AbsentHeaders {

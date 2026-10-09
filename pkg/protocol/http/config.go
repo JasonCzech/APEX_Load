@@ -686,6 +686,50 @@ func (h *HTTP) ClearCookies(ctx context.Context) error {
 	return nil
 }
 
+// SetCookie satisfies protocol.CookieSetter: it stores (or expires) a
+// script-provided cookie in the VUser's jar. A Domain makes it a domain
+// cookie (sent to subdomains too, like LoadRunner's DOMAIN=); without one it
+// is host-only for the base URL's host.
+func (h *HTTP) SetCookie(ctx context.Context, cookie protocol.ScriptCookie) error {
+	if h.client == nil || h.client.Jar == nil {
+		return nil
+	}
+	name := strings.TrimSpace(cookie.Name)
+	if name == "" {
+		return fmt.Errorf("cookie_set requires a cookie name")
+	}
+	host := strings.TrimPrefix(strings.TrimSpace(cookie.Domain), ".")
+	scheme := "http"
+	if base, err := url.Parse(strings.TrimSpace(h.baseURL)); err == nil && base.Host != "" {
+		if host == "" {
+			host = base.Hostname()
+		}
+		if base.Scheme != "" {
+			scheme = base.Scheme
+		}
+	}
+	if host == "" {
+		return fmt.Errorf("cookie_set %q needs a domain because the script has no base URL", name)
+	}
+	if cookie.Secure {
+		scheme = "https"
+	}
+	path := strings.TrimSpace(cookie.Path)
+	if path == "" {
+		path = "/"
+	}
+	value := &http.Cookie{Name: name, Value: cookie.Value, Path: path, Secure: cookie.Secure}
+	if strings.TrimSpace(cookie.Domain) != "" {
+		value.Domain = host
+	}
+	if cookie.Remove {
+		value.Value = ""
+		value.MaxAge = -1
+	}
+	h.client.Jar.SetCookies(&url.URL{Scheme: scheme, Host: host, Path: path}, []*http.Cookie{value})
+	return nil
+}
+
 func parseMaxRedirects(config map[string]any) int {
 	maxRedirects := 10
 	if _, configured := config["max_redirects"]; configured {

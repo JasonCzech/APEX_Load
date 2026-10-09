@@ -36,6 +36,8 @@ func (vu *VUser) handleEngineAction(ctx context.Context, action dsl.Action) (boo
 		return true, vu.handleSourceRuntimeAction(ctx, action)
 	case "cookie_clear":
 		return true, vu.clearProtocolCookies(ctx)
+	case "cookie_set":
+		return true, vu.setProtocolCookie(ctx, action)
 	case "cache_clear":
 		return true, vu.clearProtocolCache(ctx)
 	case "http_connections_close":
@@ -99,6 +101,32 @@ func (vu *VUser) clearProtocolCookies(ctx context.Context) error {
 		return nil
 	}
 	return controller.ClearCookies(ctx)
+}
+
+// setProtocolCookie dispatches a cookie_set action (imported web_add_cookie /
+// web_remove_cookie) to the protocol's cookie store, resolving templates in
+// its parameters first. Protocols without a cookie store treat it as a no-op.
+func (vu *VUser) setProtocolCookie(ctx context.Context, action dsl.Action) error {
+	if vu == nil || vu.Proto == nil {
+		return nil
+	}
+	setter, ok := vu.Proto.(protocol.CookieSetter)
+	if !ok {
+		return nil
+	}
+	params := vu.interpolateAnyMap(action.Params)
+	text := func(key string) string {
+		value, _ := params[key].(string)
+		return value
+	}
+	flag := func(key string) bool {
+		value, _ := params[key].(bool)
+		return value
+	}
+	return setter.SetCookie(ctx, protocol.ScriptCookie{
+		Name: text("name"), Value: text("value"), Domain: text("domain"), Path: text("path"),
+		Secure: flag("secure"), Remove: flag("remove"),
+	})
 }
 
 // browserEmulationNewUserEachIteration reports whether browser emulation's
