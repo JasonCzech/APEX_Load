@@ -373,15 +373,22 @@ func writeFieldTable(b *strings.Builder, fields []dsl.FieldSpec) {
 	b.WriteString("| Field | Kind | Required | Description |\n")
 	b.WriteString("|-------|------|----------|-------------|\n")
 	for _, field := range fields {
-		kind := string(field.Kind)
+		// Enum values go in the description, so the Kind column stays one word wide.
+		description := field.Doc
 		if field.Kind == dsl.FieldKindEnum {
-			kind = "enum: " + strings.Join(field.Enum, "\\|")
+			description = strings.TrimSpace(description + " One of: `" + strings.Join(field.Enum, "`, `") + "`.")
 		}
 		required := ""
 		if field.Required {
 			required = "yes"
 		}
-		fmt.Fprintf(b, "| `%s` | %s | %s | %s |\n", field.Name, kind, required, field.Doc)
+		fmt.Fprintf(b, "| `%s` | %s | %s | %s |\n", tableCell(field.Name), field.Kind, required, tableCell(description))
 	}
 	b.WriteString("\n")
+}
+
+// tableCell escapes text for one Markdown table cell. An unescaped pipe would
+// start a new column.
+func tableCell(text string) string {
+	return strings.ReplaceAll(strings.Join(strings.Fields(text), " "), "|", "\\|")
 }

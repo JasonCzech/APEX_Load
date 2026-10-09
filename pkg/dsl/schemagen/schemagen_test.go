@@ -45,6 +45,20 @@ func TestGeneratedReferenceIsFresh(t *testing.T) {
 	}
 }
 
+// TestGeneratedReferenceTablesKeepTheirColumns fails when a field name or
+// description writes an unescaped pipe, which splits its row into extra cells.
+func TestGeneratedReferenceTablesKeepTheirColumns(t *testing.T) {
+	for number, line := range strings.Split(string(GenerateReference()), "\n") {
+		if !strings.HasPrefix(line, "| `") {
+			continue
+		}
+		row := strings.TrimSuffix(strings.TrimPrefix(line, "|"), "|")
+		if cells := strings.Count(row, "|") - strings.Count(row, "\\|") + 1; cells != 4 {
+			t.Errorf("line %d has %d cells, want 4: %s", number+1, cells, line)
+		}
+	}
+}
+
 // TestGeneratedSchemaCompiles asserts the emitted document is a valid JSON
 // Schema 2020-12.
 func TestGeneratedSchemaCompiles(t *testing.T) {

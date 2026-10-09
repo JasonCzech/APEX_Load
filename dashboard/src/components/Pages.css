@@ -1586,6 +1586,22 @@
   border-bottom: none;
 }
 
+/* MarkdownRenderer marks columns of short values, which stay on one line,
+   and columns of prose, which keep a readable measure. */
+.markdown-table-wrap td.markdown-col-compact {
+  white-space: nowrap;
+}
+
+.markdown-table-wrap .markdown-col-prose {
+  min-width: 16em;
+}
+
+@media (max-width: 900px) {
+  .markdown-table-wrap .markdown-col-prose {
+    min-width: 10em;
+  }
+}
+
 /* Access-review attention surfacing (notifications): a count pill on the Activity tab and
    a banner in the service-accounts workspace. */
 

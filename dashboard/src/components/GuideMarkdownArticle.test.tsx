@@ -1,0 +1,101 @@
+// @vitest-environment jsdom
+
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import GuideMarkdownArticle from './GuideMarkdownArticle'
+
+;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+describe('GuideMarkdownArticle', () => {
+  let container: HTMLDivElement
+  let root: Root
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.append(container)
+    root = createRoot(container)
+  })
+  afterEach(async () => {
+    await act(async () => root.unmount())
+    container.remove()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+  async function render(source: string) {
+    // Help resolves links itself; a repository path such as ../.github/... stays unlinked.
+    await act(async () => root.render(<GuideMarkdownArticle source={source} sectionHref={id => `#/docs?article=dsl&section=${id}`} resolveLink={href => href} />))
+  }
+  const toc = () => container.querySelector('nav[aria-label="On this page"]')!
+
+  it('lists every heading of a short article, with code labels instead of backticks', async () => {
+    await render(['# Title', '## Overview', '### `cache_clear`', '## Limits'].join('\n\n'))
+    const items = Array.from(toc().querySelectorAll('li'))
+    expect(items.map(item => item.textContent)).toEqual(['Overview', 'cache_clear', 'Limits'])
+    expect(items[1].className).toBe('help-toc-nested')
+    expect(items[1].querySelector('code')?.textContent).toBe('cache_clear')
+    expect(items[1].querySelector('a')?.getAttribute('href')).toBe('#/docs?article=dsl&section=cache-clear')
+    expect(container.querySelector('.help-section-index')).toBeNull()
+  })
+
+  it('lists only sections of a long article and opens each section with its own index', async () => {
+    const actions = (prefix: string, count: number) => Array.from({ length: count }, (_, index) => `### \`${prefix}_${index}\``)
+    await render(['# Reference', '## Common fields', '## Protocol: browser', ...actions('browser', 10), '## Protocol: kafka', ...actions('kafka', 8), '## Protocol: grpc', ...actions('grpc', 2)].join('\n\n'))
+    const items = Array.from(toc().querySelectorAll(':scope > ul > li'))
+    expect(items.map(item => item.querySelector('a')?.textContent)).toEqual(['Common fields', 'Protocol: browser', 'Protocol: kafka', 'Protocol: grpc'])
+    expect(items.map(item => item.querySelector('.help-toc-count')?.textContent ?? '')).toEqual(['', '10 subsections', '8 subsections', '2 subsections'])
+    expect(items[1].textContent).toBe('Protocol: browser 10 subsections')
+    const kafka = container.querySelector('nav[aria-label="In this section: Protocol: kafka"]')!
+    expect(kafka.previousElementSibling?.id).toBe('protocol-kafka')
+    expect(Array.from(kafka.querySelectorAll('a')).map(link => link.textContent)).toEqual(Array.from({ length: 8 }, (_, index) => `kafka_${index}`))
+    expect(kafka.querySelector('a')?.getAttribute('href')).toBe('#/docs?article=dsl&section=kafka-0')
+    // A section with fewer subsections than an index is worth is listed in the card only.
+    expect(container.querySelectorAll('.help-section-index')).toHaveLength(2)
+  })
+
+  it('sizes table columns by their content and keeps short names whole', async () => {
+    await render([
+      '| Field | Kind | Required | Description |',
+      '|---|---|---|---|',
+      '| `params.wait_until` | enum | yes | Navigation readiness point; defaults to the load event of the page. One of: `load`, `commit`. |',
+      '| `config.eventhubs.start_position` | string |  | Where a new consumer starts reading: earliest, latest, or a timestamp \\| sequence number. |',
+      '',
+      '| System | File |',
+      '|---|---|',
+      '| GitHub Actions | [`.github/workflows/release.yml`](../.github/workflows/release.yml) |',
+    ].join('\n'))
+    const [fields, files] = Array.from(container.querySelectorAll('table'))
+    expect(Array.from(fields.querySelectorAll('th')).map(th => th.className)).toEqual(['', 'markdown-col-compact', 'markdown-col-compact', 'markdown-col-prose'])
+    const [short, long] = Array.from(fields.querySelectorAll('tbody tr td:first-child code'))
+    expect(short.querySelector('wbr')).toBeNull()
+    expect(long.innerHTML).toBe('config.<wbr>eventhubs.<wbr>start_<wbr>position')
+    // An escaped pipe stays inside its cell.
+    expect(fields.querySelectorAll('tbody tr:nth-child(2) td')).toHaveLength(4)
+    expect(fields.querySelector('tbody tr:nth-child(2) td:last-child')?.textContent).toContain('timestamp | sequence number')
+    // A link label keeps its inline code even when the destination is not linkable.
+    const file = files.querySelector('tbody td:last-child')!
+    expect(file.textContent).toBe('.github/workflows/release.yml')
+    expect(file.querySelector('code')?.innerHTML).toBe('.github/<wbr>workflows/<wbr>release.yml')
+  })
+
+  it('makes a table a focusable region only while it scrolls sideways', async () => {
+    let overflowing = true
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(() => overflowing ? 900 : 600)
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => 600)
+    const observers: (() => void)[] = []
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(private readonly callback: () => void) { observers.push(() => this.callback()) }
+      observe() { this.callback() }
+      disconnect() {}
+    })
+    await render(['## Settings', '| Field | Description |', '|---|---|', '| `a` | b |'].join('\n'))
+    const wrap = container.querySelector('.markdown-table-wrap')!
+    expect(wrap.getAttribute('role')).toBe('region')
+    expect(wrap.getAttribute('tabindex')).toBe('0')
+    expect(wrap.getAttribute('aria-label')).toBe('Settings: Field, Description')
+    overflowing = false
+    await act(async () => observers.forEach(notify => notify()))
+    expect(wrap.hasAttribute('role')).toBe(false)
+    expect(wrap.hasAttribute('tabindex')).toBe(false)
+  })
+})
