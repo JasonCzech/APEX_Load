@@ -28,7 +28,7 @@ var publishedWebHTTPFunctionExpectations = map[string]struct {
 	"web_cleanup_cookies":            {"web", SourceFunctionSupportExecutable},
 	"web_concurrent_end":             {"web", SourceFunctionSupportExecutable},
 	"web_concurrent_start":           {"web", SourceFunctionSupportExecutable},
-	"web_convert_date_param":         {"parameter", SourceFunctionSupportReviewOnly},
+	"web_convert_date_param":         {"parameter", SourceFunctionSupportExecutable},
 	"web_convert_from_formatted":     {"parameter", SourceFunctionSupportReviewOnly},
 	"web_convert_param":              {"parameter", SourceFunctionSupportExecutable},
 	"web_convert_to_formatted":       {"parameter", SourceFunctionSupportReviewOnly},
@@ -63,8 +63,8 @@ var publishedWebHTTPFunctionExpectations = map[string]struct {
 	"web_rest":                       {"web", SourceFunctionSupportExecutable},
 	"web_revert_auto_header":         {"web", SourceFunctionSupportExecutable},
 	"web_save_header":                {"web", SourceFunctionSupportReviewOnly},
-	"web_save_param_length":          {"parameter", SourceFunctionSupportReviewOnly},
-	"web_save_timestamp_param":       {"parameter", SourceFunctionSupportReviewOnly},
+	"web_save_param_length":          {"parameter", SourceFunctionSupportExecutable},
+	"web_save_timestamp_param":       {"parameter", SourceFunctionSupportExecutable},
 	"web_set_certificate":            {"web", SourceFunctionSupportReviewOnly},
 	"web_set_certificate_ex":         {"web", SourceFunctionSupportExecutable},
 	"web_set_max_html_param_len":     {"web", SourceFunctionSupportNativeNoop},
@@ -237,7 +237,7 @@ func sampleWebFunctionCall(name string) string {
 	case "web_convert_param":
 		return `web_convert_param("Param", "SourceEncoding=HTML", "TargetEncoding=URL", LAST);`
 	case "web_convert_date_param":
-		return `web_convert_date_param("Out", "SourceString={In}", LAST);`
+		return `web_convert_date_param("Out", "SourceFormat=%d/%m/%Y", "TargetFormat=%Y-%m-%d", LAST);`
 	case "web_convert_from_formatted":
 		return `web_convert_from_formatted("Out", "Format=%d", "Source={In}", LAST);`
 	case "web_convert_to_formatted":

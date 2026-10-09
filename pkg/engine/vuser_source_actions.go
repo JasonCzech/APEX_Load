@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/strftime"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	protocolhttp "github.com/jasonczech/apexload/pkg/protocol/http"
 	"go.opentelemetry.io/otel/trace"
@@ -1126,6 +1127,20 @@ func (vu *VUser) handleSourceParameterAction(function string, action dsl.Action)
 		vu.setSourceVariable(firstEngineValue("vuser_ip", args...), "127.0.0.1")
 	case "web_convert_param":
 		vu.handleWebConvertParamAction(action, args)
+	case "web_save_timestamp_param":
+		// Milliseconds since the Unix epoch, as LoadRunner saves it.
+		if len(args) >= 1 {
+			vu.setSourceVariable(args[0], strconv.FormatInt(time.Now().UnixMilli(), 10))
+		}
+	case "web_save_param_length":
+		// The length of an existing parameter's value, in decimal, saved as
+		// <Param>_Length. The importer keeps Base=Hexadecimal for review.
+		if len(args) >= 1 {
+			value := vu.Variables[strings.ToLower(strings.TrimSpace(args[0]))]
+			vu.setSourceVariable(strings.TrimSpace(args[0])+"_Length", strconv.Itoa(len(value)))
+		}
+	case "web_convert_date_param":
+		vu.handleWebConvertDateParamAction(args)
 	default:
 		if saveName := saveParamNameFromAction(action); saveName != "" {
 			vu.setSourceVariable(saveName, firstEngineValue("", args...))
@@ -1167,6 +1182,39 @@ func sourceTimestampValue(now time.Time, args []string) string {
 		value = value[:digits]
 	}
 	return value
+}
+
+// handleWebConvertDateParamAction rewrites a date parameter in place from
+// SourceFormat= to TargetFormat= (strftime specifiers). A value that does not
+// match the source format is left unchanged and logged.
+func (vu *VUser) handleWebConvertDateParamAction(args []string) {
+	if len(args) < 1 {
+		return
+	}
+	name := strings.TrimSpace(args[0])
+	sourceFormat, targetFormat := "", ""
+	for _, arg := range args[1:] {
+		key, value, ok := strings.Cut(arg, "=")
+		if !ok {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(key)) {
+		case "sourceformat":
+			sourceFormat = value
+		case "targetformat":
+			targetFormat = value
+		}
+	}
+	current := vu.Variables[strings.ToLower(name)]
+	parsed, err := strftime.Parse(current, sourceFormat, time.Local)
+	if err == nil {
+		var converted string
+		if converted, err = strftime.Format(parsed, targetFormat); err == nil {
+			vu.setSourceVariable(name, converted)
+			return
+		}
+	}
+	vu.runtimeLogger().Warn("web_convert_date_param left the parameter unchanged", "vuser", vu.ID, "parameter", name, "error", err)
 }
 
 func (vu *VUser) handleWebConvertParamAction(action dsl.Action, args []string) {

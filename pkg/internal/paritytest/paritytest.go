@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -83,9 +84,12 @@ type Expectation struct {
 // ExpectedRequest describes one request the fixture server must receive.
 // Only the fields that are set are compared.
 type ExpectedRequest struct {
-	Method        string            `json:"method"`
-	Path          string            `json:"path"`
-	Query         *string           `json:"query,omitempty"`
+	Method string  `json:"method"`
+	Path   string  `json:"path"`
+	Query  *string `json:"query,omitempty"`
+	// QueryPattern is an RE2 pattern the whole raw query must match, for
+	// values that change on every run (timestamps).
+	QueryPattern  string            `json:"query_pattern,omitempty"`
 	Headers       map[string]string `json:"headers,omitempty"`
 	AbsentHeaders []string          `json:"absent_headers,omitempty"`
 	// HeaderContains asserts that a header's joined values contain a substring.
@@ -362,6 +366,13 @@ func (s *Server) compareOne(n int, want ExpectedRequest, got Recorded) []string 
 	}
 	if want.Query != nil && s.expand(*want.Query) != got.Query {
 		add("query = %q, want %q", got.Query, s.expand(*want.Query))
+	}
+	if want.QueryPattern != "" {
+		if pattern, err := regexp.Compile("^(?:" + want.QueryPattern + ")$"); err != nil {
+			add("query_pattern %q is not valid RE2: %v", want.QueryPattern, err)
+		} else if !pattern.MatchString(got.Query) {
+			add("query = %q, want it to match %q", got.Query, want.QueryPattern)
+		}
 	}
 	names := make([]string, 0, len(want.Headers))
 	for name := range want.Headers {

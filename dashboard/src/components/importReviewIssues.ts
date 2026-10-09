@@ -51,6 +51,7 @@ const LOADRUNNER_PARITY_ISSUE_TITLES: Record<string, string> = {
   html_form_requires_page_context: 'Verify form submitted without its page',
   request_body_variant_unsupported: 'Rebuild unsupported request body',
   request_body_file_missing: 'Add the missing request body file',
+  parameter_helper_unsupported: 'Review the parameter helper options',
   request_argument_unsupported: 'Review unsupported request attributes',
   request_argument_review: 'Review request side effects',
   registration_scope_narrowed: 'Review narrowed extraction scope',

@@ -196,6 +196,17 @@ func convertSourceFunctionAction(fn ParsedFunction) (dsl.Action, SourceFunctionS
 		return convertGenericSourceAction(fn, "source_metric", def), def.SupportMode, true
 	case "parameter", "attribute", "info":
 		action := convertGenericSourceAction(fn, "source_parameter", def)
+		if code, detail := sourceParameterHelperReview(fn); code != "" {
+			action.Type = "source_review"
+			makeSourceReviewActionDisclosureSafe(&action, fn, SourceFunctionSupportReviewOnly)
+			importreview.ApplyToAction(&action, []importreview.Finding{{
+				Code: code, ReasonCode: code,
+				Element: fn.Name, Source: "enterprise_script_archive", SourceRef: fn.Filename,
+				Detail: detail,
+				Gate:   importreview.GateExecution,
+			}})
+			return action, SourceFunctionSupportReviewOnly, true
+		}
 		if sourceRandomArrayAssignmentRequiresReview(fn) {
 			action.Type = "source_review"
 			makeSourceReviewActionDisclosureSafe(&action, fn, SourceFunctionSupportReviewOnly)

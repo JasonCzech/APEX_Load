@@ -12,9 +12,9 @@ Evaluation of the complete published OpenText/Micro Focus VuGen 26.1 **Web (HTTP
 
 | Disposition | Count | Meaning |
 |---|---|---|
-| `executable` | 44 | Translated to an executable DSL action or config mapping. |
+| `executable` | 47 | Translated to an executable DSL action or config mapping. |
 | `native_noop` | 6 | Preserved as a runtime-compatibility attribute; a guaranteed no-op in APEX Load (no client cache / no auto-resource fetch). |
-| `review_only` | 31 | Preserved in the import-review artifact; no APEX runtime equivalent, so it is not executed (never fabricated). |
+| `review_only` | 28 | Preserved in the import-review artifact; no APEX runtime equivalent, so it is not executed (never fabricated). |
 
 Every published function resolves to one of the dispositions above — none falls through to a `custom_call` review stub. This is enforced by `TestWebHTTPFunctionRegistryResolvesEveryPublishedFunction`.
 
@@ -31,7 +31,7 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_cleanup_cookies` | web | `executable` | cookie_clear action | Executable positional cookie clear. |
 | `web_concurrent_end` | web | `executable` | Concurrent http_sequence boundary | Closes a validated explicit source group; unsupported spans remain execution-gated review cases. |
 | `web_concurrent_start` | web | `executable` | Concurrent http_sequence boundary | Only matched same-scope groups of 1–256 independent HTTP requests; a request wrapped in its own LR_AUTO transaction records that transaction, timed by the request; barriers, conflicts, waits and malformed boundaries require review. |
-| `web_convert_date_param` | parameter | `review_only` | Import review | Date conversion is preserved for review; no APEX runtime equivalent yet. |
+| `web_convert_date_param` | parameter | `executable` | source_parameter action | Rewrites the date parameter in place from SourceFormat to TargetFormat (strftime specifiers); unsupported specifiers keep review. |
 | `web_convert_from_formatted` | parameter | `review_only` | Import review | Formatted-string parse is preserved for review; no APEX runtime equivalent yet. |
 | `web_convert_param` | parameter | `executable` | source_parameter action | Encoding/format conversion. |
 | `web_convert_to_formatted` | parameter | `review_only` | Import review | Formatted-string build is preserved for review; no APEX runtime equivalent yet. |
@@ -66,8 +66,8 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_rest` | web | `executable` | HTTP request action | REST method/body/HEADERS block. |
 | `web_revert_auto_header` | web | `executable` | Request headers | Removes one persistent auto header. |
 | `web_save_header` | web | `review_only` | Import review | Saving response headers to a parameter has no extractor equivalent. |
-| `web_save_param_length` | parameter | `review_only` | Import review | Parameter length capture is preserved for review; no APEX runtime equivalent yet. |
-| `web_save_timestamp_param` | parameter | `review_only` | Import review | Timestamp capture is preserved for review; no APEX runtime equivalent yet. |
+| `web_save_param_length` | parameter | `executable` | source_parameter action | Saves the decimal length of a parameter as <Param>_Length; Base=Hexadecimal keeps review. |
+| `web_save_timestamp_param` | parameter | `executable` | source_parameter action | Saves the current time in milliseconds since the Unix epoch. |
 | `web_set_certificate` | web | `review_only` | Import review | Selects a cert by store index; no file path to map. |
 | `web_set_certificate_ex` | web | `executable` | config.http.tls client cert | CertFilePath=/KeyFilePath=. |
 | `web_set_max_html_param_len` | web | `native_noop` | config.web_runtime attribute | Native no-op compatibility attribute. |
