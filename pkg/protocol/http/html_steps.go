@@ -76,7 +76,7 @@ func (s *pageContextState) observeMainDocument(action *protocol.Action, resp *ht
 	if s == nil || resp == nil || !complete || resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return
 	}
-	if step, _ := action.Params["resource_step"].(bool); step {
+	if isResourceStep(action) || !stepHTMLMode(action) {
 		return
 	}
 	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
@@ -315,4 +315,44 @@ func pageContextEvidence(page *pagecontext.Page) map[string]any {
 		"page_context_images": len(page.Images),
 		"page_context_forms":  len(page.Forms),
 	}
+}
+
+// isResourceStep reports a step recorded as a resource (LoadRunner
+// Resource=1): its failures follow the non-critical resource policy and it
+// never becomes the page context.
+func isResourceStep(action *protocol.Action) bool {
+	step, _ := action.Params["resource_step"].(bool)
+	return step
+}
+
+// stepHTMLMode reports whether a step is replayed in HTML mode (LoadRunner
+// Mode=HTML, the default): its page is parsed for resources and becomes the
+// page context. Mode=HTTP (html_mode false) does neither.
+func stepHTMLMode(action *protocol.Action) bool {
+	mode, set := action.Params["html_mode"].(bool)
+	return !set || mode
+}
+
+// downgradeResourceStepFailure turns a resource step's HTTP error or
+// transport failure into a warning, as LoadRunner reports a failed resource
+// step, unless fail_noncritical_resources is on (or the failure is a timeout
+// and resource_timeout_as_warning is off).
+func (p replayOutcomePolicy) downgradeResourceStepFailure(result *protocol.Result) {
+	if result == nil || result.Success || p.failResources {
+		return
+	}
+	transport := result.StatusCode == 0 && result.ErrorMessage != ""
+	if result.StatusCode < 400 && !transport {
+		return
+	}
+	if transport && strings.Contains(strings.ToLower(result.ErrorMessage), "timeout") && p.timeoutConfigured && !p.resourceTimeoutWarning {
+		return
+	}
+	addReplayWarning(result, "resource_step_failed")
+	result.ProtocolEvidence["resource_step_error"] = result.ErrorMessage
+	if result.ErrorMessage == "" {
+		result.ProtocolEvidence["resource_step_error"] = fmt.Sprintf("HTTP %d", result.StatusCode)
+	}
+	result.ErrorMessage = ""
+	result.Success = true
 }

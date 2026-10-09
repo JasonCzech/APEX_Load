@@ -93,6 +93,7 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 		action.Headers[k] = convertParamReferences(v)
 	}
 	applySourceRefererHeader(action, fn)
+	applySourceStepMode(action, fn)
 	if contentType := requestContentTypeFromFunction(fn); contentType != "" {
 		if _, exists := headerValueCaseInsensitive(action.Headers, "Content-Type"); !exists {
 			value := convertParamReferences(contentType)
@@ -190,6 +191,34 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 	action.Target = convertParamReferences(action.Target)
 
 	return action, warnings
+}
+
+// applySourceStepMode carries a step's Mode= and Resource= attributes:
+// Mode=HTTP replays it without parsing its page (no resource discovery, no
+// page context) and Mode=HTML with them; Resource=1 marks a resource step,
+// whose failures follow the non-critical resource policy. A step without
+// Mode= follows the runtime default, which is HTML.
+func applySourceStepMode(action *dsl.Action, fn ParsedFunction) {
+	if action == nil {
+		return
+	}
+	set := func(key string, value bool) {
+		if action.Params == nil {
+			action.Params = map[string]any{}
+		}
+		action.Params[key] = value
+	}
+	if mode, ok := sourceNamedArg(fn.Args, "Mode"); ok {
+		switch strings.ToUpper(strings.TrimSpace(cleanConfigValue(mode))) {
+		case "HTTP":
+			set("html_mode", false)
+		case "HTML":
+			set("html_mode", true)
+		}
+	}
+	if resource, ok := sourceNamedArg(fn.Args, "Resource"); ok && strings.TrimSpace(cleanConfigValue(resource)) == "1" {
+		set("resource_step", true)
+	}
 }
 
 // applySourceRefererHeader sends a step's Referer= argument as the Referer

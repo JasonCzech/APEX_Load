@@ -280,6 +280,9 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.ProtocolEvidence = map[string]any{"legacy_html_check": "disabled"}
 		return result, nil
 	}
+	if isResourceStep(action) {
+		defer func() { h.outcome.downgradeResourceStepFailure(result) }()
+	}
 	if step, ok := action.Params[HTMLStepParam].(map[string]any); ok {
 		pageEvidence := pageContextEvidence(h.page.current())
 		resolved, done, err := h.resolveHTMLStep(action, step)
@@ -996,7 +999,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			finalURL = resp.Request.URL
 		}
 		var pageBody []byte
-		if h.shouldParseHTML(resp.Header) {
+		if h.shouldParseHTML(resp.Header) && stepHTMLMode(action) {
 			pageBody = respBody
 		}
 		if len(explicit) > 0 || len(pageBody) > 0 {

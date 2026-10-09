@@ -194,6 +194,7 @@ func convertHTMLStepAction(fn ParsedFunction, transaction, subTransaction string
 		action.Headers[name] = convertParamReferences(value)
 	}
 	applySourceRefererHeader(action, fn)
+	applySourceStepMode(action, fn)
 	applyExtraResources(fn, action)
 	return action, nil
 }

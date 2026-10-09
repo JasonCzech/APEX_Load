@@ -90,3 +90,38 @@ func TestHTMLStepsNeedPageContextConfig(t *testing.T) {
 		t.Fatalf("without page context: %v %v", result, err)
 	}
 }
+
+func TestResourceStepsAndHTTPMode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/missing.png" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		io.WriteString(w, `<a href="/next">Next</a>`)
+	}))
+	defer server.Close()
+	resource := &protocol.Action{Type: "GET", Target: server.URL + "/missing.png", Params: map[string]any{"resource_step": true}}
+
+	lenient := initCompatibilityHTTP(t, map[string]any{HTMLPageContextConfig: true})
+	result, err := lenient.Execute(context.Background(), resource)
+	if err != nil || !result.Success || result.ProtocolEvidence["resource_step_error"] == nil {
+		t.Fatalf("a missing resource step must warn: %+v %v", result, err)
+	}
+	strict := initCompatibilityHTTP(t, map[string]any{"fail_noncritical_resources": true})
+	if result, _ := strict.Execute(context.Background(), resource); result.Success {
+		t.Fatal("fail_noncritical_resources must keep the failure")
+	}
+
+	// A Mode=HTTP page never becomes the page context.
+	if result, _ := lenient.Execute(context.Background(), &protocol.Action{Type: "GET", Target: server.URL + "/page", Params: map[string]any{"html_mode": false}}); !result.Success {
+		t.Fatalf("http-mode page: %s", result.ErrorMessage)
+	}
+	if lenient.page.current() != nil {
+		t.Fatal("a Mode=HTTP step must leave the page context unchanged")
+	}
+	lenient.Execute(context.Background(), &protocol.Action{Type: "GET", Target: server.URL + "/page"})
+	if page := lenient.page.current(); page == nil || len(page.Links) != 1 {
+		t.Fatalf("an HTML-mode page must become the page context, got %+v", page)
+	}
+}

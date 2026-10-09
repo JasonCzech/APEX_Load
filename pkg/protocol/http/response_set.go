@@ -323,5 +323,5 @@ func (h *HTTP) pageResourcesPlanned(action *protocol.Action, resp *http.Response
 	if len(explicit) > 0 {
 		return true
 	}
-	return h.resources != nil && len(respBody) > 0 && h.shouldParseHTML(resp.Header)
+	return h.resources != nil && len(respBody) > 0 && h.shouldParseHTML(resp.Header) && stepHTMLMode(action)
 }
