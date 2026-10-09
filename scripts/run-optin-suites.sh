@@ -123,6 +123,17 @@ run_analytics_reference() {
     go test -tags analytics_duckdb -count=1 -timeout 60m -v -run '^TestNativeAnalyticsReferenceBenchmark$' ./pkg/api
 }
 
+# run_telemetry_reference runs the TEL-4 telemetry reference workload,
+# keeping its results and F4 acceptance request at a fresh private path.
+run_telemetry_reference() {
+  local out_dir commit
+  out_dir="$(mktemp -d "${TMPDIR:-/tmp}/apexload-telemetry-reference.XXXXXX")" || return 1
+  printf 'Telemetry reference results: %s\n' "${out_dir}"
+  commit="$(acceptance_commit)"
+  APEXLOAD_TELEMETRY_REFERENCE=1 APEXLOAD_TELEMETRY_REFERENCE_OUT="${out_dir}" APEXLOAD_COMMIT_SHA="${commit}" \
+    go test -count=1 -timeout 30m -v -run '^TestTelemetryReferenceWorkload$' ./pkg/api
+}
+
 # run_browser_intelligence_acceptance runs the BI-4 golden in Chromium and
 # WebKit, keeping its results and F4 acceptance requests at a fresh private
 # path.
@@ -142,6 +153,14 @@ run_suite "analytics_duckdb (embedded native analytics)" \
 run_suite "native analytics reference workload (NA-6: a 1 GiB partitioned import and timed queries, with an F4 acceptance request)" \
   "--all and a CGO-enabled Go toolchain (several GiB of scratch)" '[[ ${run_all} == 1 && "$(go env CGO_ENABLED)" == "1" ]]' \
   run_analytics_reference
+
+run_suite "telemetry fault matrix (TEL-4: the matrix's Go tests under the race detector)" \
+  "nothing" "true" \
+  go test -race -count=1 -timeout 30m -run '^(TestArchiveSourceCoveragePersistsMissingAndRetiredSources|TestBaselineComparisonExportsCarryTelemetryCompatibility|TestBaselineTelemetryLegacyMetadataCannotImplyZeroDrops|TestBuildRunArchiveReportIncludesTelemetryHealthEvidence|TestCITelemetryVerdictComesFromTheArchiveManifest|TestCSVExportAppliesArchiveRedaction|TestClientRenderReportRefusedOnAFollower|TestClientRenderReportsRotatingTabsShareTheViewerBudget|TestClientRenderSamplesCountOnlyVisibleRenders|TestClockCalibrationExpiryJumpAndStep|TestClockCalibrationStepBetweenProbes|TestClockPipelineUnscoredIsNotHealthy|TestClockStepToleranceBelowTheTransportBudget|TestCounterDerivationsExcludeResetsEpochsMissingAndOverflow|TestDistributedDropCounterRequiresColdAssignedPeers|TestDistributedMetricsPublicationRejectsReorderedOlderAggregate|TestDistributedMetricsSequenceGapIsRetainedInTelemetry|TestDistributedNegativeDropCounterPresenceIsUnavailable|TestDistributedPublicationRetryKeepsHeldJointBatches|TestGeneratorArchiveTelemetryPreservesMeasuredZeroAvailability|TestGeneratorArchiveTelemetryRejectsNegativeCounterAvailability|TestGeneratorEpochKeeperWaitsForAdoptionReconcile|TestMetricsBrokerStampsTheProcessSourceEpoch|TestMetricsBrokerTerminalOverflowPreservesDetectableSequenceGap|TestMissingMetricWindowsAreCountedWithinOneSourceEpoch|TestProjectTelemetryPolicyUpdateChangesOnlyTheOptIn|TestStageDistributionsDiscloseALostRecorder|TestTelemetryCoverageAfterAdoption|TestTelemetryCoverageBeforeAdoptionAndForSilentSourcesIsUnknown|TestTelemetryCoverageBridgesJitterButNotLoss|TestTelemetryLiveCoverageAfterAdoptionIsALowerBound|TestTelemetryLostPublicationsClampOnOverflow|TestTelemetryPolicySegmentRejectsAnInvalidPolicy|TestTelemetryStageRecorderReadoptionSamplesFromTheAdoption)$' ./pkg/api ./pkg/distributed/generatorrpc ./pkg/analysis
+
+run_suite "telemetry reference workload (TEL-4: two generators at 2,000 observations a second with a foreground dashboard, and an F4 acceptance request)" \
+  "--all, and Playwright Chromium for the foreground dashboard" "[[ ${run_all} == 1 ]]" \
+  run_telemetry_reference
 
 # --- Category 3: real client libraries compiled in. No external infrastructure. ---
 run_suite "apexload_fault_probe (evacuation guard pause)" \

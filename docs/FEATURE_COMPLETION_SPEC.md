@@ -391,6 +391,36 @@ Complete the final published malformed-counter API regressions and refreshed API
 
 The under-two-second pipeline figure remains a design target. Certify a declared reference workload, not universal density: on a 4 vCPU/16 GiB controller with two declared generator hosts and a foreground dashboard, exercise 2,000 accepted observations/s, one-second publications, collector traffic and concurrent admitted analytics. Proposed release targets are P99 qualified capture→visible-render age ≤2,000 ms and zero unreported accepted-record loss. Record stage P50/P95/P99, CPU/RSS, queue/byte volumes, clock uncertainty and coverage. A slow browser/unsupported clock is classified separately; overloaded/fault trials must surface degraded/incomplete status and recover without control-plane failure. Density/host upgrades need new evidence.
 
+Delivery progress, 2026-10-09 (Wave 5, C8): [TELEMETRY_ACCEPTANCE.md](qa/TELEMETRY_ACCEPTANCE.md), generated and checked by `docs/qa/telemetry_acceptance_test.go`, maps every fault in the matrix to the Go, dashboard and end-to-end tests that accept it. Its Go tests run together under the race detector as the opt-in "telemetry fault matrix" suite, registered in `scripts/run-optin-suites.sh` and [TEST_PROGRAM.md](qa/TEST_PROGRAM.md); a test missing from the suite's selection fails the inventory.
+
+The opt-in `TestTelemetryReferenceWorkload` runs the reference workload in one process:
+- two declared generators (real generator services over in-memory gRPC), each running half of 2,000 accepted observations a second for 60 s against a local target, publishing every second;
+- a foreground dashboard: headless Chromium on the run's live page, reporting its render evidence;
+- archive analyses of an earlier run, read every second.
+
+It records each stage's P50/P95/P99, coverage, loss accounting against the target's own count of served requests, CPU and RSS. With a commit it writes one TEL-4 F4 request, `pending` without failures and `failed` otherwise.
+
+A local run (darwin-arm64, 10 CPUs) **failed the target**:
+- **Loss:** 123,146 requests served and 123,146 archived at 1,887 a second, with zero unreported loss; every loss counter was exact at 0, except the WebSocket drops, which are controller-wide.
+- **Stage P50/P95/P99:**
+  - generator processing: 502 / 503 / 506 ms;
+  - transport: 8 / 17 / 5,181 ms;
+  - controller fan-out: 10 / 16 / 990 ms;
+  - sample age: 525 / 1,512 / 5,199 ms, above the 2,000 ms target;
+  - browser render: 141 / 239 / 307 ms.
+- **Capture to visible render:** at most 5.5 s.
+- **Analyses:** 94 concurrent analyses, none failed.
+- **Coverage:** 61 of 65 s observed; under the default budgets, 13 s degraded, 46 s breached and none healthy.
+
+Deviations:
+- The transport and sample-age P99s come from one or two publications per run, and they persist without the concurrent analyses; a generator's final publication is suspected and is not yet explained.
+- Generator processing sits at the generator's half-second aggregation window, so the default budgets read the run as breached.
+- The workload runs in one process: transport is in-memory gRPC, and CPU and RSS cover the controller, both generators and the target together. It is not the 4 vCPU / 16 GiB reference controller.
+- Collector traffic, an overload trial and native (DuckDB) analytics are not exercised.
+- No test changes the cadence or policy within a run (each run has one policy segment).
+- Exports are covered by the archive's export redaction, not by a telemetry-specific sanitization test.
+- No acceptance record is published.
+
 ## 9. Native analytics completion
 
 Implementation coordination: reuse the in-progress RCA engine in `claude/rca-correlation-start` for analysis, detection, graph construction and workload/baseline qualification, together with its immutable evidence revisions and fenced durable jobs. Native ingestion and query work supply adapters to that engine rather than a second analytical core or job lifecycle. Adopt the authoritative engine changes before wiring those adapters. Cross-run series identity must preserve unit, kind, population/version, derivation, provider provenance and observation-grid semantics; matching an identity does not establish qualified coverage or permission to compare measurements. Existing archived engine revisions remain readable, and new identity semantics require an explicit engine revision.
