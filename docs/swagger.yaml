@@ -4819,21 +4819,6 @@ paths:
                     browser_intelligence:
                       type: object
                       properties:
-                        baseline:
-                          type: object
-                          properties:
-                            analysis_id:
-                              type: string
-                            baseline:
-                              type: object
-                              description: 'Go type: rca.BrowserBaseline'
-                              additionalProperties: true
-                              nullable: true
-                            completed_at:
-                              type: string
-                              format: date-time
-                              nullable: true
-                          nullable: true
                         findings:
                           type: object
                           properties:
@@ -367316,23 +367301,6 @@ paths:
                   browser_intelligence:
                     type: object
                     properties:
-                      baseline:
-                        type: object
-                        properties:
-                          analysis_id:
-                            type: string
-                          baseline:
-                            type: object
-                            description: 'Go type: rca.BrowserBaseline'
-                            additionalProperties: true
-                            nullable: true
-                          completed_at:
-                            type: string
-                            format: date-time
-                            nullable: true
-                        required:
-                          - analysis_id
-                        nullable: true
                       findings:
                         type: object
                         properties:

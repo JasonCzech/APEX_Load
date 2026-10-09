@@ -1714,11 +1714,6 @@ export interface operations {
               "version"?: number;
             }) | null;
             "browser_intelligence"?: ({
-              "baseline"?: ({
-                "analysis_id"?: string;
-                "baseline"?: (Record<string, unknown>) | null;
-                "completed_at"?: (string) | null;
-              }) | null;
               "findings"?: ({
                 "completed_at"?: (string) | null;
                 "failure"?: string;
@@ -69754,11 +69749,6 @@ export interface operations {
               "version": number;
             }) | null;
             "browser_intelligence"?: ({
-              "baseline"?: ({
-                "analysis_id": string;
-                "baseline"?: (Record<string, unknown>) | null;
-                "completed_at"?: (string) | null;
-              }) | null;
               "findings"?: ({
                 "completed_at"?: (string) | null;
                 "failure"?: string;

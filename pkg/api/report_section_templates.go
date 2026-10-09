@@ -568,19 +568,6 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 {{end}}
 
-{{define "browser_baseline"}}
-<h2>Browser Baseline</h2>
-{{with .BrowserBaselineView}}
-<p class="section-copy">{{.Summary}}</p>
-{{if .Results}}<table><thead><tr><th>Metric</th><th>Cohort</th><th>Level</th><th>Result</th><th class="num">Current</th><th>Expected range</th><th>Detail</th></tr></thead><tbody>
-{{range .Results}}<tr><td>{{.Metric}}</td><td>{{.Cohort}}</td><td>{{.Level}}</td><td>{{.State}}</td><td class="num">{{.Current}}</td><td>{{.Expected}}</td><td>{{.Detail}}</td></tr>{{end}}
-</tbody></table>{{end}}
-{{if .More}}<p class="section-copy">{{.More}} more results are in the root-cause analysis.</p>{{end}}
-{{if .Excluded}}<p class="section-copy">Excluded: {{range $i, $e := .Excluded}}{{if $i}}; {{end}}{{$e}}{{end}}.</p>{{end}}
-{{if .Limitations}}<ul>{{range .Limitations}}<li>{{.}}</li>{{end}}</ul>{{end}}
-{{end}}
-{{end}}
-
 {{define "interaction_map"}}
 <h2>Interaction Patterns and Heatmaps</h2>
 {{with .InteractionMapView}}

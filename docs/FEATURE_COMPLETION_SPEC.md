@@ -290,7 +290,7 @@ Delivery progress, 2026-10-09 (Wave 5, E6): the workflows are described in the [
 - **Drill-down:** finding → document → resources → HAR entry. A finding's worst document opens the inspector filtered to that document. A request opens its HAR entry through `GET /api/v1/tests/{id}/archive/browser/har-entry?request_id=` (HAR download permission): a synthetic HAR 1.2 entry scrubbed and bounded as the downloadable synthetic HAR is, or, for a context that recorded a native HAR, that HAR's name.
 - **Policy editor:** **Settings → Workspaces → Browser & journey policies** lists, creates, edits and deletes a project's browser and journey policies. It presents the revision it read; a 409 offers the current revision; and any past revision can be shown read-only. Viewers read them. Run pins and finding revisions are unchanged by edits.
 - **Saved panels:** the project panel editor offers the **Archived browser documents** population (`document_*` metrics at p50–p99), which reads one measurement tuple.
-- **Reports:** the engineer profile adds Browser Findings, Browser Baseline, Interaction Patterns and Heatmaps, and Journey Risk sections (HTML, PDF, CSV and DOCX through HTML). Their results are read at export, and a section without a result says why.
+- **Reports:** the engineer profile adds Browser Findings, Interaction Patterns and Heatmaps, and Journey Risk sections (HTML, PDF, CSV and DOCX through HTML). Their results are read at export, and a section without a result says why. The browser baseline is reported in the root-cause section, with its analysis.
 - **CLI and MCP:** `apexctl analysis interactions`, `har-entry` and `policies list|get|save|delete` (a save of an existing policy needs the revision it was read at), and MCP tools for findings, interactions, journeys, the HAR entry and the policies.
 
 Deviations:
@@ -299,7 +299,6 @@ Deviations:
 - Findings, interaction patterns and journeys read the finalized archive, so the live page shows only the comparison.
 - A saved panel reads one tuple, so the comparison table offers no "save as panel"; panels are authored in the panel editor.
 - The report sections are in the engineer profile only.
-- The baseline section reads the latest completed root-cause analysis; reports do not run one.
 - The drill-down workflow test runs a real HTTP run (its archive, policy pin, HAR list and HAR-entry API are real), but its document summary, findings result and resource page are transport fixtures; no live browser run proves the drill-down end to end.
 
 Delivery progress, 2026-10-09 (Wave 5, E7): [BROWSER_INTELLIGENCE_ACCEPTANCE.md](qa/BROWSER_INTELLIGENCE_ACCEPTANCE.md), generated and checked by `docs/qa/browser_intelligence_acceptance_test.go`, maps every BI-4 golden behavior to the tests that accept it and where each runs: in both engines, in Chromium alone for an API only Chromium exposes, or as a unit test. A listed real-browser test must start the engines it is listed for, a unit test must not start a browser, and each end-to-end spec must run in both authentication profiles.

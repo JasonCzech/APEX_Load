@@ -45,13 +45,12 @@ Project analytics panels can plot **Archived browser documents**: a document met
 
 ## Reports
 
-The engineer report profile adds four sections, in HTML, PDF, CSV and (through HTML) DOCX:
+The engineer report profile adds three sections, in HTML, PDF, CSV and (through HTML) DOCX:
 - **Browser Findings:** the score and up to 20 findings, active ones first.
-- **Browser Baseline:** the latest root-cause analysis's results, anomalies first (up to 30), with exclusions and limitations.
 - **Interaction Patterns and Heatmaps:** coverage, up to 20 patterns and 12 heatmaps.
 - **Journey Risk:** the weighted failure index and each journey's attempts.
 
-Each section reads its result when the report is exported. A section whose result could not be read (no evaluation, no completed root-cause analysis, an archive not finalized, no pinned journey policy) says why instead.
+Each section reads its result when the report is exported. A section whose result could not be read (no evaluation, an archive not finalized, no pinned journey policy) says why instead. The browser baseline comparison is part of the root-cause section, with the analysis it comes from.
 
 ## CLI and MCP tools
 

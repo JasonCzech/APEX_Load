@@ -5,8 +5,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-
-	"github.com/jasonczech/apexload/pkg/rca"
 )
 
 func browserIntelligenceReportFixture() *ReportBrowserIntelligence {
@@ -22,13 +20,6 @@ func browserIntelligenceReportFixture() *ReportBrowserIntelligence {
 			Counts: map[string]int{"active": 1, "suppressed": 1},
 			Notes:  []string{"Scores weigh only qualified final documents."},
 		}},
-		Baseline: &ReportBrowserBaseline{AnalysisID: "rca-1", Baseline: &rca.BrowserBaseline{Version: "browser_baseline.v1", Status: "complete", Policy: "policy-1@3", Baseline: rca.BaselineRef{TestID: "run-0"},
-			Results: []rca.BrowserBaselineResult{
-				{Metric: "lcp", Series: "webkit/iphone_15", Level: "100 VUsers", State: "within_range", Current: 2000, Unit: "ms", ExpectedLow: 1500, ExpectedHigh: 2600},
-				{Metric: "cls", Series: "webkit/iphone_15", Level: "100 VUsers", State: "anomaly", Direction: "higher", Current: 0.4, Unit: "score", ExpectedLow: 0.01, ExpectedHigh: 0.12},
-			},
-			Excluded:    map[string]int64{"outside_steady_load": 4},
-			Limitations: []rca.Limitation{{Code: "source_loss", Detail: "one generator lost samples"}}}},
 		Interactions: &BrowserInteractionAnalysis{Version: "browser_interaction_patterns.v1", Status: "ready",
 			Coverage: BrowserInteractionCoverage{Interactions: 40, Mapped: 30, Dropped: 2},
 			Patterns: []BrowserInteractionPattern{{Kind: "scripted_repetition", Provenance: "scripted", Route: "/cart", ActionName: "Add to cart", Count: 4, Detail: "4 clicks within 2 s"}},
@@ -72,7 +63,6 @@ func TestBrowserIntelligenceReportSectionsRenderTheirResults(t *testing.T) {
 	sections := renderBrowserIntelligenceSections(t, report)
 	expect := map[string][]string{
 		reportSectionBrowserFindings: {"Score 72.5/100 (needs improvement) under Vitals revision 3", "LCP · webkit / iphone_15", "3100 ms", "LCP p75 is poor."},
-		reportSectionBrowserBaseline: {"1 anomalies, 1 within range, 0 unscored, compared with baseline run run-0", "Browser policy policy-1@3", "outside_steady_load: 4 buckets", "source_loss: one generator lost samples"},
 		reportSectionInteractionMap:  {"1 patterns and 1 heatmaps from 40 interactions (30 mapped, 2 dropped)", "scripted_repetition", "Add to cart", "390×844 portrait"},
 		reportSectionJourneyRisk:     {"Weighted failure index 0.125 under Shop revision 2", "Checkout", "25.0%"},
 	}
@@ -84,11 +74,6 @@ func TestBrowserIntelligenceReportSectionsRenderTheirResults(t *testing.T) {
 				}
 			}
 		}
-	}
-	// Anomalies are listed before results within range.
-	html := sections[reportSectionBrowserBaseline][0]
-	if strings.Index(html, "anomaly") > strings.Index(html, "within_range") {
-		t.Fatal("baseline anomalies are not listed first")
 	}
 }
 
@@ -107,12 +92,10 @@ func TestBrowserIntelligenceReportSectionsSayWhyAResultIsMissing(t *testing.T) {
 		Findings:     &RunBrowserFindingsResponse{Status: "pending"},
 		Interactions: &BrowserInteractionAnalysis{Status: "not_captured"},
 		Journeys:     &JourneyRiskReport{Availability: "unavailable", Reason: "no_iterations"},
-		Unavailable:  map[string]string{reportSectionBrowserBaseline: "No root-cause analysis has completed for this run."},
 	}
 	sections := renderBrowserIntelligenceSections(t, report)
 	for id, want := range map[string]string{
 		reportSectionBrowserFindings: "queued or running",
-		reportSectionBrowserBaseline: "No root-cause analysis has completed",
 		reportSectionInteractionMap:  "captured no interaction evidence",
 		reportSectionJourneyRisk:     "unavailable for this run: no_iterations",
 	} {
@@ -143,7 +126,7 @@ func TestBrowserIntelligenceIsAttachedOnlyForProfilesThatRenderIt(t *testing.T) 
 	if got == nil || got.Findings == nil || got.Findings.Status != "not_evaluated" || got.Findings.RunID != id {
 		t.Fatalf("findings %+v", got)
 	}
-	for _, section := range []string{reportSectionBrowserBaseline, reportSectionInteractionMap, reportSectionJourneyRisk} {
+	for _, section := range []string{reportSectionInteractionMap, reportSectionJourneyRisk} {
 		if got.Unavailable[section] == "" {
 			t.Errorf("%s has no reason: %+v", section, got.Unavailable)
 		}
@@ -153,7 +136,7 @@ func TestBrowserIntelligenceIsAttachedOnlyForProfilesThatRenderIt(t *testing.T) 
 	if err := writeRunArchiveReportCSVWithProfile(&RunArchiveReport{Manifest: manifest, BrowserIntelligence: got}, &csv, "engineer"); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(csv.String(), "No root-cause analysis has completed for this run") {
-		t.Fatalf("CSV lacks the baseline reason:\n%s", csv.String())
+	if !strings.Contains(csv.String(), "Interaction patterns read the finalized archive, which is not available yet.") {
+		t.Fatalf("CSV lacks the interaction reason:\n%s", csv.String())
 	}
 }

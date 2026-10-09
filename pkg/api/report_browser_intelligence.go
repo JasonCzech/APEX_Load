@@ -2,20 +2,18 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
 	"strings"
-	"time"
 
-	"github.com/jasonczech/apexload/pkg/rca"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 // Browser intelligence report sections (BI-4): browser_findings,
-// browser_baseline, interaction_map and journey_risk. Their results are read
+// interaction_map and journey_risk (the browser baseline is part of the rca
+// section, with the root-cause analysis it comes from). Their results are read
 // at the storage-aware layer (attachBrowserIntelligence), as the release
 // trend and root cause are, so buildRunArchiveReport stays a pure function of
 // one archive. HTML, PDF, CSV and (through HTML) DOCX all render the same
@@ -23,36 +21,25 @@ import (
 
 const (
 	reportSectionBrowserFindings = "browser_findings"
-	reportSectionBrowserBaseline = "browser_baseline"
 	reportSectionInteractionMap  = "interaction_map"
 	reportSectionJourneyRisk     = "journey_risk"
 
 	// Report tables are bounded; the run report and the APIs hold the rest.
-	reportBrowserFindingsLimit       = 20
-	reportBrowserBaselineResultLimit = 30
-	reportInteractionPatternLimit    = 20
-	reportInteractionHeatmapLimit    = 12
+	reportBrowserFindingsLimit    = 20
+	reportInteractionPatternLimit = 20
+	reportInteractionHeatmapLimit = 12
 )
 
-var browserIntelligenceReportSections = []string{reportSectionBrowserFindings, reportSectionBrowserBaseline, reportSectionInteractionMap, reportSectionJourneyRisk}
+var browserIntelligenceReportSections = []string{reportSectionBrowserFindings, reportSectionInteractionMap, reportSectionJourneyRisk}
 
 // ReportBrowserIntelligence holds the browser intelligence results a report
 // renders. A section whose result could not be read names why in
 // Unavailable; a section the profile does not render is not read.
 type ReportBrowserIntelligence struct {
 	Findings     *RunBrowserFindingsResponse `json:"findings,omitempty"`
-	Baseline     *ReportBrowserBaseline      `json:"baseline,omitempty"`
 	Interactions *BrowserInteractionAnalysis `json:"interactions,omitempty"`
 	Journeys     *JourneyRiskReport          `json:"journeys,omitempty"`
 	Unavailable  map[string]string           `json:"unavailable,omitempty"`
-}
-
-// ReportBrowserBaseline is the browser baseline of the run's latest completed
-// root-cause analysis.
-type ReportBrowserBaseline struct {
-	AnalysisID  string               `json:"analysis_id"`
-	CompletedAt *time.Time           `json:"completed_at,omitempty"`
-	Baseline    *rca.BrowserBaseline `json:"baseline,omitempty"`
 }
 
 // attachBrowserIntelligenceForProfile reads the browser intelligence results
@@ -89,14 +76,6 @@ func (s *Server) attachBrowserIntelligence(ctx context.Context, report *RunArchi
 			out.Findings = &findings
 		}
 	}
-	if sections[reportSectionBrowserBaseline] {
-		baseline, reason, err := s.latestRunBrowserBaseline(project, testID)
-		if baseline != nil {
-			out.Baseline = baseline
-		} else {
-			unavailable(reportSectionBrowserBaseline, reason, err)
-		}
-	}
 	if sections[reportSectionInteractionMap] {
 		analysis, err := s.runArchiveBrowserInteractions(ctx, testID)
 		switch {
@@ -120,30 +99,6 @@ func (s *Server) attachBrowserIntelligence(ctx context.Context, report *RunArchi
 		out.Unavailable = nil
 	}
 	report.BrowserIntelligence = out
-}
-
-// latestRunBrowserBaseline reads the browser baseline of the run's latest
-// completed root-cause analysis.
-func (s *Server) latestRunBrowserBaseline(project, testID string) (*ReportBrowserBaseline, string, error) {
-	store, ok := s.store.(storage.RCAStore)
-	if !ok {
-		return nil, "Root-cause analysis is unavailable on this controller.", nil
-	}
-	latest, err := store.LatestCompletedRCAAnalysis(project, testID)
-	if err != nil {
-		return nil, "The run's root-cause analyses could not be read.", err
-	}
-	if latest == nil {
-		return nil, "No root-cause analysis has completed for this run; the browser baseline comparison is part of it.", nil
-	}
-	var payload rcaAnalysisPayload
-	if err := json.Unmarshal(latest.Payload, &payload); err != nil || payload.Assessment == nil {
-		return nil, "The run's latest root-cause analysis is unreadable.", err
-	}
-	if payload.Assessment.BrowserBaseline == nil {
-		return nil, "The run's latest root-cause analysis has no browser baseline (the run kept no browser document evidence).", nil
-	}
-	return &ReportBrowserBaseline{AnalysisID: latest.ID, CompletedAt: latest.CompletedAt, Baseline: payload.Assessment.BrowserBaseline}, "", nil
 }
 
 // runJourneyRisk accounts the run's journeys under its pinned journey policy.
@@ -193,18 +148,6 @@ type reportBrowserFindingsView struct {
 
 type reportBrowserFindingRow struct {
 	Title, State, Severity, Observed, Summary string
-}
-
-type reportBrowserBaselineView struct {
-	Summary     string
-	Results     []reportBrowserBaselineRow
-	More        int
-	Excluded    []string
-	Limitations []string
-}
-
-type reportBrowserBaselineRow struct {
-	Metric, Cohort, Level, State, Current, Expected, Detail string
 }
 
 type reportInteractionMapView struct {
@@ -309,64 +252,6 @@ func (d *runArchiveHTMLReportData) BrowserFindingsView() reportBrowserFindingsVi
 			}
 		}
 		view.Findings = append(view.Findings, reportBrowserFindingRow{Title: title, State: finding.State, Severity: strings.ReplaceAll(finding.Severity, "_", " "), Observed: reportFloat(finding.Observed, finding.Unit), Summary: finding.Summary})
-	}
-	return view
-}
-
-// BrowserBaselineView is the browser_baseline section's view of the report.
-func (d *runArchiveHTMLReportData) BrowserBaselineView() reportBrowserBaselineView {
-	intelligence := d.browserIntelligence()
-	if reason := browserIntelligenceUnavailable(intelligence, reportSectionBrowserBaseline); reason != "" || intelligence.Baseline == nil || intelligence.Baseline.Baseline == nil {
-		if reason == "" {
-			reason = "The run's browser baseline was not read."
-		}
-		return reportBrowserBaselineView{Summary: reason}
-	}
-	baseline := intelligence.Baseline.Baseline
-	counts := map[string]int{}
-	for _, result := range baseline.Results {
-		counts[result.State]++
-	}
-	against := "no qualified baseline run"
-	if baseline.Baseline.TestID != "" {
-		against = "baseline run " + baseline.Baseline.TestID
-	}
-	view := reportBrowserBaselineView{Summary: fmt.Sprintf("Root-cause analysis %s (%s, %s): %d anomalies, %d within range, %d unscored, compared with %s.", intelligence.Baseline.AnalysisID, baseline.Version, baseline.Status,
-		counts["anomaly"], counts["within_range"], counts["unscored"], against)}
-	if baseline.Policy != "" {
-		view.Summary += " Browser policy " + baseline.Policy + "."
-	}
-	results := append([]rca.BrowserBaselineResult(nil), baseline.Results...)
-	rank := map[string]int{"anomaly": 0, "unscored": 1, "within_range": 2}
-	sort.SliceStable(results, func(i, j int) bool { return rank[results[i].State] < rank[results[j].State] })
-	for index, result := range results {
-		if index == reportBrowserBaselineResultLimit {
-			view.More = len(results) - index
-			break
-		}
-		expected := ""
-		if result.State != "unscored" {
-			expected = fmt.Sprintf("%.4g – %.4g", result.ExpectedLow, result.ExpectedHigh)
-		}
-		detail := result.Reason
-		if result.Direction != "" {
-			detail = result.Direction
-		}
-		if result.Detail != "" {
-			detail = strings.TrimSpace(detail + " " + result.Detail)
-		}
-		view.Results = append(view.Results, reportBrowserBaselineRow{Metric: result.Metric, Cohort: result.Series, Level: result.Level, State: result.State, Current: fmt.Sprintf("%.4g %s", result.Current, result.Unit), Expected: expected, Detail: detail})
-	}
-	reasons := make([]string, 0, len(baseline.Excluded))
-	for reason := range baseline.Excluded {
-		reasons = append(reasons, reason)
-	}
-	sort.Strings(reasons)
-	for _, reason := range reasons {
-		view.Excluded = append(view.Excluded, fmt.Sprintf("%s: %d buckets", reason, baseline.Excluded[reason]))
-	}
-	for _, limitation := range baseline.Limitations {
-		view.Limitations = append(view.Limitations, strings.TrimSpace(limitation.Code+": "+limitation.Detail))
 	}
 	return view
 }
@@ -477,50 +362,6 @@ func browserFindingsReportCSV(d *runArchiveHTMLReportData, write reportCSVWriteF
 		key := fmt.Sprint(index)
 		rows = append(rows, [4]string{"browser_finding", key, "title", finding.Title}, [4]string{"browser_finding", key, "state", finding.State},
 			[4]string{"browser_finding", key, "severity", finding.Severity}, [4]string{"browser_finding", key, "observed", finding.Observed}, [4]string{"browser_finding", key, "summary", finding.Summary})
-	}
-	return writeReportCSVRows(write, rows)
-}
-
-func browserBaselineReportPDF(d *runArchiveHTMLReportData, lines *[]string) {
-	view := d.BrowserBaselineView()
-	pdfHeading(lines, "Browser Baseline")
-	*lines = append(*lines, view.Summary)
-	for _, result := range view.Results {
-		line := fmt.Sprintf("- %s %s at %s: %s, %s", result.Metric, result.Cohort, result.Level, result.State, result.Current)
-		if result.Expected != "" {
-			line += " (expected " + result.Expected + ")"
-		}
-		if result.Detail != "" {
-			line += "; " + result.Detail
-		}
-		*lines = append(*lines, line)
-	}
-	if view.More > 0 {
-		*lines = append(*lines, fmt.Sprintf("%d more results are in the root-cause analysis.", view.More))
-	}
-	for _, excluded := range view.Excluded {
-		*lines = append(*lines, "Excluded "+excluded)
-	}
-	for _, limitation := range view.Limitations {
-		*lines = append(*lines, "Limitation "+limitation)
-	}
-	*lines = append(*lines, "")
-}
-
-func browserBaselineReportCSV(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
-	view := d.BrowserBaselineView()
-	rows := [][4]string{{"browser_baseline", "", "summary", view.Summary}}
-	for index, result := range view.Results {
-		key := fmt.Sprint(index)
-		for _, item := range [][2]string{{"metric", result.Metric}, {"cohort", result.Cohort}, {"level", result.Level}, {"state", result.State}, {"current", result.Current}, {"expected", result.Expected}, {"detail", result.Detail}} {
-			rows = append(rows, [4]string{"browser_baseline_result", key, item[0], item[1]})
-		}
-	}
-	for index, excluded := range view.Excluded {
-		rows = append(rows, [4]string{"browser_baseline_excluded", fmt.Sprint(index), "excluded", excluded})
-	}
-	for index, limitation := range view.Limitations {
-		rows = append(rows, [4]string{"browser_baseline_limitation", fmt.Sprint(index), "limitation", limitation})
 	}
 	return writeReportCSVRows(write, rows)
 }

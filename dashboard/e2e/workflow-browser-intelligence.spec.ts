@@ -106,13 +106,13 @@ test('the Browser area leads from a finding to its document resources and HAR en
   await expect(inspector).toContainText('this archive keeps no headers')
 
   // Exports: the engineer report's CSV (unrouted: the real archive) carries
-  // the browser intelligence sections, each saying why its result is missing.
+  // the browser intelligence sections, each saying why its result is missing
+  // (the browser baseline is part of the rca section).
   const exported = await request.get(`/api/v1/tests/${id}/archive/report?format=csv&profile=engineer`)
   expect(exported.status()).toBe(200)
   const csv = await exported.text()
-  for (const section of ['browser_findings', 'browser_baseline', 'interaction_map', 'journey_risk']) expect(csv).toContain(section)
+  for (const section of ['browser_findings', 'interaction_map', 'journey_risk']) expect(csv).toContain(section)
   expect(csv).toContain('This run has no browser evaluation.')
-  expect(csv).toContain('No root-cause analysis has completed for this run')
   expect(csv).toContain('This run captured no interaction evidence.')
 })
 
