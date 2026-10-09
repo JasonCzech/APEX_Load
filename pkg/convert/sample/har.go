@@ -114,8 +114,9 @@ func parseHAR(content string, includeStaticAssets bool, diagnostics *diag.Collec
 			continue
 		}
 		if isHARWebSocketUpgrade(item) {
-			diagnostics.Add(diag.Warning, "HAR websocket upgrade", fmt.Sprintf("HAR entry %d", index+1), "WebSocket upgrade/101 traffic is not converted by the generic HTTP HAR importer; import with a WebSocket-aware path before replay")
-			warnings = append(warnings, "HAR WebSocket upgrade entries were skipped by the generic HTTP importer")
+			// The connection becomes WebSocket steps (see harWebSockets),
+			// not an HTTP request.
+			diagnostics.Add(diag.Info, "HAR websocket upgrade", fmt.Sprintf("HAR entry %d", index+1), webSocketHARDiagnostic(item))
 			skipped++
 			continue
 		}

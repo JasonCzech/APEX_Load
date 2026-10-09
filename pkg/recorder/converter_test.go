@@ -693,17 +693,18 @@ func TestConvertSession_MixedHTTPAndWebSocketKeepsHTTPActions(t *testing.T) {
 	if result.Script.Protocol != "http" {
 		t.Fatalf("protocol = %q, want http for mixed capture with replayable HTTP actions", result.Script.Protocol)
 	}
-	if len(result.Script.Actions) != 2 {
-		t.Fatalf("actions = %d, want 2 HTTP actions", len(result.Script.Actions))
+	// The socket becomes WebSocket steps in the HTTP script, in recorded
+	// order (WP3.4).
+	var types []string
+	for _, action := range result.Script.Actions {
+		types = append(types, action.Type+" "+action.Target)
 	}
-	if got := result.Script.Actions[0].Target; got != "/api/bootstrap?tenant=acme" {
-		t.Fatalf("first target = %q", got)
+	want := []string{"request /api/bootstrap?tenant=acme", "ws_connect wss://app.example.test/events?tenant=acme", "ws_send ", "ws_close ", "request /api/checkout"}
+	if strings.Join(types, "|") != strings.Join(want, "|") {
+		t.Fatalf("actions = %q, want %q", types, want)
 	}
-	if got := result.Script.Actions[1].Target; got != "/api/checkout" {
-		t.Fatalf("second target = %q", got)
-	}
-	if len(result.Warnings) == 0 || !strings.Contains(strings.Join(result.Warnings, "\n"), "WebSocket") {
-		t.Fatalf("warnings = %#v, want mixed WebSocket warning", result.Warnings)
+	if send := result.Script.Actions[2]; send.Body != `{"type":"subscribe"}` {
+		t.Fatalf("send = %+v", send)
 	}
 	preserved := result.Script.Metadata.Import.Preserved
 	if preserved["recorded_websocket_urls_available"] != true {

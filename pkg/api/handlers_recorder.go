@@ -343,12 +343,15 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 		// mirror VuGen's recording options.
 		PageTitleChecks *bool  `json:"page_title_checks,omitempty"`
 		ResourceMode    string `json:"resource_mode,omitempty"`
+		// AsyncScan (default on) turns requests a page repeated in the
+		// background into background conversations; false keeps them inline.
+		AsyncScan *bool `json:"async_scan,omitempty"`
 	}
 	if !decodeOptionalJSONBody(w, r, &req) {
 		return
 	}
 
-	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize, PageTitleChecks: req.PageTitleChecks, ResourceMode: req.ResourceMode})
+	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize, PageTitleChecks: req.PageTitleChecks, ResourceMode: req.ResourceMode, AsyncScan: req.AsyncScan})
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(session.ProjectID)
 		ensureCredentialPreservingImportMetadata(result.Script, "recorder")
@@ -421,12 +424,15 @@ func (s *Server) handlePreviewRecordingConversion(w http.ResponseWriter, r *http
 		// mirror VuGen's recording options.
 		PageTitleChecks *bool  `json:"page_title_checks,omitempty"`
 		ResourceMode    string `json:"resource_mode,omitempty"`
+		// AsyncScan (default on) turns requests a page repeated in the
+		// background into background conversations; false keeps them inline.
+		AsyncScan *bool `json:"async_scan,omitempty"`
 	}
 	if !decodeOptionalJSONBody(w, r, &req) {
 		return
 	}
 
-	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize, PageTitleChecks: req.PageTitleChecks, ResourceMode: req.ResourceMode})
+	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize, PageTitleChecks: req.PageTitleChecks, ResourceMode: req.ResourceMode, AsyncScan: req.AsyncScan})
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(session.ProjectID)
 		ensureCredentialPreservingImportMetadata(result.Script, "recorder")

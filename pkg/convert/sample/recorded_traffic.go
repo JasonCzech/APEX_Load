@@ -14,8 +14,9 @@ import (
 // the proxy recorder (pkg/convert/requestimport) before correlation:
 //   - the 401 leg of an NTLM or Negotiate handshake is dropped, because the
 //     retry that follows it is the real request;
-//   - single-use NTLM/Negotiate Authorization tokens are removed and the
-//     request is gated until credentials are configured;
+//   - single-use NTLM/Negotiate Authorization tokens are removed; the script
+//     answers those hosts' challenges with negotiate_any auth (see
+//     integratedAuthHosts and requestimport.ApplyIntegratedAuth);
 //   - cookies a request carried only because an earlier recorded response
 //     set them are removed from its Cookie header, since the replay cookie
 //     jar sends them; keeping both sends two values for one name.
@@ -46,7 +47,7 @@ func normalizeRecordedExchanges(exchanges []exchange, format string) ([]exchange
 	}
 	var warnings []string
 	if droppedLegs > 0 {
-		warnings = append(warnings, fmt.Sprintf("%d NTLM/Negotiate handshake challenge leg(s) were dropped; the requests that completed the handshakes are gated until credentials are configured", droppedLegs))
+		warnings = append(warnings, fmt.Sprintf("%d NTLM/Negotiate handshake challenge leg(s) were dropped; the script answers those hosts' challenges with negotiate_any auth whose credentials must be configured", droppedLegs))
 	}
 	if jarCookies > 0 {
 		warnings = append(warnings, fmt.Sprintf("%d recorded Cookie value(s) were left to the replay cookie jar because an earlier recorded response set them", jarCookies))
@@ -191,4 +192,23 @@ func applyExchangeReviewFindings(action *dsl.Action, ex exchange) {
 	if len(ex.ReviewFindings) > 0 {
 		importreview.ApplyToAction(action, ex.ReviewFindings)
 	}
+}
+
+// integratedAuthHosts lists the hosts of requests recorded with an
+// integrated-auth handshake.
+func integratedAuthHosts(exchanges []exchange) []string {
+	var hosts []string
+	seen := map[string]bool{}
+	for _, ex := range exchanges {
+		for _, finding := range ex.ReviewFindings {
+			if finding.Code != requestimport.IntegratedAuthReasonCode {
+				continue
+			}
+			if host := requestimport.IntegratedAuthHost(ex.URL); host != "" && !seen[host] {
+				seen[host] = true
+				hosts = append(hosts, host)
+			}
+		}
+	}
+	return hosts
 }

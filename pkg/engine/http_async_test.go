@@ -25,6 +25,7 @@ type asyncPollProtocol struct {
 	polls    []time.Time
 	marked   int
 	requests []string
+	rounds   []string
 }
 
 func (p *asyncPollProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
@@ -34,6 +35,8 @@ func (p *asyncPollProtocol) Execute(_ context.Context, action *protocol.Action) 
 	result := &protocol.Result{ActionName: action.Name, StartTime: time.Now(), Success: true, StatusCode: 200, Extractions: map[string]string{}}
 	if action.Target == "/poll" {
 		p.polls = append(p.polls, time.Now())
+		round, _ := action.Params["round"].(string)
+		p.rounds = append(p.rounds, round)
 		if id, _ := action.Params["async_conversation"].(string); id != "" {
 			p.marked++
 		}
@@ -250,8 +253,14 @@ func TestHTTPAsyncOnRequestAndStopFromCallback(t *testing.T) {
 	if _, err := vu.handleEngineAction(ctx, start); err != nil {
 		t.Fatal(err)
 	}
-	if vu.Variables["round"] != "r0" {
-		t.Fatalf("on_request must run before the first request is resolved: round=%q", vu.Variables["round"])
+	proto.mu.Lock()
+	firstRound := proto.rounds[0]
+	proto.mu.Unlock()
+	if firstRound != "r0" {
+		t.Fatalf("on_request must run before the first request is resolved: round=%q", firstRound)
+	}
+	if vu.Variables["round"] != "r1" {
+		t.Fatalf("a poll's first request runs in the start step, and on_request runs again after its response: round=%q", vu.Variables["round"])
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for vu.asyncConversation("poll") != nil && time.Now().Before(deadline) {

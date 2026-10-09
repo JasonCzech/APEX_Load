@@ -198,7 +198,31 @@ func (vu *VUser) startAsyncConversation(ctx context.Context, action dsl.Action) 
 	conversation.cancel = cancel
 	vu.async.byID[id] = conversation
 	vu.async.order = append(vu.async.order, id)
-	go vu.runAsyncConversation(workerCtx, conversation)
+	firstDelay := time.Duration(0)
+	if pattern == "poll" {
+		// A poll's first request runs as part of the start step, so values
+		// it extracts are there for the steps that follow; the worker sends
+		// the next one an interval later. Long-poll and push requests are
+		// held by the server, so they start in the background.
+		started := time.Now()
+		first := conversation.current()
+		result, err := vu.Proto.Execute(ctx, first)
+		if result == nil {
+			result = &protocol.Result{ActionName: first.Name, StartTime: started, Duration: time.Since(started)}
+		}
+		if err != nil {
+			result.Success = false
+			result.ErrorMessage = err.Error()
+		}
+		conversation.push(asyncItem{result: result})
+		if err := vu.applyAsyncResults(ctx, conversation); err != nil {
+			cancel()
+			vu.forgetAsyncConversation(id)
+			return err
+		}
+		firstDelay = interval - time.Since(started)
+	}
+	go vu.runAsyncConversation(workerCtx, conversation, firstDelay)
 	return nil
 }
 
@@ -215,8 +239,17 @@ func (vu *VUser) resolveAsyncRequest(id string, request dsl.Action) *protocol.Ac
 	return resolved
 }
 
-func (vu *VUser) runAsyncConversation(ctx context.Context, conversation *asyncConversation) {
+func (vu *VUser) runAsyncConversation(ctx context.Context, conversation *asyncConversation, firstDelay time.Duration) {
 	defer close(conversation.done)
+	if firstDelay > 0 {
+		timer := time.NewTimer(firstDelay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
 	for {
 		started := time.Now()
 		chunked := false

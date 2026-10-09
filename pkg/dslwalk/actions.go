@@ -41,7 +41,17 @@ type SurfaceKind string
 const (
 	ActionSurface              SurfaceKind = "action"
 	HTTPSequenceRequestSurface SurfaceKind = "http_sequence_request"
+	// HTTPAsyncRequestSurface is the request an http_async_start
+	// conversation repeats (params.request).
+	HTTPAsyncRequestSurface SurfaceKind = "http_async_request"
 )
+
+// IsNestedRequest reports whether the surface is a request carried inside
+// another action's params (an http_sequence child or an async
+// conversation's request) rather than an action of its own.
+func (ref SurfaceRef) IsNestedRequest() bool {
+	return ref.Kind == HTTPSequenceRequestSurface || ref.Kind == HTTPAsyncRequestSurface
+}
 
 // SurfaceRef identifies one mutable request-shaped surface and its
 // deterministic DSL path.
@@ -167,6 +177,13 @@ func Walk(script *dsl.Script, visit SurfaceVisitFunc) error {
 			OwnerPath:   current.path,
 		}); err != nil {
 			return err
+		}
+		if strings.EqualFold(strings.TrimSpace(action.Type), "http_async_start") {
+			var err error
+			visited, err = walkHTTPAsyncRequest(current.phase, current.path, current.depth, action, visited, visit)
+			if err != nil {
+				return err
+			}
 		}
 		if strings.EqualFold(strings.TrimSpace(action.Type), "http_sequence") {
 			var err error
@@ -311,6 +328,37 @@ func walkHTTPSequenceRequests(
 				return visited, err
 			}
 		}
+	}
+	return visited, nil
+}
+
+// walkHTTPAsyncRequest visits the request an http_async_start conversation
+// repeats.
+func walkHTTPAsyncRequest(phase Phase, ownerPath string, depth int, owner *dsl.Action, visited int, visit SurfaceVisitFunc) (int, error) {
+	if owner == nil || owner.Params == nil {
+		return visited, nil
+	}
+	raw, exists := owner.Params["request"]
+	if !exists {
+		return visited, nil
+	}
+	visited++
+	if visited > dsl.MaxScriptActionDefinitions {
+		return visited, fmt.Errorf("script action/request definitions exceed %d", dsl.MaxScriptActionDefinitions)
+	}
+	ref := SurfaceRef{Kind: HTTPAsyncRequestSurface, Phase: phase, Path: ownerPath + ".params.request", Depth: depth, OwnerAction: owner, OwnerPath: ownerPath}
+	switch request := raw.(type) {
+	case map[string]any:
+		ref.Request = request
+		return visited, visit(ref)
+	case *dsl.Action:
+		ref.Action = request
+		return visited, visit(ref)
+	case dsl.Action:
+		ref.Action = &request
+		err := visit(ref)
+		owner.Params["request"] = request
+		return visited, err
 	}
 	return visited, nil
 }

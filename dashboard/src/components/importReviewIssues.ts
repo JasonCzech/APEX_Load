@@ -68,6 +68,7 @@ const LOADRUNNER_PARITY_ISSUE_TITLES: Record<string, string> = {
   websocket_callbacks_not_executed: 'Rebuild WebSocket callbacks that do not run',
   websocket_attribute_unsupported: 'Review WebSocket connect attributes',
   websocket_step_unsupported: 'Review WebSocket step APEX cannot run',
+  recorded_async_conversation: 'Review recorded background conversation',
 }
 
 export function issueTitle(code: string): string {

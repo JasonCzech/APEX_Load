@@ -27090,6 +27090,7 @@ export interface operations {
       content: {
         "application/json": {
           "also_create_http_script"?: boolean;
+          "async_scan"?: (boolean) | null;
           "end_seq"?: number;
           "expected_script_count"?: number;
           "folder_id"?: (string) | null;
@@ -27171,6 +27172,7 @@ export interface operations {
     requestBody?: {
       content: {
         "application/json": {
+          "async_scan"?: (boolean) | null;
           "name"?: string;
           "page_title_checks"?: (boolean) | null;
           "parameterize"?: boolean;
@@ -84354,6 +84356,7 @@ export interface operations {
     parameters: {
       "query"?: {
         "artifact_mode"?: string;
+        "async_scan"?: boolean;
         "base_url"?: string;
         "filename"?: string;
         "include_static_assets"?: boolean;
@@ -84368,6 +84371,7 @@ export interface operations {
       content: {
         "multipart/form-data": {
           "artifact_mode"?: string;
+          "async_scan"?: string;
           "base_url"?: string;
           "file"?: string;
           "include_static_assets"?: string;
@@ -84724,6 +84728,7 @@ export interface operations {
     parameters: {
       "query"?: {
         "artifact_mode"?: string;
+        "async_scan"?: boolean;
         "base_url"?: string;
         "filename"?: string;
         "include_static_assets"?: boolean;
@@ -84738,6 +84743,7 @@ export interface operations {
       content: {
         "multipart/form-data": {
           "artifact_mode"?: string;
+          "async_scan"?: string;
           "base_url"?: string;
           "file"?: string;
           "include_static_assets"?: string;
@@ -84789,6 +84795,7 @@ export interface operations {
           "format": string;
           "name"?: string;
           "options"?: {
+            "async_scan"?: (boolean) | null;
             "base_url"?: string;
             "include_assertions"?: (boolean) | null;
             "include_static_assets"?: (boolean) | null;
@@ -104007,6 +104014,7 @@ export interface operations {
       content: {
         "application/json": {
           "also_create_http_script"?: boolean;
+          "async_scan"?: (boolean) | null;
           "end_seq"?: number;
           "http_script_level"?: string;
           "max_think_time_ms"?: number;
@@ -109307,6 +109315,7 @@ export interface operations {
     requestBody?: {
       content: {
         "application/json": {
+          "async_scan"?: (boolean) | null;
           "name"?: string;
           "page_title_checks"?: (boolean) | null;
           "parameterize"?: boolean;
@@ -164022,6 +164031,7 @@ export interface operations {
         "application/json": {
           "conversion"?: {
             "also_create_http_script"?: boolean;
+            "async_scan"?: (boolean) | null;
             "end_seq"?: number;
             "expected_script_count"?: number;
             "folder_id"?: (string) | null;

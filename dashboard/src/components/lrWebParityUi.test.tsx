@@ -55,6 +55,7 @@ describe('LoadRunner web parity UI', () => {
     expect(issueTitle('request_body_file_missing')).toBe('Add the missing request body file')
     expect(issueTitle('async_callbacks_not_executed')).toBe('Rebuild async callbacks that do not run')
     expect(issueTitle('websocket_callbacks_not_executed')).toBe('Rebuild WebSocket callbacks that do not run')
+    expect(issueTitle('recorded_async_conversation')).toBe('Review recorded background conversation')
     expect(issueTitle('some_future_code')).toBe('some future code')
   })
 

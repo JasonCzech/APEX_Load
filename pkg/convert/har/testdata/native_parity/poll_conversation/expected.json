@@ -1,0 +1,50 @@
+{
+  "description": "A dashboard polls a status URL every second (with a cache-buster) while the user waits, then opens the report. The async scan turns the four polls into one background poll conversation, started where the first poll was and stopped before the next page; the job id the poll returns is extracted from each poll response and sent by the report request (the fixture returns a different job than the recording, so only the extracted value passes); the cache-buster is a fresh client timestamp.",
+  "source": "VuGen async scan (Poll pattern) and web_reg_async_attributes / web_stop_async generation; web_save_timestamp_param for client timestamps.",
+  "outcome": "replay",
+  "responses": [
+    {
+      "method": "GET",
+      "path": "/app/dashboard",
+      "headers": {
+        "Content-Type": "text/html"
+      },
+      "body": "<html><head><title>Dashboard</title></head><body>jobs</body></html>"
+    },
+    {
+      "method": "GET",
+      "path": "/api/status",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"state\":\"running\",\"jobId\":\"d41c07ab93e25f18\"}"
+    },
+    {
+      "method": "GET",
+      "path": "/app/report",
+      "headers": {
+        "Content-Type": "text/html"
+      },
+      "body": "<html><head><title>Report</title></head><body>done</body></html>"
+    }
+  ],
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/app/dashboard"
+    },
+    {
+      "method": "GET",
+      "path": "/api/status",
+      "query_pattern": "^_=[0-9]{13}$",
+      "headers": {
+        "X-Requested-With": "XMLHttpRequest"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/app/report",
+      "query": "job=d41c07ab93e25f18"
+    }
+  ]
+}

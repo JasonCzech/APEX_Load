@@ -797,7 +797,7 @@ func importURLCredentialSurfaces(ref dslwalk.SurfaceRef) []importURLCredentialSu
 		}
 		return surfaces
 	}
-	if ref.Request == nil || ref.Kind != dslwalk.HTTPSequenceRequestSurface {
+	if ref.Request == nil || !ref.IsNestedRequest() {
 		return nil
 	}
 	raw, _ := ref.Request["target"].(string)

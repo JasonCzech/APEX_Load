@@ -44,6 +44,9 @@ type ConvertOptions struct {
 	// SalvageTruncated imports the complete entries of a HAR file that was cut
 	// off partway through (see SalvageTruncated); the import warns what is lost.
 	SalvageTruncated *bool `json:"salvage_truncated,omitempty"`
+	// AsyncScan (default on) collapses requests a page repeated in the
+	// background into background conversations; off keeps them inline.
+	AsyncScan *bool `json:"async_scan,omitempty"`
 }
 
 type ArtifactGovernance struct {
@@ -106,6 +109,7 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			PageTitleChecks:     opts.PageTitleChecks,
 			ResourceMode:        opts.ResourceMode,
 			HTMLSteps:           opts.HTMLSteps,
+			AsyncScan:           opts.AsyncScan,
 		},
 	})
 	if err != nil {

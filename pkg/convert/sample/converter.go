@@ -46,6 +46,10 @@ type ConvertOptions struct {
 	// HTML-mode steps (params.html_step) that resolve against the replayed
 	// page. The browser recorder supplies them for an HTML-level HTTP script.
 	HTMLSteps map[int]map[string]any `json:"-"`
+	// AsyncScan (HAR input; default on) collapses requests a page repeated in
+	// the background (poll, long-poll, push) into background conversations.
+	// Off keeps them as recorded steps.
+	AsyncScan *bool `json:"async_scan,omitempty"`
 }
 
 type ConvertStats struct {
@@ -272,6 +276,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			SkippedRequests: skipped,
 		},
 	}
+	if warning := requestimport.ApplyIntegratedAuth(result.Script, integratedAuthHosts(exchanges)); warning != "" {
+		result.Warnings = append(result.Warnings, warning)
+	}
 	if format == "raw_http" && rawHTTP11Only(exchanges) {
 		// Raw HTTP/1.1 connection-specific headers are executable only when the
 		// script requires HTTP/1.1. Leaving the config in automatic negotiation
@@ -471,6 +478,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 
 	if gap := result.Stats.TotalRequests - result.Stats.FilteredAssets - result.Stats.SkippedRequests - result.Stats.ConvertedActions; gap > 0 {
 		diagnostics.Add(diag.Warning, "Sample completeness guard", format, fmt.Sprintf("%d request(s) were parsed but not converted into actions", gap))
+	}
+	if format == "har" {
+		var shapeWarnings []string
+		sourceMappings, shapeWarnings = shapeRecordedHAR(result.Script, exchanges, req.Content, convertutil.BoolOption(req.Options.AsyncScan, true), sourceMappings)
+		result.Warnings = append(result.Warnings, shapeWarnings...)
 	}
 	result.Unsupported = append(diagnostics.Items(), finalized.Diagnostics...)
 	result.Stats.CorrelationsDetected = len(correlations)

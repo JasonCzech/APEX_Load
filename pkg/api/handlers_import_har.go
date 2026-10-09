@@ -280,6 +280,7 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportR
 			RedactSensitive:     parseOptionalBool(upload.Value("redact_sensitive")),
 			IncludeStaticAssets: parseOptionalBool(upload.Value("include_static_assets")),
 			SalvageTruncated:    parseOptionalBool(upload.Value("salvage_truncated")),
+			AsyncScan:           parseOptionalBool(upload.Value("async_scan")),
 		},
 	}, true
 }

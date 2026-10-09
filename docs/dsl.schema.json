@@ -3647,7 +3647,7 @@
                     "type": "integer"
                   },
                   "pattern": {
-                    "description": "poll sends the request every interval_ms; long_poll re-sends it as soon as a response arrives; push re-opens a streaming response (read as server-sent events, see params.stream on HTTP requests) when it ends. Defaults to poll.",
+                    "description": "poll sends the request every interval_ms, the first one as part of this step (its response is applied before the script continues); long_poll re-sends it as soon as a response arrives; push re-opens a streaming response (read as server-sent events, see params.stream on HTTP requests) when it ends. Defaults to poll.",
                     "examples": [
                       "poll",
                       "long_poll",

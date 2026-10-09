@@ -49,10 +49,10 @@ func TestEngineDispatchCoversCatalogEngineActions(t *testing.T) {
 			vu.Proto = &httpprotocol.HTTP{}
 			action.Params = map[string]any{"operation": "register", "id": "check", "text": "error", "scope": "all", "fail_if_found": true}
 		case "http_async_start":
-			vu.Proto = &asyncPollProtocol{}
+			vu.Proto, vu.Metrics = &asyncPollProtocol{}, NewMetricsCollector(16)
 			action.Params = asyncPollStart(nil).Params
 		case "http_async_stop":
-			vu.Proto = &asyncPollProtocol{}
+			vu.Proto, vu.Metrics = &asyncPollProtocol{}, NewMetricsCollector(16)
 			if _, err := vu.handleEngineAction(context.Background(), asyncPollStart(nil)); err != nil {
 				t.Fatal(err)
 			}

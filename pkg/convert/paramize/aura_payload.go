@@ -178,7 +178,7 @@ func surfaceBody(ref dslwalk.SurfaceRef) (target, body, encoding string) {
 	return
 }
 func surfaceHTTP(ref dslwalk.SurfaceRef) bool {
-	if ref.Kind == dslwalk.HTTPSequenceRequestSurface {
+	if ref.IsNestedRequest() {
 		return true
 	}
 	if ref.Action == nil {

@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -88,6 +89,8 @@ type Expectation struct {
 	// check against a broken page), each with a fragment of its error. Every
 	// other action must succeed; replay continues past each failure.
 	ExpectFailures map[string]string `json:"expect_failures,omitempty"`
+	// Secrets are the project secrets the replay resolves.
+	Secrets map[string]string `json:"secrets,omitempty"`
 }
 
 // ExpectedRequest describes one request the fixture server must receive.
@@ -139,12 +142,22 @@ type Response struct {
 	Body    string            `json:"body,omitempty"`
 	// WebSocket upgrades the request and answers each message.
 	WebSocket *WebSocketBehavior `json:"websocket,omitempty"`
+	// NTLM requires an NTLM handshake naming User before the response is
+	// served.
+	NTLM *NTLMBehavior `json:"ntlm,omitempty"`
 }
 
-// WebSocketBehavior scripts a fixture WebSocket endpoint: each received text
-// message is answered with ReplyPrefix followed by the message.
+// NTLMBehavior scripts an NTLM-protected fixture endpoint.
+type NTLMBehavior struct {
+	User string `json:"user"`
+}
+
+// WebSocketBehavior scripts a fixture WebSocket endpoint: each received
+// message is answered with Reply, or with ReplyPrefix followed by the
+// message.
 type WebSocketBehavior struct {
-	ReplyPrefix string `json:"reply_prefix"`
+	ReplyPrefix string `json:"reply_prefix,omitempty"`
+	Reply       string `json:"reply,omitempty"`
 }
 
 // Recorded is one request the fixture server received.
@@ -307,11 +320,24 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		if index >= len(list) {
 			index = len(list) - 1
 		}
-		s.served[key]++
 		chosen := list[index]
+		// An NTLM handshake leg answers with a challenge and does not use
+		// up the scripted response.
+		if chosen.NTLM == nil || ntlmAuthenticated(r, chosen.NTLM.User) {
+			s.served[key]++
+		}
 		response = &chosen
 	}
 	s.mu.Unlock()
+	if response != nil && response.NTLM != nil && !ntlmAuthenticated(r, response.NTLM.User) {
+		if kind, _ := ntlmMessage(r.Header.Get("Authorization")); kind == 1 {
+			w.Header().Set("WWW-Authenticate", "NTLM "+ntlmChallenge())
+		} else {
+			w.Header().Set("WWW-Authenticate", "NTLM")
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
 	if response == nil {
 		w.WriteHeader(http.StatusOK)
 		return
@@ -347,10 +373,58 @@ func (s *Server) serveWebSocket(w http.ResponseWriter, r *http.Request, recorded
 		s.mu.Lock()
 		s.recorded[recordedIndex].Messages = append(s.recorded[recordedIndex].Messages, string(message))
 		s.mu.Unlock()
-		if err := conn.WriteMessage(kind, append([]byte(behavior.ReplyPrefix), message...)); err != nil {
+		reply := append([]byte(behavior.ReplyPrefix), message...)
+		if behavior.Reply != "" {
+			reply = []byte(behavior.Reply)
+		}
+		if err := conn.WriteMessage(kind, reply); err != nil {
 			return
 		}
 	}
+}
+
+// ntlmAuthenticated reports whether a request carries an NTLM Type 3
+// message naming user.
+func ntlmAuthenticated(r *http.Request, user string) bool {
+	kind, raw := ntlmMessage(r.Header.Get("Authorization"))
+	if kind != 3 {
+		return false
+	}
+	var name []byte
+	for _, ch := range user {
+		name = append(name, byte(ch), byte(ch>>8))
+	}
+	return bytes.Contains(raw, name)
+}
+
+func ntlmMessage(header string) (uint32, []byte) {
+	token, ok := strings.CutPrefix(header, "NTLM ")
+	if !ok {
+		return 0, nil
+	}
+	raw, err := base64.StdEncoding.DecodeString(token)
+	if err != nil || len(raw) < 12 || string(raw[:8]) != "NTLMSSP\x00" {
+		return 0, nil
+	}
+	return binary.LittleEndian.Uint32(raw[8:12]), raw
+}
+
+// ntlmChallenge is a minimal NTLM Type 2 message: a server challenge and an
+// empty target-info list.
+func ntlmChallenge() string {
+	var message bytes.Buffer
+	message.WriteString("NTLMSSP\x00")
+	_ = binary.Write(&message, binary.LittleEndian, uint32(2))
+	_ = binary.Write(&message, binary.LittleEndian, [2]uint16{0, 0})
+	_ = binary.Write(&message, binary.LittleEndian, uint32(48))
+	flags := uint32(1<<0 | 1<<2 | 1<<9 | 1<<19 | 1<<23 | 1<<29 | 1<<31)
+	_ = binary.Write(&message, binary.LittleEndian, flags)
+	message.Write([]byte{1, 2, 3, 4, 5, 6, 7, 8})
+	message.Write(make([]byte, 8))
+	_ = binary.Write(&message, binary.LittleEndian, [2]uint16{4, 4})
+	_ = binary.Write(&message, binary.LittleEndian, uint32(48))
+	message.Write([]byte{0, 0, 0, 0})
+	return base64.StdEncoding.EncodeToString(message.Bytes())
 }
 
 // Recorded returns a copy of the requests received so far.
@@ -381,16 +455,23 @@ func (s *Server) Expand(value string) string { return s.expand(value) }
 
 // ReplayOnce runs one iteration of script through the engine's replay path,
 // the same path the script debugger uses.
-func ReplayOnce(ctx context.Context, script *dsl.Script, variables map[string]string) (*engine.ReplayReport, error) {
+func ReplayOnce(ctx context.Context, script *dsl.Script, variables, secrets map[string]string) (*engine.ReplayReport, error) {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	seed := int64(1)
-	return engine.ReplayScript(ctx, script, engine.ReplayOptions{
+	options := engine.ReplayOptions{
 		GroupName:       "parity",
 		IgnoreThinkTime: true,
 		Seed:            &seed,
 		Variables:       variables,
-	})
+	}
+	if len(secrets) > 0 {
+		options.SecretResolver = engine.SecretResolverFunc(func(name string) (string, bool) {
+			value, ok := secrets[name]
+			return value, ok
+		})
+	}
+	return engine.ReplayScript(ctx, script, options)
 }
 
 // Compare checks recorded requests against the expectation and returns one
@@ -694,7 +775,7 @@ func CheckOutcome(ctx context.Context, server *Server, exp *Expectation, script 
 				problems = append(problems, fmt.Sprintf("execution gate %q missing; script carries %v", code, codes))
 			}
 		}
-		if _, err := ReplayOnce(ctx, script, exp.Variables); err == nil {
+		if _, err := ReplayOnce(ctx, script, exp.Variables, exp.Secrets); err == nil {
 			problems = append(problems, "replay ran, but a gated import must be refused")
 		}
 		if recorded := server.Recorded(); len(recorded) > 0 {
@@ -707,7 +788,7 @@ func CheckOutcome(ctx context.Context, server *Server, exp *Expectation, script 
 				problems = append(problems, fmt.Sprintf("review gate %q missing; script carries %v", code, codes))
 			}
 		}
-		if _, err := ReplayOnce(ctx, script, exp.Variables); err != nil {
+		if _, err := ReplayOnce(ctx, script, exp.Variables, exp.Secrets); err != nil {
 			problems = append(problems, fmt.Sprintf("a review-gated import must still replay for debugging, but replay refused: %v", err))
 		}
 		if len(exp.Requests) > 0 {
@@ -718,7 +799,7 @@ func CheckOutcome(ctx context.Context, server *Server, exp *Expectation, script 
 			continueOnError := true
 			script.Config.ErrorHandling.ContinueOnError = &continueOnError
 		}
-		report, err := ReplayOnce(ctx, script, exp.Variables)
+		report, err := ReplayOnce(ctx, script, exp.Variables, exp.Secrets)
 		if err != nil {
 			problems = append(problems, fmt.Sprintf("replay refused or failed: %v (gate reason codes %v)", err, codes))
 			return problems

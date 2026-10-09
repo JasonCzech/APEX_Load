@@ -188,6 +188,13 @@ func Apply(script *dsl.Script, evidence Evidence) Report {
 			scan(action.Body)
 		} else if action != nil {
 			scan(action.Target)
+		} else if ref.Request != nil {
+			target, _ := ref.Request["target"].(string)
+			scan(target)
+			if safeRequestBody(ref.Request) {
+				body, _ := ref.Request["body"].(string)
+				scan(body)
+			}
 		}
 		return nil
 	})
@@ -239,6 +246,14 @@ func Apply(script *dsl.Script, evidence Evidence) Report {
 	_ = dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
 		action := ref.Action
 		if action == nil {
+			if ref.Request != nil {
+				if target, ok := ref.Request["target"].(string); ok {
+					ref.Request["target"] = replace(target)
+				}
+				if body, ok := ref.Request["body"].(string); ok && safeRequestBody(ref.Request) {
+					ref.Request["body"] = replace(body)
+				}
+			}
 			return nil
 		}
 		action.Target = replace(action.Target)
@@ -263,6 +278,19 @@ func safeBody(action *dsl.Action) bool {
 	return action.BodyFile == "" && action.BodyEncoding == "" &&
 		action.Metadata[dsl.ImportURLFormTemplateValueEncodingMetadataKey] == nil &&
 		action.Metadata[dsl.ImportAuraTemplateContractMetadataKey] == nil
+}
+
+// safeRequestBody is safeBody for a request held as a map (an async
+// conversation's request or an http_sequence child).
+func safeRequestBody(request map[string]any) bool {
+	if file, _ := request["body_file"].(string); file != "" {
+		return false
+	}
+	if encoding, _ := request["body_encoding"].(string); encoding != "" {
+		return false
+	}
+	metadata, _ := request["metadata"].(map[string]any)
+	return metadata[dsl.ImportURLFormTemplateValueEncodingMetadataKey] == nil && metadata[dsl.ImportAuraTemplateContractMetadataKey] == nil
 }
 
 func keyBefore(prefix string) string {

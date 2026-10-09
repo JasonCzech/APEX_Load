@@ -15,14 +15,18 @@ import (
 type normalizedRecording struct {
 	requests []RecordedRequest
 	findings map[int][]importreview.Finding
+	// integratedAuthHosts are the hosts recorded with an NTLM or Negotiate
+	// handshake.
+	integratedAuthHosts []string
 }
 
 // normalizeRecordedRequests applies the rules every recorded-traffic converter
 // shares (pkg/convert/requestimport):
 //   - the 401 leg of an NTLM or Negotiate handshake is excluded, because the
 //     retry that follows it is the real request;
-//   - single-use NTLM/Negotiate Authorization tokens are removed and the
-//     request is gated until credentials are configured;
+//   - single-use NTLM/Negotiate Authorization tokens are removed, and the
+//     host is listed so the script answers its challenges with
+//     negotiate_any auth;
 //   - a request whose body hit the capture limit is gated.
 //
 // The input is not modified.
@@ -42,6 +46,9 @@ func normalizeRecordedRequests(requests []RecordedRequest) normalizedRecording {
 		if scheme := recordedIntegratedAuthScheme(*req); scheme != "" {
 			stripRecordedAuthorization(req)
 			out.findings[req.Seq] = append(out.findings[req.Seq], requestimport.IntegratedAuthFinding("recording", ref, scheme))
+			if host := requestimport.IntegratedAuthHost(req.URL); host != "" && !containsFold(out.integratedAuthHosts, host) {
+				out.integratedAuthHosts = append(out.integratedAuthHosts, host)
+			}
 		}
 		if req.BodyTruncated {
 			out.findings[req.Seq] = append(out.findings[req.Seq], requestimport.RecordedBodyTruncatedFinding("recording", ref, req.BodySizeBytes))
@@ -143,6 +150,15 @@ func isRecordedRedirectStep(req RecordedRequest) bool {
 	}
 	for _, value := range recordedHeaderValuesFold(req.ResponseHeadersMulti, req.ResponseHeaders, "Location") {
 		if strings.TrimSpace(value) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func containsFold(values []string, value string) bool {
+	for _, existing := range values {
+		if strings.EqualFold(existing, value) {
 			return true
 		}
 	}

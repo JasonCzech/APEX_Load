@@ -33716,6 +33716,9 @@ paths:
               properties:
                 also_create_http_script:
                   type: boolean
+                async_scan:
+                  type: boolean
+                  nullable: true
                 end_seq:
                   type: integer
                   format: int64
@@ -33843,6 +33846,9 @@ paths:
               properties:
                 also_create_http_script:
                   type: boolean
+                async_scan:
+                  type: boolean
+                  nullable: true
                 end_seq:
                   type: integer
                   format: int64
@@ -34721,6 +34727,9 @@ paths:
                   properties:
                     also_create_http_script:
                       type: boolean
+                    async_scan:
+                      type: boolean
+                      nullable: true
                     end_seq:
                       type: integer
                       format: int64
@@ -78235,6 +78244,9 @@ paths:
             schema:
               type: object
               properties:
+                async_scan:
+                  type: boolean
+                  nullable: true
                 name:
                   type: string
                 page_title_checks:
@@ -78316,6 +78328,9 @@ paths:
             schema:
               type: object
               properties:
+                async_scan:
+                  type: boolean
+                  nullable: true
                 name:
                   type: string
                 page_title_checks:
@@ -265591,6 +265606,8 @@ paths:
               properties:
                 artifact_mode:
                   type: string
+                async_scan:
+                  type: string
                 base_url:
                   type: string
                 file:
@@ -265648,6 +265665,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: async_scan
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: boolean
         - name: base_url
           in: query
           description: Handler-defined query parameter.
@@ -288775,6 +288798,8 @@ paths:
               properties:
                 artifact_mode:
                   type: string
+                async_scan:
+                  type: string
                 base_url:
                   type: string
                 file:
@@ -288832,6 +288857,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: async_scan
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: boolean
         - name: base_url
           in: query
           description: Handler-defined query parameter.
@@ -288905,6 +288936,9 @@ paths:
                 options:
                   type: object
                   properties:
+                    async_scan:
+                      type: boolean
+                      nullable: true
                     base_url:
                       type: string
                     include_assertions:

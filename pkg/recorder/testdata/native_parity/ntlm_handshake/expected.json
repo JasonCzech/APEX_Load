@@ -1,6 +1,45 @@
 {
-  "description": "An NTLM handshake recorded through the proxy. Its tokens are single-use, so they must not be replayed; the request is gated until credentials are configured (WP3.3/WP3.4 map it to auth settings).",
+  "description": "An NTLM handshake recorded through the proxy. Its single-use tokens are not replayed: the challenge leg is dropped, the token is removed, and the script answers the host's challenge with host-scoped negotiate_any auth whose credentials come from the project secrets INTEGRATED_AUTH_USERNAME and INTEGRATED_AUTH_PASSWORD. With those configured, replay performs a fresh NTLM handshake naming the configured user. The request carries a promotion finding until the credentials are reviewed.",
   "source": "NTLM over HTTP (connection-bound challenge/response); VuGen web_set_user negotiates it at replay.",
-  "outcome": "gated",
-  "gate_reason_codes": ["integrated_auth_requires_configuration"]
+  "outcome": "replay",
+  "secrets": {
+    "INTEGRATED_AUTH_USERNAME": "ada",
+    "INTEGRATED_AUTH_PASSWORD": "parity-pass"
+  },
+  "responses": [
+    {
+      "method": "GET",
+      "path": "/intranet",
+      "ntlm": {
+        "user": "ada"
+      },
+      "headers": {
+        "Content-Type": "text/html"
+      },
+      "body": "<html><title>Intranet</title></html>"
+    }
+  ],
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/intranet",
+      "absent_headers": [
+        "Authorization"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/intranet",
+      "header_contains": {
+        "Authorization": "NTLM "
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/intranet",
+      "header_contains": {
+        "Authorization": "NTLM "
+      }
+    }
+  ]
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
+	"github.com/jasonczech/apexload/pkg/convert/recordedshape"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
@@ -62,6 +63,10 @@ type ConvertOptions struct {
 	// discovered at replay) or "in_step" (each static resource is attached to
 	// the page that requested it as an explicit resource).
 	ResourceMode string
+	// AsyncScan collapses requests a page repeated in the background (poll,
+	// long-poll, push) into background conversations. Nil means on; false
+	// keeps them as recorded steps.
+	AsyncScan *bool
 }
 
 // ConvertSession converts a recording with default options.
@@ -117,12 +122,18 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 		},
 		CreatedAt: time.Now(),
 	}
+	if warning := requestimport.ApplyIntegratedAuth(script, normalized.integratedAuthHosts); warning != "" {
+		result.Warnings = append(result.Warnings, warning)
+	}
 	recordedResourceURLs := make([]string, 0)
 	recordedResourceSeen := make(map[string]struct{})
 
 	inStep := strings.EqualFold(strings.TrimSpace(opts.ResourceMode), "in_step")
 	pageActionByURL := map[string]int{}
 	lastPageAction := -1
+	// steps holds the recorded timing of each generated action, for the
+	// async scan and WebSocket placement.
+	var steps []recordedshape.Step
 	for i, req := range recordedRequests {
 		if req.IsStatic && !req.Excluded {
 			rawURL := strings.TrimSpace(req.URL)
@@ -236,6 +247,11 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 		}
 
 		script.Actions = append(script.Actions, action)
+		steps = append(steps, recordedshape.Step{
+			StartedAt: recordedAt(req), Duration: time.Duration(req.ResponseTimeMs * float64(time.Millisecond)),
+			URL: req.URL, Method: req.Method, ContentType: recordedResponseHeader(req, "Content-Type"),
+			Page: recordedshape.IsPage(recordedResponseHeader(req, "Content-Type"), req.Headers),
+		})
 		if inStep && strings.Contains(strings.ToLower(recordedResponseHeader(req, "Content-Type")), "text/html") {
 			lastPageAction = len(script.Actions) - 1
 			pageActionByURL[strings.TrimSpace(req.URL)] = lastPageAction
@@ -259,7 +275,6 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 	if len(webSocketRequests) > 0 && hasHTTPRequests {
 		preserved["recorded_websocket_urls_available"] = true
 		preserved["recorded_websocket_urls"] = recordedWebSocketURLs(webSocketRequests)
-		result.Warnings = append(result.Warnings, "recording contains HTTP and WebSocket traffic; generated HTTP script includes HTTP requests and preserves WebSocket exchanges as review metadata")
 	}
 	if len(preserved) > 0 {
 		target := ensureRecorderImportPreserved(script, session.Name)
@@ -274,8 +289,63 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 	if _, _, err := requestimport.ApplyRuntimeFidelityReview(script, requestimport.RuntimeFidelityOptions{SourceProfile: "recording"}); err != nil {
 		result.Warnings = append(result.Warnings, "Recording HTTP fidelity review could not inspect the script; repair its structure before replay.")
 	}
+	var sockets []recordedshape.Socket
+	if hasHTTPRequests {
+		sockets = recordedSockets(webSocketRequests, session.Filters.CaptureCookies)
+	}
+	asyncScan := opts.AsyncScan == nil || *opts.AsyncScan
+	if asyncScan || len(sockets) > 0 {
+		original := append([]dsl.Action(nil), script.Actions...)
+		shaped := recordedshape.Shape(script, steps, sockets, recordedshape.Options{AsyncScan: asyncScan})
+		if !shaped.Changed() {
+			result.Warnings = append(result.Warnings, shaped.Warnings...)
+		} else if issues := dsl.ValidateScriptIssues(script); len(issues) != 0 {
+			script.Actions = original
+			result.Warnings = append(result.Warnings, "the recording's background requests and WebSocket traffic were left as recorded because the reshaped script did not validate: "+strings.Join(issues, "; "))
+		} else {
+			result.Warnings = append(result.Warnings, shaped.Warnings...)
+		}
+	}
 	result.Script = script
 	return result
+}
+
+// recordedAt is when a request was recorded; a request without a timestamp
+// keeps its recorded order.
+func recordedAt(req RecordedRequest) time.Time {
+	if !req.Timestamp.IsZero() {
+		return req.Timestamp
+	}
+	return time.Unix(0, 0).Add(time.Duration(req.Seq) * time.Millisecond)
+}
+
+// recordedSockets turns the WebSocket connections recorded alongside HTTP
+// traffic into sockets for recordedshape.
+func recordedSockets(requests []RecordedRequest, captureCookies bool) []recordedshape.Socket {
+	sockets := make([]recordedshape.Socket, 0, len(requests))
+	for _, req := range requests {
+		started := recordedAt(req)
+		socket := recordedshape.Socket{URL: recordedshape.WebSocketURL(req.URL), StartedAt: started, EndedAt: started, Headers: filterRecordedHeaders(req.Headers, captureCookies)}
+		for index, msg := range coalesceWebSocketMessages(req.WebSocketMessages) {
+			if msg.Timestamp.IsZero() {
+				msg.Timestamp = started.Add(time.Duration(index+1) * time.Microsecond)
+			}
+			if msg.Opcode != webSocketOpcodeText && msg.Opcode != webSocketOpcodeBinary {
+				continue
+			}
+			socket.Frames = append(socket.Frames, recordedshape.Frame{
+				Send:    msg.Direction == webSocketDirectionClientToServer,
+				Payload: msg.Payload,
+				Base64:  webSocketDSLMessageType(msg) == "binary",
+				At:      msg.Timestamp,
+			})
+			if msg.Timestamp.After(socket.EndedAt) {
+				socket.EndedAt = msg.Timestamp
+			}
+		}
+		sockets = append(sockets, socket)
+	}
+	return sockets
 }
 
 // recordedTimestampEvidence collects what the recorded responses say about

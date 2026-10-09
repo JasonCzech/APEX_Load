@@ -3,11 +3,13 @@ package requestimport
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 // Rules shared by the converters that turn recorded traffic (proxy recorder
@@ -53,8 +55,10 @@ func IsIntegratedAuthChallenge(status int, wwwAuthenticate []string) bool {
 	return false
 }
 
-// IntegratedAuthFinding is the execution gate for a request recorded with an
-// integrated-auth handshake whose Authorization header was removed.
+// IntegratedAuthFinding marks a request recorded with an integrated-auth
+// handshake whose single-use Authorization tokens were removed. The script
+// answers the host's challenge itself (IntegratedAuthConfig), so the request
+// runs; promotion waits until the credentials are reviewed.
 func IntegratedAuthFinding(source, sourceRef, scheme string) importreview.Finding {
 	label := map[string]string{"ntlm": "NTLM", "negotiate": "Negotiate (Kerberos)"}[scheme]
 	if label == "" {
@@ -62,10 +66,59 @@ func IntegratedAuthFinding(source, sourceRef, scheme string) importreview.Findin
 	}
 	return importreview.Finding{
 		Code: IntegratedAuthReasonCode, ReasonCode: IntegratedAuthReasonCode,
-		Severity: diag.Blocker, Gate: importreview.GateExecution,
+		Severity: diag.Warning, Gate: importreview.GatePromotion,
 		Source: source, SourceRef: sourceRef, Resolution: "configure_integrated_auth",
-		Detail: fmt.Sprintf("This request was recorded with a %s authentication handshake. Its single-use tokens were removed because replaying them fails; configure credentials for this host before replay.", label),
+		Detail: fmt.Sprintf("This request was recorded with a %s authentication handshake. Its single-use tokens were removed; the script answers the host's challenge with negotiate_any auth using the project secrets %s and %s, which must be configured before replay.", label, IntegratedAuthUsernameSecret, IntegratedAuthPasswordSecret),
 	}
+}
+
+// The project secrets a recording's integrated-auth hosts authenticate
+// with.
+const (
+	IntegratedAuthUsernameSecret = "INTEGRATED_AUTH_USERNAME"
+	IntegratedAuthPasswordSecret = "INTEGRATED_AUTH_PASSWORD"
+)
+
+// ApplyIntegratedAuth gives a script recorded with NTLM or Negotiate
+// handshakes host-scoped negotiate_any auth: it answers whichever challenge
+// those hosts send (as VuGen's web_set_user does), with credentials from
+// project secrets, never recorded tokens. It returns a warning when the
+// script already has different auth.
+func ApplyIntegratedAuth(script *dsl.Script, hosts []string) string {
+	if script == nil || len(hosts) == 0 {
+		return ""
+	}
+	username := "{{secret." + IntegratedAuthUsernameSecret + "}}"
+	password := "{{secret." + IntegratedAuthPasswordSecret + "}}"
+	existing := script.Config.HTTP.Auth
+	switch {
+	case existing.Type == "" && existing.Username == "" && existing.Token == "":
+		script.Config.HTTP.Auth = dsl.AuthConfig{Type: "negotiate_any", Username: username, Password: password}
+	case existing.Type == "negotiate_any" && existing.Username == username && existing.Password == password:
+	default:
+		return "the recording's NTLM/Negotiate hosts were not given negotiate_any auth because the script already has other auth settings; configure their credentials by hand"
+	}
+	auth := &script.Config.HTTP.Auth
+	for _, host := range hosts {
+		duplicate := false
+		for _, existingHost := range auth.Hosts {
+			duplicate = duplicate || strings.EqualFold(existingHost, host)
+		}
+		if !duplicate && host != "" {
+			auth.Hosts = append(auth.Hosts, host)
+		}
+	}
+	return ""
+}
+
+// IntegratedAuthHost is the auth scope of a recorded request URL: its host
+// name, any port.
+func IntegratedAuthHost(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(parsed.Hostname())
 }
 
 // RecordedBodyTruncatedFinding is the execution gate for a request whose body

@@ -3,6 +3,8 @@ package requestimport
 import (
 	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func TestIntegratedAuthScheme(t *testing.T) {
@@ -40,17 +42,41 @@ func TestCookieOriginsLeaveJarCookiesToTheJar(t *testing.T) {
 	}
 }
 
-func TestRecordedTrafficFindingsAreExecutionGates(t *testing.T) {
+func TestRecordedTrafficFindingGates(t *testing.T) {
+	// A truncated body cannot run; an integrated-auth request runs on the
+	// script's negotiate_any auth, and promotion waits for review (WP3.4).
 	for _, finding := range []struct {
 		code string
 		gate string
+		want string
 	}{
-		{IntegratedAuthFinding("har", "entry-1", "ntlm").Code, string(IntegratedAuthFinding("har", "entry-1", "ntlm").Gate)},
-		{RecordedBodyTruncatedFinding("recording", "request-2", 10).Code, string(RecordedBodyTruncatedFinding("recording", "request-2", 10).Gate)},
+		{IntegratedAuthFinding("har", "entry-1", "ntlm").Code, string(IntegratedAuthFinding("har", "entry-1", "ntlm").Gate), "promotion"},
+		{RecordedBodyTruncatedFinding("recording", "request-2", 10).Code, string(RecordedBodyTruncatedFinding("recording", "request-2", 10).Gate), "execution"},
 	} {
-		if finding.gate != "execution" {
-			t.Fatalf("%s gate = %q, want execution", finding.code, finding.gate)
+		if finding.gate != finding.want {
+			t.Fatalf("%s gate = %q, want %s", finding.code, finding.gate, finding.want)
 		}
+	}
+}
+
+func TestApplyIntegratedAuth(t *testing.T) {
+	script := &dsl.Script{}
+	if warning := ApplyIntegratedAuth(script, []string{"intranet.test", "sso.test"}); warning != "" {
+		t.Fatal(warning)
+	}
+	auth := script.Config.HTTP.Auth
+	if auth.Type != "negotiate_any" || auth.Username != "{{secret.INTEGRATED_AUTH_USERNAME}}" || auth.Password != "{{secret.INTEGRATED_AUTH_PASSWORD}}" || strings.Join(auth.Hosts, ",") != "intranet.test,sso.test" {
+		t.Fatalf("auth = %+v", auth)
+	}
+	if warning := ApplyIntegratedAuth(script, []string{"SSO.test", "other.test"}); warning != "" || strings.Join(script.Config.HTTP.Auth.Hosts, ",") != "intranet.test,sso.test,other.test" {
+		t.Fatalf("a second call widens the scope: %+v %q", script.Config.HTTP.Auth, warning)
+	}
+	basic := &dsl.Script{Config: dsl.ScriptConfig{HTTP: dsl.HTTPConfig{Auth: dsl.AuthConfig{Type: "basic", Username: "u", Password: "p"}}}}
+	if warning := ApplyIntegratedAuth(basic, []string{"intranet.test"}); warning == "" || basic.Config.HTTP.Auth.Type != "basic" {
+		t.Fatalf("other auth must be kept with a warning: %+v %q", basic.Config.HTTP.Auth, warning)
+	}
+	if host := IntegratedAuthHost("https://Intranet.Test:8443/x"); host != "intranet.test" {
+		t.Fatalf("host = %q", host)
 	}
 }
 
