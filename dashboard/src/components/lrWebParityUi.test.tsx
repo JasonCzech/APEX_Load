@@ -10,6 +10,7 @@ import AuthHostsField from './AuthHostsField'
 import { parseAuthHosts } from './authHosts'
 import { ProtocolAssertionsSection, ProtocolExtractorsSection } from './scriptActionFields'
 import { describeExtractorDFEs, describeExtractorScope } from './extractorScope'
+import { describeHTMLStep, htmlStepOf } from './htmlSteps'
 import { bodyEncodingLabel, knownBodyEncoding } from './bodyEncodings'
 import type { ScriptDefinition } from '../types/scripts'
 
@@ -173,5 +174,16 @@ describe('HTTP text assertions', () => {
     expect(onUpdate).toHaveBeenCalledWith(0, 0, 'source', 'all')
     act(() => { ignoreCase.click() })
     expect(onUpdate).toHaveBeenCalledWith(0, 0, 'case_insensitive', undefined)
+  })
+})
+
+describe('HTML-mode steps', () => {
+  it('describes what each step resolves on the page', () => {
+    expect(htmlStepOf({ html_step: { kind: 'link', text: 'Flights' } })?.kind).toBe('link')
+    expect(htmlStepOf({ resources: [] })).toBeUndefined()
+    expect(describeHTMLStep({ kind: 'link', text: 'Next', ordinal: 2 })).toBe('Follows the link "Next" (match 2) on the current page.')
+    expect(describeHTMLStep({ kind: 'image', alt: 'Go' })).toBe('Clicks the image with alt "Go" on the current page.')
+    expect(describeHTMLStep({ kind: 'image_check', src: '/logo.png' })).toContain('no request is sent')
+    expect(describeHTMLStep({ kind: 'form', fields: [{ name: 'user' }, { name: 'pass' }] })).toBe("Submits the form with fields user, pass, with the page's own hidden fields, URL and method.")
   })
 })

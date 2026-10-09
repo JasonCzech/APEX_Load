@@ -1,11 +1,12 @@
 package enterprisearchive
 
 import (
-	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 // publishedWebHTTPFunctionExpectations pins the disposition of every function in
@@ -41,11 +42,11 @@ var publishedWebHTTPFunctionExpectations = map[string]struct {
 	"web_global_verification":        {"web", SourceFunctionSupportExecutable},
 	"web_global_verification_pause":  {"web", SourceFunctionSupportExecutable},
 	"web_global_verification_resume": {"web", SourceFunctionSupportExecutable},
-	"web_image":                      {"web", SourceFunctionSupportReviewOnly},
+	"web_image":                      {"web", SourceFunctionSupportExecutable},
 	"web_image_check":                {"web", SourceFunctionSupportExecutable},
 	"web_js_reset":                   {"web", SourceFunctionSupportReviewOnly},
 	"web_js_run":                     {"web", SourceFunctionSupportReviewOnly},
-	"web_link":                       {"web", SourceFunctionSupportReviewOnly},
+	"web_link":                       {"web", SourceFunctionSupportExecutable},
 	"web_load_cache":                 {"web", SourceFunctionSupportNativeNoop},
 	"web_reg_add_cookie":             {"web", SourceFunctionSupportExecutable},
 	"web_reg_async_attributes":       {"web", SourceFunctionSupportReviewOnly},
@@ -324,78 +325,80 @@ func convertSingleWebSource(t *testing.T, body string) *ConvertResult {
 	return result
 }
 
-func TestWebLinkWithExplicitURLConvertsAndWebImageSrcIsGated(t *testing.T) {
+func htmlStepOf(action dsl.Action) map[string]any {
+	step, _ := action.Params[httpprotocol.HTMLStepParam].(map[string]any)
+	return step
+}
+
+func TestWebLinkAndWebImageResolveAgainstThePage(t *testing.T) {
 	result := convertSingleWebSource(t, `
 	web_link("Catalog", "Text=Catalog", "URL=https://example.test/catalog", LAST);
-	web_image("Logo", "Alt=Logo", "Src=https://example.test/logo.png", LAST);`)
-	if len(result.Script.Actions) != 2 {
-		t.Fatalf("actions = %d, want the explicit-URL GET plus one gated review step", len(result.Script.Actions))
+	web_image("Logo", "Alt=Logo", "Src=https://example.test/logo.png", "Ordinal=2", LAST);
+	web_link("Continue", "Text/IC=continue", LAST);`)
+	if len(result.Script.Actions) != 3 {
+		t.Fatalf("actions = %d, want three", len(result.Script.Actions))
 	}
 	link := result.Script.Actions[0]
-	if link.Method != "GET" || !strings.Contains(link.Target, "/catalog") {
-		t.Errorf("web_link with an explicit URL = %s %q, want GET of the catalog URL", link.Method, link.Target)
+	if link.Method != "GET" || !strings.Contains(link.Target, "/catalog") || htmlStepOf(link) != nil {
+		t.Errorf("web_link with an explicit URL = %s %q, want a GET of the catalog URL", link.Method, link.Target)
 	}
 	image := result.Script.Actions[1]
-	if image.Type != "source_review" || image.Target != "" {
-		t.Fatalf("web_image Src must not become a request target, got type=%q target=%q", image.Type, image.Target)
+	if image.Target != htmlStepTarget || !reflect.DeepEqual(htmlStepOf(image), map[string]any{"kind": "image", "alt": "Logo", "src": "https://example.test/logo.png", "ordinal": 2}) {
+		t.Fatalf("web_image = %q %v, want an image step", image.Target, htmlStepOf(image))
 	}
-	if blockers, _ := image.Metadata["execution_blockers"].([]string); len(blockers) != 1 || blockers[0] != htmlNavigationReasonCode {
-		t.Fatalf("web_image gate = %v, want %s", image.Metadata["execution_blockers"], htmlNavigationReasonCode)
+	if !reflect.DeepEqual(htmlStepOf(result.Script.Actions[2]), map[string]any{"kind": "link", "text": "continue", "case_insensitive": true}) {
+		t.Fatalf("web_link without URL = %v", htmlStepOf(result.Script.Actions[2]))
 	}
-	args := fmt.Sprint(image.Params["args"])
-	if !strings.Contains(args, "Alt=Logo") || !strings.Contains(args, "Src=https://example.test/logo.png") {
-		t.Fatalf("review args = %s, want the recorded Alt and Src selectors", args)
+	assertSourceReviewSupportMode(t, result.SourceReview.Mappings, "web_image", SourceFunctionSupportExecutable)
+}
+
+func TestHTMLStepsThatCannotBeResolvedKeepTheGate(t *testing.T) {
+	result := convertSingleWebSource(t, `
+	web_link("Menu", "Text=Menu", "FrameName=nav", LAST);
+	web_image("East", "Src=map.png", "MapName=regions", "AreaAlt=East", LAST);`)
+	for _, action := range result.Script.Actions {
+		if blockers, _ := action.Metadata["execution_blockers"].([]string); action.Type != "source_review" || len(blockers) != 1 || blockers[0] != htmlNavigationReasonCode {
+			t.Fatalf("action = %+v, want the navigation gate", action)
+		}
+	}
+	if len(result.Script.Actions) != 2 || !hasWarningContaining(result.Warnings, "frame") || !hasWarningContaining(result.Warnings, "image-map area") {
+		t.Fatalf("actions = %d, warnings = %v", len(result.Script.Actions), result.Warnings)
 	}
 }
 
-func TestWebImageCheckKeepsItsSrcAsTheVerifiedImage(t *testing.T) {
+func TestWebImageCheckBecomesAPageCheck(t *testing.T) {
 	result := convertSingleWebSource(t, `
 	web_url("Home", "URL=https://example.test/home", LAST);
 	web_image_check("LogoCheck", "Src=https://example.test/logo.png", LAST);`)
-	var found bool
-	for _, action := range result.Script.Actions {
-		if strings.Contains(action.Target, "/logo.png") {
-			found = true
-			if action.Params["legacy_html_check"] != true {
-				t.Fatalf("web_image_check must stay a legacy check, params=%v", action.Params)
-			}
-		}
+	check := result.Script.Actions[1]
+	if !reflect.DeepEqual(htmlStepOf(check), map[string]any{"kind": "image_check", "src": "https://example.test/logo.png"}) {
+		t.Fatalf("web_image_check = %v, want an image_check step", htmlStepOf(check))
 	}
-	if !found {
-		t.Fatalf("web_image_check Src was dropped: %+v", result.Script.Actions)
+	if check.Params["legacy_html_check"] != true {
+		t.Fatalf("web_image_check must stay a legacy check, params=%v", check.Params)
 	}
 }
 
-func TestWebSubmitFormCarriesAPromotionGate(t *testing.T) {
+func TestWebSubmitFormBecomesAPageFormStep(t *testing.T) {
 	result := convertSingleWebSource(t, `
 	web_url("Home", "URL=https://example.test/WebTours/", LAST);
-	web_submit_form("login.pl", ITEMDATA, "Name=username", "Value=jojo", ENDITEM, LAST);`)
+	web_submit_form("login.pl", "Ordinal=2", ITEMDATA, "Name=username", "Value={User}", ENDITEM, "Name=login.x", "Value=21", ENDITEM,
+		STARTHIDDENS, "Name=userSession", "Value=recorded", ENDITEM, ENDHIDDENS, LAST);`)
 	form := result.Script.Actions[1]
-	reasons, _ := form.Metadata["review_reasons"].([]string)
-	if len(reasons) == 0 || reasons[0] != htmlFormReasonCode {
-		t.Fatalf("review_reasons = %v, want %s", form.Metadata["review_reasons"], htmlFormReasonCode)
+	want := map[string]any{
+		"kind":    "form",
+		"ordinal": 2,
+		"fields":  []any{map[string]any{"name": "username", "value": "{{var.user}}"}, map[string]any{"name": "login.x", "value": "21"}},
+		"hidden":  []any{map[string]any{"name": "userSession", "value": "recorded"}},
 	}
-	if _, blocked := form.Metadata["execution_blockers"]; blocked {
-		t.Fatalf("web_submit_form must stay replayable for debugging, metadata = %v", form.Metadata)
+	if form.Type != "POST" || !reflect.DeepEqual(htmlStepOf(form), want) {
+		t.Fatalf("web_submit_form = %s %v", form.Type, htmlStepOf(form))
 	}
-}
-
-func TestWebLinkWithoutURLIsReviewedNotFabricated(t *testing.T) {
-	result := convertSingleWebSource(t, `
-	web_url("Home", "URL=https://example.test/home", LAST);
-	web_link("Continue", "Text=Continue", LAST);`)
-	// Only the anchor request is emitted; the context-resolved link is not a request.
-	for _, action := range result.Script.Actions {
-		if action.Type == "GET" && strings.EqualFold(action.Name, "Continue") {
-			t.Fatalf("web_link without a URL must not fabricate a GET action: %#v", action)
-		}
+	if _, reviewed := form.Metadata["review_reasons"]; reviewed {
+		t.Fatalf("a page-resolved form needs no review, metadata = %v", form.Metadata)
 	}
-	if result.Stats.ReviewOnlyFunctions == 0 {
-		t.Fatalf("web_link without URL should be classified review_only, stats=%#v", result.Stats)
-	}
-	assertSourceReviewSupportMode(t, result.SourceReview.Mappings, "web_link", SourceFunctionSupportReviewOnly)
-	if !hasWarningContaining(result.Warnings, "no URL") {
-		t.Errorf("expected a 'no URL' warning, got %v", result.Warnings)
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("validation = %v", issues)
 	}
 }
 

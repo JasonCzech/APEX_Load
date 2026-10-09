@@ -27,3 +27,16 @@ func TestAppendHTTPSecurityConfigPassesAuthHostScope(t *testing.T) {
 		t.Fatal("unscoped auth must not set auth_hosts")
 	}
 }
+
+func TestHTMLPageContextIsEnabledOnlyForHTMLSteps(t *testing.T) {
+	plain := &dsl.Script{Actions: []dsl.Action{{Type: "GET", Target: "/"}}}
+	if scriptUsesHTMLSteps(plain) {
+		t.Fatal("a script without HTML steps must not index pages")
+	}
+	nested := &dsl.Script{Actions: []dsl.Action{{Type: "http_sequence", Params: map[string]any{"requests": []any{
+		map[string]any{"type": "GET", "target": "#html-step", "params": map[string]any{"html_step": map[string]any{"kind": "link", "text": "x"}}},
+	}}}}}
+	if !scriptUsesHTMLSteps(nested) {
+		t.Fatal("an HTML step inside a sequence must enable page context")
+	}
+}

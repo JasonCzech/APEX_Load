@@ -65,11 +65,6 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 		action.Metadata["review_required"] = true
 		warnings = append(warnings, fmt.Sprintf("line %d: web_service_call '%s' has no inline endpoint; using %s until WSDL/service settings are mapped", fn.LineNumber, fn.StepName, rawURL))
 	}
-	if fn.URL == "" && fn.Name == "web_submit_form" {
-		action.Metadata["inferred_url_from"] = "source_form_context"
-		action.Metadata["inferred_url_source"] = convertutil.FirstNonEmpty(firstNonEmptyArg(fn, "Referer"), previousRequestURL)
-	}
-	applyHTMLFormReview(action, fn)
 
 	target := makeRelative(rawURL, baseURL)
 	action.Target = target
@@ -374,7 +369,7 @@ func applyPersistentCookies(action *dsl.Action, cookies []ParsedCookie, rawURL s
 // resolved from page context rather than carried inline.
 func isHTMLModeNavigationFunction(name string) bool {
 	switch name {
-	case "web_link", "web_image", "web_image_check":
+	case "web_link", "web_image", "web_image_check", "web_submit_form":
 		return true
 	default:
 		return false

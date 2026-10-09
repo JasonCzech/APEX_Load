@@ -11,6 +11,7 @@ import { dslActionTypesForProtocol, dslActionUsesSelector, dslActionUsesValue } 
 import { ProtocolExtractorsSection, ProtocolAssertionsSection, BrowserActionFields, DatabaseActionFields, GrpcActionFields, HttpActionFields, JmsActionFields, NetworkActionFields, WebSocketActionFields } from './scriptActionFields'
 import { type AuthoringIssue } from './scriptAuthoringAssist'
 import { httpSequenceExecutionSettings, setHTTPSequenceExecutionMode, setHTTPSequenceMaxConcurrency, type HTTPSequenceExecutionMode } from './httpSequenceExecutionModel'
+import { describeHTMLStep, htmlStepOf } from './htmlSteps'
 
 type Action = ScriptActionDefinition
 type Assertion = ScriptAssertionDefinition
@@ -914,6 +915,8 @@ function ActionCoreFields({ hideActionType = false, typeOnly = false, action, in
         </>
       ) : isRuntimeStateAction || isControlAction(action) ? (
         <div className="form-hint full-width">This action controls execution and has no request target.</div>
+      ) : htmlStepOf(action.params) ? (
+        <div className="form-hint full-width" aria-label="HTML-mode step">HTML-mode step: {describeHTMLStep(htmlStepOf(action.params)!)}</div>
       ) : (
         <label className="full-width"><span>{targetLabel}</span><input data-author-field="target" value={action.target} onChange={e => onUpdate(index, 'target', e.target.value)} placeholder={targetPlaceholder} /></label>
       )}

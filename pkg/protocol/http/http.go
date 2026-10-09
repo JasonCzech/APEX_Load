@@ -81,6 +81,9 @@ type HTTP struct {
 	cacheCheckNewerVersions    bool
 	resources                  *resourceFetcher
 	captureCorrelationEvidence bool
+	// page is the virtual user's HTML page context, shared with the
+	// per-version clones; nil unless the script has HTML-mode steps.
+	page *pageContextState
 }
 
 const (
@@ -198,6 +201,11 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	h.defaultHeaderList = buildDefaultHeaderList(config)
 	h.contentChecks = parseContentChecks(config)
 	h.dataFormattingAutoDetect = parseDataFormattingAutoDetect(config)
+	if enabled, _ := config[HTMLPageContextConfig].(bool); enabled {
+		h.page = &pageContextState{}
+	} else {
+		h.page = nil
+	}
 	h.dataFormattingChain = parseDataFormattingChain(config)
 	h.streaming = parseStreamingProfile(config)
 	if parseHTTPCacheEnabled(config) {
@@ -271,6 +279,31 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.Success = true
 		result.ProtocolEvidence = map[string]any{"legacy_html_check": "disabled"}
 		return result, nil
+	}
+	if step, ok := action.Params[HTMLStepParam].(map[string]any); ok {
+		pageEvidence := pageContextEvidence(h.page.current())
+		resolved, done, err := h.resolveHTMLStep(action, step)
+		if err != nil || done {
+			result.Success = err == nil
+			if err != nil {
+				result.ErrorMessage = err.Error()
+				if code := htmlStepFailureCode(err); code != "" {
+					pageEvidence["failure_code"] = code
+				}
+			}
+			result.Duration = time.Since(result.StartTime)
+			result.ProtocolEvidence = pageEvidence
+			return result, nil
+		}
+		action = resolved
+		defer func() {
+			for key, value := range pageEvidence {
+				if result.ProtocolEvidence == nil {
+					result.ProtocolEvidence = map[string]any{}
+				}
+				result.ProtocolEvidence[key] = value
+			}
+		}()
 	}
 	policy, policyErr := h.effectiveHTTPVersion(action)
 	if policyErr == nil {
@@ -941,6 +974,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	// outcome (not result.Success, which extractors/assertions may have
 	// flipped) — a real browser fetches resources for any rendered page.
 	observeVerification(ctx, resp.Header, respBody, false, contentComplete)
+	h.page.observeMainDocument(action, resp, respBody, contentComplete)
 	var resourceEvidence *resourceCapture
 	resourceCtx := ctx
 	if action.CaptureResourceDetails {

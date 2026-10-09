@@ -11,17 +11,14 @@ import (
 )
 
 // HTML-mode (context-sensitive) VuGen functions act on the page the previous
-// step loaded. Until the HTTP runtime keeps that page (WP2.1-WP2.3), the
-// importer must say so instead of guessing a request.
+// step loaded. The HTTP runtime resolves them against its page context
+// (html_steps.go); the shapes it cannot resolve yet (frames, image-map
+// areas, missing selectors) keep this gate instead of guessing a request.
 const (
-	// htmlNavigationReasonCode gates a web_link or web_image click whose target
-	// is resolved from the previous page. Dropping the click would replay a
-	// flow the server never sees, so execution is blocked.
+	// htmlNavigationReasonCode gates an HTML-mode step the page context cannot
+	// resolve. Dropping the click would replay a flow the server never sees,
+	// so execution is blocked.
 	htmlNavigationReasonCode = "html_navigation_requires_page_context"
-	// htmlFormReasonCode marks a web_submit_form built without its page. The
-	// request may still work (forms without hidden fields), so replay stays
-	// available for debugging and only promotion is blocked.
-	htmlFormReasonCode = "html_form_requires_page_context"
 )
 
 // htmlNavigationSelectorArgs are the attributes VuGen uses to find the link,
@@ -67,24 +64,4 @@ func htmlNavigationGateAction(fn ParsedFunction) dsl.Action {
 			fn.Name, step, kind, described),
 	}})
 	return action
-}
-
-// applyHTMLFormReview marks a web_submit_form request as an approximation:
-// VuGen takes the form's action URL, method and hidden fields from the page
-// at replay, while this request was built from the script alone.
-func applyHTMLFormReview(action *dsl.Action, fn ParsedFunction) {
-	if action == nil || fn.Name != "web_submit_form" {
-		return
-	}
-	importreview.ApplyToAction(action, []importreview.Finding{{
-		Code:       htmlFormReasonCode,
-		ReasonCode: htmlFormReasonCode,
-		Severity:   diag.Warning,
-		Gate:       importreview.GatePromotion,
-		Source:     "enterprise_script_archive",
-		SourceRef:  fmt.Sprintf("%s:%d", fn.Filename, fn.LineNumber),
-		Resolution: "verify_form_submission",
-		Detail: "web_submit_form submits a form found on the previous page; VuGen fills in that form's hidden fields, action URL and method at replay. " +
-			"This request was built from the script alone (target inferred from the step name, only the listed fields), so hidden fields such as anti-forgery tokens are missing. Verify it against the application before promotion.",
-	}})
 }

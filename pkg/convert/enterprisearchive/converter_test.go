@@ -656,17 +656,16 @@ func TestConvertInfersSourceFormTargetsAndIgnoresCommentedCode(t *testing.T) {
 	if len(result.Script.Actions) != 2 {
 		t.Fatalf("actions = %#v, want two converted actions", result.Script.Actions)
 	}
+	// web_submit_form resolves its form, URL and hidden fields from the page
+	// at replay, so no URL is inferred at import.
 	form := result.Script.Actions[1]
-	if form.Target != "/mi/login.jsp" {
-		t.Fatalf("form target = %q, want inferred /mi/login.jsp", form.Target)
+	if form.Target != htmlStepTarget || form.Metadata["inferred_url_from"] != nil {
+		t.Fatalf("form target = %q, metadata = %#v; want an HTML-mode step", form.Target, form.Metadata)
 	}
 	// Structural, not a substring probe: assert the exact surviving field list.
 	// `!strings.Contains(body, "disabled")` also passes when the live "user" field
 	// was dropped, reordered, or duplicated.
-	assertFormBodyFields(t, form.Body, []formField{{"user", "{{var.username}}"}})
-	if form.Metadata["inferred_url_from"] != "source_form_context" {
-		t.Fatalf("metadata = %#v, want inferred URL marker", form.Metadata)
-	}
+	assertFormBodyFields(t, htmlStepFormBody(form), []formField{{"user", "{{var.username}}"}})
 }
 
 func TestConvertPreservesSaveCountAndRegexpCorrelations(t *testing.T) {

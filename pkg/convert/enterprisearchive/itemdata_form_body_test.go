@@ -5,6 +5,9 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 // itemdata_form_body_test.go replaces substring probing of converted ITEMDATA
@@ -288,13 +291,18 @@ func TestITEMDATABodiesAreStructurallyFaithful(t *testing.T) {
 				body string
 			}
 			for _, action := range result.Script.Actions {
-				if action.Body == "" {
+				body := action.Body
+				if body == "" {
+					// web_submit_form keeps its fields as an HTML-mode step.
+					body = htmlStepFormBody(action)
+				}
+				if body == "" {
 					continue
 				}
 				form = &struct {
 					name string
 					body string
-				}{action.Name, action.Body}
+				}{action.Name, body}
 			}
 			if form == nil {
 				t.Fatalf("no action with a body was emitted: %#v", result.Script.Actions)
@@ -356,4 +364,19 @@ func TestCountLiveENDITEMBlocksIgnoresComments(t *testing.T) {
 	if got := countLiveENDITEMBlocks(source); got != 4 {
 		t.Fatalf("live ENDITEM rows = %d, want 4 (a, c, f, g — the // inside a URL literal is not a comment)", got)
 	}
+}
+
+// htmlStepFormBody urlencodes the scripted fields of a web_submit_form step,
+// so form-field conservation can be checked like a web_submit_data body.
+func htmlStepFormBody(action dsl.Action) string {
+	step, _ := action.Params[httpprotocol.HTMLStepParam].(map[string]any)
+	fields, _ := step["fields"].([]any)
+	parts := make([]string, 0, len(fields))
+	for _, raw := range fields {
+		field, _ := raw.(map[string]any)
+		name, _ := field["name"].(string)
+		value, _ := field["value"].(string)
+		parts = append(parts, encodeSourceFormComponent(name)+"="+encodeSourceFormComponent(value))
+	}
+	return strings.Join(parts, "&")
 }

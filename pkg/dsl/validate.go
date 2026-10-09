@@ -912,8 +912,67 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 	if CanonicalActionType(action.Type) == "http_oauth2_token" {
 		return issues
 	}
+	if step, ok := action.Params[httpprotocol.HTMLStepParam]; ok {
+		// An HTML-mode step resolves its URL from the page at replay.
+		return append(issues, validateHTMLStepIssues(actionLabel(path, action), protocol, step)...)
+	}
 	if action.Target == "" {
 		issues = append(issues, fmt.Sprintf("%s: missing target", actionLabel(path, action)))
+	}
+	return issues
+}
+
+// validateHTMLStepIssues checks params.html_step of an HTML-mode step.
+func validateHTMLStepIssues(label, protocol string, raw any) []string {
+	if protocol != "http" {
+		return []string{fmt.Sprintf("%s: params.html_step is supported only by the http protocol", label)}
+	}
+	step, ok := raw.(map[string]any)
+	if !ok {
+		return []string{fmt.Sprintf("%s: params.html_step must be an object", label)}
+	}
+	text := func(key string) string {
+		value, _ := step[key].(string)
+		return strings.TrimSpace(value)
+	}
+	kind := strings.ToLower(text("kind"))
+	var issues []string
+	switch kind {
+	case "link":
+		if text("text") == "" {
+			issues = append(issues, fmt.Sprintf("%s: params.html_step link requires text", label))
+		}
+	case "image", "image_check":
+		if text("alt") == "" && text("src") == "" {
+			issues = append(issues, fmt.Sprintf("%s: params.html_step %s requires alt or src", label, kind))
+		}
+	case "form":
+		for _, key := range []string{"fields", "hidden", "submit"} {
+			if value, present := step[key]; present {
+				items, ok := value.([]any)
+				if !ok {
+					issues = append(issues, fmt.Sprintf("%s: params.html_step %s must be a list of {name, value}", label, key))
+					continue
+				}
+				for _, item := range items {
+					entry, ok := item.(map[string]any)
+					name, _ := entry["name"].(string)
+					if !ok || strings.TrimSpace(name) == "" {
+						issues = append(issues, fmt.Sprintf("%s: params.html_step %s entries need a name", label, key))
+						break
+					}
+				}
+			}
+		}
+	default:
+		issues = append(issues, fmt.Sprintf("%s: params.html_step kind must be link, image, image_check or form (got %q)", label, kind))
+	}
+	if ordinal, present := step["ordinal"]; present {
+		if number, ok := ordinal.(float64); !ok || number < 0 || number != float64(int(number)) {
+			if _, isInt := ordinal.(int); !isInt {
+				issues = append(issues, fmt.Sprintf("%s: params.html_step ordinal must be a whole number", label))
+			}
+		}
 	}
 	return issues
 }

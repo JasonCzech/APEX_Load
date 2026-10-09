@@ -54,6 +54,10 @@
               },
               "params": {
                 "properties": {
+                  "html_step": {
+                    "description": "HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet.",
+                    "type": "object"
+                  },
                   "resources": {
                     "description": "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification.",
                     "type": "array"
@@ -66,7 +70,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "Request path or absolute URL; relative paths resolve against config.base_url.",
+                "description": "Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step).",
                 "type": "string"
               }
             },
@@ -126,6 +130,10 @@
               },
               "params": {
                 "properties": {
+                  "html_step": {
+                    "description": "HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet.",
+                    "type": "object"
+                  },
                   "resources": {
                     "description": "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification.",
                     "type": "array"
@@ -138,7 +146,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "Request path or absolute URL; relative paths resolve against config.base_url.",
+                "description": "Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step).",
                 "type": "string"
               }
             },
@@ -198,6 +206,10 @@
               },
               "params": {
                 "properties": {
+                  "html_step": {
+                    "description": "HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet.",
+                    "type": "object"
+                  },
                   "resources": {
                     "description": "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification.",
                     "type": "array"
@@ -210,7 +222,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "Request path or absolute URL; relative paths resolve against config.base_url.",
+                "description": "Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step).",
                 "type": "string"
               }
             },
@@ -270,6 +282,10 @@
               },
               "params": {
                 "properties": {
+                  "html_step": {
+                    "description": "HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet.",
+                    "type": "object"
+                  },
                   "resources": {
                     "description": "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification.",
                     "type": "array"
@@ -282,7 +298,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "Request path or absolute URL; relative paths resolve against config.base_url.",
+                "description": "Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step).",
                 "type": "string"
               }
             },
@@ -342,6 +358,10 @@
               },
               "params": {
                 "properties": {
+                  "html_step": {
+                    "description": "HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet.",
+                    "type": "object"
+                  },
                   "resources": {
                     "description": "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification.",
                     "type": "array"
@@ -354,7 +374,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "Request path or absolute URL; relative paths resolve against config.base_url.",
+                "description": "Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step).",
                 "type": "string"
               }
             },
@@ -414,6 +434,10 @@
               },
               "params": {
                 "properties": {
+                  "html_step": {
+                    "description": "HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet.",
+                    "type": "object"
+                  },
                   "resources": {
                     "description": "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification.",
                     "type": "array"
@@ -426,7 +450,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "Request path or absolute URL; relative paths resolve against config.base_url.",
+                "description": "Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step).",
                 "type": "string"
               }
             },
@@ -486,6 +510,10 @@
               },
               "params": {
                 "properties": {
+                  "html_step": {
+                    "description": "HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet.",
+                    "type": "object"
+                  },
                   "resources": {
                     "description": "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification.",
                     "type": "array"
@@ -498,7 +526,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "Request path or absolute URL; relative paths resolve against config.base_url.",
+                "description": "Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step).",
                 "type": "string"
               }
             },

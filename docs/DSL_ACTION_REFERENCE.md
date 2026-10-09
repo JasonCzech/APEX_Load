@@ -851,7 +851,7 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
@@ -859,6 +859,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
@@ -871,7 +872,7 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
@@ -879,6 +880,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
@@ -891,7 +893,7 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
@@ -899,6 +901,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
@@ -911,7 +914,7 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
@@ -919,6 +922,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
@@ -931,7 +935,7 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
@@ -939,6 +943,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
@@ -951,7 +956,7 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
@@ -959,6 +964,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
@@ -971,7 +977,7 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
@@ -979,6 +985,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
@@ -1023,7 +1030,7 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
@@ -1031,6 +1038,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
@@ -1043,7 +1051,7 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
@@ -1051,6 +1059,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
@@ -1063,7 +1072,7 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
@@ -1071,6 +1080,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
@@ -1083,7 +1093,7 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
@@ -1091,6 +1101,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
@@ -1103,7 +1114,7 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
@@ -1111,6 +1122,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
@@ -1123,7 +1135,7 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
@@ -1131,6 +1143,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
@@ -1143,7 +1156,7 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
@@ -1151,6 +1164,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
@@ -1718,7 +1732,7 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
@@ -1726,6 +1740,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
@@ -1738,7 +1753,7 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
@@ -1746,6 +1761,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
@@ -1758,7 +1774,7 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
@@ -1766,6 +1782,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
@@ -1778,7 +1795,7 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
@@ -1786,6 +1803,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
@@ -1798,7 +1816,7 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
@@ -1806,6 +1824,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
@@ -1818,7 +1837,7 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
@@ -1826,6 +1845,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
@@ -1838,7 +1858,7 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
 | `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
@@ -1846,6 +1866,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |

@@ -672,6 +672,8 @@ func optionalConfigBool(config map[string]any, key string) (bool, bool) {
 // idiomatic reset. When cookies are disabled the client has no jar and this is
 // a no-op.
 func (h *HTTP) ClearCookies(ctx context.Context) error {
+	// A cleared session also forgets the page it was on.
+	h.page.set(nil)
 	if h.client == nil || h.client.Jar == nil {
 		return nil
 	}

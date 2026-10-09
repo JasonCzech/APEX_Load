@@ -17,6 +17,10 @@ func validateHTTPSequenceActionIssues(index int, action Action) []string {
 		issues = append(issues, fmt.Sprintf("%s: %v", label, settingsErr))
 		return issues
 	}
+	if mode == HTTPSequenceConcurrent && httpSequenceHasHTMLStep(action.Params["requests"]) {
+		// Concurrent children cannot each resolve against "the current page".
+		issues = append(issues, fmt.Sprintf("%s: HTML-mode steps (params.html_step) cannot run in a concurrent http_sequence", label))
+	}
 	requests, ok := action.Params["requests"]
 	if !ok {
 		return []string{fmt.Sprintf("%s: http_sequence requires params.requests", label)}
@@ -115,6 +119,11 @@ func validateHTTPSequenceRequestIssues(label string, requestIndex int, request m
 		return []string{fmt.Sprintf("%s.params.requests[%d]: %s", label, requestIndex, BrunoRunnerRetiredMessage)}
 	}
 	var issues []string
+	if params, ok := request["params"].(map[string]any); ok {
+		if step, ok := params[httpprotocol.HTMLStepParam]; ok {
+			issues = append(issues, validateHTMLStepIssues(fmt.Sprintf("%s.params.requests[%d]", label, requestIndex), "http", step)...)
+		}
+	}
 	name := stringAnyValue(request["name"])
 	method := strings.ToUpper(strings.TrimSpace(firstNonEmptyString(stringAnyValue(request["method"]), stringAnyValue(request["type"]))))
 	target := stringAnyValue(request["target"])
@@ -332,4 +341,25 @@ func validateHTTPAssertionIssues(label string, assertions []Assertion) []string 
 		}
 	}
 	return issues
+}
+
+// httpSequenceHasHTMLStep reports whether any child request is an HTML-mode
+// step, whatever form the children are stored in.
+func httpSequenceHasHTMLStep(requests any) bool {
+	payload, err := json.Marshal(requests)
+	if err != nil {
+		return false
+	}
+	var children []struct {
+		Params map[string]any `json:"params"`
+	}
+	if json.Unmarshal(payload, &children) != nil {
+		return false
+	}
+	for _, child := range children {
+		if _, ok := child.Params[httpprotocol.HTMLStepParam]; ok {
+			return true
+		}
+	}
+	return false
 }

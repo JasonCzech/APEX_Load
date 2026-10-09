@@ -715,7 +715,13 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 
 		case "web_url", "web_submit_data", "web_submit_form", "web_custom_request", "web_rest", "web_service_call",
 			"web_link", "web_image", "web_image_check":
-			action, warnings := convertAction(fn, baseURL, currentTransaction, currentSubTransaction, opts, lastRequestURL)
+			var action *dsl.Action
+			var warnings []string
+			if isHTMLStepFunction(fn) {
+				action, warnings = convertHTMLStepAction(fn, currentTransaction, currentSubTransaction, opts)
+			} else {
+				action, warnings = convertAction(fn, baseURL, currentTransaction, currentSubTransaction, opts, lastRequestURL)
+			}
 			argumentGated := false
 			if action != nil {
 				var unknownArgs []string
@@ -727,7 +733,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			if opts.BaseURL != "" && action != nil && (strings.HasPrefix(action.Target, "http://") || strings.HasPrefix(action.Target, "https://")) {
 				overrideMissedTargets++
 			}
-			if contextURL := sourceRequestContextURL(fn, lastRequestURL); contextURL != "" && fn.Name != "web_image_check" {
+			if contextURL := sourceRequestContextURL(fn, lastRequestURL); contextURL != "" && fn.Name != "web_image_check" && !isHTMLStepFunction(fn) {
 				lastRequestURL = contextURL
 			}
 			if action != nil {

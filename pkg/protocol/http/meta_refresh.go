@@ -234,6 +234,7 @@ func (h *HTTP) metaRefreshClient() *HTTP {
 		traceparentSampled:         h.traceparentSampled,
 		authConfig:                 h.authConfig,
 		authHosts:                  h.authHosts,
+		page:                       h.page,
 		cache:                      h.cache,
 		cacheContentURLsOnly:       h.cacheContentURLsOnly,
 		cacheCheckNewerVersions:    h.cacheCheckNewerVersions,
