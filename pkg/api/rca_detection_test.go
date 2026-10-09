@@ -237,7 +237,7 @@ func TestRCADetectionInputFromSidecars(t *testing.T) {
 		gauge := analysis.MetricPoint{Source: "prom-1", MetricName: "cpu", Kind: analysis.KindGauge, Unit: "%", Quality: analysis.QualityValid, TimestampUTC: at, Value: value(40),
 			Dimensions: map[string]string{"pod": "api-1"}, Provider: &analysis.ProviderMeasurement{Name: monitorprovider.ProviderPrometheus, Mode: "evaluation_point", EvaluationStepSeconds: 10, Statistic: "value"}}
 		counter := gauge
-		counter.MetricName, counter.Kind = "requests_total", analysis.KindCounter
+		counter.MetricName, counter.Kind, counter.Unit = "requests_total", analysis.KindCounter, ""
 		unknown := gauge
 		unknown.Provider = &analysis.ProviderMeasurement{Name: "not-a-provider"}
 		points = append(points, gauge, counter, unknown)
@@ -276,14 +276,19 @@ func TestRCADetectionInputFromSidecars(t *testing.T) {
 		if s.Kind != rca.SeriesProvider {
 			continue
 		}
-		switch s.Observation {
-		case rca.ObservationSnapshot:
+		switch {
+		case strings.HasPrefix(s.ID, "monitor/prometheus/prom-1/cpu/"):
 			gauge++
-			if s.Bucket != 10*time.Second || len(s.Points) != 36 || !strings.HasPrefix(s.ID, "monitor/prometheus/prom-1/cpu/") || s.Evidence.Kind != "monitor_series" {
+			if s.Observation != rca.ObservationSnapshot || s.Bucket != 10*time.Second || len(s.Points) != 36 || s.Evidence.Kind != "monitor_series" {
 				t.Fatalf("gauge %+v", s)
 			}
-		case rca.ObservationCumulative:
+		case strings.HasPrefix(s.ID, "monitor/prometheus/prom-1/requests_total/"):
 			counter++
+			// A counter is read as the count it added per bucket between
+			// samples: the fixture's never moves.
+			if s.Observation != rca.ObservationInterval || s.Unit != "per 10 s" || s.Bucket != 10*time.Second || len(s.Points) != 35 || !s.Points[0].Valid || s.Points[0].Value != 0 {
+				t.Fatalf("counter %+v", s)
+			}
 		}
 	}
 	if gauge != 1 || counter != 1 || len(input.Levels) != 1 || input.Levels[0].VUsers != 5 {
@@ -293,13 +298,87 @@ func TestRCADetectionInputFromSidecars(t *testing.T) {
 	for _, l := range input.Limitations {
 		codes[l.Code] = true
 	}
-	if !codes[limitationMonitorSemanticsUnknown] || codes[limitationIntervalDistributionsReconstructed] || codes[limitationActionsJudged] {
+	if !codes[limitationMonitorSemanticsUnknown] || !codes[limitationCumulativeSeriesRated] || codes[limitationIntervalDistributionsReconstructed] || codes[limitationActionsJudged] {
 		t.Fatalf("limitations %+v", input.Limitations)
 	}
-	// The counter is excluded from detection with a limitation.
+	// Nothing is excluded from detection: the counter is judged as a rate.
 	_, detection, limitations := rca.Detect(input, rca.DefaultDetectParams, budgeter)
-	if detection.SeriesExcluded != 1 || !strings.Contains(limitationCodes(limitations), rca.LimitationCumulativeExcluded) {
+	if detection.SeriesExcluded != 0 || strings.Contains(limitationCodes(limitations), rca.LimitationCumulativeExcluded) {
 		t.Fatalf("%+v %+v", detection, limitations)
+	}
+}
+
+// A counter's samples become the count added per bucket: a jump between two
+// samples is that bucket's count, spacing wider than the bucket is scaled to
+// it, a reset is a gap, and a counter with one sample stays cumulative.
+func TestRateCumulativeSeries(t *testing.T) {
+	at := func(seconds int) time.Time { return exemplarFixtureStart.Add(time.Duration(seconds) * time.Second) }
+	counter := rca.Series{ID: "monitor/prometheus/src/restarts_total/abc", Kind: rca.SeriesProvider, Observation: rca.ObservationCumulative, Bucket: 10 * time.Second, Points: []rca.SeriesPoint{
+		{At: at(0), Value: 100, Valid: true}, {At: at(10), Value: 100, Valid: true}, {At: at(20), Value: 103, Valid: true}, {At: at(40), Value: 107, Valid: true}, {At: at(50), Value: 2, Valid: true}, {At: at(60), Value: 5, Valid: true}, {At: at(70), Valid: false}, {At: at(80), Value: 9, Valid: true},
+	}}
+	rated, ok := rateCumulativeSeries(counter)
+	if !ok || rated.Observation != rca.ObservationInterval || rated.Unit != "per 10 s" || len(rated.Points) != 7 {
+		t.Fatalf("%v %+v", ok, rated)
+	}
+	want := []struct {
+		value float64
+		valid bool
+	}{{0, true}, {3, true}, {2, true}, {0, false}, {3, true}, {0, false}, {0, false}}
+	for i, w := range want {
+		if p := rated.Points[i]; p.Valid != w.valid || (w.valid && math.Abs(p.Value-w.value) > 1e-9) || !p.At.Equal(counter.Points[i].At) {
+			t.Fatalf("point %d: %+v, want %+v", i, p, w)
+		}
+	}
+	bytes := rca.Series{Unit: "bytes", Observation: rca.ObservationCumulative, Points: []rca.SeriesPoint{{At: at(0), Value: 0, Valid: true}, {At: at(30), Value: 300, Valid: true}}}
+	if rated, ok := rateCumulativeSeries(bytes); !ok || rated.Unit != "bytes per 30 s" || rated.Bucket != 30*time.Second || rated.Points[0].Value != 300 {
+		t.Fatalf("inferred bucket: %v %+v", ok, rated)
+	}
+	if _, ok := rateCumulativeSeries(rca.Series{Observation: rca.ObservationCumulative, Points: counter.Points[:1]}); ok {
+		t.Fatal("one sample was rated")
+	}
+}
+
+// A transaction that first appears after the run began starts at its own
+// first interval: the intervals before it hold no throughput point, so its
+// appearance is not a step up from a baseline of zeros.
+func TestRCALateTransactionsStartWhenTheyAppear(t *testing.T) {
+	server, store := baselineTestServer(t)
+	record := exemplarArchiveFixture(t, server, store, "rca-run", nil)
+	var distributions []IntervalDistributionRecord
+	for i := 1; i <= 36; i++ {
+		transactions := map[string]IntervalDistributionMetric{"checkout": {Count: 10, P95: 120}}
+		if i >= 10 && i != 20 {
+			transactions["search"] = IntervalDistributionMetric{Count: 5, P95: 80}
+		}
+		distributions = append(distributions, IntervalDistributionRecord{Schema: intervalDistributionSchema, Timestamp: exemplarFixtureStart.Add(time.Duration(i) * 10 * time.Second), WindowSeconds: 10, Dimensions: map[string]map[string]IntervalDistributionMetric{"transaction": transactions}})
+	}
+	writeArchiveSidecar(t, record, intervalDistributionsArchiveFileName, distributions, func(m *RunArchiveManifest) { m.IntervalDistributionsFile = intervalDistributionsArchiveFileName })
+	manifest, _ := loadRunArchiveManifestFromRecord(record)
+	summaries, err := readAllArchiveSummaries(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := archiveDetectionInput(context.Background(), record, manifest, summaries, rca.ArrivalClosed, rca.NewBudgeter(rca.DefaultBudget, nil, nil), rca.DefaultBudget, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]rca.Series{}
+	for _, s := range input.Series {
+		byID[s.ID] = s
+	}
+	late := byID["transaction/search/throughput"]
+	if len(late.Points) != 27 || !late.Points[0].At.Equal(exemplarFixtureStart.Add(90*time.Second)) || len(byID["transaction/checkout/throughput"].Points) != 36 {
+		t.Fatalf("late series: %d points from %s; checkout %d", len(late.Points), late.Points[0].At, len(byID["transaction/checkout/throughput"].Points))
+	}
+	zeros := 0
+	for _, p := range late.Points {
+		if p.Valid && p.Value == 0 {
+			zeros++
+		}
+	}
+	// Only the interval it completed nothing in, after it appeared, is zero.
+	if zeros != 1 {
+		t.Fatalf("%d zero points", zeros)
 	}
 }
 

@@ -29,6 +29,7 @@ const (
 	limitationMonitorSemanticsUnknown            = "monitor_semantics_unknown"
 	limitationActionsJudged                      = "actions_judged"
 	limitationDetectionEvidenceUnreadable        = "detection_evidence_unreadable"
+	limitationCumulativeSeriesRated              = "cumulative_series_rated"
 )
 
 // rcaJointDimension is the archive dimension of joint (version 3) interval
@@ -204,7 +205,7 @@ func archiveDetectionInput(ctx context.Context, record *storage.RunArchiveRecord
 		limit = max(0, limit-len(transactions.series))
 	}
 	monitors := newRCASeriesReader(limit, budget.MaxSeriesPoints)
-	cut, unknown, err := readMonitorSeries(ctx, record, manifest, monitors, budgeter, observe)
+	cut, unknown, rated, err := readMonitorSeries(ctx, record, manifest, monitors, budgeter, observe)
 	jointSeries := joint.list()
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return input, ctxErr
@@ -214,6 +215,9 @@ func archiveDetectionInput(ctx context.Context, record *storage.RunArchiveRecord
 	}
 	if unknown > 0 {
 		input.Limitations = append(input.Limitations, rca.Limitation{Code: limitationMonitorSemanticsUnknown, Detail: fmt.Sprintf("%d monitor points came from providers that declare no observation semantics and were not judged", unknown)})
+	}
+	if rated > 0 {
+		input.Limitations = append(input.Limitations, rca.Limitation{Code: limitationCumulativeSeriesRated, Detail: fmt.Sprintf("%d counter series were read as the count added per bucket between samples; a counter reset is a gap", rated)})
 	}
 	if cut || monitors.droppedSeries > 0 {
 		input.Limitations = append(input.Limitations, rca.Limitation{Code: limitationDetectionEvidenceCut, Detail: fmt.Sprintf("the series budget or analysis budget left out monitor evidence (%d series)", monitors.droppedSeries)})
@@ -286,10 +290,13 @@ func (t *transactionSeries) templatesFor(name string, bucket time.Duration) (*tr
 	return created, true
 }
 
-// add records one interval. A key absent from a complete interval completed
-// nothing in it, so its throughput is zero there, including the intervals
-// before it first appeared.
-func (t *transactionSeries) add(r IntervalDistributionRecord, current distributionInterval, earlier []distributionInterval, bucket time.Duration) {
+// add records one interval. A key absent from a complete interval after it
+// first appeared completed nothing in it, so its throughput is zero there.
+// Before it first appeared it was not measured, so there is no point: a
+// group or request that starts later than the run begins at its own first
+// interval instead of climbing from a baseline of zeros, which would make
+// its appearance the run's largest anomaly.
+func (t *transactionSeries) add(r IntervalDistributionRecord, current distributionInterval, bucket time.Duration) {
 	present := r.Dimensions[t.dimension]
 	if current.complete {
 		for _, name := range t.names {
@@ -300,14 +307,7 @@ func (t *transactionSeries) add(r IntervalDistributionRecord, current distributi
 	}
 	for _, name := range slices.Sorted(maps.Keys(present)) {
 		metric := present[name]
-		templates, created := t.templatesFor(name, bucket)
-		if created {
-			for _, e := range earlier {
-				if e.complete {
-					t.reader.add(&templates.throughput, rca.SeriesPoint{At: e.start, Valid: true})
-				}
-			}
-		}
+		templates, _ := t.templatesFor(name, bucket)
 		counted := metric.Count > 0
 		t.reader.add(&templates.latency, rca.SeriesPoint{At: current.start, Value: metric.P95, Valid: counted && finiteNonNegative(metric.P95)})
 		errorRate := 0.0
@@ -351,7 +351,6 @@ func readTransactionSeries(ctx context.Context, record *storage.RunArchiveRecord
 	transactions := newTransactionSeries("transaction", scope, limit, maxPoints)
 	actions := newTransactionSeries("action", scope, limit, maxPoints)
 	joint := newTransactionSeries(rcaJointDimension, scope, limit, maxPoints)
-	var jointIntervals []distributionInterval
 	automatic := automaticIterationTransactions(manifest)
 	authored := func() bool {
 		for _, name := range transactions.names {
@@ -361,27 +360,26 @@ func readTransactionSeries(ctx context.Context, record *storage.RunArchiveRecord
 		}
 		return false
 	}
-	var intervals []distributionInterval
+	read := 0
 	emit := func(r IntervalDistributionRecord) error {
-		if len(intervals)%1000 == 999 && budgeter.Exhausted() {
+		if read%1000 == 999 && budgeter.Exhausted() {
 			return errRCADetectionStopped
 		}
+		read++
 		if r.WindowSeconds <= 0 || math.IsNaN(r.WindowSeconds) || math.IsInf(r.WindowSeconds, 0) {
 			return nil
 		}
 		bucket := time.Duration(r.WindowSeconds * float64(time.Second))
 		current := distributionInterval{start: r.Timestamp.UTC().Add(-bucket), complete: !r.Incomplete}
-		transactions.add(r, current, intervals, bucket)
+		transactions.add(r, current, bucket)
 		if r.EvidenceVersion >= 3 {
-			joint.add(r, current, jointIntervals, bucket)
-			jointIntervals = append(jointIntervals, current)
+			joint.add(r, current, bucket)
 		}
 		if actions != nil && authored() {
 			actions = nil
 		} else if actions != nil {
-			actions.add(r, current, intervals, bucket)
+			actions.add(r, current, bucket)
 		}
-		intervals = append(intervals, current)
 		return ctx.Err()
 	}
 	var err error
@@ -440,11 +438,13 @@ func finiteNonNegative(value float64) bool {
 }
 
 // readMonitorSeries groups the archived monitor points into one series per
-// provider query, metric and dimension set. It reports whether the budget
-// stopped the read and how many points had no declared semantics.
-func readMonitorSeries(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, reader *rcaSeriesReader, budgeter *rca.Budgeter, observe func(analysis.MetricPoint)) (bool, int, error) {
+// provider query, metric and dimension set, and reads each counter series
+// as the count added per bucket. It reports whether the budget stopped the
+// read, how many points had no declared semantics and how many counter
+// series were rated.
+func readMonitorSeries(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, reader *rcaSeriesReader, budgeter *rca.Budgeter, observe func(analysis.MetricPoint)) (bool, int, int, error) {
 	if manifest.MonitorEvidenceFile == "" {
-		return false, 0, nil
+		return false, 0, 0, nil
 	}
 	read, unknown := 0, 0
 	project := archiveIdentityScope(manifest).project
@@ -505,10 +505,60 @@ func readMonitorSeries(ctx context.Context, record *storage.RunArchiveRecord, ma
 		reader.add(template, rca.SeriesPoint{At: point.TimestampUTC.UTC(), Value: value, Valid: valid})
 		return nil
 	})
-	if errors.Is(err, errRCADetectionStopped) {
-		return true, unknown, nil
+	cut := errors.Is(err, errRCADetectionStopped)
+	if cut {
+		err = nil
 	}
-	return false, unknown, err
+	// A counter accumulates from an origin and cannot be compared bucket to
+	// bucket; what it counted in each bucket can.
+	rated := 0
+	for _, s := range reader.series {
+		if s.Observation != rca.ObservationCumulative {
+			continue
+		}
+		if derived, ok := rateCumulativeSeries(*s); ok {
+			*s = derived
+			rated++
+		}
+	}
+	return cut, unknown, rated, err
+}
+
+// rateCumulativeSeries turns a counter's samples into the count it added per
+// bucket between consecutive samples, each on the bucket its earlier sample
+// starts. Samples spaced wider or narrower than the series' bucket are
+// scaled to it. A sample below its predecessor is a counter reset, whose
+// bucket is a gap, as is a bucket beside an invalid sample. A series with
+// fewer than two samples stays cumulative, and is excluded.
+func rateCumulativeSeries(s rca.Series) (rca.Series, bool) {
+	points := slices.Clone(s.Points)
+	slices.SortStableFunc(points, func(a, b rca.SeriesPoint) int { return a.At.Compare(b.At) })
+	bucket := s.Bucket
+	if bucket <= 0 {
+		for i := 1; i < len(points); i++ {
+			if step := points[i].At.Sub(points[i-1].At); step > 0 && (bucket <= 0 || step < bucket) {
+				bucket = step
+			}
+		}
+	}
+	if bucket <= 0 || len(points) < 2 {
+		return s, false
+	}
+	out := make([]rca.SeriesPoint, 0, len(points)-1)
+	for i := 1; i < len(points); i++ {
+		previous, current := points[i-1], points[i]
+		point := rca.SeriesPoint{At: previous.At}
+		if dt := current.At.Sub(previous.At); previous.Valid && current.Valid && dt > 0 && current.Value >= previous.Value {
+			point.Value, point.Valid = (current.Value-previous.Value)*float64(bucket)/float64(dt), true
+		}
+		out = append(out, point)
+	}
+	unit := "per " + strconv.FormatFloat(bucket.Seconds(), 'f', -1, 64) + " s"
+	if base := strings.TrimSpace(s.Unit); base != "" && base != "1" {
+		unit = base + " " + unit
+	}
+	s.Points, s.Observation, s.Bucket, s.Unit = out, rca.ObservationInterval, bucket, unit
+	return s, true
 }
 
 // monitorSeriesKey is a cheap key over every field a point's measurement
