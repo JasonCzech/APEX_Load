@@ -62,7 +62,7 @@ var webFunctionCoverageDetail = map[string]webCoverageDetail{
 	"web_reg_add_cookie":             {"Cookie headers", "Registered cookie attached downstream."},
 	"web_remove_cookie":              {"cookie_set action (remove)", "Expires a cookie added with web_add_cookie; other names (or ALL) stop a registered cookie attaching downstream."},
 	"web_cleanup_cookies":            {"cookie_clear action", "Executable positional cookie clear."},
-	"web_set_user":                   {"config.http.auth (hosts-scoped)", "Basic credentials sent only to the host:port it names (config.http.auth.hosts); a second, different credential set is execution-gated."},
+	"web_set_user":                   {"config.http.auth (hosts-scoped)", "negotiate_any credentials answer the Basic, Digest, NTLM or Negotiate challenge of the host:port it names (config.http.auth.hosts) and are never sent before a challenge; a second, different credential set is execution-gated."},
 	"web_set_timeout":                {"config.http timeouts", "Connect/receive/SSL timeouts."},
 	"web_set_sockets_option":         {"config.http (TLS/conns)", "SSL version, keep-alive, max connections."},
 	"web_set_option":                 {"config.web_runtime / config.http", "Known options mapped to config; others preserved as attributes."},

@@ -1,9 +1,49 @@
 {
-  "description": "web_set_user credentials apply to the host it names; a request to another host must not carry them.",
-  "source": "VuGen 26.1 Function Reference: web_set_user (user name, password, host:port).",
+  "description": "web_set_user credentials answer the authentication challenge of the host it names (here Basic) and are sent only after that challenge; a request to another host never carries them, even when it is challenged.",
+  "source": "VuGen 26.1 Function Reference: web_set_user (user name, password, host:port; Basic, Digest, NTLM and Negotiate challenges).",
   "outcome": "replay",
+  "responses": [
+    {
+      "method": "GET",
+      "path": "/secure/home",
+      "status": 401,
+      "headers": {
+        "WWW-Authenticate": "Basic realm=\"secure\""
+      },
+      "body": "login required"
+    },
+    {
+      "method": "GET",
+      "path": "/secure/home",
+      "body": "welcome alice"
+    },
+    {
+      "method": "GET",
+      "path": "/public/asset",
+      "body": "asset"
+    }
+  ],
   "requests": [
-    {"method": "GET", "path": "/secure/home", "headers": {"Authorization": "Basic YWxpY2U6czNjcmV0"}},
-    {"method": "GET", "path": "/public/asset", "absent_headers": ["Authorization"]}
+    {
+      "method": "GET",
+      "path": "/secure/home",
+      "absent_headers": [
+        "Authorization"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/secure/home",
+      "headers": {
+        "Authorization": "Basic YWxpY2U6czNjcmV0"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/public/asset",
+      "absent_headers": [
+        "Authorization"
+      ]
+    }
   ]
 }

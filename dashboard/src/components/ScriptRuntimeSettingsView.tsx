@@ -1306,8 +1306,10 @@ export function ScriptRuntimeSettingsView({
                 <option value="basic">Basic</option>
                 <option value="bearer">Bearer Token</option>
                 <option value="ntlm">NTLM</option>
+                <option value="negotiate">Negotiate (NTLM)</option>
+                <option value="negotiate_any">Any challenge (Basic, Digest, NTLM, Negotiate)</option>
               </select></label>
-            {(script.config.http?.auth?.type === 'basic' || script.config.http?.auth?.type === 'ntlm') && (
+            {['basic', 'ntlm', 'negotiate', 'negotiate_any'].includes(script.config.http?.auth?.type || '') && (
               <>
                 <label><span>Username</span>
                   <input value={script.config.http?.auth?.username || ''}

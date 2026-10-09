@@ -53,7 +53,7 @@ func TestWebSetUserScopesCredentialsToHosts(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := convertSingleWebSource(t, "\t"+tt.body+"\n\tweb_url(\"home\", \"URL=https://shop.test/\", LAST);")
 			auth := result.Script.Config.HTTP.Auth
-			if auth.Username != "alice" || auth.Type != "basic" {
+			if auth.Username != "alice" || auth.Type != "negotiate_any" {
 				t.Fatalf("auth = %+v", auth)
 			}
 			if !reflect.DeepEqual(auth.Hosts, tt.hosts) {

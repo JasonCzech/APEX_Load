@@ -445,8 +445,8 @@ export function collectAuthoringIssues(script: ScriptDefinition): AuthoringIssue
     pushIssue(issues, { id: 'script:base_url', severity: 'error', message: scriptBaseURLError(script) })
   }
 
-  const authType = script.config.http?.auth?.type
-  if ((authType === 'basic' || authType === 'ntlm') && (!script.config.http?.auth?.username || !script.config.http?.auth?.password)) {
+  const authType = script.config.http?.auth?.type || ''
+  if (['basic', 'ntlm', 'negotiate', 'negotiate_any'].includes(authType) && (!script.config.http?.auth?.username || !script.config.http?.auth?.password)) {
     pushIssue(issues, {
       id: 'script:http-auth',
       severity: 'warning',

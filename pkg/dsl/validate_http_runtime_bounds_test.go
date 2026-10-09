@@ -16,7 +16,7 @@ func TestValidateHTTPRuntimeControlBounds(t *testing.T) {
 		want   string
 	}{
 		{name: "unsupported action method", mutate: func(script *Script) { script.Actions[0].Method = "PROPFIND" }, want: `unsupported HTTP method "PROPFIND"`},
-		{name: "unsupported action auth", mutate: func(script *Script) { script.Actions[0].Auth = &AuthConfig{Type: "ntlm"} }, want: "configure an external auth flow"},
+		{name: "unsupported action auth", mutate: func(script *Script) { script.Actions[0].Auth = &AuthConfig{Type: "kerberos"} }, want: "external auth flow"},
 		{name: "action timeout", mutate: func(script *Script) { script.Actions[0].TimeoutMs = MaxConfiguredProtocolTimeoutMS + 1 }, want: "timeout_ms must be between"},
 		{name: "action redirects", mutate: func(script *Script) { script.Actions[0].MaxRedirects = &tooManyRedirects }, want: "max_redirects must be between"},
 		{name: "SSE timeout", mutate: func(script *Script) {
@@ -163,7 +163,7 @@ func TestValidateHTTPAllowsUnsupportedAuthOnlyOnExecutionBlockedDraft(t *testing
 		Config:   ScriptConfig{BaseURL: "https://example.test"},
 		Actions: []Action{{
 			Name: "blocked", Type: "request", Method: "GET", Target: "/",
-			Auth:     &AuthConfig{Type: "ntlm"},
+			Auth:     &AuthConfig{Type: "kerberos"},
 			Metadata: map[string]any{"execution_blocker": "import_review_required"},
 		}},
 	}

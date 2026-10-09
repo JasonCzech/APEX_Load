@@ -891,7 +891,7 @@ type ProxyConfig struct {
 
 // AuthConfig defines default authentication applied to all requests.
 type AuthConfig struct {
-	Type     string `json:"type,omitempty"`     // "basic", "bearer", or "digest"; imported "ntlm"/"kerberos"/"negotiate" are review-only and fail closed at HTTP runtime
+	Type     string `json:"type,omitempty"`     // "basic", "bearer", "digest"; challenge-driven "ntlm", "negotiate" (NTLM inside Negotiate) and "negotiate_any" (answers Basic, Digest, NTLM or Negotiate challenges); "kerberos" fails closed
 	Username string `json:"username,omitempty"` // for basic/ntlm/digest
 	Password string `json:"password,omitempty"`
 	Token    string `json:"token,omitempty"`  // for bearer

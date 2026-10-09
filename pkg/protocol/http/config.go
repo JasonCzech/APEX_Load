@@ -849,10 +849,10 @@ func buildAuthConfig(config map[string]any) *protocol.AuthConfig {
 
 func validateAuthType(authType string) error {
 	switch strings.ToLower(strings.TrimSpace(authType)) {
-	case "", "none", "noauth", "inherit", "basic", "bearer", "digest":
+	case "", "none", "noauth", "inherit", "basic", "bearer", "digest", "ntlm", "negotiate", "negotiate_any":
 		return nil
-	case "ntlm", "kerberos", "negotiate":
-		return fmt.Errorf("unsupported HTTP auth type %q: configure an external auth flow or remove the auth setting", authType)
+	case "kerberos":
+		return fmt.Errorf("unsupported HTTP auth type %q: Kerberos tickets are not supported; use negotiate (Negotiate with NTLM) or an external auth flow", authType)
 	default:
 		return fmt.Errorf("unsupported HTTP auth type %q", authType)
 	}
@@ -886,7 +886,7 @@ func buildRedactedActionAuthHeader(auth *protocol.AuthConfig) string {
 		return ""
 	}
 	switch strings.ToLower(strings.TrimSpace(auth.Type)) {
-	case "basic", "ntlm":
+	case "basic", "ntlm", "negotiate", "negotiate_any":
 		return "Basic [REDACTED]"
 	case "bearer":
 		return "Bearer [REDACTED]"

@@ -21,7 +21,7 @@ to their `source_*` equivalents.
 | `metadata` | object |  | Free-form metadata; importers preserve source details here. |
 | `timeout_ms` | int |  | Per-action timeout override in milliseconds. |
 | `max_redirects` | int |  | Per-action redirect-policy override (-1 disables). |
-| `auth` | object |  | Per-action auth override: {type, username, password, token, domain}. |
+| `auth` | object |  | Per-action auth override: {type, username, password, token, domain}. HTTP types: basic (sent preemptively), bearer, digest, and the challenge-driven ntlm, negotiate (Negotiate carrying NTLM; domain prefixes the user) and negotiate_any (answers whichever Basic, Digest, NTLM or Negotiate challenge the server sends, as LoadRunner's web_set_user does; write DOMAIN\user for a domain). kerberos is not supported. |
 
 ## Engine actions (any protocol)
 

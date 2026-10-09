@@ -32,8 +32,10 @@ const (
 	AuthTypeNTLM      = "ntlm"
 	AuthTypeKerberos  = "kerberos"
 	AuthTypeNegotiate = "negotiate"
-	AuthTypeAWS       = "aws"
-	AuthTypeHawk      = "hawk"
+	// AuthTypeNegotiateAny answers whichever challenge the server sends.
+	AuthTypeNegotiateAny = "negotiate_any"
+	AuthTypeAWS          = "aws"
+	AuthTypeHawk         = "hawk"
 )
 
 var supportedMethods = [...]string{
@@ -405,6 +407,12 @@ func ValidateAuthWireValues(auth *protocol.AuthConfig) error {
 		if !httpguts.ValidHeaderFieldValue("Bearer " + auth.Token) {
 			return &AuthWireValueError{Field: "token"}
 		}
+	case AuthTypeNTLM, AuthTypeNegotiate, AuthTypeNegotiateAny:
+		// The credentials travel as Basic user:password into the handshake
+		// (and as Basic itself for negotiate_any), so the Basic rules apply.
+		if strings.TrimSpace(auth.Username) == "" || strings.Contains(auth.Username, ":") || !httpguts.ValidHeaderFieldValue(auth.Username) {
+			return &AuthWireValueError{Field: "username"}
+		}
 	case AuthTypeDigest:
 		// quoteDigestValue escapes quotes and backslashes, but control bytes
 		// would remain invalid in the eventual Authorization header.
@@ -713,7 +721,9 @@ func LookupAuthCapability(raw string) AuthCapability {
 		return AuthCapability{Type: AuthTypeBearer, Support: AuthExecutable, RequiresToken: true}
 	case AuthTypeDigest:
 		return AuthCapability{Type: AuthTypeDigest, Support: AuthExecutable, RequiresUsername: true, RequiresPassword: true, ChallengeResponse: true}
-	case AuthTypeNTLM, AuthTypeKerberos, AuthTypeNegotiate, AuthTypeAWS, AuthTypeHawk:
+	case AuthTypeNTLM, AuthTypeNegotiate, AuthTypeNegotiateAny:
+		return AuthCapability{Type: mode, Support: AuthExecutable, RequiresUsername: true, RequiresPassword: true, ChallengeResponse: true}
+	case AuthTypeKerberos, AuthTypeAWS, AuthTypeHawk:
 		return AuthCapability{Type: mode, Support: AuthReviewOnly}
 	default:
 		// Importers must retain unknown schemes as review-only evidence instead

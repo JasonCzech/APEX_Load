@@ -261,6 +261,6 @@ func CommonActionFields() []FieldSpec {
 		{Name: "metadata", Kind: FieldKindObject, Doc: "Free-form metadata; importers preserve source details here."},
 		{Name: "timeout_ms", Kind: FieldKindInt, Doc: "Per-action timeout override in milliseconds."},
 		{Name: "max_redirects", Kind: FieldKindInt, Doc: "Per-action redirect-policy override (-1 disables)."},
-		{Name: "auth", Kind: FieldKindObject, Doc: "Per-action auth override: {type, username, password, token, domain}."},
+		{Name: "auth", Kind: FieldKindObject, Doc: "Per-action auth override: {type, username, password, token, domain}. HTTP types: basic (sent preemptively), bearer, digest, and the challenge-driven ntlm, negotiate (Negotiate carrying NTLM; domain prefixes the user) and negotiate_any (answers whichever Basic, Digest, NTLM or Negotiate challenge the server sends, as LoadRunner's web_set_user does; write DOMAIN\\user for a domain). kerberos is not supported."},
 	}
 }

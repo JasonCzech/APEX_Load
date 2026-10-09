@@ -1256,6 +1256,8 @@ export default function RuntimeSettingsGroupEditor({
                       <option value="basic">Basic</option>
                       <option value="bearer">Bearer</option>
                       <option value="ntlm">NTLM</option>
+                      <option value="negotiate">Negotiate (NTLM)</option>
+                      <option value="negotiate_any">Any challenge (Basic, Digest, NTLM, Negotiate)</option>
                       <option value="digest">Digest</option>
                     </select>
                   </label>

@@ -864,9 +864,9 @@ Action()
 		t.Fatalf("unsupported funcs = %#v skipped=%d, want none", result.Stats.UnsupportedFuncs, result.Stats.Skipped)
 	}
 	auth := result.Script.Config.HTTP.Auth
-	if auth.Type != "basic" || auth.Username != "perfuser" ||
+	if auth.Type != "negotiate_any" || auth.Username != "perfuser" ||
 		auth.Password != "perfpass" {
-		t.Fatalf("http auth = %#v, want web_set_user basic auth", auth)
+		t.Fatalf("http auth = %#v, want web_set_user challenge-driven auth", auth)
 	}
 	requirements := result.ProtectedRequirements.Take()
 	if len(requirements) != 0 {
@@ -911,8 +911,8 @@ func TestConvertPreservesWebSetUserAcrossRuntimeConfigMerge(t *testing.T) {
 		t.Fatalf("convert error: %v", err)
 	}
 	auth := result.Script.Config.HTTP.Auth
-	if auth.Type != "basic" || auth.Username != "perfuser" || auth.Password != "perfpass" {
-		t.Fatalf("http auth = %#v, want web_set_user basic auth after config merge", auth)
+	if auth.Type != "negotiate_any" || auth.Username != "perfuser" || auth.Password != "perfpass" {
+		t.Fatalf("http auth = %#v, want web_set_user challenge-driven auth after config merge", auth)
 	}
 	if len(auth.Hosts) != 1 || auth.Hosts[0] != "secure.example.com:443" {
 		t.Fatalf("auth hosts = %#v, want the web_set_user host scope after config merge", auth.Hosts)

@@ -460,6 +460,20 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	if digestAuth != nil && (requestHeaderKeyPresent(req.Header, "Authorization") || authorizationAuthored) {
 		digestAuth = nil
 	}
+	integratedAuth := h.authConfig
+	if actionAuthOverride {
+		integratedAuth = action.Auth
+	}
+	if integratedAuth != nil && IsIntegratedAuthType(integratedAuth.Type) && !authorizationAuthored &&
+		(actionAuthOverride || authHostScopesAllow(h.authHosts, targetURL)) {
+		var integratedDigest *protocol.AuthConfig
+		req, integratedDigest = applyIntegratedAuth(req, integratedAuth)
+		if integratedDigest != nil {
+			digestAuth = integratedDigest
+		}
+		appliedTypedAuthHeader = req.Header.Get("Authorization")
+		typedAuthApplied = true
+	}
 	typedAuthApplied = typedAuthApplied && req.Header.Get("Authorization") == appliedTypedAuthHeader
 	redactedAuthConfig := h.authConfig
 	if actionAuthOverride {

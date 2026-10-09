@@ -22,9 +22,10 @@ func TestNormalizeAndLookupAuthCapability(t *testing.T) {
 		{"basic", AuthTypeBasic, AuthExecutable},
 		{"Bearer", AuthTypeBearer, AuthExecutable},
 		{"digest", AuthTypeDigest, AuthExecutable},
-		{"ntlm", AuthTypeNTLM, AuthReviewOnly},
+		{"ntlm", AuthTypeNTLM, AuthExecutable},
 		{"Kerberos", AuthTypeKerberos, AuthReviewOnly},
-		{"negotiate", AuthTypeNegotiate, AuthReviewOnly},
+		{"negotiate", AuthTypeNegotiate, AuthExecutable},
+		{"Negotiate_Any", AuthTypeNegotiateAny, AuthExecutable},
 		{"aws", AuthTypeAWS, AuthReviewOnly},
 		{"hawk", AuthTypeHawk, AuthReviewOnly},
 		{"future-auth", "future-auth", AuthReviewOnly},
@@ -72,12 +73,12 @@ func TestAuthCapabilityFieldRequirements(t *testing.T) {
 
 func TestValidateAuthTypePreservesRuntimeBehavior(t *testing.T) {
 	t.Parallel()
-	for _, mode := range []string{"", "none", "noauth", "inherit", "basic", "bearer", "digest"} {
+	for _, mode := range []string{"", "none", "noauth", "inherit", "basic", "bearer", "digest", "ntlm", "negotiate", "negotiate_any"} {
 		if err := ValidateAuthType(mode); err != nil {
 			t.Fatalf("ValidateAuthType(%q): %v", mode, err)
 		}
 	}
-	if err := ValidateAuthType("ntlm"); err == nil || !strings.Contains(err.Error(), "external auth flow") {
+	if err := ValidateAuthType("kerberos"); err == nil || !strings.Contains(err.Error(), "external auth flow") {
 		t.Fatalf("review-only auth error = %v", err)
 	}
 	if err := ValidateAuthType("unknown"); err == nil || !strings.Contains(err.Error(), "unsupported HTTP auth type") {

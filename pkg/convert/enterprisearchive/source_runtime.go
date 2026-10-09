@@ -79,7 +79,10 @@ func applySourceWebSetUserConfig(result *ConvertResult, fn ParsedFunction) map[s
 	existing := result.Script.Config.HTTP.Auth
 	switch {
 	case existing.Username == "" && existing.Token == "":
-		auth := dsl.AuthConfig{Type: "basic", Username: username, Password: password}
+		// negotiate_any answers whichever challenge the server sends (Basic,
+		// Digest, NTLM or Negotiate), as LoadRunner's web_set_user does, and
+		// sends nothing before a challenge.
+		auth := dsl.AuthConfig{Type: "negotiate_any", Username: username, Password: password}
 		if scoped {
 			auth.Hosts = []string{scope}
 		}
