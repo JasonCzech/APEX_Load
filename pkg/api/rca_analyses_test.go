@@ -3,7 +3,9 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -300,11 +302,83 @@ func TestRCAAnalysisWaitsForArchiveFinalization(t *testing.T) {
 	if reply := timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{}); reply.Code != http.StatusConflict || !strings.Contains(reply.Body.String(), "finalized") {
 		t.Fatalf("finalizing archive: %d %s", reply.Code, reply.Body.String())
 	}
+	// A finalization that has failed an attempt may never succeed; the
+	// request does not wait on its retries.
+	job, err := store.GetArchiveFinalizationJob("rca-run")
+	if err != nil || job == nil {
+		t.Fatal(job, err)
+	}
+	if err := store.MarkArchiveFinalizationJobFailedIfToken("rca-run", job.IntentToken, errors.New("object store unavailable"), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	stuck := timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{})
+	if stuck.Code != http.StatusAccepted {
+		t.Fatalf("stuck finalization: %d %s", stuck.Code, stuck.Body.String())
+	}
+	queued := decodeRCAResponse(t, stuck.Body.Bytes())
 	if err := store.DeleteArchiveFinalizationJob("rca-run"); err != nil {
 		t.Fatal(err)
 	}
-	if reply := timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{}); reply.Code != http.StatusAccepted {
-		t.Fatalf("settled archive: %d %s", reply.Code, reply.Body.String())
+	// Once settled, the same request is answered by the analysis already queued.
+	settled := timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{})
+	if settled.Code != http.StatusOK || decodeRCAResponse(t, settled.Body.Bytes()).AnalysisID != queued.AnalysisID {
+		t.Fatalf("settled archive: %d %s", settled.Code, settled.Body.String())
+	}
+}
+
+// Finalize and every adjunct refresh after it rewrite the test manifest, the
+// test notes and the archive manifest. The evidence digest an analysis
+// freezes reads through those rewrites, while the whole-manifest digest moves
+// with each; so an analysis requested at publication stays current, and the
+// same request after a refresh is the same analysis.
+func TestRCAEvidenceDigestSurvivesAdjunctRefresh(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
+	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", archiveBackendFilesystem)
+	t.Setenv(envArchiveAdjunctMinFreeBytes, "1")
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	run, record := createArchiveFinalizationTest(t, store, "rca-adjuncts", root)
+	runner := NewTestRunner(1, nil, store)
+	digests := func(stage string) (string, string) {
+		manifest, err := loadRunArchiveManifestFromRecord(record)
+		if err != nil {
+			t.Fatalf("%s: %v", stage, err)
+		}
+		evidence, err := rcaEvidenceDigest(manifest)
+		if err != nil {
+			t.Fatalf("%s: %v", stage, err)
+		}
+		whole, err := rcaManifestDigest(record)
+		if err != nil {
+			t.Fatalf("%s: %v", stage, err)
+		}
+		return evidence, whole
+	}
+	published, publishedManifest := digests("published")
+	if err := runner.persistTestManifestArtifact(run, record); err != nil {
+		t.Fatal(err)
+	}
+	finalized, finalizedManifest := digests("finalized")
+	if err := store.CreateTestNote(&storage.TestNote{ID: "note-1", TestID: run.ID, Body: "written after the analysis was requested"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runner.persistTestManifestArtifact(run, record); err != nil {
+		t.Fatal(err)
+	}
+	refreshed, refreshedManifest := digests("refreshed")
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil || manifest.TestNotesFile == "" || manifest.TestManifestFile == "" {
+		t.Fatalf("adjuncts not written: %v %+v", err, manifest)
+	}
+	if finalizedManifest == publishedManifest || refreshedManifest == finalizedManifest {
+		t.Fatalf("the manifest was not rewritten: %s %s %s", publishedManifest, finalizedManifest, refreshedManifest)
+	}
+	if finalized != published || refreshed != published {
+		t.Fatalf("the evidence digest moved with the adjuncts: published %s, finalized %s, refreshed %s", published, finalized, refreshed)
 	}
 }
 

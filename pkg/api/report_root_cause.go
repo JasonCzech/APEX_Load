@@ -130,7 +130,11 @@ func reportBrowserBaselineSummary(b *ReportBrowserBaseline) string {
 	if b.Baseline != "" {
 		against = "baseline run " + b.Baseline
 	}
-	return fmt.Sprintf("Browser baseline (%s, %s): %d cohorts compared with %s at the same load, %d anomalies, %d unscored.", b.Version, strings.ToLower(rcaHumanize(b.Status)), b.Compared, against, b.Anomalies, b.Unscored)
+	anomalies := "anomalies"
+	if b.Anomalies == 1 {
+		anomalies = "anomaly"
+	}
+	return fmt.Sprintf("Browser baseline (%s, %s): %d cohort%s compared with %s at the same load, %d %s, %d unscored.", b.Version, strings.ToLower(rcaHumanize(b.Status)), b.Compared, pluralSuffix(b.Compared), against, b.Anomalies, anomalies, b.Unscored)
 }
 
 // ReportRootCauseHypothesis is one ranked explanation: a v2 hypothesis or a

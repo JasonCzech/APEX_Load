@@ -107,7 +107,7 @@ func TestRootCauseSectionRendersOneModelInEveryFormat(t *testing.T) {
 		extra []string
 	}{
 		{"v2", func(*RunArchiveReport) *ReportRootCause { return &v2 }, "Resource pressure", []string{"CPU stays below saturation while latency rises", "Contradicting evidence",
-			"2 cohorts compared with baseline run base-run at the same load, 1 anomalies, 1 unscored", "p75 3100 ms, higher than the baseline"}},
+			"2 cohorts compared with baseline run base-run at the same load, 1 anomaly, 1 unscored", "p75 3100 ms, higher than the baseline"}},
 		{"v1", func(r *RunArchiveReport) *ReportRootCause {
 			view := reportRootCauseFromV1(buildRunRootCauseSummary("matrix-run", r))
 			if len(view.Hypotheses) == 0 {

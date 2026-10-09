@@ -279,14 +279,18 @@ func rcaArchiveDigest(record *storage.RunArchiveRecord) (string, error) {
 // rcaArchiveFinalizing reports whether the run's archive is still being
 // finalized or refreshed. The sidecars and manifest that work publishes would
 // change the evidence an analysis requested now reads, so the request waits
-// instead of failing when it runs.
+// instead of failing when it runs. A finalization that has already failed an
+// attempt is retried a minute at a time and may never succeed, so the
+// request does not wait on it: the archive is analyzed as it stands, and a
+// retry that changes the evidence fails the analysis as archive-changed,
+// which can be requested again.
 func (s *Server) rcaArchiveFinalizing(testID string) bool {
 	if s.runner == nil {
 		return false
 	}
 	if outbox := s.runner.archiveFinalizationOutbox(); outbox != nil {
 		if job, err := outbox.GetArchiveFinalizationJob(testID); err == nil && job != nil {
-			return true
+			return strings.TrimSpace(job.LastError) == ""
 		}
 	}
 	if refresh := s.runner.archiveRefreshOutbox(); refresh != nil {
