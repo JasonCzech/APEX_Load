@@ -239,6 +239,18 @@ func materializeMultipart(body Body, identity string) (Body, error) {
 	return body, nil
 }
 
+// MaterializeMultipart serializes ordered parts the way the request
+// finalizer does: a boundary derived deterministically from identity (or the
+// one mediaType names), part headers in order, and the final media type with
+// its boundary parameter.
+func MaterializeMultipart(mediaType string, parts []MultipartPart, identity string) ([]byte, string, error) {
+	body, err := materializeMultipart(Body{Kind: BodyMultipart, MediaType: mediaType, Multipart: &MultipartBody{Parts: parts}}, identity)
+	if err != nil {
+		return nil, "", err
+	}
+	return body.Payload, body.MediaType, nil
+}
+
 func multipartMediaBoundary(mediaType string) (string, error) {
 	mediaType = strings.TrimSpace(mediaType)
 	if mediaType == "" {

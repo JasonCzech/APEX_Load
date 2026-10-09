@@ -1,6 +1,38 @@
 {
-  "description": "Multipart upload with a file part. Not reproduced yet (WP1.2 adds body_multipart), so the import must be gated, never sent with a wrong body.",
-  "source": "VuGen 26.1 Function Reference: web_submit_data (EncType=multipart/form-data, File=Yes, ContentType).",
-  "outcome": "gated",
-  "gate_reason_codes": ["web_submit_data_itemdata_encoding_unsupported"]
+  "description": "Multipart upload: a text field with a parameter, a text file, a binary file, and a FilePath= file sent under the Value= filename. Parts are compared by name, filename, Content-Type and bytes; the boundary is the sender's own.",
+  "source": "VuGen 26.1 Function Reference: web_submit_data (EncType=multipart/form-data; ITEMDATA File=Yes, FilePath, ContentType).",
+  "outcome": "replay",
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/upload",
+      "header_contains": {
+        "Content-Type": "multipart/form-data; boundary="
+      },
+      "multipart": [
+        {
+          "name": "description",
+          "body": "quarterly report Q3"
+        },
+        {
+          "name": "file",
+          "filename": "report.txt",
+          "content_type": "text/plain",
+          "body": "quarterly numbers\n"
+        },
+        {
+          "name": "logo",
+          "filename": "logo.bin",
+          "content_type": "application/octet-stream",
+          "body": "\u0000\u0001\u0002PNG"
+        },
+        {
+          "name": "summary",
+          "filename": "summary.txt",
+          "content_type": "text/plain",
+          "body": "quarterly numbers\n"
+        }
+      ]
+    }
+  ]
 }

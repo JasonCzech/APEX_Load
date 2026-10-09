@@ -63,7 +63,8 @@ func TestWebSubmitDataUnsupportedEncodingsArePreservedAndGated(t *testing.T) {
 		encType string
 		extra   string
 	}{
-		{name: "multipart", encType: "multipart/form-data"},
+		{name: "multipart with an encrypted value", encType: "multipart/form-data", extra: `, "EncryptedValue=x"`},
+		{name: "multipart with a transforming transfer encoding", encType: "multipart/form-data", extra: `, "ContentTransferEncoding=base64"`},
 		{name: "json", encType: "application/json"},
 		{name: "raw", encType: "raw"},
 		{name: "explicit empty", encType: ""},

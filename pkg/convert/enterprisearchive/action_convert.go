@@ -151,7 +151,15 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 		action.Metadata["body_gated_by_secret"] = true
 		importreview.ApplyToAction(action, []importreview.Finding{{Code: "restored_body_required", ReasonCode: "restored_body_required", Severity: diag.Blocker, Gate: importreview.GateExecution, Source: "enterprise_script_archive", SourceRef: fmt.Sprintf("%s:%d", fn.Filename, fn.LineNumber), Resolution: "restore_body", Detail: "Supply the restored body or a project secret containing it."}})
 	}
-	if reason := strings.TrimSpace(fn.itemDataReviewReason); reason != "" {
+	multipartRebuilt, multipartReason, multipartFindings := rebuildSourceMultipart(action, fn, opts)
+	if len(multipartFindings) > 0 {
+		action.Body = ""
+		action.BodyEncoding = ""
+		deleteHeaderCaseInsensitive(action.Headers, "Content-Type")
+		action.HeaderList = filterHeaderListCaseInsensitive(action.HeaderList, "Content-Type")
+		action.Metadata["source_itemdata_encoding"] = "review_required"
+		importreview.ApplyToAction(action, multipartFindings)
+	} else if reason := strings.TrimSpace(fn.itemDataReviewReason); reason != "" && !multipartRebuilt {
 		// The source review retains the original ITEMDATA call. Do not fabricate a
 		// raw, JSON, or multipart body from only the Name/Value subset and do not
 		// advertise its EncType on an empty/differently serialized payload.
@@ -163,11 +171,15 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 		if fn.LineNumber > 0 {
 			location = fmt.Sprintf("%s:%d", location, fn.LineNumber)
 		}
+		detail := "The source ITEMDATA encoding or field shape cannot be serialized faithfully as an APEX URL-encoded body; rebuild the request body before execution."
+		if multipartReason != "" {
+			detail = "The multipart ITEMDATA cannot be serialized exactly: " + multipartReason + "; rebuild the request body before execution."
+		}
 		importreview.ApplyToAction(action, []importreview.Finding{{
 			Code:       "import_review_required",
 			Severity:   diag.Blocker,
 			Element:    "web_submit_data ITEMDATA serialization",
-			Detail:     "The source ITEMDATA encoding or field shape cannot be serialized faithfully as an APEX URL-encoded body; rebuild the request body before execution.",
+			Detail:     detail,
 			Location:   location,
 			Source:     "enterprise_script_archive",
 			ReasonCode: reason,

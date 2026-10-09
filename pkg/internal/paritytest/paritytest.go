@@ -20,6 +20,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -90,6 +92,17 @@ type ExpectedRequest struct {
 	Body         *string        `json:"body,omitempty"`
 	BodyBase64   *string        `json:"body_base64,omitempty"`
 	BodyContains []string       `json:"body_contains,omitempty"`
+	// Multipart compares a multipart body part by part. The boundary is not
+	// compared: it is generated per sender and carries no meaning.
+	Multipart []ExpectedPart `json:"multipart,omitempty"`
+}
+
+// ExpectedPart is one multipart part, in order.
+type ExpectedPart struct {
+	Name        string `json:"name"`
+	FileName    string `json:"filename,omitempty"`
+	ContentType string `json:"content_type,omitempty"`
+	Body        string `json:"body"`
 }
 
 // Response is a scripted fixture response. Responses for the same method and
@@ -413,7 +426,53 @@ func (s *Server) compareOne(n int, want ExpectedRequest, got Recorded) []string 
 			add("body does not contain %q", s.expand(fragment))
 		}
 	}
+	if len(want.Multipart) > 0 {
+		for _, problem := range compareMultipart(got, want.Multipart, s.expand) {
+			add("%s", problem)
+		}
+	}
 	return problems
+}
+
+func compareMultipart(got Recorded, want []ExpectedPart, expand func(string) string) []string {
+	mediaType, params, err := mime.ParseMediaType(got.Header.Get("Content-Type"))
+	if err != nil || !strings.HasPrefix(mediaType, "multipart/") || params["boundary"] == "" {
+		return []string{fmt.Sprintf("Content-Type %q is not multipart with a boundary", got.Header.Get("Content-Type"))}
+	}
+	reader := multipart.NewReader(bytes.NewReader(got.Body), params["boundary"])
+	var problems []string
+	for index := 0; ; index++ {
+		part, err := reader.NextRawPart()
+		if err == io.EOF {
+			if index != len(want) {
+				problems = append(problems, fmt.Sprintf("multipart has %d part(s), want %d", index, len(want)))
+			}
+			return problems
+		}
+		if err != nil {
+			return append(problems, fmt.Sprintf("multipart part %d is malformed: %v", index+1, err))
+		}
+		data, err := io.ReadAll(part)
+		if err != nil {
+			return append(problems, fmt.Sprintf("multipart part %d is malformed: %v", index+1, err))
+		}
+		if index >= len(want) {
+			continue
+		}
+		expected := want[index]
+		if part.FormName() != expected.Name {
+			problems = append(problems, fmt.Sprintf("part %d name = %q, want %q", index+1, part.FormName(), expected.Name))
+		}
+		if part.FileName() != expected.FileName {
+			problems = append(problems, fmt.Sprintf("part %d filename = %q, want %q", index+1, part.FileName(), expected.FileName))
+		}
+		if contentType := part.Header.Get("Content-Type"); contentType != expected.ContentType {
+			problems = append(problems, fmt.Sprintf("part %d Content-Type = %q, want %q", index+1, contentType, expected.ContentType))
+		}
+		if string(data) != expand(expected.Body) {
+			problems = append(problems, fmt.Sprintf("part %d body = %q, want %q", index+1, truncate(string(data)), truncate(expand(expected.Body))))
+		}
+	}
 }
 
 func truncate(value string) string {

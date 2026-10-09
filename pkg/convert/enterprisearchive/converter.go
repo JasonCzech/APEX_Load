@@ -819,7 +819,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 					mappingStatus = "review_only"
 					mappingNotes = fmt.Sprintf("Request argument is produced by %s(...); APEX has no verified decoder for this payload; supply a restored body through protected import repair — the action requires manual review.", metadataString(action.Metadata, "masked_body_function"))
 					mappingMode = SourceFunctionSupportReviewOnly
-				} else if fn.itemDataReviewReason != "" {
+				} else if metadataString(action.Metadata, "source_itemdata_encoding") == "review_required" {
 					mappingStatus = "review_only"
 					mappingNotes = "ITEMDATA uses an encoding or field shape that cannot be serialized faithfully; the source is preserved and execution is blocked until the request body is rebuilt."
 					mappingMode = SourceFunctionSupportReviewOnly
