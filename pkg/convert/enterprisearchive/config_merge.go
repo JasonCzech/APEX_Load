@@ -180,7 +180,7 @@ func isEmptyPacingConfig(cfg dsl.PacingConfig) bool {
 }
 
 func isEmptyRunLogicConfig(cfg dsl.RunLogicConfig) bool {
-	return cfg.Iterations == 0 && cfg.AutoTransactions == "" && cfg.BlockScheduling == "" && len(cfg.ActionSequence) == 0
+	return cfg.Iterations == 0 && cfg.AutoTransactions == "" && cfg.BlockScheduling == "" && len(cfg.ActionSequence) == 0 && len(cfg.Blocks) == 0
 }
 
 func isEmptyLogConfig(cfg dsl.LogConfig) bool {

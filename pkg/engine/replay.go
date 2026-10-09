@@ -468,7 +468,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 			}
 		}
 		if shouldContinue {
-			shouldContinue = runReplayPhase(ctx, vu, script.Actions, "action", continueOnError, opts.IgnoreThinkTime, globalThinkCfg, report, onProgress, opts.DebugController)
+			shouldContinue = runReplayPhaseInOrder(ctx, vu, script.Actions, vu.iterationOrder(), "action", continueOnError, opts.IgnoreThinkTime, globalThinkCfg, report, onProgress, opts.DebugController)
 		}
 	}
 	vu.stopAllAsyncConversations(ctx, "replay end")
@@ -653,8 +653,33 @@ func runReplayPhase(
 	onProgress func(ReplayProgressEvent),
 	debugController ReplayDebugController,
 ) bool {
+	return runReplayPhaseInOrder(ctx, vu, actions, nil, phase, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
+}
+
+// runReplayPhaseInOrder runs the actions at the given indexes (all of them,
+// in order, when order is nil); run-logic blocks choose the order.
+func runReplayPhaseInOrder(
+	ctx context.Context,
+	vu *VUser,
+	actions []dsl.Action,
+	order []int,
+	phase string,
+	continueOnError bool,
+	ignoreThinkTime bool,
+	globalThinkCfg protocol.ThinkTimeConfig,
+	report *ReplayReport,
+	onProgress func(ReplayProgressEvent),
+	debugController ReplayDebugController,
+) bool {
 	defer vu.pushReplayRuntimeFrame(ReplayRuntimeFrame{Kind: "phase", Phase: phase, ActionIndex: -1})()
-	for actionIndex, action := range actions {
+	if order == nil {
+		order = make([]int, len(actions))
+		for index := range order {
+			order[index] = index
+		}
+	}
+	for _, actionIndex := range order {
+		action := actions[actionIndex]
 		leafOrdinal := 0
 		flow, abort := expandReplayAction(ctx, vu, action, phase, actionIndex, 0, nil, nil, &leafOrdinal, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
 		if abort {

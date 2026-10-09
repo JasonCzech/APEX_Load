@@ -772,6 +772,9 @@ type RunLogicConfig struct {
 	AutoTransactions string   `json:"auto_transactions,omitempty"` // "none" (default), "per_action", "per_iteration"
 	BlockScheduling  string   `json:"block_scheduling,omitempty"`  // "sequential", "random", "percentage"
 	ActionSequence   []string `json:"action_sequence,omitempty"`   // e.g. ["init", "action", "teardown"]
+	// Blocks replaces the fixed order of script.actions with LoadRunner run
+	// logic (see run_logic_blocks.go).
+	Blocks []RunLogicBlock `json:"blocks,omitempty"`
 }
 
 // LogConfig controls per-VUser logging verbosity.

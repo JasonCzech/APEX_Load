@@ -8950,6 +8950,50 @@
       },
       "type": "object"
     },
+    "RunLogicBlock": {
+      "additionalProperties": false,
+      "properties": {
+        "children": {
+          "items": {
+            "$ref": "#/$defs/RunLogicChild"
+          },
+          "type": "array"
+        },
+        "iterations": {
+          "maximum": 100000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mode": {
+          "enum": [
+            "sequential",
+            "random",
+            "percentage"
+          ],
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "RunLogicChild": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "block": {
+          "$ref": "#/$defs/RunLogicBlock"
+        },
+        "weight": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "RunLogicConfig": {
       "additionalProperties": false,
       "properties": {
@@ -8964,6 +9008,12 @@
         },
         "block_scheduling": {
           "type": "string"
+        },
+        "blocks": {
+          "items": {
+            "$ref": "#/$defs/RunLogicBlock"
+          },
+          "type": "array"
         },
         "global_iterations": {
           "type": "integer"

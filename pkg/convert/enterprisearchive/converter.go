@@ -104,6 +104,9 @@ type ConvertOptions struct {
 	// projection runs only after parameter files have been attached and known
 	// source parameters have been rewritten to {{param.*}} references.
 	deferArchiveFinalization bool
+	// runLogicActionNames maps action files to their run-logic action names
+	// (see tagRunLogicActions).
+	runLogicActionNames map[string]string
 	// Render lr_unmask(...) request bodies as governed secret references. Archive
 	// imports enable this so payload bytes never leak while operators get a
 	// re-provisioning handle; lower-level conversions keep opaque bodies empty.
@@ -1086,6 +1089,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	if opts.RuntimeSettings != nil {
 		mergeScriptConfig(&result.Script.Config, opts.RuntimeSettings)
 	}
+	tagRunLogicActions(result.Script, opts.runLogicActionNames)
 	for _, fn := range sourceRuntimeControls {
 		reapplySourceRuntimeControlConfig(result, fn)
 	}

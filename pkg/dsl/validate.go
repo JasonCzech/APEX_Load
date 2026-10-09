@@ -2112,6 +2112,7 @@ func validateWebRuntimeIssues(script *Script) []string {
 			issues = append(issues, fmt.Sprintf("config.run_logic.action_sequence[%d] must be init, action, teardown, vuser_init, or vuser_end", index))
 		}
 	}
+	issues = append(issues, validateRunLogicBlocks(script)...)
 
 	for key := range script.Config.WebRuntime.AdditionalAttributes {
 		if strings.TrimSpace(key) == "" {

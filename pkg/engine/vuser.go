@@ -1119,7 +1119,7 @@ func (vu *VUser) Run(ctx context.Context) {
 		// stray break/continue with no enclosing control_loop is a no-op that
 		// proceeds to the next action — matching the replay path's runReplayPhase.
 	actions:
-		for _, action := range vu.Script.Actions {
+		for _, action := range vu.iterationActions() {
 			switch runOne(action, 0) {
 			case flowTeardown:
 				if iterationExitRequested {

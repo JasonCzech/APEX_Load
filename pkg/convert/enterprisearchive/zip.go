@@ -488,6 +488,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		opts.UseMaskedBodySecretReferences = true
 		opts.deferArchiveFinalization = true
 		opts.archiveFiles = files
+		opts.runLogicActionNames = runLogicActionNames(projectConfig)
 		result, convertErr = Convert(parsedActions, opts)
 		if result != nil {
 			result.DetectedProtocol = &detected

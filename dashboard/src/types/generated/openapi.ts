@@ -915,6 +915,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -4359,6 +4360,12 @@ export interface operations {
               "action_sequence"?: Array<string>;
               "auto_transactions"?: string;
               "block_scheduling"?: string;
+              "blocks"?: Array<{
+                "children"?: Array<Record<string, unknown>>;
+                "iterations"?: number;
+                "mode"?: string;
+                "name"?: string;
+              }>;
               "global_iterations"?: number;
               "iterations"?: number;
               "max_in_flight"?: number;
@@ -4726,6 +4733,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -5200,6 +5208,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -6020,6 +6029,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -6742,6 +6752,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -12031,6 +12042,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -12913,6 +12925,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -13612,6 +13625,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -14278,6 +14292,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -14830,6 +14845,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -15457,6 +15473,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -16098,6 +16115,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -16828,6 +16846,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -17479,6 +17498,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -19076,6 +19096,12 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<{
+                  "children": Array<Record<string, unknown>>;
+                  "iterations"?: number;
+                  "mode"?: string;
+                  "name"?: string;
+                }>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -19402,6 +19428,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -20150,6 +20177,12 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<{
+                  "children": Array<Record<string, unknown>>;
+                  "iterations"?: number;
+                  "mode"?: string;
+                  "name"?: string;
+                }>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -20476,6 +20509,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -21372,6 +21406,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -22432,6 +22467,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -23247,6 +23283,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -25143,6 +25180,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -25778,6 +25816,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -26781,6 +26820,12 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<{
+                  "children": Array<Record<string, unknown>>;
+                  "iterations"?: number;
+                  "mode"?: string;
+                  "name"?: string;
+                }>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -27835,6 +27880,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -28546,6 +28592,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -33149,6 +33196,7 @@ export interface operations {
               "action_sequence"?: Array<string>;
               "auto_transactions"?: string;
               "block_scheduling"?: string;
+              "blocks"?: Array<Record<string, unknown>>;
               "global_iterations"?: number;
               "iterations"?: number;
               "max_in_flight"?: number;
@@ -33521,6 +33569,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -35309,6 +35358,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -36311,6 +36361,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -36584,6 +36635,12 @@ export interface operations {
               "action_sequence"?: Array<string>;
               "auto_transactions"?: string;
               "block_scheduling"?: string;
+              "blocks"?: Array<{
+                "children"?: Array<Record<string, unknown>>;
+                "iterations"?: number;
+                "mode"?: string;
+                "name"?: string;
+              }>;
               "global_iterations"?: number;
               "iterations"?: number;
               "max_in_flight"?: number;
@@ -37300,6 +37357,12 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<{
+                  "children": Array<Record<string, unknown>>;
+                  "iterations"?: number;
+                  "mode"?: string;
+                  "name"?: string;
+                }>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -37626,6 +37689,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -38493,6 +38557,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -39571,6 +39636,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -40333,6 +40399,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -40615,6 +40682,12 @@ export interface operations {
               "action_sequence"?: Array<string>;
               "auto_transactions"?: string;
               "block_scheduling"?: string;
+              "blocks"?: Array<{
+                "children"?: Array<Record<string, unknown>>;
+                "iterations"?: number;
+                "mode"?: string;
+                "name"?: string;
+              }>;
               "global_iterations"?: number;
               "iterations"?: number;
               "max_in_flight"?: number;
@@ -41726,6 +41799,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -44388,6 +44462,12 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<{
+                  "children": Array<Record<string, unknown>>;
+                  "iterations"?: number;
+                  "mode"?: string;
+                  "name"?: string;
+                }>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -47304,6 +47384,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -47968,6 +48049,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -48554,6 +48636,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -49218,6 +49301,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -51430,6 +51514,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -51712,6 +51797,12 @@ export interface operations {
               "action_sequence"?: Array<string>;
               "auto_transactions"?: string;
               "block_scheduling"?: string;
+              "blocks"?: Array<{
+                "children"?: Array<Record<string, unknown>>;
+                "iterations"?: number;
+                "mode"?: string;
+                "name"?: string;
+              }>;
               "global_iterations"?: number;
               "iterations"?: number;
               "max_in_flight"?: number;
@@ -52196,6 +52287,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -53122,6 +53214,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -55029,6 +55122,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -64019,6 +64113,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -65508,6 +65603,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -66377,6 +66473,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -71442,6 +71539,12 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<{
+                  "children": Array<Record<string, unknown>>;
+                  "iterations"?: number;
+                  "mode"?: string;
+                  "name"?: string;
+                }>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -71768,6 +71871,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -72233,6 +72337,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -73110,6 +73215,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -73813,6 +73919,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -77021,6 +77128,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -79683,6 +79791,12 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<{
+                  "children": Array<Record<string, unknown>>;
+                  "iterations"?: number;
+                  "mode"?: string;
+                  "name"?: string;
+                }>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -80299,6 +80413,12 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<{
+                  "children": Array<Record<string, unknown>>;
+                  "iterations"?: number;
+                  "mode"?: string;
+                  "name"?: string;
+                }>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -80601,6 +80721,12 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<{
+                  "children": Array<Record<string, unknown>>;
+                  "iterations"?: number;
+                  "mode"?: string;
+                  "name"?: string;
+                }>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -80889,6 +81015,12 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<{
+                  "children": Array<Record<string, unknown>>;
+                  "iterations"?: number;
+                  "mode"?: string;
+                  "name"?: string;
+                }>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -81177,6 +81309,12 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<{
+                  "children": Array<Record<string, unknown>>;
+                  "iterations"?: number;
+                  "mode"?: string;
+                  "name"?: string;
+                }>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -81705,6 +81843,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -82215,6 +82354,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -82738,6 +82878,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -85225,6 +85366,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -85928,6 +86070,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -97861,6 +98004,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -100523,6 +100667,12 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<{
+                  "children": Array<Record<string, unknown>>;
+                  "iterations"?: number;
+                  "mode"?: string;
+                  "name"?: string;
+                }>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -101443,6 +101593,7 @@ export interface operations {
               "action_sequence"?: Array<string>;
               "auto_transactions"?: string;
               "block_scheduling"?: string;
+              "blocks"?: Array<Record<string, unknown>>;
               "global_iterations"?: number;
               "iterations"?: number;
               "max_in_flight"?: number;
@@ -103591,6 +103742,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -104519,6 +104671,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -105231,6 +105384,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -106012,6 +106166,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -106972,6 +107127,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -107671,6 +107827,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -108337,6 +108494,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -108889,6 +109047,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -110899,6 +111058,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -111602,6 +111762,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -112298,6 +112459,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -114618,6 +114780,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -116489,6 +116652,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -118360,6 +118524,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -120231,6 +120396,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -122102,6 +122268,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -122803,6 +122970,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -123600,6 +123768,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -126760,6 +126929,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -128341,6 +128511,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -128762,6 +128933,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -129393,6 +129565,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -131178,6 +131351,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -131896,6 +132070,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -133336,6 +133511,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -134853,6 +135029,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -136393,6 +136570,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -137934,6 +138112,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -139474,6 +139653,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -145888,6 +146068,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -148550,6 +148731,12 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<{
+                  "children": Array<Record<string, unknown>>;
+                  "iterations"?: number;
+                  "mode"?: string;
+                  "name"?: string;
+                }>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -149449,6 +149636,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -150159,6 +150347,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -153661,6 +153850,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -153934,6 +154124,12 @@ export interface operations {
               "action_sequence"?: Array<string>;
               "auto_transactions"?: string;
               "block_scheduling"?: string;
+              "blocks"?: Array<{
+                "children"?: Array<Record<string, unknown>>;
+                "iterations"?: number;
+                "mode"?: string;
+                "name"?: string;
+              }>;
               "global_iterations"?: number;
               "iterations"?: number;
               "max_in_flight"?: number;
@@ -154649,6 +154845,12 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<{
+                  "children": Array<Record<string, unknown>>;
+                  "iterations"?: number;
+                  "mode"?: string;
+                  "name"?: string;
+                }>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -154975,6 +155177,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -155962,6 +156165,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -157038,6 +157242,7 @@ export interface operations {
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
                   "block_scheduling"?: string;
+                  "blocks"?: Array<Record<string, unknown>>;
                   "global_iterations"?: number;
                   "iterations"?: number;
                   "max_in_flight"?: number;
@@ -161133,6 +161338,12 @@ export interface operations {
               "action_sequence"?: Array<string>;
               "auto_transactions"?: string;
               "block_scheduling"?: string;
+              "blocks"?: Array<{
+                "children"?: Array<Record<string, unknown>>;
+                "iterations"?: number;
+                "mode"?: string;
+                "name"?: string;
+              }>;
               "global_iterations"?: number;
               "iterations"?: number;
               "max_in_flight"?: number;
@@ -161432,6 +161643,12 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<{
+                  "children": Array<Record<string, unknown>>;
+                  "iterations"?: number;
+                  "mode"?: string;
+                  "name"?: string;
+                }>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -162334,6 +162551,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -163316,6 +163534,7 @@ export interface operations {
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
                 "block_scheduling"?: string;
+                "blocks"?: Array<Record<string, unknown>>;
                 "global_iterations"?: number;
                 "iterations"?: number;
                 "max_in_flight"?: number;
@@ -163589,6 +163808,12 @@ export interface operations {
               "action_sequence"?: Array<string>;
               "auto_transactions"?: string;
               "block_scheduling"?: string;
+              "blocks"?: Array<{
+                "children"?: Array<Record<string, unknown>>;
+                "iterations"?: number;
+                "mode"?: string;
+                "name"?: string;
+              }>;
               "global_iterations"?: number;
               "iterations"?: number;
               "max_in_flight"?: number;

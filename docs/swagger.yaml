@@ -2605,6 +2605,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -12087,6 +12093,24 @@ paths:
                           type: string
                         block_scheduling:
                           type: string
+                        blocks:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              children:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicChild'
+                                  additionalProperties: true
+                              iterations:
+                                type: integer
+                                format: int64
+                              mode:
+                                type: string
+                              name:
+                                type: string
                         global_iterations:
                           type: integer
                           format: int64
@@ -13089,6 +13113,12 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunLogicBlock'
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -14309,6 +14339,12 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunLogicBlock'
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -16389,6 +16425,12 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunLogicBlock'
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -18281,6 +18323,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -50270,6 +50318,26 @@ paths:
                             type: string
                           block_scheduling:
                             type: string
+                          blocks:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                children:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicChild'
+                                    additionalProperties: true
+                                iterations:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                name:
+                                  type: string
+                              required:
+                                - children
                           global_iterations:
                             type: integer
                             format: int64
@@ -81137,6 +81205,12 @@ paths:
                           type: string
                         block_scheduling:
                           type: string
+                        blocks:
+                          type: array
+                          items:
+                            type: object
+                            description: 'Go type: RunLogicBlock'
+                            additionalProperties: true
                         global_iterations:
                           type: integer
                           format: int64
@@ -82154,6 +82228,12 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunLogicBlock'
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -87708,6 +87788,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -93465,6 +93551,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -99223,6 +99315,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -104993,6 +105091,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -110763,6 +110867,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -116533,6 +116643,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -122303,6 +122419,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -138375,6 +138497,12 @@ paths:
                                   type: string
                                 block_scheduling:
                                   type: string
+                                blocks:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicBlock'
+                                    additionalProperties: true
                                 global_iterations:
                                   type: integer
                                   format: int64
@@ -139459,6 +139587,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -140151,6 +140285,24 @@ paths:
                           type: string
                         block_scheduling:
                           type: string
+                        blocks:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              children:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicChild'
+                                  additionalProperties: true
+                              iterations:
+                                type: integer
+                                format: int64
+                              mode:
+                                type: string
+                              name:
+                                type: string
                         global_iterations:
                           type: integer
                           format: int64
@@ -142120,6 +142272,26 @@ paths:
                             type: string
                           block_scheduling:
                             type: string
+                          blocks:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                children:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicChild'
+                                    additionalProperties: true
+                                iterations:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                name:
+                                  type: string
+                              required:
+                                - children
                           global_iterations:
                             type: integer
                             format: int64
@@ -143022,6 +143194,12 @@ paths:
                                   type: string
                                 block_scheduling:
                                   type: string
+                                blocks:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicBlock'
+                                    additionalProperties: true
                                 global_iterations:
                                   type: integer
                                   format: int64
@@ -145256,6 +145434,26 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  properties:
+                                    children:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: RunLogicChild'
+                                        additionalProperties: true
+                                    iterations:
+                                      type: integer
+                                      format: int64
+                                    mode:
+                                      type: string
+                                    name:
+                                      type: string
+                                  required:
+                                    - children
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -146158,6 +146356,12 @@ paths:
                                       type: string
                                     block_scheduling:
                                       type: string
+                                    blocks:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: RunLogicBlock'
+                                        additionalProperties: true
                                     global_iterations:
                                       type: integer
                                       format: int64
@@ -147524,6 +147728,12 @@ paths:
                                     type: string
                                   block_scheduling:
                                     type: string
+                                  blocks:
+                                    type: array
+                                    items:
+                                      type: object
+                                      description: 'Go type: RunLogicBlock'
+                                      additionalProperties: true
                                   global_iterations:
                                     type: integer
                                     format: int64
@@ -148664,6 +148874,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -149356,6 +149572,24 @@ paths:
                           type: string
                         block_scheduling:
                           type: string
+                        blocks:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              children:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicChild'
+                                  additionalProperties: true
+                              iterations:
+                                type: integer
+                                format: int64
+                              mode:
+                                type: string
+                              name:
+                                type: string
                         global_iterations:
                           type: integer
                           format: int64
@@ -151325,6 +151559,26 @@ paths:
                             type: string
                           block_scheduling:
                             type: string
+                          blocks:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                children:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicChild'
+                                    additionalProperties: true
+                                iterations:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                name:
+                                  type: string
+                              required:
+                                - children
                           global_iterations:
                             type: integer
                             format: int64
@@ -152227,6 +152481,12 @@ paths:
                                   type: string
                                 block_scheduling:
                                   type: string
+                                blocks:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicBlock'
+                                    additionalProperties: true
                                 global_iterations:
                                   type: integer
                                   format: int64
@@ -154359,6 +154619,26 @@ paths:
                             type: string
                           block_scheduling:
                             type: string
+                          blocks:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                children:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicChild'
+                                    additionalProperties: true
+                                iterations:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                name:
+                                  type: string
+                              required:
+                                - children
                           global_iterations:
                             type: integer
                             format: int64
@@ -155261,6 +155541,12 @@ paths:
                                   type: string
                                 block_scheduling:
                                   type: string
+                                blocks:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicBlock'
+                                    additionalProperties: true
                                 global_iterations:
                                   type: integer
                                   format: int64
@@ -158201,6 +158487,26 @@ paths:
                             type: string
                           block_scheduling:
                             type: string
+                          blocks:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                children:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicChild'
+                                    additionalProperties: true
+                                iterations:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                name:
+                                  type: string
+                              required:
+                                - children
                           global_iterations:
                             type: integer
                             format: int64
@@ -159103,6 +159409,12 @@ paths:
                                   type: string
                                 block_scheduling:
                                   type: string
+                                blocks:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicBlock'
+                                    additionalProperties: true
                                 global_iterations:
                                   type: integer
                                   format: int64
@@ -160821,6 +161133,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -164353,6 +164671,12 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunLogicBlock'
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -166210,6 +166534,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -168272,6 +168602,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -169932,6 +170268,12 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunLogicBlock'
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -171789,6 +172131,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -173286,6 +173634,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -173978,6 +174332,24 @@ paths:
                           type: string
                         block_scheduling:
                           type: string
+                        blocks:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              children:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicChild'
+                                  additionalProperties: true
+                              iterations:
+                                type: integer
+                                format: int64
+                              mode:
+                                type: string
+                              name:
+                                type: string
                         global_iterations:
                           type: integer
                           format: int64
@@ -190650,6 +191022,11 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -193576,6 +193953,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -196600,6 +196983,12 @@ paths:
                                     type: string
                                   block_scheduling:
                                     type: string
+                                  blocks:
+                                    type: array
+                                    items:
+                                      type: object
+                                      description: 'Go type: RunLogicBlock'
+                                      additionalProperties: true
                                   global_iterations:
                                     type: integer
                                     format: int64
@@ -198491,6 +198880,12 @@ paths:
                                     type: string
                                   block_scheduling:
                                     type: string
+                                  blocks:
+                                    type: array
+                                    items:
+                                      type: object
+                                      description: 'Go type: RunLogicBlock'
+                                      additionalProperties: true
                                   global_iterations:
                                     type: integer
                                     format: int64
@@ -200625,6 +201020,11 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -203549,6 +203949,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -206501,6 +206907,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -208587,6 +208999,12 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunLogicBlock'
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -212799,6 +213217,12 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunLogicBlock'
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -217690,6 +218114,12 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunLogicBlock'
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -219787,6 +220217,12 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunLogicBlock'
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -224741,6 +225177,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -228397,6 +228839,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -230304,6 +230752,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -232302,6 +232756,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -234215,6 +234675,12 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunLogicBlock'
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -236066,6 +236532,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -239948,6 +240420,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -242218,6 +242696,12 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunLogicBlock'
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -246125,6 +246609,12 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunLogicBlock'
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -247988,6 +248478,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -250093,6 +250589,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -252224,6 +252726,12 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunLogicBlock'
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -256188,6 +256696,12 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunLogicBlock'
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -258981,6 +259495,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -260731,6 +261251,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -262916,6 +263442,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -264648,6 +265180,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -266786,6 +267324,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -269770,6 +270314,12 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunLogicBlock'
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -272130,6 +272680,12 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunLogicBlock'
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -275601,6 +276157,12 @@ paths:
                                     type: string
                                   block_scheduling:
                                     type: string
+                                  blocks:
+                                    type: array
+                                    items:
+                                      type: object
+                                      description: 'Go type: RunLogicBlock'
+                                      additionalProperties: true
                                   global_iterations:
                                     type: integer
                                     format: int64
@@ -277479,6 +278041,12 @@ paths:
                                     type: string
                                   block_scheduling:
                                     type: string
+                                  blocks:
+                                    type: array
+                                    items:
+                                      type: object
+                                      description: 'Go type: RunLogicBlock'
+                                      additionalProperties: true
                                   global_iterations:
                                     type: integer
                                     format: int64
@@ -279296,6 +279864,12 @@ paths:
                                       type: string
                                     block_scheduling:
                                       type: string
+                                    blocks:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: RunLogicBlock'
+                                        additionalProperties: true
                                     global_iterations:
                                       type: integer
                                       format: int64
@@ -280850,6 +281424,12 @@ paths:
                                       type: string
                                     block_scheduling:
                                       type: string
+                                    blocks:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: RunLogicBlock'
+                                        additionalProperties: true
                                     global_iterations:
                                       type: integer
                                       format: int64
@@ -282839,6 +283419,12 @@ paths:
                                     type: string
                                   block_scheduling:
                                     type: string
+                                  blocks:
+                                    type: array
+                                    items:
+                                      type: object
+                                      description: 'Go type: RunLogicBlock'
+                                      additionalProperties: true
                                   global_iterations:
                                     type: integer
                                     format: int64
@@ -284717,6 +285303,12 @@ paths:
                                     type: string
                                   block_scheduling:
                                     type: string
+                                  blocks:
+                                    type: array
+                                    items:
+                                      type: object
+                                      description: 'Go type: RunLogicBlock'
+                                      additionalProperties: true
                                   global_iterations:
                                     type: integer
                                     format: int64
@@ -286534,6 +287126,12 @@ paths:
                                       type: string
                                     block_scheduling:
                                       type: string
+                                    blocks:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: RunLogicBlock'
+                                        additionalProperties: true
                                     global_iterations:
                                       type: integer
                                       format: int64
@@ -288088,6 +288686,12 @@ paths:
                                       type: string
                                     block_scheduling:
                                       type: string
+                                    blocks:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: RunLogicBlock'
+                                        additionalProperties: true
                                     global_iterations:
                                       type: integer
                                       format: int64
@@ -290102,6 +290706,12 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunLogicBlock'
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -291940,6 +292550,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -293902,6 +294518,12 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunLogicBlock'
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -295592,6 +296214,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -297276,6 +297904,12 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunLogicBlock'
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -299355,6 +299989,12 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunLogicBlock'
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -303323,6 +303963,12 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunLogicBlock'
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -305190,6 +305836,12 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunLogicBlock'
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -307022,6 +307674,12 @@ paths:
                                     type: string
                                   block_scheduling:
                                     type: string
+                                  blocks:
+                                    type: array
+                                    items:
+                                      type: object
+                                      description: 'Go type: RunLogicBlock'
+                                      additionalProperties: true
                                   global_iterations:
                                     type: integer
                                     format: int64
@@ -308892,6 +309550,12 @@ paths:
                                     type: string
                                   block_scheduling:
                                     type: string
+                                  blocks:
+                                    type: array
+                                    items:
+                                      type: object
+                                      description: 'Go type: RunLogicBlock'
+                                      additionalProperties: true
                                   global_iterations:
                                     type: integer
                                     format: int64
@@ -311061,6 +311725,11 @@ paths:
                               type: string
                             block_scheduling:
                               type: string
+                            blocks:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             global_iterations:
                               type: integer
                               format: int64
@@ -322046,6 +322715,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -322758,6 +323433,24 @@ paths:
                           type: string
                         block_scheduling:
                           type: string
+                        blocks:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              children:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicChild'
+                                  additionalProperties: true
+                              iterations:
+                                type: integer
+                                format: int64
+                              mode:
+                                type: string
+                              name:
+                                type: string
                         global_iterations:
                           type: integer
                           format: int64
@@ -326184,6 +326877,12 @@ paths:
                                   type: string
                                 block_scheduling:
                                   type: string
+                                blocks:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicBlock'
+                                    additionalProperties: true
                                 global_iterations:
                                   type: integer
                                   format: int64
@@ -335013,6 +335712,26 @@ paths:
                             type: string
                           block_scheduling:
                             type: string
+                          blocks:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                children:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicChild'
+                                    additionalProperties: true
+                                iterations:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                name:
+                                  type: string
+                              required:
+                                - children
                           global_iterations:
                             type: integer
                             format: int64
@@ -338859,6 +339578,12 @@ paths:
                                   type: string
                                 block_scheduling:
                                   type: string
+                                blocks:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicBlock'
+                                    additionalProperties: true
                                 global_iterations:
                                   type: integer
                                   format: int64
@@ -347688,6 +348413,26 @@ paths:
                             type: string
                           block_scheduling:
                             type: string
+                          blocks:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                children:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicChild'
+                                    additionalProperties: true
+                                iterations:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                name:
+                                  type: string
+                              required:
+                                - children
                           global_iterations:
                             type: integer
                             format: int64
@@ -352305,6 +353050,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -354903,6 +355654,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -377664,6 +378421,12 @@ paths:
                                   type: string
                                 block_scheduling:
                                   type: string
+                                blocks:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicBlock'
+                                    additionalProperties: true
                                 global_iterations:
                                   type: integer
                                   format: int64
@@ -386493,6 +387256,26 @@ paths:
                             type: string
                           block_scheduling:
                             type: string
+                          blocks:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                children:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicChild'
+                                    additionalProperties: true
+                                iterations:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                name:
+                                  type: string
+                              required:
+                                - children
                           global_iterations:
                             type: integer
                             format: int64
@@ -390283,6 +391066,12 @@ paths:
                                   type: string
                                 block_scheduling:
                                   type: string
+                                blocks:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicBlock'
+                                    additionalProperties: true
                                 global_iterations:
                                   type: integer
                                   format: int64
@@ -399112,6 +399901,26 @@ paths:
                             type: string
                           block_scheduling:
                             type: string
+                          blocks:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                children:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicChild'
+                                    additionalProperties: true
+                                iterations:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                name:
+                                  type: string
+                              required:
+                                - children
                           global_iterations:
                             type: integer
                             format: int64
@@ -401437,6 +402246,26 @@ paths:
                             type: string
                           block_scheduling:
                             type: string
+                          blocks:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                children:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicChild'
+                                    additionalProperties: true
+                                iterations:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                name:
+                                  type: string
+                              required:
+                                - children
                           global_iterations:
                             type: integer
                             format: int64
@@ -402213,6 +403042,26 @@ paths:
                             type: string
                           block_scheduling:
                             type: string
+                          blocks:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                children:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicChild'
+                                    additionalProperties: true
+                                iterations:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                name:
+                                  type: string
+                              required:
+                                - children
                           global_iterations:
                             type: integer
                             format: int64
@@ -402947,6 +403796,26 @@ paths:
                             type: string
                           block_scheduling:
                             type: string
+                          blocks:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                children:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicChild'
+                                    additionalProperties: true
+                                iterations:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                name:
+                                  type: string
+                              required:
+                                - children
                           global_iterations:
                             type: integer
                             format: int64
@@ -403681,6 +404550,26 @@ paths:
                             type: string
                           block_scheduling:
                             type: string
+                          blocks:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                children:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicChild'
+                                    additionalProperties: true
+                                iterations:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                name:
+                                  type: string
+                              required:
+                                - children
                           global_iterations:
                             type: integer
                             format: int64
@@ -404455,6 +405344,24 @@ paths:
                           type: string
                         block_scheduling:
                           type: string
+                        blocks:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              children:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicChild'
+                                  additionalProperties: true
+                              iterations:
+                                type: integer
+                                format: int64
+                              mode:
+                                type: string
+                              name:
+                                type: string
                         global_iterations:
                           type: integer
                           format: int64
@@ -405204,6 +406111,26 @@ paths:
                             type: string
                           block_scheduling:
                             type: string
+                          blocks:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                children:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicChild'
+                                    additionalProperties: true
+                                iterations:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                name:
+                                  type: string
+                              required:
+                                - children
                           global_iterations:
                             type: integer
                             format: int64
@@ -406560,6 +407487,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -408042,6 +408975,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -409604,6 +410543,12 @@ paths:
                                   type: string
                                 block_scheduling:
                                   type: string
+                                blocks:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicBlock'
+                                    additionalProperties: true
                                 global_iterations:
                                   type: integer
                                   format: int64
@@ -426162,6 +427107,12 @@ paths:
                                 type: string
                               block_scheduling:
                                 type: string
+                              blocks:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicBlock'
+                                  additionalProperties: true
                               global_iterations:
                                 type: integer
                                 format: int64
@@ -426874,6 +427825,24 @@ paths:
                           type: string
                         block_scheduling:
                           type: string
+                        blocks:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              children:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunLogicChild'
+                                  additionalProperties: true
+                              iterations:
+                                type: integer
+                                format: int64
+                              mode:
+                                type: string
+                              name:
+                                type: string
                         global_iterations:
                           type: integer
                           format: int64
@@ -428197,6 +429166,12 @@ paths:
                                   type: string
                                 block_scheduling:
                                   type: string
+                                blocks:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunLogicBlock'
+                                    additionalProperties: true
                                 global_iterations:
                                   type: integer
                                   format: int64
@@ -429658,6 +430633,12 @@ paths:
                           type: string
                         block_scheduling:
                           type: string
+                        blocks:
+                          type: array
+                          items:
+                            type: object
+                            description: 'Go type: RunLogicBlock'
+                            additionalProperties: true
                         global_iterations:
                           type: integer
                           format: int64

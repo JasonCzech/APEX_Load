@@ -120,7 +120,8 @@ The importer reads the section/key vocabulary real VuGen writes, not only APEX-n
 | `[ModemSpeed]` `EnableModemSpeed`/`EnableCustomModemSpeed`/`ModemSpeed`/`CustomModemSpeed` (bits per second) | `config.web_runtime.network_simulation` (`max` when both toggles are off, `custom` + Kbps when one is on) |
 | `[FILTERS]` `IncludeFiltersInList`/`ExcludeFiltersInList` | `config.web_runtime.download_filters` (`allow_list`/`block_list`; both lists populated fails to review) |
 | `[Log]` `AutoLog` | `config.log.on_error_only` (JIT "send messages only when an error occurs") |
-| `.usp` `RunLogicRunMode` | Preserved in `config.run_logic.block_scheduling` as `compatibility_only`; the current engine does not consume the field. |
+| `.usp` `RunLogicRunMode` | Preserved in `config.run_logic.block_scheduling` as `compatibility_only`; the engine does not consume that field. |
+| `.usp` run-logic tree (`MercIniTreeSons`, `RunLogicObjectKind=Group`, per-block `RunLogicRunMode`/`RunLogicNumOfIterations`) | When it runs more than one action or any block: `config.run_logic.blocks`, which the engine executes (sequential, random, percentage; each step is tagged with its action in `metadata.run_logic_action`). A Random block reads a child key naming a percentage or weight; without one its children are picked uniformly (`run_logic_blocks` review note). |
 | `.usp` `[Profile Actions]`/`RunLogicActionOrder` | Preserved in `config.run_logic.action_sequence` as `compatibility_only` (standard lifecycle vocabulary only; custom multi-action orders fail to review); the current engine uses its fixed init/action/teardown lifecycle. |
 | `[Java]` `UseExternalJVM`/`ExternalJREPath` | `config.java_vuser.jdk_selection`/`jdk_home` (java_vuser scripts; non-applicable elsewhere) |
 | `*_extra_arg_N` spill rows (e.g. `BrowserAcceptLanguage_extra_arg_2`) | The base value stays authoritative; divergent spill rows raise a `request_headers` review finding |
@@ -137,7 +138,7 @@ applies. Set `iterations` on the scenario group or in scenario/group
 [ENTERPRISE_CONTRACTS.md](ENTERPRISE_CONTRACTS.md#schedule-authority-over-script-iteration-caps).
 
 `block_scheduling` and `action_sequence` are migration evidence, not current
-execution controls. An executable migration policy should include
+execution controls; `config.run_logic.blocks` is the executed form of run logic. An executable migration policy should include
 `compatibility_only` in `migration_block_statuses`; this keeps imported random,
 percentage, omitted-phase, or reordered lifecycle semantics review-gated until
 they are replaced with behavior the engine executes.
