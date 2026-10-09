@@ -20,9 +20,14 @@ import (
 
 const interruptedEvacuationFenceProof = "controller ownership was interrupted during generator evacuation; successor confirmed process-epoch fences for all possible generators"
 
+// interruptedEvacuationAttestedProof stands in for the successor's fences when
+// a generator is gone for good: a system administrator attested through the
+// interrupted-run override that every possible generator process is stopped.
+const interruptedEvacuationAttestedProof = "controller ownership was interrupted during generator evacuation; a system administrator attested that every generator process that could run it is stopped"
+
 func interruptedEvacuationHasDurableFenceProof(test *ManagedTest) bool {
 	return test != nil && test.Status == "FAILED" && test.EndedAt != nil &&
-		strings.HasPrefix(test.Error, interruptedEvacuationFenceProof)
+		(strings.HasPrefix(test.Error, interruptedEvacuationFenceProof) || strings.HasPrefix(test.Error, interruptedEvacuationAttestedProof))
 }
 
 func targetShardAssignmentChanged(before, next map[string][]GeneratorShardSummary, target string) bool {
@@ -71,7 +76,7 @@ func priorCompletedTargetStillTerminal(guard runEvacuationCheckpoint, target str
 
 // interruptedEvacuationTargets is deliberately stricter than the normal guard
 // decoder. A damaged journal cannot establish a complete participant set, so
-// it must stay STOPPING for external process-fence reconciliation.
+// it stays STOPPING until an administrator attests its generators stopped.
 func interruptedEvacuationTargets(raw, testID string) (runEvacuationCheckpoint, []string, error) {
 	var guard runEvacuationCheckpoint
 	if json.Unmarshal([]byte(raw), &guard) != nil || !interruptedRunEvacuation(raw) || guard.TestID != testID ||
@@ -372,7 +377,7 @@ func (tr *TestRunner) resumeInterruptedRunEvacuations() {
 		tr.mu.RUnlock()
 		if !provenTerminal {
 			if _, _, err := interruptedEvacuationTargets(raw, test.ID); err != nil {
-				slog.Warn("interrupted evacuation needs external process-fence reconciliation", "test_id", test.ID, "error", err)
+				slog.Warn("interrupted evacuation cannot be fenced automatically; a system administrator can attest that its generators stopped (POST /api/v1/tests/{id}/interrupted-stop/resolve)", "test_id", test.ID, "error", err)
 				continue
 			}
 		}

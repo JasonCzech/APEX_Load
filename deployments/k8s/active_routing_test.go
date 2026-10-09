@@ -16,8 +16,9 @@ type ingressManifest struct {
 		Rules []struct {
 			HTTP struct {
 				Paths []struct {
-					Path    string `yaml:"path"`
-					Backend struct {
+					Path     string `yaml:"path"`
+					PathType string `yaml:"pathType"`
+					Backend  struct {
 						Service struct {
 							Name string `yaml:"name"`
 						} `yaml:"service"`
@@ -47,6 +48,7 @@ func assertIngressActiveControllerRoutes(t *testing.T, input io.Reader) {
 		"/api/v1/browser-recorder":           false,
 		"/api/v1/ws":                         false,
 	}
+	active := make(map[string]string)
 	for {
 		var manifest ingressManifest
 		err := decoder.Decode(&manifest)
@@ -61,7 +63,11 @@ func assertIngressActiveControllerRoutes(t *testing.T, input io.Reader) {
 		}
 		for _, rule := range manifest.Spec.Rules {
 			for _, path := range rule.HTTP.Paths {
-				if _, required := want[path.Path]; required && path.Backend.Service.Name == "apexload-controller-active" {
+				if path.Backend.Service.Name != "apexload-controller-active" {
+					continue
+				}
+				active[path.Path] = path.PathType
+				if _, required := want[path.Path]; required {
 					want[path.Path] = true
 				}
 			}
@@ -72,11 +78,27 @@ func assertIngressActiveControllerRoutes(t *testing.T, input io.Reader) {
 			t.Errorf("rendered ingress does not route %s to apexload-controller-active", path)
 		}
 	}
+	// Every route a follower refuses must reach the admitted leader; otherwise
+	// HA load balancing turns it into an intermittent 503.
+	for _, route := range leaderOnlyRoutes(t) {
+		if !activeIngressCovers(active, route.Path) {
+			t.Errorf("leader-only route %s %s (%s) is not routed to apexload-controller-active", route.Method, route.Path, route.Handler)
+		}
+	}
 }
 
 func TestProductionIngressesRouteExecutionReplayAndRealtimeLifecyclesToActiveController(t *testing.T) {
 	t.Run("AKS manifest", func(t *testing.T) {
 		file, err := os.Open("aks/controller-ingress.yaml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer file.Close()
+		assertIngressActiveControllerRoutes(t, file)
+	})
+
+	t.Run("EKS manifest", func(t *testing.T) {
+		file, err := os.Open("eks/controller-ingress.yaml")
 		if err != nil {
 			t.Fatal(err)
 		}

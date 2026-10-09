@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -551,5 +553,71 @@ func TestInterruptedEvacuationRecoveryIncludesDurableCapacityTargets(t *testing.
 	}
 	if err != nil || record.Status != "FAILED" || record.EndTime == nil {
 		t.Fatalf("fully fenced capacity participants were not resolved: %+v, %v", record, err)
+	}
+}
+
+// A generator that is gone for good can never acknowledge the successor's
+// fence, which used to strand the evacuation STOPPING with its capacity. The
+// audited operator attestation stands in for the fence proof; evacuation
+// recovery then performs only its post-terminal cleanup.
+func TestInterruptedEvacuationOperatorAttestationResolvesVanishedGenerator(t *testing.T) {
+	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
+	markEvacuationRecoveryRunStarted(t, store, test)
+	tr.armRunContinuity(nil, test, generation, owner, token, previous)
+	if _, err := tr.beginRunEvacuationCheckpoint(nil, test, generation, owner, "gen-a", token, previous, next); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReleaseSchedulerLease(executionLeaseName, owner); err != nil {
+		t.Fatal(err)
+	}
+	successor := newExecutionLeadership(store, "attested-evacuation-successor")
+	successor.tick()
+	tr.leadership = successor
+	var dials atomic.Int32
+	tr.execution = newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, 200*time.Millisecond, func(context.Context, string) (generatorClient, error) {
+		dials.Add(1)
+		return nil, errors.New("generator node was deleted")
+	})
+	if err := tr.reconcileStoredActiveTest(test); err != nil {
+		t.Fatal(err)
+	}
+	if err := tr.recoverInterruptedRunEvacuation(test); err == nil {
+		t.Fatal("evacuation was resolved without any process fence")
+	}
+	tr.mu.RLock()
+	awaiting, distributed := interruptedEvacuationAwaitingProofLocked(test), interruptedDistributedRunLocked(test)
+	tr.mu.RUnlock()
+	if !awaiting || distributed {
+		t.Fatalf("override classes = evacuation %v, distributed %v; want evacuation only", awaiting, distributed)
+	}
+
+	server := &Server{runner: tr, store: store}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tests/"+test.ID+"/interrupted-stop/resolve", strings.NewReader(`{"attestation":"all-generator-processes-stopped","note":"node pool deleted"}`))
+	req.SetPathValue("id", test.ID)
+	server.handleResolveInterruptedRun(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("override = %d %s", rec.Code, rec.Body.String())
+	}
+	record, err := store.GetTest(test.ID)
+	if err != nil || record.Status != "FAILED" || record.EndTime == nil || !strings.HasPrefix(record.Error, interruptedEvacuationAttestedProof) || !strings.Contains(record.Error, "node pool deleted") {
+		t.Fatalf("attested evacuation = %+v, %v", record, err)
+	}
+	tr.mu.RLock()
+	proven := interruptedEvacuationHasDurableFenceProof(test)
+	tr.mu.RUnlock()
+	if !proven {
+		t.Fatal("attestation was not accepted as evacuation fence proof")
+	}
+	before := dials.Load()
+	if err := tr.recoverInterruptedRunEvacuation(test); err != nil {
+		t.Fatalf("post-attestation cleanup required generator ACKs: %v", err)
+	}
+	failure, err := store.GetRunArchiveFailure(test.ID)
+	if err != nil || failure.Reason != storage.RunArchiveFailureRemoteCollection {
+		t.Fatalf("archive cleanup after attestation = %+v, %v", failure, err)
+	}
+	if dials.Load() != before {
+		t.Fatalf("post-attestation cleanup dialed generators to re-fence them: %d -> %d", before, dials.Load())
 	}
 }

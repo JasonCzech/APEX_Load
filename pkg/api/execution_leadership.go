@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"reflect"
@@ -43,6 +45,9 @@ type leadershipCallbackKind uint8
 const (
 	leadershipCallbackAcquire leadershipCallbackKind = iota + 1
 	leadershipCallbackLoss
+	// leadershipCallbackRelease releases one exact durable owner token after
+	// the loss cleanup queued before it has finished.
+	leadershipCallbackRelease
 )
 
 type leadershipCallbackEvent struct {
@@ -68,7 +73,10 @@ type executionLeadership struct {
 	ownerID string
 	ttl     time.Duration
 	renew   time.Duration
-	now     func() time.Time
+	// now must keep Go's monotonic clock reading (do not call UTC/In/Round on
+	// its results): every local lease deadline is compared on the monotonic
+	// clock, so a wall-clock step can neither extend nor shorten a lease.
+	now func() time.Time
 
 	leader      atomic.Bool
 	reconciling atomic.Bool
@@ -103,7 +111,15 @@ type executionLeadership struct {
 	// same process after it reacquires leadership.
 	leaseAttempt uint64
 	leaseOwnerID string
-	tickMu       sync.Mutex
+	// processNonce makes every owner token unique to this process. ownerID can
+	// be operator-configured (APEXLOAD_CONTROLLER_ID) to the same value on every
+	// replica or survive a container restart, and the lease treats an identical
+	// owner token as a renewal rather than a contest.
+	processNonce string
+	// acquireNotBefore holds off contention after a voluntary step-down so a
+	// healthy replica can take over before this one retries.
+	acquireNotBefore time.Time
+	tickMu           sync.Mutex
 }
 
 func newExecutionLeadership(store executionLeaseStore, ownerID string) *executionLeadership {
@@ -117,9 +133,31 @@ func newExecutionLeadership(store executionLeaseStore, ownerID string) *executio
 		now:             time.Now,
 		operationCtx:    ctx,
 		operationCancel: cancel,
+		processNonce:    newExecutionLeaseProcessNonce(),
 	}
 	l.lossDone = sync.NewCond(&l.mu)
 	return l
+}
+
+func newExecutionLeaseProcessNonce() string {
+	var nonce [8]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		// crypto/rand does not fail on supported platforms; keep a distinct
+		// per-process value even if it ever does.
+		return fmt.Sprintf("t%x", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(nonce[:])
+}
+
+// nextLeaseOwnerIDLocked starts a new acquisition epoch and returns its owner
+// token. l.mu must be held.
+func (l *executionLeadership) nextLeaseOwnerIDLocked() string {
+	if l.processNonce == "" {
+		l.processNonce = newExecutionLeaseProcessNonce()
+	}
+	l.leaseAttempt++
+	l.leaseOwnerID = fmt.Sprintf("%s/%s/%d", l.ownerID, l.processNonce, l.leaseAttempt)
+	return l.leaseOwnerID
 }
 
 // setOnAcquire registers the callback invoked once each time leadership is
@@ -161,7 +199,7 @@ func (l *executionLeadership) IsLeader() bool {
 	if l == nil {
 		return true
 	}
-	now := l.now().UTC()
+	now := l.now()
 	l.mu.Lock()
 	if !l.leader.Load() || l.pendingLoss > 0 {
 		l.mu.Unlock()
@@ -212,7 +250,7 @@ func (l *executionLeadership) Run(ctx context.Context) {
 			case <-watchdogStop:
 				return
 			case <-ticker.C:
-				now := l.now().UTC()
+				now := l.now()
 				l.mu.Lock()
 				stale := l.leader.Load() && l.leaseExpiredLocked(now)
 				steppedDown := stale && l.transitionToFollowerLocked()
@@ -244,16 +282,18 @@ func (l *executionLeadership) tick() {
 	l.tickMu.Lock()
 	defer l.tickMu.Unlock()
 
-	requestStartedAt := l.now().UTC()
+	requestStartedAt := l.now()
 	l.mu.Lock()
+	if !l.leader.Load() && requestStartedAt.Before(l.acquireNotBefore) {
+		l.mu.Unlock()
+		return
+	}
 	if !l.leader.Load() {
-		l.leaseAttempt++
-		l.leaseOwnerID = fmt.Sprintf("%s/%d", l.ownerID, l.leaseAttempt)
+		l.nextLeaseOwnerIDLocked()
 	} else if l.leaseOwnerID == "" {
 		// Compatibility for tests/bootstrap paths that install leader state
 		// directly. Normal acquisitions always take the branch above.
-		l.leaseAttempt++
-		l.leaseOwnerID = fmt.Sprintf("%s/%d", l.ownerID, l.leaseAttempt)
+		l.nextLeaseOwnerIDLocked()
 	}
 	leaseOwnerID := l.leaseOwnerID
 	transitionGeneration := l.generation
@@ -300,7 +340,7 @@ func (l *executionLeadership) tick() {
 		// granted elsewhere. Step down only once our last confirmed hold is
 		// older than the TTL — bounding the split-brain window to the TTL.
 		l.mu.Lock()
-		stale := l.leaseExpiredLocked(l.now().UTC())
+		stale := l.leaseExpiredLocked(l.now())
 		steppedDown := stale && l.transitionToFollowerLocked()
 		l.mu.Unlock()
 		if steppedDown {
@@ -322,7 +362,7 @@ func (l *executionLeadership) tick() {
 	localLeaseDeadline := requestStartedAt.Add(l.ttl)
 	_, generationAwareStore := l.store.(executionLeaseTermStore)
 	invalidGeneration := generationAwareStore && leaseTerm != nil && leaseTerm.Generation == 0
-	if leaseTerm == nil || leaseTerm.OwnerID != leaseOwnerID || leaseTerm.ExpiresAt.IsZero() || invalidGeneration || !l.now().UTC().Before(localLeaseDeadline) {
+	if leaseTerm == nil || leaseTerm.OwnerID != leaseOwnerID || leaseTerm.ExpiresAt.IsZero() || invalidGeneration || !l.now().Before(localLeaseDeadline) {
 		if store, ok := l.store.(executionLeaseReleaseStore); ok {
 			_ = store.ReleaseSchedulerLease(executionLeaseName, leaseOwnerID)
 		}
@@ -424,7 +464,7 @@ func (l *executionLeadership) executionLeaseTerm() (string, uint64) {
 	if !l.leader.Load() || l.pendingLoss > 0 || l.leaseOwnerID == "" {
 		return "", 0
 	}
-	if l.leaseExpiredLocked(l.now().UTC()) {
+	if l.leaseExpiredLocked(l.now()) {
 		l.transitionToFollowerLocked()
 		return "", 0
 	}
@@ -437,7 +477,7 @@ func (l *executionLeadership) executionGeneratorClaim() (uint64, string, time.Ti
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	now := l.now().UTC()
+	now := l.now()
 	if !l.leader.Load() || l.pendingLoss > 0 || l.durableGeneration == 0 || l.leaseExpiredLocked(now) {
 		return 0, "", time.Time{}, false
 	}
@@ -586,6 +626,12 @@ func (l *executionLeadership) enqueueLeadershipCallback(event leadershipCallback
 				l.invokeLossCallback(event)
 				continue
 			}
+			if event.kind == leadershipCallbackRelease {
+				if panicValue := invokeLeadershipCallback(event.fn); panicValue != nil {
+					slog.Error("execution leadership release callback panicked", "panic", panicValue)
+				}
+				continue
+			}
 			if l.shouldRunLeadershipCallback(event) {
 				if panicValue := invokeLeadershipCallback(event.fn); panicValue != nil {
 					slog.Error("execution leadership acquire callback panicked", "generation", event.generation, "panic", panicValue)
@@ -639,6 +685,38 @@ func (l *executionLeadership) failAcquireCallback(event leadershipCallbackEvent)
 			slog.Warn("failed to release execution lease after recovery callback panic", "owner", leaseOwnerID, "err", err)
 		}
 	}
+}
+
+// relinquishAfterRecoveryFailure steps down voluntarily when acquire-time
+// recovery cannot complete, so another replica can try. Loss cleanup runs
+// first (it decides which runs are handed off rather than stopped), then the
+// exact durable token is released for an immediate takeover. This replica does
+// not contend again until cooldown has passed. It reports whether it stepped
+// down. It is safe to call from the acquire callback: both follow-up events
+// run on the ordered worker after the callback returns.
+func (l *executionLeadership) relinquishAfterRecoveryFailure(cooldown time.Duration) bool {
+	if l == nil {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.leader.Load() {
+		return false
+	}
+	leaseOwnerID := l.leaseOwnerID
+	l.acquireNotBefore = l.now().Add(cooldown)
+	l.transitionToFollowerLocked()
+	if store, ok := l.store.(executionLeaseReleaseStore); ok && leaseOwnerID != "" {
+		l.enqueueLeadershipCallback(leadershipCallbackEvent{
+			kind: leadershipCallbackRelease,
+			fn: func() {
+				if err := store.ReleaseSchedulerLease(executionLeaseName, leaseOwnerID); err != nil {
+					slog.Warn("failed to release execution lease after recovery failure", "owner", leaseOwnerID, "err", err)
+				}
+			},
+		})
+	}
+	return true
 }
 
 // shouldRunLeadershipCallback drops acquire callbacks superseded before they

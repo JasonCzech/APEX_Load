@@ -68,6 +68,11 @@ type adoptedRunResume struct {
 	// A successor cannot publish finishStatus until each has positive stop or
 	// terminal proof; a missing generator can outlive the controller lease.
 	finishTargets []string
+	// secured is set once Phase A has re-established the run's generator
+	// leases and supervision under the rotated token; secureFailure carries a
+	// failure for Phase B to apply (archive publication needs admission).
+	secured       bool
+	secureFailure string
 }
 
 func (tr *TestRunner) runAdoptionEnabled() bool {
@@ -103,15 +108,17 @@ func (tr *TestRunner) isRunAdoptionCandidate(test *ManagedTest) bool {
 	return committed
 }
 
-// awaitRunAdoptionReconcile holds the generator epoch keeper until acquisition
-// reconcile (which performs the adoption claims) finishes, bounded so a stuck
-// reconcile cannot leave generators unclaimed.
-func (tr *TestRunner) awaitRunAdoptionReconcile(ctx context.Context) {
+// awaitRunAdoptionReconcile holds the generator epoch keeper until generation's
+// acquire-time adoption (Phase A) finishes, or reconcile ends without it,
+// bounded so a stuck reconcile cannot leave generators unclaimed. Waiting for
+// adoption alone, not the whole reconcile, lets the keeper claim the rest of
+// the fleet as soon as orphans are safe.
+func (tr *TestRunner) awaitRunAdoptionReconcile(ctx context.Context, generation uint64) {
 	if !tr.runAdoptionEnabled() {
 		return
 	}
 	deadline := time.Now().Add(runAdoptionKeeperWait)
-	for tr.leadership.reconciling.Load() && tr.leadership.IsLeader() {
+	for tr.leadership.reconciling.Load() && tr.leadership.IsLeader() && tr.runAdoptionDoneGeneration.Load() < generation {
 		if time.Now().After(deadline) {
 			slog.Warn("generator epoch keeper stopped waiting for run adoption; unadopted orphans will be fenced")
 			return
@@ -120,6 +127,20 @@ func (tr *TestRunner) awaitRunAdoptionReconcile(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
+// markRunAdoptionDone records that acquire-time adoption finished for
+// generation, releasing that term's generator epoch keeper.
+func (tr *TestRunner) markRunAdoptionDone(generation uint64) {
+	if tr == nil || generation == 0 {
+		return
+	}
+	for {
+		current := tr.runAdoptionDoneGeneration.Load()
+		if current >= generation || tr.runAdoptionDoneGeneration.CompareAndSwap(current, generation) {
+			return
 		}
 	}
 }
@@ -363,7 +384,90 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 			tr.installAdoptedRun(b, candidate, adopted, completed, archives, generation, ownerID)
 		})
 	}
+	tr.secureAdoptedRuns(b)
 	return nil
+}
+
+// secureAdoptedRuns re-establishes generator run leases and supervision for
+// every run Phase A adopted, before admission opens. The adoption claim gave
+// each generator one supervision TTL to hear from the successor; leaving the
+// re-claim to Phase B made the run's survival depend on how long the rest of
+// acquisition recovery takes. Failures are recorded for Phase B to apply.
+func (tr *TestRunner) secureAdoptedRuns(b *distributedExecutionBackend) {
+	tr.mu.RLock()
+	tests := make([]*ManagedTest, 0)
+	for _, test := range tr.tests {
+		if resume := test.adoptedResume; resume != nil && resume.finishStatus == "" && len(resume.adopted) > 0 && !resume.secured && resume.secureFailure == "" {
+			tests = append(tests, test)
+		}
+	}
+	tr.mu.RUnlock()
+	var secures sync.WaitGroup
+	for _, test := range tests {
+		secures.Add(1)
+		go func() {
+			defer secures.Done()
+			tr.mu.RLock()
+			resume := test.adoptedResume
+			executionCtx := test.executionCtx
+			token := test.remoteRunSupervisionToken
+			active := tr.tests[test.ID] == test && runAdoptionStatus(test.Status) && test.Status != "STOPPING"
+			tr.mu.RUnlock()
+			if resume == nil || !active || executionCtx == nil {
+				return
+			}
+			message := func() (message string) {
+				defer func() {
+					if recovered := recover(); recovered != nil {
+						slog.Error("securing an adopted run panicked", "test_id", test.ID, "panic", recovered)
+						message = fmt.Sprintf("internal error while re-establishing generator supervision (%v)", recovered)
+					}
+				}()
+				return tr.secureAdoptedRunSupervision(b, test, resume, executionCtx, token)
+			}()
+			tr.mu.Lock()
+			if test.adoptedResume == resume {
+				if message != "" {
+					resume.secureFailure = message
+				} else {
+					resume.secured = true
+				}
+			}
+			tr.mu.Unlock()
+		}()
+	}
+	secures.Wait()
+}
+
+// secureAdoptedRunSupervision moves an adopted run's generator-side keepalives
+// to the new term: per-run leases for a loss-tolerant run, then supervision
+// under the rotated token and its renewal keeper. It returns a failure message,
+// or "" on success.
+func (tr *TestRunner) secureAdoptedRunSupervision(b *distributedExecutionBackend, test *ManagedTest, resume *adoptedRunResume, executionCtx context.Context, token [generatorrpc.RunSupervisionTokenSize]byte) string {
+	tr.excludeFinishedGenerators(b, test, resume.completed)
+	tr.mu.RLock()
+	lossTolerant := assignmentToleratesGeneratorLoss(test.Assignment)
+	tr.mu.RUnlock()
+	if lossTolerant {
+		// A loss-tolerant run also holds a per-run lease on each generator; the
+		// generator requires it before supervision. Re-establish it under the
+		// new term, then hand it to the ordinary per-run renewal loop (which
+		// also drives generator-loss evacuation from here on). A generator lost
+		// during the gap already failed the run in Phase A.
+		_, _, leaseDeadline, claimErr := tr.generatorExecutionClaim()
+		if claimErr != nil {
+			return fmt.Sprintf("execution leadership changed before run leases were re-established: %v", claimErr)
+		}
+		if err := b.renewGeneratorTestExecutionClients(executionCtx, test.ID, resume.adopted, resume.generation, resume.ownerID, leaseDeadline); err != nil {
+			return fmt.Sprintf("re-establish generator run leases: %v", err)
+		}
+		go b.renewGeneratorExecutionEpoch(executionCtx, tr, test, resume.generation)
+	}
+	if err := b.claimRunSupervisionClients(executionCtx, test.ID, resume.adopted, resume.generation, resume.ownerID, token[:]); err != nil {
+		return fmt.Sprintf("re-establish generator run supervision: %v", err)
+	}
+	b.startRunSupervisionKeeper(executionCtx, tr, test, resume.adopted, resume.generation, resume.ownerID, token)
+	return ""
 }
 
 // Completed and retired participants still need archive access, but may share
@@ -1046,32 +1150,17 @@ func (tr *TestRunner) resumeAdoptedRun(test *ManagedTest) {
 		return
 	}
 	fail := func(message string) { tr.failResumedAdoptedRunWithStopProof(b, test, resume, message) }
-	tr.excludeFinishedGenerators(b, test, resume.completed)
-	tr.mu.RLock()
-	lossTolerant := assignmentToleratesGeneratorLoss(test.Assignment)
-	tr.mu.RUnlock()
-	if lossTolerant {
-		// A loss-tolerant run also holds a per-run lease on each generator; the
-		// generator requires it before supervision. Re-establish it under the
-		// new term, then hand it to the ordinary per-run renewal loop (which
-		// also drives generator-loss evacuation from here on). A generator lost
-		// during the gap already failed the run in Phase A.
-		_, _, leaseDeadline, claimErr := tr.generatorExecutionClaim()
-		if claimErr != nil {
-			fail(fmt.Sprintf("execution leadership changed before run leases were re-established: %v", claimErr))
-			return
-		}
-		if err := b.renewGeneratorTestExecutionClients(executionCtx, test.ID, resume.adopted, resume.generation, resume.ownerID, leaseDeadline); err != nil {
-			fail(fmt.Sprintf("re-establish generator run leases: %v", err))
-			return
-		}
-		go b.renewGeneratorExecutionEpoch(executionCtx, tr, test, resume.generation)
-	}
-	if err := b.claimRunSupervisionClients(executionCtx, test.ID, resume.adopted, resume.generation, resume.ownerID, token[:]); err != nil {
-		fail(fmt.Sprintf("re-establish generator run supervision: %v", err))
+	// Phase A normally secured supervision already (secureAdoptedRuns).
+	if resume.secureFailure != "" {
+		fail(resume.secureFailure)
 		return
 	}
-	b.startRunSupervisionKeeper(executionCtx, tr, test, resume.adopted, resume.generation, resume.ownerID, token)
+	if !resume.secured {
+		if message := tr.secureAdoptedRunSupervision(b, test, resume, executionCtx, token); message != "" {
+			fail(message)
+			return
+		}
+	}
 
 	lifecycleCtx, lifecycleCancel := tr.executionOperationContext(context.Background())
 	streams := make(map[string]*generatorrpc.MetricsStream, len(resume.adopted))
