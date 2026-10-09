@@ -13,6 +13,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/rca"
@@ -44,9 +46,12 @@ const (
 // on its exact action-dimension tuple, associated analysis datasets
 // contribute imported series and browser document measurement tuples
 // contribute document series (joint slices ranking last for series and
-// anomalies), and unscored telemetry reads as unknown. It has not been
-// released, so its review fixes keep the name.
-const rcaArchiveAdapterVersion = "archive.3"
+// anomalies), and unscored telemetry reads as unknown.
+// archive.4: the archive input digest covers the manifest fields and
+// artifacts the analysis reads, not the adjunct sidecars, telemetry accounts
+// and test notes a finalize refresh rewrites; a request made while the
+// archive is still being finalized is refused instead of failing later.
+const rcaArchiveAdapterVersion = "archive.4"
 
 // rcaEngineVersion changes whenever the engine's output for the same frozen
 // inputs could change, so it is part of every input digest.
@@ -124,6 +129,11 @@ type rcaAnalysisPayload struct {
 	// name, frozen with it.
 	Excerpts []RCAEvidenceExcerpt `json:"excerpts,omitempty"`
 	Error    string               `json:"error,omitempty"`
+	// ArchiveManifest is the digest of the whole archive manifest when the
+	// inputs were frozen. Inputs.Archive covers only what the analysis reads,
+	// so an unchanged manifest digest says the archive is unchanged without
+	// reading it again.
+	ArchiveManifest string `json:"archive_manifest,omitempty"`
 }
 
 // RCAAnalysisResponse reports an analysis and, once completed, its
@@ -169,8 +179,8 @@ func rcaInputDigest(inputs rca.InputDigests) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// rcaArchiveDigest identifies an archive by its manifest.
-func rcaArchiveDigest(record *storage.RunArchiveRecord) (string, error) {
+// rcaManifestDigest identifies an archive publication by its whole manifest.
+func rcaManifestDigest(record *storage.RunArchiveRecord) (string, error) {
 	if record == nil {
 		return "", errors.New("run archive unavailable")
 	}
@@ -182,6 +192,81 @@ func rcaArchiveDigest(record *storage.RunArchiveRecord) (string, error) {
 		return "", fmt.Errorf("read archive manifest: %w", err)
 	}
 	return sha256BytesHex(data), nil
+}
+
+// rcaEvidenceDigest identifies the archive evidence an analysis reads: the
+// manifest without the adjunct sidecars, telemetry accounts and test notes
+// that finalize writes after publication and a later refresh rewrites, and
+// only the artifacts the adapters open. An adjunct-only rewrite leaves it
+// unchanged, so a completed analysis stays current and a queued one still
+// runs; a field this package does not know about still changes it, which
+// errs towards re-analysis.
+func rcaEvidenceDigest(manifest *RunArchiveManifest) (string, error) {
+	if manifest == nil {
+		return "", errors.New("run archive manifest unavailable")
+	}
+	read := *manifest
+	read.TestManifestFile, read.TestNotesFile = "", ""
+	read.ProviderLookupsFile, read.ProviderLookupCount, read.ProviderLookupsTruncated = "", 0, false
+	read.ExemplarsFile, read.ExemplarCount, read.ExemplarsTruncated = "", 0, false
+	read.ClockObservationsFile, read.ClockObservationCount, read.ClockObservationsTruncated = "", 0, false
+	read.TelemetrySourcesFile, read.TelemetrySourceEpochCount, read.TelemetrySourcesTruncated = "", 0, false
+	read.JointIntervalsFile, read.JointIntervalsParquetFile, read.JointIntervalCount, read.JointIntervalsTruncated = "", "", 0, false
+	read.TelemetryCoverage, read.TelemetryStageDistributions, read.TelemetryStageDigests, read.TelemetryLoss = nil, nil, nil, nil
+	read.PhaseEventsFile, read.PhaseEventCount, read.PhaseEventsTruncated = "", 0, false
+	read.BrowserHARArtifacts, read.BrowserHARIncomplete, read.BrowserHAROmitted = nil, false, nil
+	read.BrowserInteractionsFile, read.BrowserInteractionRecordCount, read.BrowserInteractionsIncomplete, read.BrowserInteractionsDropped, read.BrowserInteractionsArtifact = "", 0, false, 0, nil
+	inputs := map[string]bool{}
+	for _, name := range []string{manifest.TransactionsFile, manifest.IntervalSummariesFile, manifest.ResourceSamplesFile, manifest.IntervalDistributionsFile, manifest.MonitorEvidenceFile, manifest.BrowserDocumentsFile} {
+		if strings.TrimSpace(name) != "" {
+			inputs[name] = true
+		}
+	}
+	read.Artifacts = nil
+	for _, artifact := range manifest.Artifacts {
+		if inputs[artifact.Name] {
+			read.Artifacts = append(read.Artifacts, artifact)
+		}
+	}
+	body, err := json.Marshal(read)
+	if err != nil {
+		return "", fmt.Errorf("encode archive manifest: %w", err)
+	}
+	return sha256BytesHex(body), nil
+}
+
+// rcaArchiveDigest is the evidence digest of an archive record's current
+// manifest, read from its materialized path.
+func rcaArchiveDigest(record *storage.RunArchiveRecord) (string, error) {
+	if record == nil {
+		return "", errors.New("run archive unavailable")
+	}
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		return "", err
+	}
+	return rcaEvidenceDigest(manifest)
+}
+
+// rcaArchiveFinalizing reports whether the run's archive is still being
+// finalized or refreshed. The sidecars and manifest that work publishes would
+// change the evidence an analysis requested now reads, so the request waits
+// instead of failing when it runs.
+func (s *Server) rcaArchiveFinalizing(testID string) bool {
+	if s.runner == nil {
+		return false
+	}
+	if outbox := s.runner.archiveFinalizationOutbox(); outbox != nil {
+		if job, err := outbox.GetArchiveFinalizationJob(testID); err == nil && job != nil {
+			return true
+		}
+	}
+	if refresh := s.runner.archiveRefreshOutbox(); refresh != nil {
+		if job, err := refresh.GetArchiveRefreshJob(testID); err == nil && job != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func sidecarState(file string, truncated bool) string {
@@ -205,7 +290,10 @@ func captureRCAEvidence(store any, project, testID string, record *storage.RunAr
 	if !ok {
 		return nil, errors.New("root-cause storage unavailable")
 	}
-	digest, err := rcaArchiveDigest(record)
+	if record == nil {
+		return nil, errors.New("run archive unavailable")
+	}
+	digest, err := rcaEvidenceDigest(manifest)
 	if err != nil {
 		return nil, err
 	}
@@ -248,8 +336,11 @@ func captureRCAEvidence(store any, project, testID string, record *storage.RunAr
 	return rcaStore.AppendRCAEvidenceRevision(project, testID, payload, now, accept)
 }
 
-// sameEvidence reuses a revision captured from the same archive under the
-// same mapping decisions and associated dataset revisions.
+// sameEvidence reuses a revision captured from the same archive evidence
+// under the same mapping decisions and associated dataset revisions. The
+// sidecar inventory is not compared: a sidecar the assessment reads is in
+// the evidence digest, and one it does not read (exemplars, phase events)
+// must not make identical requests two analyses.
 func sameEvidence(latest, current rcaEvidence) bool {
 	return latest.ArchiveDigest == current.ArchiveDigest && latest.MappingDigest == current.MappingDigest &&
 		rcaDatasetsDigest(latest.Datasets) == rcaDatasetsDigest(current.Datasets) && latest.DatasetsTruncated == current.DatasetsTruncated
@@ -272,9 +363,16 @@ func (tr *TestRunner) autoEnrichRCAEvidence(test *ManagedTest, record *storage.R
 	}
 }
 
-func rcaAnalysisResponse(analysis *storage.RCAAnalysis) RCAAnalysisResponse {
+// rcaAnalysisPayloadOf decodes an analysis row's payload; a row that cannot
+// be decoded reads as empty.
+func rcaAnalysisPayloadOf(analysis *storage.RCAAnalysis) rcaAnalysisPayload {
 	var payload rcaAnalysisPayload
 	_ = json.Unmarshal(analysis.Payload, &payload)
+	return payload
+}
+
+func rcaAnalysisResponse(analysis *storage.RCAAnalysis) RCAAnalysisResponse {
+	payload := rcaAnalysisPayloadOf(analysis)
 	created := analysis.CreatedAt
 	out := RCAAnalysisResponse{AnalysisID: analysis.ID, Revision: analysis.Revision, State: analysis.State, CreatedAt: &created, CompletedAt: analysis.CompletedAt,
 		Inputs: &payload.Inputs, Error: payload.Error, Presented: rcaV2PresentEnabled(analysis.ProjectID)}
@@ -316,12 +414,24 @@ func (s *Server) handleCreateRCAAnalysis(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	request.BaselineTestID = strings.TrimSpace(request.BaselineTestID)
+	// The archive is published before finalize writes its sidecars and the
+	// final manifest; an analysis frozen in that window would read a changed
+	// archive when it runs, so it waits for the archive to settle.
+	if s.rcaArchiveFinalizing(test.ID) {
+		writeError(w, http.StatusConflict, "the run archive is still being finalized; request the analysis once it has settled")
+		return
+	}
 	manifest, err := loadRunArchiveManifestFromRecord(record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to read archive manifest")
 		return
 	}
-	archiveDigest, err := rcaArchiveDigest(record)
+	archiveDigest, err := rcaEvidenceDigest(manifest)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	manifestDigest, err := rcaManifestDigest(record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -357,7 +467,7 @@ func (s *Server) handleCreateRCAAnalysis(w http.ResponseWriter, r *http.Request)
 	if json.Unmarshal(evidence.Payload, &frozen) == nil {
 		inputs.Mapping = frozen.MappingDigest
 	}
-	payload, _ := json.Marshal(rcaAnalysisPayload{Request: request, Inputs: inputs})
+	payload, _ := json.Marshal(rcaAnalysisPayload{Request: request, Inputs: inputs, ArchiveManifest: manifestDigest})
 	analysis, created, err := store.CreateRCAAnalysis(project, test.ID, rcaInputDigest(inputs), payload, time.Now())
 	if errors.Is(err, storage.ErrRCALimit) {
 		writeError(w, http.StatusConflict, err.Error())
@@ -396,7 +506,11 @@ func (s *Server) rcaBaselineArchive(ctx context.Context, currentID, project, bas
 		return "", http.StatusServiceUnavailable, "baseline archive unavailable"
 	}
 	defer lease.Release()
-	digest, err := rcaArchiveDigest(record)
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		return "", http.StatusServiceUnavailable, "baseline archive unavailable"
+	}
+	digest, err := rcaEvidenceDigest(manifest)
 	if err != nil {
 		return "", http.StatusServiceUnavailable, "baseline archive unavailable"
 	}
@@ -434,21 +548,75 @@ func (s *Server) handleGetRCAAnalysis(w http.ResponseWriter, r *http.Request) {
 // a completed analysis predates the run's current archive.
 func (s *Server) currentRCAAnalysisResponse(ctx context.Context, analysis *storage.RCAAnalysis) RCAAnalysisResponse {
 	out := rcaAnalysisResponse(analysis)
-	if out.Assessment != nil && out.Inputs != nil {
-		out.ArchiveChanged = s.rcaArchiveChanged(ctx, analysis.TestID, *out.Inputs)
+	if out.Assessment != nil {
+		out.ArchiveChanged = s.rcaArchiveChanged(ctx, analysis.TestID, rcaAnalysisPayloadOf(analysis))
 	}
 	return out
 }
 
-// rcaArchiveChanged reports whether the run's archive is no longer the one
-// an analysis read. An archive without a recorded digest is not judged.
-func (s *Server) rcaArchiveChanged(ctx context.Context, testID string, inputs rca.InputDigests) bool {
+// rcaArchiveChanged reports whether the archive evidence an analysis read is
+// no longer the run's: a field or artifact the analysis reads changed. A
+// manifest rewrite that only refreshed adjunct sidecars or test notes is not
+// a change. A run without an archive is not judged; an archive that cannot
+// be read is judged changed, so the caller re-analyzes rather than trusts.
+func (s *Server) rcaArchiveChanged(ctx context.Context, testID string, payload rcaAnalysisPayload) bool {
+	if payload.Inputs.Archive == "" {
+		return false
+	}
 	record, ok := s.archiveDomainService().GetRunArchiveContext(ctx, testID)
 	if !ok || record == nil {
 		return false
 	}
-	current := strings.TrimSpace(record.ManifestSHA256)
-	return current != "" && inputs.Archive != "" && current != inputs.Archive
+	if current := strings.TrimSpace(record.ManifestSHA256); current != "" && current == payload.ArchiveManifest {
+		return false
+	}
+	digest, err := rcaCurrentEvidenceDigest(ctx, record)
+	if err != nil {
+		return true
+	}
+	return digest != payload.Inputs.Archive
+}
+
+// rcaEvidenceDigests caches each archive manifest's evidence digest by the
+// manifest's own digest, so a run's analyses are judged current without
+// re-reading its manifest on every request. Each archive publication adds
+// one entry; the cache is emptied once it holds rcaEvidenceDigestCacheLimit.
+var (
+	rcaEvidenceDigests          sync.Map
+	rcaEvidenceDigestCount      atomic.Int64
+	rcaEvidenceDigestCacheLimit = int64(4096)
+)
+
+// rcaCurrentEvidenceDigest is the evidence digest of the run's current
+// archive manifest.
+func rcaCurrentEvidenceDigest(ctx context.Context, record *storage.RunArchiveRecord) (string, error) {
+	key := strings.TrimSpace(record.ManifestSHA256)
+	if key != "" {
+		if cached, ok := rcaEvidenceDigests.Load(key); ok {
+			return cached.(string), nil
+		}
+	}
+	lease, err := acquireArchiveMaterialized(ctx, record)
+	if err != nil {
+		return "", err
+	}
+	defer lease.Release()
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		return "", err
+	}
+	digest, err := rcaEvidenceDigest(manifest)
+	if err != nil {
+		return "", err
+	}
+	if key != "" {
+		if rcaEvidenceDigestCount.Add(1) > rcaEvidenceDigestCacheLimit {
+			rcaEvidenceDigests.Range(func(k, _ any) bool { rcaEvidenceDigests.Delete(k); return true })
+			rcaEvidenceDigestCount.Store(1)
+		}
+		rcaEvidenceDigests.Store(key, digest)
+	}
+	return digest, nil
 }
 
 // handleGetRCAAssessmentV2 returns the run's latest completed assessment.
@@ -687,16 +855,16 @@ func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *st
 		return nil, nil, fmt.Errorf("materialize archive: %w", err)
 	}
 	defer lease.Release()
-	digest, err := rcaArchiveDigest(record)
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		return nil, nil, err
+	}
+	digest, err := rcaEvidenceDigest(manifest)
 	if err != nil {
 		return nil, nil, err
 	}
 	if digest != payload.Inputs.Archive {
 		return nil, nil, errRCAArchiveChanged
-	}
-	manifest, err := loadRunArchiveManifestFromRecord(record)
-	if err != nil {
-		return nil, nil, err
 	}
 	summaries, err := readAllArchiveSummaries(record)
 	if err != nil {
@@ -932,12 +1100,12 @@ func (s *Server) rcaBaselineEvidence(ctx context.Context, manifest *RunArchiveMa
 		return missing, nil
 	}
 	defer lease.Release()
-	if current, err := rcaArchiveDigest(record); err != nil || current != digest {
-		missing.Detail = "baseline archive changed after the analysis was requested"
-		return missing, nil
-	}
 	baselineManifest, err := loadRunArchiveManifestFromRecord(record)
 	if err != nil {
+		return missing, nil
+	}
+	if current, err := rcaEvidenceDigest(baselineManifest); err != nil || current != digest {
+		missing.Detail = "baseline archive changed after the analysis was requested"
 		return missing, nil
 	}
 	baselineKey := comparisonWorkloadKey(&baselineComparisonRun{manifest: baselineManifest}, nil, "")

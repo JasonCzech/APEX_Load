@@ -185,18 +185,67 @@ func TestRCACancellationAndOwnerChange(t *testing.T) {
 	}
 }
 
+// An analysis reads a frozen archive. Evidence that changed before it ran
+// fails it; a finalize refresh that only rewrote adjunct sidecars and test
+// notes, and so the manifest digest, is not a change.
 func TestRCAAnalysisFailsWhenTheArchiveChanged(t *testing.T) {
-	server, _ := rcaTestServer(t)
-	queued := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{}).Body.Bytes())
-	server.runner.mu.Lock()
-	server.runner.archives["rca-run"].ManifestSHA256 = strings.Repeat("f", 64)
-	server.runner.mu.Unlock()
-	if ran, err := server.runNextRCAAnalysis(context.Background(), nil); err != nil || !ran {
-		t.Fatal(ran, err)
+	t.Run("evidence changed", func(t *testing.T) {
+		server, _ := rcaTestServer(t)
+		record := server.runner.archives["rca-run"]
+		queued := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{}).Body.Bytes())
+		writeArchiveSidecar(t, record, "resources.jsonl", []ResourceSample{}, func(m *RunArchiveManifest) { m.TransactionCount++ })
+		server.runner.mu.Lock()
+		record.ManifestSHA256 = strings.Repeat("f", 64)
+		server.runner.mu.Unlock()
+		if ran, err := server.runNextRCAAnalysis(context.Background(), nil); err != nil || !ran {
+			t.Fatal(ran, err)
+		}
+		failed := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodGet, rcaRunPath+"/analyses/"+queued.AnalysisID, nil).Body.Bytes())
+		if failed.State != storage.RCAStateFailed || failed.Error != errRCAArchiveChanged.Error() || failed.Assessment != nil {
+			t.Fatalf("changed archive: %+v", failed)
+		}
+	})
+	t.Run("adjuncts refreshed", func(t *testing.T) {
+		server, _ := rcaTestServer(t)
+		record := server.runner.archives["rca-run"]
+		queued := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{}).Body.Bytes())
+		writeArchiveSidecar(t, record, "phase_events.jsonl", []PhaseEvent{}, func(m *RunArchiveManifest) {
+			m.PhaseEventsFile, m.TestNotesFile, m.TestManifestFile = "phase_events.jsonl", "test_notes.json", "test_manifest.json"
+			m.Artifacts = append(m.Artifacts, RunArchiveArtifact{Name: "phase_events.jsonl", SHA256: strings.Repeat("a", 64)})
+		})
+		server.runner.mu.Lock()
+		record.ManifestSHA256 = strings.Repeat("e", 64)
+		server.runner.mu.Unlock()
+		if ran, err := server.runNextRCAAnalysis(context.Background(), nil); err != nil || !ran {
+			t.Fatal(ran, err)
+		}
+		done := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodGet, rcaRunPath+"/analyses/"+queued.AnalysisID, nil).Body.Bytes())
+		if done.State != storage.RCAStateCompleted || done.Assessment == nil || done.ArchiveChanged {
+			t.Fatalf("adjunct refresh: %+v", done)
+		}
+		// The same request after the refresh is still the same analysis.
+		if repeat := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{}).Body.Bytes()); repeat.AnalysisID != queued.AnalysisID {
+			t.Fatalf("adjunct refresh made new inputs: %+v", repeat)
+		}
+	})
+}
+
+// While finalize is still writing the archive's sidecars and manifest, an
+// analysis request waits rather than freezing evidence that is about to change.
+func TestRCAAnalysisWaitsForArchiveFinalization(t *testing.T) {
+	server, store := rcaTestServer(t)
+	record := server.runner.archives["rca-run"]
+	if err := store.SaveArchiveFinalizationJob(&storage.ArchiveFinalizationJob{TestID: "rca-run", ProjectID: storage.DefaultProjectID, ArchiveRecord: *record, PersistArtifacts: true}); err != nil {
+		t.Fatal(err)
 	}
-	failed := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodGet, rcaRunPath+"/analyses/"+queued.AnalysisID, nil).Body.Bytes())
-	if failed.State != storage.RCAStateFailed || failed.Error != errRCAArchiveChanged.Error() || failed.Assessment != nil {
-		t.Fatalf("changed archive: %+v", failed)
+	if reply := timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{}); reply.Code != http.StatusConflict || !strings.Contains(reply.Body.String(), "finalized") {
+		t.Fatalf("finalizing archive: %d %s", reply.Code, reply.Body.String())
+	}
+	if err := store.DeleteArchiveFinalizationJob("rca-run"); err != nil {
+		t.Fatal(err)
+	}
+	if reply := timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{}); reply.Code != http.StatusAccepted {
+		t.Fatalf("settled archive: %d %s", reply.Code, reply.Body.String())
 	}
 }
 

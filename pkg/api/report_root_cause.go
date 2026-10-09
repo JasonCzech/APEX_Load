@@ -128,7 +128,7 @@ func (s *Server) latestRootCauseV2(project, testID string) (*ReportRootCause, er
 		return nil, fmt.Errorf("analysis %s has no assessment", latest.ID)
 	}
 	view := reportRootCauseFromV2(payload.Assessment, latest.CompletedAt)
-	if s.rcaArchiveChanged(context.Background(), testID, payload.Inputs) {
+	if s.rcaArchiveChanged(context.Background(), testID, payload) {
 		view.Notes = append(view.Notes, "This analysis judged an earlier revision of the run's archive; evidence archived since is not in it. Re-analyze the run to include it.")
 	}
 	return &view, nil
