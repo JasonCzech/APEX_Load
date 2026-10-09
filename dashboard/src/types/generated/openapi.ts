@@ -38013,6 +38013,7 @@ export interface operations {
                 "legacy_html_check"?: boolean;
                 "max"?: number;
                 "min"?: number;
+                "source"?: string;
                 "type"?: string;
                 "value"?: string;
               }>;
@@ -38621,6 +38622,7 @@ export interface operations {
                 "legacy_html_check"?: boolean;
                 "max"?: number;
                 "min"?: number;
+                "source"?: string;
                 "type"?: string;
                 "value"?: string;
               }>;
@@ -38771,6 +38773,7 @@ export interface operations {
                 "legacy_html_check"?: boolean;
                 "max"?: number;
                 "min"?: number;
+                "source"?: string;
                 "type"?: string;
                 "value"?: string;
               }>;
@@ -155467,6 +155470,7 @@ export interface operations {
                 "legacy_html_check"?: boolean;
                 "max"?: number;
                 "min"?: number;
+                "source"?: string;
                 "type"?: string;
                 "value"?: string;
               }>;
@@ -156075,6 +156079,7 @@ export interface operations {
                 "legacy_html_check"?: boolean;
                 "max"?: number;
                 "min"?: number;
+                "source"?: string;
                 "type"?: string;
                 "value"?: string;
               }>;
@@ -156225,6 +156230,7 @@ export interface operations {
                 "legacy_html_check"?: boolean;
                 "max"?: number;
                 "min"?: number;
+                "source"?: string;
                 "type"?: string;
                 "value"?: string;
               }>;
@@ -161836,6 +161842,7 @@ export interface operations {
                 "legacy_html_check"?: boolean;
                 "max"?: number;
                 "min"?: number;
+                "source"?: string;
                 "type"?: string;
                 "value"?: string;
               }>;
@@ -162444,6 +162451,7 @@ export interface operations {
                 "legacy_html_check"?: boolean;
                 "max"?: number;
                 "min"?: number;
+                "source"?: string;
                 "type"?: string;
                 "value"?: string;
               }>;
@@ -162594,6 +162602,7 @@ export interface operations {
                 "legacy_html_check"?: boolean;
                 "max"?: number;
                 "min"?: number;
+                "source"?: string;
                 "type"?: string;
                 "value"?: string;
               }>;

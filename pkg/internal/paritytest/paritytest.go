@@ -74,6 +74,10 @@ type Expectation struct {
 	// Variables seeds replay variables, for values a real run would get from
 	// earlier steps or data files the case does not include.
 	Variables map[string]string `json:"variables,omitempty"`
+	// ExpectFailures names the actions of a replay case that must fail (a
+	// check against a broken page), each with a fragment of its error. Every
+	// other action must succeed; replay continues past each failure.
+	ExpectFailures map[string]string `json:"expect_failures,omitempty"`
 }
 
 // ExpectedRequest describes one request the fixture server must receive.
@@ -554,6 +558,39 @@ func collectMetadataCodes(script *dsl.Script, keys ...string) []string {
 // cases must carry their reason codes and be refused by replay; replay cases
 // must run and put exactly the expected requests on the wire. It returns one
 // line per problem.
+// checkExpectedFailures verifies that exactly the named actions failed, each
+// with its expected error fragment.
+func checkExpectedFailures(report *engine.ReplayReport, expected map[string]string) []string {
+	if report == nil {
+		return []string{"replay produced no report"}
+	}
+	var problems []string
+	seen := map[string]bool{}
+	for _, event := range report.Events {
+		fragment, wantFailure := expected[event.ActionName]
+		if !wantFailure {
+			if !event.Success {
+				problems = append(problems, fmt.Sprintf("action %q failed: %s", event.ActionName, event.ErrorMessage))
+			}
+			continue
+		}
+		seen[event.ActionName] = true
+		switch {
+		case event.Success:
+			problems = append(problems, fmt.Sprintf("action %q passed, but its check must fail on this page", event.ActionName))
+		case !strings.Contains(event.ErrorMessage, fragment):
+			problems = append(problems, fmt.Sprintf("action %q failed with %q, want it to mention %q", event.ActionName, event.ErrorMessage, fragment))
+		}
+	}
+	for name := range expected {
+		if !seen[name] {
+			problems = append(problems, fmt.Sprintf("action %q did not run", name))
+		}
+	}
+	sort.Strings(problems)
+	return problems
+}
+
 func CheckOutcome(ctx context.Context, server *Server, exp *Expectation, script *dsl.Script, warnings []string) []string {
 	var problems []string
 	joined := strings.Join(warnings, "\n")
@@ -599,12 +636,18 @@ func CheckOutcome(ctx context.Context, server *Server, exp *Expectation, script 
 			problems = append(problems, server.Compare(exp.Requests)...)
 		}
 	case OutcomeReplay:
+		if len(exp.ExpectFailures) > 0 {
+			continueOnError := true
+			script.Config.ErrorHandling.ContinueOnError = &continueOnError
+		}
 		report, err := ReplayOnce(ctx, script, exp.Variables)
 		if err != nil {
 			problems = append(problems, fmt.Sprintf("replay refused or failed: %v (gate reason codes %v)", err, codes))
 			return problems
 		}
-		if report != nil && !report.Success {
+		if len(exp.ExpectFailures) > 0 {
+			problems = append(problems, checkExpectedFailures(report, exp.ExpectFailures)...)
+		} else if report != nil && !report.Success {
 			detail := report.Error
 			if summary := report.DiagnosisSummary; summary != nil {
 				detail = fmt.Sprintf("%d failure(s); first: %s: %s", summary.FailureCount, summary.FirstFailureAction, summary.FirstFailureCause)

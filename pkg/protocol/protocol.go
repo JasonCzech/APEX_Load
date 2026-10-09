@@ -661,8 +661,11 @@ type Assertion struct {
 	Value    string `json:"value,omitempty"`    // Field to check (JSONPath, header name, etc.)
 	Min      int    `json:"min,omitempty"`      // Min threshold for numeric assertions
 	Max      int    `json:"max,omitempty"`      // Max threshold for numeric assertions
-	// CaseInsensitive makes body_contains and body_not_contains ignore case.
+	// CaseInsensitive makes body_contains, body_not_contains and the text_*
+	// checks ignore case.
 	CaseInsensitive bool `json:"case_insensitive,omitempty"`
+	// Source is the surface a text_* check reads: body, headers or all.
+	Source string `json:"source,omitempty"`
 }
 
 // ThinkTimeConfig defines think time (delay) after an action.

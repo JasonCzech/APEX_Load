@@ -118,19 +118,16 @@ func TestLoadRunnerGlobMatch(t *testing.T) {
 	}
 }
 
-func TestTextCheckOnHeadersIsNotRunAgainstTheBody(t *testing.T) {
+func TestTextCheckOnHeadersChecksTheHeaderBlock(t *testing.T) {
 	result := convertSingleWebSource(t, `
 	web_reg_find("Text=X-Status: ok", "Search=Headers", LAST);
 	web_url("status", "URL=https://shop.test/status", LAST);`)
 	action := result.Script.Actions[0]
-	for _, assertion := range action.Assertions {
-		if assertion.Type == "body_contains" {
-			t.Fatalf("a Search=Headers check must not become a body assertion: %+v", action.Assertions)
-		}
+	if len(action.Assertions) != 1 || action.Assertions[0].Type != "text_contains" || action.Assertions[0].Source != "headers" || action.Assertions[0].Value != "X-Status: ok" {
+		t.Fatalf("assertions = %+v, want a text_contains check over the headers", action.Assertions)
 	}
-	reasons, _ := action.Metadata["review_reasons"].([]string)
-	if len(reasons) != 1 || reasons[0] != textCheckScopeReasonCode {
-		t.Fatalf("review_reasons = %v, want %s", action.Metadata["review_reasons"], textCheckScopeReasonCode)
+	if reasons, _ := action.Metadata["review_reasons"].([]string); len(reasons) != 0 {
+		t.Fatalf("an exact header check needs no review, got %v", reasons)
 	}
 }
 

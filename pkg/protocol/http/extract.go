@@ -478,6 +478,8 @@ func extractFromHeaders(ext protocol.Extractor, headers http.Header) (string, er
 		return v, nil
 	case "regex":
 		return extractRegex(ext.Expression, []byte(flattenHeaders(headers)))
+	case "regex_count", "regex_ordinal":
+		return extractFromBody(ext, []byte(flattenHeaders(headers)))
 	case "boundary":
 		return extractBoundary(ext.Expression, []byte(flattenHeaders(headers)))
 	default:

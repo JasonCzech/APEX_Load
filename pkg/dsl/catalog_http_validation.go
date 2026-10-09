@@ -325,6 +325,8 @@ func validateHTTPAssertionIssues(label string, assertions []Assertion) []string 
 			Value:           assertion.Value,
 			Min:             assertion.Min,
 			Max:             assertion.Max,
+			CaseInsensitive: assertion.CaseInsensitive,
+			Source:          assertion.Source,
 		}); err != nil {
 			issues = append(issues, fmt.Sprintf("%s: assertions[%d]: %v", label, index, err))
 		}

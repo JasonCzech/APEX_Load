@@ -1247,7 +1247,7 @@ func validateExtractorIssues(protocol string, path string, action Action) []stri
 					issues = append(issues, fmt.Sprintf("%s: extractors[%d] type %q is not supported for body extraction", label, i, ext.Type))
 				}
 			case "header":
-				if !isAllowedValue(strings.TrimSpace(ext.Type), "", "header", "regex", "boundary") {
+				if !isAllowedValue(strings.TrimSpace(ext.Type), "", "header", "regex", "regex_count", "regex_ordinal", "boundary") {
 					issues = append(issues, fmt.Sprintf("%s: extractors[%d] type %q is not supported for header extraction", label, i, ext.Type))
 				}
 			case "all", "cookies":

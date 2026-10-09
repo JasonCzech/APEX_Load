@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/internal/aurapayload"
 	"github.com/jasonczech/apexload/pkg/internal/bodyencoding"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
@@ -1312,7 +1314,12 @@ func toProtocolAssertions(asserts []dsl.Assertion, vu *VUser) []protocol.Asserti
 		value := a.Value
 		if vu != nil {
 			expected, _ = vu.interpolateAnyWithSecrets(expected)
-			value, _ = vu.interpolateWithSecrets(value)
+			if httpprotocol.IsRegexTextAssertion(a.Type) {
+				// A parameter inside a text_matches pattern is literal text.
+				value, _ = vu.interpolateWithSecretsTransform(value, regexp.QuoteMeta)
+			} else {
+				value, _ = vu.interpolateWithSecrets(value)
+			}
 		}
 		out[i] = protocol.Assertion{
 			Type:            a.Type,
@@ -1322,6 +1329,7 @@ func toProtocolAssertions(asserts []dsl.Assertion, vu *VUser) []protocol.Asserti
 			Min:             a.Min,
 			Max:             a.Max,
 			CaseInsensitive: a.CaseInsensitive,
+			Source:          a.Source,
 		}
 	}
 	return out

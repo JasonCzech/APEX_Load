@@ -8,7 +8,7 @@ import { issueTitle } from './importReviewIssues'
 import { collectAuthoringIssues } from './scriptAuthoringAssist'
 import AuthHostsField from './AuthHostsField'
 import { parseAuthHosts } from './authHosts'
-import { ProtocolExtractorsSection } from './scriptActionFields'
+import { ProtocolAssertionsSection, ProtocolExtractorsSection } from './scriptActionFields'
 import { describeExtractorDFEs, describeExtractorScope } from './extractorScope'
 import { bodyEncodingLabel, knownBodyEncoding } from './bodyEncodings'
 import type { ScriptDefinition } from '../types/scripts'
@@ -152,5 +152,26 @@ describe('extractor scope summary', () => {
     expect(describeExtractorScope({ header_names: ['Location'] })).toBe('Final response only; only headers Location')
     expect(describeExtractorDFEs(['base64', 'json_to_xml'])).toBe('Decodes the body first: base64 → json_to_xml')
     expect(describeExtractorDFEs([])).toBe('')
+  })
+})
+
+describe('HTTP text assertions', () => {
+  it('edits the source and case of a text check', () => {
+    const onUpdate = vi.fn()
+    const action = { name: 'a', type: 'http', method: 'GET', target: '/', assertions: [{ type: 'text_matches', value: 'Order [0-9]+', source: 'headers', case_insensitive: true }] }
+    render(<ProtocolAssertionsSection action={action as never} index={0} protocol="http" onAddAssertion={vi.fn()} onRemoveAssertion={vi.fn()} onUpdateAssertion={onUpdate} />)
+    const type = document.querySelector('select[aria-label="Assertion 1 type"]') as HTMLSelectElement
+    expect(type.options[type.selectedIndex].textContent).toBe('Text matches pattern')
+    const source = document.querySelector('select[aria-label="Assertion 1 source"]') as HTMLSelectElement
+    expect(source.value).toBe('headers')
+    const ignoreCase = document.querySelector('input[aria-label="Assertion 1 ignore case"]') as HTMLInputElement
+    expect(ignoreCase.checked).toBe(true)
+    act(() => {
+      source.value = 'all'
+      source.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onUpdate).toHaveBeenCalledWith(0, 0, 'source', 'all')
+    act(() => { ignoreCase.click() })
+    expect(onUpdate).toHaveBeenCalledWith(0, 0, 'case_insensitive', undefined)
   })
 })

@@ -28,14 +28,11 @@ const (
 	// implement transform the response before searching, so the saved value
 	// would differ.
 	registrationDFEReasonCode = "registration_dfe_unsupported"
-	// textCheckScopeReasonCode: web_reg_find searches a scope APEX does not
-	// check yet (Headers), so the check is not executed.
-	textCheckScopeReasonCode = "text_check_scope_unsupported"
-	// textCheckNarrowedReasonCode: web_reg_find Search=ALL checked against the
-	// main body only.
+	// textCheckNarrowedReasonCode: web_reg_find Search=ALL also spans
+	// downloaded resources; APEX checks the main response's headers and body.
 	textCheckNarrowedReasonCode = "text_check_scope_narrowed"
-	// textCheckUnsupportedReasonCode: a text check form APEX cannot express
-	// yet (TextPfx/TextSfx, /DIG, /ALNUM, /BIN, /REGEXP); not executed.
+	// textCheckUnsupportedReasonCode: a text check APEX cannot express (an
+	// unknown flag, a non-RE2 /REGEXP, /BIN bytes above 0x7F); not executed.
 	textCheckUnsupportedReasonCode = "text_check_unsupported"
 )
 

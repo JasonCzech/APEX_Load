@@ -1290,7 +1290,10 @@ type Assertion struct {
 	Value    string `json:"value,omitempty"`
 	Min      int    `json:"min,omitempty"`
 	Max      int    `json:"max,omitempty"`
-	// CaseInsensitive makes HTTP body_contains and body_not_contains ignore
-	// case, as LoadRunner's Text/IC does.
+	// CaseInsensitive makes HTTP body_contains, body_not_contains and the
+	// text_* checks ignore case, as LoadRunner's Text/IC does.
 	CaseInsensitive bool `json:"case_insensitive,omitempty"`
+	// Source is the surface an HTTP text_* check reads: "body" (default),
+	// "headers" (the raw header block) or "all" (headers, then the body).
+	Source string `json:"source,omitempty"`
 }

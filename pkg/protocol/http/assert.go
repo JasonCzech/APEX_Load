@@ -67,6 +67,8 @@ func (budget *assertionInputWorkBudget) charge(assertion protocol.Assertion) err
 		// Header lookup scans the response header surface to honor
 		// case-insensitive names, so charge the complete bounded surface.
 		cost = budget.headerBytes
+	case "text_contains", "text_not_contains", "text_matches", "text_not_matches":
+		cost = textAssertionCost(assertion, budget)
 	default:
 		return nil
 	}
@@ -166,6 +168,9 @@ func evaluateResponseAssertion(a protocol.Assertion, result *protocol.Result, re
 		}
 		return fmt.Errorf("response header %q does not contain %q", headerName, expected)
 
+	case "text_contains", "text_not_contains", "text_matches", "text_not_matches":
+		return evaluateTextAssertion(a, responseHeaders, bodyText)
+
 	case "body_regex_capture_equals":
 		expected, ok := a.Expected.(string)
 		if !ok {
@@ -213,7 +218,12 @@ func responseHeaderValues(headers http.Header, name string) []string {
 // rejected before an HTTP action is launched. The DSL validator calls this
 // same function so authoring health and runtime admission cannot diverge.
 func ValidateAssertionDefinition(assertion protocol.Assertion) error {
+	if strings.TrimSpace(assertion.Source) != "" && !IsTextAssertion(assertion.Type) {
+		return fmt.Errorf("%s assertion: %w", assertion.Type, errAssertionSourceUnsupported)
+	}
 	switch assertion.Type {
+	case "text_contains", "text_not_contains", "text_matches", "text_not_matches":
+		return validateTextAssertion(assertion)
 	case "aura_actions_success":
 		if assertion.Value != "" || assertion.Min != 0 || assertion.Max != 0 || assertion.LegacyHTMLCheck {
 			return errors.New("aura_actions_success assertion accepts no value, min, max or legacy bypass")
@@ -284,6 +294,9 @@ func responseStatusExplicitlyAccepted(assertions []protocol.Assertion, result *p
 }
 
 func assertionNeedsResponseBody(assertion protocol.Assertion) bool {
+	if IsTextAssertion(assertion.Type) {
+		return textAssertionNeedsBody(assertion)
+	}
 	switch assertion.Type {
 	case "aura_actions_success", "body_contains", "body_not_contains", "body_regex_capture_equals":
 		return true

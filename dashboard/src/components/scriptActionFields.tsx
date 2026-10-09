@@ -1165,10 +1165,18 @@ function assertionOptions(protocol: string): Array<[string, string]> {
     case 'http':
     case 'http/1.1':
     case 'http/2':
-      return [['status_code', 'Status Code'], ['response_time_ms', 'Response Time (ms)'], ['body_contains', 'Body Contains'], ['header_contains', 'Header Contains'], ['body_regex_capture_equals', 'Body Regex Capture Equals'], ['aura_actions_success', 'Aura actions succeed']]
+      return [['status_code', 'Status Code'], ['response_time_ms', 'Response Time (ms)'], ['body_contains', 'Body Contains'], ['body_not_contains', 'Body Excludes'], ...HTTP_TEXT_ASSERTIONS, ['header_contains', 'Header Contains'], ['body_regex_capture_equals', 'Body Regex Capture Equals'], ['aura_actions_success', 'Aura actions succeed']]
     default:
-      return [['status_code', 'Status Code'], ['response_time_ms', 'Response Time (ms)'], ['body_contains', 'Body Contains'], ['header_contains', 'Header Contains'], ['body_regex_capture_equals', 'Body Regex Capture Equals']]
+      return [['status_code', 'Status Code'], ['response_time_ms', 'Response Time (ms)'], ['body_contains', 'Body Contains'], ['body_not_contains', 'Body Excludes'], ...HTTP_TEXT_ASSERTIONS, ['header_contains', 'Header Contains'], ['body_regex_capture_equals', 'Body Regex Capture Equals']]
   }
+}
+
+// HTTP text checks (LoadRunner web_reg_find) over a chosen response surface.
+const HTTP_TEXT_ASSERTIONS: Array<[string, string]> = [['text_contains', 'Text contains'], ['text_not_contains', 'Text excludes'], ['text_matches', 'Text matches pattern'], ['text_not_matches', 'Text does not match pattern']]
+const TEXT_ASSERTION_SOURCES: Array<[string, string]> = [['', 'Body'], ['headers', 'Headers'], ['all', 'Headers and body']]
+
+function isTextAssertion(type: string) {
+  return type.startsWith('text_') && HTTP_TEXT_ASSERTIONS.some(([value]) => value === type)
 }
 
 function assertionUsesNumericExpected(type: string) {
@@ -1176,7 +1184,7 @@ function assertionUsesNumericExpected(type: string) {
 }
 
 function assertionUsesTextValue(type: string) {
-  return ['body_contains', 'body_not_contains', 'metadata_contains', 'correlation_match', 'element_visible', 'url_contains'].includes(type)
+  return ['body_contains', 'body_not_contains', 'metadata_contains', 'correlation_match', 'element_visible', 'url_contains'].includes(type) || isTextAssertion(type)
 }
 
 function assertionUsesNamedExpected(type: string) {
@@ -1214,7 +1222,15 @@ export function ProtocolAssertionsSection({ action, index, protocol, onAddAssert
           {assertion.type === 'page_title' && <input aria-label={`Assertion ${assertionIndex + 1} expected title`} value={typeof assertion.value === 'string' ? assertion.value : String(assertion.expected ?? '')} onChange={e => onUpdateAssertion(index, assertionIndex, typeof assertion.value === 'string' ? 'value' : 'expected', e.target.value)} placeholder="Expected title" />}
           {assertionUsesNumericExpected(assertion.type) && <input aria-label={`Assertion ${assertionIndex + 1} expected number`} type="number" value={typeof assertion.expected === 'number' ? assertion.expected : 0} onChange={e => onUpdateAssertion(index, assertionIndex, 'expected', Number(e.target.value))} />}
           {assertion.type === 'response_time_ms' && <input aria-label={`Assertion ${assertionIndex + 1} maximum milliseconds`} type="number" min="1" value={assertion.max ?? 5000} onChange={e => onUpdateAssertion(index, assertionIndex, 'max', Number(e.target.value))} placeholder="Max ms" />}
-          {assertionUsesTextValue(assertion.type) && <input aria-label={`Assertion ${assertionIndex + 1} ${assertion.type.startsWith('element_') ? 'selector' : 'value'}`} value={assertion.value ?? ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'value', e.target.value)} placeholder={assertion.type === 'element_visible' ? 'Element selector' : 'Expected text'} />}
+          {assertionUsesTextValue(assertion.type) && <input aria-label={`Assertion ${assertionIndex + 1} ${assertion.type.startsWith('element_') ? 'selector' : 'value'}`} value={assertion.value ?? ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'value', e.target.value)} placeholder={assertion.type === 'element_visible' ? 'Element selector' : assertion.type.endsWith('matches') ? 'RE2 pattern' : 'Expected text'} />}
+          {isTextAssertion(assertion.type) && (
+            <select aria-label={`Assertion ${assertionIndex + 1} source`} value={assertion.source ?? ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'source', e.target.value || undefined)}>
+              {TEXT_ASSERTION_SOURCES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          )}
+          {(isTextAssertion(assertion.type) || assertion.type === 'body_contains' || assertion.type === 'body_not_contains') && protocol.startsWith('http') && (
+            <label className="checkbox-inline"><input type="checkbox" aria-label={`Assertion ${assertionIndex + 1} ignore case`} checked={Boolean(assertion.case_insensitive)} onChange={e => onUpdateAssertion(index, assertionIndex, 'case_insensitive', e.target.checked || undefined)} /> Ignore case</label>
+          )}
           {assertionUsesNamedExpected(assertion.type) && assertion.type !== 'scalar_equals' && <input aria-label={`Assertion ${assertionIndex + 1} ${assertion.type.startsWith('element_') ? 'selector' : 'value'}`} value={assertion.value ?? ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'value', e.target.value)} placeholder={assertionValuePlaceholder(assertion.type)} />}
           {assertionUsesNamedExpected(assertion.type) && <input aria-label={`Assertion ${assertionIndex + 1} expected value`} value={typeof assertion.expected === 'string' || typeof assertion.expected === 'number' ? String(assertion.expected) : ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'expected', e.target.value)} placeholder="Expected value" />}
           <button aria-label={`Remove assertion ${assertionIndex + 1}`} className="btn-icon danger" onClick={() => onRemoveAssertion(index, assertionIndex)}>✕</button>

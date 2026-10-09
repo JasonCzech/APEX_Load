@@ -6737,6 +6737,9 @@
         "min": {
           "type": "integer"
         },
+        "source": {
+          "type": "string"
+        },
         "type": {
           "type": "string"
         },

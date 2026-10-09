@@ -37,3 +37,20 @@ func TestUTF16LEBodyIsInterpolatedAsText(t *testing.T) {
 		t.Fatalf("resolved = %q (%s); the protocol encodes UTF-16LE after interpolation", resolved.Body, resolved.BodyEncoding)
 	}
 }
+
+func TestTextMatchesTreatsParameterValuesLiterally(t *testing.T) {
+	vu := &VUser{Variables: map[string]string{"code": "a.b(1)"}}
+	resolved := vu.resolveAction(dsl.Action{Type: "http", Method: "GET", Target: "https://example.invalid", Assertions: []dsl.Assertion{
+		{Type: "text_matches", Value: `[0-9]{{var.code}}`, Source: "headers"},
+		{Type: "text_contains", Value: `{{var.code}}`},
+	}})
+	if got := resolved.Assertions[0].Value; got != `[0-9]a\.b\(1\)` {
+		t.Fatalf("pattern = %q, want the parameter value quoted", got)
+	}
+	if resolved.Assertions[0].Source != "headers" {
+		t.Fatalf("source = %q", resolved.Assertions[0].Source)
+	}
+	if got := resolved.Assertions[1].Value; got != "a.b(1)" {
+		t.Fatalf("literal = %q, want the raw value", got)
+	}
+}
