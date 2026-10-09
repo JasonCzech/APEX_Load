@@ -1,0 +1,7 @@
+{
+  "description": "A Web HTTP/HTML script written in JavaScript. Until the JavaScript importer lands (WP4.3), the import must be review-only with its reason code, never routed to the Java Vuser path or sent as a broken script.",
+  "source": "VuGen 26.1 JavaScript function reference: web.url, web.regFind, web.submitData.",
+  "outcome": "gated",
+  "gate_reason_codes": ["javascript_web_script_unsupported"],
+  "warnings_contain": ["written in JavaScript"]
+}

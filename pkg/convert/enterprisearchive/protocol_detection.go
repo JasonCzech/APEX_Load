@@ -284,10 +284,10 @@ func profileForProjectConfig(cfg *ProjectConfig) (protocolProfile, []string, boo
 // RunType=Java-Interpreter for every Java-family protocol.
 func javaProjectConfigSignals(cfg *ProjectConfig) ([]string, bool) {
 	signals := make([]string, 0, 2)
-	if strings.Contains(strings.ToLower(cfg.ScriptLanguage), "java") {
+	if scriptLanguageIsJava(cfg.ScriptLanguage) {
 		signals = append(signals, fmt.Sprintf(".usr [General] ScriptLanguage=%s", strings.TrimSpace(cfg.ScriptLanguage)))
 	}
-	if strings.Contains(strings.ToLower(cfg.RunType), "java") {
+	if scriptLanguageIsJava(cfg.RunType) {
 		signals = append(signals, fmt.Sprintf(".usr [General] RunType=%s", strings.TrimSpace(cfg.RunType)))
 	}
 	return signals, len(signals) > 0

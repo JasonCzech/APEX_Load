@@ -124,6 +124,9 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			)
 		}
 	}
+	if actionFiles, ok := javaScriptWebActionFiles(files, projectConfig, projectSections); ok {
+		return newJavaScriptWebReviewResult(files, projectConfig, actionFiles), nil
+	}
 	javaArchive := isJavaProtocolsProject(projectConfig) ||
 		isJavaVuserArchive(files, projectConfig)
 	if sourceZipHasDevWebMain(files) && !javaArchive {
@@ -2042,7 +2045,7 @@ func sourceZipHasDevWebMain(files map[string]string) bool {
 
 func isJavaVuserArchive(files map[string]string, projectConfig *ProjectConfig) bool {
 	if projectConfig != nil {
-		if strings.Contains(strings.ToLower(projectConfig.ScriptLanguage), "java") || strings.Contains(strings.ToLower(projectConfig.RunType), "java") {
+		if scriptLanguageIsJava(projectConfig.ScriptLanguage) || scriptLanguageIsJava(projectConfig.RunType) {
 			return true
 		}
 		for _, actionFile := range projectConfig.ActionFiles {

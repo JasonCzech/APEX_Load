@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sort"
@@ -46,6 +47,15 @@ func TestLRWebParityCorpus(t *testing.T) {
 				t.Fatalf("ConvertZip: %v", err)
 			}
 			scripts := result.effectiveScripts()
+			if len(scripts) == 0 && exp.Outcome == paritytest.OutcomeGated {
+				// A review-only import generates no script at all; its review
+				// artifact must still name the reason.
+				checkParityReviewArtifact(t, result, exp)
+				if recorded := server.Recorded(); len(recorded) > 0 {
+					t.Errorf("a review-only import sent %d request(s)", len(recorded))
+				}
+				return
+			}
 			if len(scripts) != 1 {
 				t.Fatalf("converted %d scripts, want 1", len(scripts))
 			}
@@ -56,6 +66,30 @@ func TestLRWebParityCorpus(t *testing.T) {
 	}
 	if ran == 0 {
 		t.Fatal("no parity corpus cases found")
+	}
+}
+
+// checkParityReviewArtifact verifies that a review-only import's artifact
+// carries every expected gate reason code.
+func checkParityReviewArtifact(t *testing.T, result *ConvertResult, exp *paritytest.Expectation) {
+	t.Helper()
+	if result.ReviewArtifact == nil {
+		t.Fatal("no script and no review artifact were produced")
+	}
+	raw, err := json.Marshal(result.ReviewArtifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, code := range exp.GateReasonCodes {
+		if !strings.Contains(string(raw), `"`+code+`"`) {
+			t.Errorf("review artifact does not name reason code %q: %s", code, raw)
+		}
+	}
+	joined := strings.Join(result.Warnings, "\n")
+	for _, fragment := range exp.WarningsContain {
+		if !strings.Contains(joined, fragment) {
+			t.Errorf("warnings do not mention %q; got:\n%s", fragment, joined)
+		}
 	}
 }
 
