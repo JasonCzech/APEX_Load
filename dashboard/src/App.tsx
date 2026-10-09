@@ -18,6 +18,7 @@ import { usePersonalAppearance } from "./hooks/usePersonalPreferences";
 import "./components/PersonalSettings.css";
 import { useDashboardTheme } from "./hooks/useDashboardTheme";
 import { requestDashboardZoom, useDashboardZoomShortcuts } from "./hooks/useDashboardZoomShortcuts";
+import { useDesktopWindowTitle } from "./desktop/useDesktopWindowTitle";
 import { useAsyncTask } from "./hooks/useAsyncTask";
 import { useKeyboardShortcutHelp, useKeyboardShortcuts } from "./hooks/KeyboardShortcutProvider";
 import { KeyboardShortcutProvider } from "./hooks/KeyboardShortcutRoot";
@@ -3784,6 +3785,7 @@ function AppContent() {
   );
   const [aboutOpen, setAboutOpen] = useState(false);
   useDashboardZoomShortcuts();
+  useDesktopWindowTitle();
 
   // Own the renderer handshake above AuthGate. In native-auth configurations
   // AppShell is intentionally not rendered, but About, Zoom, external-link

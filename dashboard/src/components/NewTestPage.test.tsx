@@ -1112,8 +1112,8 @@ describe('NewTestPage', () => {
 
     const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit')
     await act(async () => editButton?.click())
-    const maintenanceStart = container.querySelector<HTMLInputElement>('[aria-label="Maintenance windows window 1 start time"]')
-    const maintenanceTimezone = container.querySelector<HTMLSelectElement>('[aria-label="Maintenance windows window 1 timezone"]')
+    const maintenanceStart = container.querySelector<HTMLInputElement>('[aria-label="Maintenance window 1 start time"]')
+    const maintenanceTimezone = container.querySelector<HTMLSelectElement>('[aria-label="Maintenance window 1 timezone"]')
     expect(maintenanceStart).toBeTruthy()
     expect(maintenanceTimezone?.value).toBe('Europe/Berlin')
     await act(async () => {
@@ -4565,10 +4565,13 @@ describe('NewTestPage', () => {
 
     const addWindowButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === '+ Add window')
     await act(async () => addWindowButton?.click())
-    expect(container.querySelector('[aria-label="Blackout windows window 1 name"]')).toBeInstanceOf(HTMLInputElement)
-    expect(container.querySelector('[aria-label="Blackout windows window 1 start time"]')).toBeInstanceOf(HTMLInputElement)
-    expect(container.querySelector('[aria-label="Blackout windows window 1 end time"]')).toBeInstanceOf(HTMLInputElement)
-    expect(container.querySelector('[aria-label="Blackout windows window 1 days of week"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Blackout window 1 name"]')).toBeInstanceOf(HTMLInputElement)
+    expect(container.querySelector('[aria-label="Blackout window 1 start time"]')).toBeInstanceOf(HTMLInputElement)
+    expect(container.querySelector('[aria-label="Blackout window 1 end time"]')).toBeInstanceOf(HTMLInputElement)
+    expect(container.querySelector('[aria-label="Blackout window 1 days of week"]')).not.toBeNull()
+    // Each entry is "a blackout window", never "blackout windows window".
+    expect(container.querySelector('[aria-label="Add blackout window"]')).toBeInstanceOf(HTMLButtonElement)
+    expect(container.innerHTML).not.toContain('windows window')
   })
   async function renderAuditPage(extra?: ReactNode) {
     await act(async () => root.render(<NavigationGuardProvider><NewTestPage

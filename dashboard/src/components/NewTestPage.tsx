@@ -382,6 +382,8 @@ function ScheduleWindowListEditor({ title, description, windows, fallbackTimezon
     const has = w.days_of_week.includes(day)
     update(i, { days_of_week: has ? w.days_of_week.filter(d => d !== day) : [...w.days_of_week, day].sort((a, b) => a - b) })
   }
+  // "Blackout windows" names the list; each entry is a "blackout window".
+  const kind = title.replace(/\s+windows$/i, '')
   return (
     <div className="setting-row schedule-window-editor">
       <div className="setting-info">
@@ -392,17 +394,17 @@ function ScheduleWindowListEditor({ title, description, windows, fallbackTimezon
         {windows.length === 0 && <span className="setting-desc schedule-window-empty">None configured.</span>}
         {windows.map((w, i) => (
           <div key={i} className="schedule-window-row">
-            <input aria-label={`${title} window ${i + 1} name`} className="settings-input schedule-window-name" placeholder="Name (optional)" value={w.name} disabled={disabled} onChange={e => update(i, { name: e.target.value })} />
-            <div className="schedule-window-days" role="group" aria-label={`${title} window ${i + 1} days of week`}>
+            <input aria-label={`${kind} window ${i + 1} name`} className="settings-input schedule-window-name" placeholder="Name (optional)" value={w.name} disabled={disabled} onChange={e => update(i, { name: e.target.value })} />
+            <div className="schedule-window-days" role="group" aria-label={`${kind} window ${i + 1} days of week`}>
               {SCHEDULE_WEEKDAYS.map(d => (
                 <button type="button" key={d.value} className={`schedule-day-toggle ${w.days_of_week.includes(d.value) ? 'active' : ''}`} disabled={disabled} aria-pressed={w.days_of_week.includes(d.value)} onClick={() => toggleDay(i, d.value)}>{d.label}</button>
               ))}
             </div>
-            <input aria-label={`${title} window ${i + 1} start time`} type="time" className="settings-input schedule-window-time" value={w.start_time} disabled={disabled} onChange={e => update(i, { start_time: e.target.value })} />
+            <input aria-label={`${kind} window ${i + 1} start time`} type="time" className="settings-input schedule-window-time" value={w.start_time} disabled={disabled} onChange={e => update(i, { start_time: e.target.value })} />
             <span className="schedule-window-sep">to</span>
-            <input aria-label={`${title} window ${i + 1} end time`} type="time" className="settings-input schedule-window-time" value={w.end_time} disabled={disabled} onChange={e => update(i, { end_time: e.target.value })} />
+            <input aria-label={`${kind} window ${i + 1} end time`} type="time" className="settings-input schedule-window-time" value={w.end_time} disabled={disabled} onChange={e => update(i, { end_time: e.target.value })} />
             <select
-              aria-label={`${title} window ${i + 1} timezone`}
+              aria-label={`${kind} window ${i + 1} timezone`}
               className="settings-input schedule-window-timezone"
               value={w.timezone?.trim() || fallbackTimezone.trim() || 'UTC'}
               disabled={disabled}
@@ -410,10 +412,10 @@ function ScheduleWindowListEditor({ title, description, windows, fallbackTimezon
             >
               {COMMON_TIMEZONES.map(tz => <option key={tz} value={tz}>{tz}</option>)}
             </select>
-            <button type="button" className="btn btn-ghost btn-sm" disabled={disabled} onClick={() => remove(i)} aria-label={`Remove ${title.toLowerCase()} window ${i + 1}`}>Remove</button>
+            <button type="button" className="btn btn-ghost btn-sm" disabled={disabled} onClick={() => remove(i)} aria-label={`Remove ${kind.toLowerCase()} window ${i + 1}`}>Remove</button>
           </div>
         ))}
-        <button type="button" className="btn btn-secondary btn-sm" disabled={disabled} aria-label={`Add ${title.toLowerCase()} window`} onClick={add}>+ Add window</button>
+        <button type="button" className="btn btn-secondary btn-sm" disabled={disabled} aria-label={`Add ${kind.toLowerCase()} window`} onClick={add}>+ Add window</button>
       </div>
     </div>
   )

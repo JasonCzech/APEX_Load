@@ -22,7 +22,6 @@
 }
 
 .run-report-toolbar .run-report-title,
-.run-report-verdict h1,
 .run-report-section-heading h2 {
   margin: 0;
   letter-spacing: 0;
@@ -132,17 +131,6 @@
   padding: 20px;
 }
 
-.run-report-verdict-main {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-}
-
-.run-report-verdict h1 {
-  font-size: 32px;
-}
-
 .run-report-verdict p {
   max-width: 860px;
   margin: 8px 0 0;
@@ -198,6 +186,13 @@
   color: var(--danger-text);
 }
 
+/* The computed verdict named inline in the assessment's opening sentence. */
+.run-report-verdict p .run-report-verdict-badge {
+  min-width: 0;
+  padding: 1px 8px;
+  vertical-align: baseline;
+}
+
 .run-report-sla-na {
   border: 1px solid var(--border);
   background: var(--bg-secondary);
@@ -206,12 +201,6 @@
 
 .run-report-override {
   margin-top: 16px;
-}
-
-.run-report-override summary {
-  cursor: pointer;
-  color: var(--text-secondary);
-  font-weight: 700;
 }
 
 .run-report-override-grid {

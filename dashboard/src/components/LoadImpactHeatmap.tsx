@@ -435,8 +435,9 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
                           className={rowHighlighted ? 'load-impact-axis-highlighted' : undefined}
                           data-axis-active={rowHighlighted ? 'true' : undefined}
                         >
+                          {/* The unit once, in parentheses: "ART (ms)", never "ARTms" or "% %". */}
                           <span>{row.metric.label}</span>
-                          {row.metric.unit && <small>{row.metric.unit}</small>}
+                          {row.metric.unit && <small> ({row.metric.unit})</small>}
                         </th>
                         {row.cells.map(cell => {
                           const selected = selectedCellKey === loadImpactCellKey(cell)
