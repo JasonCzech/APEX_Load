@@ -86,3 +86,28 @@ func TestAnomalyRejectsUnqualifiedBaselines(t *testing.T) {
 		})
 	}
 }
+
+func TestThreeSigmaScoreIsDetectAnomalysScorer(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	baseline := make([]MetricPoint, 30)
+	values := make([]float64, 30)
+	for i := range baseline {
+		values[i] = float64(10 + i%3)
+		baseline[i] = point(start.Add(time.Duration(i)*time.Minute), values[i])
+	}
+	current := point(start.Add(31*time.Minute), 20)
+	detected, ok, err := DetectAnomaly(current, baseline)
+	if err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	scored, ok := ThreeSigmaScore(20, values, DefaultAnomalySigma)
+	if !ok || scored.ZScore != detected.ZScore || scored.BaselineMean != detected.BaselineMean || scored.BaselineStdDev != detected.BaselineStdDev || scored.Exceeded != detected.Exceeded || scored.BaselineBuckets != 30 {
+		t.Fatalf("scorer %+v, detector %+v", scored, detected)
+	}
+	if _, ok := ThreeSigmaScore(20, []float64{5, 5, 5}, DefaultAnomalySigma); ok {
+		t.Fatal("a baseline without spread was scored")
+	}
+	if _, ok := ThreeSigmaScore(20, nil, DefaultAnomalySigma); ok {
+		t.Fatal("an empty baseline was scored")
+	}
+}

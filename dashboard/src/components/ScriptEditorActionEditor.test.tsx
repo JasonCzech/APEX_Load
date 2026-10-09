@@ -248,6 +248,22 @@ describe('ActionEditor transaction field', () => {
     expect(badge.style.background).toBe('rgb(0, 0, 0)')
   })
 
+  it('shows the imported call for a transaction marker instead of request fields', () => {
+    renderEditor({ name: 'Start 01_Login', type: 'source_transaction', params: { function: 'lr_start_transaction', args: ['"01_Login"'] } } as unknown as ScriptActionDefinition, { inspector: true })
+    expect(labelInput('Transaction')).toBeUndefined()
+    expect(labelInput('Target (path)')).toBeUndefined()
+    expect(container.textContent).not.toContain('Headers')
+    expect(container.querySelector('.form-hint code')?.textContent).toBe('lr_start_transaction("01_Login")')
+    expect([...container.querySelectorAll('.inspector-section-tabs button')].map(button => button.textContent)[0]).toBe('Source call')
+  })
+
+  it('keeps the Transaction field on other imported calls such as rendezvous', () => {
+    renderEditor({ name: 'Meet', type: 'rendezvous', params: { function: 'lr_rendezvous', key: 'checkout' } } as unknown as ScriptActionDefinition)
+    expect(labelInput('Transaction')).toBeTruthy()
+    expect(labelInput('Target (path)')).toBeUndefined()
+    expect(container.querySelector('.form-hint')?.textContent).toContain('VUsers wait at rendezvous point checkout')
+  })
+
   it('shows an empty Transaction field and tags the action on input', () => {
     const updates = renderEditor({ name: 'Login', type: 'POST', target: '/login' } as unknown as ScriptActionDefinition)
     const input = labelInput('Transaction')!

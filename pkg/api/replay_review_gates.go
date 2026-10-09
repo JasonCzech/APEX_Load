@@ -28,6 +28,25 @@ func validateScriptForReplayWithImportTrust(
 	return appendUniqueStrings(issues, scriptReviewGateIssues(script, "replay")...)
 }
 
+// transientStaticIssues are a debug or replay script's static findings,
+// judged on the copy the session executes. That copy masks a sensitive JVM
+// argument with a sentinel, which would read as a different finding than every
+// other entry point reports (must_start_with_dash, not sensitive_property), so
+// an untrusted script's submitted JVM arguments are judged in its place; every
+// other masked value is judged as executed (a masked recorded resource URL
+// cannot be executed). A trusted import snapshot is executed unmasked.
+func (s *Server) transientStaticIssues(submitted, prepared *dsl.Script, trusted bool) []string {
+	if trusted || submitted == nil || prepared == nil {
+		return validateScriptForReplayWithImportTrust(prepared, trusted)
+	}
+	judged := cloneScriptDefinition(prepared)
+	if judged == nil {
+		return validateScriptForReplayWithImportTrust(prepared, false)
+	}
+	judged.Config.JavaVuser.AdditionalVMParameters = append([]string(nil), submitted.Config.JavaVuser.AdditionalVMParameters...)
+	return validateScriptForReplayWithImportTrust(judged, false)
+}
+
 func replayReviewGateIssues(script *dsl.Script) []string {
 	return scriptReviewGateIssues(script, "replay")
 }

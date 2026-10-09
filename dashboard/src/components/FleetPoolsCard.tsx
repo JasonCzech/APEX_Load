@@ -17,6 +17,8 @@ import type { DeploymentProvider, DomainDeploymentTarget } from '../types/deploy
 import { clustersForProvider, providerLabel } from './deploymentTargetModel'
 import { listAllFleetPools, listAllGeneratorMetadata, runtimePoolMemberCount } from './fleetCatalogModel'
 import './parityPanels.css'
+import LoadingState from './ux/LoadingState'
+import EmptyState from './ux/EmptyState'
 
 interface Props {
   resourceId?: string
@@ -625,9 +627,9 @@ export default function FleetPoolsCard({ canManage = false, resourceId = '' }: P
       )}
 
       {loading ? (
-        <div className="pp-empty">Loading pools…</div>
+        <LoadingState what="pools" className="pp-loading" />
       ) : pools.length === 0 ? (
-        <div className="pp-empty">No managed generator pools. Pools group load generators for cloud-backed scaling.</div>
+        <EmptyState title="No managed generator pools yet." hint="Pools group load generators for cloud-backed scaling." />
       ) : (
         <div className="pp-list">
           {resourceId && <p role="status">Selected resource: {resourceId}. {!pools.some(item => item.id === resourceId) && 'This resource was not found or is no longer accessible.'} <a href={window.location.hash.replace(/([?&])resourceId=[^&]*&?/, '$1').replace(/[?&]$/, '')}>Show all resources</a></p>}
@@ -684,7 +686,7 @@ export default function FleetPoolsCard({ canManage = false, resourceId = '' }: P
           <span className="pp-muted">{provisionRequests.length} request{provisionRequests.length === 1 ? '' : 's'}</span>
         </div>
         {provisionRequests.length === 0 ? (
-          <div className="pp-empty pp-empty-compact">No provisioning requests recorded yet.</div>
+          <EmptyState compact title="No provisioning requests yet." />
         ) : (
           <div className="pp-list">
             {provisionRequests.map(request => {

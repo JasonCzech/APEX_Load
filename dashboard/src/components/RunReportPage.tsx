@@ -10,7 +10,7 @@ import StatusBadge from './StatusBadge'
 import TestNotesDialog from './TestNotesDialog'
 import { reportComparisonQualification } from './reportComparisonQualification'
 import { OrchestrationReturn } from './OrchestrationReturn'
-import { parseAppViewFromHash, scopeAppViewToWorkspace, viewToLocationHash, workspaceScopeForAppView, type ReportSection, type RootCauseRouteState } from '../appRouting'
+import { parseAppViewFromHash, scopeAppViewToWorkspace, viewToLocationHash, workspaceScopeForAppView, type ReportFocus, type ReportSection, type RootCauseRouteState } from '../appRouting'
 import TabList from './ux/TabList'
 import TestExecutionArchive from './TestExecutionArchive'
 import RunOutcomeSummary, { RunMetricPopulations } from './RunOutcomeSummary'
@@ -47,6 +47,9 @@ import SynchronizedTimeline, { type TimelineAnnotation } from './runReport/Synch
 import ReleaseReadinessSummary from './runReport/ReleaseReadinessSummary'
 import ImportedDashboardPanels from './runReport/ImportedDashboardPanels'
 import TransactionSlaScoreboard from './runReport/TransactionSlaScoreboard'
+import JourneyRiskPanel from './runReport/JourneyRiskPanel'
+import BrowserFindingsPanel from './runReport/BrowserFindingsPanel'
+import BrowserInteractionsPanel from './runReport/BrowserInteractionsPanel'
 import TransactionResponseTimeSLATable from './TransactionResponseTimeSLATable'
 import {
   alignBaselineTimeline,
@@ -68,6 +71,8 @@ interface Props {
   initialTransaction?: string
   initialPopulation?: MetricPopulation
   initialSection?: ReportSection
+  /** Content an old archive-tab link named: opened and scrolled to once the report loads. */
+  initialFocus?: ReportFocus
   initialRootCause?: RootCauseRouteState
   statusOverride?: string
   onOpenCommandCenter: (id?: string) => void
@@ -102,6 +107,7 @@ export default function RunReportPage({
   initialTransaction,
   initialPopulation,
   initialSection,
+  initialFocus,
   initialRootCause,
   statusOverride,
   onOpenCommandCenter,
@@ -216,6 +222,7 @@ export default function RunReportPage({
     appliedAnalysisSelection.current = stamp
   }, [testId, initialTransaction, initialPopulation, archiveModel])
   useEffect(() => { setAreaState(({ summary: 'Summary', performance: 'Performance', comparison: 'Comparison', diagnostics: 'Diagnostics', evidence: 'Evidence', execution: 'Execution' } as const)[initialSection ?? 'summary']) }, [testId, initialSection])
+  const focusHandledRef = useRef('')
   useEffect(() => {
     pinCompareStamp.current += 1
   }, [effectiveCompareId])
@@ -459,16 +466,32 @@ export default function RunReportPage({
     }
   }
 
+  // Archive-tab deep links (load impact, action summary, transaction
+  // drill-down) open and scroll to their content once the report renders.
+  const focusReport = archiveModel.archiveReport
+  useEffect(() => {
+    const key = `${testId}:${initialFocus || ''}`
+    if (!initialFocus || !focusReport || focusHandledRef.current === key) return
+    const target = document.querySelector<HTMLElement>(`[data-report-focus="${initialFocus}"]`)
+    if (!target) return
+    focusHandledRef.current = key
+    if (target instanceof HTMLDetailsElement) target.open = true
+    target.scrollIntoView?.({ block: 'start' })
+    const heading = target.querySelector<HTMLElement>('summary, h2, h3')
+    if (heading && heading.tagName !== 'SUMMARY' && !heading.hasAttribute('tabindex')) heading.tabIndex = -1
+    heading?.focus()
+  }, [area, initialFocus, focusReport, testId])
+
   if (testError) {
     return <div className="page run-report-page"><p className="run-report-error" role="alert">{testError}</p></div>
   }
 
   if (!test) {
-    return <div className="page run-report-page"><p role="status">Loading run snapshot...</p></div>
+    return <div className="page run-report-page"><p role="status">Loading run snapshot…</p></div>
   }
 
   if (!completed) {
-    return <div className="page run-report-page"><p role="status">Opening command center...</p></div>
+    return <div className="page run-report-page"><p role="status">Opening command center…</p></div>
   }
 
   const report = archiveModel.archiveReport
@@ -507,7 +530,7 @@ export default function RunReportPage({
   return (
     <div className="page run-report-page">
       <div className="run-report-toolbar">
-        <div><p className="run-report-kicker">Run results · {test.ref_key || test.id}</p><h1>{test.name || test.id}</h1><p><StatusBadge status={resolvedStatus} stoppedByOperator={report?.manifest?.termination_reason === 'operator_stopped'} /> · Configured {recordedNumber(facts.vusers)} VUsers for {facts.duration || 'Not recorded'} · Lifecycle elapsed {facts.lifecycleElapsed}{hasArchive && <> · Archived evidence elapsed {report ? facts.elapsed : 'Not recorded'}</>}</p></div>
+        <div><p className="run-report-kicker">Run results · {test.ref_key || test.id}</p><h2 className="run-report-title">{test.name || test.id}</h2><p><StatusBadge status={resolvedStatus} stoppedByOperator={report?.manifest?.termination_reason === 'operator_stopped'} /> · Configured {recordedNumber(facts.vusers)} VUsers for {facts.duration || 'Not recorded'} · Lifecycle elapsed {facts.lifecycleElapsed}{/* Stated once the archive has loaded; until then it is unknown, not unrecorded. */}{hasArchive && report && <> · Archived evidence elapsed {facts.elapsed}</>}</p></div>
         <div className="run-report-toolbar-actions">
           <button className="btn btn-secondary" type="button" disabled={!hasArchive} aria-expanded={area === 'Comparison'} onClick={() => { setShowCompare(false); setArea('Comparison') }}>Compare</button>
           {hasArchive && <RunReportLensSwitcher activeLens={activeLens} onLensChange={setLens} />}
@@ -536,14 +559,15 @@ export default function RunReportPage({
         <details><summary>Publish to Power BI</summary><RunReportPowerBIPublish testId={testId} publish={api.publishTestToPowerBI} getStatus={api.getPowerBIPublishStatus} /></details>
         <details><summary>Publish to Confluence</summary><RunReportConfluencePublish testId={testId} canPublish={canPublishConfluence} /></details>
       </section>}
-      {hasArchive && area !== 'Execution' && area !== 'Comparison' && <section className="run-report-context" aria-label="Analysis context">
+      {/* The population drives the analysis sections only; Evidence lists sources, not metrics. */}
+      {hasArchive && (area === 'Summary' || area === 'Performance' || area === 'Diagnostics') && <section className="run-report-context" aria-label="Analysis context">
         <label>Metric population <select value={population} onChange={e => choosePopulation(e.target.value as MetricPopulation)}>{Object.entries(populationLabels).map(([key,label]) => {
           // Empty populations would turn every KPI into "n/a": offer them with their count, disabled.
           const records = report?.metric_populations?.[key as MetricPopulation]?.transactions
           return <option key={key} value={key} disabled={records === 0 && key !== population}>{label}{records !== undefined ? ` (${records.toLocaleString()} records)` : ''}</option>
         })}</select></label>
         {report?.metric_populations?.[population]?.transactions === 0 && <p role="status"><strong>No records in this population.</strong> Choose another population to see results.</p>}
-        <p>{populationLabels[population]} · {report?.metric_populations?.[population]?.transactions ?? 'Unknown'} samples · Whole captured run. {(report?.metric_populations?.transaction?.transactions || 0) > 0 ? 'Interval graphs show named transaction metrics.' : 'Legacy interval graphs have no identified named transaction population; their values are separate from these KPIs.'} Resource curves show the load generators.</p>
+        {report && <p>{populationLabels[population]} · {report.metric_populations?.[population]?.transactions ?? 'Unknown'} samples · Whole captured run. {(report?.metric_populations?.transaction?.transactions || 0) > 0 ? 'Interval graphs show named transaction metrics.' : 'Legacy interval graphs have no identified named transaction population; their values are separate from these KPIs.'} Resource curves show the load generators.</p>}
       </section>}
       {showCompare && hasArchive && <RunReportCompareBar compareId={effectiveCompareId} suggestedCompareId={suggestedCompareId} baselineName={baselineTest?.name} options={baselineOptions} optionsLoading={baselineOptionsLoading}
         deltas={baselineDiff} loading={baselineLoading} error={baselineError || baselineOptionsError || (effectiveCompareId && report && baselineReport && (!reportPopulationOverview(report, population) || !reportPopulationOverview(baselineReport, population)) ? 'No comparable samples for the selected population.' : '')}
@@ -560,10 +584,10 @@ export default function RunReportPage({
       <MessagingProgressDiagnostics snapshot={report?.messaging_progress} />
       <MessagingDiagnostics series={Object.entries(report?.by_action || {}).map(([name, stats]) => ({ name, messaging: stats.messaging }))} />
       <RunAnnotations key={`annotations-${testId}`} testId={testId} startedAt={test.started_at} canEdit={canPublishConfluence} onAnnotationsChange={setTimelineAnnotations} />
-      <TabList className="run-report-areas" role="tablist" aria-label="Result sections">{areas.map((name,index) => <button key={name} type="button" role="tab" id={`result-tab-${name}`} aria-controls={`result-panel-${name}`} aria-selected={area === name} tabIndex={area === name ? 0 : -1}
+      <TabList className="run-report-areas" role="tablist" aria-label="Result sections">{areas.map((name,index) => <button key={name} type="button" role="tab" id={`result-tab-${name}`} aria-controls={area === name ? `result-panel-${name}` : undefined} aria-selected={area === name} tabIndex={area === name ? 0 : -1}
         onClick={() => setArea(name)} onKeyDown={e => { const next = e.key === 'ArrowRight' ? (index+1)%areas.length : e.key === 'ArrowLeft' ? (index+areas.length-1)%areas.length : e.key === 'Home' ? 0 : e.key === 'End' ? areas.length-1 : -1; if(next >= 0){e.preventDefault();setArea(areas[next]);document.getElementById(`result-tab-${areas[next]}`)?.focus()} }}>{name === 'Comparison' ? 'Baseline Comparison' : name}</button>)}</TabList>
       <section role="tabpanel" id={`result-panel-${area}`} aria-labelledby={`result-tab-${area}`} className="run-report-area-content">
-        {archiveModel.archiveLoading && <p role="status">Loading archived results...</p>}
+        {archiveModel.archiveLoading && <p role="status">Loading archived results…</p>}
         {archiveModel.archiveError && <section className="run-report-panel" aria-label="Report unavailable">
           <h2>Report could not be loaded</h2><p role="alert" className="run-report-error">{archiveModel.archiveError}</p>
           <p>Retry to load the archived findings. Execution details remain available.</p>
@@ -575,7 +599,8 @@ export default function RunReportPage({
         {area === 'Summary' && hasArchive && !archiveModel.archiveError && <>
           {report && <RunOutcomeSummary report={report} showPopulations={false} />}
           <ReleaseReadinessSummary report={report} findings={annotations?.findings} />
-          <RunReportKpiScorecard kpis={kpis} />
+          {/* KPI values wait for the report: "—" would read as a measured gap. */}
+          {report && <RunReportKpiScorecard kpis={kpis} />}
           <section className="run-report-panel"><h2>Findings and next steps</h2>
             {rootCauseView && <p className="rca-summary-line"><span><strong>Root cause:</strong> {rootCauseView.summary}</span><button type="button" className="btn btn-secondary" onClick={investigateRootCause}>Investigate root cause</button></p>}
             {report?.error_patterns?.length ? <><p>{report.error_patterns.length} error patterns were captured across all populations.</p><button className="btn btn-secondary" onClick={() => setArea('Diagnostics')}>Investigate errors</button></> : <p>{report ? 'No recurring error patterns were captured across all populations.' : 'Findings will appear when the report loads.'}</p>}
@@ -585,7 +610,8 @@ export default function RunReportPage({
           <details><summary>Analyst assessment (shared by every report audience)</summary><RunReportVerdictBanner report={report} annotations={annotations} status={verdictDraft.status} explanation={verdictDraft.explanation} saving={savingAnnotations || annotationsLoading} disabled={!annotations} onStatusChange={updateVerdictStatus} onExplanationChange={updateVerdictExplanation} onSaveOverride={saveOverride} /></details>
         </>}
         {area === 'Performance' && hasArchive && <>
-          <RunReportKpiScorecard kpis={kpis} />
+          {/* KPI values wait for the report: "—" would read as a measured gap. */}
+          {report && <RunReportKpiScorecard kpis={kpis} />}
           <SynchronizedTimeline key={testId} runId={testId} baselineId={effectiveCompareId} data={timelineHistory} annotations={timelineAnnotations} goalConfig={goalConfig} loading={archiveSummariesLoading || archiveResourcesLoading || baselineSummaryLoading} error={archiveSummaryError || archiveResourceError} showBaseline={Boolean(effectiveCompareId && timelineHistory.some(point => point.baselineTps !== undefined))} />
           <ImportedDashboardPanels test={test} baselineTest={baselineReadyTest} />
           {(report?.transaction_response_time_sla_results?.length ?? 0) > 0 ? (
@@ -605,8 +631,9 @@ export default function RunReportPage({
           ) : (
             <TransactionSlaScoreboard rows={slaRows} selectedAction={population === slaPopulation && slaRows.some(row => row.name === archiveModel.selectedArchiveAction) ? archiveModel.selectedArchiveAction : ''} drilldownTransactions={population === slaPopulation ? archiveModel.archiveTransactions : []} loadingTransactions={archiveModel.archiveTransactionsLoading} onSelectAction={name => { setPopulationChoice(slaPopulation); archiveModel.onSelectedArchiveGroupChange(''); archiveModel.onSelectedArchiveActionChange(name) }} />
           )}
-          {renderEvidence('action-summary')}
-          <details><summary>Load impact</summary>{renderEvidence('load-impact')}</details>
+          <div data-report-focus="action-summary">{renderEvidence('action-summary')}</div>
+          <JourneyRiskPanel testId={testId} />
+          <details data-report-focus="load-impact"><summary>Load impact</summary>{renderEvidence('load-impact')}</details>
         </>}
         {area === 'Diagnostics' && hasArchive && <>
           <RootCausePanel testId={testId} model={rootCause} report={report} history={timelineHistory} historyLoading={archiveSummariesLoading || archiveResourcesLoading}
@@ -614,8 +641,8 @@ export default function RunReportPage({
           <BusinessKeyLookup testId={testId} projectId={test.project_id || 'default'} canLookup={canPublishConfluence} canApprove={canManageProject} />
           <RunReportDiagnostics report={report} loading={archiveModel.archiveAnalysisLoading} error={archiveModel.archiveAnalysisError} />
           {renderEvidence('report-error-patterns')}
-          {renderEvidence('transactions')}
-          <details><summary>Browser evidence</summary>{renderEvidence('report-browser-summary')}{renderEvidence('report-browser-resources')}</details>
+          <div data-report-focus="transaction-drilldown">{renderEvidence('transactions')}</div>
+          <details><summary>Browser evidence</summary><BrowserFindingsPanel testId={testId} projectId={test.project_id || 'default'} canEvaluate={canPublishConfluence} /><BrowserInteractionsPanel testId={testId} />{renderEvidence('report-browser-summary')}{renderEvidence('report-browser-resources')}</details>
           <details><summary>Execution path analysis</summary>{renderEvidence('report-analysis')}</details>
         </>}
         {area === 'Evidence' && hasArchive && <>

@@ -50,14 +50,16 @@ func EngineVersion() string {
 		Hypotheses []any
 		Capacity   []any
 		Graph      []any
+		Browser    BrowserBaselineParams
 	}{
 		DefaultBudget, DefaultDetectParams, DefaultValidityRules,
 		[]any{LeadMargin, MaxGraphHops, MaxHypotheses},
 		[]any{KneeSlopeRatio, MinKneeLevels, LittlesFlatFraction, LittlesMinPoints, MaxCapacityResults},
 		[]any{MaxGraphBytes, MaxValidityWindows},
+		DefaultBrowserBaselineParams,
 	})
 	sum := sha256.Sum256(body)
-	return EngineVersionBase + "+" + ValidityRulesVersion + "+" + DetectParamsVersion + "+" + GraphSchemaVersion + "+" + signatures.Version +
+	return EngineVersionBase + "+" + ValidityRulesVersion + "+" + DetectParamsVersion + "+" + BrowserBaselineVersion + "+" + GraphSchemaVersion + "+" + signatures.Version +
 		"+" + hex.EncodeToString(sum[:6]) + "." + signatures.Fingerprint()
 }
 
@@ -88,6 +90,9 @@ type Assessment struct {
 	Graph      Graph        `json:"graph"`
 	Capacity   []Capacity   `json:"capacity"`
 	LittlesLaw []LittlesLaw `json:"littles_law"`
+	// BrowserBaseline compares the run's browser document cohorts with the
+	// baseline run's (browser_baseline.v1); absent without document series.
+	BrowserBaseline *BrowserBaseline `json:"browser_baseline,omitempty"`
 }
 
 // InputDigests identify the frozen inputs an assessment read.
@@ -136,6 +141,8 @@ type Anomaly struct {
 type BaselineRef struct {
 	TestID        string `json:"test_id,omitempty"`
 	Qualification string `json:"qualification,omitempty"`
+	// Reasons say why a partial baseline is partial, when known.
+	Reasons []string `json:"reasons,omitempty"`
 }
 
 // Hypothesis is one ranked explanation of one or more symptoms.
@@ -230,6 +237,9 @@ func Analyze(input AnalysisInput, budgeter *Budgeter) Assessment {
 		var limitations []Limitation
 		out.Anomalies, out.Detection, limitations = Detect(input.Detection, DefaultDetectParams, budgeter)
 		out.Limitations = append(out.Limitations, limitations...)
+		// Browser document cohorts against the baseline run's: advisory,
+		// apart from onsets and hypotheses.
+		out.BrowserBaseline = DetectBrowserBaseline(input.Detection, BrowserBaselineParamsFor(input.Detection.BrowserPolicy))
 	}
 	if budgeter.Exhausted() {
 		out.Graph = Graph{Schema: GraphSchemaVersion, Nodes: []GraphNode{}, Edges: []GraphEdge{}, Cycles: [][]string{}}

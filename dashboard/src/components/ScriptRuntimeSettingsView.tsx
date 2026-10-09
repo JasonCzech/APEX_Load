@@ -317,7 +317,7 @@ export function ScriptRuntimeSettingsView({
   {!hideSave && <div className="center-document-header runtime-settings-save-header">
     <div className="runtime-settings-header-actions">
       <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saveScriptDisabled} title={saveScriptTitle}>
-        {saving ? 'Saving...' : 'Save Script'}
+        {saving ? 'Saving…' : 'Save Script'}
       </button>
     </div>
   </div>}
@@ -1741,7 +1741,7 @@ export function ScriptRuntimeSettingsView({
       <div className="section-body">
         <div className="logging-settings-layout">
           <label>
-            <span>Log Level</span>
+            <span>Log level</span>
             <select value={script.config.log?.level || 'standard'}
               onChange={e => updateField('config.log', { ...script.config.log, level: e.target.value })}>
               <option value="disabled">Disabled</option>

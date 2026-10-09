@@ -1201,11 +1201,15 @@ describe('TestHub', () => {
     expect(searchInput).toBeDefined()
     expect(document.activeElement).toBe(searchInput)
     expect(document.body.textContent).toContain('Choosing for Group 1')
-    expect(document.body.textContent).toContain('Payments Peak')
-    expect(document.body.textContent).toContain('PI30')
     expect(document.body.textContent).toContain('grpc')
-    expect(document.body.textContent).toContain('May 15, 2026')
-    expect(document.body.textContent).toContain('May 20, 2026')
+    // Usage and history sit behind the row's info badge.
+    expect(document.body.textContent).not.toContain('Payments Peak')
+    const paymentsInfo = await openInfoPopover('Payments Flow')
+    expect(paymentsInfo.textContent).toContain('Payments Peak')
+    expect(paymentsInfo.textContent).toContain('PI30')
+    expect(paymentsInfo.textContent).toContain('May 15, 2026')
+    expect(paymentsInfo.textContent).toContain('May 20, 2026')
+    await act(async () => { paymentsInfo.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
     if (!searchInput) return
 
     await act(async () => {
@@ -2371,14 +2375,20 @@ describe('TestHub', () => {
     expect(libraryHeaders.some(header => header.includes('Start'))).toBe(false)
     expect(libraryHeaders.some(header => header.includes('Finish'))).toBe(false)
     expect(libraryHeaders.some(header => header.includes('Last Run'))).toBe(false)
+    // No remote workspace rows: every row is local, so there is no Source column.
+    expect(libraryHeaders).not.toContain('Source')
+    expect(libraryHeaders).toContain('Assignment')
+    // Archive lives in the row's More menu.
+    expect(container.querySelector('.scenario-library-table button[aria-label="Archive Pinned Checkout"]')?.closest('.ux-row-actions-menu')).not.toBeNull()
     expect(container.textContent).toContain('Pinned Checkout')
     expect(container.textContent).toContain('Specific Hosts')
-    expect(container.textContent).toContain('gen-a, gen-b')
+    expect(container.textContent).not.toContain('gen-a, gen-b')
+    expect((await openInfoPopover('Pinned Checkout')).textContent).toContain('gen-a, gen-b')
     expect(container.textContent).not.toContain('run-checkout-1')
     expect(container.textContent).not.toContain(new Date('2026-05-13T00:00:00Z').toLocaleString())
     expect(container.textContent).not.toContain(new Date('2026-05-13T00:05:00Z').toLocaleString())
     expect(container.textContent).toContain('PI29')
-    expect(container.textContent).toContain('No data pools')
+    expect(container.textContent).not.toContain('No data pools')
     expect(container.textContent).toContain('0 results')
     expect(container.textContent).not.toContain('Automatic placement')
     expect(container.textContent).not.toContain('Uses controller recommendations')
@@ -2513,59 +2523,30 @@ describe('TestHub', () => {
     expect(apiMock.updateScenario).not.toHaveBeenCalled()
   })
 
-  it('gives the delete confirmation dialog a trapped, dismissible focus lifecycle', async () => {
-    const onSelectTest = vi.fn()
+  it('confirms a row delete with the same named confirmation as bulk delete', async () => {
+    const confirm = vi.fn(() => false)
+    vi.stubGlobal('confirm', confirm)
     apiMock.listScenarios.mockResolvedValue({
       scenarios: [scenarioFixture('scenario-delete', 'Delete Me')],
       count: 1,
     })
 
     await act(async () => {
-      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+      root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />)
     })
     await flushPromises()
 
     const deleteTrigger = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Delete')
     expect(deleteTrigger).toBeDefined()
-    if (!deleteTrigger) return
-    deleteTrigger.focus()
-
     await act(async () => {
-      deleteTrigger.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    await flushTimeouts()
-
-    const dialog = container.querySelector('[role="dialog"]') as HTMLDivElement | null
-    expect(dialog).not.toBeNull()
-    expect(dialog?.getAttribute('aria-modal')).toBe('true')
-    expect(dialog?.getAttribute('aria-labelledby')).toBe('delete-scenario-dialog-title')
-    expect(dialog?.getAttribute('aria-describedby')).toBe('delete-scenario-dialog-description')
-    expect(dialog?.getAttribute('tabindex')).toBe('-1')
-    expect(document.activeElement?.textContent).toBe('Cancel')
-
-    const dialogButtons = Array.from(dialog?.querySelectorAll('button') || [])
-    const firstButton = dialogButtons[0]
-    const lastButton = dialogButtons[dialogButtons.length - 1]
-    expect(firstButton?.textContent).toBe('Cancel')
-    expect(lastButton?.textContent).toBe('Delete Scenario')
-
-    await act(async () => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }))
-    })
-    expect(document.activeElement).toBe(lastButton)
-
-    await act(async () => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
-    })
-    expect(document.activeElement).toBe(firstButton)
-
-    await act(async () => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      deleteTrigger?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flushPromises()
 
+    expect(confirm).toHaveBeenCalledWith('Permanently delete “Delete Me”? Scenarios with linked results cannot be deleted. This cannot be undone.')
+    // The bespoke dialog with its second Cancel button is gone.
     expect(container.querySelector('[role="dialog"]')).toBeNull()
-    expect(document.activeElement).toBe(deleteTrigger)
+    expect(apiMock.deleteScenario).not.toHaveBeenCalled()
   })
 
   it('limits header selection to the current page and offers explicit selection of all matches', async () => {
@@ -2788,8 +2769,6 @@ describe('TestHub', () => {
 
     expect(container.textContent).not.toContain('Existing Scripts Library')
     expect(container.textContent).not.toContain('Scenario Library (')
-    expect(container.textContent).toContain('Run releases')
-    expect(container.textContent).toContain('Updated')
     expect(container.textContent).not.toContain('Test ID')
     expect(container.textContent).not.toContain('Finish')
     expect(container.textContent).not.toContain('Last Run')
@@ -2799,11 +2778,14 @@ describe('TestHub', () => {
     expect(apiMock.listScenarioResults).toHaveBeenCalledWith('scenario-source')
     const selectedCloneRow = Array.from(container.querySelectorAll('.scenario-clone-table tr.selected')).find(row => row.textContent?.includes('Pinned Checkout'))
     expect(selectedCloneRow).toBeDefined()
-    expect(selectedCloneRow?.textContent).toContain('Local')
     expect(selectedCloneRow?.textContent).not.toContain('run-1')
     expect(selectedCloneRow?.textContent).toContain('Checkout Flow')
-    expect(selectedCloneRow?.textContent).toContain('No releases yet')
-    expect(selectedCloneRow?.textContent).toContain('May 12, 2026')
+    // Run releases and the update date sit behind the row's info badge; opening it does not re-copy the scenario.
+    const cloneInfo = await openInfoPopover('Pinned Checkout')
+    expect(cloneInfo.textContent).toContain('Run releasesNone')
+    expect(cloneInfo.textContent).toContain('May 12, 2026')
+    expect(container.querySelectorAll('.scenario-clone-table tr.selected')).toHaveLength(1)
+    await act(async () => { cloneInfo.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
     expect(selectedCloneRow?.textContent).not.toContain(new Date('2026-05-13T00:01:00Z').toLocaleString())
     expect(selectedCloneRow?.textContent).not.toContain(new Date('2026-05-13T00:08:00Z').toLocaleString())
     const runPanel = container.querySelector('.scenario-source-runs-panel')
@@ -3523,7 +3505,7 @@ describe('TestHub', () => {
 
     expect(container.textContent).toContain('Mobile Checkout')
     expect(container.textContent).toContain('Browser')
-    expect(container.textContent).toContain('iphone_se · Portrait · Touch enabled · Headed')
+    expect((await openInfoPopover('Mobile Checkout')).textContent).toContain('iphone_se · Portrait · Touch enabled · Headed')
   })
 
   it('applies workload templates and renders load-model validation findings', async () => {
@@ -4152,12 +4134,9 @@ describe('TestHub', () => {
       apiMock.listScenarios.mockResolvedValue({ scenarios: [conflictScenario], count: 1 })
       await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />))
       await flushPromises()
+      vi.stubGlobal('confirm', vi.fn(() => true))
       await act(async () => {
         Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Delete')?.click()
-      })
-      await flushTimeouts()
-      await act(async () => {
-        Array.from(container.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(button => button.textContent === 'Delete Scenario')?.click()
       })
       await flushPromises()
       expect(apiMock.deleteScenario).toHaveBeenCalledWith('scenario-conflict', '2026-05-12T00:00:00Z')
@@ -4635,6 +4614,16 @@ describe('TestHub', () => {
     confirmSpy.mockRestore()
   })
 })
+
+/** Opens a row's info badge and returns its details panel. */
+async function openInfoPopover(name: string) {
+  const badge = document.body.querySelector<HTMLButtonElement>(`button[aria-label="Details for ${name}"]`)
+  if (!badge) throw new Error(`No info badge for ${name}`)
+  await act(async () => { badge.click() })
+  const panel = document.getElementById(badge.getAttribute('aria-controls') || '')
+  if (!panel) throw new Error(`Info badge for ${name} did not open`)
+  return panel
+}
 
 async function flushPromises() {
   await act(async () => {

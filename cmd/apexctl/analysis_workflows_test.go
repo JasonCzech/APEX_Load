@@ -312,3 +312,90 @@ func TestMonitoringEvidenceFiltersAndBounds(t *testing.T) {
 		t.Fatalf("series ceiling changed: %v", err)
 	}
 }
+
+func TestAnalysisPanelCatalogAndRunQueryCommands(t *testing.T) {
+	var gotPath, gotQuery, gotMethod string
+	answered := `{"ok":true}`
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotQuery, gotMethod = r.URL.Path, r.URL.RawQuery, r.Method
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(answered))
+	}))
+	defer s.Close()
+	dir := t.TempDir()
+	definition := filepath.Join(dir, "panel.json")
+	if err := os.WriteFile(definition, []byte(`{"project_id":"p","name":"Ops","tabs":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		args                []string
+		method, path, query string
+	}{
+		{[]string{"catalog", "--project", "p"}, "GET", "/api/v1/analysis/capabilities", "project_id=p"},
+		{[]string{"panels", "--project", "p"}, "GET", "/api/v1/monitoring/dashboard-definitions", "project_id=p"},
+		{[]string{"panel", "--id", "d1"}, "GET", "/api/v1/monitoring/dashboard-definitions/d1", ""},
+		{[]string{"save-panel", "--file", definition}, "POST", "/api/v1/monitoring/dashboard-definitions", ""},
+		{[]string{"update-panel", "--id", "d1", "--file", definition}, "PATCH", "/api/v1/monitoring/dashboard-definitions/d1", ""},
+		{[]string{"delete-panel", "--id", "d1", "--revision", "4"}, "DELETE", "/api/v1/monitoring/dashboard-definitions/d1", "revision=4"},
+		{[]string{"run-query", "--id", "run-1", "--file", definition}, "POST", "/api/v1/tests/run-1/archive/native-series", ""},
+	} {
+		var output bytes.Buffer
+		if err := executeWorkflowCommand(context.Background(), "analysis", append(tc.args, "--api", s.URL), &output); err != nil {
+			t.Fatalf("%v: %v", tc.args, err)
+		}
+		if gotMethod != tc.method || gotPath != tc.path || gotQuery != tc.query || strings.TrimSpace(output.String()) != `{"ok":true}` {
+			t.Fatalf("%v: request %s %s?%s output %q", tc.args, gotMethod, gotPath, gotQuery, output.String())
+		}
+	}
+	// --revision prints exactly that saved revision, and refuses an answer
+	// that is another one (a controller that ignores ?revision).
+	answered = `{"id":"d1","revision":3,"current_revision":4}`
+	var output bytes.Buffer
+	if err := executeWorkflowCommand(context.Background(), "analysis", []string{"panel", "--id", "d1", "--revision", "3", "--api", s.URL}, &output); err != nil || gotQuery != "revision=3" || strings.TrimSpace(output.String()) != answered {
+		t.Fatalf("panel --revision 3: %v %q %q", err, gotQuery, output.String())
+	}
+	// A revision written with a leading zero is the same revision.
+	if err := executeWorkflowCommand(context.Background(), "analysis", []string{"panel", "--id", "d1", "--revision", "03", "--api", s.URL}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("panel --revision 03: %v", err)
+	}
+	answered = `{"id":"d1","revision":4}`
+	if err := executeWorkflowCommand(context.Background(), "analysis", []string{"panel", "--id", "d1", "--revision", "3", "--api", s.URL}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "returned revision 4, not the requested revision 3") {
+		t.Fatalf("a different revision was accepted: %v", err)
+	}
+	answered = `{"ok":true}`
+	for _, args := range [][]string{
+		{"panel"}, {"panel", "--id", "d1", "--revision", "x"}, {"delete-panel", "--id", "d1"}, {"update-panel", "--id", "d1"},
+		{"save-panel"}, {"run-query", "--id", "run-1"}, {"panels"},
+	} {
+		if err := executeWorkflowCommand(context.Background(), "analysis", append(args, "--api", s.URL), &bytes.Buffer{}); err == nil {
+			t.Fatalf("%v was accepted", args)
+		}
+	}
+}
+
+// A large result streams to the output: it is not refused at the old
+// buffered response bound, and a failure carries the controller's message.
+func TestAnalysisResultsStreamWithoutAWholeResponseBound(t *testing.T) {
+	large := strings.Repeat("x", 9<<20)
+	failing := false
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if failing {
+			http.Error(w, `{"error":"run not found"}`, http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":"` + large + `"}`))
+	}))
+	defer s.Close()
+	var output bytes.Buffer
+	if err := executeWorkflowCommand(context.Background(), "analysis", []string{"panels", "--project", "p", "--api", s.URL}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if output.Len() != len(large)+len(`{"data":""}`)+1 {
+		t.Fatalf("streamed %d bytes", output.Len())
+	}
+	failing = true
+	err := executeWorkflowCommand(context.Background(), "analysis", []string{"panels", "--project", "p", "--api", s.URL}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "404") || !strings.Contains(err.Error(), "run not found") {
+		t.Fatalf("failure = %v", err)
+	}
+}

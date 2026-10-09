@@ -576,6 +576,10 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
   const [comparisonChartMetric, setComparisonChartMetric] = useState<ComparisonChartMetric>('tps')
   const [comparisonActionFilter, setComparisonActionFilter] = useState(ALL_COMPARISON_ACTIONS)
   const [operationError, setError] = useState('')
+  // Completion of a delete, announced in the page's status line.
+  const [deleteNotice, setDeleteNotice] = useState('')
+  // A delete confirmation belongs to the catalog it happened in.
+  useEffect(() => { setDeleteNotice('') }, [resultCatalogScopeKey])
   const [sortField, setSortField] = useState<SortField>('started')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [search, setSearch] = useState('')
@@ -1189,22 +1193,26 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
     setComparisonTestIds(sortedSelection.map(test => test.id))
   }, [canCompareSelected, selectedArchivedTests])
 
-  const handleDelete = async (id: string, event: React.MouseEvent, name?: string) => {
+  const handleDelete = async (test: TestSummary, event: React.MouseEvent) => {
     event.stopPropagation()
-    await deleteResult(id, name)
+    await deleteResult(test)
   }
 
-  const deleteResult = async (id: string, name?: string) => {
+  const deleteResult = async (test: TestSummary) => {
+    const id = test.id
+    const label = formatComparisonRunLabel(test)
     if (deletingResultIdsRef.current.has(id)) return
-    if (!(await confirmAction(name ? `Delete the result “${name}”? This cannot be undone.` : 'Delete this result? This cannot be undone.', { title: 'Delete result', confirmLabel: 'Delete', destructive: true }))) return
+    if (!(await confirmAction(`Delete run “${label}”? Its archived evidence and report are removed. This cannot be undone.`, { title: 'Delete run', confirmLabel: 'Delete run', destructive: true }))) return
     if (deletingResultIdsRef.current.has(id)) return
     const requestScopeKey = resultCatalogScopeKey
     deletingResultIdsRef.current.add(id)
     setDeletingResultIds(new Set(deletingResultIdsRef.current))
     setError('')
+    setDeleteNotice('')
     try {
       await api.deleteTest(id)
       if (resultCatalogScopeKeyRef.current === requestScopeKey) {
+        setDeleteNotice(`Deleted run “${label}”.`)
         invalidateResultTailAfterDelete([id])
         setDeletedResultIds(current => new Set(current).add(id))
         if (comparisonTestIds.includes(id)) {
@@ -1231,17 +1239,20 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
 
   const deleteSelected = async () => {
     const ids = visibleSelectedIds.filter(id => !deletingResultIdsRef.current.has(id))
-    if (ids.length === 0 || !(await confirmAction(`Delete ${ids.length} selected result${ids.length === 1 ? '' : 's'}? This cannot be undone.`, { title: 'Delete results', confirmLabel: 'Delete', destructive: true }))) return
+    const runs = `${ids.length} selected run${ids.length === 1 ? '' : 's'}`
+    if (ids.length === 0 || !(await confirmAction(`Delete ${runs}? Their archived evidence and reports are removed. This cannot be undone.`, { title: 'Delete runs', confirmLabel: `Delete ${ids.length === 1 ? 'run' : 'runs'}`, destructive: true }))) return
     const requestScopeKey = resultCatalogScopeKey
     ids.forEach(id => deletingResultIdsRef.current.add(id))
     setDeletingResultIds(new Set(deletingResultIdsRef.current))
     setError('')
+    setDeleteNotice('')
     const outcomes = await boundedAllSettled(ids, id => api.deleteTest(id))
     const deletedIDs = ids.filter((_, index) => outcomes[index]?.status === 'fulfilled')
     const failed = outcomes.flatMap((outcome, index) => outcome.status === 'rejected'
       ? [{ id: ids[index], reason: getErrorMessage(outcome.reason, 'delete failed') }]
       : [])
     if (deletedIDs.length > 0 && resultCatalogScopeKeyRef.current === requestScopeKey) {
+      if (failed.length === 0) setDeleteNotice(`Deleted ${deletedIDs.length} run${deletedIDs.length === 1 ? '' : 's'}.`)
       invalidateResultTailAfterDelete(deletedIDs)
       setDeletedResultIds(current => {
         const next = new Set(current)
@@ -1267,7 +1278,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
     if (failed.length > 0 && resultCatalogScopeKeyRef.current === requestScopeKey) {
       const failureSummary = failed.slice(0, 3).map(item => `${item.id}: ${item.reason}`).join('; ')
       const suffix = failed.length > 3 ? `; ${failed.length - 3} more failed` : ''
-      setError(`Deleted ${deletedIDs.length} of ${ids.length} selected results. ${failureSummary}${suffix}`)
+      setError(`Deleted ${deletedIDs.length} of ${ids.length} selected runs. ${failureSummary}${suffix}`)
     }
   }
 
@@ -1379,13 +1390,10 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
         <td className="cell-muted">{row.duration || '-'}{!row.test && <small> (source-reported)</small>}</td>
         <td className="cell-muted">
           {test
-            ? (test.archive ? <span title="Raw archive rows: each request and each named transaction that wraps it is a separate row, so this exceeds the transaction count.">{test.archive.transaction_count.toLocaleString()} archive rows (requests + transactions)</span> : 'Unavailable')
+            ? (test.archive ? <span title="Raw archive rows (requests + transactions): each request and each named transaction that wraps it is a separate row, so this exceeds the transaction count.">{test.archive.transaction_count.toLocaleString()} rows</span> : 'Unavailable')
             : (externalImport && row.archiveCount !== undefined ? `${row.archiveCount} tx` : (row.hasArchive ? 'Ready' : '-'))}
           {test?.baseline_pinned && (
-            <>
-              <br />
-              <span title={formatBaselinePin(test.baseline_pinned_at)}>Pinned baseline</span>
-            </>
+            <div><span className="script-health-token healthy" title={`Pinned comparison baseline${test.baseline_pinned_at ? ` · ${formatBaselinePin(test.baseline_pinned_at)}` : ''}`}>Baseline</span></div>
           )}
         </td>
         <td>
@@ -1399,7 +1407,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
                 <button className="btn btn-sm btn-ghost" onClick={event => toggleBaselinePin(test, event)}>
                   {test.baseline_pinned ? 'Unpin Baseline' : 'Pin Baseline'}
                 </button>
-                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger-text)' }} onClick={event => handleDelete(test.id, event, test.name)} disabled={deletingResultIds.has(test.id)}>
+                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger-text)' }} onClick={event => handleDelete(test, event)} disabled={deletingResultIds.has(test.id)}>
                   {deletingResultIds.has(test.id) ? 'Deleting…' : 'Delete'}
                 </button>
                 <button
@@ -1494,7 +1502,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
           <div className="results-actions">
             {showResultsLoadStatus && (
               <span className={`results-load-status${resultsSourcesLoading || resultTailLoading || resultsRefreshing ? '' : ' idle'}`} aria-live="polite">
-                {resultsSourcesLoading ? 'Loading results...' : resultTailLoading ? 'Loading older results...' : resultsRefreshing ? 'Refreshing...' : 'Results refreshed'}
+                {resultsSourcesLoading ? 'Loading results…' : resultTailLoading ? 'Loading older results…' : resultsRefreshing ? 'Refreshing…' : 'Results refreshed'}
               </span>
             )}
             {showComparisonLoadedHint && (
@@ -1504,6 +1512,8 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
         )}
       </div>
 
+      <p className="sr-only" role="status" aria-live="polite">{deleteNotice}</p>
+      {deleteNotice && !error && <p className="setting-desc results-delete-notice">{deleteNotice}</p>}
       {error && !(showResultsLoadErrorCard && error === listError) && <div className="settings-error-inline" role="alert">
         {resultsLoadFailed && error === listError ? `Local results could not be loaded: ${listError}` : error}
         {resultsLoadFailed && error === listError && <button className="btn btn-secondary btn-sm" type="button" onClick={() => { void refreshLocalResults() }}>Retry</button>}
@@ -1556,7 +1566,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
               )}
             </div>
 
-            {comparisonLoading && <p className="results-compare-status">Loading comparison...</p>}
+            {comparisonLoading && <p className="results-compare-status">Loading comparison…</p>}
             {comparisonError && <p className="results-compare-status error">{comparisonError}</p>}
 
             {comparisonCards.length >= 2 && comparisonCards.every(item => item.report) && (
@@ -1831,7 +1841,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
               </>
             )}
             summaryText={resultsSourcesLoading
-              ? 'Loading local and remote result sources...'
+              ? 'Loading local and remote result sources…'
               : showResultsLoadErrorCard
                 ? 'Results could not be loaded.'
                 : `${resultsLoadFailed ? 'Local results could not be loaded; showing remote results only. ' : ''}${filteredRows.length} matching run${filteredRows.length === 1 ? '' : 's'} · ${activeRelease.name}.`}
@@ -1861,7 +1871,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
             <div className="empty-card results-loading-card" role="status" aria-live="polite" aria-busy="true">
               <span className="results-loading-spinner" aria-hidden="true" />
               <div>
-                <p>Loading result sources...</p>
+                <p>Loading result sources…</p>
                 <p className="empty-hint">Fetching completed runs and library catalog entries for this release.</p>
               </div>
             </div>

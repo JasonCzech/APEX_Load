@@ -5,6 +5,8 @@ import { useExecutionPlansApi } from '../hooks/api/useExecutionPlansApi'
 import { ApiError } from '../hooks/apiClient'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { ExecutionPlan, ExecutionPlanApproval } from '../types'
+import LoadingState from './ux/LoadingState'
+import { formatDateTime } from '../utils/dateTime'
 
 interface Props {
   plan: ExecutionPlan
@@ -26,10 +28,9 @@ function approvalStatusPill(status: string): string {
   }
 }
 
+// Shared formatter: dates read the same, zone included, as the rest of the app.
 function formatTimestamp(iso?: string): string {
-  if (!iso) return '—'
-  const parsed = new Date(iso)
-  return Number.isNaN(parsed.getTime()) ? iso : parsed.toLocaleString()
+  return formatDateTime(iso, { seconds: true, fallback: '—' })
 }
 
 export default function ExecutionPlanApprovalsModal({ plan, canAdmin = false, onClose, onResolved }: Props) {
@@ -150,7 +151,7 @@ export default function ExecutionPlanApprovalsModal({ plan, canAdmin = false, on
           )}
 
           {loading ? (
-            <div className="pp-empty">Loading approvals…</div>
+            <LoadingState what="approvals" className="pp-loading" />
           ) : approvals.length === 0 ? (
             <div className="pp-empty">No approval requests. Runs within quota launch without approval.</div>
           ) : (

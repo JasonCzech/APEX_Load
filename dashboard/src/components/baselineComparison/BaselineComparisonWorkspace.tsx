@@ -1,5 +1,6 @@
 import BaselineBrowserDocuments from './BaselineBrowserDocuments'
 import BaselineTelemetryEvidence from './BaselineTelemetryEvidence'
+import BaselineTelemetryCompatibility from './BaselineTelemetryCompatibility'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { TestSummary } from '../../types'
@@ -174,6 +175,7 @@ export default function BaselineComparisonWorkspace({ test, initialBaseline, com
     {!snapshot && <section className="run-report-panel bc-empty"><h3>Compare the same workload across releases</h3><p>Select up to five pinned runs, then compare. You’ll see transaction changes, monitored resource differences, and setup inconsistencies together.</p></section>}
     {snapshot && <>
       <BaselineTelemetryEvidence evidence={snapshot.telemetry} runNames={new Map([...runNames, [test.id, test.name]])} />
+      <BaselineTelemetryCompatibility comparisons={snapshot.telemetry_comparisons} projectId={snapshot.project_id} runNames={new Map([...runNames, [snapshot.current.id, `${snapshot.current.release_name || 'No release'} · ${snapshot.current.name}`]])} />
       <BaselineBrowserDocuments rows={snapshot.browser_documents} baselines={snapshot.baselines} softNavigation={snapshot.browser_soft_navigation} />
       <section className="run-report-panel" aria-label="Regression verdict"><h2>Regression verdict: {snapshot.verdict ? comparisonVerdictLabel(snapshot.verdict.status) : 'Unavailable'}</h2>{snapshot.verdict && <><p>{snapshot.verdict.evaluated} evaluated · {snapshot.verdict.unavailable} unavailable</p><details><summary>Acceptance evidence</summary><ul>{snapshot.verdict.evidence.map((e, i) => <li key={i}>{e.metric}: {comparisonVerdictLabel(e.status)} · {runNames.get(e.baseline_id) || e.baseline_id} / {e.row_id} {e.reason}</li>)}</ul></details></>}</section>
       <section className="run-report-panel" aria-label="Comparison findings"><header><div><p className="bc-eyebrow">Saved {new Date(snapshot.created_at).toLocaleString()}</p><h2>Findings to review</h2></div><div className="bc-findings-count"><strong>{snapshot.findings.filter(f => f.status === 'changed').length}</strong> threshold changes <span>· {snapshot.findings.filter(f => f.status !== 'changed').length} qualifications</span></div></header>

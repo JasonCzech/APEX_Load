@@ -910,7 +910,7 @@ func inspectHandlerContract(name string, functions map[string]*ast.FuncDecl, fun
 		}
 
 		switch callName {
-		case "decodeJSONBody", "decodeRequestBody", "decodeAnalysisDefinitionJSON", "decodeAnalysisQueryRequest":
+		case "decodeJSONBody", "decodeRequestBody", "decodeAnalysisDefinitionJSON", "decodeAnalysisQueryRequest", "decodeClientRenderReport":
 			analysis.jsonRequest = true
 			setInferredRequestSchema(call, variableTypes, typeDefinitions, analysis)
 		case "decodeOptionalJSONBody", "decodeOptionalJSONBodyAllowingUnknownFields":

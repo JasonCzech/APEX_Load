@@ -797,10 +797,12 @@ func safeManifestAuditDetails(details map[string]any) map[string]any {
 }
 
 func (tr *TestRunner) persistTestManifestArtifact(test *ManagedTest, record *storage.RunArchiveRecord) error {
-	return tr.persistTestManifestArtifactWithPreparation(test, record, nil, nil)
+	return tr.persistTestManifestArtifactWithPreparation(test, record, nil, nil, false)
 }
 
-func (tr *TestRunner) persistTestManifestArtifactWithPreparation(test *ManagedTest, record *storage.RunArchiveRecord, prepare func([]byte) error, budget *archiveOutputBudget) error {
+// persistTestManifestArtifactWithPreparation writes the manifest's adjuncts;
+// refresh is an adjunct refresh of an already published archive.
+func (tr *TestRunner) persistTestManifestArtifactWithPreparation(test *ManagedTest, record *storage.RunArchiveRecord, prepare func([]byte) error, budget *archiveOutputBudget, refresh bool) error {
 	if test == nil || record == nil || strings.TrimSpace(record.ArchivePath) == "" || strings.TrimSpace(record.ManifestPath) == "" {
 		return nil
 	}
@@ -840,6 +842,11 @@ func (tr *TestRunner) persistTestManifestArtifactWithPreparation(test *ManagedTe
 	}
 	if err := tr.persistTelemetryCoverage(context.Background(), test, record, archiveManifest); err != nil {
 		slog.Warn("failed to record telemetry coverage", "test_id", test.ID, "error", err)
+	}
+	tr.persistTelemetryStageDistributions(test, archiveManifest, refresh)
+	tr.persistTelemetryLoss(test, archiveManifest, refresh)
+	if err := tr.persistJointIntervalArchive(context.Background(), test, record, archiveManifest); err != nil {
+		slog.Warn("failed to archive joint evidence", "test_id", test.ID, "error", err)
 	}
 	if err := tr.persistPhaseEventArchive(context.Background(), test, record, archiveManifest); err != nil {
 		slog.Warn("failed to archive phase events", "test_id", test.ID, "error", err)

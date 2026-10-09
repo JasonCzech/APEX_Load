@@ -277,7 +277,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 <h2>Executive Summary</h2>
 {{with headline .Report}}<p class="kpi-basis">Headline metrics: {{.Label}}</p>
 <div class="kpis">
-  <div class="kpi"><b>Peak attempts/s</b><div class="v">{{formatFloat .PeakTPS}}</div></div>
+  <div class="kpi"><b>Peak TPS (attempts/s)</b><div class="v">{{formatFloat .PeakTPS}}</div></div>
   <div class="kpi"><b>P95 latency</b><div class="v">{{fms .P95Ms}}</div></div>
   <div class="kpi {{if gt .ErrorPct 0.0}}warn{{end}}"><b>Error rate</b><div class="v">{{formatPercent .ErrorPct}}</div></div>
   <div class="kpi"><b>Peak VUsers</b><div class="v">{{$.Report.Overview.PeakActiveVUsers}}</div></div>
@@ -298,7 +298,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 <h3>Run at a glance</h3>
 {{with headline .Report}}<p class="kpi-basis">Headline metrics: {{.Label}}</p>
 <div class="kpis">
-  <div class="kpi"><b>Peak attempts/s</b><div class="v">{{formatFloat .PeakTPS}}</div><div class="d">{{if gt $.Report.Overview.PeakTargetTPS 0.0}}target {{formatFloat $.Report.Overview.PeakTargetTPS}} TPS{{else}}observed peak{{end}}</div></div>
+  <div class="kpi"><b>Peak TPS (attempts/s)</b><div class="v">{{formatFloat .PeakTPS}}</div><div class="d">{{if gt $.Report.Overview.PeakTargetTPS 0.0}}target {{formatFloat $.Report.Overview.PeakTargetTPS}} TPS{{else}}observed peak{{end}}</div></div>
   <div class="kpi"><b>P95 latency</b><div class="v">{{fms .P95Ms}}</div><div class="d">avg {{fms .AvgResponseMs}}</div></div>
   <div class="kpi {{if gt .ErrorPct 0.0}}warn{{end}}"><b>Error rate</b><div class="v">{{formatPercent .ErrorPct}}</div><div class="d">{{hint .Errors}} of {{hint .Transactions}}</div></div>
   <div class="kpi"><b>Archive records</b><div class="v">{{hint $.Report.Overview.Transactions}}</div><div class="d">peak {{$.Report.Overview.PeakActiveVUsers}} VUsers</div></div>
@@ -308,7 +308,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 <thead><tr><th>Metric</th><th class="num">Value</th><th>Metric</th><th class="num">Value</th></tr></thead>
 <tbody>
 <tr><td>p50 / p90 / p99</td><td class="num">{{f0 .P50Ms}} / {{f0 .P90Ms}} / {{f0 .P99Ms}} ms</td><td>Peak concurrent VUsers</td><td class="num">{{$.Report.Overview.PeakActiveVUsers}}</td></tr>
-<tr><td>Peak attempts/s</td><td class="num">{{formatFloat .PeakTPS}}</td><td>Load generators</td><td class="num">{{if gt $.GeneratorCount 0}}{{$.GeneratorCount}}{{else}}n/a{{end}}</td></tr>
+<tr><td>Peak TPS (attempts/s)</td><td class="num">{{formatFloat .PeakTPS}}</td><td>Load generators</td><td class="num">{{if gt $.GeneratorCount 0}}{{$.GeneratorCount}}{{else}}n/a{{end}}</td></tr>
 <tr><td>Response range</td><td class="num">{{f0 .MinResponseMs}}–{{f0 .MaxResponseMs}} ms</td><td>Data completeness</td><td class="num">{{formatFloat $.Report.Completeness.ScorePct}}%</td></tr>
 <tr><td>Interval summaries</td><td class="num">{{$.Report.Overview.IntervalSummaries}}</td><td>Resource samples</td><td class="num">{{$.Report.Overview.ResourceSamples}}</td></tr>
 </tbody></table>{{end}}
@@ -527,6 +527,32 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 </table>
 {{else}}<p class="section-copy">No controller failover occurred during this run.</p>{{end}}
 {{else}}<p class="section-copy">No controller failover occurred during this run.</p>{{end}}
+{{end}}
+
+{{define "telemetry_acceptance"}}
+<h2>Telemetry Acceptance</h2>
+{{with .TelemetryAcceptanceView}}
+<p class="section-copy">{{.Summary}}</p>
+{{if .Pins}}<table><thead><tr><th>Policy</th><th>Name</th><th class="num">Revision</th><th>SHA-256</th></tr></thead><tbody>
+{{range .Pins}}<tr><td>{{.Kind}}</td><td>{{.Name}}</td><td class="num">{{.Revision}}</td><td>{{.SHA256}}</td></tr>{{end}}
+</tbody></table>{{end}}
+{{if .Criteria}}<table><thead><tr><th>Criterion</th><th>Result</th><th>Observed</th><th>Bound</th><th>Threshold</th><th>Basis</th><th>Reason</th></tr></thead><tbody>
+{{range .Criteria}}<tr><td>{{.Criterion}}</td><td>{{.Outcome}}</td><td>{{.Observed}}</td><td>{{.Bound}}</td><td>{{.Threshold}}</td><td>{{.Basis}}</td><td>{{.Reason}}</td></tr>{{end}}
+</tbody></table>{{end}}
+{{if .Loss}}<table><thead><tr><th>Loss counter</th><th>Total</th><th>State</th><th>Reason</th></tr></thead><tbody>
+{{range .Loss}}<tr><td>{{.Counter}}</td><td>{{.Value}}</td><td>{{.State}}</td><td>{{.Reason}}</td></tr>{{end}}
+</tbody></table>{{else}}<p class="section-copy">Run-level loss totals were not recorded for this run.</p>{{end}}
+<p class="section-copy">Coverage: {{.Coverage}}</p>
+{{if .Sources}}<table><thead><tr><th>Source</th><th>Observed</th></tr></thead><tbody>
+{{range .Sources}}<tr><td>{{.Source}}</td><td>{{.Observed}}</td></tr>{{end}}
+</tbody></table>{{end}}
+<p class="section-copy">Classified time: {{.Breach}}</p>
+<p class="section-copy">Clock quality: {{.Clock}}</p>
+{{if .Stages}}<table><thead><tr><th>Stage</th><th>Availability</th><th class="num">Samples</th><th class="num">p50 ms</th><th class="num">p95 ms</th><th class="num">p99 ms</th><th class="num">max ms</th><th>Excluded</th></tr></thead><tbody>
+{{range .Stages}}<tr><td>{{.Stage}}</td><td>{{.Availability}}</td><td class="num">{{.Samples}}</td><td class="num">{{.P50}}</td><td class="num">{{.P95}}</td><td class="num">{{.P99}}</td><td class="num">{{.Max}}</td><td>{{.Excluded}}</td></tr>{{end}}
+</tbody></table>{{end}}
+{{if .Exclusions}}<ul>{{range .Exclusions}}<li>Excluded — {{.}}</li>{{end}}</ul>{{end}}
+{{end}}
 {{end}}
 
 {{define "completeness"}}

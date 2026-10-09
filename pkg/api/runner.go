@@ -367,7 +367,10 @@ type TestRunner struct {
 	execution                                   testExecutionBackend
 	notifier                                    *notificationDispatcher
 	notifications                               atomic.Value
-	routeCache                                  map[string]latencyRouteCacheEntry
+	// archiveAttachedHook, installed by Server, runs (in its own goroutine)
+	// after a finalized archive is attached to its run.
+	archiveAttachedHook func(testID string)
+	routeCache          map[string]latencyRouteCacheEntry
 	// importPublicationSnapshot is installed by Server after construction. It
 	// reads the durable direct-import journal and returns assets that have been
 	// created but whose containing batch has not committed. Keeping the callback
@@ -528,8 +531,11 @@ type ManagedTest struct {
 	GoalTargets           map[string]GoalTargetStatus       `json:"goal_targets,omitempty"`
 	// Continuity is the HA run-continuity state (docs/HA_RUN_CONTINUITY_PLAN.md);
 	// derived on read, never persisted from this field.
-	Continuity            *RunContinuityStatus     `json:"continuity,omitempty"`
-	TrafficProfile        *TrafficProfile          `json:"traffic_profile,omitempty"`
+	Continuity     *RunContinuityStatus `json:"continuity,omitempty"`
+	TrafficProfile *TrafficProfile      `json:"traffic_profile,omitempty"`
+	// JointEvidence is the run's joint evidence v4 projection (B5), frozen
+	// into provenance at Start.
+	JointEvidence         *engine.JointProjection  `json:"joint_evidence,omitempty"`
 	RuntimeSettings       *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
 	ELKCapture            *ELKCaptureConfig        `json:"elk_capture,omitempty"`
 	elkArtifacts          *runArtifacts
@@ -537,6 +543,8 @@ type ManagedTest struct {
 	dynatraceArtifacts    *runArtifacts
 	clockObservations     *clockObservationLog                     // measured source clocks; created on first observation
 	telemetrySources      *telemetrySourceLedger                   // source-epoch publication coverage; created on first publication
+	telemetryStages       *telemetryStageRecorder                  // per-stage latency distributions; created on first sample
+	historyTrimmed        int64                                    // history points dropped by the in-memory bounds
 	clockCalibrations     *clockCalibrations                       // current generator clock offsets; created on first probe
 	TotalVUsers           int                                      `json:"total_vusers"`
 	GeneratorShards       []GeneratorShardSummary                  `json:"generator_shards,omitempty"`
@@ -671,7 +679,21 @@ type ManagedTest struct {
 	remoteMetricsFlushScheduled                    bool
 	// Accepted/published revisions and the gate make distributed aggregate
 	// publication monotonic when per-target consumers finish out of order.
-	remoteMetricsAcceptedRevision   uint64
+	remoteMetricsAcceptedRevision uint64
+	// pendingJointPublications hold the joint evidence of source batches
+	// accepted since the last published point (B5); the next installed
+	// publication carries them (pendingJointBytes estimates their size).
+	// jointPublicationsDropped counts those dropped past the bound and those
+	// released because no point or archive of this controller will carry
+	// them (the run's archive was committed, none was collected here, or
+	// leadership was lost).
+	// jointHeldFromStart is set when this controller starts the distributed
+	// run, so it has held every batch accepted since; a run it loaded after a
+	// restart, or adopted, cannot know what another controller held.
+	pendingJointPublications        []*storage.NativePublicationEvidence
+	pendingJointBytes               int64
+	jointPublicationsDropped        int64
+	jointHeldFromStart              bool
 	remoteMetricsPublishedRevision  uint64
 	remoteMetricsPublishGate        chan struct{}
 	remoteGoalAcceptedErrorWindows  map[string]distributedGoalErrorAccumulator
@@ -1085,6 +1107,9 @@ type TelemetryHealth struct {
 	ControllerFanoutLagMs    float64   `json:"controller_fanout_lag_ms,omitempty"`
 	BrowserRenderLagMs       float64   `json:"browser_render_lag_ms,omitempty"`
 	SampleAgeMs              float64   `json:"sample_age_ms,omitempty"`
+	// StageDistributions are the run's per-stage latency distributions so
+	// far (C5), one entry per stage; percentiles only where sampled.
+	StageDistributions []TelemetryStageDistribution `json:"stage_distributions,omitempty"`
 	// Sources rolls up per-generator source epochs: publications lost
 	// between received sequence numbers, exact or a lower bound.
 	Sources *TelemetrySourceSummary `json:"sources,omitempty"`
@@ -1095,6 +1120,13 @@ type TelemetryHealth struct {
 	// Coverage is the run's wall-time observation coverage so far: the
 	// time every required generator was observed, and the unknown rest.
 	Coverage *TelemetryCoverage `json:"coverage,omitempty"`
+	// Acceptance is the run's provisional telemetry verdict under its pinned
+	// acceptance policy; the finalized verdict is in the run report.
+	Acceptance *TelemetryAcceptanceVerdict `json:"acceptance,omitempty"`
+	// restoredFromHistory marks health rebuilt from a stored interval
+	// summary (a restarted controller, a follower): it carries none of the
+	// loss, coverage or stage evidence a verdict reads, so none is shown.
+	restoredFromHistory bool
 	// TransportLagQuality and SampleAgeQuality qualify the stages measured
 	// across a generator's clock and the controller's: qualified when a
 	// current offset calibration corrected them. Absent for a run executed
@@ -1108,9 +1140,10 @@ type TelemetryHealth struct {
 	// collectedAtBoundUnixMs is the controller-clock instant the qualified
 	// generators' oldest samples were certainly collected by (0 = none).
 	collectedAtBoundUnixMs float64
-	// sampleAgeUnavailable: no generator reported a sample, so no sample-age
-	// budget decision is made.
-	sampleAgeUnavailable bool
+	// SampleAgeUnavailable: no generator reported a sample, so no sample-age
+	// budget decision is made. It is retained with the interval so a later
+	// re-evaluation makes the same decision.
+	SampleAgeUnavailable bool `json:"sample_age_unavailable,omitempty"`
 	// qualifiedAt and qualifiedMonotonic are the controller's wall time and
 	// monotonic reading when collectedAtQuality was judged; a step between
 	// then and publication voids it.
@@ -2049,15 +2082,17 @@ type CreateTestRequest struct {
 	ScheduledStartAt     *time.Time `json:"scheduled_start_at,omitempty"`
 	// TimeslotID, when set, binds the run to an approved capacity timeslot as part
 	// of creation; if the timeslot can't be bound the create fails (strict).
-	TimeslotID       *string                           `json:"timeslot_id,omitempty"`
-	ScenarioMode     string                            `json:"scenario_mode,omitempty"`
-	ScriptShakeout   bool                              `json:"script_shakeout,omitempty"`
-	ResourceBaseline bool                              `json:"resource_baseline,omitempty"`
-	Assignment       *GeneratorAssignmentSettings      `json:"assignment,omitempty"`
-	GoalConfig       *GoalConfig                       `json:"goal_config,omitempty"`
-	TrafficProfile   *TrafficProfile                   `json:"traffic_profile,omitempty"`
-	Groups           []CreateGroupEntry                `json:"groups,omitempty"`
-	DataPools        []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
+	TimeslotID       *string                      `json:"timeslot_id,omitempty"`
+	ScenarioMode     string                       `json:"scenario_mode,omitempty"`
+	ScriptShakeout   bool                         `json:"script_shakeout,omitempty"`
+	ResourceBaseline bool                         `json:"resource_baseline,omitempty"`
+	Assignment       *GeneratorAssignmentSettings `json:"assignment,omitempty"`
+	GoalConfig       *GoalConfig                  `json:"goal_config,omitempty"`
+	TrafficProfile   *TrafficProfile              `json:"traffic_profile,omitempty"`
+	// JointEvidence chooses the run's joint evidence v4 projection.
+	JointEvidence *engine.JointProjection           `json:"joint_evidence,omitempty"`
+	Groups        []CreateGroupEntry                `json:"groups,omitempty"`
+	DataPools     []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
 	// Single-script shorthand (backwards compatible)
 	ScriptID string `json:"script_id,omitempty"`
 	VUsers   int    `json:"vusers,omitempty"`

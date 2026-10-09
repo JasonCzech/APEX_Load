@@ -27,7 +27,7 @@ var manuallyDeletedProjectTables = stringSet(
 	"execution_plan_schedule_occurrences", "execution_plan_schedules", "execution_plans",
 	"external_result_imports", "folders", "github_check_intents", "github_script_sync_claims",
 	"github_check_links", "github_script_sync_target_claims", "github_script_sync_target_owners", "github_sync_jobs",
-	"dashboard_definitions", "grafana_dashboard_snapshots", "grafana_dashboards", "grafana_import_sessions",
+	"dashboard_definitions", "dashboard_definition_revisions", "grafana_dashboard_snapshots", "grafana_dashboards", "grafana_import_sessions",
 	"monitoring_collectors", "object_repositories", "powerbi_publishes",
 	"project_secret_provider_metadata", "project_secrets", "protected_source_secret_sessions",
 	"provisioning_requests", "release_sla_waivers", "releases", "reusable_blocks",

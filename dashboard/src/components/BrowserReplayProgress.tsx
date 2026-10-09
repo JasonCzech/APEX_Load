@@ -11,6 +11,7 @@ import {
   type BrowserReplaySessionResponse,
   type ReplayRepairSuggestion,
 } from '../types'
+import BrowserReplayHARDownloads from './BrowserReplayHARDownloads'
 import RepairSuggestionList from './RepairSuggestionList'
 
 export interface BrowserReplayProgressProps {
@@ -286,6 +287,11 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
         {onDismiss && <button type="button" className="rec-inline-action" onClick={onDismiss}>Close</button>}
       </div>
 
+      {/* A controller replay's HAR (native when it was recorded, by record_har
+          or the script's own capture policy, else synthetic) and evidence ZIP;
+          a bridge replay has none here, nor does a session the controller
+          could not confirm. */}
+      {!bridge && !unavailable && phase !== 'running' && <BrowserReplayHARDownloads sessionId={replaySessionId} />}
       {report && <details><summary>Verified output and scope</summary><p>{report.group} · {report.protocol}</p><p>Script fingerprint: {report.script_hash || 'Unavailable'}</p><p>{report.completed_at}</p></details>}
       {real.length === 0 && phase === 'running' && (
         <div className="brp-replay-empty">Launching replay…</div>

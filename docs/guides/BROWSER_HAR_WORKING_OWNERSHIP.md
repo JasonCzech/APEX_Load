@@ -215,8 +215,9 @@ run's archive counts as acknowledged.
 The archive manifest's artifact inventory lists each HAR (format `har`,
 record type `browser_har_native`) with its SHA-256, so object-store
 publication and materialization carry it, and the inventory refuses a HAR
-whose bytes differ from its manifest entry. Safe archive exports omit HARs
-until HARs have their own download and export contract. The transfer is
+whose bytes differ from its manifest entry. The default safe archive
+export omits HARs (`safe_export`); an editor's `?include=har` export keeps
+them (see [Downloads and exports](#downloads-and-exports)). The transfer is
 pulled by the controller, as the run's other archive artifacts are, rather
 than pushed by the generator: generators host the gRPC server in both
 connectivity modes. The transfer advertises no capability of its own, so
@@ -226,6 +227,140 @@ controller older than this never fetches or acknowledges a newer generator's
 HARs, which then remain only in that generator's own archive until its
 retention. Run controllers and generators of the same release when HARs
 matter.
+
+## Synthetic HAR
+
+A browser context recorded without native capture, or by a generator older
+than native HAR transfer, still leaves retained network entries in the run
+archive's transactions. A synthetic HAR 1.2 (`harsynth`, algorithm
+`apexload.synthetic_har` version 1) is derived from them on request and never
+stored, so archives written before it existed have one too, and the same
+archive always yields the same bytes. Each native HAR names the browser
+evidence generation of the context it recorded (`evidence_generation` in the
+manifest's HAR entries, from the context's resource evidence); entries of
+those contexts are left out of the synthetic HAR (counted as `native_har`),
+so a context's requests appear in one HAR or the other. Entries whose
+generation is unknown (older peers, malformed evidence, or a row whose
+evidence the engine dropped at its evidence budget, which may belong to a
+covered context) are kept. A native
+HAR that does not name its context (one written before evidence generations
+were recorded, or with a malformed one) makes the overlap unknown: the
+synthetic HAR's `_apexload` block then reports
+`native_har_coverage_unknown` (how many such HARs) and lists it among the
+completeness reasons, since those contexts' requests may be in both.
+
+Entries first pass the same sanitizer as the safe transaction download, then
+the native HAR scrubber, so a synthetic HAR never shows more than that
+download does. The writer invents nothing: an optional timing phase the
+evidence lacks (`blocked`, `dns`, `connect`, `ssl`) is HAR's -1, while the
+required `send`, `wait` and `receive`, which HAR 1.2 requires to be
+non-negative, are 0 when unmeasured and named in the entry's
+`_apexload.unavailable_fields` (`send` always, since the evidence measures
+request start to response start as one phase, written as `wait`);
+`startedDateTime` is the measured request start, or the transaction's
+record time labelled `started_source: record_time`; `time` is the sum of the
+measured phases, or the entry's duration labelled `entry_duration` and
+written as the whole `wait` (`wait_is_entry_duration`) so that `time` stays
+the sum of the timings, or 0 labelled `unavailable`; header and body sizes
+the evidence lacks are -1, and the decoded `content.size`, never measured,
+is 0 and listed as unavailable; HTTP versions, status text and cookies are
+empty; request and response bodies are never written (body
+policy `omitted`). A Parquet-only archive's projection keeps no headers, so
+its synthetic HAR carries none and says so. The log's `_apexload` block
+records fidelity `synthetic`, capture mode (`retained_network_entries`, or
+`replay_network_entries` for a replay), completeness (`partial`, since
+retained entries are a bounded sample of what the browser issued, or
+`truncated` when the writer's own 100,000-entry or 100 MiB limit left entries
+out), entry count, omitted entries by reason, omitted fields, algorithm and
+schema version and body policy; each entry's `_apexload` names its action,
+page, request, resource type, failure kind and where its start and time came
+from.
+
+## Downloads and exports
+
+Only archived HARs, and HARs derived from archived evidence, are served: a
+HAR directory's working, published or retired files are never reachable,
+and names are matched against the archive's manifest, never used as paths.
+Because native HARs embed scrubbed response content, anyone who can view a
+run lists its HARs, and downloading one needs editor (or project
+administrator) access to the project.
+
+- `GET /api/v1/tests/{id}/archive/browser/har` lists the run's native HARs
+  (name, fidelity `native`, source identity and generation,
+  `evidence_generation`, SHA-256 and bytes) and its synthetic HAR (fidelity
+  `synthetic`, derived on download; unavailable without a transaction
+  source), whether native HARs were omitted and why, the role a download
+  needs and whether the caller has it.
+- `GET /api/v1/tests/{id}/archive/browser/har/{artifact}` downloads one. A
+  native HAR is checked against its manifest SHA-256 and size first (a
+  mismatch is 409); `browser_har_synthetic.har` is derived from the archive
+  then (`X-APEXLoad-HAR-Completeness`). `X-APEXLoad-HAR-Fidelity` names the
+  fidelity.
+- `GET /api/v1/tests/{id}/archive?include=har` is the safe archive export
+  with the native HARs kept in the archive inventory and manifest; viewers
+  are refused (403). The default export, and library bundles, still omit
+  them.
+- A browser replay started through the browser replay API
+  (`POST /api/v1/scripts/browser-replay/sessions` or
+  `/api/v1/scripts/{id}/browser-replay/sessions`) records a native HAR when
+  asked with `record_har: true`; recording sets both capture aliases to
+  `always`, overriding a script's own capture policy. It is opt-in because a
+  recording runs under the same limits as a load run's: past 100 MiB or
+  100,000 entries, or when the memory watchdog picks it, the browser context
+  is closed and the replay fails, and an owner that cannot be created fails
+  the replay's start. Without it a replay records only when the script's own
+  capture policy does (and serves that HAR as its native one); otherwise it
+  serves the synthetic HAR built from its network entries. The Script
+  Editor's debugger runs replays as script debug sessions, which offer no
+  HAR: one the script's own capture policy records is retired when the
+  session ends. Classic replays (`POST /api/v1/scripts/replay` and
+  `/api/v1/scripts/{id}/replay`) offer none either and retire such a HAR
+  too. When the replay's browser closes, the
+  controller copies the published HAR into its own directory (under the
+  system temporary directory's `apexload-replay-har`, used only when it is a
+  real 0700 directory the controller's user owns; a running controller
+  keeps its own directory fresh and others idle for a day are removed;
+  otherwise a private temporary directory that is not swept after a crash)
+  and retires the original, so the HAR directory keeps nothing for replays. A replay that
+  fails before producing a report retires its recording too. The copy
+  belongs to that session record: it is kept only while the record holds
+  its lease and integrity fence, a later replay reusing the session ID never
+  sees it, and it is removed when the record is pruned, evicted or retired.
+  `GET /api/v1/browser-replay/sessions/{id}/har` streams it, or a synthetic
+  HAR from the replay's network entries when there is none
+  (`capture_mode: replay_network_entries`), once the replay has ended (409
+  while it runs, and 409 with `Retry-After` while a stopped replay is still
+  closing its browser). `GET /api/v1/browser-replay/sessions/{id}/evidence` is a
+  streamed ZIP of the session (`report.json`), the HAR (`replay.har`) and
+  what the HAR is (`har.json`, written last: fidelity, capture mode,
+  completeness, entries, SHA-256 and bytes of the HAR as streamed). Both
+  need editor access to the replay's project; at most four replay HAR
+  downloads run at once (503 with `Retry-After` beyond that). Replay HARs
+  live with the controller process that ran the replay: they are not
+  durable across a restart and not reachable from another replica.
+
+The dashboard lists a run's HARs above the retained resource inspector, with
+a download per HAR and an archive download with its native HARs; each
+retained resource row offers the HAR holding it (the native HAR whose
+evidence generation matches the row's source generation, else the
+synthetic one). The recorder's replay verification, and the replay
+validation of a recorder-export import, offer a finished replay's HAR and
+evidence ZIP (not for a replay run through a paired recording agent, which
+the controller does not hold); the enterprise archive (LoadRunner and
+TruClient) import's replay validation does not offer them yet.
+From the command line (a download of a replay that was just stopped waits
+while the replay closes, honouring `Retry-After`, for at most ten requests):
+
+```bash
+apexctl analysis browser-har list --id RUN_ID
+apexctl analysis browser-har download --id RUN_ID --artifact browser_har_synthetic.har --out run.har
+apexctl analysis browser-har download --replay SESSION_ID --evidence --out replay-evidence.zip
+```
+
+Downloads go to a new file (an existing one is never overwritten, and a
+failed download, including one cut mid-body, leaves none) or to standard
+output with `--out -`. A download has ten minutes, independent of the CLI's
+ordinary request timeout.
 
 ## Bounds and compatibility
 

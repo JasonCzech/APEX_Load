@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 
 import GitHubSyncModal from './GitHubSyncModal'
 import { GitHubConfigResponse, StoredScript } from '../types'
+import { formatDateTime } from '../utils/dateTime'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -455,7 +456,7 @@ describe('GitHubSyncModal (import)', () => {
       await flushPromises()
       await flushPromises()
 
-      expect(container.textContent).toContain('Credential-preserving import draft available until')
+      expect(container.textContent).toContain('This import review expires at')
       expect(findButton('Save Script')?.disabled).toBe(false)
       await act(async () => {
         vi.advanceTimersByTime(1_001)
@@ -523,7 +524,8 @@ describe('GitHubSyncModal (import)', () => {
       await flushPromises()
       await flushPromises()
 
-      expect(container.textContent).toContain(new Date(initialExpiry).toLocaleString())
+      // One expiry sentence for every importer: wall-clock time with its zone.
+      expect(container.textContent).toContain(`This import review expires at ${formatDateTime(initialExpiry)}`)
       await act(async () => {
         findButton('Apply Selected (1)')?.click()
         await Promise.resolve()
@@ -533,7 +535,7 @@ describe('GitHubSyncModal (import)', () => {
         vi.advanceTimersByTime(0)
         await Promise.resolve()
       })
-      expect(container.textContent).toContain(new Date(rotatedExpiry).toLocaleString())
+      expect(container.textContent).toContain(`This import review expires at ${formatDateTime(rotatedExpiry)}`)
 
       await act(async () => {
         vi.advanceTimersByTime(1_001)

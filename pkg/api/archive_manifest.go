@@ -54,6 +54,8 @@ func archiveManifestArtifactNames(manifest *RunArchiveManifest) (map[string]stru
 		manifest.ClockObservationsFile,
 		manifest.TelemetrySourcesFile,
 		manifest.PhaseEventsFile,
+		manifest.JointIntervalsFile,
+		manifest.JointIntervalsParquetFile,
 		"manifest.json",
 	} {
 		if strings.TrimSpace(name) == "" {
@@ -139,6 +141,12 @@ func validateRunArchiveManifestArtifacts(manifest *RunArchiveManifest) error {
 		return err
 	}
 	if manifest.PhaseEventsFile, err = optionalArchiveArtifactName("phase_events_file", manifest.PhaseEventsFile); err != nil {
+		return err
+	}
+	if manifest.JointIntervalsFile, err = optionalArchiveArtifactName("joint_intervals_file", manifest.JointIntervalsFile); err != nil {
+		return err
+	}
+	if manifest.JointIntervalsParquetFile, err = optionalArchiveArtifactName("joint_intervals_parquet_file", manifest.JointIntervalsParquetFile); err != nil {
 		return err
 	}
 	if manifest.TelemetrySourcesFile, err = optionalArchiveArtifactName("telemetry_sources_file", manifest.TelemetrySourcesFile); err != nil {

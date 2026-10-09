@@ -9,8 +9,8 @@ test('Access policy navigation keeps the requested body through links and reload
   await page.goto(`/#/access?accessView=users&${scopeQuery(workspace)}`)
   for (const label of [
     'Authentication',
-    'Import policy',
-    'Redaction',
+    'Import credential policy',
+    'Project redaction rules',
     'Project secrets',
     'Governance audit',
   ]) {
@@ -20,7 +20,7 @@ test('Access policy navigation keeps the requested body through links and reload
       .click()
     await page
       .getByRole('navigation', { name: 'Access administration' })
-      .getByRole('link', { name: 'Feature policy', exact: true })
+      .getByRole('link', { name: 'Domain feature policy', exact: true })
       .click()
     await expect(page.locator('#settings-section-feature-access')).toBeVisible()
     await expect(page.locator('#settings-section-general')).toBeHidden()
@@ -46,7 +46,7 @@ test('Access policy navigation keeps the requested body through links and reload
   await page.setViewportSize({ width: 720, height: 1000 })
   await page.getByLabel(`Role for ${workspace.label} project`).scrollIntoViewIfNeeded()
   await page.screenshot({ path: 'test-results/access-create-narrow.png', animations:'disabled' })
-  await page.getByRole('button', { name: 'Create Service Account', exact: true }).click()
+  await page.getByRole('button', { name: 'Create account', exact: true }).click()
   const issued = page.getByRole('dialog', { name: 'Issued API key', exact: true })
   await expect(issued).toBeVisible()
   await expect(issued.locator('.access-issued-examples')).toContainText(new URL(page.url()).origin)
@@ -71,7 +71,7 @@ test('Access history loads older events beyond 50 into the same table and downlo
     )
   await page.goto(`/#/access?accessView=events&${scopeQuery(workspace)}`)
   await page.getByPlaceholder('auth.user.create').fill('auth.user.binding.create')
-  await page.getByRole('button', { name: 'Apply Filters', exact: true }).click()
+  await page.getByRole('button', { name: 'Apply filters', exact: true }).click()
   const loadOlder = page.getByRole('button', { name: 'Load older events', exact: true })
   await expect(loadOlder).toBeEnabled()
   const rows = page.getByRole('table', { name: 'Audit events', exact: true }).locator('tbody tr')
@@ -97,7 +97,7 @@ test('Access history loads older events beyond 50 into the same table and downlo
     50,
   )
   expect(firstIds).toBe(50)
-  await page.getByRole('tab', { name: 'Usage By User', exact: true }).click()
+  await page.getByRole('tab', { name: 'Usage by user', exact: true }).click()
   await expect(page).toHaveURL(/accessView=usage/)
   await expect(page.getByRole('button', { name: 'Export usage CSV', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Export all matching events CSV', exact: true })).toHaveCount(
@@ -142,7 +142,7 @@ test('Access review opens remediation and renders long identities at narrow widt
   })).toBe(true)
   await page.screenshot({ path: 'test-results/access-users-desktop.png', animations: 'disabled' })
   await page.getByRole('navigation', { name: 'Access administration' }).getByRole('button', { name: /^Activity/ }).click()
-  await page.getByRole('tab', { name: 'Access Review', exact: true }).click()
+  await page.getByRole('tab', { name: 'Access review', exact: true }).click()
   const accountName = `Later review account ${Date.now()}`
   await json(await request.post('/api/v1/auth/service-accounts', { data: {
     name: accountName, global_roles: ['viewer'], scopes: ['results:read'],

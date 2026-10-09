@@ -14,6 +14,7 @@ func TestPDFASCIIText(t *testing.T) {
 		{"verdict — passed", "verdict - passed"},
 		{"“quoted” ‘value’", "\"quoted\" 'value'"},
 		{"plain ascii", "plain ascii"},
+		{"dropped ≥ 4 (breached ÷ classified) ≤ 5% × 2", "dropped >= 4 (breached / classified) <= 5% x 2"},
 	}
 	for _, tc := range cases {
 		if got := pdfASCIIText(tc.in); got != tc.want {

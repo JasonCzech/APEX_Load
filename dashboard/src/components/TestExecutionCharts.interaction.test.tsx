@@ -248,7 +248,7 @@ describe('TestExecutionCharts context menu', () => {
       firstChart?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 100, clientY: 120 }))
     })
 
-    expect(container.querySelector('.chart-context-menu-title')?.textContent).toBe('Virtual Users')
+    expect(container.querySelector('.chart-context-menu-title')?.textContent).toBe('VUsers')
     expect(menuActionTexts()).toContain('Reset Zoom')
     expect(menuActionTexts()).toContain('Download Snapshot')
     expect(menuActionTexts()).toContain('Export Graph Data')
@@ -270,7 +270,7 @@ describe('TestExecutionCharts context menu', () => {
 
   it('opens graph actions from a keyboard-focusable button and restores focus on Escape', async () => {
     await renderCharts()
-    const actionsButton = container.querySelector<HTMLButtonElement>('button[aria-label="Virtual Users actions"]')
+    const actionsButton = container.querySelector<HTMLButtonElement>('button[aria-label="VUsers actions"]')
     expect(actionsButton).not.toBeNull()
     if (!actionsButton) return
     actionsButton.focus()
@@ -369,7 +369,7 @@ describe('TestExecutionCharts context menu', () => {
     await renderCharts()
 
     const vusersChart = container.querySelectorAll('.chart-card')[0]
-    expect(vusersChart?.textContent).toContain('Virtual Users')
+    expect(vusersChart?.textContent).toContain('VUsers')
     expect(vusersChart?.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-label')).toBe('')
     expect(axisLabels(vusersChart)).toEqual([])
     expect(axisAriaLabels(vusersChart)).toContain('Show VUsers axis label')
@@ -397,7 +397,7 @@ describe('TestExecutionCharts context menu', () => {
     })
 
     expect(vusersChart?.querySelector('path[data-testid="mock-line"][data-name="ART"]')).not.toBeNull()
-    expect(vusersChart?.querySelector('.chart-title')?.textContent).toBe('Virtual Users + ART')
+    expect(vusersChart?.querySelector('.chart-title')?.textContent).toBe('VUsers + ART')
     expect(axisLabels(vusersChart)).toEqual([])
     expect(axisAriaLabels(vusersChart)).toEqual(expect.arrayContaining(['Show VUsers axis label', 'Show ART (ms) axis label']))
     expect(window.localStorage.getItem('apexload.execution.artOverlayCharts')).toBe('["vusers"]')
@@ -408,14 +408,14 @@ describe('TestExecutionCharts context menu', () => {
 
     expect(menuActionTexts()).toContain('Hide ART Overlay')
     expect(menuActionTexts()).toContain('Overlay TPS')
-    expect(container.querySelector('.chart-context-menu-title')?.textContent).toBe('Virtual Users + ART')
+    expect(container.querySelector('.chart-context-menu-title')?.textContent).toBe('VUsers + ART')
 
     await act(async () => {
       menuButton('Overlay TPS')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     expect(vusersChart?.querySelector('path[data-testid="mock-line"][data-name="TPS"]')).not.toBeNull()
-    expect(vusersChart?.querySelector('.chart-title')?.textContent).toBe('Virtual Users + ART + TPS')
+    expect(vusersChart?.querySelector('.chart-title')?.textContent).toBe('VUsers + ART + TPS')
     expect(axisLabels(vusersChart)).toEqual([])
     expect(axisAriaLabels(vusersChart)).toContain('Show ART (ms) / TPS axis label')
     expect(window.localStorage.getItem('apexload.execution.tpsOverlayCharts')).toBe('["vusers"]')
@@ -1526,7 +1526,7 @@ describe('TestExecutionCharts context menu', () => {
     await renderCharts(null)
 
     titles = chartTitles()
-    expect(titles[0]).toBe('Virtual Users')
+    expect(titles[0]).toBe('VUsers')
     expect(titles[1]).toBe('Transactions Per Second')
   })
 
@@ -1535,21 +1535,21 @@ describe('TestExecutionCharts context menu', () => {
 
     expect(container.querySelector('.load-impact-card:not(.load-impact-card-graph)')).toBeNull()
     expect(container.querySelector('.load-impact-card.load-impact-card-graph')).not.toBeNull()
-    expect(chartTitles()[0]).toBe('Virtual Users')
+    expect(chartTitles()[0]).toBe('VUsers')
   })
 
   it('rearranges graph cards by dragging a chart grabber', async () => {
     await renderCharts()
 
     expect(chartTitles().slice(0, 3)).toEqual([
-      'Virtual Users',
+      'VUsers',
       'Transactions Per Second',
       'Response Time (ms)',
     ])
 
     const cards = () => Array.from(container.querySelectorAll<HTMLElement>('.chart-card'))
     const responseCard = cards().find(card => card.textContent?.includes('Response Time (ms)'))
-    const vusersCard = cards().find(card => card.textContent?.includes('Virtual Users'))
+    const vusersCard = cards().find(card => card.textContent?.includes('VUsers'))
     const responseGrabber = responseCard?.querySelector<HTMLElement>('.chart-drag-handle')
     expect(responseGrabber).not.toBeNull()
 

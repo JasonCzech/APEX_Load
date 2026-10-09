@@ -18,14 +18,13 @@ it('keeps edits while keyboard navigation selects the labelled review panel', ()
   try {
     act(() => root.render(<Review />))
     const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role=tab]')]
-    expect(tabs.map(tab => tab.getAttribute('aria-label'))).toEqual(['Review', 'Credentials', 'Data & parameters', 'Runtime settings', 'DSL Preview', 'Source Mapping'])
+    expect(tabs.map(tab => tab.getAttribute('aria-label'))).toEqual(['Review', 'Credentials, 2 review items', 'Data & parameters', 'Runtime settings', 'DSL Preview', 'Source Mapping'])
     const input = container.querySelector('input')!
     input.value = 'Edited draft'
     act(() => {
       tabs[0].focus()
       tabs[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
     })
-    expect(container.querySelector(`[id="${tabs[1].getAttribute('aria-describedby')}"]`)?.textContent).toBe('2 review items')
     expect(document.activeElement).toBe(tabs[1])
     expect(tabs[1].getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('[role=tabpanel]')?.getAttribute('aria-labelledby')).toBe(tabs[1].id)
@@ -52,10 +51,11 @@ it('shows only applicable tabs and omits zero-count badges', () => {
       counts={{ review: 2, runtime: 0 }}
     ><p>Review content</p></ImportReviewTabs>))
     const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role=tab]')]
-    expect(tabs.map(tab => tab.getAttribute('aria-label'))).toEqual(['Review', 'Runtime settings', 'Source Mapping'])
+    // The count is in the name once; the visible badge is hidden from assistive tech.
+    expect(tabs.map(tab => tab.getAttribute('aria-label'))).toEqual(['Review, 2 review items', 'Runtime settings', 'Source Mapping'])
+    expect(tabs[0].querySelector('span')?.getAttribute('aria-hidden')).toBe('true')
     expect(tabs[0].textContent).toContain('2')
     expect(tabs[1].querySelector('span')).toBeNull()
-    expect(tabs[1].getAttribute('aria-describedby')).toBeNull()
   } finally {
     act(() => root.unmount())
     container.remove()

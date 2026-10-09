@@ -177,6 +177,28 @@ describe('CSVDrivenSourcePanel', () => {
     container.remove()
   })
 
+  it('infers relative time from sampled values and says why Analyze is unavailable', async () => {
+    apiMock.analyzeCSVDriven.mockReset().mockResolvedValueOnce({ ...inspection, sheets: [{ name: 'CSV', columns: ['time', 'orders'], samples: [['0s', '10'], ['60s', '20']] }] })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    await act(async () => { root.render(<CSVDrivenSourcePanel groupNames={['Checkout']} scenarioDraft={draft} onApply={vi.fn()} />) })
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['time,orders\n0s,10\n60s,20'], 'schedule.csv', { type: 'text/csv' })] })
+    await act(async () => { fileInput.dispatchEvent(new Event('change', { bubbles: true })) })
+    await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Inspect columns')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+
+    const select = (label: string) => Array.from(container.querySelectorAll('select')).find(item => item.parentElement?.querySelector('span')?.textContent === label) as HTMLSelectElement
+    expect(select('Time column').value).toBe('time')
+    // "0s"/"60s" are elapsed offsets, not timestamps, even though the column is named "time".
+    expect(select('Time values').value).toBe('relative')
+    const analyzeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Analyze schedule')!
+    expect(analyzeButton.disabled).toBe(true)
+    expect(container.querySelector(`#${analyzeButton.getAttribute('aria-describedby')}`)?.textContent).toBe('Choose at least one target column to analyze the schedule.')
+    await act(async () => root.unmount())
+    container.remove()
+  })
+
   it('reveals TPS ART and guardrail controls only in Goal Driven mode', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)

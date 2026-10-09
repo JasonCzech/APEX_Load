@@ -4,7 +4,7 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { DASHBOARD_ZOOM_STORAGE_KEY, useDashboardZoomShortcuts } from './useDashboardZoomShortcuts'
+import { DASHBOARD_ZOOM_STORAGE_KEY, requestDashboardZoom, useDashboardZoomShortcuts } from './useDashboardZoomShortcuts'
 import { DESKTOP_QUEUED_MENU_ZOOM_EVENT } from '../desktop/rendererEvents'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -53,6 +53,16 @@ describe('useDashboardZoomShortcuts', () => {
     expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1')
     expect(document.documentElement.style.getPropertyValue('--dashboard-zoom')).toBe('1')
     expect(window.localStorage.getItem(DASHBOARD_ZOOM_STORAGE_KEY)).toBe('1')
+  })
+
+  it('zooms once per command-palette request', async () => {
+    await act(async () => {
+      root.render(<ZoomHarness />)
+    })
+    await act(async () => requestDashboardZoom('in'))
+    expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1.1')
+    await act(async () => requestDashboardZoom('reset'))
+    expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1')
   })
 
   it('loads a stored zoom value', async () => {

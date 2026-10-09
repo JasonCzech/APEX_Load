@@ -60,6 +60,8 @@ describe('Help documentation', () => {
     expect(container.textContent).toContain('Your first test')
     await navigate('#/docs?guide=user-guide&article=identity')
     expect(container.textContent).toContain('Administration requires administrative access')
+    // The address names the article actually shown, not the denied one.
+    expect(window.location.hash).not.toContain('article=identity')
     expect(container.querySelector('.help-article-header h2')?.textContent).toBe('Your first test')
   })
   it('does not expose administration while access is unresolved or failed', async () => {

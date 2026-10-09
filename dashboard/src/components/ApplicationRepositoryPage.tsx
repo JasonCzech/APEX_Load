@@ -6,7 +6,7 @@ import TabList from './ux/TabList'
 import { confirmAction } from './ux/confirmAction'
 import { handleTabKey } from './tabKeyboard'
 import { settingsHref } from './settingsNavigation'
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 
 import {
@@ -39,12 +39,15 @@ import {
   RepositoryCatalogTab,
   RepositorySortKey,
   buildRepositoryCatalogRows,
+  customRangeInverted,
   filterRepositoryRows,
   repositoryKindLabel,
   sortRepositoryRows,
   summarizeRepositoryRows,
 } from './repositoryCatalogUtils'
 import { drainBoundedOffsetCatalog } from './catalogPagination'
+import BadgeIcon from './ux/BadgeIcon'
+import InfoPopover from './ux/InfoPopover'
 import {
   createRepositoryCatalogTaskLimiter,
   type RepositoryCatalogTaskLimiter,
@@ -212,7 +215,7 @@ function statusTone(status?: string) {
   const value = (status || '').toLowerCase()
   if (/(failed|aborted|blocked|error|danger)/.test(value)) return 'danger'
   if (/(running|complete|active|ready|passed|healthy)/.test(value)) return 'healthy'
-  if (/(queued|pending|paused|warning|archived|shakeout)/.test(value)) return 'warning'
+  if (/(queued|pending|paused|warning|review|archived|shakeout)/.test(value)) return 'warning'
   return 'neutral'
 }
 
@@ -223,12 +226,29 @@ function splitProtocols(value?: string) {
     .filter(Boolean)
 }
 
+/** Scripts and scenarios are library assets: saved is not the same as ready to run. */
+const LIBRARY_READINESS_NOTE = 'Validation, debug and approval evidence must be checked before execution.'
+
 function renderStatus(row: RepositoryAssetRow) {
   if (row.kind === 'test' && row.status) {
     return <StatusBadge status={row.status} />
   }
-  return <><span className={`repository-status-pill ${statusTone(row.status)}`}>{row.kind === 'script' ? `Authoring: ${row.status || 'Not assessed'}` : row.kind === 'scenario' ? 'Saved' : row.status || 'Unknown'}</span>
-    {(row.kind === 'script' || row.kind === 'scenario') && <span className="repository-readiness-note">Validation, debug and approval evidence must be checked before execution.</span>}</>
+  if (row.kind === 'script') {
+    const label = row.status ? row.status.charAt(0).toUpperCase() + row.status.slice(1).replace(/_/g, ' ') : 'Not assessed'
+    return <span className={`repository-status-pill ${statusTone(row.status)}`} title={`Authoring health: ${label}. ${LIBRARY_READINESS_NOTE}`}>{label}</span>
+  }
+  if (row.kind === 'scenario') return <span className={`repository-status-pill ${statusTone(row.status)}`} title={LIBRARY_READINESS_NOTE}>Saved</span>
+  return <span className={`repository-status-pill ${statusTone(row.status)}`}>{row.status || 'Unknown'}</span>
+}
+
+function RepositoryRowInfo({ row }: { row: RepositoryAssetRow }) {
+  return <InfoPopover label={`Details for ${row.name}`} title={row.name} triggerClassName="script-health-token script-info-badge" trigger={<BadgeIcon kind="info" />}>
+    <dl className="ux-info-list">
+      <div><dt>Identifier</dt><dd><code>{row.id}</code></dd></div>
+      {row.facts?.map(fact => <div key={fact.label}><dt>{fact.label}</dt><dd>{fact.value}</dd></div>)}
+      {(row.kind === 'script' || row.kind === 'scenario') && <div><dt>Before running</dt><dd>{LIBRARY_READINESS_NOTE}</dd></div>}
+    </dl>
+  </InfoPopover>
 }
 
 function repositoryRowKey(row: RepositoryAssetRow) {
@@ -627,6 +647,9 @@ export default function ApplicationRepositoryPage({
   const selectedPageRows = pageRows.filter(row => selectedRowKeys.has(repositoryRowKey(row)))
   const allVisibleRowsSelected = pageRows.length > 0 && selectedPageRows.length === pageRows.length
   const hasPartialVisibleSelection = selectedPageRows.length > 0 && !allVisibleRowsSelected
+
+  const customRangeErrorId = useId()
+  const customRangeError = filters.timeframe === 'custom' && customRangeInverted(filters)
 
   const filterActive = filters.query.trim()
     || filters.projectId !== 'all'
@@ -1114,25 +1137,25 @@ export default function ApplicationRepositoryPage({
   const repositoryOrigin = `#/repository${repositoryOriginParams.size ? `?${repositoryOriginParams}` : ''}`
   const renderRowAction = (row: RepositoryAssetRow) => {
     if (row.kind === 'script' && onOpenScript) {
-      return <button type="button" className="repository-row-action" aria-label={`Edit ${row.name}`} onClick={() => onOpenScript(row.id, row.projectId)}>Edit</button>
+      return <button type="button" className="btn btn-sm btn-secondary" aria-label={`Edit ${row.name}`} onClick={() => onOpenScript(row.id, row.projectId)}>Edit</button>
     }
     if (row.kind === 'scenario' && onCreateTestFromScenario) {
-      return <button type="button" className="repository-row-action" aria-label={`New test from ${row.name}`} onClick={() => onCreateTestFromScenario(row.id, row.projectId)}>New Test</button>
+      return <button type="button" className="btn btn-sm btn-secondary" aria-label={`New test from ${row.name}`} onClick={() => onCreateTestFromScenario(row.id, row.projectId)}>New Test</button>
     }
     if (row.kind === 'test' && onOpenTest) {
       return (
         <div className="repository-row-actions">
-          <button type="button" className="repository-row-action" aria-label={`Open ${row.name}`} onClick={() => onOpenTest(row.id, row.projectId)}>Open</button>
+          <button type="button" className="btn btn-sm btn-secondary" aria-label={`Open ${row.name}`} onClick={() => onOpenTest(row.id, row.projectId)}>Open</button>
           {onOpenCommandCenter && (
-            <button type="button" className="repository-row-action" aria-label={`Open ${row.name} in Command Center`} onClick={() => onOpenCommandCenter(row.id, row.projectId)}>Command Center</button>
+            <button type="button" className="btn btn-sm btn-secondary" aria-label={`Open ${row.name} in Command Center`} onClick={() => onOpenCommandCenter(row.id, row.projectId)}>Command Center</button>
           )}
         </div>
       )
     }
     if (row.kind === 'project' || row.kind === 'release') {
-      return <button type="button" className="repository-row-action" aria-label={`Open structure for ${row.name}`} onClick={() => { setStructureFocus(row.projectId); setActiveTab('structure') }}>Open structure</button>
+      return <button type="button" className="btn btn-sm btn-secondary" aria-label={`Open structure for ${row.name}`} onClick={() => { setStructureFocus(row.projectId); setActiveTab('structure') }}>Open structure</button>
     }
-    if (row.kind === 'data_pool') return <a className="repository-row-action" aria-label={`Open data pool ${row.name}`} href={repositoryDataPoolHref(row.id, row.projectId, repositoryOrigin)}>Open data pool</a>
+    if (row.kind === 'data_pool') return <a className="btn btn-sm btn-secondary" aria-label={`Open data pool ${row.name}`} href={repositoryDataPoolHref(row.id, row.projectId, repositoryOrigin)}>Open data pool</a>
     return null
   }
 
@@ -1142,7 +1165,8 @@ export default function ApplicationRepositoryPage({
       <div className="page-header">
         <div>
           <p className="page-kicker">Repository</p>
-          <h1>{applicationRepository?.name || 'Application Repository'}</h1>
+          {/* The top bar holds the page h1. */}
+          <h2>{applicationRepository?.name || 'Application Repository'}</h2>
           <p className="page-subtitle">
             Search, sort, and inspect repository assets
             {activeApplication ? ` for ${activeApplication.name}` : ' across the selected domain'}.
@@ -1169,7 +1193,7 @@ export default function ApplicationRepositoryPage({
           <span>{message}</span>
           <button
             type="button"
-            className="repository-row-action"
+            className="btn btn-sm btn-secondary"
             onClick={() => { void reconcileCommittedDrafts(target as ReconciliationTarget) }}
           >
             Retry {target === 'repository' ? 'repository' : 'project'} synchronization
@@ -1249,28 +1273,35 @@ export default function ApplicationRepositoryPage({
           </button>
         </div>
         {filters.timeframe === 'custom' && (
-          <div className="repository-custom-time-row" aria-label="Custom activity range">
+          <div className="repository-custom-time-row" role="group" aria-label="Custom activity range">
             <label>
-              <span>Activity From</span>
+              <span>Activity from</span>
               <input
                 type="date"
                 value={filters.customStartDate}
+                max={filters.customEndDate || undefined}
+                aria-invalid={customRangeError || undefined}
+                aria-describedby={customRangeError ? customRangeErrorId : undefined}
                 onChange={event => setFilters(prev => ({ ...prev, customStartDate: event.target.value }))}
               />
             </label>
             <label>
-              <span>Activity To</span>
+              <span>Activity to</span>
               <input
                 type="date"
                 value={filters.customEndDate}
+                min={filters.customStartDate || undefined}
+                aria-invalid={customRangeError || undefined}
+                aria-describedby={customRangeError ? customRangeErrorId : undefined}
                 onChange={event => setFilters(prev => ({ ...prev, customEndDate: event.target.value }))}
               />
             </label>
+            {customRangeError && <p id={customRangeErrorId} className="settings-error-inline" role="alert">Activity from must be on or before Activity to. The date range is not applied until it is corrected.</p>}
           </div>
         )}
 
         </>} />
-        <p className="setting-desc" role="status">{catalogLoading ? 'Loading assets...' : catalogLoadedAt ? `Updated ${formatDate(catalogLoadedAt)}` : 'Not loaded yet'}</p>
+        <p className="setting-desc" role="status">{catalogLoading ? 'Loading assets…' : catalogLoadedAt ? `Updated ${formatDate(catalogLoadedAt)}` : 'Not loaded yet'}</p>
         <TabList className="repository-tab-row" role="tablist" aria-label="Repository asset types" onKeyDown={handleTabKey}>
           {CATALOG_TABS.map(tab => {
             const count = tab.id === 'all'
@@ -1304,9 +1335,9 @@ export default function ApplicationRepositoryPage({
           <header><h2>{inspected.name}</h2><button className="btn btn-secondary btn-sm" type="button" onClick={() => setInspectedKey(null)}>Close inspection</button></header>
           <dl><dt>Type</dt><dd>{repositoryKindLabel(inspected.kind)}</dd><dt>Project</dt><dd>{inspected.projectName}</dd><dt>Release</dt><dd>{inspected.releaseNames.join(', ') || inspected.releaseName || 'None'}</dd><dt>Summary</dt><dd>{inspected.summary}</dd><dt>Identifier</dt><dd><code>{inspected.id}</code></dd></dl>
           {renderRowAction(inspected)}
-          {inspectedScenario && <><h3>Scenario scripts</h3><ul>{inspectedScenario.scripts.map(script => <li key={script.script_id}><button className="repository-row-action" type="button" disabled={!onOpenScript} onClick={() => onOpenScript?.(script.script_id, inspected.projectId)}>{script.script_name || script.script_id}</button></li>)}</ul></>}
-          {inspected.kind === 'script' && <><h3>Used by scenarios</h3>{relatedScenarios.length ? <ul>{relatedScenarios.map(scenario => <li key={scenario.id}><button className="repository-row-action" type="button" onClick={() => { setFilters(DEFAULT_FILTERS); setActiveTab('scenario'); setInspectedKey(`scenario:${scenario.id}`) }}>{scenario.name}</button></li>)}</ul> : <p>No scenarios in the loaded catalog reference this script.</p>}</>}
-          {(inspected.kind === 'scenario' || inspected.kind === 'script') && <><h3>Run history</h3>{relatedRuns.length ? <ul>{relatedRuns.map(test => <li key={test.id}><button className="repository-row-action" type="button" disabled={!onOpenTest} onClick={() => onOpenTest?.(test.id, inspected.projectId)}>{test.name} · {test.ref_key || test.id} · {test.status}</button></li>)}</ul> : <p>No runs in the loaded catalog reference this asset.</p>}</>}
+          {inspectedScenario && <><h3>Scenario scripts</h3><ul>{inspectedScenario.scripts.map(script => <li key={script.script_id}><button className="btn btn-sm btn-secondary" type="button" disabled={!onOpenScript} onClick={() => onOpenScript?.(script.script_id, inspected.projectId)}>{script.script_name || script.script_id}</button></li>)}</ul></>}
+          {inspected.kind === 'script' && <><h3>Used by scenarios</h3>{relatedScenarios.length ? <ul>{relatedScenarios.map(scenario => <li key={scenario.id}><button className="btn btn-sm btn-secondary" type="button" onClick={() => { setFilters(DEFAULT_FILTERS); setActiveTab('scenario'); setInspectedKey(`scenario:${scenario.id}`) }}>{scenario.name}</button></li>)}</ul> : <p>No scenarios in the loaded catalog reference this script.</p>}</>}
+          {(inspected.kind === 'scenario' || inspected.kind === 'script') && <><h3>Run history</h3>{relatedRuns.length ? <ul>{relatedRuns.map(test => <li key={test.id}><button className="btn btn-sm btn-secondary" type="button" disabled={!onOpenTest} onClick={() => onOpenTest?.(test.id, inspected.projectId)}>{test.name} · {test.ref_key || test.id} · {test.status}</button></li>)}</ul> : <p>No runs in the loaded catalog reference this asset.</p>}</>}
         </section>}
         {activeTab !== 'structure' && (
           <nav className="repository-pagination" aria-label="Repository pages">
@@ -1325,10 +1356,10 @@ export default function ApplicationRepositoryPage({
               <span>{archiveableSelectedRows.length > 0 ? plural(archiveableSelectedRows.length, 'archiveable item') : 'No archiveable items'}</span>
             </div>
             <div className="repository-bulk-actions">
-              {selectedVisibleRows.length < selectableVisibleRows.length && <button type="button" className="repository-row-action" disabled={bulkBusy} onClick={() => setSelectedRowKeys(new Set(selectableVisibleRows.map(repositoryRowKey)))}>Select all {selectableVisibleRows.length} matching items</button>}
+              {selectedVisibleRows.length < selectableVisibleRows.length && <button type="button" className="btn btn-sm btn-secondary" disabled={bulkBusy} onClick={() => setSelectedRowKeys(new Set(selectableVisibleRows.map(repositoryRowKey)))}>Select all {selectableVisibleRows.length} matching items</button>}
               <button
                 type="button"
-                className="repository-row-action"
+                className="btn btn-sm btn-secondary"
                 onClick={handleBulkArchive}
                 disabled={bulkBusy || archiveableSelectedRows.length === 0}
               >
@@ -1336,13 +1367,13 @@ export default function ApplicationRepositoryPage({
               </button>
               <button
                 type="button"
-                className="repository-row-action danger"
+                className="btn btn-sm btn-danger-outline"
                 onClick={handleBulkDelete}
                 disabled={bulkBusy || deletableSelectedRows.length === 0}
               >
                 Delete selected ({deletableSelectedRows.length})
               </button>
-              <button type="button" className="repository-row-action" onClick={clearSelectedRows} disabled={bulkBusy}>
+              <button type="button" className="btn btn-sm btn-secondary" onClick={clearSelectedRows} disabled={bulkBusy}>
                 Clear
               </button>
             </div>
@@ -1536,9 +1567,11 @@ export default function ApplicationRepositoryPage({
                     </td>
                         <td aria-label="Repository asset">
                       <div className="repository-asset-name">
-                        <button type="button" className="repository-row-action" onClick={() => setInspectedKey(repositoryRowKey(row))}>{row.name}</button>
+                        <div className="repository-asset-title">
+                          <button type="button" className="btn btn-sm btn-secondary" onClick={() => setInspectedKey(repositoryRowKey(row))}>{row.name}</button>
+                          <RepositoryRowInfo row={row} />
+                        </div>
                         <span>{row.summary}</span>
-                        <details><summary>Identifier</summary><code>{row.id}</code></details>
                       </div>
                     </td>
                     <td><span className="repository-kind-pill">{repositoryKindLabel(row.kind)}</span></td>
@@ -1570,10 +1603,10 @@ export default function ApplicationRepositoryPage({
                     <td>
                       <div className="repository-table-stack">
                         <strong>{formatCompactDate(row.lastActivityAt || row.updatedAt || row.createdAt)}</strong>
-                        {row.detail && <span>{row.detail}</span>}
+                        {row.detail && !row.facts && <span>{row.detail}</span>}
                       </div>
                     </td>
-                    <td><div className="repository-row-actions"><button type="button" className="repository-row-action" aria-label={`Inspect ${row.name}`} onClick={() => setInspectedKey(repositoryRowKey(row))}>Inspect</button>{renderRowAction(row)}</div></td>
+                    <td><div className="repository-row-actions"><button type="button" className="btn btn-sm btn-secondary" aria-label={`Inspect ${row.name}`} onClick={() => setInspectedKey(repositoryRowKey(row))}>Inspect</button>{renderRowAction(row)}</div></td>
                   </tr>
                 ))}
                 {virtualizeCatalogRows && catalogPaddingBottom > 0 && (
@@ -1585,7 +1618,7 @@ export default function ApplicationRepositoryPage({
                   <tr className="no-hover">
                     <td colSpan={9}>
                       <div className="repository-empty table-empty">
-                        {catalogLoading ? 'Loading repository assets...' : filterActive ? 'No assets match the current filters.' : emptyCatalogMessage}
+                        {catalogLoading ? 'Loading repository assets…' : filterActive ? 'No assets match the current filters.' : emptyCatalogMessage}
                       </div>
                     </td>
                   </tr>

@@ -18,9 +18,10 @@ func (tr *TestRunner) persistArchiveFinalizationArtifacts(ctx context.Context, j
 		return err
 	}
 	defer budget.close()
+	refresh := strings.TrimSpace(job.RefreshToken) != ""
 	preparer, ok := tr.archiveStore.(archiveManifestPreparationStore)
 	if !ok || tr.archiveFinalizationOutbox() == nil {
-		return tr.persistTestManifestArtifactWithPreparation(test, &job.ArchiveRecord, nil, budget)
+		return tr.persistTestManifestArtifactWithPreparation(test, &job.ArchiveRecord, nil, budget, refresh)
 	}
 	if err := restorePreparedArchiveManifest(ctx, job, budget); err != nil {
 		return err
@@ -41,7 +42,7 @@ func (tr *TestRunner) persistArchiveFinalizationArtifacts(ctx context.Context, j
 		job.ArchiveRecord = prepared
 		job.PreparedManifestJSON = string(data)
 		return ctx.Err()
-	}, budget)
+	}, budget, refresh)
 }
 
 // An interrupted atomic manifest replacement can leave the prior local manifest

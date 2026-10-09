@@ -690,6 +690,12 @@
   gap: 6px;
   max-width: 420px;
 }
+.script-name-duplicate {
+  display: block;
+  margin-top: 6px;
+  color: var(--warning-text);
+  font-size: var(--font-size-xs);
+}
 .script-name-field span {
   color: var(--text-muted);
   font-size: 11px;
@@ -3523,6 +3529,16 @@
   padding: 12px 14px;
 }
 
+details.replay-code-block > summary,
+.replay-protocol-evidence > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.replay-protocol-evidence {
+  margin-top: 8px;
+}
+
 .replay-code-block-header {
   display: flex;
   justify-content: space-between;
@@ -5538,8 +5554,6 @@
 .script-editor .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .script-editor .btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
 .script-editor .btn-ghost:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-primary); }
-.script-editor .btn-accent { background: var(--accent); color: var(--accent-contrast); }
-.script-editor .btn-accent:hover:not(:disabled) { background: var(--accent-hover); }
 .script-editor .btn-sm { padding: 4px 10px; font-size: 12px; }
 .script-editor .btn-icon {
   width: 24px; height: 24px; border: none; background: transparent;
@@ -5650,7 +5664,7 @@
   color: var(--text-primary);
 }
 .runtime-settings-tabs .runtime-settings-tab:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 .runtime-settings-tabs .runtime-settings-tab.active {
@@ -7986,7 +8000,7 @@ button.debugger-problem-row:hover {
 .runtime-active-heading { margin: 18px 20px 10px; }
 .runtime-settings-detail .runtime-field-evidence { margin: 20px 0 0; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); overflow: hidden; }
 .runtime-field-evidence > summary { cursor: pointer; padding: 12px 14px; text-align: left; }
-.runtime-field-evidence > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.runtime-field-evidence > summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -3px; }
 .runtime-evidence-heading { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; vertical-align: middle; }
 .runtime-evidence-heading .runtime-section-icon { flex: 0 0 auto; width: 24px; height: 24px; color: var(--accent-text); }
 .runtime-evidence-heading strong { color: var(--text-primary); font-size: 13px; }
@@ -8012,7 +8026,7 @@ button.debugger-problem-row:hover {
 .runtime-evidence-no-details { color: var(--text-muted); }
 .runtime-evidence-other { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
 .runtime-evidence-other > summary { cursor: pointer; color: var(--text-secondary); font-size: 12px; font-weight: 600; }
-.runtime-evidence-other > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.runtime-evidence-other > summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .runtime-evidence-other > p { color: var(--text-secondary); font-size: 12px; }
 .imported-runtime-run-order { padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); }
 .imported-runtime-run-order h4 { margin: 0 0 8px; color: var(--text-primary); font-size: 13px; }
@@ -8028,7 +8042,7 @@ button.debugger-problem-row:hover {
 .imported-runtime-group-pill { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 5px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-secondary); color: var(--text-secondary); cursor: pointer; font: inherit; font-size: 12px; overflow-wrap: anywhere; text-align: left; }
 .imported-runtime-group-pill.selected { border-color: var(--accent-border); background: var(--accent-soft); color: var(--text-primary); }
 .imported-runtime-group-pill:hover { border-color: var(--accent); }
-.imported-runtime-group-pill:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.imported-runtime-group-pill:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .imported-runtime-group-pill span { color: var(--text-muted); font-size: 11px; }
 .imported-runtime-empty-groups { color: var(--text-secondary); font-size: 12px; }
 .imported-runtime-file { margin-top: 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); overflow: hidden; }
@@ -8244,7 +8258,7 @@ button.debugger-problem-row:hover {
 .issue-details-copy > span { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .script-action-navigator input[type="search"], .author-insert-dialog input, .author-insert-dialog select, .author-body-toolbar select { background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); padding: 8px 10px; font: inherit; width: 100%; }
-.author-insert-dialog input:focus-visible, .author-insert-dialog select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.author-insert-dialog input:focus-visible, .author-insert-dialog select:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 .script-action-navigator > label { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
 

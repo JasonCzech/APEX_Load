@@ -433,13 +433,13 @@ export default function GroupPlacementEditor({
       {unsupportedGroupWeighted && (
         <div className="settings-error-inline" role="alert">
           Weighted placement is not supported for individual groups. Choose inherit, automatic placement, host pinning, or a required capability.
-          <button type="button" className="secondary-button" onClick={useAutomaticGroupPlacement}>Use automatic placement</button>
+          <button type="button" className="btn btn-sm btn-secondary" onClick={useAutomaticGroupPlacement}>Use automatic placement</button>
         </div>
       )}
       {unsupportedGroupLossTolerance && (
         <div className="settings-error-inline" role="alert">
           Generator-loss tolerance is executed only at scenario scope.
-          <button type="button" className="secondary-button" onClick={removeUnsupportedGroupLossTolerance}>Remove unsupported setting</button>
+          <button type="button" className="btn btn-sm btn-secondary" onClick={removeUnsupportedGroupLossTolerance}>Remove unsupported setting</button>
         </div>
       )}
       {scope === 'scenario' && (mode === 'region_weighted' || mode === 'load_zone_weighted') && (() => {
@@ -467,7 +467,7 @@ export default function GroupPlacementEditor({
             <div className="scenario-browser-grid">
               <label><span>{mode === 'region_weighted' ? 'Region' : 'Load zone'} name</span><input aria-label="New placement weight name" className="settings-input" value={newWeightKey} onChange={event => setNewWeightKey(event.target.value)} /></label>
               <label><span>Weight</span><input aria-label="New placement weight value" className="settings-input" type="number" min={1} step={1} value={newWeightValue} aria-invalid={!newWeightIsValid} onChange={event => setNewWeightValue(event.target.value)} /></label>
-              <button type="button" className="secondary-button" disabled={!newWeightKey.trim() || !newWeightIsValid} onClick={addWeight}>Add weight</button>
+              <button type="button" className="btn btn-sm btn-secondary" disabled={!newWeightKey.trim() || !newWeightIsValid} onClick={addWeight}>Add weight</button>
             </div>
             {(weightError || storedWeightError || newWeightDraftError) && <p className="settings-error-inline" role="alert">{weightError || storedWeightError || newWeightDraftError}</p>}
           </div>

@@ -339,7 +339,18 @@ func TestDistributedArchiveOutputAdmissionPreservesCompletedOutcome(t *testing.T
 		t.Run(tc.name, func(t *testing.T) {
 			tr, store, run, backend := collectionCacheFixture(t, "generator-a")
 			t.Setenv(tc.key, tc.value)
+			tr.mu.Lock()
+			run.pendingJointPublications, run.pendingJointBytes = []*storage.NativePublicationEvidence{{SourceID: "generator-a", Sequence: 9}}, 512
+			tr.mu.Unlock()
 			backend.completeDistributedTestRun(tr, run, "COMPLETE", "")
+			// No archive was staged, so nothing would release the joint batches
+			// held for its sidecar (B5): they are released and counted.
+			tr.mu.RLock()
+			held, dropped := len(run.pendingJointPublications), run.jointPublicationsDropped
+			tr.mu.RUnlock()
+			if held != 0 || dropped != 1 {
+				t.Fatalf("held joint batches after an unstaged archive: %d held, %d dropped", held, dropped)
+			}
 			stored, err := store.GetTest(run.ID)
 			if err != nil || stored.Status != "COMPLETE" || stored.Error != "" {
 				t.Fatalf("archive admission changed execution outcome: %+v %v", stored, err)

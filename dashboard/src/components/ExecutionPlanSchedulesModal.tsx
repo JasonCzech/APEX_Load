@@ -13,6 +13,8 @@ import {
 } from '../types'
 import ConfirmDestructiveModal from './ConfirmDestructiveModal'
 import { CronBuilder } from './ScheduleCronBuilder'
+import LoadingState from './ux/LoadingState'
+import { formatDateTime } from '../utils/dateTime'
 import {
   COMMON_TIMEZONES,
   datetimeLocalToISO,
@@ -72,10 +74,9 @@ function isoToLocalInput(iso?: string): string {
   return Number.isNaN(parsed.getTime()) ? '' : formatDatetimeLocalValue(parsed)
 }
 
+// Shared formatter: dates read the same, zone included, as the rest of the app.
 function formatTimestamp(iso?: string): string {
-  if (!iso) return '—'
-  const parsed = new Date(iso)
-  return Number.isNaN(parsed.getTime()) ? iso : parsed.toLocaleString()
+  return formatDateTime(iso, { seconds: true, fallback: '—' })
 }
 
 function occurrenceStatusPill(status: string): string {
@@ -549,7 +550,7 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
 
           {/* Schedule list */}
           {loading ? (
-            <div className="pp-empty">Loading schedules…</div>
+            <LoadingState what="schedules" className="pp-loading" />
           ) : schedules.length === 0 ? (
             <div className="pp-empty">No schedules yet. Add one to run this plan on a recurring cadence.</div>
           ) : (
@@ -601,7 +602,7 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
                   {occurrencesFor === schedule.id && (
                     <div className="pp-occurrences">
                       {occLoading ? (
-                        <div className="pp-empty">Loading runs…</div>
+                        <LoadingState what="runs" className="pp-loading" />
                       ) : occurrences.length === 0 ? (
                         <div className="pp-empty">No runs materialized yet.</div>
                       ) : (

@@ -68,6 +68,20 @@ Step modes:
 - `over`: run through the current container or sub-request scope, then pause before the next action outside it.
 - `loop_end`: run to the end of the nearest enclosing control loop, then pause before the next action outside it.
 
+### Editor keys
+
+These keys work while the script editor is open, and `?` lists them with the rest:
+
+| Keys | Action |
+| --- | --- |
+| `Cmd/Ctrl` + `S` | Save script |
+| `F5` | Run the debugger, or continue a paused session |
+| `Shift` + `F5` | Stop the debugger |
+| `F10` | Step (`into`) |
+| `F11` | Step over the current block (`over`) |
+| `Shift` + `F11` | Finish the current loop (`loop_end`) |
+| `Cmd/Ctrl` + `B` | Toggle a breakpoint on the selected action |
+
 ## Break On Failure
 
 `break_on_failure` pauses immediately after a failed action, before the replay engine applies the script failure policy. This lets an operator inspect request, response, variables, condition evidence, and logs before choosing resume, step, or stop.

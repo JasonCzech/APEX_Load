@@ -1,4 +1,4 @@
-import { DashboardThemePreference } from '../hooks/useDashboardTheme'
+import { THEME_OPTIONS, type DashboardThemePreference } from '../hooks/useDashboardTheme'
 
 interface ThemeToggleProps {
   theme: DashboardThemePreference
@@ -14,12 +14,7 @@ export default function ThemeToggle({ theme, onThemeChange }: ThemeToggleProps) 
         onChange={(e) => onThemeChange(e.target.value as DashboardThemePreference)}
         aria-label="Dashboard color theme"
       >
-        <option value="system">System (Auto)</option>
-        <option value="dark">Dark Theme</option>
-        <option value="light">Light Theme</option>
-        <option value="solarized-dark">Solarized Dark</option>
-        <option value="solarized-light">Solarized Light</option>
-        <option value="monokai-dimmed">Monokai Dimmed</option>
+        {THEME_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
     </div>
   )

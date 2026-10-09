@@ -3,6 +3,7 @@ import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { StoredScript, TestSummary } from '../types'
 import { buildScenarioDraftFromTest } from './scenarioDraftUtils'
+import LoadingState from './ux/LoadingState'
 
 const CreateTestModal = lazy(() => import('./CreateTestModal'))
 
@@ -49,7 +50,7 @@ export default function TestExecutionScenarioEditor({ open, test, onClose, onSel
   }
 
   return (
-    <Suspense fallback={<div className="page-loading" role="status">Loading scenario editor…</div>}>
+    <Suspense fallback={<LoadingState what="scenario editor" />}>
       <CreateTestModal
         mode="revise-queued-run"
         projectId={owningProjectId}

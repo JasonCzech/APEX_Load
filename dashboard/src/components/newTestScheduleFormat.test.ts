@@ -212,3 +212,9 @@ describe('formatScheduleInstant', () => {
     expect(formatScheduleInstant(undefined, 'America/New_York')).toBe('Not scheduled')
   })
 })
+
+describe('describeCron out-of-range fields', () => {
+  it('describes nothing rather than a garbage time', () => {
+    expect(describeCron('99 87 * * *')).toBe('')
+  })
+})

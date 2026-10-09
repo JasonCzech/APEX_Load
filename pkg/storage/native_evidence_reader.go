@@ -14,9 +14,33 @@ type NativeIntervalEvidenceReader interface {
 	ForEachNativeIntervalEvidence(ctx context.Context, testID string, fn func(timestamp time.Time, evidence *NativeIntervalEvidence) error) error
 }
 
+// NativeIntervalEvidenceRetention reports whether a run's persisted interval
+// rows reached the store's retention cap, so its oldest rows may have been
+// trimmed.
+type NativeIntervalEvidenceRetention interface {
+	NativeIntervalEvidenceTrimmed(ctx context.Context, testID string) (bool, error)
+}
+
+// NativeIntervalEvidenceTrimmed reports whether the run has as many persisted
+// interval rows as the store keeps (maxPersistedTestHistoryPoints): the
+// oldest may have been trimmed. Exactly that many without a trim also counts.
+func (s *SQLiteStore) NativeIntervalEvidenceTrimmed(ctx context.Context, testID string) (bool, error) {
+	var rows int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM test_interval_summaries WHERE test_id = ?`, testID).Scan(&rows); err != nil {
+		return false, err
+	}
+	return rows >= maxPersistedTestHistoryPoints, nil
+}
+
 // nativeEvidencePageSize keeps at most this many decoded rows in memory; one
 // row can hold several hundred t-digests.
 const nativeEvidencePageSize = 32
+
+// nativeEvidencePageBytes also ends a page once its encoded rows reach this
+// size: a distributed run's row carries the joint evidence of every source
+// batch accepted since the previous point, so rows vary widely in size. A
+// variable so tests can page by bytes.
+var nativeEvidencePageBytes = 32 << 20
 
 // ForEachNativeIntervalEvidence pages through the run's rows that carry native
 // evidence. It is meant for completed runs, whose rows no longer change. Pages
@@ -44,6 +68,7 @@ func (s *SQLiteStore) ForEachNativeIntervalEvidence(ctx context.Context, testID 
 			return err
 		}
 		page := make([]row, 0, nativeEvidencePageSize)
+		pageBytes, more := 0, false
 		for rows.Next() {
 			var timestamp time.Time
 			var encoded sql.NullString
@@ -57,6 +82,10 @@ func (s *SQLiteStore) ForEachNativeIntervalEvidence(ctx context.Context, testID 
 				return fmt.Errorf("decode native interval evidence at %s: %w", timestamp.UTC().Format(time.RFC3339Nano), err)
 			}
 			page = append(page, row{timestamp, &evidence})
+			if pageBytes += len(encoded.String); pageBytes >= nativeEvidencePageBytes {
+				more = true // the page ends early; the next one resumes after it
+				break
+			}
 		}
 		if err := rows.Err(); err != nil {
 			rows.Close()
@@ -72,7 +101,7 @@ func (s *SQLiteStore) ForEachNativeIntervalEvidence(ctx context.Context, testID 
 				return err
 			}
 		}
-		if len(page) < nativeEvidencePageSize {
+		if !more && len(page) < nativeEvidencePageSize {
 			return nil
 		}
 		last := page[len(page)-1].timestamp

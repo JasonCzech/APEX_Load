@@ -17,44 +17,6 @@
   align-items: flex-start;
 }
 
-.btn-accent-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 27px;
-  padding: 5px 9px;
-  border: 1px solid var(--accent) !important;
-  border-radius: 999px;
-  background: var(--accent) !important;
-  color: var(--accent-contrast) !important;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.2;
-  text-decoration: none;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
-}
-
-.btn-accent-action:hover:not(:disabled),
-.btn-accent-action:focus-visible {
-  border-color: var(--accent-hover) !important;
-  background: var(--accent-hover) !important;
-  color: var(--accent-contrast) !important;
-  text-decoration: none;
-  transform: translateY(-1px) scale(1.02);
-  box-shadow: var(--glow-md);
-}
-
-.btn-accent-action:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.btn-accent-action:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
 .results-actions {
   display: flex;
   align-items: center;
@@ -2320,41 +2282,37 @@
   color: var(--accent-text);
 }
 
+/* Script · Health · Usage · Run releases · Created · Last run · Actions */
 .script-create-existing-table th:nth-child(1),
 .script-create-existing-table td:nth-child(1) {
-  width: 9%;
+  width: 27%;
 }
 
 .script-create-existing-table th:nth-child(2),
 .script-create-existing-table td:nth-child(2) {
-  width: 23%;
+  width: 19%;
 }
 
 .script-create-existing-table th:nth-child(3),
 .script-create-existing-table td:nth-child(3) {
-  width: 17%;
+  width: 16%;
 }
 
 .script-create-existing-table th:nth-child(4),
 .script-create-existing-table td:nth-child(4) {
-  width: 15%;
+  width: 14%;
 }
 
 .script-create-existing-table th:nth-child(5),
-.script-create-existing-table td:nth-child(5) {
-  width: 17%;
+.script-create-existing-table td:nth-child(5),
+.script-create-existing-table th:nth-child(6),
+.script-create-existing-table td:nth-child(6) {
+  width: 9%;
 }
 
-.script-create-existing-table th:nth-child(6),
-.script-create-existing-table td:nth-child(6),
 .script-create-existing-table th:nth-child(7),
 .script-create-existing-table td:nth-child(7) {
-  width: 10%;
-}
-
-.script-create-existing-table th:nth-child(8),
-.script-create-existing-table td:nth-child(8) {
-  width: 9%;
+  width: 6%;
 }
 
 .script-create-existing-table tbody tr:hover {
@@ -2919,6 +2877,17 @@
   text-decoration: none;
 }
 
+/* The chevron stays beside the first line of a long name. */
+.script-row-toggle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.script-table-usage strong {
+  white-space: nowrap;
+}
+
 .script-row-toggle:hover,
 .script-row-toggle:focus-visible,
 .script-run-link:hover,
@@ -3147,6 +3116,114 @@
   border-color: rgba(var(--danger-rgb), 0.3);
   color: var(--danger-text);
   background: rgba(var(--danger-rgb), 0.12);
+}
+
+/* Room for a row's badges on one line: the name's protocol, version and info
+   badges, and the health status plus its count badges. */
+.scripts-library-table td.cell-name,
+.scenario-library-table td.cell-name {
+  min-width: 220px;
+}
+
+.scripts-library-table td[aria-label="Authoring health"] {
+  min-width: 180px;
+}
+
+/* A row's actions stay on one line; the rest are behind More. */
+.library-row-actions-cell {
+  white-space: nowrap;
+}
+
+.library-row-actions-cell .ux-row-actions-menu {
+  white-space: normal;
+}
+
+/* Library row badges: colour-coded, clickable, an icon plus a number. */
+.script-health-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.script-health-badge {
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: var(--font-size-xs, 11px);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.script-health-badge:hover {
+  filter: brightness(0.96);
+}
+
+/* A count with no issue list to open (pickers): informative, not clickable. */
+.script-health-badge.static {
+  cursor: default;
+}
+
+.script-health-badge.static:hover {
+  filter: none;
+}
+
+/* The overall status (icon + score) outweighs the count badges beside it. */
+.script-health-badge.script-health-status {
+  border-width: 1.5px;
+  font-weight: 800;
+}
+
+.script-info-badge {
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.script-info-badge:hover {
+  color: var(--text-primary);
+}
+
+.script-health-popover-status,
+.script-health-popover-secrets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.script-health-popover-secrets {
+  color: var(--text-secondary);
+}
+
+.script-health-popover-inputs {
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.script-health-popover-inputs li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.script-health-popover-inputs strong {
+  text-transform: capitalize;
+}
+
+.script-health-popover-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .script-health-detail {
@@ -3473,7 +3550,7 @@
 }
 
 .monitor-tab:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -4051,7 +4128,7 @@
 }
 
 .telemetry-summary-card:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -4990,7 +5067,7 @@
 }
 
 .new-test-builder-button:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -5255,7 +5332,26 @@
   min-width: 0;
 }
 
-.new-test-scenario-name-cell > span:nth-child(2) {
+.new-test-row-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.new-test-row-toggle:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.new-test-row-toggle > span:nth-child(2) {
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -5779,7 +5875,7 @@
 }
 
 .new-test-add-release-link:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -6299,16 +6395,6 @@
   margin-top: 8px;
 }
 
-.btn-danger {
-  background: var(--danger-fill);
-  color: var(--danger-fill-text);
-  border: 1px solid var(--danger-fill);
-}
-
-.btn-danger:hover {
-  background: var(--danger-fill);
-}
-
 .btn-danger-outline {
   background: transparent;
   color: var(--danger-text);
@@ -6681,7 +6767,7 @@
 }
 
 .library-source-pill-link:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
 
@@ -7797,8 +7883,7 @@ col.results-actions-col {
   min-width: 0;
 }
 
-.repository-reset-filter,
-.repository-row-action {
+.repository-reset-filter {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-hover);
@@ -7810,10 +7895,6 @@ col.results-actions-col {
   white-space: nowrap;
 }
 
-.repository-row-action {
-  padding: 7px 10px;
-}
-
 .repository-row-actions {
   display: flex;
   flex-wrap: wrap;
@@ -7821,25 +7902,14 @@ col.results-actions-col {
   gap: 6px;
 }
 
-.repository-reset-filter:hover:not(:disabled),
-.repository-row-action:hover:not(:disabled) {
+.repository-reset-filter:hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--accent-text);
 }
 
-.repository-reset-filter:disabled,
-.repository-row-action:disabled {
+.repository-reset-filter:disabled {
   opacity: 0.55;
   cursor: not-allowed;
-}
-
-.repository-row-action.danger {
-  color: var(--danger-text);
-}
-
-.repository-row-action.danger:hover:not(:disabled) {
-  border-color: var(--danger);
-  color: var(--danger-text);
 }
 
 .repository-row-action-muted {
@@ -8038,7 +8108,14 @@ col.results-actions-col {
   word-break: break-word;
 }
 
-.repository-asset-name span,
+.repository-asset-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.repository-asset-name > span,
 .repository-table-stack span {
   color: var(--text-muted);
   font-size: 12px;

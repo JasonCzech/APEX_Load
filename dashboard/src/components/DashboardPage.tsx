@@ -33,6 +33,7 @@ import './DashboardPage.css'
 import { aggregateDashboardTpsHistory } from './dashboardAggregateHistory'
 import { recentMetricAverages } from './testExecutionMetricsModel'
 import { formatFixed } from '../utils/numberFormat'
+import { metricHeader } from '../metricLabels'
 
 interface Props {
   testStatuses: Record<string, string>
@@ -158,8 +159,8 @@ const tableMinimumViewportHeightPx = 80
 
 const graphMetricOptions: { key: CardMetricKey; label: string; color: string; digits: number }[] = [
   { key: 'tps', label: 'TPS', color: 'var(--accent)', digits: 1 },
-  { key: 'avg_response_ms', label: 'Avg ms', color: 'var(--chart-2)', digits: 0 },
-  { key: 'error_pct', label: 'Error rate (%)', color: 'var(--danger)', digits: 2 },
+  { key: 'avg_response_ms', label: metricHeader('avg'), color: 'var(--chart-2)', digits: 0 },
+  { key: 'error_pct', label: metricHeader('errorRate'), color: 'var(--danger)', digits: 2 },
   { key: 'active_vusers', label: 'Active VUsers', color: 'var(--chart-3)', digits: 0 },
 ]
 
@@ -386,7 +387,8 @@ function SnapshotStat({ label, value, tone = 'neutral', onClick }: SnapshotStatP
   const className = `release-panel-stat tone-${tone}${onClick ? ' is-actionable' : ''}`
   const content = (
     <>
-      <span className="release-panel-stat-value">{value}</span>
+      {/* Values are ellipsized in the narrow grid; the title keeps the full text reachable. */}
+      <span className="release-panel-stat-value" title={typeof value === 'string' || typeof value === 'number' ? String(value) : undefined}>{value}</span>
       <span className="release-panel-stat-label">{label}</span>
     </>
   )
@@ -511,6 +513,7 @@ function ReleaseSnapshotPanel({
               type="button"
               className={`dash-release-option ${activeRelease?.id === release.id ? 'active' : ''}`}
               aria-current={activeRelease?.id === release.id ? 'true' : undefined}
+              title={release.name}
               onClick={() => onReleaseChange(release)}
             >
               {release.name}
@@ -525,7 +528,8 @@ function ReleaseSnapshotPanel({
             <SnapshotStat label="Archives Ready" value={archivesReady} onClick={onResults} />
             <SnapshotStat label="Archive records" value={releaseStats.totalTx.toLocaleString()} onClick={onResults} />
             <SnapshotStat label="Current TPS" value={dashboardStats.active ? formatOptionalNumber(dashboardStats.activeTps, 1) : 'Idle'} onClick={onPrimaryActiveRun} />
-            <SnapshotStat label="Mean Run Error Rate" value={dashboardStats.active ? formatOptionalPercent(dashboardStats.avgError, 2) : 'Idle'} tone={(dashboardStats.avgError ?? 0) > 0 ? 'danger' : 'neutral'} onClick={onPrimaryActiveRun} />
+            {/* A rate, not a status: with nothing running there is no value to show. */}
+            <SnapshotStat label="Live error rate (active runs)" value={dashboardStats.active ? formatOptionalPercent(dashboardStats.avgError, 2) : MISSING_VALUE} tone={(dashboardStats.avgError ?? 0) > 0 ? 'danger' : 'neutral'} onClick={onPrimaryActiveRun} />
           </div>
         )}
 
@@ -547,7 +551,7 @@ function ReleaseSnapshotPanel({
               <p className="dashboard-context-note">System-wide health · last successful check: {healthUpdatedAt ? new Date(healthUpdatedAt).toLocaleTimeString() : 'Not available'}</p>
               <div className="release-panel-detail-grid">
                 <SnapshotStat label="API Health" value={statusLabel} tone={statusColor === 'healthy' ? 'success' : statusColor === 'offline' ? 'danger' : 'warning'} onClick={onMonitoring} />
-                <SnapshotStat label="Generators Ready" value={generatorAvailability} onClick={onMonitoring} />
+                <SnapshotStat label="Load generators ready" value={generatorAvailability} onClick={onMonitoring} />
                 <SnapshotStat label="WebSocket Clients" value={health?.ws_clients ?? '—'} />
                 <SnapshotStat label="Pending Runs" value={pendingTests.length} tone={pendingTests.length > 0 ? 'warning' : 'neutral'} onClick={() => onPendingRun(pendingTests[0]?.id)} />
               </div>
@@ -1368,7 +1372,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         </div>
         {releasesLoading ? (
           <div className="empty-card" role="status">
-            <p>Loading release scope...</p>
+            <p>Loading release scope…</p>
             <p className="empty-hint">Dashboard data will appear after the selected release is confirmed.</p>
           </div>
         ) : (
@@ -1512,6 +1516,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                             <button
                               type="button"
                               className="dash-source-link"
+                              title={test.name}
                               onClick={event => {
                                 event.stopPropagation();
                                 (onOpenTestArchive ?? onSelectTest)(test.id)
@@ -1603,7 +1608,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                     >
                       <div className="dac-header">
                         <div className="dac-title-wrap">
-                          <button type="button" className="btn btn-ghost dac-name" aria-label={`Open live test ${test.name}`} onClick={() => onSelectTest(test.id)}>{test.name}</button>
+                          <button type="button" className="btn btn-ghost dac-name" aria-label={`Open live test ${test.name}`} title={test.name} onClick={() => onSelectTest(test.id)}>{test.name}</button>
                         </div>
                         <StatusBadge status={test.status} />
                       </div>
@@ -1658,8 +1663,8 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                                 <th>Group</th>
                                 <th className="num">VUsers</th>
                                 <th className="num">TPS</th>
-                                <th className="num">ART</th>
-                                <th className="num">Errors %</th>
+                                <th className="num">{metricHeader('art')}</th>
+                                <th className="num">{metricHeader('errorRate')}</th>
                                 <th className="num">Passed</th>
                                 <th className="num">Failed</th>
                               </tr>
@@ -1668,7 +1673,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                               {groupRows.map(row => (
                                 <tr key={row.name} className={row.hasLiveMetrics ? undefined : 'is-pending'}>
                                   <td>
-                                    <span className="dac-group-name">{row.name}</span>
+                                    <span className="dac-group-name" title={row.name}>{row.name}</span>
                                   </td>
                                   <td className="num strong">{formatOptionalCount(row.vusers)}</td>
                                   <td className="num">{formatOptionalNumber(row.tps, 1)}</td>
@@ -1753,6 +1758,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                             <button
                               type="button"
                               className="dash-source-link"
+                              title={test.name}
                               onClick={event => {
                                 event.stopPropagation()
                                 onSelectTest(test.id)

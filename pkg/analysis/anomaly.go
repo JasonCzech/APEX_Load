@@ -37,7 +37,7 @@ func DetectAnomaly(current MetricPoint, baseline []MetricPoint) (AnomalyEvidence
 	if current.Quality != QualityValid {
 		return AnomalyEvidence{}, false, nil
 	}
-	mean, m2, count := 0.0, 0.0, 0
+	values := make([]float64, 0, len(baseline))
 	for _, point := range baseline {
 		if err := point.Validate(); err != nil {
 			return AnomalyEvidence{}, false, fmt.Errorf("baseline: %w", err)
@@ -48,28 +48,41 @@ func DetectAnomaly(current MetricPoint, baseline []MetricPoint) (AnomalyEvidence
 		if !point.TimestampUTC.Before(current.TimestampUTC) {
 			return AnomalyEvidence{}, false, errors.New("baseline buckets must precede current point")
 		}
-		if point.Quality != QualityValid {
-			continue
+		if point.Quality == QualityValid {
+			values = append(values, *point.Value)
 		}
-		count++
-		delta := *point.Value - mean
-		mean += delta / float64(count)
-		m2 += delta * (*point.Value - mean)
 	}
-	if count < DefaultAnomalyMinBuckets {
+	if len(values) < DefaultAnomalyMinBuckets {
 		return AnomalyEvidence{}, false, nil
+	}
+	evidence, ok := ThreeSigmaScore(*current.Value, values, DefaultAnomalySigma)
+	evidence.MetricName = current.MetricName
+	return evidence, ok, nil
+}
+
+// ThreeSigmaScore scores a value against baseline values: the z-score
+// against their mean and population standard deviation, exceeded at
+// |z| >= sigma. A false result means no spread (or a non-finite score) to
+// judge by; callers check the baseline's size.
+func ThreeSigmaScore(current float64, baseline []float64, sigma float64) (AnomalyEvidence, bool) {
+	mean, m2 := 0.0, 0.0
+	for i, value := range baseline {
+		delta := value - mean
+		mean += delta / float64(i+1)
+		m2 += delta * (value - mean)
+	}
+	count := len(baseline)
+	if count == 0 {
+		return AnomalyEvidence{}, false
 	}
 	stddev := math.Sqrt(m2 / float64(count))
 	if stddev <= 0 || math.IsNaN(stddev) || math.IsInf(stddev, 0) {
-		return AnomalyEvidence{}, false, nil
+		return AnomalyEvidence{}, false
 	}
-	z := (*current.Value - mean) / stddev
+	z := (current - mean) / stddev
 	if math.IsNaN(z) || math.IsInf(z, 0) {
-		return AnomalyEvidence{}, false, nil
+		return AnomalyEvidence{}, false
 	}
-	return AnomalyEvidence{
-		MetricName: current.MetricName, Current: *current.Value, BaselineMean: mean,
-		BaselineStdDev: stddev, BaselineBuckets: count, ZScore: z,
-		Threshold: DefaultAnomalySigma, Exceeded: math.Abs(z) >= DefaultAnomalySigma,
-	}, true, nil
+	return AnomalyEvidence{Current: current, BaselineMean: mean, BaselineStdDev: stddev, BaselineBuckets: count, ZScore: z,
+		Threshold: sigma, Exceeded: math.Abs(z) >= sigma}, true
 }

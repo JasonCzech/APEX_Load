@@ -330,3 +330,49 @@ func TestAnalysisCLICommitRefusesIgnoredRequestOptionsBeforeNetwork(t *testing.T
 		})
 	}
 }
+
+// A dataset selection may pin its committed artifacts; the pin reaches the
+// controller, and a malformed pin or a pin on a managed run is refused first.
+func TestAnalysisCLIComparisonCarriesDatasetArtifactPins(t *testing.T) {
+	pin := strings.Repeat("a", 64)
+	for _, tc := range []struct {
+		name, extra string
+		run, sent   bool
+	}{
+		{"dataset pin", `"dataset_artifact_sha256":"` + pin + `"`, false, true},
+		{"uppercase pin", `"dataset_artifact_sha256":"` + strings.ToUpper(pin) + `"`, false, false},
+		{"short pin", `"dataset_artifact_sha256":"abc"`, false, false},
+		{"pin on a run", `"dataset_artifact_sha256":"` + pin + `"`, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var received atomic.Value
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/analysis/imports/") {
+					_ = json.NewEncoder(w).Encode(map[string]any{"id": strings.TrimPrefix(r.URL.Path, "/api/v1/analysis/imports/"), "project_id": "project", "mapping": map[string]int{"version": 1}})
+					return
+				}
+				body, _ := io.ReadAll(r.Body)
+				received.Store(string(body))
+				_, _ = io.WriteString(w, `{}`)
+			}))
+			defer server.Close()
+			right := `{"dataset_id":"b","metric":"latency","aggregation":"avg",` + tc.extra + `}`
+			if tc.run {
+				right = `{"run_id":"run","metric":"response_time","aggregation":"avg",` + tc.extra + `}`
+			}
+			body := strings.Replace(analysisCLITestComparison, `"right":{"dataset_id":"b","metric":"latency","aggregation":"avg"}`, `"right":`+right, 1)
+			var output bytes.Buffer
+			err := executeWorkflowCommand(context.Background(), "analysis", analysisCLIIdentityArgs(t, "compare", body, server.URL), &output)
+			sent, _ := received.Load().(string)
+			if tc.sent {
+				if err != nil || !strings.Contains(sent, pin) {
+					t.Fatalf("pinned comparison: err=%v sent=%q", err, sent)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "dataset_artifact_sha256") || sent != "" {
+				t.Fatalf("invalid pin: err=%v sent=%q", err, sent)
+			}
+		})
+	}
+}

@@ -21,6 +21,12 @@ describe('app keyboard shortcuts', () => {
     expect(onNavigate).toHaveBeenCalledWith('scripts')
     shortcuts.find(shortcut => shortcut.id === 'navigation.fleet')?.onTrigger()
     expect(onNavigate).toHaveBeenCalledWith('fleet')
+    // Every primary destination has a g-sequence, and no two share one.
+    for (const [keys, page] of [['g t', 'tests'], ['g p', 'repository'], ['g v', 'activity'], ['g l', 'schedules']] as const) {
+      shortcuts.find(shortcut => shortcut.keys === keys)?.onTrigger()
+      expect(onNavigate).toHaveBeenLastCalledWith(page)
+    }
+    expect(new Set(shortcuts.map(shortcut => shortcut.keys)).size).toBe(shortcuts.length)
   })
 
   it('focuses and selects the first visible search or filter field', () => {

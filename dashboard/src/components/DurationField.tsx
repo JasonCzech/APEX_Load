@@ -1,6 +1,6 @@
-import { useId, useMemo, useReducer, useRef } from 'react'
+import { useEffect, useId, useMemo, useReducer, useRef } from 'react'
 
-import { DurationUnit, isValidDurationInput, serializeDurationFieldValue, splitDurationInput } from '../utils/timeUtils'
+import { DurationUnit, isValidDurationInput, isValidNonNegativeDurationInput, serializeDurationFieldValue, splitDurationInput } from '../utils/timeUtils'
 import './DurationField.css'
 
 const DEFAULT_PRESETS = ['30s', '1m', '5m', '10m', '30m', '1h']
@@ -21,6 +21,10 @@ interface DurationFieldProps {
   unitLabel?: string
   showPresets?: boolean
   showValidation?: boolean
+  /** Zero is a meaningful value (for example an instant ramp), serialized as 0 in the unit shown. */
+  allowZero?: boolean
+  /** Reports when the field shows an error, so a parent can block saving. */
+  onInvalidChange?: (invalid: boolean) => void
 }
 
 const UNIT_LABELS: Record<DurationUnit, string> = {
@@ -45,10 +49,15 @@ export default function DurationField({
   unitLabel = 'Unit',
   showPresets = false,
   showValidation = true,
+  allowZero = false,
+  onInvalidChange,
 }: DurationFieldProps) {
   const generatedId = useId()
   const inputId = id || generatedId
-  const parts = useMemo(() => splitDurationInput(value), [value])
+  const parts = useMemo(() => {
+    const zero = allowZero ? /^0+(?:\.0*)?(s|m|h)$/.exec(value.trim()) : null
+    return zero ? { value: '0', unit: zero[1] as DurationUnit } : splitDurationInput(value)
+  }, [allowZero, value])
   const isEmpty = value.trim() === ''
   const retainedUnitRef = useRef<DurationUnit>(parts.unit)
   // While the value is the one this field just emitted, show exactly what the
@@ -66,18 +75,22 @@ export default function DurationField({
   const displayedValue = ownValue ? typedRef.current : parts.value
   // Typed text that is not a duration empties the value; it is still an error, not "empty".
   const typedInvalid = ownValue && isEmpty && typedRef.current.trim() !== ''
-  const isValid = !typedInvalid && isValidDurationInput(value, allowEmpty)
+  const isValid = !typedInvalid && (allowZero ? isValidNonNegativeDurationInput(value, allowEmpty) : isValidDurationInput(value, allowEmpty))
   const error = !showValidation || isValid
     ? ''
     : isEmpty && !typedInvalid
       ? 'Duration is required.'
-      : 'Enter a positive duration.'
+      : allowZero ? 'Enter zero or a positive duration.' : 'Enter a positive duration.'
+  const onInvalidChangeRef = useRef(onInvalidChange)
+  onInvalidChangeRef.current = onInvalidChange
+  useEffect(() => { onInvalidChangeRef.current?.(Boolean(error)) }, [error])
 
   const emitValue = (nextValue: string, nextUnit: DurationUnit) => {
     typedRef.current = nextValue
     retainedUnitRef.current = nextUnit
     // Exponent notation (1e2) is not a duration anyone means to type.
-    const serialized = /e/i.test(nextValue) ? '' : serializeDurationFieldValue(nextValue, nextUnit)
+    const zero = allowZero && /^0+(?:\.0*)?$/.test(nextValue.trim())
+    const serialized = /e/i.test(nextValue) ? '' : zero ? `0${nextUnit}` : serializeDurationFieldValue(nextValue, nextUnit)
     lastEmittedRef.current = serialized
     onChange(serialized)
   }

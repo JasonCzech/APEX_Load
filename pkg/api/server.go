@@ -82,6 +82,9 @@ type Server struct {
 	// elasticHTTPClient replaces the allowlisted Elasticsearch query client in tests.
 	elasticHTTPClient *http.Client
 
+	// clientRenderReports rate-limits client render evidence per tab (C5).
+	clientRenderReports clientRenderLimiter
+
 	httpServer *http.Server
 	hub        *Hub
 	runner     *TestRunner
@@ -786,6 +789,10 @@ func NewServer(cfg ServerConfig) *Server {
 		slog.Warn("failed to recover abandoned direct import during construction", "error", err)
 	}
 	runner.setImportPublicationSnapshot(s.store, s.pendingDirectImportAssets)
+	// Browser findings are evaluated (E1) and a failed or inconclusive
+	// telemetry acceptance verdict is announced (C7) when a run's finalized
+	// archive is attached.
+	runner.archiveAttachedHook = s.runArchiveAttached
 
 	s.loadLibraryState()
 	s.routes(cfg.AllowedOrigins)
@@ -1309,6 +1316,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/ai/repairs", cors(log(auth(http.HandlerFunc(s.handleAIRepairSuggestions)))))
 	s.mux.Handle("POST /api/v1/ai/explain", cors(log(auth(http.HandlerFunc(s.handleAIExplain)))))
 	s.mux.Handle("GET /api/v1/browser-replay/sessions/{session_id}", cors(log(browserReplaySessionViewAuth(http.HandlerFunc(s.handleGetBrowserReplaySession)))))
+	s.mux.Handle("GET /api/v1/browser-replay/sessions/{session_id}/har", cors(log(browserReplaySessionEditAuth(http.HandlerFunc(s.handleDownloadBrowserReplayHAR)))))
+	s.mux.Handle("GET /api/v1/browser-replay/sessions/{session_id}/evidence", cors(log(browserReplaySessionEditAuth(http.HandlerFunc(s.handleDownloadBrowserReplayEvidence)))))
 	s.mux.Handle("POST /api/v1/browser-replay/sessions/{session_id}/pause", cors(log(browserReplaySessionEditAuth(http.HandlerFunc(s.handlePauseBrowserReplaySession)))))
 	s.mux.Handle("POST /api/v1/browser-replay/sessions/{session_id}/resume", cors(log(browserReplaySessionEditAuth(http.HandlerFunc(s.handleResumeBrowserReplaySession)))))
 	s.mux.Handle("POST /api/v1/browser-replay/sessions/{session_id}/stop", cors(log(browserReplaySessionEditAuth(http.HandlerFunc(s.handleStopBrowserReplaySession)))))

@@ -1,0 +1,62 @@
+.correlation-semantics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.correlation-semantics > p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.correlation-side {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  padding: 10px 12px;
+  min-width: 0;
+}
+
+.correlation-side h4 {
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+}
+
+.correlation-side dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.correlation-side dt {
+  color: var(--text-secondary);
+}
+
+.correlation-side dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.correlation-evidence table {
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.correlation-evidence caption {
+  caption-side: top;
+  text-align: left;
+  padding-bottom: 6px;
+  color: var(--text-secondary);
+}
+
+.correlation-evidence th,
+.correlation-evidence td {
+  text-align: left;
+  padding: 4px 16px 4px 0;
+  border-bottom: 1px solid var(--border);
+}

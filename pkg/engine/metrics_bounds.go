@@ -198,6 +198,12 @@ func estimateMetricsSnapshotBytes(snapshot MetricsSnapshot) int {
 	}
 	estimateActions(snapshot.ByAction)
 	estimateActions(snapshot.ByDimensions)
+	if snapshot.Joint != nil {
+		estimateActions(snapshot.Joint.Tuples)
+		if snapshot.Joint.Other != nil {
+			estimateActions(map[string]*ActionMetrics{"other": snapshot.Joint.Other})
+		}
+	}
 	estimateActions(snapshot.ByActionProperty)
 	estimateActions(snapshot.ByProperty)
 	estimateActions(snapshot.ByTransaction)

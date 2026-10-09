@@ -613,6 +613,39 @@ describe('Sidebar', () => {
     expect(container.querySelector('.sidebar-footer .build-badge')).not.toBeNull()
   })
 
+  it('opens the collapsed rail from a click on its empty space but leaves its controls alone', async () => {
+    const onNavigate = vi.fn()
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={onNavigate}
+          connectionState="connected"
+        />,
+      )
+    })
+    const click = async (target: Element | null, init: MouseEventInit = {}) => {
+      await act(async () => {
+        target?.dispatchEvent(new MouseEvent('click', { bubbles: true, ...init }))
+      })
+    }
+
+    // An icon keeps its own behavior: it navigates and the rail stays collapsed.
+    await click(container.querySelector('.nav-item'))
+    expect(onNavigate).toHaveBeenCalledTimes(1)
+    expect(container.querySelector('.sidebar.collapsed')).not.toBeNull()
+
+    // Only a primary click on empty space opens it.
+    await click(container.querySelector('.sidebar-nav'), { button: 1 })
+    expect(container.querySelector('.sidebar.collapsed')).not.toBeNull()
+    await click(container.querySelector('.sidebar-nav'))
+    expect(container.querySelector('.sidebar.collapsed')).toBeNull()
+
+    // Once open, empty space does not toggle it closed again.
+    await click(container.querySelector('.sidebar-nav'))
+    expect(container.querySelector('.sidebar.collapsed')).toBeNull()
+  })
+
   it('does not render raw SHA build versions as the badge label', async () => {
     const rawRevision = 'abcdef0123456789abcdef0123456789abcdef01'
     systemApiMock.getVersion.mockResolvedValueOnce({
@@ -739,13 +772,13 @@ describe('Sidebar', () => {
     await openDevView()
     expect(container.textContent).toContain('Dev View')
     expect(container.textContent).toContain('Admin')
-    expect(container.textContent).toContain('User')
+    expect(container.textContent).toContain('Editor')
     expect(container.textContent).toContain('New Test')
     expect(container.textContent).toContain('Help & documentation')
     expect(container.textContent).toContain('Settings')
     expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button')).some(button => button.textContent?.trim() === 'Sign out')).toBe(true)
 
-    const userButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'User')
+    const userButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Editor')
     expect(userButton).toBeDefined()
     if (!userButton) {
       return
@@ -1157,7 +1190,7 @@ describe('Sidebar', () => {
     await openDevView()
     await act(async () => {
       Array.from(container.querySelectorAll('button'))
-        .find(button => button.textContent === 'User')
+        .find(button => button.textContent === 'Editor')
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 

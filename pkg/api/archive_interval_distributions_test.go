@@ -80,6 +80,8 @@ func TestIntervalDistributionsCopyLiveNativeEvidence(t *testing.T) {
 		evidence := &storage.NativeIntervalEvidence{Version: 2, WindowSeconds: 5, Dimensions: map[string]map[string]storage.NativeIntervalMetric{
 			"transaction": {"Purchase": {Count: 3, Errors: 1, P50: 20, P90: 30, P95: 30, P99: 30, DurationDigest: nativeDigest(10, 20, float64(30*i))}},
 			"action":      {"request": {Count: 3, P95: 9, DurationDigest: nativeDigest(5, 7, 9)}},
+			// Joint tuples have their own sidecar and are not copied here.
+			storage.NativeJointDimension: {"tuple": {Count: 3, P95: 9, DurationDigest: nativeDigest(5, 7, 9)}},
 		}}
 		live = append(live, evidence)
 		if err := store.SaveHistory("native", start.Add(time.Duration(i)*5*time.Second), &LiveMetrics{Timestamp: start.Add(time.Duration(i) * 5 * time.Second), NativeEvidence: evidence}); err != nil {
@@ -103,6 +105,9 @@ func TestIntervalDistributionsCopyLiveNativeEvidence(t *testing.T) {
 		got := r.Dimensions["transaction"]["Purchase"]
 		if r.Schema != intervalDistributionSchema || r.EvidenceVersion != 2 || r.DigestUnit != "ns" || got.PercentileQuality != intervalPercentileNativeDigest {
 			t.Fatalf("record %d = %+v", i, r)
+		}
+		if _, ok := r.Dimensions[storage.NativeJointDimension]; ok || len(r.Dimensions) != 2 {
+			t.Fatalf("record %d copied the joint tuples: %v", i, r.Dimensions)
 		}
 		// The sidecar keeps the live distribution and the percentiles live showed.
 		if !reflect.DeepEqual(got.DurationDigest, want.DurationDigest) || got.P95 != want.P95 || got.Count != want.Count || got.Errors != want.Errors {

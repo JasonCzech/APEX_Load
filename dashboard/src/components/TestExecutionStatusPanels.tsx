@@ -1,4 +1,6 @@
 import TelemetryPolicy from './TelemetryPolicy'
+import TelemetryStageDistributions from './TelemetryStageDistributions'
+import TelemetryAcceptanceVerdict from './TelemetryAcceptanceVerdict'
 import { BrowserDeviceLiveMetrics, BrowserLiveMetrics, CapacityAdvisory, GoalStatus, GroupLiveMetrics, LiveCapacityStatus, TelemetryHealth, TestSummary, TxMetrics } from '../types'
 import { formatTimeCompact } from '../utils/timeUtils'
 import { browserMetricRecord, finiteBrowserMetric, formatBrowserSampleCount, formatBrowserEngineLabel, formatDevicePlatformLabel } from './browserBreakdownModel'
@@ -388,6 +390,8 @@ export default function TestExecutionStatusPanels({
             </div>
           </div>
           <p>Drop counters are cumulative controller observations, not an exact run loss total. Age observations do not establish synchronized clocks, complete time coverage, or a telemetry verdict.</p>
+          <TelemetryStageDistributions stages={metrics.telemetry.stage_distributions} startedAt={test.started_at} />
+          <TelemetryAcceptanceVerdict verdict={metrics.telemetry.acceptance} />
         </div>
       )}
 

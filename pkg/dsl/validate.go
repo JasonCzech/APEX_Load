@@ -1803,13 +1803,23 @@ func actionParamString(params map[string]any, key string) string {
 	return value
 }
 
-// ValidateScriptError returns the first validation issue as an error.
+// ValidationError carries every static finding of a script, as the API's
+// validation routes report them, so the parser and the routes agree on what
+// is wrong (AUTH-2 parity). Error joins them with "; ".
+type ValidationError struct {
+	Issues []string
+}
+
+func (e *ValidationError) Error() string { return strings.Join(e.Issues, "; ") }
+
+// ValidateScriptError returns every validation issue as a *ValidationError,
+// or nil for a valid script.
 func ValidateScriptError(script *Script) error {
 	issues := ValidateScriptIssues(script)
 	if len(issues) == 0 {
 		return nil
 	}
-	return fmt.Errorf("%s", issues[0])
+	return &ValidationError{Issues: issues}
 }
 
 // visitScriptActions walks every executable section and nested control-flow

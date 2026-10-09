@@ -1,4 +1,5 @@
 import { useUnsavedWorkGuard } from '../hooks/NavigationGuardProvider'
+import { importSourceName } from '../appTopbar'
 import { ImportConversionDetails, ImportEvidenceFacts } from './ImportConversionDetails'
 import ImportWorkflowGuide from './ImportWorkflowGuide'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
@@ -65,84 +66,84 @@ interface Props {
 
 const copy = {
   devweb: {
-    title: 'Import DevWeb Script',
+    title: importSourceName('devweb'),
     subtitle: 'Upload a DevWeb .js file or ZIP archive and convert common WebRequest, WebSocket, and gRPC invoke calls into APEX Load DSL.',
     accept: '.js,.zip,application/javascript,text/javascript,application/zip',
     drop: 'Drop a DevWeb .js or .zip file here',
     button: 'Convert DevWeb Script',
   },
   har: {
-    title: 'Import HAR',
+    title: importSourceName('traffic_har'),
     subtitle: 'Upload a Chrome DevTools HAR file and convert recorded HTTP entries into a reviewable APEX Load HTTP script. Salesforce traffic is auto-detected and can emit a native Salesforce draft.',
     accept: '.har,application/json',
     drop: 'Drop a .har file here',
     button: 'Convert HAR',
   },
   'recorder-export': {
-    title: 'Import Browser Recording',
+    title: importSourceName('recorder_export'),
     subtitle: 'Upload a Chrome DevTools Recorder JSON export or a Playwright codegen script and convert it into a browser script with ranked selector candidates for replay self-heal.',
     accept: '.json,.js,.ts,application/json,application/javascript,text/javascript',
     drop: 'Drop a Chrome Recorder .json or Playwright .js/.ts file here',
     button: 'Convert Recording',
   },
   openapi: {
-    title: 'Import OpenAPI',
+    title: importSourceName('openapi'),
     subtitle: 'Upload an OpenAPI or Swagger JSON/YAML document and generate grouped REST request flows, auth placeholders, and data-source review notes.',
     accept: '.json,.yaml,.yml,application/json,application/yaml,text/yaml,text/plain',
     drop: 'Drop an OpenAPI JSON or YAML file here',
     button: 'Convert OpenAPI',
   },
   raml: {
-    title: 'Import RAML',
+    title: importSourceName('raml'),
     subtitle: 'Upload a RAML 1.0 JSON/YAML document — or a .zip bundle whose !include files resolve together — and generate HTTP actions with resource, method, example, OAuth2, and Anypoint policy review notes.',
     accept: '.raml,.yaml,.yml,.json,.zip,application/json,application/yaml,text/yaml,text/plain,application/zip',
     drop: 'Drop a RAML file or .zip bundle here',
     button: 'Convert RAML',
   },
   postman: {
-    title: 'Import Postman Collection',
+    title: importSourceName('postman'),
     subtitle: 'Upload a Postman collection JSON file and convert folders, requests, variables, and auth placeholders into an APEX Load HTTP script.',
     accept: '.postman_collection.json,.json,application/json',
     drop: 'Drop a Postman collection JSON file here',
     button: 'Convert Postman Collection',
   },
   wsdl: {
-    title: 'Import WSDL',
+    title: importSourceName('wsdl'),
     subtitle: 'Upload a WSDL document and generate SOAP request actions with SOAPAction, namespace, payload, and fault review guidance.',
     accept: '.wsdl,.xml,text/xml,application/xml',
     drop: 'Drop a .wsdl or .xml file here',
     button: 'Convert WSDL',
   },
   asyncapi: {
-    title: 'Import AsyncAPI',
+    title: importSourceName('asyncapi'),
     subtitle: 'Upload an AsyncAPI 2.x or 3.x document and generate Kafka produce/consume/request-reply actions with brokers, topics, and sample payloads.',
     accept: '.json,.yaml,.yml,application/json,application/yaml,text/yaml,text/plain',
     drop: 'Drop an AsyncAPI JSON or YAML file here',
     button: 'Convert AsyncAPI',
   },
   k6: {
-    title: 'Import k6 Script',
+    title: importSourceName('k6'),
     subtitle: 'Upload a k6 JavaScript file and convert the supported HTTP subset into APEX Load actions with review notes for unsupported code.',
     accept: '.js,.ts,application/javascript,text/javascript,text/plain',
     drop: 'Drop a k6 .js file here',
     button: 'Convert k6 Script',
   },
   cloudtest: {
-    title: 'Import Akamai CloudTest Export',
+    title: importSourceName('cloudtest'),
     subtitle: 'Upload a dependency-complete CloudTest XML or ZIP export. APEX classifies every source element and creates fixture-gated Clip scripts, Composition drafts, and preserved review artifacts.',
     accept: '.xml,.zip,text/xml,application/xml,application/zip',
     drop: 'Drop a CloudTest .xml or .zip export here',
     button: 'Inspect CloudTest Export',
   },
   'eventhubs-capture': {
-    title: 'Import Event Hubs Capture',
+    title: importSourceName('eventhubs_capture'),
     subtitle: 'Upload an Azure Event Hubs Capture file or any Avro data file and seed native eventhubs_produce actions in mock mode for review. Records from a non-Capture file each become one event body.',
     accept: '.avro,application/octet-stream',
     drop: 'Drop an Event Hubs Capture or Avro data .avro file here',
     button: 'Convert Capture',
   },
   'broker-config': {
-    title: 'Import Broker Config',
+    title: importSourceName('broker_config'),
     subtitle: 'Upload IBM MQ MQSC or JMS JNDI properties and seed a JMS topology draft from queues, topics, and bindings.',
     accept: '.mqsc,.properties,.txt,text/plain,application/octet-stream',
     drop: 'Drop MQSC or JNDI properties here',
@@ -181,7 +182,7 @@ function validateImportFile(kind: ImportKind, file: File): string | null {
   }
   if (!fileMatchesAccept(file, copy[kind].accept)) {
     const extensions = acceptTokens(copy[kind].accept).filter(token => token.startsWith('.')).join(', ')
-    return `${file.name} is not a supported ${copy[kind].title.replace(/^Import\s+/i, '').toLowerCase()} file${extensions ? ` (${extensions})` : ''}.`
+    return `${file.name} is not a supported ${copy[kind].title} file${extensions ? ` (${extensions})` : ''}.`
   }
   return null
 }
@@ -1128,7 +1129,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     } catch (error: unknown) {
       if (requestIsCurrent()) {
         sourceSecretSessions.clear('conversion')
-        setMessageError(getErrorMessage(error, `${labels.title} failed`))
+        setMessageError(getErrorMessage(error, `Import ${labels.title} failed`))
       }
     }
   }
@@ -1219,7 +1220,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const asyncAPISaveAllLabel = asyncAPIMultiScript
     ? `${asyncAPIPendingScriptIndices.length === generatedScripts.length
         ? `Save All ${generatedScripts.length} Scripts`
-        : `Save Remaining ${asyncAPIPendingScriptIndices.length} Script${asyncAPIPendingScriptIndices.length === 1 ? '' : 's'}`
+        : `Save remaining ${asyncAPIPendingScriptIndices.length} script${asyncAPIPendingScriptIndices.length === 1 ? '' : 's'}`
       }${configureLaterCount > 0 ? ` with ${configureLaterCount} secret${configureLaterCount === 1 ? '' : 's'} to configure` : ''}`
     : ''
   const cloudTestSaveLabel = kind === 'cloudtest' && generatedScripts.length > 1
@@ -1883,7 +1884,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         const credentialNotice = credentialsPreparedForBatch
           ? ' Project-secret values prepared during review remain configured and will be reused.'
           : ''
-        setMessageError(`${message} The script batch was not reported complete.${credentialNotice} Retrying Save Remaining safely reuses the same save operation.`)
+        setMessageError(`${message} The script batch was not reported complete.${credentialNotice} Retrying Save remaining safely reuses the same save operation.`)
       }
     } finally {
       saveAllInFlightRef.current = false
@@ -2310,11 +2311,11 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         {projectScopeRequired && <p id="har-project-scope-required" className="sample-import-error" role="status">Select a project from the workspace context before inspecting HAR traffic.</p>}
         {kind !== 'asyncapi' && (
           <details><summary>Advanced validation only</summary><p>Run the validator to inspect a draft without saving. Review its findings before choosing whether to save.</p><button className="btn btn-secondary btn-lg" onClick={() => handleConvert('validation')} disabled={convertTask.pending || sourceMutationLocked || !file || projectScopeRequired}>
-            {convertTask.pending && reviewMode === 'validation' ? <><span className="spinner" /> Validating...</> : 'Validate Only'}
+            {convertTask.pending && reviewMode === 'validation' ? <><span className="spinner" /> Validating…</> : 'Validate Only'}
           </button></details>
         )}
         <button className="btn btn-primary btn-lg" onClick={() => handleConvert('conversion')} disabled={convertTask.pending || sourceMutationLocked || !file || projectScopeRequired} aria-describedby={projectScopeRequired ? 'har-project-scope-required' : undefined}>
-          {convertTask.pending && reviewMode === 'conversion' ? <><span className="spinner" /> Inspecting...</> : 'Inspect & review'}
+          {convertTask.pending && reviewMode === 'conversion' ? <><span className="spinner" /> Inspecting…</> : 'Inspect & review'}
         </button>
       </div>
 
@@ -2390,11 +2391,11 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                     ? 'Re-run the import to obtain a fresh credential-preserving draft before saving.'
                     : asyncAPISaveAllDisabledReason || undefined}
                 >
-                  {saveTask.pending ? 'Saving...' : saveAllPreparing ? 'Preparing credentials...' : asyncAPISaveAllLabel}
+                  {saveTask.pending ? 'Saving…' : saveAllPreparing ? 'Preparing credentials…' : asyncAPISaveAllLabel}
                 </button>
                 {asyncAPISaveAllDisabledReason && (
                   <p id="asyncapi-save-all-disabled-reason" className="sample-import-warning" role="status">
-                    <strong>Why Save Remaining is unavailable:</strong> {asyncAPISaveAllDisabledReason}
+                    <strong>Why Save remaining is unavailable:</strong> {asyncAPISaveAllDisabledReason}
                   </p>
                 )}
               </div>
@@ -2446,7 +2447,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                 ? handleSaveAllAsyncAPIScripts
                 : handleSave}
             onEdit={onEdit && !savedResult && !asyncAPISelectedScriptSaved && generatedScripts.length === 1 ? handleEditReviewedScript : undefined}
-            editLabel={editRequiresCredentialPreservingSave ? 'Save and Open in Visual Editor' : 'Open Draft in Visual Editor'}
+            editLabel={editRequiresCredentialPreservingSave ? 'Save and open in Visual Editor' : 'Open draft in Visual Editor'}
             sourceFocusRequest={auraSourceFocus}
             previewAside={kind === 'recorder-export'
               ? <SelectorCandidatesReview script={reviewedScript} onPromoteCandidate={handlePromoteRecorderCandidate} />
@@ -2466,7 +2467,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                 <h4>Replay Validation</h4>
                 <div className="sample-import-actions compact">
                   <button className="btn btn-secondary btn-sm" type="button" onClick={handleRunRecorderReplay} disabled={replayTask.pending || recorderReplayStatus === 'running'}>
-                    {replayTask.pending || recorderReplayStatus === 'running' ? 'Starting Replay...' : 'Run Replay Validation'}
+                    {replayTask.pending || recorderReplayStatus === 'running' ? 'Starting Replay…' : 'Run Replay Validation'}
                   </button>
                   <label className="sample-toggle" title="Save the import as a draft even if replay has not passed yet.">
                     <input type="checkbox" checked={allowRecorderDraftSave} onChange={event => {
@@ -2708,7 +2709,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                       onClick={() => handleHARSalesforceNativeConvert(false)}
                       disabled={convertTask.pending || !file || !harSalesforceNative}
                     >
-                      {convertTask.pending && harSalesforceNative ? 'Converting...' : 'Force Generic HAR'}
+                      {convertTask.pending && harSalesforceNative ? 'Converting…' : 'Force Generic HAR'}
                     </button>
                     <button
                       type="button"
@@ -2716,7 +2717,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                       onClick={() => handleHARSalesforceNativeConvert(true)}
                       disabled={convertTask.pending || !file || harSalesforceNative}
                     >
-                      {convertTask.pending && !harSalesforceNative ? 'Converting...' : 'Use Native Salesforce Draft'}
+                      {convertTask.pending && !harSalesforceNative ? 'Converting…' : 'Use Native Salesforce Draft'}
                     </button>
                   </div>
                 )}

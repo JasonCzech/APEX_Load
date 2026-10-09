@@ -15,7 +15,7 @@ Administrative controls are grouped by task:
 - **Access** (sidebar) — users, roles, service accounts, activity, and audit.
 - **Monitoring → Fleet** — generators, pools, capacity, and provisioning.
 - **Settings** — runtime configuration, integrations, capacity, scheduling and retention.
-- **Access → Authentication & policy** — identity configuration, import policy, redaction and project secrets.
+- **Access → Security policy** — authentication, feature and import policy, redaction, project secrets and the governance audit.
 
 ## Administrator Roles At A Glance
 
@@ -55,7 +55,7 @@ do their job, and reserve `system_admin` for platform owners.
 ## The Access Console
 
 Open **Access** from the sidebar. This is the primary administrative console, with
-tabs for **Users**, **Service Accounts**, and **Activity** (which includes an
+tabs for **Users**, **Service accounts**, and **Activity** (which includes an
 audit/review view). What you can do here depends on your capabilities — lifecycle
 actions such as creating or deleting users require `manage_users` (system admin);
 binding actions require `manage_users` or `manage_user_bindings`.
@@ -95,7 +95,7 @@ Grant the narrowest scope that fits. If someone only works on one project, bind 
 as `editor` on that project rather than globally. Remove bindings when they are no
 longer needed; every grant and revocation is recorded in the audit log.
 
-Use **Access → Activity → Access Review → Role permissions preview** to inspect
+Use **Access → Activity → Access review → Role permissions preview** to inspect
 operations granted by role bindings in the selected scope. This is not a complete
 API authorization check: account status, service-account token scopes, and
 route-specific policies can still deny those operations.
@@ -104,7 +104,7 @@ route-specific policies can still deny those operations.
 
 Automation — CI/CD pipelines, the MCP server, reporting exporters, external
 integrations — should authenticate as a **service account**, not as a person. Manage
-these under **Access → Service Accounts**.
+these under **Access → Service accounts**.
 
 - **Create a service account** with the roles and token scopes it needs. APEX Load
   shows the generated **API key exactly once** — copy it immediately and store it in a

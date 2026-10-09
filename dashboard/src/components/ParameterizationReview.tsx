@@ -233,13 +233,13 @@ export default function ParameterizationReview({ parameterization, script, scrip
     <div className="paramize-review">
       <div className="paramize-review-header">
         <div>
-          <h4>{guided ? 'Parameter suggestions' : 'Parameterization Review'}{scriptName ? ` — ${scriptName}` : ''} ({suggestions.length})</h4>
+          <h4>{guided ? 'Parameter suggestions' : 'Parameterization review'}{scriptName ? ` — ${scriptName}` : ''} ({suggestions.length})</h4>
           <p>{suggestions.length > 0
             ? 'Suggestions to review before running at load. Confirm whether each value is test data, application configuration, or session data. High-confidence suggestions are pre-selected; review each row, then apply the selection.'
             : 'No selectable parameter suggestions were produced. Inspection coverage is shown below.'}</p>
         </div>
         {!guided && suggestions.length > 0 && <button className="btn btn-primary" onClick={handleApply} disabled={disabled || applying || selectedIds.length === 0}>
-          {applying ? 'Applying...' : `${applied ? 'Reapply' : 'Apply'} Selected (${selectedIds.length})`}
+          {applying ? 'Applying…' : `${applied ? 'Reapply' : 'Apply'} Selected (${selectedIds.length})`}
         </button>}
         {applied && <span className="paramize-applied-badge">Applied {diffs.length} change(s)</span>}
       </div>

@@ -13,6 +13,13 @@ import (
 )
 
 func TestBrowserProtocolCacheDisabledReloadsCacheableAssets(t *testing.T) {
+	// BE-4: controlled pages in Chromium and WebKit.
+	for _, engine := range []string{"chromium", "webkit"} {
+		t.Run(engine, func(t *testing.T) { testCacheDisabledReloadsCacheableAssets(t, engine) })
+	}
+}
+
+func testCacheDisabledReloadsCacheableAssets(t *testing.T, engine string) {
 	var assetHits int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -39,11 +46,12 @@ func TestBrowserProtocolCacheDisabledReloadsCacheableAssets(t *testing.T) {
 
 	b := &Browser{}
 	if err := b.Init(context.Background(), map[string]any{
+		"browser_engine":        engine,
 		"base_url":              server.URL,
 		"browser_headless":      true,
 		"browser_cache_enabled": false,
 	}); err != nil {
-		requireBrowserRuntime(t, "", err)
+		requireBrowserRuntime(t, engine, err)
 	}
 	defer b.Teardown(context.Background())
 
@@ -130,6 +138,13 @@ func TestBrowserProtocolDownloadResourcesRecordedRequiresMetadata(t *testing.T) 
 }
 
 func TestBrowserProtocolCheckNewerVersionsRevalidatesCachedAssets(t *testing.T) {
+	// BE-4: controlled pages in Chromium and WebKit.
+	for _, engine := range []string{"chromium", "webkit"} {
+		t.Run(engine, func(t *testing.T) { testCheckNewerVersionsRevalidatesCachedAssets(t, engine) })
+	}
+}
+
+func testCheckNewerVersionsRevalidatesCachedAssets(t *testing.T, engine string) {
 	var assetHits int32
 	var revalidationHits int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -163,12 +178,13 @@ func TestBrowserProtocolCheckNewerVersionsRevalidatesCachedAssets(t *testing.T) 
 
 	b := &Browser{}
 	if err := b.Init(context.Background(), map[string]any{
+		"browser_engine":               engine,
 		"base_url":                     server.URL,
 		"browser_headless":             true,
 		"browser_cache_enabled":        true,
 		"browser_check_newer_versions": true,
 	}); err != nil {
-		requireBrowserRuntime(t, "", err)
+		requireBrowserRuntime(t, engine, err)
 	}
 	defer b.Teardown(context.Background())
 

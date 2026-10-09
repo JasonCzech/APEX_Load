@@ -90,8 +90,8 @@ func TestNativeMergedSourceFramesDeduplicateFleetRepublication(t *testing.T) {
 	m := nativeBucketMetric(10, 20)
 	batch := generatorrpc.MetricsBatch{ActionMetricsVersion: 2, BatchSequence: 1, ExecutionGeneration: 3, TimestampUnixMs: start.Add(time.Second).UnixMilli(), WindowMs: 1000, ActionMetrics: []generatorrpc.MetricAggregate{{Name: "checkout", Count: m.Count, AvgMs: m.Avg, DurationDigest: m.DurationDigest}}}
 	peers := map[string]generatorrpc.MetricsBatch{"a": batch, "b": batch}
-	a := nativePublicationEvidence("a", batch, peers)
-	b := nativePublicationEvidence("b", batch, peers)
+	a := nativePublicationEvidence("a", batch, peers, nil)
+	b := nativePublicationEvidence("b", batch, peers, nil)
 	histories := []*LiveMetrics{
 		{Timestamp: start.Add(time.Second), NativeEvidence: &storage.NativeIntervalEvidence{Publication: a}},
 		{Timestamp: start.Add(1500 * time.Millisecond), NativeEvidence: &storage.NativeIntervalEvidence{Publication: b}},

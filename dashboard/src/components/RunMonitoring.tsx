@@ -44,7 +44,7 @@ function useMonitoringCapabilities(projectId?: string) {
 }
 function useMonitoringEnabled(projectId?: string) { return useMonitoringCapabilities(projectId)?.monitoring_enabled === true }
 
-export function RunMonitorSources({ projectId, canManage = false }: { projectId?: string; canManage?: boolean }) {
+export function RunMonitorSources({ projectId, canManage = false, showEnableHint = false }: { projectId?: string; canManage?: boolean; /** Tell an administrator how the project gate is enabled. */ showEnableHint?: boolean }) {
   const capabilities = useMonitoringCapabilities(projectId)
   const enabled = capabilities?.monitoring_enabled === true
   const kafkaManagementAvailable = capabilities?.messaging_management_enabled === true && capabilities.messaging_management_packs?.includes('kafka-offsets') === true
@@ -67,7 +67,7 @@ export function RunMonitorSources({ projectId, canManage = false }: { projectId?
     if (enabled && projectId) void Promise.all([request<Source[]>(sourcesPath(projectId), { signal: c.signal }), request<MonitoringCollectorListResponse>(`/monitoring/collectors?project_id=${encodeURIComponent(projectId)}`, { signal: c.signal })]).then(([s, collectors]) => { if (!c.signal.aborted) { setSources(s); setCollectors(collectors.collectors) } }).catch(e => { if (!c.signal.aborted) setError(String(e)) })
     return () => { c.abort(); operation.current?.abort() }
   }, [enabled, projectId, refresh])
-  if (!enabled || !projectId) return <p>Run-bound monitoring is not enabled for this project.</p>
+  if (!enabled || !projectId) return <p className="monitor-hint">Run-bound monitoring is not enabled for this project.{showEnableHint && <> It is enabled per project in the controller configuration (<code>APEXLOAD_RUN_MONITOR_PROJECTS</code>).</>}</p>
   const savedDraftSource = sources.find(source => source.id === draft.id && source.pack === draft.pack)
   const savedManagementSource = savedDraftSource ? managementSource(savedDraftSource) : undefined
   // Direct packs query their own connection; every other pack runs on a collector.

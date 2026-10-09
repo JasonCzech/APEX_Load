@@ -163,6 +163,7 @@ func (b *distributedExecutionBackend) prepareDistributedTestRunWithLifecycle(tr 
 	test.PendingReason = ""
 	test.QueuePosition = 0
 	test.Error = ""
+	test.jointHeldFromStart = true
 	if err := tr.saveManagedTestRecord(test); err != nil {
 		// No metrics consumer has been launched yet. Restore the durable startup
 		// state and detach every remote handle so the caller can stop/close the
@@ -203,6 +204,7 @@ func (b *distributedExecutionBackend) prepareDistributedTestRunWithLifecycle(tr 
 		test.StartedAt = nil
 		test.EndedAt = nil
 		test.Status = "INITIALIZING"
+		test.jointHeldFromStart = false
 		tr.mu.Unlock()
 		lifecycleCancel()
 		return false, nil, fmt.Errorf("persist distributed RUNNING transition: %w", err)
@@ -1170,6 +1172,11 @@ func (b *distributedExecutionBackend) publishDistributedMetricsRevision(ctx cont
 			}
 		}
 		test.remoteMetricsPublishedRevision = publication.revision
+		// The installed point carries the joint evidence of the batches
+		// accepted since the last one (B5).
+		if live.NativeEvidence != nil {
+			live.NativeEvidence.JointPublications = takePendingJointPublicationsLocked(test, live.NativeEvidence.Publication)
+		}
 		return true
 	})
 	if !installed {
@@ -1338,6 +1345,10 @@ func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner
 		}
 	}
 	test.remoteMetricsBatchesByTarget[target] = batch
+	// Each generator's stages are sampled where its batch is accepted:
+	// publications are throttled fleet-wide, so most batches are only stored.
+	stageRecorderLocked(test).observeGeneratorBatch(target, batch)
+	rememberJointPublicationLocked(test, target, batch)
 	if len(batch.TransactionResponseTimeSLA) > 0 {
 		delete(test.remoteTransactionResponseTimeSLALegacyByTarget, target)
 	} else {
@@ -1696,6 +1707,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 				accepted = true
 				test.remoteMetricsAcceptedRevision++
 				revision = test.remoteMetricsAcceptedRevision
+				stageRecorderLocked(test).observeGeneratorBatch(target, batch)
 			} else {
 				batch = prior
 			}
@@ -1704,6 +1716,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 			accepted = true
 			test.remoteMetricsAcceptedRevision++
 			revision = test.remoteMetricsAcceptedRevision
+			stageRecorderLocked(test).observeGeneratorBatch(target, batch)
 			stageDistributedGoalErrorWindowLocked(tr, test, target, batch)
 		}
 	}
@@ -1801,7 +1814,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 		}
 	}
 	if live.NativeEvidence != nil {
-		live.NativeEvidence.Publication = nativePublicationEvidence(target, batch, batches)
+		live.NativeEvidence.Publication = nativePublicationEvidence(target, batch, batches, runJointProjection(test))
 		// Include assigned peers before their first metric batch, so cold or lost
 		// sources cannot make a partial fleet appear completely covered.
 		expected := make([]string, 0, len(test.remoteClientsByTarget))
@@ -1928,6 +1941,7 @@ func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner,
 		return
 	}
 	archiveRecord, archiveErr := b.stageRemoteArchive(tr, test, finalStatus, finalError, completedAt, finalStatus == "COMPLETE")
+	staged := archiveRecord != nil
 	if archiveErr != nil && !isArchiveOutputAdmissionError(archiveErr) {
 		finalStatus = "FAILED"
 		finalError = testexec.AppendRunError(finalError, "remote archive stage failed", archiveErr)
@@ -1976,6 +1990,14 @@ func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner,
 	}
 	if err := tr.completeTestRunUnderArchiveFence(test, finalStatus, completedAt, finalError, archiveRecord); err != nil {
 		slog.Error("distributed terminal transition remains retryable after bounded persistence retries", "test_id", test.ID, "status", finalStatus, "error", err)
+	}
+	if !staged {
+		// No archive of this run was staged here, so no commit of one will
+		// release the joint batches held for its sidecar (B5); a recovery
+		// archive written later is marked truncated.
+		tr.mu.Lock()
+		releaseHeldJointPublicationsLocked(test)
+		tr.mu.Unlock()
 	}
 	if archiveErr != nil {
 		tr.recordRemoteArchiveFailure(test, storage.RunArchiveFailureRemoteCollection)

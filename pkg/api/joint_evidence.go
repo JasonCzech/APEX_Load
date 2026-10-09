@@ -1,0 +1,271 @@
+package api
+
+import (
+	"encoding/json"
+	"fmt"
+	"slices"
+	"sort"
+	"time"
+
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/storage"
+)
+
+// Joint evidence v4 (B5): a run's capture projection. It is chosen before
+// Start (joint_evidence on test creation), stored with the test, frozen
+// into the run's provenance at Start, sent to native_joint_evidence_v4
+// generators and applied to a local run's engine. Generators keep only the
+// projected tuples; peers without the capability leave the joint evidence
+// of their windows unavailable.
+
+// normalizeJointEvidence validates a requested projection.
+func normalizeJointEvidence(projection *engine.JointProjection) (*engine.JointProjection, error) {
+	if projection == nil {
+		return nil, nil
+	}
+	if err := projection.Validate(); err != nil {
+		return nil, fmt.Errorf("joint_evidence: %w", err)
+	}
+	return projection.Clone(), nil
+}
+
+func jointEvidenceForStorage(projection *engine.JointProjection) any {
+	if projection == nil {
+		return nil
+	}
+	return projection.Clone()
+}
+
+// decodeStoredJointEvidence reads a stored projection; one that no longer
+// validates is dropped rather than applied.
+func decodeStoredJointEvidence(raw any) *engine.JointProjection {
+	if raw == nil {
+		return nil
+	}
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		return nil
+	}
+	var projection engine.JointProjection
+	if err := json.Unmarshal(encoded, &projection); err != nil || projection.Validate() != nil {
+		return nil
+	}
+	return &projection
+}
+
+// runJointProjection is the projection a run executes under: the one
+// frozen in its provenance at Start, else the test's own.
+func runJointProjection(test *ManagedTest) *engine.JointProjection {
+	if test == nil {
+		return nil
+	}
+	if test.initialArchiveProvenance != nil && test.initialArchiveProvenance.JointEvidence != nil {
+		return test.initialArchiveProvenance.JointEvidence.Clone()
+	}
+	return test.JointEvidence.Clone()
+}
+
+// generatorAcceptsJointEvidence reports whether a generator's probed
+// features include joint evidence v4. Only such a generator is sent the
+// projection, at Start or as an evacuation replacement; another leaves its
+// windows' joint evidence unavailable.
+func generatorAcceptsJointEvidence(features []string) bool {
+	return stringSliceContainsEqualFold(features, generatorrpc.FeatureJointEvidenceV4)
+}
+
+// Joint evidence unavailability reasons.
+const (
+	jointReasonSourceLacksCapability = "source_lacks_joint_evidence_v4"
+	jointReasonProjectionMismatch    = "projection_mismatch"
+	jointReasonInvalid               = "invalid_joint_evidence"
+)
+
+func nativeJointMetric(m *TxMetrics) storage.NativeIntervalMetric {
+	return storage.NativeIntervalMetric{DurationDigest: engine.CloneTDigestSnapshot(m.DurationDigest), Count: m.Count, Errors: m.Errors, Avg: m.AvgMs, P50: m.P50Ms, P90: m.P90Ms, P95: m.P95Ms, P99: m.P99Ms}
+}
+
+// setNativeJointEvidence records a source's joint evidence on interval
+// evidence: its validated tuples under storage.NativeJointDimension and the
+// description. projection is the run's; a source that published none while
+// the run has one is unavailable, as is one counted under another
+// projection. Tuples that do not decode to the projection are dropped and
+// make the evidence incomplete. incomplete also carries the window's sample
+// loss; the marginal dimensions' key caps never make joint evidence partial.
+func setNativeJointEvidence(out *storage.NativeIntervalEvidence, projection *engine.JointProjection, published *engine.JointProjection, tuples map[string]*TxMetrics, other *TxMetrics, omitted int64, incomplete bool) {
+	if out == nil || projection == nil && published == nil {
+		return
+	}
+	reference := projection
+	if reference == nil {
+		reference = published
+	}
+	joint := &storage.NativeJointEvidence{Population: reference.Population, Dimensions: append([]string(nil), reference.Dimensions...), Availability: "unavailable"}
+	out.Joint = joint
+	switch {
+	case published == nil:
+		joint.Reason = jointReasonSourceLacksCapability
+		return
+	case published.Validate() != nil:
+		joint.Reason = jointReasonInvalid
+		return
+	case projection != nil && (published.Population != projection.Population || !slices.Equal(published.Dimensions, projection.Dimensions)):
+		joint.Reason = jointReasonProjectionMismatch
+		return
+	}
+	joint.Availability, joint.OmittedTuples, joint.Incomplete = "measured", omitted, incomplete
+	values := map[string]storage.NativeIntervalMetric{}
+	keys := make([]string, 0, len(tuples))
+	for key := range tuples {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		metric := tuples[key]
+		if _, ok := engine.JointTupleValues(key, len(joint.Dimensions)); !ok || metric == nil || len(values) >= engine.JointMaxKeys {
+			joint.Incomplete = true
+			continue
+		}
+		values[key] = nativeJointMetric(metric)
+	}
+	if other != nil && other.Count > 0 {
+		metric := nativeJointMetric(other)
+		joint.Other = &metric
+	}
+	out.Dimensions[storage.NativeJointDimension] = values
+}
+
+// jointEvidenceFromBatch reads a source batch's joint evidence.
+func jointEvidenceFromBatch(batch generatorrpc.MetricsBatch) (published *engine.JointProjection, tuples map[string]*TxMetrics, other *TxMetrics, omitted int64, incomplete bool) {
+	info := batch.JointInfo
+	if info == nil {
+		return nil, nil, nil, 0, false
+	}
+	if info.Version != engine.JointEvidenceVersion {
+		return &engine.JointProjection{}, nil, nil, 0, true
+	}
+	tuples = map[string]*TxMetrics{}
+	for _, aggregate := range batch.JointMetrics {
+		if m := txMetricsFromAggregate(aggregate); m != nil {
+			tuples[aggregate.Name] = m
+		}
+	}
+	if info.Other != nil {
+		other = txMetricsFromAggregate(*info.Other)
+	}
+	return &engine.JointProjection{Population: info.Population, Dimensions: append([]string(nil), info.Dimensions...)}, tuples, other, info.OmittedTuples, info.Incomplete
+}
+
+// jointEvidenceFromEngine reads a local run window's joint evidence.
+func jointEvidenceFromEngine(snapshot *engine.JointMetricsSnapshot, window time.Duration) (published *engine.JointProjection, tuples map[string]*TxMetrics, other *TxMetrics, omitted int64, incomplete bool) {
+	if snapshot == nil {
+		return nil, nil, nil, 0, false
+	}
+	tuples = map[string]*TxMetrics{}
+	for key, metric := range snapshot.Tuples {
+		tuples[key] = buildTxMetricsFromAction(key, metric, window)
+	}
+	if snapshot.Other != nil {
+		other = buildTxMetricsFromAction("other", snapshot.Other, window)
+	}
+	return &engine.JointProjection{Population: snapshot.Population, Dimensions: append([]string(nil), snapshot.Dimensions...)}, tuples, other, snapshot.OmittedTuples, snapshot.Incomplete
+}
+
+// The source batches whose joint evidence waits for the next published point
+// are bounded by count and by their estimated in-memory size; the oldest are
+// dropped (and counted) first.
+const maxPendingJointPublications = 1024
+
+// maxPendingJointBytes is a variable so tests can bound by size.
+var maxPendingJointBytes int64 = 64 << 20
+
+// jointPublicationBytes estimates a pending publication's in-memory size:
+// its tuple keys, metrics and digest centroids.
+func jointPublicationBytes(p *storage.NativePublicationEvidence) int64 {
+	if p == nil {
+		return 0
+	}
+	size := int64(256 + len(p.SourceID) + len(p.SourceEpoch))
+	for key, metric := range p.Dimensions[storage.NativeJointDimension] {
+		size += int64(len(key)) + 160
+		if metric.DurationDigest != nil {
+			size += int64(len(metric.DurationDigest.Centroids)) * 16
+		}
+	}
+	if p.Joint != nil && p.Joint.Other != nil && p.Joint.Other.DurationDigest != nil {
+		size += int64(len(p.Joint.Other.DurationDigest.Centroids)) * 16
+	}
+	return size
+}
+
+// nativePublicationIdentity identifies one source window across retained
+// and persisted evidence.
+func nativePublicationIdentity(p *storage.NativePublicationEvidence) string {
+	return fmt.Sprintf("%s/%s/%d/%d", p.SourceID, p.SourceEpoch, p.ExecutionGeneration, p.Sequence)
+}
+
+// jointPublicationEvidence is one accepted source batch's joint evidence
+// alone, kept until the next published point carries it.
+func jointPublicationEvidence(source string, batch generatorrpc.MetricsBatch, projection *engine.JointProjection) *storage.NativePublicationEvidence {
+	evidence := &storage.NativeIntervalEvidence{Dimensions: map[string]map[string]storage.NativeIntervalMetric{}}
+	published, tuples, other, omitted, incomplete := jointEvidenceFromBatch(batch)
+	lost := batch.Telemetry != nil && (batch.Telemetry.DroppedResults > 0 || batch.Telemetry.DroppedSubscriberBatches > 0 || batch.Telemetry.MissingMetricWindows > 0)
+	setNativeJointEvidence(evidence, projection, published, tuples, other, omitted, incomplete || lost)
+	dimensions := map[string]map[string]storage.NativeIntervalMetric{}
+	if values, ok := evidence.Dimensions[storage.NativeJointDimension]; ok {
+		dimensions[storage.NativeJointDimension] = values
+	}
+	return &storage.NativePublicationEvidence{SourceID: source, SourceEpoch: batch.SourceEpoch, Sequence: batch.BatchSequence, ExecutionGeneration: batch.ExecutionGeneration,
+		Timestamp: time.UnixMilli(batch.TimestampUnixMs).UTC(), Version: int(batch.ActionMetricsVersion), WindowSeconds: batchWindowSeconds(batch.WindowMs), Dimensions: dimensions, Joint: evidence.Joint}
+}
+
+// rememberJointPublicationLocked keeps an accepted batch's joint evidence
+// for the next published point; tr.mu is held.
+func rememberJointPublicationLocked(test *ManagedTest, source string, batch generatorrpc.MetricsBatch) {
+	projection := runJointProjection(test)
+	if projection == nil || batch.BatchSequence == 0 {
+		return
+	}
+	p := jointPublicationEvidence(source, batch, projection)
+	size := jointPublicationBytes(p)
+	for len(test.pendingJointPublications) > 0 && (len(test.pendingJointPublications) >= maxPendingJointPublications || test.pendingJointBytes+size > maxPendingJointBytes) {
+		test.pendingJointBytes -= jointPublicationBytes(test.pendingJointPublications[0])
+		test.pendingJointPublications[0] = nil
+		test.pendingJointPublications = test.pendingJointPublications[1:]
+		test.jointPublicationsDropped++
+	}
+	test.pendingJointPublications = append(test.pendingJointPublications, p)
+	test.pendingJointBytes += size
+}
+
+// releaseHeldJointPublicationsLocked drops the batches held for the run's
+// joint sidecar once no point of this controller will carry them (its archive
+// was committed, will not be, or another controller holds the run), counting
+// them as dropped so a sidecar written without them is marked truncated;
+// tr.mu is held.
+func releaseHeldJointPublicationsLocked(test *ManagedTest) {
+	test.jointPublicationsDropped += int64(len(test.pendingJointPublications))
+	test.pendingJointPublications, test.pendingJointBytes = nil, 0
+}
+
+// takePendingJointPublicationsLocked hands the pending joint evidence to the
+// point being installed (tr.mu is held), leaving out the published batch
+// itself, which the point carries in full.
+func takePendingJointPublicationsLocked(test *ManagedTest, published *storage.NativePublicationEvidence) []*storage.NativePublicationEvidence {
+	pending := test.pendingJointPublications
+	test.pendingJointPublications, test.pendingJointBytes = nil, 0
+	out := make([]*storage.NativePublicationEvidence, 0, len(pending))
+	for _, p := range pending {
+		if published != nil {
+			if nativePublicationIdentity(p) == nativePublicationIdentity(published) {
+				continue
+			}
+			p.ExpectedSources = append([]string(nil), published.ExpectedSources...)
+		}
+		out = append(out, p)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}

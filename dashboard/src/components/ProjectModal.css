@@ -68,7 +68,7 @@
 }
 
 .project-modal-field input:focus {
-  outline: 1px solid var(--accent);
+  outline: 1px solid var(--focus-ring);
   border-color: var(--accent);
 }
 

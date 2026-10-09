@@ -55,7 +55,7 @@ func TestTelemetryCoverageAtFinalizeFromDurablePlacement(t *testing.T) {
 	if err := tr.persistTelemetryCoverage(context.Background(), test, record, manifest); err != nil {
 		t.Fatal(err)
 	}
-	if coverage := manifest.TelemetryCoverage; coverage == nil || coverage.HealthyMs != 60_000 || coverage.UnknownMs != 0 || len(coverage.Coverage.Sources) != 0 {
+	if coverage := manifest.TelemetryCoverage; coverage == nil || coverage.HealthyMs != 60_000 || coverage.UnknownMs != 0 || len(coverage.Coverage.Sources) != 0 || coverage.Coverage.ObserverLost != "" || !coverage.Coverage.SourceRequirements {
 		t.Fatalf("local run with a local placement: %+v", coverage)
 	}
 
@@ -65,7 +65,19 @@ func TestTelemetryCoverageAtFinalizeFromDurablePlacement(t *testing.T) {
 	if err := tr.persistTelemetryCoverage(context.Background(), rebuilt, record, manifest); err != nil {
 		t.Fatal(err)
 	}
-	if coverage := manifest.TelemetryCoverage; coverage == nil || coverage.HealthyMs != 0 || coverage.UnknownMs != 60_000 {
+	// The time is unknown here because this controller lost what was
+	// observed, which the record says: its observed time is a lower bound.
+	if coverage := manifest.TelemetryCoverage; coverage == nil || coverage.HealthyMs != 0 || coverage.UnknownMs != 60_000 || coverage.Coverage.ObserverLost != telemetryCoverageLedgerLost || !coverage.Coverage.SourceRequirements {
 		t.Fatalf("distributed run rebuilt from storage: %+v", coverage)
+	}
+	// A controller that adopted the run observed it only from then.
+	record, manifest = coverageFinalizeFixture(t, start, 60, remote)
+	adopted := &ManagedTest{ID: "coverage-run", Status: "COMPLETE", StartedAt: &start, EndedAt: &end, telemetrySources: newTelemetrySourceLedger()}
+	adopted.telemetrySources.markAdopted()
+	if err := tr.persistTelemetryCoverage(context.Background(), adopted, record, manifest); err != nil {
+		t.Fatal(err)
+	}
+	if coverage := manifest.TelemetryCoverage; coverage == nil || coverage.Coverage.ObserverLost != telemetryCoverageAdopted {
+		t.Fatalf("adopted run: %+v", coverage)
 	}
 }

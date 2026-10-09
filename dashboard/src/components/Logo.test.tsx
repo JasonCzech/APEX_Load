@@ -42,11 +42,35 @@ describe('Logo', () => {
     expect(svg().getAttribute('width')).toBe('28')
   })
 
-  it('drives its fills from theme accent variables so it adapts to the active theme', () => {
+  it('drives its colors from theme tokens so it changes tone with the active theme', () => {
     act(() => root.render(<Logo />))
-    // Two peaks plus the baseline rule are accent-driven, so the mark recolors
-    // automatically when the --accent custom property changes per theme.
-    expect(container.querySelectorAll('[fill="var(--accent)"]').length).toBe(3)
+    expect(svg().querySelector(':scope > rect')?.getAttribute('fill')).toBe('var(--accent)')
+    expect(container.querySelector('polygon')?.getAttribute('fill')).toBe('var(--accent-contrast)')
+    expect(container.querySelector('path[stroke]')?.getAttribute('stroke')).toBe('var(--logo-wave, var(--brand-highlight))')
+    for (const stop of Array.from(container.querySelectorAll('stop'))) {
+      expect(stop.getAttribute('style')).toContain('var(--logo-wave, var(--brand-highlight))')
+    }
+  })
+
+  it('switches to the bolder small cut at 32px and below', () => {
+    act(() => root.render(<Logo size={32} />))
+    expect(svg().getAttribute('data-logo-cut')).toBe('small')
+    expect(container.querySelector('path[stroke]')?.getAttribute('stroke-width')).toBe('7')
+
+    act(() => root.render(<Logo size={64} />))
+    expect(svg().getAttribute('data-logo-cut')).toBe('master')
+    expect(container.querySelector('path[stroke]')?.getAttribute('stroke-width')).toBe('5')
+  })
+
+  it('gives each instance its own gradient and clip ids', () => {
+    act(() => root.render(<><Logo /><Logo /></>))
+    const ids = Array.from(container.querySelectorAll('[id]'), (el) => el.id)
+    expect(ids).toHaveLength(4)
+    expect(new Set(ids).size).toBe(4)
+    for (const logo of Array.from(container.querySelectorAll('svg'))) {
+      const fade = logo.querySelector('linearGradient')?.id
+      expect(logo.querySelector(`[fill="url(#${fade})"]`)).not.toBeNull()
+    }
   })
 
   it('is decorative (aria-hidden) by default', () => {

@@ -935,7 +935,7 @@ export function buildRunDefaultCards(scenario: StoredScenario | undefined, overr
     },
     {
       key: 'log_level',
-      label: 'Log Level',
+      label: 'Log level',
       value: effectiveRuntime.log_level || 'Script default',
       scenarioValue: runtimeLogLevel(scenario.runtime_settings) || 'Script default',
       isDefault: !effectiveRuntime.log_level,
@@ -943,7 +943,7 @@ export function buildRunDefaultCards(scenario: StoredScenario | undefined, overr
     },
     {
       key: 'auto_transactions',
-      label: 'Auto Transactions',
+      label: 'Auto transactions',
       value: effectiveRuntime.auto_transactions || 'Script default',
       scenarioValue: runtimeAutoTransactions(scenario.runtime_settings) || 'Script default',
       isDefault: !effectiveRuntime.auto_transactions,
@@ -959,7 +959,7 @@ export function buildRunDefaultCards(scenario: StoredScenario | undefined, overr
     },
     {
       key: 'think_time',
-      label: 'Think Time',
+      label: 'Think time',
       value: formatRuntimeThinkTimeConfig(effectiveRuntime.think_time),
       scenarioValue: formatRuntimeThinkTime(scenario),
       isDefault: !effectiveRuntime.think_time,
@@ -967,7 +967,7 @@ export function buildRunDefaultCards(scenario: StoredScenario | undefined, overr
     },
     {
       key: 'continue_on_error',
-      label: 'Continue On Error',
+      label: 'Continue on error',
       value: formatRuntimeBooleanValue(effectiveRuntime.continue_on_error),
       scenarioValue: formatRuntimeBooleanValue(scenarioErrorHandling.continue_on_error),
       isDefault: effectiveRuntime.continue_on_error === undefined,
@@ -975,7 +975,7 @@ export function buildRunDefaultCards(scenario: StoredScenario | undefined, overr
     },
     {
       key: 'snapshot_on_error',
-      label: 'Snapshot On Error',
+      label: 'Snapshot on error',
       value: formatRuntimeBooleanValue(effectiveRuntime.snapshot_on_error),
       scenarioValue: formatRuntimeBooleanValue(scenarioErrorHandling.snapshot_on_error),
       isDefault: effectiveRuntime.snapshot_on_error === undefined,
@@ -983,7 +983,7 @@ export function buildRunDefaultCards(scenario: StoredScenario | undefined, overr
     },
     {
       key: 'script_shakeout',
-      label: 'Script Shakeout',
+      label: 'Script shakeout',
       value: formatEnabledValue(scriptShakeout),
       scenarioValue: formatEnabledValue(scenario.script_shakeout),
       isDefault: false,
@@ -991,7 +991,7 @@ export function buildRunDefaultCards(scenario: StoredScenario | undefined, overr
     },
     {
       key: 'resource_baseline',
-      label: 'Resource Baseline',
+      label: 'Resource baseline',
       value: formatResourceBaselineValue(resourceBaseline),
       scenarioValue: formatResourceBaselineValue(scenario.resource_baseline),
       isDefault: false,

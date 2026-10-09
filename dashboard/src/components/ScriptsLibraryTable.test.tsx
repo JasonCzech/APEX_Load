@@ -98,6 +98,62 @@ describe('ScriptsLibraryTable federation', () => {
     expect(container.textContent).not.toContain('Move to folder')
   })
 
+  it('keeps the script cell to name, protocol, version and an info badge with the identity details', async () => {
+    const described = { ...script, ref_key: 'LOC-SCR-0001-v1', activity: { creator: { id: 'c', action: 'create', actor_type: 'user', actor_subject: 'alice', actor_display_name: 'Alice', project_id: 'p', resource_type: 'script', resource_id: script.id, resource_name: script.name, status: 'success', created_at: '2026-05-01T00:00:00Z' } } } as StoredScript
+    await act(async () => root.render(<ScriptsLibraryTable {...baseProps} scripts={[described]} />))
+    const cell = container.querySelector('tbody td.cell-name')!
+    // The reference key and attribution are no longer spelled out in the row.
+    expect(cell.textContent).not.toContain('Created by')
+    expect(cell.textContent).not.toContain('LOC-SCR-0001-v1')
+    expect(cell.querySelector('.protocol-badge')?.textContent).toBe('http')
+    const info = buttonByLabel(/^Details for Local Checkout$/)!
+    await act(async () => info.click())
+    const panel = container.querySelector('[role="dialog"]')!
+    expect(panel.textContent).toContain('LOC-SCR-0001-v1')
+    expect(panel.querySelector('button[aria-label="Copy LOC-SCR-0001-v1"]')).not.toBeNull()
+    expect(panel.textContent).toContain('Alice')
+    expect(panel.textContent).toContain('Not changed since it was created')
+    expect(document.activeElement).toBe(panel)
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.activeElement).toBe(info)
+  })
+
+  it('shows authoring health as clickable badges whose popup lists every input', async () => {
+    const reviewed = { ...script, authoring_health: { score: 72, status: 'needs_review', inputs: [
+      { key: 'validation_issues', status: 'pass', summary: 'Script validation passed.' },
+      { key: 'runtime_parity', status: 'warning', count: 2, summary: 'Runtime parity is partial.' },
+    ] } } as StoredScript
+    await act(async () => root.render(<ScriptsLibraryTable {...baseProps} scripts={[reviewed]} />))
+    const healthCell = container.querySelector('td[aria-label="Authoring health"]')!
+    // No sentences in the cell: an icon and the score, plus a warning count.
+    expect(healthCell.textContent).toBe('721')
+    const status = buttonByLabel(/^Authoring health for Local Checkout: Needs review, score 72/)!
+    expect(status.className).toContain('warning')
+    await act(async () => status.click())
+    const panel = container.querySelector('[role="dialog"]')!
+    expect(panel.textContent).toContain('Score 72 of 100')
+    // Most severe first.
+    expect(panel.querySelector('li')?.textContent).toContain('runtime parity · 2 — Runtime parity is partial.')
+    expect(panel.textContent).toContain('All project secrets this script needs are configured.')
+    expect(buttonByLabel(/^View 1 warning detail for Local Checkout$/)?.textContent).toBe('1')
+  })
+
+  it('states usage as the scenario count alone when no scenario run has a release', async () => {
+    await act(async () => root.render(<ScriptsLibraryTable {...baseProps} />))
+    const usage = container.querySelector('td[aria-label="Scenario usage"]')!
+    expect(usage.textContent).toBe('0 scenarios')
+  })
+
+  it('flags scripts that share a name within one folder', async () => {
+    const twin = { ...script, id: 'script-twin', ref_key: 'LOC-SCR-0002-v1', name: ` ${script.name.toUpperCase()} ` } as StoredScript
+    const elsewhere = { ...script, id: 'script-elsewhere', ref_key: 'LOC-SCR-0003-v1', folder_id: 'folder-2' } as StoredScript
+    await act(async () => root.render(<ScriptsLibraryTable {...baseProps} scripts={[script, twin, elsewhere]} />))
+    const flagged = Array.from(container.querySelectorAll('tbody tr')).filter(row => row.textContent?.includes('Duplicate name'))
+    expect(flagged).toHaveLength(2)
+    expect(flagged.some(row => row.textContent?.includes('LOC-SCR-0003-v1'))).toBe(false)
+  })
+
   it('paginates local and remote assets together and selects only local rows on the page', async () => {
     const scripts = Array.from({ length: 11 }, (_, index) => ({ ...script, id: `script-${index}`, name: `Script ${index}` }))
     const onToggleScriptSelection = vi.fn()
@@ -131,6 +187,11 @@ describe('ScriptsLibraryTable federation', () => {
 
   function findButton(label: string) {
     return Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === label) as HTMLButtonElement | undefined
+  }
+
+  // Health badges show an icon and a number; their accessible names carry the words.
+  function buttonByLabel(pattern: RegExp) {
+    return Array.from(container.querySelectorAll('button')).find(button => pattern.test(button.getAttribute('aria-label') || '')) as HTMLButtonElement | undefined
   }
 
   async function waitForIssueDialog() {
@@ -177,7 +238,7 @@ describe('ScriptsLibraryTable federation', () => {
     expect(chipTexts[0]).toContain('data source fit · blocker · 1')
     expect(chipTexts[1]).toContain('runtime parity · warning · 8')
 
-    const blockerButton = findButton('1 blocker')
+    const blockerButton = buttonByLabel(/^View 1 blocker detail for /)
     expect(blockerButton?.getAttribute('aria-label')).toContain('Imported Upgrade')
     await act(async () => { blockerButton?.click() })
     expect((await waitForIssueDialog())?.textContent).toContain('Data-source fit checks found missing columns')
@@ -185,7 +246,7 @@ describe('ScriptsLibraryTable federation', () => {
     await act(async () => {
       ;(document.body.querySelector('[role="dialog"] button') as HTMLButtonElement).click()
     })
-    const warningButton = findButton('1 warning')
+    const warningButton = buttonByLabel(/^View 1 warning detail for /)
     await act(async () => { warningButton?.click() })
     expect((await waitForIssueDialog())?.textContent).toContain('Runtime parity has partial')
   })
@@ -244,7 +305,7 @@ describe('ScriptsLibraryTable federation', () => {
       )
     })
 
-    await act(async () => { findButton('1 blocker')?.click() })
+    await act(async () => { buttonByLabel(/^View 1 blocker detail for /)?.click() })
     expect(onValidateScriptDetails).toHaveBeenCalledWith(blockedScript.id)
     const dialogText = (await waitForIssueDialog())?.textContent || ''
     expect(dialogText).toContain('Validation issue 1')
@@ -280,8 +341,9 @@ describe('ScriptsLibraryTable federation', () => {
       )
     })
 
-    expect(container.textContent).toContain('1 secret missing')
-    await act(async () => findButton('1 secret missing')?.click())
+    const missing = buttonByLabel(/^View 1 missing secret detail for /)!
+    expect(missing.textContent).toBe('1')
+    await act(async () => missing.click())
     expect(onConfigureSecrets).toHaveBeenCalledWith(script)
     const configure = findButton('Configure secrets')
     await act(async () => configure?.click())
@@ -358,8 +420,9 @@ describe('ScriptsLibraryTable federation', () => {
       )
     })
 
-    expect(container.textContent).toContain('Secret status unavailable')
-    expect(container.textContent).toContain('secret status unknown')
+    const status = buttonByLabel(/^Authoring health for /)!
+    expect(status.getAttribute('aria-label')).toContain('Secret status unavailable')
+    expect(status.className).toContain('warning')
     expect(container.textContent).not.toContain('ready')
     await act(async () => findButton('Configure secrets')?.click())
     await act(async () => findButton('Retry secret check')?.click())
@@ -411,6 +474,20 @@ describe('ScriptsLibraryTable federation', () => {
     })
     expect(container.textContent).toContain('Local Checkout')
     expect(container.textContent).not.toContain('Host Only Script')
+    // Every visible row is local, so the Source column would only repeat "Local".
+    expect(Array.from(container.querySelectorAll('th')).some(th => th.textContent?.includes('Source'))).toBe(false)
+    expect(container.querySelector('tbody > tr > td:first-child')?.classList.contains('cell-name')).toBe(true)
+  })
+
+  it('keeps Archive in the More menu and marks archived scripts in the name cell', async () => {
+    await act(async () => {
+      root.render(<ScriptsLibraryTable {...baseProps} canManageScripts scripts={[{ ...script, archived_at: '2026-10-08T00:00:00Z', script: { ...script.script!, updated_at: '2026-10-08T00:00:00Z' } }]} />)
+    })
+    const row = container.querySelector('tbody > tr')!
+    const restore = row.querySelector<HTMLButtonElement>('button[aria-label^="Restore "]')
+    expect(restore?.closest('.ux-row-actions-menu')).not.toBeNull()
+    expect(row.querySelector('.cell-name')?.textContent).toContain('Archived')
+    expect(row.querySelector('.library-row-actions-cell')).not.toBeNull()
   })
 
   it('disables transfers and suppresses them in read-only mode', async () => {

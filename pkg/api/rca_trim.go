@@ -20,8 +20,8 @@ const limitationAssessmentTrimmed = "assessment_trimmed"
 const rcaTrimHeadroom = 1 << 10
 
 // trimRCAAssessment cuts an assessment until fits reports true, the least
-// load-bearing parts first: validity windows, spikes, capacity results, the
-// graph's unused edges and then its weakest edges and uncited nodes,
+// load-bearing parts first: validity windows, spikes, capacity results,
+// browser baseline results, the graph's unused edges and then its weakest edges and uncited nodes,
 // anomalies no hypothesis cites, and then the lowest-ranked hypotheses,
 // whose anomalies go with them. A kept hypothesis's anomalies and nodes are
 // never cut. It reports whether it cut anything.
@@ -39,6 +39,18 @@ func trimRCAAssessment(a *rca.Assessment, fits func() bool) bool {
 	halve(max(len(a.Capacity), len(a.LittlesLaw)), func(n int) {
 		a.Capacity, a.LittlesLaw = a.Capacity[:min(n, len(a.Capacity))], a.LittlesLaw[:min(n, len(a.LittlesLaw))]
 	})
+	// Browser baseline results are advisory and never cited, so they go
+	// before the graph, anomalies and hypotheses (anomalies first are kept).
+	// The section is copied first: a bundle shares the stored assessment's.
+	if baseline := a.BrowserBaseline; baseline != nil && len(baseline.Results) > 0 && !fits() {
+		trimmed := *baseline
+		trimmed.Results, trimmed.Limitations = slices.Clone(baseline.Results), slices.Clone(baseline.Limitations)
+		a.BrowserBaseline = &trimmed
+		before := len(trimmed.Results)
+		halve(before, func(n int) { trimmed.Results = trimmed.Results[:n] })
+		trimmed.Status = rca.DetectionPartial
+		trimmed.Limitations = append(trimmed.Limitations, rca.Limitation{Code: rca.BrowserBaselineResultsTruncated, Detail: fmt.Sprintf("kept %d of %d browser baseline results to fit the assessment's size limit", len(trimmed.Results), before)})
+	}
 	if !fits() && len(a.Graph.Edges) > 0 {
 		used := a.Graph.Edges[:0:0]
 		for _, e := range a.Graph.Edges {

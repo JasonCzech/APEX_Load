@@ -21,15 +21,14 @@
   padding: 18px 20px;
 }
 
-.run-report-toolbar h1,
-.run-report-verdict h1,
+.run-report-toolbar .run-report-title,
 .run-report-section-heading h2 {
   margin: 0;
   letter-spacing: 0;
   color: var(--text-primary);
 }
 
-.run-report-toolbar h1 {
+.run-report-toolbar .run-report-title {
   font-size: 24px;
   line-height: 1.2;
 }
@@ -72,7 +71,7 @@
 }
 
 .run-report-export-option:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -132,17 +131,6 @@
   padding: 20px;
 }
 
-.run-report-verdict-main {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-}
-
-.run-report-verdict h1 {
-  font-size: 32px;
-}
-
 .run-report-verdict p {
   max-width: 860px;
   margin: 8px 0 0;
@@ -198,6 +186,13 @@
   color: var(--danger-text);
 }
 
+/* The computed verdict named inline in the assessment's opening sentence. */
+.run-report-verdict p .run-report-verdict-badge {
+  min-width: 0;
+  padding: 1px 8px;
+  vertical-align: baseline;
+}
+
 .run-report-sla-na {
   border: 1px solid var(--border);
   background: var(--bg-secondary);
@@ -206,12 +201,6 @@
 
 .run-report-override {
   margin-top: 16px;
-}
-
-.run-report-override summary {
-  cursor: pointer;
-  color: var(--text-secondary);
-  font-weight: 700;
 }
 
 .run-report-override-grid {
@@ -696,7 +685,7 @@
 }
 
 .run-report-toolbar > div { min-width: 0; }
-.run-report-toolbar h1 { overflow-wrap: anywhere; }
+.run-report-toolbar .run-report-title { overflow-wrap: anywhere; }
 .run-report-toolbar { flex-wrap: wrap; }
 .run-report-context { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; }
 .run-report-context label { display: flex; align-items: center; gap: 10px; font-weight: 600; }
@@ -749,7 +738,7 @@
 .run-execution-groups { min-width: 560px; }
 .run-execution-groups dd { margin: 0 0 8px; }
 .run-execution-records pre { max-height: 400px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
-.run-report-page button:focus-visible, .run-report-page summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.run-report-page button:focus-visible, .run-report-page summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
 .run-report-areas { flex-wrap: wrap; }
 
 .run-report-timeline-window {
@@ -775,3 +764,20 @@
 .run-archive-coverage-table { max-height: 320px; overflow: auto; margin-top: 12px; }
 .run-archive-coverage-table table { width: 100%; table-layout: fixed; }
 .run-archive-coverage-table :is(td, th) { white-space: normal; overflow-wrap: anywhere; }
+
+.interaction-heatmaps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.interaction-heatmaps figure {
+  margin: 0;
+  max-width: 100%;
+}
+
+.interaction-heatmap {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}

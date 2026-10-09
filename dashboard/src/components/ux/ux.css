@@ -10,6 +10,9 @@
   box-sizing: border-box; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border);
   border-radius: 12px; max-width: calc(100vw - 40px); max-height: calc(100dvh - 40px); overflow-y: auto;
 }
+/* Settings and fleet form dialogs share one readable width tier; the generic
+   viewport cap above would otherwise stretch their single-column fields. */
+.ux-dialog-layer .pp-modal { max-width: min(760px, calc(100vw - 40px)); }
 .ux-dialog-layer :is(.modal-header, .pp-modal-header, .project-modal-header) { gap: 16px; align-items: flex-start; }
 .ux-dialog-layer :is(.modal-header, .pp-modal-header, .project-modal-header) h3 { margin: 0; font-size: 18px; line-height: 1.4; }
 .ux-dialog-layer :is(.modal-actions, .pp-modal-actions, .project-modal-actions) {
@@ -21,7 +24,7 @@
 .ux-dialog-layer .test-notes-grid { overflow: auto; }
 .ux-panel-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 32px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); background: var(--bg-secondary); cursor: pointer; }
 .ux-panel-toggle > span:first-child { font-size: 20px; line-height: 1; }
-.ux-panel-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ux-panel-toggle:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 @media (max-width: 700px) {
   .ux-dialog-layer :is(.modal-overlay, .pp-modal-overlay, .project-modal-backdrop, .access-modal-overlay, .lr-modal-backdrop) { padding: 12px; }
   .ux-dialog-layer :is(.modal, .modal-content, .pp-modal, .project-modal, .access-modal) { max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
@@ -64,11 +67,25 @@
 .library-source-toolbar { flex-wrap: wrap; gap: 12px; }
 .library-source-toolbar > label:has(input[type="search"]) { order: -1; }
 .repository-filter-row { flex-wrap: wrap; gap: 12px; }
-.library-more-actions, .scenario-more-actions { display: inline-block; position: relative; text-align: left; }
-.library-more-actions > summary, .scenario-more-actions > summary { cursor: pointer; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; list-style: none; }
-.library-more-actions[open], .scenario-more-actions[open] { min-width: 120px; }
-.library-more-actions[open] > button, .scenario-more-actions[open] > button { display: block; width: 100%; text-align: left; margin-top: 4px; }
-.library-more-actions > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ux-row-actions { display: inline-block; position: relative; text-align: left; }
+.ux-row-actions-toggle { cursor: pointer; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--text-secondary); font: inherit; }
+.ux-row-actions-toggle:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.ux-row-actions-menu { position: fixed; z-index: 30; display: flex; flex-direction: column; gap: 4px; min-width: 180px; max-width: min(320px, calc(100vw - 16px)); padding: 6px; border: 1px solid var(--border); border-radius: 8px; background: linear-gradient(var(--bg-elevated), var(--bg-elevated)), var(--bg-primary); box-shadow: 0 8px 24px rgb(0 0 0 / 18%); }
+.ux-row-actions-menu[hidden] { display: none; }
+.ux-row-actions-menu > button { display: block; width: 100%; margin: 0; text-align: left; }
+.ux-info-popover { display: inline-flex; position: relative; vertical-align: middle; }
+.ux-info-popover-trigger { cursor: pointer; font: inherit; }
+.ux-info-popover-trigger:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.ux-info-popover-panel { position: fixed; z-index: 30; display: grid; gap: 8px; width: max-content; min-width: 220px; max-width: min(380px, calc(100vw - 16px)); padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: linear-gradient(var(--bg-elevated), var(--bg-elevated)), var(--bg-primary); box-shadow: 0 8px 24px rgb(0 0 0 / 18%); color: var(--text-primary); font-size: 13px; line-height: 1.4; text-align: left; white-space: normal; }
+.ux-info-popover-panel:focus { outline: none; }
+.ux-info-popover-panel:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.ux-info-popover-title { margin: 0; font-weight: 700; }
+.ux-info-list { display: grid; gap: 6px; margin: 0; }
+.ux-info-list > div { display: grid; grid-template-columns: minmax(84px, auto) 1fr; gap: 10px; align-items: baseline; }
+.ux-info-list dt { color: var(--text-secondary); font-size: var(--font-size-xs); font-weight: 600; }
+.ux-info-list dd { margin: 0; overflow-wrap: anywhere; }
+.ux-badge-icon { flex: 0 0 auto; }
+.ux-row-actions-note { margin: 0; padding: 0 8px 4px; color: var(--text-secondary); font-size: var(--font-size-xs); white-space: normal; }
 @media (max-width: 980px) {
   .run-calendar-grid .run-calendar-weekday { display: none; }
   .scripts-library-table th:last-child, .scripts-library-table td:last-child { position: sticky; right: 0; background: var(--bg-secondary); z-index: 1; min-width: 100px; }
@@ -78,7 +95,7 @@
 .ux-form-field { display: grid; gap: 8px; margin-top: 16px; }
 .ux-form-field > label { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
 .ux-form-field :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) { box-sizing: border-box; width: 100%; min-height: 36px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); padding: 8px 12px; font: inherit; }
-.ux-form-field :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ux-form-field :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .ux-panel-toggle > svg { flex: 0 0 16px; }
 .ux-panel-toggle > span { font-size: 12px; line-height: 1.4; }
 .run-calendar-nav .run-calendar-nav-btn { display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; }
@@ -174,6 +191,11 @@
   color: var(--text-primary);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
   font-size: 13px;
+}
+
+.ux-undo-notice.error {
+  border-color: rgba(var(--danger-rgb), 0.45);
+  color: var(--danger-text, var(--danger));
 }
 
 .ux-undo-notice-error {

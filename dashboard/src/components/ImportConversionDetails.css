@@ -38,7 +38,7 @@
 .import-evidence-section .lr-review-section-header { gap: 12px; }
 .import-evidence-section .lr-review-section p,
 .import-evidence-section .lr-review-section ul { font-size: inherit; line-height: inherit; }
-.import-conversion-details summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.import-conversion-details summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
 
 @media (max-width: 600px) {
   .import-conversion-details { margin: 12px 0; }

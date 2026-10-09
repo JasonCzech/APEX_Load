@@ -131,3 +131,18 @@ export function trafficProfileTimelineSeconds(profile: TrafficProfile | undefine
   }
   return Array.from(result).sort((left, right) => left - right)
 }
+
+// Mirrors trafficprofile.ParseRelativeTimestamp: a Go duration ("60s",
+// "1m30s") or elapsed H:MM[:SS].
+const RELATIVE_TIME = /^(?:(?:\d+(?:\.\d+)?(?:ns|us|µs|ms|s|m|h))+|\d+:[0-5]\d(?::[0-5]\d(?:\.\d+)?)?)$/
+
+/** The time mode the sampled values imply, or undefined when they do not decide it. */
+export function inferTimestampMode(samples: string[][] | undefined, columns: string[], column: string): 'absolute' | 'relative' | undefined {
+  const index = columns.indexOf(column)
+  if (index < 0) return undefined
+  const values = (samples || []).map(row => (row[index] || '').trim()).filter(Boolean)
+  if (values.length === 0) return undefined
+  if (values.every(value => RELATIVE_TIME.test(value))) return 'relative'
+  if (values.every(value => !Number.isNaN(Date.parse(value)) && /\d{4}-\d{2}-\d{2}/.test(value))) return 'absolute'
+  return undefined
+}

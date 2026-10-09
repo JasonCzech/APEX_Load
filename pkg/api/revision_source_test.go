@@ -2,10 +2,12 @@ package api
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -383,5 +385,39 @@ func TestRevisionDataPoolIntentIsOrderInsensitiveAndNormalizesDefaults(t *testin
 	}
 	if sameRevisionDataPoolBindings(duplicates, source) {
 		t.Fatal("duplicate normalized aliases were treated as a valid unchanged intent")
+	}
+}
+
+// A queued run's joint evidence projection is a materialized setting: a
+// revised copy keeps it unless the request names another.
+func TestQueuedRunRevisionKeepsTheJointEvidenceProjection(t *testing.T) {
+	server, _ := newRuntimeOverrideTestServer(t)
+	script := httpScript("revision-joint-script", "Revision joint")
+	if _, err := server.runner.StoreScriptDurable(script); err != nil {
+		t.Fatal(err)
+	}
+	projection := &engine.JointProjection{Population: "transaction", Dimensions: []string{"name", "region"}}
+	source, err := server.runner.CreateTest(CreateTestRequest{Name: "Joint source", Duration: "1m", JointEvidence: projection,
+		Groups: []CreateGroupEntry{{Name: "Primary", ScriptID: script.ID, VUsers: 1}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceIndex := 0
+	revised, err := server.runner.CreateTest(CreateTestRequest{Name: "Joint revision", RevisionSourceTestID: source.ID,
+		Groups: []CreateGroupEntry{{Name: "Primary", ScriptID: script.ID, VUsers: 2, RevisionSourceGroupIndex: &sourceIndex}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(revised.JointEvidence, projection) {
+		t.Fatalf("revised projection %+v, want %+v", revised.JointEvidence, projection)
+	}
+	other := &engine.JointProjection{Population: "action", Dimensions: []string{"name"}}
+	renamed, err := server.runner.CreateTest(CreateTestRequest{Name: "Joint revision 2", RevisionSourceTestID: source.ID, JointEvidence: other,
+		Groups: []CreateGroupEntry{{Name: "Primary", ScriptID: script.ID, VUsers: 2, RevisionSourceGroupIndex: &sourceIndex}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(renamed.JointEvidence, other) {
+		t.Fatalf("named projection %+v, want %+v", renamed.JointEvidence, other)
 	}
 }

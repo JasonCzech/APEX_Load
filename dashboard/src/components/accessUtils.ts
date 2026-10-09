@@ -1,6 +1,7 @@
 // Shared constants, pure helpers, and SortHeader for the Access page workspaces
 // (extracted from AccessPage.tsx, A16).
 import { formatTimeLong } from '../utils/timeUtils'
+import { formatDateTime } from '../utils/dateTime'
 import {
   ApplicationRepository, Domain, Project,
   DashboardAuditEvent, DashboardAuditEventFilter, DashboardServiceAccount,
@@ -295,9 +296,8 @@ export function timestampValue(value?: string): number {
 }
 
 export function formatTimestamp(value?: string): string {
-  if (!value) return 'Never'
-  const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
+  // The shared formatter labels the zone, so access times read like the rest of the app.
+  return formatDateTime(value, { seconds: true, fallback: 'Never' })
 }
 
 export function formatDurationSeconds(value?: number): string {

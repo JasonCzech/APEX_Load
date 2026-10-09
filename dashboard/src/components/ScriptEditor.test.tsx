@@ -767,7 +767,7 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.querySelector('.editor-header h2')).toBeNull()
-    expect(container.querySelector('.editor-header')?.textContent).not.toContain('Edit Script')
+    expect(container.querySelector('.editor-header')?.textContent).not.toContain('Edit script')
     expect(container.querySelector('.editor-header .editor-actions')).not.toBeNull()
     expect(container.querySelector('.side-panel-script-name')).not.toBeNull()
   })
@@ -1307,8 +1307,8 @@ describe('ScriptEditor', () => {
     })
     expect(debugActionLabels()).toEqual(['Debug one iteration'])
     const metaLabels = Array.from(topbar?.querySelectorAll('.topbar-meta-chip') || []).map(chip => chip.textContent?.trim())
-    expect(metaLabels).not.toContain('Create Script')
-    expect(metaLabels).not.toContain('Edit Script')
+    expect(metaLabels).not.toContain('Create script')
+    expect(metaLabels).not.toContain('Edit script')
     expect(metaLabels).not.toContain((initialScript.protocol || 'http').toUpperCase())
     expect(metaLabels).not.toContain('Draft')
     expect(metaLabels).not.toContain('JSON Draft')
@@ -1858,6 +1858,18 @@ describe('ScriptEditor', () => {
     expect(sourceMapPanelsRule).toContain('height: auto;')
     expect(sourceMapPanelsRule).toContain('min-height: 0;')
     expect(sourceMapPanelsRule).toContain('max-height: none;')
+  })
+
+  it('hints when the script name repeats another script in its folder', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} takenScriptNames={[` ${initialScript.name.toLowerCase()} `, 'Other']} />)
+    })
+    const nameInput = container.querySelector<HTMLInputElement>('input[placeholder="My_Test_Script"]')!
+    const hint = () => container.querySelector('#script-name-duplicate')
+    expect(hint()?.textContent).toContain(`already named “${initialScript.name}”`)
+    expect(nameInput.getAttribute('aria-describedby')).toBe('script-name-duplicate')
+    await act(async () => changeInputValue(nameInput, 'Checkout Flow v2'))
+    expect(hint()).toBeNull()
   })
 
   it('keeps the landing editor focused on script name while support tools live in the outline', async () => {
@@ -5894,7 +5906,21 @@ describe('ScriptEditor', () => {
     expect(findInputByLabelText(container, 'Follow execution')?.checked).toBe(follow)
     expect(findDebuggerRunButton(container)?.disabled).toBe(false)
     await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button[role="tab"]')).find(button => button.textContent === 'Variables')!.click())
-    expect(container.querySelector('[aria-label="Variable watches"]')?.textContent).toContain(privacy ? RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE : 'Current state unavailable: the session has ended.')
+    const watches = () => container.querySelector('[aria-label="Variable watches"]')
+    if (privacy) {
+      expect(watches()?.textContent).toContain(RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE)
+      return
+    }
+    // An ended session opens on the selected execution's values, not an empty "current" state.
+    const valuesAt = () => watches()!.querySelector<HTMLSelectElement>('select')!
+    expect(valuesAt().value).toBe('selected')
+    expect(watches()?.textContent).toContain('This is historical evidence, not current engine state.')
+    await act(async () => {
+      valuesAt().value = 'current'
+      valuesAt().dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(valuesAt().value).toBe('current')
+    expect(watches()?.textContent).toContain('Current state unavailable: the session has ended.')
   })
 
   it('binds a deferred trusted start despite matching early full and leaf WebSocket broadcasts', async () => {

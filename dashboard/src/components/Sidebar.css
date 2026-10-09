@@ -19,6 +19,8 @@
 .sidebar.collapsed {
   width: 64px;
   flex-basis: 64px;
+  /* Empty space on the collapsed rail opens the sidebar (see Sidebar.tsx). */
+  cursor: pointer;
 }
 
 /* The shell reserves the 64px icon rail in the page layout. The sidebar itself

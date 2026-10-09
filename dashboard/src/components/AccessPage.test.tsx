@@ -372,7 +372,7 @@ describe('AccessPage', () => {
     await clickButton(container, 'Export all matching events CSV')
     expect(apiMock.downloadAuthUserActivity).toHaveBeenCalledWith(expect.objectContaining({all:'true',created_before:firstQuery.created_before}))
     expect(apiMock.downloadAuthUserActivity.mock.lastCall?.[0].actor_subject).toBeUndefined()
-    await clickButton(container, 'Apply Filters')
+    await clickButton(container, 'Apply filters')
     expect(apiMock.getAuthUserActivity).toHaveBeenLastCalledWith(expect.objectContaining({offset:0,actor_subject:'unapplied-user'}))
   })
 
@@ -380,8 +380,8 @@ describe('AccessPage', () => {
     await act(async () => root.render(<AccessPage projects={projects} domains={domains} canManageUserLifecycle={false} canManageUserBindings={false} canManageServiceAccounts={false} canViewUserActivity />))
     await flushPromises()
     changeInput(inputByPlaceholder(container,'actor subject')!, 'event-only')
-    await clickButton(container, 'Apply Filters')
-    await clickButton(container, 'Usage By User')
+    await clickButton(container, 'Apply filters')
+    await clickButton(container, 'Usage by user')
     await flushPromises()
     expect(apiMock.getAuthUserActivity).toHaveBeenLastCalledWith(expect.objectContaining({report:'usage',actor_subject:undefined}))
     expect(container.textContent).toContain('run creation time')
@@ -422,7 +422,7 @@ describe('AccessPage', () => {
     await act(async () => root.render(<AccessPage projects={projects} domains={domains} canManageUserLifecycle canManageUserBindings canManageServiceAccounts canViewUserActivity />))
     await flushPromises()
     await clickButton(container,'Activity',true)
-    await clickButton(container,'Access Review')
+    await clickButton(container,'Access review')
     await flushPromises()
     await clickButton(container,'More users')
     expect(apiMock.listAuthUsers).toHaveBeenLastCalledWith(expect.objectContaining({offset:50,limit:50}))
@@ -440,7 +440,7 @@ describe('AccessPage', () => {
     await act(async () => root.render(<AccessPage projects={projects} domains={domains} canManageUserLifecycle canManageUserBindings canManageServiceAccounts canViewUserActivity />))
     await flushPromises()
     await clickButton(container,'Activity',true)
-    await clickButton(container,'Access Review')
+    await clickButton(container,'Access review')
     await flushPromises()
     await clickButton(container,'Inspect account')
     expect(container.textContent).toContain('Account is no longer available')
@@ -473,7 +473,7 @@ describe('AccessPage', () => {
     await act(async () => root.render(<AccessPage projects={projects} domains={domains} canManageUserLifecycle canManageUserBindings canManageServiceAccounts canViewUserActivity />))
     await flushPromises()
     await clickButton(container,'Activity',true)
-    await clickButton(container,'Access Review')
+    await clickButton(container,'Access review')
     await flushPromises()
     await clickButton(container,'Export access review CSV')
     expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob),'apexload-access-review.csv')
@@ -501,13 +501,13 @@ describe('AccessPage', () => {
     })
     await flushPromises()
 
-    expect(container.textContent).toContain('Service Accounts')
+    expect(container.textContent).toContain('Service accounts')
     expect(container.textContent).toContain('Existing Accounts')
     expect(container.textContent).toContain('Nightly CI')
 
     await clickButton(container, 'Create service account')
     expect(container.textContent).toContain('CI runner')
-    expect(container.textContent).toContain('Create Service Account')
+    expect(container.textContent).toContain('Create service account')
 
     const searchCheckbox = Array.from(container.querySelectorAll('input[type="checkbox"]')).find(input => {
       const row = input.closest('.access-project-role-row')
@@ -519,7 +519,7 @@ describe('AccessPage', () => {
     await act(async () => {
       searchCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    await clickButton(container, 'Create Service Account')
+    await clickButton(container, 'Create account')
     await flushPromises()
 
     expect(apiMock.createAuthServiceAccount).toHaveBeenCalledWith(expect.objectContaining({
@@ -562,7 +562,7 @@ describe('AccessPage', () => {
       domainCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    await clickButton(container, 'Create Service Account')
+    await clickButton(container, 'Create account')
     await flushPromises()
 
     expect(apiMock.createAuthServiceAccount).toHaveBeenCalledWith(expect.objectContaining({
@@ -596,7 +596,7 @@ describe('AccessPage', () => {
     if (!domainCheckbox) return
     await act(async () => { domainCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
 
-    await clickButton(container, 'Save Changes')
+    await clickButton(container, 'Save changes')
     await flushPromises()
 
     expect(apiMock.updateAuthServiceAccount).toHaveBeenCalledWith('svc-1', expect.objectContaining({
@@ -626,7 +626,7 @@ describe('AccessPage', () => {
     await clickButton(container, 'Edit')
     // Save without touching the project role; the form shows only the first role but the
     // full stored array must be preserved on the PATCH.
-    await clickButton(container, 'Save Changes')
+    await clickButton(container, 'Save changes')
     await flushPromises()
 
     expect(apiMock.updateAuthServiceAccount).toHaveBeenCalledWith('svc-multi', expect.objectContaining({
@@ -647,7 +647,7 @@ describe('AccessPage', () => {
     if (!viewerChip) return
     await act(async () => { viewerChip.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
 
-    await clickButton(container, 'Save Changes')
+    await clickButton(container, 'Save changes')
     await flushPromises()
 
     expect(apiMock.updateAuthServiceAccount).not.toHaveBeenCalled()
@@ -661,7 +661,7 @@ describe('AccessPage', () => {
     await flushPromises()
 
     await clickButton(container, 'Activity', true)
-    await clickButton(container, 'Access Review')
+    await clickButton(container, 'Access review')
     await flushPromises()
     expect(container.textContent).toContain('Role permissions preview')
 
@@ -692,7 +692,7 @@ describe('AccessPage', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('Activity')
-    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent?.trim() === 'Access Review')).toBe(false)
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent?.trim() === 'Access review')).toBe(false)
     expect(apiMock.getAccessReview).not.toHaveBeenCalled()
   })
 
@@ -785,7 +785,7 @@ describe('AccessPage', () => {
   // (and stacks over the one-time API-key dialog for service accounts).
   it.each([
     { kind: 'user', initial: 'onboard' as AccessView, submit: 'Create User', settled: 'Users access workspace' },
-    { kind: 'service account', initial: 'create-account' as AccessView, submit: 'Create Service Account', settled: 'Service accounts access workspace' },
+    { kind: 'service account', initial: 'create-account' as AccessView, submit: 'Create account', settled: 'Service accounts access workspace' },
   ])('does not raise the unsaved-changes guard after creating a $kind through a guarded route', async ({ kind, initial, submit, settled }) => {
     function GuardedAccess() {
       const { runGuarded } = useNavigationGuardRunner()
@@ -854,7 +854,7 @@ describe('AccessPage', () => {
 
     await clickButton(container, 'Bob Viewer')
     expect(container.querySelector('[role="dialog"]')?.textContent).toContain('User editor has unsaved changes')
-    await clickButton(container, 'Save changes')
+    await clickScopedButton(container.querySelector('[role="dialog"]') as HTMLElement, 'Save changes')
     await flushPromises()
     expect(apiMock.updateAuthUser).toHaveBeenCalledWith('user-1', {
       subject: 'alice',
@@ -981,7 +981,7 @@ describe('AccessPage', () => {
     const inspector = container.querySelector('aside[aria-label="Selected service account details"]') as HTMLElement | null
     expect(inspector).not.toBeNull()
     if (!inspector) return
-    await clickScopedButton(inspector, 'Rotate Key')
+    await clickScopedButton(inspector, 'Rotate key')
     await flushPromises()
     expect(tablePrimaryTexts(container)).toContain('Nightly CI Rotated')
 
@@ -1118,7 +1118,7 @@ describe('AccessPage', () => {
     await act(async () => changeSelect(projectSelect, 'project-1'))
     await flushPromises()
     const removeAccess = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.trim() === 'Remove Access')
+      .find(button => button.textContent?.trim() === 'Disable access')
     expect(removeAccess).toBeDefined()
     if (!removeAccess) return
     await act(async () => removeAccess.click())
@@ -1171,12 +1171,12 @@ describe('AccessPage', () => {
     expect(inspector?.textContent).toContain('Account Details')
     if (!inspector) return
 
-    await clickScopedButton(inspector, 'Rotate Key')
+    await clickScopedButton(inspector, 'Rotate key')
     await flushPromises()
     expect(apiMock.rotateAuthServiceAccount).toHaveBeenCalledWith('svc-1')
     expect(container.textContent).toContain('srk_rotated_key')
 
-    await clickScopedButton(inspector, 'Disable')
+    await clickScopedButton(inspector, 'Disable access')
     await flushPromises()
     expect(apiMock.updateAuthServiceAccount).toHaveBeenCalledWith('svc-1', { active: false })
 
@@ -1207,7 +1207,7 @@ describe('AccessPage', () => {
     await flushPromises()
 
     const inspector = container.querySelector('aside[aria-label="Selected service account details"]') as HTMLElement | null
-    const rotateButton = inspector ? findButton(inspector, 'Rotate Key') : undefined
+    const rotateButton = inspector ? findButton(inspector, 'Rotate key') : undefined
     expect(rotateButton).toBeDefined()
     if (!rotateButton) return
 
@@ -1349,7 +1349,7 @@ describe('AccessPage', () => {
     await act(async () => aliceButton.click())
     if (!inspector) return
     expect(inspector.querySelectorAll('input, select').length).toBe(0)
-    expect(inspector.textContent).not.toContain('Save Changes')
+    expect(inspector.textContent).not.toContain('Save changes')
     expect(inspector.textContent).not.toContain('Add Project')
 
     const userManagement = container.querySelector('.access-user-management') as HTMLElement | null
@@ -1370,7 +1370,7 @@ describe('AccessPage', () => {
       changeInput(managementInputs[1], 'alice.updated@example.com')
       changeInput(managementInputs[2], 'Alice Updated')
     })
-    await clickScopedButton(editManagement, 'Remove Access')
+    await clickScopedButton(editManagement, 'Disable access')
     await flushPromises()
     expect(apiMock.disableAuthUser).toHaveBeenCalledWith('user-1')
 
@@ -1387,7 +1387,7 @@ describe('AccessPage', () => {
     await act(async () => {
       changeSelect(editSecondProjectSelect, 'project-2')
     })
-    await clickScopedButton(editManagement, 'Save Changes')
+    await clickScopedButton(editManagement, 'Save changes')
     await flushPromises()
     expect(apiMock.updateAuthUser).toHaveBeenCalledWith('user-1', {
       subject: 'alice-updated',
@@ -1429,7 +1429,7 @@ describe('AccessPage', () => {
     expect(profileInputs.length).toBe(3)
     expect(profileInputs.every(input => input.disabled)).toBe(true)
 
-    const lifecycleButton = findButton(editManagement, 'Remove Access')
+    const lifecycleButton = findButton(editManagement, 'Disable access')
     expect(lifecycleButton?.disabled).toBe(true)
 
     await clickScopedButton(editManagement, 'Add Project')
@@ -1444,7 +1444,7 @@ describe('AccessPage', () => {
     await act(async () => {
       changeSelect(editSecondProjectSelect, 'project-2')
     })
-    await clickScopedButton(editManagement, 'Save Changes')
+    await clickScopedButton(editManagement, 'Save changes')
     await flushPromises()
 
     expect(apiMock.updateAuthUser).not.toHaveBeenCalled()
@@ -1496,7 +1496,7 @@ describe('AccessPage', () => {
       expect(projectSelect).toBeDefined()
       if (!projectSelect) return
       changeSelect(projectSelect, 'project-2')
-      await clickScopedButton(editor, 'Save Changes')
+      await clickScopedButton(editor, 'Save changes')
       await flushPromises()
     }
 
@@ -1509,7 +1509,7 @@ describe('AccessPage', () => {
     const retryEditor = container.querySelector('.access-user-management') as HTMLElement | null
     expect(retryEditor).not.toBeNull()
     if (!retryEditor) return
-    await clickScopedButton(retryEditor, 'Save Changes')
+    await clickScopedButton(retryEditor, 'Save changes')
     await flushPromises()
 
     expect(apiMock.deleteAuthUserBinding).toHaveBeenCalledTimes(1)
@@ -1536,7 +1536,7 @@ describe('AccessPage', () => {
       changeInput(userInput, 'alice')
       changeInput(actionInput, 'auth.user.create')
     })
-    await clickButton(container, 'Apply Filters')
+    await clickButton(container, 'Apply filters')
     await flushPromises()
     expect(apiMock.getAuthUserActivity).toHaveBeenLastCalledWith(expect.objectContaining({
       actor_subject: 'alice',
@@ -1577,7 +1577,7 @@ describe('AccessPage', () => {
     })
     expect(container.querySelector('aside[aria-label="Selected activity event details"]')?.textContent).toContain('expired key')
 
-    await clickButton(container, 'Usage By User')
+    await clickButton(container, 'Usage by user')
     await flushPromises()
     expect(container.textContent).toContain('alice')
     await clickSortHeader(container, 'User')

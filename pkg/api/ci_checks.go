@@ -789,6 +789,7 @@ func ciGitHubCheckSummary(test *ManagedTest, response ciRunResponse, metadata ci
 			lines = append(lines, fmt.Sprintf("| %s | %s | %s | `%s` |", row.metric, row.threshold, row.actual, row.result))
 		}
 	}
+	lines = append(lines, ciGitHubCheckTelemetryLines(response.TelemetryVerdict)...)
 	if len(response.MonitorRuleResults) > 0 {
 		lines = append(lines, "", "Monitoring criteria:")
 		for _, result := range response.MonitorRuleResults {
@@ -807,6 +808,8 @@ func ciGitHubCheckSummary(test *ManagedTest, response ciRunResponse, metadata ci
 			label = "Evidence explanation: "
 		case "run_invalid":
 			label = "Validity gate: "
+		case ciOutcomeTelemetryFailed, ciOutcomeTelemetryInconclusive:
+			label = "Telemetry acceptance: "
 		}
 		lines = append(lines, "", label+responseError)
 	}
@@ -817,6 +820,72 @@ func ciGitHubCheckSummary(test *ManagedTest, response ciRunResponse, metadata ci
 		}
 	}
 	return truncateCIUTF8WithSuffix(strings.Join(lines, "\n"), ciGitHubCheckSummaryMaxBytes, ciGitHubCheckTruncatedSuffix)
+}
+
+// ciGitHubCheckTelemetryLines lists the telemetry verdict apart from the
+// application outcome: its policy, mode, whether it decided the run, and
+// each criterion with its evidence.
+func ciGitHubCheckTelemetryLines(verdict *ciTelemetryVerdict) []string {
+	if verdict == nil {
+		return nil
+	}
+	policy := "unknown policy"
+	if verdict.Policy != nil {
+		policy = fmt.Sprintf("%s revision %d", sanitizeCIExternalText(verdict.Policy.Name, 128), verdict.Policy.Revision)
+	}
+	effect := "advisory: never changes the outcome"
+	switch {
+	case verdict.Enforced:
+		effect = "enforced: decided the outcome"
+	case verdict.Mode == telemetryAcceptanceModeUnknown:
+		effect = "unknown mode: the policy's definition was not retained, so it never changes the outcome"
+	case verdict.Mode == "fail_ci" && verdict.Outcome == TelemetryAcceptancePass:
+		effect = "fail_ci: passed"
+	case verdict.Mode == "fail_ci" && verdict.Outcome == TelemetryAcceptanceInconclusive && verdict.InconclusivePolicy == ciTelemetryInconclusivePass:
+		effect = "fail_ci: inconclusive, which this run maps to pass"
+	case verdict.Mode == "fail_ci":
+		effect = "fail_ci: not applied, because the run did not otherwise pass"
+	}
+	lines := []string{"", "Telemetry acceptance (separate from the application verdict):", "",
+		"- Verdict: `" + verdict.Outcome + "` under " + policy + " (" + verdict.Mode + "; " + effect + ")"}
+	if verdict.InconclusivePolicy != "" {
+		lines = append(lines, "- Inconclusive maps to: `"+verdict.InconclusivePolicy+"`")
+	}
+	for _, criterion := range verdict.Criteria {
+		observed := "unknown"
+		if criterion.Observed != nil {
+			observed = formatCITelemetryValue(*criterion.Observed, criterion.Unit)
+			switch criterion.Bound {
+			case telemetryAcceptanceLowerBound:
+				observed = "≥ " + observed
+			case telemetryAcceptanceUpperBound:
+				observed = "≤ " + observed
+			case telemetryAcceptancePartial:
+				observed += " (partial evidence)"
+			}
+		}
+		outcome := "`" + criterion.Outcome + "`"
+		if criterion.Advisory {
+			outcome += " (advisory, never decides)"
+		}
+		line := fmt.Sprintf("- %s: %s (observed %s, %s %s)", criterion.Criterion, outcome, observed, criterion.Comparator, formatCITelemetryValue(criterion.Threshold, criterion.Unit))
+		if criterion.Reason != "" {
+			line += "; " + sanitizeCIExternalText(criterion.Reason, 512)
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+func formatCITelemetryValue(value float64, unit string) string {
+	switch unit {
+	case "ratio":
+		return formatAcceptanceRatio(value)
+	case "ms":
+		return fmt.Sprintf("%.0f ms", value)
+	default:
+		return fmt.Sprintf("%.0f %s", value, unit)
+	}
 }
 
 func truncateCIUTF8WithSuffix(value string, maxBytes int, suffix string) string {

@@ -606,6 +606,7 @@ function formatReportSectionLabel(section: string): string {
     artifact_integrity: 'Artifact integrity',
     report_authorship: 'Report authorship',
     official_outcome: 'Official outcome',
+    telemetry_acceptance: 'Telemetry acceptance',
   }
   return labels[section] || section.replace(/_/g, ' ')
 }
@@ -1957,7 +1958,7 @@ export default function TestExecutionArchive({
                         <th>{renderArchiveSortButton('duration', 'Duration')}</th>
                         <th>{renderArchiveSortButton('bytes', 'Bytes')}</th>
                         <th>{renderArchiveSortButton('error', 'Error')}</th>
-                    <th aria-label="Actions"></th>
+                    <th><span className="sr-only">Actions</span></th>
                       </tr>
                       <tr className="archive-column-filter-row">
                         <th>

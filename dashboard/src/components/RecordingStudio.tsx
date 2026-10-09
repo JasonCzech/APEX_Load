@@ -881,7 +881,7 @@ export default function RecordingStudio({
 
     let cancelled = false;
     setRecordingAgentChecksum(null);
-    setRecordingAgentChecksumStatus("Checking SHA-256...");
+    setRecordingAgentChecksumStatus("Checking SHA-256…");
     apiFetch(
       `/downloads/recording-agent/latest/checksum?platform=${encodeURIComponent(recordingAgentPlatform)}`,
     )
@@ -2387,10 +2387,10 @@ export default function RecordingStudio({
         .map((requirement) => requirement.suggested_name),
     ).size;
   const convertedSaveLabel = convertedSaveInProgress
-    ? "Saving..."
+    ? "Saving…"
     : convertedDeferredSecretCount > 0
       ? `Save with ${convertedDeferredSecretCount} ${convertedDeferredSecretCount === 1 ? "secret" : "secrets"} to configure`
-      : "Save To Script Library";
+      : "Save to Script Library";
   const converting = convertTask.pending;
   const salesforceResult = salesforceTask.value;
   const salesforceScript =
@@ -2419,10 +2419,10 @@ export default function RecordingStudio({
         .map((requirement) => requirement.suggested_name),
     ).size;
   const salesforceSaveLabel = salesforceSaveInProgress
-    ? "Saving..."
+    ? "Saving…"
     : salesforceDeferredSecretCount > 0
       ? `Save with ${salesforceDeferredSecretCount} ${salesforceDeferredSecretCount === 1 ? "secret" : "secrets"} to configure`
-      : "Save To Script Library";
+      : "Save to Script Library";
   const reviewingSalesforce = salesforceTask.pending;
   const browserUnavailableReason = browserAvailability?.reason?.trim() || "";
   const browserUnavailableCode = browserAvailability?.code?.trim() || "";
@@ -2527,7 +2527,7 @@ export default function RecordingStudio({
                   disabled={installState.status === "installing"}
                 >
                   {installState.status === "installing"
-                    ? "Installing..."
+                    ? "Installing…"
                     : "Install Recording Browser"}
                 </button>
               )}
@@ -2558,7 +2558,7 @@ export default function RecordingStudio({
                           >
                             <option value="">
                               {recordingAgentPlatformDetecting
-                                ? "Detecting platform..."
+                                ? "Detecting platform…"
                                 : "Choose platform"}
                             </option>
                             {CLIENT_DOWNLOAD_PLATFORMS.map((platform) => (
@@ -2705,7 +2705,7 @@ export default function RecordingStudio({
                         onClick={handleVerifyBridgeAgent}
                         disabled={bridgeVerifying}
                       >
-                        {bridgeVerifying ? "Verifying..." : "Verify Agent"}
+                        {bridgeVerifying ? "Verifying…" : "Verify Agent"}
                       </button>
                     </div>
                   </div>
@@ -2720,7 +2720,7 @@ export default function RecordingStudio({
                         onClick={handlePairBridge}
                         disabled={bridgePairing}
                       >
-                        {bridgePairing ? "Pairing..." : "Pair Local Bridge"}
+                        {bridgePairing ? "Pairing…" : "Pair Local Bridge"}
                       </button>
                     </div>
                   </div>
@@ -3604,7 +3604,7 @@ export default function RecordingStudio({
                     }}
                     disabled={converting}
                   >
-                    {converting ? "Converting..." : "Convert to Script"}
+                    {converting ? "Converting…" : "Convert to Script"}
                   </button>
                   <button
                     type="button"
@@ -3628,7 +3628,7 @@ export default function RecordingStudio({
                       disabled={reviewingSalesforce}
                     >
                       {reviewingSalesforce
-                        ? "Reviewing..."
+                        ? "Reviewing…"
                         : "Review Salesforce HTTP"}
                     </button>
                   )}
@@ -3971,10 +3971,10 @@ export default function RecordingStudio({
                 }
               >
                 {convertedCredentialActionInProgress
-                  ? "Preparing editor..."
+                  ? "Preparing editor…"
                   : convertedRequiresCredentialPreservingSave
-                    ? "Save And Open In Visual Editor"
-                    : "Open In Visual Editor"}
+                    ? "Save and open in Visual Editor"
+                    : "Open in Visual Editor"}
               </button>
             )}
           </div>
@@ -4144,10 +4144,10 @@ export default function RecordingStudio({
                 }
               >
                 {salesforceCredentialActionInProgress
-                  ? "Preparing editor..."
+                  ? "Preparing editor…"
                   : salesforceRequiresCredentialPreservingSave
-                    ? "Save And Open In Visual Editor"
-                    : "Open In Visual Editor"}
+                    ? "Save and open in Visual Editor"
+                    : "Open in Visual Editor"}
               </button>
             )}
           </div>

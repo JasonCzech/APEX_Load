@@ -404,8 +404,15 @@ describe('ApplicationRepositoryPage', () => {
     await act(async () => {
       setSelectValue(filterSelects[4], 'custom')
     })
-    expect(container.textContent).toContain('Activity From')
-    expect(container.textContent).toContain('Activity To')
+    expect(container.textContent).toContain('Activity from')
+    expect(container.textContent).toContain('Activity to')
+    const [rangeFrom, rangeTo] = Array.from(container.querySelectorAll<HTMLInputElement>('.repository-custom-time-row input'))
+    await act(async () => {
+      setInputValue(rangeFrom, '2026-02-10')
+      setInputValue(rangeTo, '2026-02-01')
+    })
+    expect(container.querySelector('.repository-custom-time-row [role="alert"]')?.textContent).toContain('Activity from must be on or before Activity to')
+    expect(rangeFrom.getAttribute('aria-invalid')).toBe('true')
 
     const structureTab = findButton(container, 'Structure', false)
     await act(async () => {

@@ -17,7 +17,7 @@ import TransactionResponseTimeSLASettings from './TransactionResponseTimeSLASett
 import CreateTestRuntimeOverrides from './CreateTestRuntimeOverrides'
 import { getErrorMessage } from '../utils/errorUtils'
 import { buildDefaultScenarioGroup, buildInitialScenarioDraft, scenarioDraftReducer, ScenarioDraftField, ScenarioDraftState } from './scenarioDraftUtils'
-import { buildCreateTestPayload } from './scenarioPayloadUtils'
+import { scenarioCreatePayload, scenarioEstimateRequest } from './scenarioAssembly'
 import DurationField from './DurationField'
 import { NavigationGuardRegisterContext, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { hasGoalModeConfiguration, validateGoalConfig, validateTransactionResponseTimeSLAOverrides } from './goalConfigValidation'
@@ -90,7 +90,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const isReviseMode = mode === 'revise-queued-run'
   const modalTitle = isReviseMode ? 'Create Revised Queued Run' : 'Create Queued Run'
   const submitLabel = isReviseMode ? 'Create Revised Copy' : 'Create Queued Run'
-  const loadingLabel = isReviseMode ? 'Creating revised copy...' : 'Creating queued run...'
+  const loadingLabel = isReviseMode ? 'Creating revised copy…' : 'Creating queued run…'
   const errorMessage = isReviseMode ? 'Failed to create revised queued run' : 'Failed to create queued run'
 
   const updateScenarioField = <K extends ScenarioDraftField>(field: K, value: ScenarioDraftState[K]) => {
@@ -241,59 +241,12 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
 
     return points
   })()
-  const buildPayload = () => buildCreateTestPayload({
-    name,
-    duration,
-    termination_mode: terminationMode,
-    startDelay,
-    scenarioMode,
-    scriptShakeout,
-    resourceBaseline,
-    groups,
-    goalConfig,
-    runtimeSettings,
-    assignment,
-    applicationId: revisionContext?.applicationId,
-    releaseId: revisionContext?.releaseId,
-    scenarioId: revisionContext?.scenarioId,
-    revisionSourceTestId: revisionContext?.sourceTestId,
-    sourceGoalConfigPresent: revisionContext?.sourceGoalConfigPresent,
-    sourceRuntimeSettingsPresent: revisionContext?.sourceRuntimeSettingsPresent,
-    sourceStartDelayPresent: revisionContext?.sourceStartDelayPresent,
-    projectId: revisionContext?.projectId ?? projectId,
-    folderId: revisionContext ? revisionContext.folderId : folderId,
-    dataPools: revisionContext?.dataPools,
-    elkConnectionId,
-    dynatraceConnectionId,
-    monitorBindings,
-  })
+  const buildPayload = () => scenarioCreatePayload(scenarioDraft, { projectId, folderId, monitorBindings, elkConnectionId, dynatraceConnectionId })
 
-  const buildEstimatePayload = useCallback(() => buildCreateTestPayload({
-    name,
-    duration,
-    termination_mode: terminationMode,
-    startDelay,
-    scenarioMode,
-    scriptShakeout,
-    resourceBaseline,
-    groups,
-    goalConfig,
-    runtimeSettings,
-    assignment: assignment.mode === 'specific_hosts' && (assignment.selected_targets || []).length === 0
-      ? { mode: 'auto', selected_targets: [] }
-      : assignment,
-    applicationId: revisionContext?.applicationId,
-    releaseId: revisionContext?.releaseId,
-    scenarioId: revisionContext?.scenarioId,
-    revisionSourceTestId: revisionContext?.sourceTestId,
-    sourceGoalConfigPresent: revisionContext?.sourceGoalConfigPresent,
-    sourceRuntimeSettingsPresent: revisionContext?.sourceRuntimeSettingsPresent,
-    sourceStartDelayPresent: revisionContext?.sourceStartDelayPresent,
-    projectId: revisionContext?.projectId ?? projectId,
-    folderId: revisionContext ? revisionContext.folderId : folderId,
-    dataPools: revisionContext?.dataPools,
-    monitorBindings,
-  }), [assignment, duration, folderId, goalConfig, groups, monitorBindings, name, projectId, resourceBaseline, revisionContext, runtimeSettings, scenarioMode, scriptShakeout, startDelay, terminationMode])
+  const buildEstimatePayload = useCallback(
+    () => scenarioEstimateRequest(scenarioDraft, { projectId, folderId, monitorBindings }),
+    [folderId, monitorBindings, projectId, scenarioDraft],
+  )
 
   useEffect(() => {
     const canEstimate = (terminationMode === 'iterations' || Boolean(duration.trim())) && groups.every((group) => group.scriptId)
@@ -521,7 +474,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
                 </div>
               </label>
               <label className="setting-checkbox-row">
-                <span>Resource Baseline</span>
+                <span>Resource baseline</span>
                 <div className="setting-checkbox-control">
                   <input
                     type="checkbox"

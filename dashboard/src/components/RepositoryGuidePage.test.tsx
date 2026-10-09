@@ -6,7 +6,8 @@ import { describe, expect, it } from 'vitest'
 
 import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
-import RepositoryGuidePage from './RepositoryGuidePage'
+import ApiGuidePage from './ApiGuidePage'
+import { parseAppViewFromHash, viewToLocationHash } from '../appRouting'
 import { parseMarkdown } from './repositoryGuideMarkdown'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -173,14 +174,17 @@ describe('parseMarkdown', () => {
   })
 })
 
-describe('RepositoryGuidePage compatibility route', () => {
+describe('legacy repository-guide address', () => {
   it('opens API workflows under the consolidated Help title', async () => {
     const { helpArticles, loadHelpSource } = await import('../helpContent')
+    // The old bookmark resolves to the docs article; render what that address shows.
+    const hash = viewToLocationHash(parseAppViewFromHash('#/repository-guide'))
+    expect(hash).toBe('#/docs?article=api-workflows')
     const container = document.createElement('div'); document.body.append(container)
     const root = createRoot(container)
-    window.history.replaceState(null, '', '/#/repository-guide')
+    window.history.replaceState(null, '', `/${hash}`)
     await act(async () => {
-      root.render(<TopbarContributionProvider><TopbarContributionHarness /><RepositoryGuidePage /></TopbarContributionProvider>)
+      root.render(<TopbarContributionProvider><TopbarContributionHarness /><ApiGuidePage activePage="general" defaultArticle="api-workflows" /></TopbarContributionProvider>)
       await loadHelpSource(helpArticles.find(article => article.id === 'api-workflows')!)
     })
     expect(container.textContent).toContain('API workflows')

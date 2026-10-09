@@ -28,13 +28,17 @@ export default function ImportReviewTabs({ active, onChange, counts = {}, visibl
   }, [active, onChange, resolvedActive])
   return <div className="import-review-layout">
     <TabList className="import-review-tabs" aria-label="Import review sections">
-      {tabs.map(tab => <button type="button" key={tab.id}
-        id={`${id}-${tab.id}`} role="tab" aria-label={tab.label}
-        aria-describedby={(counts[tab.id] || 0) > 0 ? `${id}-${tab.id}-count` : undefined}
-        aria-selected={resolvedActive === tab.id} aria-controls={`${id}-panel`}
-        tabIndex={resolvedActive === tab.id ? 0 : -1} onClick={() => onChange(tab.id)}>
-        {tab.label}{(counts[tab.id] || 0) > 0 && <><span aria-hidden="true">{counts[tab.id]}</span><small id={`${id}-${tab.id}-count`} className="import-review-count-description">{counts[tab.id]} review item{counts[tab.id] === 1 ? '' : 's'}</small></>}
-      </button>)}
+      {tabs.map(tab => {
+        const count = counts[tab.id] || 0
+        // The count is part of the name, announced once; the visible badge is decorative.
+        const name = count > 0 ? `${tab.label}, ${count} review item${count === 1 ? '' : 's'}` : tab.label
+        return <button type="button" key={tab.id}
+          id={`${id}-${tab.id}`} role="tab" aria-label={name}
+          aria-selected={resolvedActive === tab.id} aria-controls={`${id}-panel`}
+          tabIndex={resolvedActive === tab.id ? 0 : -1} onClick={() => onChange(tab.id)}>
+          {tab.label}{count > 0 && <span aria-hidden="true">{count}</span>}
+        </button>
+      })}
     </TabList>
     <div role="tabpanel" id={`${id}-panel`} aria-labelledby={resolvedActive ? `${id}-${resolvedActive}` : undefined} className="import-review-panel">{children}</div>
   </div>

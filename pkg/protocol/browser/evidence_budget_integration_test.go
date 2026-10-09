@@ -14,11 +14,11 @@ import (
 )
 
 // startRecordingSession opens a HAR-recording browser session on server.
-func startRecordingSession(t *testing.T, server *httptest.Server) *Browser {
+func startRecordingSession(t *testing.T, engine string, server *httptest.Server) *Browser {
 	t.Helper()
 	b := &Browser{}
-	if err := b.Init(context.Background(), map[string]any{"base_url": server.URL, "browser_headless": true, "browser_har_capture": HARCaptureAlways, "browser_har_dir": t.TempDir()}); err != nil {
-		requireBrowserRuntime(t, "", err)
+	if err := b.Init(context.Background(), map[string]any{"base_url": server.URL, "browser_engine": engine, "browser_headless": true, "browser_har_capture": HARCaptureAlways, "browser_har_dir": t.TempDir()}); err != nil {
+		requireBrowserRuntime(t, engine, err)
 	}
 	t.Cleanup(func() { _ = b.Teardown(context.Background()) })
 	return b
@@ -33,6 +33,13 @@ func TestNeverEndingChunkedBodyIsStoppedByTheMemoryWatchdog(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping browser integration test in -short mode")
 	}
+	// BE-4: controlled pages in Chromium and WebKit.
+	for _, engine := range []string{"chromium", "webkit"} {
+		t.Run(engine, func(t *testing.T) { testNeverEndingChunkedBody(t, engine) })
+	}
+}
+
+func testNeverEndingChunkedBody(t *testing.T, engine string) {
 	var streaming atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/stream" {
@@ -59,7 +66,7 @@ func TestNeverEndingChunkedBodyIsStoppedByTheMemoryWatchdog(t *testing.T) {
 		}
 		return 1 << 20, nil
 	}, 4<<30)
-	b := startRecordingSession(t, server)
+	b := startRecordingSession(t, engine, server)
 	result, err := b.Execute(context.Background(), &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/"})
 	if err != nil || result.ErrorMessage != "" {
 		t.Fatalf("navigate: %v %s", err, result.ErrorMessage)
@@ -104,6 +111,13 @@ func TestNeverFinishingRequestFloodStaysBoundedAndCloses(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping browser integration test in -short mode")
 	}
+	// BE-4: controlled pages in Chromium and WebKit.
+	for _, engine := range []string{"chromium", "webkit"} {
+		t.Run(engine, func(t *testing.T) { testNeverFinishingRequestFlood(t, engine) })
+	}
+}
+
+func testNeverFinishingRequestFlood(t *testing.T, engine string) {
 	release := make(chan struct{})
 	var held atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -121,7 +135,7 @@ func TestNeverFinishingRequestFloodStaysBoundedAndCloses(t *testing.T) {
 	defer server.Close()
 	defer close(release)
 	budget := useTestEvidenceBudget(t, 64<<30, noUsage, 0)
-	b := startRecordingSession(t, server)
+	b := startRecordingSession(t, engine, server)
 	result, err := b.Execute(context.Background(), &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/"})
 	if err != nil || result.ErrorMessage != "" {
 		t.Fatalf("navigate: %v %s", err, result.ErrorMessage)

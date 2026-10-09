@@ -124,6 +124,16 @@ func workAssignmentFingerprint(assignment *pb.WorkAssignment) [sha256.Size]byte 
 		}
 		fingerprintWriteString(h, assignment.GetCorrelationTestName())
 	}
+	// Written only when present, so assignments without a projection keep
+	// the fingerprint older controllers and generators compute.
+	if projection := assignment.GetJointEvidenceProjection(); projection != nil {
+		fingerprintWriteString(h, FeatureJointEvidenceV4)
+		fingerprintWriteString(h, projection.GetPopulation())
+		fingerprintWriteUint64(h, uint64(len(projection.GetDimensions())))
+		for _, dimension := range projection.GetDimensions() {
+			fingerprintWriteString(h, dimension)
+		}
+	}
 	fingerprintWriteBool(h, assignment.GetRequireTestExecutionLease())
 	fingerprintWriteBytes(h, assignment.GetRunSupervisionToken())
 	return fingerprintDigest(h)

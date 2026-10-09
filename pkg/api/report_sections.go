@@ -514,7 +514,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 				"Headline metrics: "+headline.Label,
 				fmt.Sprintf("Error rate: %s (%s of %s)", formatReportPercentage(headline.ErrorPct), formatPDFInt(headline.Errors), formatPDFInt(headline.Transactions)),
 				fmt.Sprintf("P95 latency: %s; average %s (min %.1f ms / max %.1f ms)", formatReportMs(headline.P95Ms), formatReportMs(headline.AvgResponseMs), headline.MinResponseMs, headline.MaxResponseMs),
-				fmt.Sprintf("Peak attempts/s: %.1f", headline.PeakTPS),
+				fmt.Sprintf("Peak TPS (attempts/s): %.1f", headline.PeakTPS),
 				fmt.Sprintf("Peak active VUsers: %s", formatPDFInt(report.Overview.PeakActiveVUsers)),
 			)
 			if report.Overview.PeakTargetTPS > 0 {
@@ -725,6 +725,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 		}})
 
 	// --- Completeness ------------------------------------------------------
+	add(reportSectionRenderer{ID: "telemetry_acceptance", Label: "Telemetry Acceptance", PDF: telemetryAcceptanceReportPDF, CSV: telemetryAcceptanceReportCSV})
 	add(reportSectionRenderer{ID: "completeness", Label: "Completeness Score",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
 			pdfHeading(lines, "Completeness")

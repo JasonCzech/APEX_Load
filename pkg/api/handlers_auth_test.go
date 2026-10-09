@@ -64,7 +64,7 @@ func TestHandleGetAuthStatusReturnsDevUserPreview(t *testing.T) {
 	if !payload.Authenticated || payload.User == nil {
 		t.Fatalf("expected synthetic authenticated user, got %#v", payload)
 	}
-	if payload.User.Subject != "dev-user" || payload.User.DisplayName != "Dev User Preview" {
+	if payload.User.Subject != "dev-user" || payload.User.DisplayName != "Dev Editor Preview" {
 		t.Fatalf("user = %#v, want dev-user preview", payload.User)
 	}
 	if got := payload.User.GlobalRoles; len(got) != 1 || got[0] != RoleViewer {

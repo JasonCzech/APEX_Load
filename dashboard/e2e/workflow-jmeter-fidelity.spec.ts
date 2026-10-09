@@ -74,7 +74,7 @@ test('JMeter repaired import saves finite workload and downloads native per-run 
     expect(payload.scenario_draft).toMatchObject({ termination_mode: 'iterations' })
     await controls.getByRole('tab', { name: 'Runtime settings', exact: true }).click()
     await expect(controls.getByRole('tabpanel')).toContainText('2 VUsers × 3 iterations')
-    await controls.getByRole('tab', { name: 'Review', exact: true }).click()
+    await controls.getByRole('tab', { name: /^Review(,|$)/ }).click()
     const saved = mutation(page, 'POST', '/api/v1/scripts/import/jmeter/save')
     await controls.getByRole('button', { name: 'Save 1 draft', exact: true }).click()
     const stored = await json(await saved)

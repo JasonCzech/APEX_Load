@@ -461,7 +461,7 @@ export default function GroupRuntimeSettingsDialog({ testId, groupName, onClose,
               Cancel
             </button>
             {editable && (
-              <button type="button" className="btn btn-accent" onClick={handleSave} disabled={saving || loading || conflict}>
+              <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saving || loading || conflict}>
                 {saving ? 'Saving…' : 'Save to run'}
               </button>
             )}

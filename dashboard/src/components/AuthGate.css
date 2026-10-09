@@ -1,4 +1,7 @@
 .auth-gate-shell {
+  /* The sign-in card is always dark, so its focus ring is the card's gold in
+     every theme; the shared focus rule reads this token. */
+  --focus-ring: #f0bf72;
   min-height: 100vh;
   display: flex;
   align-items: center;
@@ -109,7 +112,7 @@
 }
 
 .auth-gate-form input:focus {
-  outline: 2px solid #f0bf72;
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 

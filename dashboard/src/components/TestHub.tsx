@@ -1,5 +1,5 @@
 import MonitorRuleEditor from './MonitorRuleEditor'
-import ObjectHistory, { ActivityAttribution } from './ObjectHistory'
+import ObjectHistory from './ObjectHistory'
 import ObjectArchiveControls from './ObjectArchiveControls'
 import LibraryAssignmentFilters from './LibraryAssignmentFilters'
 import { matchesAssignmentFilter } from './libraryAssignmentModel'
@@ -32,7 +32,7 @@ import { getErrorMessage } from '../utils/errorUtils'
 import { formatTimeCompact, isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
 import './TestHub.css'
 import './CreateTestModal.css'
-import { buildCreateTestPayload, buildScenarioUpsertPayload } from './scenarioPayloadUtils'
+import { goalConfigFromForm, maxStageVUsers, scenarioDraftFromForm, scenarioDraftGroupFromForm, scenarioEstimateRequest, scenarioTimelineGroups, scenarioUpsertPayload } from './scenarioAssembly'
 import { SortHeader } from './SortHeader'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import RuntimeSettingsGroupEditor from './RuntimeSettingsGroupEditor'
@@ -55,6 +55,9 @@ import LibraryFederationControls from './LibraryFederationControls'
 import { useLibraryFederation } from './useLibraryFederation'
 import { shortLibraryHash } from './libraryFederationUtils'
 import ReferenceKeyBadge from './ReferenceKeyBadge'
+import StatusBadge from './StatusBadge'
+import { ObjectInfoBadge, ScriptReadinessBadge } from './LibraryRowBadges'
+import { ScenarioNameMeta, ScenarioUsageSummary, ScenarioWorkloadSummary } from './ScenarioRowSummary'
 import SelectAllCheckbox from './SelectAllCheckbox'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { clearScenarioBuilderDraft, hasScenarioBuilderProgress } from './scenarioBuilderDraft'
@@ -179,7 +182,9 @@ export interface ScenarioFormGroup {
 	transactionResponseTimeSlaMs?: number
 }
 
-type ScenarioSortField = 'updated_at' | 'name' | 'scripts' | 'data_pools' | 'created_at' | 'associated_releases' | 'last_run_test_id' | 'last_run_at' | 'last_run_ended_at' | 'result_count'
+const SCENARIO_SORT_FIELDS = ['updated_at', 'name', 'scripts', 'data_pools', 'created_at', 'associated_releases', 'last_run_test_id', 'last_run_at', 'last_run_ended_at', 'result_count'] as const
+type ScenarioSortField = (typeof SCENARIO_SORT_FIELDS)[number]
+const SORT_DIRECTIONS = ['asc', 'desc'] as const
 type ScriptLibrarySortField = 'name' | 'created_at' | 'last_run_at' | 'associated_scenarios' | 'associated_releases' | 'protocol'
 export type ScenarioStartChoice = ScenarioSourceMode | 'goal' | ''
 
@@ -374,24 +379,6 @@ function reconstructedGoalTarget(groups: ScenarioFormGroup[], index: number, tot
   return totalTarget * Math.max(0, Number(groups[index]?.vusers) || 0) / totalSeed
 }
 
-function goalConfigFromForm(form: ScenarioFormState): GoalConfig {
-  // Preserve authored absence and explicit nested values during unrelated edits.
-  const goal: GoalConfig = structuredClone(form.goal_config || {})
-  const setNumber = (field: keyof GoalConfig, value: number | undefined) => {
-    if (value === undefined || value === null) {
-      delete goal[field]
-      return
-    }
-    goal[field] = Number(value) as never
-  }
-  setNumber('target_average_tps', form.goal_target_average_tps)
-  setNumber('min_vusers', form.goal_min_vusers)
-  setNumber('max_vusers', form.goal_max_vusers)
-  setNumber('p95_latency_ms', form.goal_p95_latency_ms)
-  setNumber('max_error_pct', form.goal_max_error_pct)
-  return goal
-}
-
 function scenarioFormWithGoalField<K extends keyof GoalConfig>(
   form: ScenarioFormState,
   field: K,
@@ -416,10 +403,6 @@ function scenarioFormWithGoalField<K extends keyof GoalConfig>(
     case 'max_error_pct': next.goal_max_error_pct = numberValue; break
   }
   return next
-}
-
-function maxStageVUsers(stages: LoadStageDraft[]) {
-  return stages.reduce((max, stage) => Math.max(max, Number(stage.target_vusers) || 0), 0)
 }
 
 function scenarioSeedFromPreset(preset: ScenarioShapePreset): ScenarioSeed {
@@ -485,40 +468,6 @@ function scenarioSeedFromForm(form: ScenarioFormState): ScenarioSeed {
     auto_transactions: form.runtime_auto_transactions,
     continue_on_error: form.continue_on_error,
     snapshot_on_error: form.snapshot_on_error,
-  }
-}
-
-function normalizeStageForPayload(stage: LoadStageDraft) {
-  return {
-    ...(stage.name ? { name: stage.name } : {}),
-    type: stage.type,
-    duration: stage.duration,
-    ...(stage.target_vusers !== undefined ? { target_vusers: Number(stage.target_vusers) || 0 } : {}),
-    ...(stage.target_tps !== undefined ? { target_tps: Number(stage.target_tps) || 0 } : {}),
-  }
-}
-
-function normalizeGroupForPayload(group: ScenarioFormGroup) {
-  const runtimeOwnsIterations = group.runtimeSettings?.run_logic !== undefined
-    || group.runtimeSettings?.iterations !== undefined
-  return {
-    name: group.name,
-    scriptId: group.script_id,
-    role: group.role,
-    vusers: maxStageVUsers(group.stages) || Number(group.vusers) || 10,
-    rampUp: group.ramp_up,
-		rampDown: group.ramp_down,
-		startOffset: group.start_offset,
-    stages: group.stages.map(normalizeStageForPayload),
-    // A runtime iteration override and the compact legacy field are alternate
-    // representations of the same setting. Never serialize both: the backend
-    // rejects mismatched values and the runtime editor promotes edits into
-    // run_logic.
-    iterations: runtimeOwnsIterations ? undefined : group.iterations,
-    initialization: group.initialization,
-    runtimeSettings: group.runtimeSettings,
-    assignment: group.assignment,
-		transactionResponseTimeSlaMs: group.transactionResponseTimeSlaMs,
   }
 }
 
@@ -714,25 +663,8 @@ function formatDateTime(value?: string) {
 
 function releaseList(scenario: StoredScenario) {
   const releases = scenario.associated_releases || []
-  if (releases.length === 0) return 'No releases yet'
+  if (releases.length === 0) return 'None'
   return Array.from(new Set(releases.map(release => release.name))).join(', ')
-}
-
-function formatScenarioScripts(scenario: StoredScenario) {
-  const scripts = scenario.scripts || []
-  if (scripts.length === 0) return 'No scripts assigned'
-  return scripts.map(script => script.script_name || script.name || script.script_id).join(', ')
-}
-
-function formatScenarioDataPools(scenario: StoredScenario) {
-  const pools = scenario.data_pools || []
-  if (pools.length === 0) return 'No data pools'
-  return pools.map(pool => `${pool.alias} (${pool.pool_name || pool.pool_id})`).join(', ')
-}
-
-function formatScenarioResultCount(scenario: StoredScenario) {
-  const count = scenario.result_count || 0
-  return `${count} result${count === 1 ? '' : 's'}`
 }
 
 function scenarioSearchText(scenario: StoredScenario) {
@@ -809,18 +741,6 @@ function getScriptLibrarySortValue(script: StoredScript, field: ScriptLibrarySor
     default:
       return `${script.name || ''} ${script.id || ''}`.toLowerCase()
   }
-}
-
-function scenarioAssignmentSummary(scenario: StoredScenario) {
-  if (scenario.assignment?.mode === 'specific_hosts') {
-    const targets = scenario.assignment.selected_targets || []
-    if (targets.length === 0) return { badge: 'Specific Hosts', detail: 'No hosts selected' }
-    return {
-      badge: 'Specific Hosts',
-      detail: targets.join(', '),
-    }
-  }
-  return null
 }
 
 function ScenarioModelTooltip({ active, payload, label }: {
@@ -1084,8 +1004,10 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const [scriptLibrarySortField, setScriptLibrarySortField] = useState<ScriptLibrarySortField>('name')
   const [scriptLibrarySortDirection, setScriptLibrarySortDirection] = useState<'asc' | 'desc'>('asc')
   const [scriptSelectionTargetIndex, setScriptSelectionTargetIndex] = useState<number | null>(null)
-  const [sortField, setSortField] = useState<ScenarioSortField>('updated_at')
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
+  // Sort is kept with the library filters so returning from a scenario or a
+  // reload shows the same ordering.
+  const [sortField, setSortField] = useLibraryFilter<ScenarioSortField>(filterScope, 'sortField', 'updated_at', SCENARIO_SORT_FIELDS)
+  const [sortDirection, setSortDirection] = useLibraryFilter<'asc' | 'desc'>(filterScope, 'sortDirection', 'desc', SORT_DIRECTIONS)
   const [expandedScenarioId, setExpandedScenarioId] = useState<string | null>(null)
   const [scenarioRuns, setScenarioRuns] = useState<Record<string, TestSummary[]>>({})
   const [loadingRunsFor, setLoadingRunsFor] = useState<string | null>(null)
@@ -1095,7 +1017,6 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const [estimateLoading, setEstimateLoading] = useState(false)
   const [estimateError, setEstimateError] = useState('')
   const [generatorInventory, setGeneratorInventory] = useState<SystemInventoryGenerator[]>([])
-  const [confirmDeleteScenarioId, setConfirmDeleteScenarioId] = useState<string | null>(null)
   const [selectedScenarioIds, setSelectedScenarioIds] = useState<Set<string>>(new Set())
   const [assignmentScenarios, setAssignmentScenarios] = useState<StoredScenario[] | null>(null)
   const [assigningScenarioIds, setAssigningScenarioIds] = useState<Set<string>>(new Set())
@@ -1118,8 +1039,6 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const scriptLibraryDialogRef = useRef<HTMLDivElement | null>(null)
   const scriptLibrarySearchRef = useRef<HTMLInputElement | null>(null)
   const scriptGroupRefs = useRef<Array<HTMLDivElement | null>>([])
-  const deleteScenarioDialogRef = useRef<HTMLDivElement | null>(null)
-  const deleteScenarioInitialFocusRef = useRef<HTMLButtonElement | null>(null)
   const editingBaselineFormRef = useRef('')
   // The tag a resumed edit recorded, kept until a baseline is adopted or the
   // edit is replaced, so a re-checkpoint while blocked still carries it.
@@ -1149,15 +1068,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     scenarioDraftGenerationRef.current += 1
     goalBaselineSelectionGenerationRef.current += 1
   }
-  const closeDeleteScenarioDialog = useCallback(() => setConfirmDeleteScenarioId(null), [])
   const closeScriptLibraryDialog = useCallback(() => setScriptSelectionTargetIndex(null), [])
   const scriptLibraryDialogOpen = scriptSelectionTargetIndex !== null && prerequisiteScript === null && reviewScriptId === null
-  useModalDialog({
-    dialogRef: deleteScenarioDialogRef,
-    enabled: Boolean(confirmDeleteScenarioId),
-    initialFocusRef: deleteScenarioInitialFocusRef,
-    onClose: closeDeleteScenarioDialog,
-  })
   useModalDialog({
     dialogRef: scriptLibraryDialogRef,
     enabled: scriptLibraryDialogOpen,
@@ -1180,7 +1092,6 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     setExpandedScenarioId(null)
     setScenarioRuns({})
     setLoadingRunsFor(null)
-    setConfirmDeleteScenarioId(null)
     setSelectedScenarioIds(new Set())
     setDeletingScenarioIds(new Set())
     setGoalBaselineTests([])
@@ -1225,6 +1136,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     () => form.groups.length > 0 ? form.groups : [emptyScenarioGroup()],
     [form.groups],
   )
+  const compositionTimelineGroups = useMemo(() => scenarioTimelineGroups(formGroups.map(scenarioDraftGroupFromForm)), [formGroups])
   const allScenarioGroupsHaveScripts = formGroups.every(group => Boolean(group.script_id.trim()))
   const duplicateGroupNameIndexes = useMemo(
     () => duplicateScenarioGroupNameIndexes(formGroups.map(group => group.name)),
@@ -1487,27 +1399,9 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const scenarioBindings: ScenarioDataPoolBinding[] = (form.data_pools || []).map(binding => ({ ...binding, access_mode: 'read_only' }))
   const bindingErrors = dataBindingErrors(scenarioBindings)
   const updateDataBindings = (bindings: ScenarioDataPoolBinding[]) => setForm(current => ({ ...current, data_pools: bindings.map(binding => ({...binding})) }))
-  const buildScenarioDraftPayload = useCallback((draftForm: ScenarioFormState = form, shapeId: string = selectedShapeId) => {
-    const dataPoolsPayload = (draftForm.data_pools || []).map(binding => ({ ...binding, access_mode: 'read_only' as const }))
-
-    return buildScenarioUpsertPayload({
-      name: draftForm.name || 'Draft scenario',
-      projectId: activeProjectId,
-      workloadShapeId: shapeId,
-      duration: draftForm.termination_mode === 'iterations' ? '' : draftForm.duration || '1m',
-      termination_mode: draftForm.termination_mode,
-      startDelay: draftForm.start_delay,
-      scenarioMode: draftForm.scenario_mode,
-      scriptShakeout: draftForm.script_shakeout,
-      resourceBaseline: draftForm.resource_baseline,
-      assignment: assignmentFromForm(draftForm),
-      groups: draftForm.groups.map(normalizeGroupForPayload),
-      goalConfig: goalConfigFromForm(draftForm),
-      runtimeSettings: runtimeSettingsFromForm(draftForm, showBrowserRuntimeSettings),
-      trafficProfile: draftForm.traffic_profile,
-      dataPools: dataPoolsPayload,
-    })
-  }, [activeProjectId, form, selectedShapeId, showBrowserRuntimeSettings])
+  const buildScenarioDraftPayload = useCallback((draftForm: ScenarioFormState = form, shapeId: string = selectedShapeId) => (
+    scenarioUpsertPayload(scenarioDraftFromForm(draftForm, { includeBrowser: showBrowserRuntimeSettings }), { projectId: activeProjectId, workloadShapeId: shapeId, fallbackName: 'Draft scenario' })
+  ), [activeProjectId, form, selectedShapeId, showBrowserRuntimeSettings])
 
   const refresh = useCallback(async () => {
     const requestedArchiveState = archiveStateRef.current
@@ -1629,7 +1523,6 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     if (effectiveAccessLoaded && !canManageTests) {
       setShowForm(false)
       setEditingId(null)
-      setConfirmDeleteScenarioId(null)
     }
   }, [effectiveAccessLoaded, canManageTests])
 
@@ -1658,19 +1551,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     const timer = window.setTimeout(() => {
       if (cancelled) return
       setEstimateLoading(true)
-      const draftPayload = buildScenarioDraftPayload()
-      api.estimateTest(buildCreateTestPayload({
-        name: form.name,
-        duration: draftPayload.duration,
-        startDelay: '',
-        scenarioMode: draftPayload.scenario_mode,
-        scriptShakeout: false,
-        resourceBaseline: false,
-        assignment: draftPayload.assignment,
-        groups: form.groups.map(normalizeGroupForPayload),
-        goalConfig: goalConfigFromForm(form),
-        runtimeSettings: runtimeSettingsFromForm(form, showBrowserRuntimeSettings),
-      }))
+      api.estimateTest(scenarioEstimateRequest(scenarioDraftFromForm(form, { includeBrowser: showBrowserRuntimeSettings }), { projectId: activeProjectId }))
       .then((estimate) => {
         if (cancelled) return
         setDraftEstimate(estimate)
@@ -1690,7 +1571,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [api, buildScenarioDraftPayload, form, showBrowserRuntimeSettings, showForm])
+  }, [activeProjectId, api, form, showBrowserRuntimeSettings, showForm])
 
   const scenarioReleaseOptions = useMemo(() => {
     const names = new Set<string>()
@@ -1745,8 +1626,11 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     () => showLocalScenarios ? sorted.map(scenario => scenario.id) : [],
     [showLocalScenarios, sorted],
   )
-  const scenarioPagination = useLibraryPagination(visibleScenarioIds.length + federationRemoteScenarioRows.length, JSON.stringify([activeProjectId, visibleScenarioIds, federationRemoteScenarioRows.map(item => item.id)]))
+  const scenarioPagination = useLibraryPagination(visibleScenarioIds.length + federationRemoteScenarioRows.length, JSON.stringify([activeProjectId, visibleScenarioIds, federationRemoteScenarioRows.map(item => item.id)]), filterScope)
   const pageScenarios = showLocalScenarios ? sorted.slice(scenarioPagination.start, scenarioPagination.end) : []
+  // Every library row is local unless a remote workspace contributes rows, so the Source column only appears then.
+  const showScenarioSource = federationRemoteScenarioRows.length > 0
+  const scenarioColumnCount = (canManageTests ? 1 : 0) + (showScenarioSource ? 1 : 0) + 6
   const pageRemoteScenarios = federationRemoteScenarioRows.slice(Math.max(0, scenarioPagination.start - visibleScenarioIds.length), Math.max(0, scenarioPagination.end - visibleScenarioIds.length))
   const selectedVisibleScenarioIds = useMemo(
     () => visibleScenarioIds.filter(id => selectedScenarioIds.has(id)),
@@ -1909,7 +1793,6 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     resetBuilderToBlank()
     setShowForm(false)
     setShowPlans(false)
-    setConfirmDeleteScenarioId(null)
     onScenarioViewChange?.('library')
   }, [onScenarioViewChange, resetBuilderToBlank])
 
@@ -3335,9 +3218,14 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     void refresh()
   }
 
+  // Row and bulk deletes share the one destructive confirmation.
+  const requestDeleteScenario = async (scenario: StoredScenario) => {
+    if (!(await confirmAction(`Permanently delete “${scenario.name || 'this scenario'}”? Scenarios with linked results cannot be deleted. This cannot be undone.`, { title: 'Delete scenario', confirmLabel: 'Delete scenario', destructive: true }))) return
+    await deleteScenario(scenario.id)
+  }
+
   const deleteScenario = async (id: string) => {
     if (assigningScenarioIds.has(id)) return
-    setConfirmDeleteScenarioId(null)
     if (!canManageTests) {
       setError('Current session can view scenarios but cannot delete them.')
       return
@@ -3389,7 +3277,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 
   const deleteSelectedScenarios = async () => {
     const ids = selectedVisibleScenarioIds.filter(id => !deletingScenarioIds.has(id))
-    if (!canManageTests || ids.length === 0 || !(await confirmAction(`Delete ${ids.length} selected scenario${ids.length === 1 ? '' : 's'}? Scenarios with linked results cannot be deleted.`, { title: 'Delete scenarios', confirmLabel: 'Delete', destructive: true }))) return
+    if (!canManageTests || ids.length === 0 || !(await confirmAction(`Delete ${ids.length} selected scenario${ids.length === 1 ? '' : 's'}? Scenarios with linked results cannot be deleted.`, { title: ids.length === 1 ? 'Delete scenario' : 'Delete scenarios', confirmLabel: ids.length === 1 ? 'Delete scenario' : 'Delete scenarios', destructive: true }))) return
     const scopeProjectId = activeProjectId
     setDeletingScenarioIds(current => new Set([...current, ...ids]))
     setError('')
@@ -3553,12 +3441,12 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
         <div className="scenario-linked-runs-header">
           <div>
             <strong>Past Scenario Runs</strong>
-            <span>{loading ? 'Loading runs...' : `${runs.length} linked run${runs.length === 1 ? '' : 's'}`}</span>
+            <span>{loading ? 'Loading runs…' : `${runs.length} linked run${runs.length === 1 ? '' : 's'}`}</span>
           </div>
           <span className="scenario-table-assignment-detail">{scenario.name}</span>
         </div>
         {runs.length === 0 ? (
-          <div className="cell-muted">{loading ? 'Loading runs...' : 'No runs for this scenario yet.'}</div>
+          <div className="cell-muted">{loading ? 'Loading runs…' : 'No runs for this scenario yet.'}</div>
         ) : (
           <div className="data-table">
             <table data-table-pagination="on">
@@ -3581,7 +3469,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                         <ReferenceKeyBadge value={run.ref_key} />
                       </div>
                     </td>
-                    <td>{run.status}</td>
+                    <td><StatusBadge status={run.status} stoppedByOperator={Boolean(run.stopped_by_subject)} /></td>
                     <td className="cell-mono">{run.release_id || '—'}</td>
                     <td className="cell-muted">{formatDateTime(run.start_time || run.created_at)}</td>
                     <td className="cell-muted">{run.duration}</td>
@@ -3783,7 +3671,15 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                         <tr key={script.id} className={selectedForTarget ? 'selected' : ''}>
                           <td className="cell-name">
                             <label className="scenario-picker-selection"><input type="checkbox" aria-label={`Select ${script.name} for bulk addition`} checked={pickedScriptIds.includes(script.id)} onChange={event => setPickedScriptIds(current => event.target.checked ? [...current, script.id] : current.filter(id => id !== script.id))} />{script.name}</label>
-                            <div className="scenario-table-assignment-detail">v{script.version || '—'} · {scriptReadiness.get(script.id)?.label}</div><small>{scriptReadiness.get(script.id)?.summary}</small><details><summary>Usage and history</summary><p>Created {formatDate(script.created_at)} · Last run {formatDate(script.last_run_at)}</p><p aria-label="Script scenario usage">{formatScriptScenarioCount(script)} · {associatedScenarioList(script)}</p><p>Releases: {scriptReleaseList(script)}</p></details>
+                            <div className="script-table-meta">
+                              <span className="script-health-token">v{script.version || '—'}</span>
+                              <ScriptReadinessBadge name={script.name} readiness={scriptReadiness.get(script.id)} needsReview={script.authoring_health?.status === 'needs_review'} />
+                              <ObjectInfoBadge name={script.name} refKey={script.ref_key} createdAt={script.created_at} activity={script.activity}>
+                                <div><dt>Last run</dt><dd>{formatDate(script.last_run_at)}</dd></div>
+                                <div><dt>Scenarios</dt><dd>{formatScriptScenarioCount(script)}{script.associated_scenarios?.length ? ` · ${associatedScenarioList(script)}` : ''}</dd></div>
+                                <div><dt>Releases</dt><dd>{script.associated_releases?.length ? scriptReleaseList(script) : 'None'}</dd></div>
+                              </ObjectInfoBadge>
+                            </div>
                           </td>
                           <td>
                             <div className="scenario-protocol-list">
@@ -3973,9 +3869,6 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                   <tbody>
                     {filteredCloneScenarios.map(scenario => {
                       const selected = selectedCloneScenarioId === scenario.id
-                      const assignment = scenarioAssignmentSummary(scenario)
-                      const showScenarioMeta = Boolean(scenario.ref_key || assignment)
-                      const browserRuntimeSummary = formatBrowserRuntimeSummary(scenario.runtime_settings?.browser)
                       return (
                         <tr
                           key={scenario.id}
@@ -3991,33 +3884,14 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                           }}
                         >
                           <td className="cell-name">
-                            <div>{scenario.name}{scenario.archived_at && <span> · Archived</span>}</div>
-                      <ActivityAttribution activity={scenario.activity} />
-                            <details onClick={event => event.stopPropagation()}><summary>Run releases / Updated</summary><p>Source: Local · {releaseList(scenario)} · Updated {formatDate(scenario.updated_at || scenario.created_at)}</p></details>
-                            {showScenarioMeta && (
-                              <div className="scenario-table-assignment">
-                                <ReferenceKeyBadge value={scenario.ref_key} />
-                                {assignment && (
-                                  <>
-                                    <span className="scenario-table-assignment-badge manual">{assignment.badge}</span>
-                                    <span className="scenario-table-assignment-detail">{assignment.detail}</span>
-                                  </>
-                                )}
-                              </div>
-                            )}
-                            {browserRuntimeSummary && (
-                              <div className="scenario-table-browser">
-                                <span className="scenario-table-browser-badge">Browser</span>
-                                <span className="scenario-table-assignment-detail">{browserRuntimeSummary}</span>
-                              </div>
-                            )}
+                            <div>{scenario.name}</div>
+                            <ScenarioNameMeta scenario={scenario}>
+                              <div><dt>Run releases</dt><dd>{releaseList(scenario)}</dd></div>
+                              <div><dt>Updated</dt><dd>{formatDate(scenario.updated_at || scenario.created_at)}</dd></div>
+                            </ScenarioNameMeta>
                           </td>
                           <td aria-label="Scenario workload">
-                            <div className="scenario-table-workload">
-                              <strong>{formatScenarioScripts(scenario)} · {scenario.duration}</strong><span>{scenario.scripts.reduce((total, group) => total + Math.max(group.vusers || 0, ...((group.stages || []).map(stage => stage.target_vusers || 0))), 0)} VUsers (sum of group peaks) · {scenario.workload_shape_id || "Custom model"}</span>
-                              <span>{formatScenarioDataPools(scenario)}</span>
-                              <span>{formatScenarioResultCount(scenario)}</span><span>{scenario.scripts.some(group => scriptReadiness.get(group.script_id)?.blocked) ? 'Script review required' : 'Validate before creating a run'}</span>
-                            </div>
+                            <ScenarioWorkloadSummary scenario={scenario} scriptsNeedReview={scenario.scripts.some(group => scriptReadiness.get(group.script_id)?.blocked)} />
                           </td>
                           <td style={{ textAlign: 'right' }}>
                             <button
@@ -4036,7 +3910,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                     })}
                     {filteredCloneScenarios.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="cell-muted">No scenarios match this search.</td>
+                        <td colSpan={3} className="cell-muted">No scenarios match this search.</td>
                       </tr>
                     )}
                   </tbody>
@@ -4479,7 +4353,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
           {scenarioSettingsSection === 'composition' && <>
 		  <ScenarioCompositionTimeline
 			duration={form.duration}
-			groups={formGroups}
+			groups={compositionTimelineGroups}
 			onOffsetChange={(index, value) => updateScenarioGroup(index, { start_offset: value })}
             selectedGroupIndex={activeGroupIndex}
             onGroupSelect={setStageGroupIndex}
@@ -4728,7 +4602,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                 <h4>Controller / Generator Assignment</h4>
                 <p>Use automatic placement, host pinning, capability labels, or weighted regions and load zones for the scenario default.</p>
               </div>
-              {estimateLoading && <span className="scenario-assignment-status">Estimating...</span>}
+              {estimateLoading && <span className="scenario-assignment-status">Estimating…</span>}
             </div>
             {draftEstimate?.footprint && (
               <div className="scenario-assignment-footprint">
@@ -4844,7 +4718,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
             <p>Validate modeled demand, capacity, data fit, and generator placement before saving.</p>
           </div>
           <button type="button" className="btn btn-secondary" onClick={validateLoadModel} disabled={sourcePending || savePending || loadModelValidationLoading || Boolean(blockingStageTimelineMessage || goalDrivenBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError)}>
-            {loadModelValidationLoading ? 'Validating...' : 'Validate Load Model'}
+            {loadModelValidationLoading ? 'Validating…' : 'Validate Load Model'}
           </button>
         </div>
         <FormField className="scenario-field scenario-name-prompt" label="Scenario name" htmlFor="scenario-review-name" hint="Save a reusable draft now; validate it before creating a run.">
@@ -5042,7 +4916,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                   shapeLabel={shapeLabel}
                   dataPoolLabel={dataPoolLabel}
                   validationStatus={goalSizingIncomplete && validationLabel === 'Not validated' ? 'Sizing incomplete' : validationLabel}
-                  compositionGroups={showCompositionPreview ? formGroups : undefined}
+                  compositionGroups={showCompositionPreview ? compositionTimelineGroups : undefined}
                 />
 				{isSteppedRamp && !activeSteppedRampPlan.error && (
 					<div className="stepped-ramp-stage-preview">
@@ -5224,10 +5098,10 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                     />
                   </th>
                 )}
-                <th>Source</th>
+                {showScenarioSource && <th>Source</th>}
                 <SortHeader label="Scenario" field="name" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
                 <SortHeader label="Workload" field="scripts" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} numeric />
-                <th>Assigned application/releases</th>
+                <th>Assignment</th>
                 <SortHeader label="Run releases" field="associated_releases" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} numeric />
                 <SortHeader label="Updated" field="updated_at" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
                 <th style={{ textAlign: 'right' }}>Actions</th>
@@ -5238,8 +5112,6 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                 const syncStatus = scenarioFederation.syncStatusForLocal(scenario.id)
                 const hostItem = scenarioFederation.hostItemForLocal(scenario.id)
                 const conflict = syncStatus === 'conflict'
-                const assignment = scenarioAssignmentSummary(scenario)
-                const showScenarioMeta = Boolean(scenario.ref_key || assignment)
                 return (
                 <Fragment key={scenario.id}>
                   <tr className={`clickable-row${selectedScenarioIds.has(scenario.id) ? ' selected' : ''}`} onClick={() => toggleScenarioRuns(scenario)}>
@@ -5255,49 +5127,26 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                         />
                       </td>
                     )}
-                    <td>
+                    {showScenarioSource && <td>
                       <span className="script-health-token">Local</span>
-                    </td>
+                    </td>}
                     <td className="cell-name">
                       <div>{scenario.name}</div>
-                      {showScenarioMeta && (
-                        <div className="scenario-table-assignment">
-                          <ReferenceKeyBadge value={scenario.ref_key} />
-                          {assignment && (
-                            <>
-                              <span className="scenario-table-assignment-badge manual">{assignment.badge}</span>
-                              <span className="scenario-table-assignment-detail">{assignment.detail}</span>
-                            </>
-                          )}
-                        </div>
-                      )}
-                      {formatBrowserRuntimeSummary(scenario.runtime_settings?.browser) && (
-                        <div className="scenario-table-browser">
-                          <span className="scenario-table-browser-badge">Browser</span>
-                          <span className="scenario-table-assignment-detail">{formatBrowserRuntimeSummary(scenario.runtime_settings?.browser)}</span>
-                        </div>
-                      )}
+                      <ScenarioNameMeta scenario={scenario} />
                     </td>
                     <td aria-label="Scenario workload">
-                      <div className="scenario-table-workload">
-                        <strong>{formatScenarioScripts(scenario)} · {scenario.duration}</strong><span>{scenario.scripts.reduce((total, group) => total + Math.max(group.vusers || 0, ...((group.stages || []).map(stage => stage.target_vusers || 0))), 0)} VUsers (sum of group peaks) · {scenario.workload_shape_id || "Custom model"}</span>
-                        <span>{formatScenarioDataPools(scenario)}</span>
-                        <span>{formatScenarioResultCount(scenario)}</span><span>{scenario.scripts.some(group => scriptReadiness.get(group.script_id)?.blocked) ? 'Script review required' : 'Validate before creating a run'}</span>
-                      </div>
+                      <ScenarioWorkloadSummary scenario={scenario} scriptsNeedReview={scenario.scripts.some(group => scriptReadiness.get(group.script_id)?.blocked)} />
                     </td>
-                    <td aria-label="Assigned application/releases">{assignmentSummary(scenario.library_assignment)}</td>
+                    <td aria-label="Assignment">{assignmentSummary(scenario.library_assignment)}</td>
                     <td aria-label="Scenario releases">
-                      <div className="scenario-table-workload">
-                        <strong>{releaseList(scenario)}</strong>
-                      </div>
+                      <ScenarioUsageSummary scenario={scenario} />
                     </td>
                     <td className="cell-muted">{formatDate(scenario.updated_at || scenario.created_at)}</td>
-                    <td style={{ textAlign: 'right' }}>
+                    <td className="library-row-actions-cell" style={{ textAlign: 'right' }}>
                       <button className="btn btn-sm btn-secondary" onClick={(event) => {
                         event.stopPropagation()
                         void toggleScenarioRuns(scenario)
                       }}>{expandedScenarioId === scenario.id ? 'Hide Runs' : 'View Runs'}</button>
-                      <ObjectArchiveControls resourceType="scenario" resourceId={scenario.id} resourceName={scenario.name} archivedAt={scenario.archived_at} updatedAt={scenario.updated_at} canManage={canManageTests} onChanged={refresh} />
                       {canManageTests ? (
                         <>
                           {onCreateTestFromScenario && (
@@ -5306,13 +5155,15 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                           <button className="btn btn-sm btn-ghost" disabled={!!scenario.archived_at || openingScenarioId === scenario.id} aria-label={`Edit ${scenario.name}`} onClick={(event) => { event.stopPropagation(); if (!assigningScenarioIds.has(scenario.id)) void openEdit(scenario) }}>{openingScenarioId === scenario.id ? 'Opening…' : 'Edit'}</button>
                           <RowActions className="scenario-more-actions" label={scenario.name}><button className="btn btn-sm btn-ghost" disabled={!!scenario.archived_at || deletingScenarioIds.has(scenario.id) || assigningScenarioIds.has(scenario.id)} onClick={() => setAssignmentScenarios([scenario])}>Change application/releases…</button><button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); duplicateScenario(scenario) }}>Duplicate</button>
                           <button className="btn btn-sm btn-ghost" disabled={!!scenario.archived_at} onClick={(event) => { event.stopPropagation(); addScenarioToPlan(scenario.id) }} title="Seed a new execution plan with this scenario">Add to plan</button>
-                          <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger-text)' }} disabled={deletingScenarioIds.has(scenario.id) || assigningScenarioIds.has(scenario.id)} onClick={(event) => { event.stopPropagation(); setConfirmDeleteScenarioId(scenario.id) }}>{deletingScenarioIds.has(scenario.id) ? 'Deleting…' : 'Delete'}</button>
+                          <ObjectArchiveControls inMenu resourceType="scenario" resourceId={scenario.id} resourceName={scenario.name} archivedAt={scenario.archived_at} updatedAt={scenario.updated_at} canManage={canManageTests} onChanged={refresh} />
+                          <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger-text)' }} disabled={deletingScenarioIds.has(scenario.id) || assigningScenarioIds.has(scenario.id)} onClick={(event) => { event.stopPropagation(); void requestDeleteScenario(scenario) }}>{deletingScenarioIds.has(scenario.id) ? 'Deleting…' : 'Delete'}</button>
                           <button
                             className="btn btn-sm btn-secondary"
                             onClick={(event) => { event.stopPropagation(); void scenarioFederation.pushLocalItem({ kind: 'scenario', id: scenario.id, name: scenario.name }) }}
                             disabled={scenarioFederation.actionBlocked || conflict}
-                            title={conflict ? 'Compare this conflict before transferring.' : scenarioFederation.actionBlockedReason}
+                            aria-describedby={conflict || (scenarioFederation.actionBlocked && scenarioFederation.actionBlockedReason) ? `push-blocked-${scenario.id}` : undefined}
                           >Push</button>
+                          {(conflict || (scenarioFederation.actionBlocked && scenarioFederation.actionBlockedReason)) && <p id={`push-blocked-${scenario.id}`} className="ux-row-actions-note">{conflict ? 'Compare this conflict before transferring.' : scenarioFederation.actionBlockedReason}</p>}
                           {hostItem?.local_item_id && (
                             <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); void scenarioFederation.compareItems(scenario.id, hostItem) }}>Compare</button>
                           )}</RowActions>
@@ -5324,7 +5175,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                   </tr>
                   {expandedScenarioId === scenario.id && (
                     <tr className="no-hover">
-                      <td colSpan={canManageTests ? 8 : 7} style={{ background: 'var(--bg-primary)' }}>
+                      <td colSpan={scenarioColumnCount} style={{ background: 'var(--bg-primary)' }}>
                         <ObjectHistory key={scenario.id} projectId={scenario.project_id} resourceType="scenario" resourceId={scenario.id} activity={scenario.activity} />
                         {renderScenarioRunsContent(scenario)}
                       </td>
@@ -5378,7 +5229,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
               })}
               {(!showLocalScenarios || sorted.length === 0) && federationRemoteScenarioRows.length === 0 && (
                 <tr>
-                  <td colSpan={canManageTests ? 8 : 7} className="cell-muted">
+                  <td colSpan={scenarioColumnCount} className="cell-muted">
                     {assignedApplicationFilter !== 'all' || assignedReleaseFilter !== 'all' || scenarioQuery.trim() || scenarioReleaseFilter !== 'all' ? 'No scenarios match these filters.' : 'No scenarios yet. Create a scenario from an existing script.'}
                   </td>
                 </tr>
@@ -5389,31 +5240,6 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       </div>
       )}
 
-      {confirmDeleteScenarioId && (
-        <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(closeDeleteScenarioDialog)}>
-          <div
-            ref={deleteScenarioDialogRef}
-            className="modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="delete-scenario-dialog-title"
-            aria-describedby="delete-scenario-dialog-description"
-          >
-            <div className="modal-header">
-              <h3 id="delete-scenario-dialog-title">Delete Scenario</h3>
-              <button ref={deleteScenarioInitialFocusRef} type="button" className="btn btn-secondary btn-sm" onClick={closeDeleteScenarioDialog}>Cancel</button>
-            </div>
-            <div className="monitor-body">
-              <p id="delete-scenario-dialog-description">Permanently delete <strong>{scenarios.find(s => s.id === confirmDeleteScenarioId)?.name || 'this scenario'}</strong>? Scenarios with linked results cannot be deleted.</p>
-              <p style={{ color: 'var(--danger-text)', fontWeight: 600 }}>This action cannot be undone.</p>
-              <div className="settings-inline-actions">
-                <button className="btn btn-secondary" type="button" onClick={closeDeleteScenarioDialog}>Cancel</button>
-                <button className="btn btn-danger" type="button" disabled={deletingScenarioIds.has(confirmDeleteScenarioId)} onClick={() => deleteScenario(confirmDeleteScenarioId)}>Delete Scenario</button>
-              </div>
-            </div>
-          </div>
-        </div></DialogLayer>
-      )}
     </div>
   )
 }

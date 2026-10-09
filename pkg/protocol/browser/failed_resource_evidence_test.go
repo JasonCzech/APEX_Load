@@ -34,6 +34,13 @@ func TestBrowserNetworkFailureClassificationRequiresFailedEvent(t *testing.T) {
 }
 
 func TestBrowserFailedSubresourceRetainsBoundedFailureEvidence(t *testing.T) {
+	// BE-4: controlled pages in Chromium and WebKit.
+	for _, engine := range []string{"chromium", "webkit"} {
+		t.Run(engine, func(t *testing.T) { testFailedSubresourceRetainsBoundedFailureEvidence(t, engine) })
+	}
+}
+
+func testFailedSubresourceRetainsBoundedFailureEvidence(t *testing.T, engine string) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/broken.js":
@@ -55,8 +62,8 @@ func TestBrowserFailedSubresourceRetainsBoundedFailureEvidence(t *testing.T) {
 	defer server.Close()
 
 	b := &Browser{}
-	if err := b.Init(context.Background(), map[string]any{"base_url": server.URL, "browser_headless": true}); err != nil {
-		requireBrowserRuntime(t, "", err)
+	if err := b.Init(context.Background(), map[string]any{"base_url": server.URL, "browser_engine": engine, "browser_headless": true}); err != nil {
+		requireBrowserRuntime(t, engine, err)
 	}
 	defer b.Teardown(context.Background())
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

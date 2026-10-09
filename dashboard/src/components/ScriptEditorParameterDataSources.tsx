@@ -793,7 +793,7 @@ export function ParameterDataEditor({
             <table className="parameter-grid" data-table-pagination="off" aria-label={`${sourceLabel} dataset`} aria-rowcount={filteredRows.length + 1}>
               <thead>
                 <tr>
-                  <th className="parameter-grid-row-action" aria-label="Row actions" />
+                  <th className="parameter-grid-row-action"><span className="sr-only">Row actions</span></th>
                   <th>#</th>
                   {visibleColumnIndexes.map((colIdx) => {
                     const column = parsed.columns[colIdx]

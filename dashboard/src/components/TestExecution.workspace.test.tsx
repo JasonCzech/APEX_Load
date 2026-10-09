@@ -86,7 +86,7 @@ describe('TestExecution advanced details', () => {
     await render()
     const text = container.querySelector('[data-testid="topbar"]')?.textContent || ''
     expect(text).toContain('Back to Command Center')
-    expect(text).toContain('Test Notes')
+    expect(text).toContain('Test notes')
     expect(text).not.toMatch(/Pause|Resume|Stop|Abort|Start Test|Pause VUsers|Revise/)
   })
 
@@ -106,6 +106,10 @@ describe('TestExecution advanced details', () => {
     await render({ initialWorkspaceTabId: 'infrastructure', onWorkspaceTabChange })
     expect(selectedTab()).toBe('Infrastructure')
     expect(onWorkspaceTabChange).toHaveBeenLastCalledWith('infrastructure', { replace: true })
+    // The tab's own evidence leads; run-wide extras such as annotations follow it.
+    const text = container.textContent || ''
+    expect(text.indexOf('Infrastructure Content')).toBeGreaterThanOrEqual(0)
+    expect(text.indexOf('Infrastructure Content')).toBeLessThan(text.indexOf('Run timeline annotations'))
   })
 
   it('retains monitoring warnings as readable text during a running test', async () => {

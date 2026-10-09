@@ -384,7 +384,7 @@
 }
 .lr-validation-review-tabs button:focus-visible {
   border-radius: 5px 5px 0 0;
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
 .lr-validation-review-panel {
@@ -868,7 +868,7 @@
 .lr-issue-workspace label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-primary); min-width: 0; }
 .lr-issue-workspace input, .lr-issue-workspace select, .lr-issue-workspace textarea { width: 100%; min-height: 40px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-input, var(--bg-primary)); color: var(--text-primary); font: inherit; box-sizing: border-box; }
 .lr-issue-workspace textarea { resize: vertical; font-weight: 400; }
-.lr-issue-workspace :is(button, input, select, textarea, summary):focus-visible, .lr-completed-setup summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.lr-issue-workspace :is(button, input, select, textarea, summary):focus-visible, .lr-completed-setup summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
 .lr-issue-layout { display: grid; grid-template-columns: minmax(260px, 0.85fr) minmax(0, 1.4fr); gap: 20px; align-items: start; }
 .lr-issue-queue { min-width: 0; }
 .lr-issue-queue > details { margin-bottom: 12px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }

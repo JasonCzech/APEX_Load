@@ -58,6 +58,13 @@
   gap: 8px;
 }
 
+.sample-import-format-notice {
+  flex-basis: 100%;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  text-align: right;
+}
+
 .sample-import-section-header h3,
 .sample-import-result-header h3,
 .sample-import-warnings h4,

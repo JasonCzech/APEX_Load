@@ -528,9 +528,14 @@ required for, an unclassified or `unscored` interval, and time before an HA
 adoption are unknown, never healthy. A run is distributed when it has a
 source ledger, clients or a durable generator placement (a local run's
 runtime-resource placement, which names the controller's own process, is
-not one), so one finalized
-after a restart or adoption without this controller's ledger is unknown
-throughout, never observed throughout. Spans are timed by the controller's
+not one), so one finalized without its source ledger (after a restart, or by
+a controller that never executed it) is unknown throughout, never observed
+throughout, and one adopted mid-run is unknown before the adoption. Either
+way `observer_lost` (`ledger_lost` or `adopted`) says observed time is a lower
+bound, live and at finalize. Each source records `required_ms`, the time it
+had to be observed, and `unknown_ms`, the part of that it was not;
+`source_requirements` marks coverage that records them (coverage written
+before them lists only each source's observed time). Spans are timed by the controller's
 wall clock at receipt, so a backward step of that clock during a run can
 overlap later spans with earlier ones and hide a gap (coverage overstated by
 at most the step). Past 1,024 disjoint spans per

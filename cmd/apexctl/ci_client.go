@@ -94,6 +94,9 @@ type CIRunRequest struct {
 	Goals           CIGoals                   `json:"goals"`
 	Source          CISource                  `json:"source"`
 	PublishCheck    bool                      `json:"publish_check"`
+	// TelemetryInconclusive maps an inconclusive telemetry verdict under a
+	// fail_ci acceptance policy (pass or fail); omitted when unset.
+	TelemetryInconclusive string `json:"telemetry_inconclusive,omitempty"`
 }
 
 type CIMetrics struct {
@@ -129,6 +132,51 @@ type CIRunResponse struct {
 	// Validity is the run's validity verdict and the project's CI validity
 	// gate; controllers before the gate omit it.
 	Validity *CIRunValidity `json:"validity,omitempty"`
+
+	// TelemetryVerdict is the run's telemetry acceptance verdict, beside the
+	// application outcome; absent when no acceptance policy applied.
+	TelemetryVerdict *CITelemetryVerdict `json:"telemetry_verdict,omitempty"`
+}
+
+// CITelemetryVerdict is a run's telemetry acceptance verdict (pass, fail or
+// inconclusive), the policy's mode, the caller's inconclusive mapping and
+// whether the verdict decided the outcome. Criteria are kept as the
+// controller sent them.
+type CITelemetryVerdict struct {
+	Outcome            string            `json:"outcome"`
+	Mode               string            `json:"mode"`
+	Policy             *CITelemetryPin   `json:"policy,omitempty"`
+	Criteria           []json.RawMessage `json:"criteria,omitempty"`
+	Reasons            []string          `json:"reasons,omitempty"`
+	Exclusions         []string          `json:"exclusions,omitempty"`
+	InconclusivePolicy string            `json:"inconclusive_policy,omitempty"`
+	Enforced           bool              `json:"enforced"`
+}
+
+// CITelemetryPin names the acceptance policy revision a verdict judged by.
+type CITelemetryPin struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Revision int64  `json:"revision"`
+	SHA256   string `json:"sha256,omitempty"`
+}
+
+func (v *CITelemetryVerdict) clone() *CITelemetryVerdict {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	if v.Policy != nil {
+		policy := *v.Policy
+		out.Policy = &policy
+	}
+	out.Criteria = make([]json.RawMessage, 0, len(v.Criteria))
+	for _, criterion := range v.Criteria {
+		out.Criteria = append(out.Criteria, append(json.RawMessage(nil), criterion...))
+	}
+	out.Reasons = append([]string(nil), v.Reasons...)
+	out.Exclusions = append([]string(nil), v.Exclusions...)
+	return &out
 }
 
 // CIRunValidity is a run's validity verdict ("valid", "suspect", "invalid"
@@ -261,7 +309,8 @@ func validateCIRunAPIResponse(response *CIRunResponse, expectedTestID string) er
 	}
 	outcome := strings.ToLower(strings.TrimSpace(response.Outcome))
 	switch outcome {
-	case "", "queued", "running", "monitoring_pending", ciOutcomeMonitoringIncomplete, ciOutcomeInconclusive, ciOutcomePassed, ciOutcomeSLABreached, ciOutcomeExecutionError, ciOutcomeConfigurationError, ciOutcomeTimedOut, ciOutcomeCancelled, ciOutcomeRunInvalid:
+	case "", "queued", "running", "monitoring_pending", ciOutcomeMonitoringIncomplete, ciOutcomeInconclusive, ciOutcomePassed, ciOutcomeSLABreached, ciOutcomeExecutionError, ciOutcomeConfigurationError, ciOutcomeTimedOut, ciOutcomeCancelled, ciOutcomeRunInvalid,
+		ciOutcomeTelemetryFailed, ciOutcomeTelemetryInconclusive:
 	default:
 		return fmt.Errorf("outcome is unsupported")
 	}
@@ -269,6 +318,9 @@ func validateCIRunAPIResponse(response *CIRunResponse, expectedTestID string) er
 	if terminal {
 		valid := outcome == "monitoring_pending" ||
 			(status == "COMPLETE" && (outcome == ciOutcomeMonitoringIncomplete || outcome == ciOutcomeInconclusive || outcome == ciOutcomePassed || outcome == ciOutcomeSLABreached || outcome == ciOutcomeExecutionError || outcome == ciOutcomeRunInvalid)) ||
+			// A telemetry outcome is an otherwise passed run whose enforced
+			// fail_ci telemetry verdict decided it.
+			(status == "COMPLETE" && (outcome == ciOutcomeTelemetryFailed || outcome == ciOutcomeTelemetryInconclusive) && response.TelemetryVerdict != nil && response.TelemetryVerdict.Enforced) ||
 			(status == "FAILED" && outcome == ciOutcomeExecutionError) ||
 			(status == "ABORTED" && (outcome == ciOutcomeCancelled || outcome == ciOutcomeTimedOut))
 		if !valid {

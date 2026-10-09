@@ -62,7 +62,7 @@ export default function RepairSuggestionList({
                     disabled={!!applying[suggestion.id]}
                     onClick={() => onApplySuggestion(suggestion)}
                   >
-                    {applying[suggestion.id] ? 'Applying...' : 'Accept'}
+                    {applying[suggestion.id] ? 'Applying…' : 'Accept'}
                   </button>
                 )}
                 {extraAction}

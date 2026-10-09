@@ -112,8 +112,23 @@ func (s *Server) handleDownloadRunArchive(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
+	// ?include=har keeps the run's native HARs (scrubbed, with response
+	// content) in the export; only a requester who may download HARs gets it.
+	includeHAR := false
+	switch r.URL.Query().Get("include") {
+	case "":
+	case "har":
+		if !s.canDownloadBrowserHAR(r, test.ProjectID) {
+			writeError(w, http.StatusForbidden, "browser HAR downloads require editor access to the project")
+			return
+		}
+		includeHAR = true
+	default:
+		writeError(w, http.StatusBadRequest, "include must be har")
+		return
+	}
 	staged, err := stageArchiveDownload(prepCtx, func(destination io.Writer) error {
-		return zipSanitizedRunArchiveContext(prepCtx, record, manifest, destination)
+		return zipSanitizedRunArchiveWith(prepCtx, record, manifest, includeHAR, destination)
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build archive bundle: "+err.Error())
@@ -123,6 +138,12 @@ func (s *Server) handleDownloadRunArchive(w http.ResponseWriter, r *http.Request
 	filename := fmt.Sprintf("%s-%s.zip", sanitizeFilename(test.Name), id)
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	if includeHAR {
+		// The same path serves the viewer-safe export; never let a cache
+		// replay the editor-only one, which embeds scrubbed response content.
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Add("Vary", "Cookie, Authorization")
+	}
 	clearArchiveWriteDeadline(w)
 	http.ServeContent(w, r, filename, record.CompletedAt.UTC(), staged.File)
 }

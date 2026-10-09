@@ -478,8 +478,9 @@ func TestParse_HTTPRequiresBaseURL(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected base_url validation error")
 	}
-	if err.Error() != "config.base_url is empty" {
-		t.Fatalf("error = %q, want config.base_url is empty", err.Error())
+	// The parser reports every static finding, as the validation API does.
+	if want := "config.base_url is empty; actions[0] \"request\": unsupported HTTP method \"REQUEST\""; err.Error() != want {
+		t.Fatalf("error = %q, want %q", err.Error(), want)
 	}
 }
 

@@ -15,6 +15,14 @@ function deploymentLabel(deployment?: DeploymentIdentity, environment?: string):
   return environment || 'Server'
 }
 
+// Where tests run, in words for the chip's tooltip.
+function engineDescription(deployment: DeploymentIdentity, environment?: string): string {
+  const kind = deployment.kind || ''
+  if (kind === 'kubernetes') return 'the hosted Kubernetes controller'
+  if (kind === 'desktop') return 'the local engine on this computer'
+  return `the ${deployment.label || environment || 'server'} controller`
+}
+
 function wideBypassDetail(deployment: DeploymentIdentity, environment?: string): string {
   const kind = deployment.kind.toLowerCase()
   const env = (environment || '').toLowerCase()
@@ -73,17 +81,18 @@ export default function DeploymentBanner() {
   const deployment = version?.deployment
   if (!version || !deployment) return null
 
-  const label = desktopSurface
-    ? `Desktop · ${deployment.kind === 'desktop' ? 'Local engine' : deploymentLabel(deployment, version.environment)}`
-    : `Browser · ${deploymentLabel(deployment, version.environment)}`
+  // One pattern on every surface: "<where you work> · <where tests run>".
+  const label = `${desktopSurface ? 'Desktop app' : 'Web app'} · ${deploymentLabel(deployment, version.environment)}`
+  const explanation = `You are using APEX Load in ${desktopSurface ? 'the desktop app' : 'a web browser'}; tests run on ${engineDescription(deployment, version.environment)}.`
   const warnWideBypass = deployment.bind_scope === 'wide' && !deployment.auth_enforced
   const showDesktopPromotion = !desktopSurface && deployment.desktop_available
 
   return (
     <div className="deployment-banner" aria-label="Deployment identity">
-      <span className={`deployment-banner-chip ${deployment.kind}`}>
+      <span className={`deployment-banner-chip ${deployment.kind}`} title={explanation}>
         <span className="deployment-banner-dot" aria-hidden="true" />
         {label}
+        <span className="sr-only">. {explanation}</span>
       </span>
       {showDesktopPromotion && (
         <span className="deployment-banner-promotion" title="Optional desktop local workspace is available for this environment">

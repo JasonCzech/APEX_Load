@@ -31,4 +31,23 @@ describe('ObjectArchiveControls', () => {
     expect(onChanged).toHaveBeenCalledTimes(2)
     expect(document.body.querySelector('.ux-undo-notice')).toBeNull()
   })
+
+  it('in a row menu, renders only the button and reports a failure in a notice', async () => {
+    request.mockRejectedValueOnce(new Error('version conflict'))
+    const onChanged = vi.fn()
+    await act(async () => root.render(<ObjectArchiveControls inMenu resourceType="scenario" resourceId="sc1" resourceName="Peak" archivedAt="2026-10-08T10:00:00Z" updatedAt="2026-10-08T10:00:00Z" canManage onChanged={onChanged} />))
+    expect(container.querySelector('.object-archive-controls')).toBeNull()
+    expect(container.textContent).toBe('Restore')
+    await act(async () => container.querySelector('button')!.click())
+    const notice = document.body.querySelector('.ux-undo-notice.error')
+    expect(notice?.getAttribute('role')).toBe('alert')
+    expect(notice?.textContent).toContain('Could not restore scenario “Peak”: version conflict')
+    expect(notice?.textContent).not.toContain('Undo')
+    expect(onChanged).not.toHaveBeenCalled()
+  })
+
+  it('in a row menu, renders nothing for readers', async () => {
+    await act(async () => root.render(<ObjectArchiveControls inMenu resourceType="script" resourceId="s1" updatedAt="v" canManage={false} onChanged={vi.fn()} />))
+    expect(container.innerHTML).toBe('')
+  })
 })

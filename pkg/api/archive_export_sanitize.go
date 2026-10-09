@@ -27,21 +27,31 @@ type sanitizedRunArchivePlan struct {
 // intentionally used at read time so archives produced by older controllers
 // receive the same protection as new writes.
 func buildSanitizedRunArchivePlan(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest) (*sanitizedRunArchivePlan, error) {
+	return buildSanitizedRunArchivePlanWith(ctx, record, manifest, false)
+}
+
+// buildSanitizedRunArchivePlanWith is buildSanitizedRunArchivePlan that, with
+// includeHAR, keeps the run's native HARs (for a requester who may download
+// them); without it the export omits them as safe_export.
+func buildSanitizedRunArchivePlanWith(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, includeHAR bool) (*sanitizedRunArchivePlan, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	key := sanitizedArchivePlanCacheKey(record)
 	if key == "" {
-		prepared, err := prepareSanitizedRunArchivePlan(ctx, record, manifest)
+		prepared, err := prepareSanitizedRunArchivePlanWith(ctx, record, manifest, includeHAR)
 		if err != nil {
 			return nil, err
 		}
 		return sanitizedArchivePlanForRequest(ctx, record, manifest, prepared), nil
 	}
+	if includeHAR {
+		key += "|har"
+	}
 	prepared, err := runArchiveSanitizedPlanCache.getOrLoadContext(ctx, key, func() (*sanitizedRunArchivePlan, error) {
 		loadCtx, cancelLoad := context.WithTimeout(context.Background(), configuredArchiveMaterializationTimeout())
 		defer cancelLoad()
-		return prepareSanitizedRunArchivePlan(loadCtx, record, manifest)
+		return prepareSanitizedRunArchivePlanWith(loadCtx, record, manifest, includeHAR)
 	})
 	if err != nil {
 		return nil, err
@@ -50,6 +60,10 @@ func buildSanitizedRunArchivePlan(ctx context.Context, record *storage.RunArchiv
 }
 
 func prepareSanitizedRunArchivePlan(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest) (*sanitizedRunArchivePlan, error) {
+	return prepareSanitizedRunArchivePlanWith(ctx, record, manifest, false)
+}
+
+func prepareSanitizedRunArchivePlanWith(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, includeHAR bool) (*sanitizedRunArchivePlan, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -68,12 +82,13 @@ func prepareSanitizedRunArchivePlan(ctx context.Context, record *storage.RunArch
 	maskedManifest.TransactionCount = stats.Count
 	maskedManifest.Artifacts = make([]RunArchiveArtifact, 0, len(manifest.Artifacts))
 	foundTransactions := false
-	// Native HARs are not part of safe exports until their own download and
-	// export contract exists; the masked manifest does not list them and
-	// says they were omitted, so an imported export never claims complete
-	// HAR evidence it does not hold.
+	// Native HARs hold scrubbed response content, so a safe export carries
+	// them only for a requester who may download HARs (includeHAR, the
+	// editor-only ?include=har export). Otherwise the masked manifest does not
+	// list them and says they were omitted, so an imported export never claims
+	// complete HAR evidence it does not hold.
 	var harNames []string
-	if omitted := int64(len(manifest.BrowserHARArtifacts)); omitted > 0 {
+	if omitted := int64(len(manifest.BrowserHARArtifacts)); omitted > 0 && !includeHAR {
 		reasons := maps.Clone(manifest.BrowserHAROmitted)
 		if reasons == nil {
 			reasons = map[string]int64{}
@@ -81,12 +96,14 @@ func prepareSanitizedRunArchivePlan(ctx context.Context, record *storage.RunArch
 		reasons[protocol.BrowserHAROmittedSafeExport] += omitted
 		maskedManifest.BrowserHAROmitted, maskedManifest.BrowserHARIncomplete = reasons, true
 	}
-	maskedManifest.BrowserHARArtifacts = nil
+	if !includeHAR {
+		maskedManifest.BrowserHARArtifacts = nil
+	}
 	for _, artifact := range manifest.Artifacts {
 		if artifact.Name == strings.TrimSpace(manifest.TransactionsParquetFile) && artifact.Name != "" {
 			continue
 		}
-		if artifact.RecordType == runArchiveHARRecordType {
+		if artifact.RecordType == runArchiveHARRecordType && !includeHAR {
 			harNames = append(harNames, artifact.Name)
 			continue
 		}
@@ -224,7 +241,13 @@ func sanitizedArchivePlanForRequest(ctx context.Context, record *storage.RunArch
 }
 
 func zipSanitizedRunArchiveContext(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, dst io.Writer) error {
-	plan, err := buildSanitizedRunArchivePlan(ctx, record, manifest)
+	return zipSanitizedRunArchiveWith(ctx, record, manifest, false, dst)
+}
+
+// zipSanitizedRunArchiveWith writes the safe export, keeping the run's native
+// HARs when includeHAR.
+func zipSanitizedRunArchiveWith(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, includeHAR bool, dst io.Writer) error {
+	plan, err := buildSanitizedRunArchivePlanWith(ctx, record, manifest, includeHAR)
 	if err != nil {
 		return err
 	}

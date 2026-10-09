@@ -97,12 +97,15 @@ type AnalysisDatasetSeriesResponse struct {
 	Derived *analysis.DerivedSeries `json:"derived,omitempty"`
 }
 type AnalysisComparisonResponse struct {
-	TimeWindow         *AnalysisTimeWindow         `json:"time_window,omitempty"`
-	Left               []analysis.MetricPoint      `json:"left"`
-	Right              []analysis.MetricPoint      `json:"right"`
-	Request            AnalysisComparisonRequest   `json:"request"`
-	Advisory           bool                        `json:"advisory"`
-	Interpretation     string                      `json:"interpretation"`
-	Correlation        []analysis.CorrelationScore `json:"correlation,omitempty"`
-	ArtifactSelections []AnalysisArtifactSelection `json:"artifact_selections,omitempty"`
+	TimeWindow     *AnalysisTimeWindow         `json:"time_window,omitempty"`
+	Left           []analysis.MetricPoint      `json:"left"`
+	Right          []analysis.MetricPoint      `json:"right"`
+	Request        AnalysisComparisonRequest   `json:"request"`
+	Advisory       bool                        `json:"advisory"`
+	Interpretation string                      `json:"interpretation"`
+	Correlation    []analysis.CorrelationScore `json:"correlation,omitempty"`
+	// CorrelationSemantics keeps each correlated series' own semantics and
+	// excluded evidence (correlation mode only).
+	CorrelationSemantics *analysis.CorrelationSemantics `json:"correlation_semantics,omitempty"`
+	ArtifactSelections   []AnalysisArtifactSelection    `json:"artifact_selections,omitempty"`
 }

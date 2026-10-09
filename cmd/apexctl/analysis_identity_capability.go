@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 var errAnalysisCLIIdentityUnavailable = errors.New("controller does not advertise the required imported identity version; request was not sent")
@@ -182,7 +183,7 @@ func analysisCLIRequestScalars(object map[string]json.RawMessage) error {
 
 var analysisCLISeriesFields = []string{"project_id", "dataset_id", "metric", "identity_schema_version", "source_id", "host", "service", "dimensions", "from", "to", "bucket_seconds", "aggregation"}
 var analysisCLIComparisonFields = []string{"left", "right", "from", "to", "bucket_seconds", "max_lag_seconds", "mode"}
-var analysisCLISelectionFields = []string{"dataset_id", "run_id", "source_id", "transaction", "host", "service", "dimensions", "protocol", "group", "metric", "aggregation"}
+var analysisCLISelectionFields = []string{"dataset_id", "run_id", "source_id", "transaction", "host", "service", "dimensions", "protocol", "group", "metric", "aggregation", "dataset_artifact_sha256"}
 
 func analysisCLISelectorsVersion(object map[string]json.RawMessage) (uint32, error) {
 	var required uint32
@@ -354,6 +355,13 @@ func (c *ApiClient) preflightAnalysisIdentity(ctx context.Context, action, proje
 			_, run := selection["run_id"]
 			if dataset == run {
 				return errors.New("comparison requires exactly one dataset or managed run per side")
+			}
+			if raw, pinned := selection["dataset_artifact_sha256"]; pinned {
+				// A pin names a dataset's committed artifacts.
+				digest, err := analysisCLIText(raw, 64, true)
+				if err != nil || run || !storage.ValidLowerSHA256Hex(digest) {
+					return errors.New("dataset_artifact_sha256 requires a dataset selection and a lowercase SHA-256")
+				}
 			}
 			if run {
 				if _, err := analysisCLIText(selection["run_id"], 128, true); err != nil {

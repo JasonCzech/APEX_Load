@@ -70,21 +70,26 @@ type BaselineRunIdentity struct {
 }
 
 type BaselineComparisonSnapshot struct {
-	Telemetry    []BaselineTelemetryEvidence `json:"telemetry,omitempty"`
-	Verdict      *BaselineRegressionVerdict  `json:"verdict,omitempty"`
-	ID           string                      `json:"id"`
-	ProjectID    string                      `json:"project_id"`
-	Current      BaselineRunIdentity         `json:"current"`
-	Baselines    []BaselineRunIdentity       `json:"baselines"`
-	CreatedAt    time.Time                   `json:"created_at"`
-	RuleVersion  string                      `json:"rule_version"`
-	Request      BaselineComparisonRequest   `json:"request"`
-	Policy       BaselineComparisonPolicy    `json:"policy"`
-	Transactions []BaselineComparisonRow     `json:"transactions"`
-	Resources    []BaselineComparisonRow     `json:"resources"`
-	Setup        []BaselineSetupDifference   `json:"setup"`
-	Findings     []BaselineComparisonFinding `json:"findings"`
-	Warnings     []string                    `json:"warnings"`
+	Telemetry []BaselineTelemetryEvidence `json:"telemetry,omitempty"`
+	// TelemetryComparisons says, per baseline, whether its whole-run
+	// telemetry health is comparable with the current run's (same budgets,
+	// window, cadence, source capabilities and qualified workload) and the
+	// health deltas when it is; otherwise why not.
+	TelemetryComparisons []BaselineTelemetryComparison `json:"telemetry_comparisons,omitempty"`
+	Verdict              *BaselineRegressionVerdict    `json:"verdict,omitempty"`
+	ID                   string                        `json:"id"`
+	ProjectID            string                        `json:"project_id"`
+	Current              BaselineRunIdentity           `json:"current"`
+	Baselines            []BaselineRunIdentity         `json:"baselines"`
+	CreatedAt            time.Time                     `json:"created_at"`
+	RuleVersion          string                        `json:"rule_version"`
+	Request              BaselineComparisonRequest     `json:"request"`
+	Policy               BaselineComparisonPolicy      `json:"policy"`
+	Transactions         []BaselineComparisonRow       `json:"transactions"`
+	Resources            []BaselineComparisonRow       `json:"resources"`
+	Setup                []BaselineSetupDifference     `json:"setup"`
+	Findings             []BaselineComparisonFinding   `json:"findings"`
+	Warnings             []string                      `json:"warnings"`
 	// Workload qualifies each baseline against the current run's offered load.
 	Workload *BaselineWorkloadQualification `json:"workload,omitempty"`
 	// BrowserDocuments compares each baseline's final document metric

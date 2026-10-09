@@ -23,6 +23,8 @@ import ExecutionPlanSchedulesModal from './ExecutionPlanSchedulesModal'
 import { dialogBackdropProps } from './dialogBackdropProps'
 import { listAllExecutionPlans } from './schedulingCatalogModel'
 import './parityPanels.css'
+import LoadingState from './ux/LoadingState'
+import EmptyState from './ux/EmptyState'
 
 interface Props {
   projectId?: string
@@ -486,14 +488,11 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
       {error && <div className="pp-error" role="alert">{error}</div>}
 
       {!projectId ? (
-        <div className="pp-empty">Select a project to view its execution plans.</div>
+        <EmptyState title="No project selected." hint="Select a project to view its execution plans." />
       ) : loading ? (
-        <div className="pp-empty">Loading execution plans…</div>
+        <LoadingState what="execution plans" className="pp-loading" />
       ) : plans.length === 0 ? (
-        <div className="pp-empty">
-          No execution plans yet. An execution plan runs several scenarios in order — in parallel or
-          sequentially — with per-entry failure handling.
-        </div>
+        <EmptyState title="No execution plans yet." hint="An execution plan runs several scenarios in order — in parallel or sequentially — with per-entry failure handling." />
       ) : (
         <div className="pp-list">
           {plans.map(plan => (
