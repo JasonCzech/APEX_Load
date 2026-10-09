@@ -867,6 +867,7 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 		}
 	}
 	issues = append(issues, validateBodyFileIssues(path, action)...)
+	issues = append(issues, validateMultipartBodyIssues(protocol, path, action)...)
 	issues = append(issues, validateBase64BodyEncodingIssues(path, action)...)
 	issues = append(issues, validateCEscapedBodyEncodingIssues(path, action)...)
 	issues = append(issues, validateExtractorIssues(protocol, path, action)...)
@@ -1183,6 +1184,9 @@ func collectActionFileReferences(action Action) []string {
 	refs = appendFileTemplateRefs(refs, action.Selector)
 	refs = appendFileTemplateRefs(refs, action.Value)
 	refs = appendFileTemplateRefs(refs, action.Body)
+	for _, value := range action.BodyMultipart.MultipartTemplateStrings() {
+		refs = appendFileTemplateRefs(refs, value)
+	}
 	refs = appendFileTemplateRefsFromStringMap(refs, action.Headers)
 	for _, header := range action.HeaderList {
 		refs = appendFileTemplateRefs(refs, header.Name)

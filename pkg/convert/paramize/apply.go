@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -210,6 +211,9 @@ func locationContainsOutsideTemplates(script *dsl.Script, location Location, lit
 		return false
 	}
 	contains := func(value string) bool { return containsOutsideTemplates(value, literal) }
+	if value, ok := multipartFieldValue(action, location.Field); ok {
+		return contains(*value)
+	}
 	switch location.Field {
 	case "target":
 		return contains(action.Target)
@@ -271,6 +275,9 @@ func locationStringValues(script *dsl.Script, location Location) []string {
 	action := actionAt(script, location.Section, location.ActionIndex)
 	if action == nil {
 		return nil
+	}
+	if value, ok := multipartFieldValue(action, location.Field); ok {
+		return []string{*value}
 	}
 	switch location.Field {
 	case "target":
@@ -541,6 +548,14 @@ func replaceInFieldValues(action *dsl.Action, location Location, replacements ma
 	replace := func(current string) (string, bool) {
 		updated := replaceOutsideTemplates(current, replacements)
 		return updated, updated != current
+	}
+	if value, isMultipart := multipartFieldValue(action, location.Field); isMultipart {
+		before = *value
+		if updated, changed := replace(*value); changed {
+			*value = updated
+			return before, updated, true
+		}
+		return "", "", false
 	}
 	switch location.Field {
 	case "target":
@@ -865,4 +880,26 @@ func cloneScript(in *dsl.Script) (*dsl.Script, error) {
 // templates, so it must not be reimplemented elsewhere.
 func ReplaceOutsideTemplates(value string, replacements map[string]string) string {
 	return replaceOutsideTemplates(value, replacements)
+}
+
+// multipartFieldPrefix addresses the text value of a body_multipart part:
+// "body_multipart.<index>".
+const multipartFieldPrefix = "body_multipart."
+
+// multipartFieldValue returns the text value a "body_multipart.<index>"
+// location addresses.
+func multipartFieldValue(action *dsl.Action, field string) (*string, bool) {
+	raw, ok := strings.CutPrefix(field, multipartFieldPrefix)
+	if !ok || action == nil || action.BodyMultipart == nil {
+		return nil, false
+	}
+	index, err := strconv.Atoi(raw)
+	if err != nil || index < 0 || index >= len(action.BodyMultipart.Parts) {
+		return nil, false
+	}
+	part := &action.BodyMultipart.Parts[index]
+	if strings.EqualFold(strings.TrimSpace(part.ValueEncoding), "base64") {
+		return nil, false
+	}
+	return &part.Value, true
 }

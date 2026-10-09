@@ -1679,6 +1679,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -2936,6 +2948,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -3288,6 +3312,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -13426,6 +13462,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -14652,6 +14698,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -14994,6 +15050,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -15512,6 +15578,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -16738,6 +16814,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -17080,6 +17166,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -17397,6 +17493,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -18654,6 +18762,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -19006,6 +19126,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -190100,6 +190232,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -191603,6 +191745,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -191991,6 +192143,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -192486,6 +192648,11 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  description: 'Go type: MultipartBody'
+                                  additionalProperties: true
+                                  nullable: true
                                 capture:
                                   type: object
                                   description: 'Go type: BrowserCaptureOptions'
@@ -192782,6 +192949,11 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  description: 'Go type: MultipartBody'
+                                  additionalProperties: true
+                                  nullable: true
                                 capture:
                                   type: object
                                   description: 'Go type: BrowserCaptureOptions'
@@ -192998,6 +193170,11 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  description: 'Go type: MultipartBody'
+                                  additionalProperties: true
+                                  nullable: true
                                 capture:
                                   type: object
                                   description: 'Go type: BrowserCaptureOptions'
@@ -193229,6 +193406,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -194486,6 +194675,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -194838,6 +195039,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -195516,6 +195729,11 @@ paths:
                                       type: string
                                     body_file:
                                       type: string
+                                    body_multipart:
+                                      type: object
+                                      description: 'Go type: MultipartBody'
+                                      additionalProperties: true
+                                      nullable: true
                                     capture:
                                       type: object
                                       description: 'Go type: BrowserCaptureOptions'
@@ -195812,6 +196030,11 @@ paths:
                                       type: string
                                     body_file:
                                       type: string
+                                    body_multipart:
+                                      type: object
+                                      description: 'Go type: MultipartBody'
+                                      additionalProperties: true
+                                      nullable: true
                                     capture:
                                       type: object
                                       description: 'Go type: BrowserCaptureOptions'
@@ -196028,6 +196251,11 @@ paths:
                                       type: string
                                     body_file:
                                       type: string
+                                    body_multipart:
+                                      type: object
+                                      description: 'Go type: MultipartBody'
+                                      additionalProperties: true
+                                      nullable: true
                                     capture:
                                       type: object
                                       description: 'Go type: BrowserCaptureOptions'
@@ -196259,6 +196487,18 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  properties:
+                                    parts:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: MultipartPart'
+                                        additionalProperties: true
+                                  required:
+                                    - parts
+                                  nullable: true
                                 capture:
                                   type: object
                                   properties:
@@ -197516,6 +197756,18 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  properties:
+                                    parts:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: MultipartPart'
+                                        additionalProperties: true
+                                  required:
+                                    - parts
+                                  nullable: true
                                 capture:
                                   type: object
                                   properties:
@@ -197868,6 +198120,18 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  properties:
+                                    parts:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: MultipartPart'
+                                        additionalProperties: true
+                                  required:
+                                    - parts
+                                  nullable: true
                                 capture:
                                   type: object
                                   properties:
@@ -198160,6 +198424,18 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  properties:
+                                    parts:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: MultipartPart'
+                                        additionalProperties: true
+                                  required:
+                                    - parts
+                                  nullable: true
                                 capture:
                                   type: object
                                   properties:
@@ -199410,6 +199686,18 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  properties:
+                                    parts:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: MultipartPart'
+                                        additionalProperties: true
+                                  required:
+                                    - parts
+                                  nullable: true
                                 capture:
                                   type: object
                                   properties:
@@ -199762,6 +200050,18 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  properties:
+                                    parts:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: MultipartPart'
+                                        additionalProperties: true
+                                  required:
+                                    - parts
+                                  nullable: true
                                 capture:
                                   type: object
                                   properties:
@@ -200098,6 +200398,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -201601,6 +201911,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -201989,6 +202309,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -202482,6 +202812,11 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  description: 'Go type: MultipartBody'
+                                  additionalProperties: true
+                                  nullable: true
                                 capture:
                                   type: object
                                   description: 'Go type: BrowserCaptureOptions'
@@ -202778,6 +203113,11 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  description: 'Go type: MultipartBody'
+                                  additionalProperties: true
+                                  nullable: true
                                 capture:
                                   type: object
                                   description: 'Go type: BrowserCaptureOptions'
@@ -202994,6 +203334,11 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  description: 'Go type: MultipartBody'
+                                  additionalProperties: true
+                                  nullable: true
                                 capture:
                                   type: object
                                   description: 'Go type: BrowserCaptureOptions'
@@ -203225,6 +203570,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -204482,6 +204839,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -204834,6 +205203,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -205440,6 +205821,11 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  description: 'Go type: MultipartBody'
+                                  additionalProperties: true
+                                  nullable: true
                                 capture:
                                   type: object
                                   description: 'Go type: BrowserCaptureOptions'
@@ -205736,6 +206122,11 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  description: 'Go type: MultipartBody'
+                                  additionalProperties: true
+                                  nullable: true
                                 capture:
                                   type: object
                                   description: 'Go type: BrowserCaptureOptions'
@@ -205952,6 +206343,11 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  description: 'Go type: MultipartBody'
+                                  additionalProperties: true
+                                  nullable: true
                                 capture:
                                   type: object
                                   description: 'Go type: BrowserCaptureOptions'
@@ -206183,6 +206579,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -207440,6 +207848,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -207792,6 +208212,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -208288,6 +208720,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -209514,6 +209956,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -209856,6 +210308,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -212506,6 +212968,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -213732,6 +214204,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -214074,6 +214556,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -217403,6 +217895,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -218629,6 +219131,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -218971,6 +219483,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -219506,6 +220028,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -220732,6 +221264,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -221074,6 +221616,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -223710,6 +224262,11 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  description: 'Go type: MultipartBody'
+                                  additionalProperties: true
+                                  nullable: true
                                 capture:
                                   type: object
                                   description: 'Go type: BrowserCaptureOptions'
@@ -224006,6 +224563,11 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  description: 'Go type: MultipartBody'
+                                  additionalProperties: true
+                                  nullable: true
                                 capture:
                                   type: object
                                   description: 'Go type: BrowserCaptureOptions'
@@ -224222,6 +224784,11 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  description: 'Go type: MultipartBody'
+                                  additionalProperties: true
+                                  nullable: true
                                 capture:
                                   type: object
                                   description: 'Go type: BrowserCaptureOptions'
@@ -224453,6 +225020,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -225710,6 +226289,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -226062,6 +226653,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -227091,6 +227694,16 @@ paths:
                         type: string
                       body_file:
                         type: string
+                      body_multipart:
+                        type: object
+                        properties:
+                          parts:
+                            type: array
+                            items:
+                              type: object
+                              description: 'Go type: MultipartPart'
+                              additionalProperties: true
+                        nullable: true
                       capture:
                         type: object
                         properties:
@@ -227361,6 +227974,16 @@ paths:
                         type: string
                       body_file:
                         type: string
+                      body_multipart:
+                        type: object
+                        properties:
+                          parts:
+                            type: array
+                            items:
+                              type: object
+                              description: 'Go type: MultipartPart'
+                              additionalProperties: true
+                        nullable: true
                       capture:
                         type: object
                         properties:
@@ -227688,6 +228311,16 @@ paths:
                         type: string
                       body_file:
                         type: string
+                      body_multipart:
+                        type: object
+                        properties:
+                          parts:
+                            type: array
+                            items:
+                              type: object
+                              description: 'Go type: MultipartPart'
+                              additionalProperties: true
+                        nullable: true
                       capture:
                         type: object
                         properties:
@@ -228115,6 +228748,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -229372,6 +230017,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -229724,6 +230381,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -230028,6 +230697,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -231285,6 +231966,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -231637,6 +232330,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -232032,6 +232737,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -233289,6 +234006,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -233641,6 +234370,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -233964,6 +234705,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -235190,6 +235941,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -235532,6 +236293,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -235808,6 +236579,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -237065,6 +237848,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -237417,6 +238212,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -238164,6 +238971,11 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  description: 'Go type: MultipartBody'
+                                  additionalProperties: true
+                                  nullable: true
                                 capture:
                                   type: object
                                   description: 'Go type: BrowserCaptureOptions'
@@ -238467,6 +239279,11 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  description: 'Go type: MultipartBody'
+                                  additionalProperties: true
+                                  nullable: true
                                 capture:
                                   type: object
                                   description: 'Go type: BrowserCaptureOptions'
@@ -238683,6 +239500,11 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  description: 'Go type: MultipartBody'
+                                  additionalProperties: true
+                                  nullable: true
                                 capture:
                                   type: object
                                   description: 'Go type: BrowserCaptureOptions'
@@ -238835,6 +239657,11 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  description: 'Go type: MultipartBody'
+                                  additionalProperties: true
+                                  nullable: true
                                 capture:
                                   type: object
                                   description: 'Go type: BrowserCaptureOptions'
@@ -239138,6 +239965,11 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  description: 'Go type: MultipartBody'
+                                  additionalProperties: true
+                                  nullable: true
                                 capture:
                                   type: object
                                   description: 'Go type: BrowserCaptureOptions'
@@ -239354,6 +240186,11 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  description: 'Go type: MultipartBody'
+                                  additionalProperties: true
+                                  nullable: true
                                 capture:
                                   type: object
                                   description: 'Go type: BrowserCaptureOptions'
@@ -239696,6 +240533,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -240953,6 +241802,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -241305,6 +242166,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -241985,6 +242858,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -243211,6 +244094,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -243553,6 +244446,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -245898,6 +246801,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -247124,6 +248037,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -247466,6 +248389,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -247754,6 +248687,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -249011,6 +249956,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -249363,6 +250320,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -249865,6 +250834,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -251122,6 +252103,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -251474,6 +252467,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -252015,6 +253020,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -253241,6 +254256,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -253583,6 +254608,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -255985,6 +257020,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -257211,6 +258256,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -257553,6 +258608,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -258173,6 +259238,11 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            description: 'Go type: MultipartBody'
+                            additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             description: 'Go type: BrowserCaptureOptions'
@@ -258465,6 +259535,11 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            description: 'Go type: MultipartBody'
+                            additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             description: 'Go type: BrowserCaptureOptions'
@@ -258674,6 +259749,11 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            description: 'Go type: MultipartBody'
+                            additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             description: 'Go type: BrowserCaptureOptions'
@@ -258882,6 +259962,10 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             capture:
                               type: object
                               additionalProperties: true
@@ -259974,6 +261058,10 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             capture:
                               type: object
                               additionalProperties: true
@@ -260188,6 +261276,10 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             capture:
                               type: object
                               additionalProperties: true
@@ -260540,6 +261632,16 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -261766,6 +262868,16 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -262108,6 +263220,16 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -262829,6 +263951,10 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             capture:
                               type: object
                               additionalProperties: true
@@ -263921,6 +265047,10 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             capture:
                               type: object
                               additionalProperties: true
@@ -264135,6 +265265,10 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             capture:
                               type: object
                               additionalProperties: true
@@ -264567,6 +265701,10 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             capture:
                               type: object
                               additionalProperties: true
@@ -265659,6 +266797,10 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             capture:
                               type: object
                               additionalProperties: true
@@ -265873,6 +267015,10 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             capture:
                               type: object
                               additionalProperties: true
@@ -266621,6 +267767,16 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -267847,6 +269003,16 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -268189,6 +269355,16 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -268831,6 +270007,11 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            description: 'Go type: MultipartBody'
+                            additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             description: 'Go type: BrowserCaptureOptions'
@@ -269123,6 +270304,11 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            description: 'Go type: MultipartBody'
+                            additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             description: 'Go type: BrowserCaptureOptions'
@@ -269332,6 +270518,11 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            description: 'Go type: MultipartBody'
+                            additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             description: 'Go type: BrowserCaptureOptions'
@@ -269611,6 +270802,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -270837,6 +272038,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -271179,6 +272390,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -271977,6 +273198,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -273203,6 +274434,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -273545,6 +274786,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -273940,6 +275191,11 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            description: 'Go type: MultipartBody'
+                            additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             description: 'Go type: BrowserCaptureOptions'
@@ -274232,6 +275488,11 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            description: 'Go type: MultipartBody'
+                            additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             description: 'Go type: BrowserCaptureOptions'
@@ -274441,6 +275702,11 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            description: 'Go type: MultipartBody'
+                            additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             description: 'Go type: BrowserCaptureOptions'
@@ -275441,6 +276707,18 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  properties:
+                                    parts:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: MultipartPart'
+                                        additionalProperties: true
+                                  required:
+                                    - parts
+                                  nullable: true
                                 capture:
                                   type: object
                                   properties:
@@ -276698,6 +277976,18 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  properties:
+                                    parts:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: MultipartPart'
+                                        additionalProperties: true
+                                  required:
+                                    - parts
+                                  nullable: true
                                 capture:
                                   type: object
                                   properties:
@@ -277050,6 +278340,18 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  properties:
+                                    parts:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: MultipartPart'
+                                        additionalProperties: true
+                                  required:
+                                    - parts
+                                  nullable: true
                                 capture:
                                   type: object
                                   properties:
@@ -277325,6 +278627,18 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  properties:
+                                    parts:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: MultipartPart'
+                                        additionalProperties: true
+                                  required:
+                                    - parts
+                                  nullable: true
                                 capture:
                                   type: object
                                   properties:
@@ -278582,6 +279896,18 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  properties:
+                                    parts:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: MultipartPart'
+                                        additionalProperties: true
+                                  required:
+                                    - parts
+                                  nullable: true
                                 capture:
                                   type: object
                                   properties:
@@ -278934,6 +280260,18 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  properties:
+                                    parts:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: MultipartPart'
+                                        additionalProperties: true
+                                  required:
+                                    - parts
+                                  nullable: true
                                 capture:
                                   type: object
                                   properties:
@@ -279249,6 +280587,10 @@ paths:
                                     type: string
                                   body_file:
                                     type: string
+                                  body_multipart:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   capture:
                                     type: object
                                     additionalProperties: true
@@ -280361,6 +281703,10 @@ paths:
                                     type: string
                                   body_file:
                                     type: string
+                                  body_multipart:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   capture:
                                     type: object
                                     additionalProperties: true
@@ -280582,6 +281928,10 @@ paths:
                                     type: string
                                   body_file:
                                     type: string
+                                  body_multipart:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   capture:
                                     type: object
                                     additionalProperties: true
@@ -280809,6 +282159,10 @@ paths:
                                     type: string
                                   body_file:
                                     type: string
+                                  body_multipart:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   capture:
                                     type: object
                                     additionalProperties: true
@@ -281921,6 +283275,10 @@ paths:
                                     type: string
                                   body_file:
                                     type: string
+                                  body_multipart:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   capture:
                                     type: object
                                     additionalProperties: true
@@ -282142,6 +283500,10 @@ paths:
                                     type: string
                                   body_file:
                                     type: string
+                                  body_multipart:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   capture:
                                     type: object
                                     additionalProperties: true
@@ -282703,6 +284065,18 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  properties:
+                                    parts:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: MultipartPart'
+                                        additionalProperties: true
+                                  required:
+                                    - parts
+                                  nullable: true
                                 capture:
                                   type: object
                                   properties:
@@ -283960,6 +285334,18 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  properties:
+                                    parts:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: MultipartPart'
+                                        additionalProperties: true
+                                  required:
+                                    - parts
+                                  nullable: true
                                 capture:
                                   type: object
                                   properties:
@@ -284312,6 +285698,18 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  properties:
+                                    parts:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: MultipartPart'
+                                        additionalProperties: true
+                                  required:
+                                    - parts
+                                  nullable: true
                                 capture:
                                   type: object
                                   properties:
@@ -284587,6 +285985,18 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  properties:
+                                    parts:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: MultipartPart'
+                                        additionalProperties: true
+                                  required:
+                                    - parts
+                                  nullable: true
                                 capture:
                                   type: object
                                   properties:
@@ -285844,6 +287254,18 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  properties:
+                                    parts:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: MultipartPart'
+                                        additionalProperties: true
+                                  required:
+                                    - parts
+                                  nullable: true
                                 capture:
                                   type: object
                                   properties:
@@ -286196,6 +287618,18 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  properties:
+                                    parts:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: MultipartPart'
+                                        additionalProperties: true
+                                  required:
+                                    - parts
+                                  nullable: true
                                 capture:
                                   type: object
                                   properties:
@@ -286511,6 +287945,10 @@ paths:
                                     type: string
                                   body_file:
                                     type: string
+                                  body_multipart:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   capture:
                                     type: object
                                     additionalProperties: true
@@ -287623,6 +289061,10 @@ paths:
                                     type: string
                                   body_file:
                                     type: string
+                                  body_multipart:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   capture:
                                     type: object
                                     additionalProperties: true
@@ -287844,6 +289286,10 @@ paths:
                                     type: string
                                   body_file:
                                     type: string
+                                  body_multipart:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   capture:
                                     type: object
                                     additionalProperties: true
@@ -288071,6 +289517,10 @@ paths:
                                     type: string
                                   body_file:
                                     type: string
+                                  body_multipart:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   capture:
                                     type: object
                                     additionalProperties: true
@@ -289183,6 +290633,10 @@ paths:
                                     type: string
                                   body_file:
                                     type: string
+                                  body_multipart:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   capture:
                                     type: object
                                     additionalProperties: true
@@ -289404,6 +290858,10 @@ paths:
                                     type: string
                                   body_file:
                                     type: string
+                                  body_multipart:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                   capture:
                                     type: object
                                     additionalProperties: true
@@ -290011,6 +291469,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -291237,6 +292705,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -291579,6 +293057,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -291842,6 +293330,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -293099,6 +294599,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -293451,6 +294963,18 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              properties:
+                                parts:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: MultipartPart'
+                                    additionalProperties: true
+                              required:
+                                - parts
+                              nullable: true
                             capture:
                               type: object
                               properties:
@@ -293823,6 +295347,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -295049,6 +296583,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -295391,6 +296935,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -295617,6 +297171,10 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             capture:
                               type: object
                               additionalProperties: true
@@ -296709,6 +298267,10 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             capture:
                               type: object
                               additionalProperties: true
@@ -296923,6 +298485,10 @@ paths:
                               type: string
                             body_file:
                               type: string
+                            body_multipart:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             capture:
                               type: object
                               additionalProperties: true
@@ -297209,6 +298775,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -298435,6 +300011,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -298777,6 +300363,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -299294,6 +300890,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -300520,6 +302126,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -300862,6 +302478,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -303268,6 +304894,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -304494,6 +306130,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -304836,6 +306482,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -305141,6 +306797,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -306367,6 +308033,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -306709,6 +308385,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -306970,6 +308656,18 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  properties:
+                                    parts:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: MultipartPart'
+                                        additionalProperties: true
+                                  required:
+                                    - parts
+                                  nullable: true
                                 capture:
                                   type: object
                                   properties:
@@ -308220,6 +309918,18 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  properties:
+                                    parts:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: MultipartPart'
+                                        additionalProperties: true
+                                  required:
+                                    - parts
+                                  nullable: true
                                 capture:
                                   type: object
                                   properties:
@@ -308572,6 +310282,18 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  properties:
+                                    parts:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: MultipartPart'
+                                        additionalProperties: true
+                                  required:
+                                    - parts
+                                  nullable: true
                                 capture:
                                   type: object
                                   properties:
@@ -308842,6 +310564,18 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  properties:
+                                    parts:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: MultipartPart'
+                                        additionalProperties: true
+                                  required:
+                                    - parts
+                                  nullable: true
                                 capture:
                                   type: object
                                   properties:
@@ -310099,6 +311833,18 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  properties:
+                                    parts:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: MultipartPart'
+                                        additionalProperties: true
+                                  required:
+                                    - parts
+                                  nullable: true
                                 capture:
                                   type: object
                                   properties:
@@ -310451,6 +312197,18 @@ paths:
                                   type: string
                                 body_file:
                                   type: string
+                                body_multipart:
+                                  type: object
+                                  properties:
+                                    parts:
+                                      type: array
+                                      items:
+                                        type: object
+                                        description: 'Go type: MultipartPart'
+                                        additionalProperties: true
+                                  required:
+                                    - parts
+                                  nullable: true
                                 capture:
                                   type: object
                                   properties:
@@ -310819,6 +312577,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -312322,6 +314090,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:
@@ -312710,6 +314488,16 @@ paths:
                             type: string
                           body_file:
                             type: string
+                          body_multipart:
+                            type: object
+                            properties:
+                              parts:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: MultipartPart'
+                                  additionalProperties: true
+                            nullable: true
                           capture:
                             type: object
                             properties:

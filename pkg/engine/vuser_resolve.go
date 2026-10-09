@@ -329,6 +329,9 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		resolved.MessageDetailMaxItemBytes = normalizedMessageDetailMaxItemBytes(detailPolicy.MaxItemBytes)
 		resolved.MessageDetailMaxTotalBytes = normalizedMessageDetailMaxTotalBytes(detailPolicy.MaxTotalBytes)
 	}
+	if action.BodyMultipart != nil {
+		vu.applyMultipartBody(action.BodyMultipart, resolved)
+	}
 	// The authored action is the only place the origin of these credentials can
 	// be read; by the time the execution path sees the resolved action,
 	// {{secret.NAME}} has already been replaced by its value. Both per-action

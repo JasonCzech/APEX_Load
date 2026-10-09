@@ -210,3 +210,27 @@ func TestApplyKeepsSetupValuesOncePerVirtualUser(t *testing.T) {
 		t.Fatalf("warning = %q", warning)
 	}
 }
+
+// A client-generated UUID in a multipart text field is parameterized like
+// one in a body; file parts keep their reference.
+func TestApplyParameterizesUUIDsInMultipartFields(t *testing.T) {
+	const generated = "3f2b8c1e-9a4d-4e6f-8b2a-1c3d5e7f9a0b"
+	script := &dsl.Script{Actions: []dsl.Action{{
+		Name: "upload", Type: "request", Method: "POST", Target: "/upload",
+		BodyMultipart: &dsl.MultipartBody{Parts: []dsl.MultipartPart{
+			{Name: "request_id", Value: generated},
+			{Name: "file", Filename: "a.bin", Value: "{{file.upload_file}}"},
+		}},
+	}}}
+	if !HasRequestUUIDs(script) {
+		t.Fatal("HasRequestUUIDs must see multipart fields")
+	}
+	Apply(script, map[string]bool{})
+	parts := script.Actions[0].BodyMultipart.Parts
+	if strings.Contains(parts[0].Value, generated) || !strings.HasPrefix(parts[0].Value, "{{param.") {
+		t.Fatalf("multipart UUID = %q, want a parameter", parts[0].Value)
+	}
+	if parts[1].Value != "{{file.upload_file}}" {
+		t.Fatalf("file part changed: %q", parts[1].Value)
+	}
+}

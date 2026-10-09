@@ -31,6 +31,10 @@
                 "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
               },
+              "body_multipart": {
+                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children).",
+                "type": "object"
+              },
               "header_list": {
                 "description": "Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate.",
                 "type": "array"
@@ -114,6 +118,10 @@
               "body_file": {
                 "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
+              },
+              "body_multipart": {
+                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children).",
+                "type": "object"
               },
               "header_list": {
                 "description": "Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate.",
@@ -199,6 +207,10 @@
                 "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
               },
+              "body_multipart": {
+                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children).",
+                "type": "object"
+              },
               "header_list": {
                 "description": "Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate.",
                 "type": "array"
@@ -282,6 +294,10 @@
               "body_file": {
                 "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
+              },
+              "body_multipart": {
+                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children).",
+                "type": "object"
               },
               "header_list": {
                 "description": "Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate.",
@@ -367,6 +383,10 @@
                 "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
               },
+              "body_multipart": {
+                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children).",
+                "type": "object"
+              },
               "header_list": {
                 "description": "Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate.",
                 "type": "array"
@@ -451,6 +471,10 @@
                 "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
               },
+              "body_multipart": {
+                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children).",
+                "type": "object"
+              },
               "header_list": {
                 "description": "Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate.",
                 "type": "array"
@@ -534,6 +558,10 @@
               "body_file": {
                 "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
+              },
+              "body_multipart": {
+                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children).",
+                "type": "object"
               },
               "header_list": {
                 "description": "Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate.",
@@ -6660,6 +6688,9 @@
         "body_file": {
           "type": "string"
         },
+        "body_multipart": {
+          "$ref": "#/$defs/MultipartBody"
+        },
         "capture": {
           "$ref": "#/$defs/BrowserCaptureOptions"
         },
@@ -8595,6 +8626,45 @@
           "maximum": 1,
           "minimum": 0,
           "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "MultipartBody": {
+      "additionalProperties": false,
+      "properties": {
+        "parts": {
+          "items": {
+            "$ref": "#/$defs/MultipartPart"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "MultipartPart": {
+      "additionalProperties": false,
+      "properties": {
+        "content_type": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "value_encoding": {
+          "type": "string"
         }
       },
       "type": "object"

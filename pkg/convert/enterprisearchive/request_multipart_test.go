@@ -35,6 +35,28 @@ type wirePart struct{ name, filename, contentType, transfer, body string }
 // representation as the runtime would (with no parameters to resolve).
 func multipartWire(t *testing.T, action dsl.Action) []wirePart {
 	t.Helper()
+	if body := action.BodyMultipart; body != nil {
+		if action.Body != "" || action.BodyEncoding != "" {
+			t.Fatalf("body_multipart with body %q (%s)", action.Body, action.BodyEncoding)
+		}
+		var parts []wirePart
+		for _, part := range body.Parts {
+			value := part.Value
+			if part.ValueEncoding == "base64" {
+				decoded, err := base64.StdEncoding.DecodeString(part.Value)
+				if err != nil {
+					t.Fatal(err)
+				}
+				value = string(decoded)
+			}
+			contentType := part.ContentType
+			if contentType == "" && part.Filename != "" {
+				contentType = "application/octet-stream"
+			}
+			parts = append(parts, wirePart{part.Name, part.Filename, contentType, part.Headers["Content-Transfer-Encoding"], value})
+		}
+		return parts
+	}
 	var wire []byte
 	switch action.BodyEncoding {
 	case "":
@@ -78,8 +100,8 @@ func TestMultipartItemDataIsSerialized(t *testing.T) {
 	t.Run("text fields and a text file stay readable", func(t *testing.T) {
 		action := convertMultipartSource(t, `"Name=note", "Value=hi", ENDITEM,
 			"Name=file", "Value=report.txt", "File=Yes", "ContentType=text/plain", "ContentTransferEncoding=binary", ENDITEM`, files, "")
-		if action.BodyEncoding != "" || action.Metadata["source_itemdata_encoding"] != "multipart" {
-			t.Fatalf("body_encoding = %q, metadata = %v", action.BodyEncoding, action.Metadata["source_itemdata_encoding"])
+		if action.BodyMultipart == nil || action.Metadata["source_itemdata_encoding"] != "multipart" {
+			t.Fatalf("body_multipart = %v, metadata = %v", action.BodyMultipart, action.Metadata["source_itemdata_encoding"])
 		}
 		parts := multipartWire(t, action)
 		want := []wirePart{{"note", "", "", "", "hi"}, {"file", "report.txt", "text/plain", "binary", "numbers\n"}}
@@ -87,20 +109,20 @@ func TestMultipartItemDataIsSerialized(t *testing.T) {
 			t.Fatalf("parts = %#v, want %#v", parts, want)
 		}
 	})
-	t.Run("binary file without parameters is base64 with the default content type", func(t *testing.T) {
+	t.Run("binary file without parameters is a base64 part with the default content type", func(t *testing.T) {
 		action := convertMultipartSource(t, `"Name=logo", "Value=img\\logo.bin", "File=Yes", ENDITEM`, files, "")
-		if action.BodyEncoding != "base64" {
-			t.Fatalf("body_encoding = %q", action.BodyEncoding)
+		if action.BodyMultipart == nil || action.BodyMultipart.Parts[0].ValueEncoding != "base64" {
+			t.Fatalf("body_multipart = %+v", action.BodyMultipart)
 		}
 		parts := multipartWire(t, action)
 		if len(parts) != 1 || parts[0] != (wirePart{"logo", "logo.bin", "application/octet-stream", "", "\x00\xffPNG"}) {
 			t.Fatalf("parts = %#v", parts)
 		}
 	})
-	t.Run("binary file with a parameter stays c_escaped", func(t *testing.T) {
+	t.Run("a parameter and a binary file are separate parts", func(t *testing.T) {
 		action := convertMultipartSource(t, `"Name=who", "Value={User}", ENDITEM, "Name=logo", "Value=renamed.bin", "FilePath=img/logo.bin", "File=Yes", ENDITEM`, files, "")
-		if action.BodyEncoding != bodyencoding.CEscaped || !strings.Contains(action.Body, "{{var.user}}") {
-			t.Fatalf("body = %q (%s)", action.Body, action.BodyEncoding)
+		if action.BodyMultipart == nil || action.BodyMultipart.Parts[0].Value != "{{var.user}}" {
+			t.Fatalf("body_multipart = %+v", action.BodyMultipart)
 		}
 		parts := multipartWire(t, action)
 		if len(parts) != 2 || parts[0].body != "{{var.user}}" || parts[1] != (wirePart{"logo", "renamed.bin", "application/octet-stream", "", "\x00\xffPNG"}) {

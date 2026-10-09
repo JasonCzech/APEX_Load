@@ -314,6 +314,14 @@ func Apply(script *dsl.Script, serverUUIDs map[string]bool) Report {
 			action.Metadata[dsl.ImportAuraTemplateContractMetadataKey] == nil
 		scan(action.Target, "", located.target)
 		scan(action.Body, "", !safeBody)
+		if multipart := action.BodyMultipart; multipart != nil {
+			for _, part := range multipart.Parts {
+				if !strings.EqualFold(part.ValueEncoding, "base64") {
+					// The field name keys a whole-value literal, as a header name does.
+					scan(part.Value, part.Name, !safeBody)
+				}
+			}
+		}
 		for name, value := range action.Headers {
 			scan(value, name, located.allHeaders || located.headerNames[strings.ToLower(name)])
 		}
@@ -324,6 +332,18 @@ func Apply(script *dsl.Script, serverUUIDs map[string]bool) Report {
 		// there must not change in the request either.
 		rest := *action
 		rest.Metadata, rest.Target, rest.Body, rest.Headers, rest.HeaderList = nil, "", "", nil, nil
+		if multipart := action.BodyMultipart; multipart != nil {
+			// Text values were scanned above; names, filenames and binary
+			// values keep their literals.
+			copied := *multipart
+			copied.Parts = append([]dsl.MultipartPart(nil), multipart.Parts...)
+			for index := range copied.Parts {
+				if !strings.EqualFold(copied.Parts[index].ValueEncoding, "base64") {
+					copied.Parts[index].Value = ""
+				}
+			}
+			rest.BodyMultipart = &copied
+		}
 		rest.Params = nil
 		if raw, err := json.Marshal(rest); err == nil {
 			scan(string(raw), "", true)
@@ -427,6 +447,9 @@ func Apply(script *dsl.Script, serverUUIDs map[string]bool) Report {
 		}
 		action.Target = replace(action.Target)
 		action.Body = replace(action.Body)
+		for _, value := range action.BodyMultipart.MultipartTextValues() {
+			*value = replace(*value)
+		}
 		for name, value := range action.Headers {
 			action.Headers[name] = replace(value)
 		}
@@ -448,6 +471,9 @@ func HasRequestUUIDs(script *dsl.Script) bool {
 			return nil
 		}
 		found = len(uuidSpans(action.Target)) > 0 || len(uuidSpans(action.Body)) > 0
+		for _, value := range action.BodyMultipart.MultipartTextValues() {
+			found = found || len(uuidSpans(*value)) > 0
+		}
 		for _, header := range action.HeaderList {
 			found = found || len(uuidSpans(header.Value)) > 0
 		}

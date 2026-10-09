@@ -172,6 +172,8 @@ export interface ScriptActionDefinition {
   body?: string
   body_file?: string
   body_encoding?: string
+  /** multipart/form-data body built at replay with a fresh boundary; replaces body. */
+  body_multipart?: ScriptMultipartBody
   params?: Record<string, unknown>
   metadata?: Record<string, unknown>
   wait_for?: ScriptWaitCondition
@@ -191,6 +193,21 @@ export interface ScriptActionDefinition {
     operation?: string
     body_mode?: string
   }
+}
+
+export interface ScriptMultipartBody {
+  parts: ScriptMultipartPart[]
+}
+
+/** One form field. A file field has a filename; its value is usually {{file.NAME}}. */
+export interface ScriptMultipartPart {
+  name: string
+  value?: string
+  /** "base64" marks a literal binary value. */
+  value_encoding?: string
+  filename?: string
+  content_type?: string
+  headers?: Record<string, string>
 }
 
 export interface ScriptAnalyticsAttribution {

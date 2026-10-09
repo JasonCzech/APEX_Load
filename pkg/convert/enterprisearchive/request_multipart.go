@@ -109,6 +109,19 @@ func rebuildSourceMultipart(action *dsl.Action, fn ParsedFunction, opts ConvertO
 		parts = append(parts, part)
 	}
 	encType, _ := sourceNamedArg(fn.Args, "EncType")
+	if structured, ok := requestimport.DSLMultipartBody(parts); ok {
+		// Replay builds the body from its parts with a fresh boundary; file
+		// parts become file data sources when the script is finished.
+		action.BodyMultipart = structured
+		action.Body, action.BodyEncoding = "", ""
+		setSourceMultipartContentType(action, "multipart/form-data")
+		if action.Metadata == nil {
+			action.Metadata = map[string]any{}
+		}
+		action.Metadata["source_itemdata_encoding"] = "multipart"
+		action.Metadata["source_multipart_parts"] = len(parts)
+		return true, "", nil
+	}
 	payload, contentType, err := requestimport.MaterializeMultipart(strings.TrimSpace(encType), parts, fmt.Sprintf("%s:%d:%s", fn.Filename, fn.LineNumber, fn.StepName))
 	if err != nil {
 		return false, err.Error(), nil
@@ -123,6 +136,17 @@ func rebuildSourceMultipart(action *dsl.Action, fn ParsedFunction, opts ConvertO
 	default:
 		action.Body, action.BodyEncoding = base64.StdEncoding.EncodeToString(payload), "base64"
 	}
+	setSourceMultipartContentType(action, contentType)
+	if action.Metadata == nil {
+		action.Metadata = map[string]any{}
+	}
+	action.Metadata["source_itemdata_encoding"] = "multipart"
+	action.Metadata["source_multipart_parts"] = len(parts)
+	return true, "", nil
+}
+
+// setSourceMultipartContentType replaces a multipart step's Content-Type.
+func setSourceMultipartContentType(action *dsl.Action, contentType string) {
 	if action.Headers == nil {
 		action.Headers = map[string]string{}
 	}
@@ -131,10 +155,4 @@ func rebuildSourceMultipart(action *dsl.Action, fn ParsedFunction, opts ConvertO
 	if len(action.HeaderList) > 0 {
 		action.HeaderList = append(filterHeaderListCaseInsensitive(action.HeaderList, "Content-Type"), dsl.HeaderEntry{Name: "Content-Type", Value: contentType})
 	}
-	if action.Metadata == nil {
-		action.Metadata = map[string]any{}
-	}
-	action.Metadata["source_itemdata_encoding"] = "multipart"
-	action.Metadata["source_multipart_parts"] = len(parts)
-	return true, "", nil
 }

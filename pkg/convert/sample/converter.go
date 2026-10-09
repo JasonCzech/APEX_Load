@@ -538,6 +538,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	result.ProtectedRequirements.Store(finalized.Requirements)
 	clearSampleRequirements(finalized.Requirements)
 	result.Script = finalized.Script
+	if format == "har" {
+		structureMultipartBodies(result.Script)
+	}
 
 	if gap := result.Stats.TotalRequests - result.Stats.FilteredAssets - result.Stats.SkippedRequests - result.Stats.ConvertedActions; gap > 0 {
 		diagnostics.Add(diag.Warning, "Sample completeness guard", format, fmt.Sprintf("%d request(s) were parsed but not converted into actions", gap))

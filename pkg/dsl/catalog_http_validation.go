@@ -128,6 +128,9 @@ func validateHTTPSequenceRequestIssues(label string, requestIndex int, request m
 	method := strings.ToUpper(strings.TrimSpace(firstNonEmptyString(stringAnyValue(request["method"]), stringAnyValue(request["type"]))))
 	target := stringAnyValue(request["target"])
 	childLabel := fmt.Sprintf("%s.params.requests[%d] %q", label, requestIndex, name)
+	if _, multipart := request["body_multipart"]; multipart {
+		issues = append(issues, childLabel+": body_multipart is not supported in an http_sequence child; use a top-level request step")
+	}
 	payload, marshalErr := json.Marshal(request)
 	var decodedChild Action
 	childDecodeErr := marshalErr

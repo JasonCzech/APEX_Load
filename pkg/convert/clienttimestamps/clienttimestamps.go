@@ -186,6 +186,9 @@ func Apply(script *dsl.Script, evidence Evidence) Report {
 		if action := ref.Action; action != nil && safeBody(action) {
 			scan(action.Target)
 			scan(action.Body)
+			for _, value := range action.BodyMultipart.MultipartTextValues() {
+				scan(*value)
+			}
 		} else if action != nil {
 			scan(action.Target)
 		} else if ref.Request != nil {
@@ -259,6 +262,9 @@ func Apply(script *dsl.Script, evidence Evidence) Report {
 		action.Target = replace(action.Target)
 		if safeBody(action) {
 			action.Body = replace(action.Body)
+			for _, value := range action.BodyMultipart.MultipartTextValues() {
+				*value = replace(*value)
+			}
 		}
 		return nil
 	})

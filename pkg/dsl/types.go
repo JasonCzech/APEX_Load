@@ -1120,6 +1120,9 @@ type Action struct {
 	TimeoutMs    int               `json:"timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"` // override global request timeout
 	MaxRedirects *int              `json:"max_redirects,omitempty" jsonschema:"minimum=-1,maximum=50"`  // override global redirect policy
 	SOAP         *SOAPActionConfig `json:"soap,omitempty"`
+	// BodyMultipart is a multipart/form-data body built at replay from its
+	// parts, with a fresh boundary. It replaces body.
+	BodyMultipart *MultipartBody `json:"body_multipart,omitempty"`
 }
 
 // AnalyticsAttribution assigns an action to a stable composition/page

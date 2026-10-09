@@ -559,6 +559,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -1037,6 +1040,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -1166,6 +1172,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -4852,6 +4861,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -5330,6 +5342,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -5459,6 +5474,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -5673,6 +5691,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -6151,6 +6172,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -6280,6 +6304,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -6396,6 +6423,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -6874,6 +6904,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -7003,6 +7036,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -11686,6 +11722,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -12164,6 +12203,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -12293,6 +12335,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -12569,6 +12614,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -13047,6 +13095,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -13176,6 +13227,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -13269,6 +13323,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -13747,6 +13804,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -13876,6 +13936,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -13978,6 +14041,7 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: (Record<string, unknown>) | null;
                 "capture"?: (Record<string, unknown>) | null;
                 "control"?: (Record<string, unknown>) | null;
                 "extractors"?: Array<Record<string, unknown>>;
@@ -14392,6 +14456,7 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: (Record<string, unknown>) | null;
                 "capture"?: (Record<string, unknown>) | null;
                 "control"?: (Record<string, unknown>) | null;
                 "extractors"?: Array<Record<string, unknown>>;
@@ -14469,6 +14534,7 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: (Record<string, unknown>) | null;
                 "capture"?: (Record<string, unknown>) | null;
                 "control"?: (Record<string, unknown>) | null;
                 "extractors"?: Array<Record<string, unknown>>;
@@ -14531,6 +14597,7 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: (Record<string, unknown>) | null;
                 "capture"?: (Record<string, unknown>) | null;
                 "control"?: (Record<string, unknown>) | null;
                 "extractors"?: Array<Record<string, unknown>>;
@@ -14945,6 +15012,7 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: (Record<string, unknown>) | null;
                 "capture"?: (Record<string, unknown>) | null;
                 "control"?: (Record<string, unknown>) | null;
                 "extractors"?: Array<Record<string, unknown>>;
@@ -15022,6 +15090,7 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: (Record<string, unknown>) | null;
                 "capture"?: (Record<string, unknown>) | null;
                 "control"?: (Record<string, unknown>) | null;
                 "extractors"?: Array<Record<string, unknown>>;
@@ -15117,6 +15186,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -15595,6 +15667,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -15724,6 +15799,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -15801,6 +15879,7 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: (Record<string, unknown>) | null;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -16215,6 +16294,7 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: (Record<string, unknown>) | null;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -16292,6 +16372,7 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: (Record<string, unknown>) | null;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -17142,6 +17223,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -17620,6 +17704,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -17749,6 +17836,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -18016,6 +18106,7 @@ export interface operations {
                   "body"?: string;
                   "body_encoding"?: string;
                   "body_file"?: string;
+                  "body_multipart"?: (Record<string, unknown>) | null;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -18110,6 +18201,7 @@ export interface operations {
                   "body"?: string;
                   "body_encoding"?: string;
                   "body_file"?: string;
+                  "body_multipart"?: (Record<string, unknown>) | null;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -18181,6 +18273,7 @@ export interface operations {
                   "body"?: string;
                   "body_encoding"?: string;
                   "body_file"?: string;
+                  "body_multipart"?: (Record<string, unknown>) | null;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -18222,6 +18315,7 @@ export interface operations {
                   "body"?: string;
                   "body_encoding"?: string;
                   "body_file"?: string;
+                  "body_multipart"?: (Record<string, unknown>) | null;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -18316,6 +18410,7 @@ export interface operations {
                   "body"?: string;
                   "body_encoding"?: string;
                   "body_file"?: string;
+                  "body_multipart"?: (Record<string, unknown>) | null;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -18387,6 +18482,7 @@ export interface operations {
                   "body"?: string;
                   "body_encoding"?: string;
                   "body_file"?: string;
+                  "body_multipart"?: (Record<string, unknown>) | null;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -20814,6 +20910,7 @@ export interface operations {
                   "body"?: string;
                   "body_encoding"?: string;
                   "body_file"?: string;
+                  "body_multipart"?: (Record<string, unknown>) | null;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -20906,6 +21003,7 @@ export interface operations {
                   "body"?: string;
                   "body_encoding"?: string;
                   "body_file"?: string;
+                  "body_multipart"?: (Record<string, unknown>) | null;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -20977,6 +21075,7 @@ export interface operations {
                   "body"?: string;
                   "body_encoding"?: string;
                   "body_file"?: string;
+                  "body_multipart"?: (Record<string, unknown>) | null;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -21050,6 +21149,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -21528,6 +21630,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -21657,6 +21762,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -21875,6 +21983,7 @@ export interface operations {
                   "body"?: string;
                   "body_encoding"?: string;
                   "body_file"?: string;
+                  "body_multipart"?: (Record<string, unknown>) | null;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -21967,6 +22076,7 @@ export interface operations {
                   "body"?: string;
                   "body_encoding"?: string;
                   "body_file"?: string;
+                  "body_multipart"?: (Record<string, unknown>) | null;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -22038,6 +22148,7 @@ export interface operations {
                   "body"?: string;
                   "body_encoding"?: string;
                   "body_file"?: string;
+                  "body_multipart"?: (Record<string, unknown>) | null;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -22111,6 +22222,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -22589,6 +22703,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -22718,6 +22835,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -22927,6 +23047,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -23405,6 +23528,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -23534,6 +23660,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -24598,6 +24727,7 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: (Record<string, unknown>) | null;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -24692,6 +24822,7 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: (Record<string, unknown>) | null;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -24763,6 +24894,7 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: (Record<string, unknown>) | null;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -24866,6 +24998,7 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: (Record<string, unknown>) | null;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -25280,6 +25413,7 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: (Record<string, unknown>) | null;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -25357,6 +25491,7 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: (Record<string, unknown>) | null;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -25502,6 +25637,7 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: (Record<string, unknown>) | null;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -25916,6 +26052,7 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: (Record<string, unknown>) | null;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -25993,6 +26130,7 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: (Record<string, unknown>) | null;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -26155,6 +26293,7 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: (Record<string, unknown>) | null;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -26249,6 +26388,7 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: (Record<string, unknown>) | null;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -26320,6 +26460,7 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: (Record<string, unknown>) | null;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -27526,6 +27667,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -28004,6 +28148,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -28133,6 +28280,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -28238,6 +28388,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -28716,6 +28869,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -28845,6 +29001,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -35683,6 +35842,9 @@ export interface operations {
             "body"?: string;
             "body_encoding"?: string;
             "body_file"?: string;
+            "body_multipart"?: ({
+              "parts"?: Array<Record<string, unknown>>;
+            }) | null;
             "capture"?: ({
               "full_page"?: boolean;
               "html"?: boolean;
@@ -35783,6 +35945,9 @@ export interface operations {
             "body"?: string;
             "body_encoding"?: string;
             "body_file"?: string;
+            "body_multipart"?: ({
+              "parts"?: Array<Record<string, unknown>>;
+            }) | null;
             "capture"?: ({
               "full_page"?: boolean;
               "html"?: boolean;
@@ -35904,6 +36069,9 @@ export interface operations {
             "body"?: string;
             "body_encoding"?: string;
             "body_file"?: string;
+            "body_multipart"?: ({
+              "parts"?: Array<Record<string, unknown>>;
+            }) | null;
             "capture"?: ({
               "full_page"?: boolean;
               "html"?: boolean;
@@ -38104,6 +38272,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -38714,6 +38885,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -38865,6 +39039,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -39047,6 +39224,7 @@ export interface operations {
                   "body"?: string;
                   "body_encoding"?: string;
                   "body_file"?: string;
+                  "body_multipart"?: (Record<string, unknown>) | null;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -39139,6 +39317,7 @@ export interface operations {
                   "body"?: string;
                   "body_encoding"?: string;
                   "body_file"?: string;
+                  "body_multipart"?: (Record<string, unknown>) | null;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -39210,6 +39389,7 @@ export interface operations {
                   "body"?: string;
                   "body_encoding"?: string;
                   "body_file"?: string;
+                  "body_multipart"?: (Record<string, unknown>) | null;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -39283,6 +39463,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -39761,6 +39944,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -39890,6 +40076,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -52861,6 +53050,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -53339,6 +53531,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -53468,6 +53663,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -54769,6 +54967,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -55247,6 +55448,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -55376,6 +55580,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -72660,6 +72867,7 @@ export interface operations {
                   "body"?: string;
                   "body_encoding"?: string;
                   "body_file"?: string;
+                  "body_multipart"?: (Record<string, unknown>) | null;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -72752,6 +72960,7 @@ export interface operations {
                   "body"?: string;
                   "body_encoding"?: string;
                   "body_file"?: string;
+                  "body_multipart"?: (Record<string, unknown>) | null;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -72823,6 +73032,7 @@ export interface operations {
                   "body"?: string;
                   "body_encoding"?: string;
                   "body_file"?: string;
+                  "body_multipart"?: (Record<string, unknown>) | null;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -72896,6 +73106,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -73374,6 +73587,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -73503,6 +73719,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -73601,6 +73820,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -74077,6 +74299,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -74206,6 +74431,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -85051,6 +85279,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -85529,6 +85760,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -85658,6 +85892,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -85755,6 +85992,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -86233,6 +86473,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -86362,6 +86605,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -103428,6 +103674,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -103906,6 +104155,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -104035,6 +104287,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -104358,6 +104613,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -104836,6 +105094,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -104965,6 +105226,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -105071,6 +105335,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -105549,6 +105816,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -105678,6 +105948,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -105853,6 +106126,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -106331,6 +106607,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -106460,6 +106739,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -106814,6 +107096,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -107292,6 +107577,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -107421,6 +107709,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -107514,6 +107805,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -107992,6 +108286,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -108121,6 +108418,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -108223,6 +108523,7 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: (Record<string, unknown>) | null;
                 "capture"?: (Record<string, unknown>) | null;
                 "control"?: (Record<string, unknown>) | null;
                 "extractors"?: Array<Record<string, unknown>>;
@@ -108637,6 +108938,7 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: (Record<string, unknown>) | null;
                 "capture"?: (Record<string, unknown>) | null;
                 "control"?: (Record<string, unknown>) | null;
                 "extractors"?: Array<Record<string, unknown>>;
@@ -108714,6 +109016,7 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: (Record<string, unknown>) | null;
                 "capture"?: (Record<string, unknown>) | null;
                 "control"?: (Record<string, unknown>) | null;
                 "extractors"?: Array<Record<string, unknown>>;
@@ -108776,6 +109079,7 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: (Record<string, unknown>) | null;
                 "capture"?: (Record<string, unknown>) | null;
                 "control"?: (Record<string, unknown>) | null;
                 "extractors"?: Array<Record<string, unknown>>;
@@ -109190,6 +109494,7 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: (Record<string, unknown>) | null;
                 "capture"?: (Record<string, unknown>) | null;
                 "control"?: (Record<string, unknown>) | null;
                 "extractors"?: Array<Record<string, unknown>>;
@@ -109267,6 +109572,7 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: (Record<string, unknown>) | null;
                 "capture"?: (Record<string, unknown>) | null;
                 "control"?: (Record<string, unknown>) | null;
                 "extractors"?: Array<Record<string, unknown>>;
@@ -110810,6 +111116,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -111288,6 +111597,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -111417,6 +111729,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -111515,6 +111830,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -111991,6 +112309,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -112120,6 +112441,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -112211,6 +112535,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -112689,6 +113016,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -112818,6 +113148,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -122722,6 +123055,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -123200,6 +123536,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -123329,6 +123668,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -123520,6 +123862,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -123998,6 +124343,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -124127,6 +124475,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -126682,6 +127033,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -127160,6 +127514,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -127289,6 +127646,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -128728,6 +129088,7 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: (Record<string, unknown>) | null;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -129142,6 +129503,7 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: (Record<string, unknown>) | null;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -129219,6 +129581,7 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: (Record<string, unknown>) | null;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -129318,6 +129681,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -129796,6 +130162,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -129925,6 +130294,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -130059,6 +130431,7 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: (Record<string, unknown>) | null;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -130153,6 +130526,7 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: (Record<string, unknown>) | null;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -130224,6 +130598,7 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: (Record<string, unknown>) | null;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -131823,6 +132198,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -132301,6 +132679,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -132430,6 +132811,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -133264,6 +133648,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -133742,6 +134129,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -133871,6 +134261,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -134783,6 +135176,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -135261,6 +135657,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -135390,6 +135789,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -136324,6 +136726,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -136802,6 +137207,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -136931,6 +137339,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -137866,6 +138277,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -138344,6 +138758,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -138473,6 +138890,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -139407,6 +139827,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -139885,6 +140308,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -140014,6 +140440,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -149391,6 +149820,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -149869,6 +150301,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -149998,6 +150433,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -150102,6 +150540,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -150580,6 +151021,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -150709,6 +151153,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -155822,6 +156269,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -156432,6 +156882,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -156583,6 +157036,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -156763,6 +157219,7 @@ export interface operations {
                   "body"?: string;
                   "body_encoding"?: string;
                   "body_file"?: string;
+                  "body_multipart"?: (Record<string, unknown>) | null;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -156855,6 +157312,7 @@ export interface operations {
                   "body"?: string;
                   "body_encoding"?: string;
                   "body_file"?: string;
+                  "body_multipart"?: (Record<string, unknown>) | null;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -156926,6 +157384,7 @@ export interface operations {
                   "body"?: string;
                   "body_encoding"?: string;
                   "body_file"?: string;
+                  "body_multipart"?: (Record<string, unknown>) | null;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -156999,6 +157458,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -157477,6 +157939,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -157606,6 +158071,9 @@ export interface operations {
                 "body"?: string;
                 "body_encoding"?: string;
                 "body_file"?: string;
+                "body_multipart"?: ({
+                  "parts": Array<Record<string, unknown>>;
+                }) | null;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -162208,6 +162676,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -162818,6 +163289,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -162969,6 +163443,9 @@ export interface operations {
               "body"?: string;
               "body_encoding"?: string;
               "body_file"?: string;
+              "body_multipart"?: ({
+                "parts"?: Array<Record<string, unknown>>;
+              }) | null;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;

@@ -664,6 +664,10 @@ func finalizeEnterpriseArchiveImportResult(
 	appendCSourceParseFailureGates(result, ctx.ParsedActions)
 	appendSplicedCommentWarnings(result, ctx.ParsedActions)
 	applySourceParamBraces(result, ctx.ProjectConfig)
+	for _, script := range result.effectiveScripts() {
+		// Uploaded files become file data sources the tester can swap.
+		requestimport.HoistMultipartFiles(script)
+	}
 	result.Warnings = append(result.Warnings, ctx.InlineWarnings...)
 	if note := recordingSnapshotNote(ctx.Files, ctx.ParsedActions); note != "" {
 		result.Warnings = append(result.Warnings, note)

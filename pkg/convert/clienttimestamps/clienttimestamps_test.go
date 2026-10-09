@@ -69,3 +69,31 @@ func TestFromHAR(t *testing.T) {
 		t.Errorf("window = %v..%v", evidence.From, evidence.To)
 	}
 }
+
+// A timestamp in a multipart text field is replaced like one in a body.
+func TestApplyReplacesTimestampsInMultipartFields(t *testing.T) {
+	captured := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	ms := func(offset time.Duration) string { return strconv.FormatInt(captured.Add(offset).UnixMilli(), 10) }
+	upload := func(offset time.Duration) dsl.Action {
+		return dsl.Action{Type: "http", Method: "POST", Target: "/upload", BodyMultipart: &dsl.MultipartBody{Parts: []dsl.MultipartPart{
+			{Name: "meta", Value: `{"ts":` + ms(offset) + `}`},
+			{Name: "file", Filename: "a.bin", Value: "{{file.upload_file}}"},
+		}}}
+	}
+	script := &dsl.Script{Actions: []dsl.Action{upload(time.Second), upload(2 * time.Second)}}
+	evidence := Evidence{Server: map[string]bool{}}
+	evidence.Observe(captured)
+	evidence.Observe(captured.Add(10 * time.Second))
+	report := Apply(script, evidence)
+	for i, action := range script.Actions {
+		if got := action.BodyMultipart.Parts[0].Value; got != `{"ts":`+Millis+`}` {
+			t.Errorf("action %d meta = %q", i, got)
+		}
+		if got := action.BodyMultipart.Parts[1].Value; got != "{{file.upload_file}}" {
+			t.Errorf("action %d file part changed: %q", i, got)
+		}
+	}
+	if report.Replaced != 2 {
+		t.Errorf("report = %+v", report)
+	}
+}

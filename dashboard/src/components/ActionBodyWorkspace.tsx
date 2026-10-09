@@ -13,6 +13,7 @@ import type { ActionEditorParameterDraft } from './scriptEditorState'
 import { apexCodeMirrorTheme } from './codeMirrorTheme'
 import { sanitizeVarName } from './scriptEditorUtils'
 import { BODY_ENCODING_OPTIONS, knownBodyEncoding } from './bodyEncodings'
+import { MultipartPartsEditor } from './MultipartPartsEditor'
 
 export function ActionBodyWorkspace({ action, index, path, parameters, script, onUpdate, onParameterize, onInspectReference }: {
   action: ScriptActionDefinition; index: number; path: string; parameters: ScriptParameterDefinition[]; script?: ScriptDefinition
@@ -71,7 +72,14 @@ export function ActionBodyWorkspace({ action, index, path, parameters, script, o
     setMenu(null)
     onParameterize({ source: 'action', actionIndex: index, start: range.from, end: range.to, selectedText, existingName, requestedName: existingName || sanitizeVarName(selectedText), seedValue: selectedText })
   }
+  const fileSources = (script?.data_sources || []).filter(source => source.type === 'file').map(source => source.name)
+  if (action.body_multipart) {
+    return <section className="center-document author-body-document" aria-label="Request body editor"><h3>{action.name} · Request body (multipart form)</h3><p>{path} · Changes are included in Save script.</p>
+      <MultipartPartsEditor parts={action.body_multipart.parts || []} fileSources={fileSources} onChange={parts => onUpdate('body_multipart', { ...action.body_multipart, parts })} />
+    </section>
+  }
   return <section className="center-document author-body-document" aria-label="Request body editor"><h3>{action.name} · Request body</h3><p>{path} · Changes are included in Save script.</p>
+    {!action.body && !action.body_file && <p><button className="btn btn-sm btn-secondary" type="button" onClick={() => { onUpdate('body_encoding', undefined); onUpdate('body_multipart', { parts: [{ name: 'field_1', value: '' }] }) }}>Use multipart form fields</button></p>}
     <div className="author-body-toolbar">
       <label>Wire encoding<select aria-label="Wire encoding" value={knownBodyEncoding(action.body_encoding)?.value ?? action.body_encoding ?? ''} onChange={event => { onUpdate('body_encoding', event.target.value || undefined); if (event.target.value) setSyntax('text') }}>{BODY_ENCODING_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.value ? option.label : 'Text (as authored)'}</option>)}{action.body_encoding && !knownBodyEncoding(action.body_encoding) && <option value={action.body_encoding}>Preserved: {action.body_encoding}</option>}</select></label>
       <label>Editor language<select aria-label="Editor language" value={syntax} onChange={e => { setSyntax(e.target.value as typeof syntax); setIssue('') }}><option value="text">Plain text</option><option value="json">JSON</option><option value="xml">XML</option></select></label>
