@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -126,5 +127,105 @@ readEvents:
 	}
 	if _, err := store.GetRunArchive(test.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("catalog became visible before publication: %v", err)
+	}
+}
+
+// failFirstPublicationStore refuses the first archive publication commit.
+type failFirstPublicationStore struct {
+	*storage.SQLiteStore
+	failed bool
+}
+
+func (s *failFirstPublicationStore) CompleteArchiveFinalizationForRun(id, token, refresh string, record *storage.RunArchiveRecord, identity storage.ArchiveFinalizationRunIdentity) (bool, error) {
+	if !s.failed {
+		s.failed = true
+		return false, errors.New("catalog unavailable")
+	}
+	return s.SQLiteStore.CompleteArchiveFinalizationForRun(id, token, refresh, record, identity)
+}
+
+func (s *failFirstPublicationStore) CompleteArchiveFinalization(id, token, refresh string, record *storage.RunArchiveRecord) (bool, error) {
+	if !s.failed {
+		s.failed = true
+		return false, errors.New("catalog unavailable")
+	}
+	return s.SQLiteStore.CompleteArchiveFinalization(id, token, refresh, record)
+}
+
+// A staged archive whose publication fails is retried from the outbox: the
+// joint batches held for its sidecar (B5) stay held for that retry, and its
+// commit releases them.
+func TestDistributedPublicationRetryKeepsHeldJointBatches(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", archiveBackendFilesystem)
+	sqlite, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlite.Close()
+	store := &failFirstPublicationStore{SQLiteStore: sqlite}
+	runner := NewTestRunner(1, NewHub(), store)
+	// The refused commit queues a background publication retry; stop it and
+	// wait for it before the store closes and the archive root is restored.
+	defer func() {
+		runner.mu.Lock()
+		runner.shuttingDown = true
+		runner.mu.Unlock()
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			runner.terminalRetryMu.Lock()
+			active := len(runner.terminalRetrying)
+			runner.terminalRetryMu.Unlock()
+			if active == 0 {
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		t.Error("the publication retry worker did not stop")
+	}()
+	now := time.Now().UTC()
+	test := &ManagedTest{ID: "publication-retry-joint", Name: "publication retry", ProjectID: storage.DefaultProjectID, Status: "RUNNING", CreatedAt: now, remoteFinalizing: true, LiveMetrics: &LiveMetrics{Timestamp: now, ActiveVUsers: 0},
+		pendingJointPublications: []*storage.NativePublicationEvidence{{SourceID: "generator", Sequence: 5}}, pendingJointBytes: 256}
+	if err := store.SaveTest(&storage.TestRecord{ID: test.ID, Name: test.Name, ProjectID: test.ProjectID, Status: test.Status, StartTime: now}); err != nil {
+		t.Fatal(err)
+	}
+	source := t.TempDir()
+	artifacts := map[string]string{}
+	for _, name := range []string{"transactions.jsonl", "resources.jsonl", "interval_summaries.jsonl"} {
+		path := filepath.Join(source, name)
+		if err := os.WriteFile(path, nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+		artifacts[name] = path
+	}
+	manifest := RunArchiveManifest{SchemaVersion: archiveSchemaVersion, TestID: test.ID, TestName: test.Name, Status: "COMPLETE", CreatedAt: now, CompletedAt: now, TransactionsFile: "transactions.jsonl", ResourceSamplesFile: "resources.jsonl", IntervalSummariesFile: "interval_summaries.jsonl"}
+	artifacts[runArchiveManifestFileName] = filepath.Join(source, runArchiveManifestFileName)
+	if err := writeIndentedJSONFile(artifacts[runArchiveManifestFileName], manifest); err != nil {
+		t.Fatal(err)
+	}
+	test.remoteClientsByTarget = map[string]generatorClient{"generator": &archiveStreamingFakeClient{artifacts: artifacts}}
+	runner.tests[test.ID] = test
+	newDistributedExecutionBackend([]string{"generator"}, time.Second, nil).completeDistributedTestRun(runner, test, "COMPLETE", "")
+	if !store.failed {
+		t.Fatal("the first publication was not attempted")
+	}
+	runner.mu.RLock()
+	held, dropped, attached := len(test.pendingJointPublications), test.jointPublicationsDropped, test.Archive != nil
+	runner.mu.RUnlock()
+	if attached || held != 1 || dropped != 0 {
+		t.Fatalf("after a failed publication: attached %v, %d held, %d dropped", attached, held, dropped)
+	}
+	job, err := store.GetArchiveFinalizationJob(test.ID)
+	if err != nil {
+		t.Fatalf("no publication retry was queued: %v", err)
+	}
+	if err := runner.processArchiveFinalizationJob(context.Background(), job); err != nil {
+		t.Fatal(err)
+	}
+	runner.mu.RLock()
+	held, dropped, attached = len(test.pendingJointPublications), test.jointPublicationsDropped, test.Archive != nil
+	runner.mu.RUnlock()
+	if !attached || held != 0 || dropped != 1 {
+		t.Fatalf("after the retried publication: attached %v, %d held, %d dropped", attached, held, dropped)
 	}
 }

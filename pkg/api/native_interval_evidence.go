@@ -43,10 +43,16 @@ func nativeIntervalEvidence(live *LiveMetrics, actions map[string]*TxMetrics, ac
 		}
 		out.Dimensions[dimension] = values
 	}
-	if live.Telemetry != nil && (live.Telemetry.DroppedResults > 0 || live.Telemetry.DroppedSubscriberBatches > 0 || live.Telemetry.MissingMetricWindows > 0) {
+	if telemetryWindowLost(live.Telemetry) {
 		out.Incomplete = true
 	}
 	return out
+}
+
+// telemetryWindowLost reports samples lost from a window (dropped results or
+// subscriber batches, missing windows): every dimension of it is partial.
+func telemetryWindowLost(telemetry *TelemetryHealth) bool {
+	return telemetry != nil && (telemetry.DroppedResults > 0 || telemetry.DroppedSubscriberBatches > 0 || telemetry.MissingMetricWindows > 0)
 }
 
 func addNativeJointEvidence(out *storage.NativeIntervalEvidence, joint map[string]*TxMetrics) {
@@ -72,7 +78,7 @@ func addNativeJointEvidence(out *storage.NativeIntervalEvidence, joint map[strin
 
 // Build a frame from the newly accepted source batch, never from the resident
 // latest-per-generator fleet map used to render instantaneous live summaries.
-func nativePublicationEvidence(source string, batch generatorrpc.MetricsBatch, peers map[string]generatorrpc.MetricsBatch) *storage.NativePublicationEvidence {
+func nativePublicationEvidence(source string, batch generatorrpc.MetricsBatch, peers map[string]generatorrpc.MetricsBatch, projection *engine.JointProjection) *storage.NativePublicationEvidence {
 	live := &LiveMetrics{}
 	convert := func(values []generatorrpc.MetricAggregate) map[string]*TxMetrics {
 		out := map[string]*TxMetrics{}
@@ -97,12 +103,14 @@ func nativePublicationEvidence(source string, batch generatorrpc.MetricsBatch, p
 	if evidence.Version == 3 {
 		addNativeDimensionEvidence(evidence, convert(batch.ActionDimensionMetrics))
 	}
+	published, tuples, other, omitted, incomplete := jointEvidenceFromBatch(batch)
+	setNativeJointEvidence(evidence, projection, published, tuples, other, omitted, incomplete || telemetryWindowLost(live.Telemetry))
 	sources := make([]string, 0, len(peers))
 	for id := range peers {
 		sources = append(sources, id)
 	}
 	sort.Strings(sources)
-	return &storage.NativePublicationEvidence{SourceID: source, Sequence: batch.BatchSequence, ExecutionGeneration: batch.ExecutionGeneration, Timestamp: time.UnixMilli(batch.TimestampUnixMs).UTC(), Version: evidence.Version, WindowSeconds: evidence.WindowSeconds, Dimensions: evidence.Dimensions, Incomplete: evidence.Incomplete, ExpectedSources: sources}
+	return &storage.NativePublicationEvidence{SourceID: source, SourceEpoch: batch.SourceEpoch, Sequence: batch.BatchSequence, ExecutionGeneration: batch.ExecutionGeneration, Timestamp: time.UnixMilli(batch.TimestampUnixMs).UTC(), Version: evidence.Version, WindowSeconds: evidence.WindowSeconds, Dimensions: evidence.Dimensions, Incomplete: evidence.Incomplete, ExpectedSources: sources, Joint: evidence.Joint}
 }
 
 func addNativeDimensionEvidence(out *storage.NativeIntervalEvidence, metrics map[string]*TxMetrics) {

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -84,7 +85,11 @@ func TestRunMonitoringAPIArtifactsAndRetry(t *testing.T) {
 	}
 	v := 3.0
 	p := analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, ProjectID: "proj-a", RunID: "monitor-run", ScenarioID: "monitor-scenario", Source: source.ID, Host: "monitor-collector", TimestampUTC: now, MetricName: "goroutines", Unit: "count", Kind: analysis.KindGauge, Quality: analysis.QualityValid, Value: &v}
-	batch := collectoragent.RunSampleBatch{Job: envelopes[0], Points: []analysis.MetricPoint{p}}
+	// A dropped sample in the second bucket: bucketing records only that the
+	// bucket is missing, so its reason is counted before bucketing.
+	dropped := p
+	dropped.TimestampUTC, dropped.Value, dropped.Quality = now.Add(12*time.Second), nil, analysis.QualityDropped
+	batch := collectoragent.RunSampleBatch{Job: envelopes[0], Points: []analysis.MetricPoint{p, dropped}}
 	path := "/api/v1/monitoring/collectors/monitor-collector/jobs/" + jobs[0].ID + "/samples"
 	// Governed providers use their typed ingestion branch. A generic signed host
 	// grant cannot manufacture provider-origin/settled bucket provenance.
@@ -136,6 +141,30 @@ func TestRunMonitoringAPIArtifactsAndRetry(t *testing.T) {
 	if len(out.Overlay) != 2 || len(out.Correlation["Checkout"]) != 1 || out.Correlation["Checkout"][0].Pairs != 1 {
 		t.Fatalf("overlay coverage: %+v", out)
 	}
+	// One pair cannot be scored, and says so; each side keeps its own
+	// semantics, the panel's empty bucket counted as missing.
+	if out.Correlation["Checkout"][0].Unavailable != analysis.CorrelationInsufficientPairs {
+		t.Fatalf("unavailability %+v", out.Correlation["Checkout"][0])
+	}
+	semantics, ok := out.CorrelationSemantics["Checkout"]
+	if !ok || semantics.Left.Unit != "ms" || semantics.Left.Statistic != q.Aggregation || semantics.Left.Population != q.Population || semantics.Left.Excluded[analysis.QualityMissing] != 1 || semantics.Right.Metric != "goroutines" || semantics.Right.Statistic != "avg" || semantics.SameUnits || semantics.UnitsUndeclared {
+		t.Fatalf("overlay semantics %+v", semantics)
+	}
+	if semantics.Right.ExcludedSamples[analysis.QualityDropped] != 1 {
+		t.Fatalf("raw sample exclusions %+v", semantics.Right)
+	}
+	// A derived panel series describes its derivation and keeps the reason
+	// a derived bucket was left unscored.
+	derived := q
+	derived.Derivation = &analysis.QueryDerivation{Operation: "moving_stddev", WindowBuckets: 2, MinimumCoverage: 1}
+	derivedOut := nativeEvidenceEnvelope(now, derived)
+	derivedOut.Series = []NativeEvidenceSeries{{Name: "Checkout", Unit: "ms", Points: []NativeEvidencePoint{{From: now, To: now.Add(10 * time.Second), Value: &value, Count: 1}, {From: now.Add(10 * time.Second), To: now.Add(20 * time.Second), Reason: "insufficient_coverage"}}}}
+	if err := server.attachNativeOverlay(context.Background(), "proj-a", "monitor-run", derived, &derivedOut); err != nil {
+		t.Fatal(err)
+	}
+	if left := derivedOut.CorrelationSemantics["Checkout"].Left; left.Derivation != analysis.CanonicalDerivation("moving_stddev") || left.Excluded["insufficient_coverage"] != 1 {
+		t.Fatalf("derived semantics %+v", left)
+	}
 	q.EvidenceMode = "live"
 	q.LiveBucketMode = "merged"
 	out.Correlation = nil
@@ -154,7 +183,8 @@ func TestRunMonitoringAPIArtifactsAndRetry(t *testing.T) {
 	}{
 		{"&from=invalid", 400, 0},
 		{"&from=" + url.QueryEscape(now.Format(time.RFC3339Nano)) + "&to=" + url.QueryEscape(now.Add(-time.Second).Format(time.RFC3339Nano)), 400, 0},
-		{"&from=" + url.QueryEscape(now.Add(time.Second).Format(time.RFC3339Nano)), 200, 0},
+		// Only the dropped sample (now+12s) is after now+1s.
+		{"&from=" + url.QueryEscape(now.Add(time.Second).Format(time.RFC3339Nano)), 200, 1},
 		{"&from=" + url.QueryEscape(now.Add(-time.Second).Format(time.RFC3339Nano)) + "&to=" + url.QueryEscape(now.Format(time.RFC3339Nano)), 200, 1},
 	} {
 		response := timeslotRequest(t, server, http.MethodGet, "/api/v1/tests/monitor-run/monitor-series?source_id="+source.ID+"&metric=goroutines"+test.query, nil)
@@ -212,7 +242,8 @@ func TestRunMonitoringAPIArtifactsAndRetry(t *testing.T) {
 	if err := server.runner.persistRunMonitorArchive("proj-a", "monitor-run", record, manifest, budget); err != nil {
 		t.Fatal(err)
 	}
-	if manifest.MonitorEvidenceCount != 1 || len(manifest.MonitorCoverage) != 1 || manifest.MonitorCoverage[0].State != "stopped" {
+	// The valid sample and the dropped one.
+	if manifest.MonitorEvidenceCount != 2 || len(manifest.MonitorCoverage) != 1 || manifest.MonitorCoverage[0].State != "stopped" {
 		t.Fatalf("archive coverage: %+v", manifest)
 	}
 	archived, err := os.ReadFile(filepath.Join(archiveRoot, manifest.MonitorEvidenceFile))
@@ -220,7 +251,7 @@ func TestRunMonitoringAPIArtifactsAndRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	var point analysis.MetricPoint
-	if err := json.Unmarshal(archived, &point); err != nil || point.ReceivedAt.IsZero() || point.RunID != "monitor-run" {
+	if err := json.Unmarshal(bytes.SplitN(archived, []byte("\n"), 2)[0], &point); err != nil || point.ReceivedAt.IsZero() || point.RunID != "monitor-run" {
 		t.Fatalf("archive point: %+v %v", point, err)
 	}
 	if err := validateImmutableArchiveArtifactIntegrity(archiveRoot, manifest); err != nil {

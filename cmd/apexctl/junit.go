@@ -74,6 +74,9 @@ type junitInput struct {
 	tps          float64
 	runErr       error
 	sla          *SLASummary
+	// telemetry is a controller CI run's telemetry acceptance verdict; it
+	// gets its own test case, apart from execution and SLA.
+	telemetry *CITelemetryVerdict
 }
 
 func buildJUnitReport(in junitInput) junitTestsuites {
@@ -145,6 +148,13 @@ func buildJUnitReport(in junitInput) junitTestsuites {
 			Time:      "0",
 			Skipped:   &junitSkipped{Message: message},
 		})
+	}
+
+	if in.telemetry != nil {
+		suite.Properties = append(suite.Properties,
+			junitProperty{Name: "telemetry_verdict", Value: in.telemetry.Outcome},
+			junitProperty{Name: "telemetry_policy_mode", Value: in.telemetry.Mode})
+		suite.Cases = append(suite.Cases, telemetryAcceptanceTestcase(classname, in.telemetry))
 	}
 
 	suite.Tests = len(suite.Cases)
@@ -228,6 +238,30 @@ func junitSuiteName(args runArgs, script *dsl.Script) string {
 		}
 	}
 	return "apexload"
+}
+
+// telemetryAcceptanceTestcase is the telemetry verdict's own test case. A
+// verdict that decided the outcome is a failure (or, for an inconclusive
+// verdict with no caller mapping, an error). An advisory verdict that did not
+// pass is skipped with its reasons, so a JUnit gate never fails on it.
+func telemetryAcceptanceTestcase(classname string, verdict *CITelemetryVerdict) junitTestcase {
+	testcase := junitTestcase{Name: "telemetry_acceptance", Classname: classname, Time: "0"}
+	if verdict.Outcome == "pass" {
+		return testcase
+	}
+	reasons := strings.Join(verdict.Reasons, "; ")
+	body := strings.Join(verdict.Reasons, "\n")
+	switch {
+	case verdict.Enforced && verdict.Outcome == "inconclusive" && verdict.InconclusivePolicy == "":
+		testcase.Error = &junitFailure{Message: truncateMessage("inconclusive telemetry verdict with no mapping: " + reasons), Type: "TelemetryInconclusive", Body: body}
+	case verdict.Enforced:
+		testcase.Failure = &junitFailure{Message: truncateMessage("telemetry " + verdict.Outcome + ": " + reasons), Type: "TelemetryAcceptance", Body: body}
+	case verdict.Outcome == "inconclusive" && verdict.InconclusivePolicy == "pass" && verdict.Mode == "fail_ci":
+		// The caller mapped an inconclusive verdict to pass.
+	default:
+		testcase.Skipped = &junitSkipped{Message: truncateMessage(verdict.Mode + " telemetry verdict " + verdict.Outcome + " (does not change the outcome): " + reasons)}
+	}
+	return testcase
 }
 
 // truncateMessage keeps failure-message attributes readable in CI summaries.

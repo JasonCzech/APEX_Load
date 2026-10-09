@@ -33,7 +33,16 @@ func TestRunArchiveFailureReadbackAndScopedEvent(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(1, hub, s)
 	runner.tests[run.ID] = run
+	// Joint batches held for the run's sidecar (B5): no archive was collected,
+	// so recording the failure releases and counts them.
+	run.pendingJointPublications, run.pendingJointBytes = []*storage.NativePublicationEvidence{{SourceID: "generator-a", Sequence: 3}}, 512
 	runner.recordRemoteArchiveFailure(run, storage.RunArchiveFailureRemoteCollection)
+	runner.mu.RLock()
+	held, dropped := len(run.pendingJointPublications), run.jointPublicationsDropped
+	runner.mu.RUnlock()
+	if held != 0 || dropped != 1 {
+		t.Fatalf("held joint batches after a remote archive failure: %d held, %d dropped", held, dropped)
+	}
 	select {
 	case message := <-hub.broadcast:
 		var event struct {
@@ -163,9 +172,18 @@ func TestDistributedCompletionRecordsArchiveFailure(t *testing.T) {
 			}
 			run.remoteTarget = "gen-a"
 			run.remoteClient = &startupLifecycleFakeClient{accept: true}
+			// Joint batches held for the sidecar (B5): no archive is collected,
+			// so each of these completions releases and counts them.
+			run.pendingJointPublications, run.pendingJointBytes = []*storage.NativePublicationEvidence{{SourceID: "gen-a", Sequence: 2}}, 256
 			runner.tests[run.ID] = run
 			backend := newDistributedExecutionBackend([]string{"gen-a"}, time.Second, nil)
 			backend.completeDistributedTestRun(runner, run, tc.status, "")
+			runner.mu.RLock()
+			held, dropped := len(run.pendingJointPublications), run.jointPublicationsDropped
+			runner.mu.RUnlock()
+			if held != 0 || dropped != 1 {
+				t.Fatalf("held joint batches after a %s completion without an archive: %d held, %d dropped", tc.status, held, dropped)
+			}
 			wantStatus := tc.status
 			if tc.status == "COMPLETE" {
 				wantStatus = "FAILED"

@@ -1022,6 +1022,7 @@ func cloneManagedTestFieldsLocked(test *ManagedTest) *ManagedTest {
 	cloned.DynatraceCapture = cloneDynatraceCaptureConfig(test.DynatraceCapture)
 	cloned.MonitorBindings = cloneMonitorBindings(test.MonitorBindings)
 	cloned.TraceContext = cloneRunTraceContext(test.TraceContext)
+	cloned.JointEvidence = test.JointEvidence.Clone()
 	cloned.GeneratorShards = cloneGeneratorShardSummaries(test.GeneratorShards)
 	cloned.ScheduledStartAt = cloneTimePtr(test.ScheduledStartAt)
 	cloned.TimeslotID = cloneStringPtr(test.TimeslotID)
@@ -1083,6 +1084,8 @@ func cloneRunLiveMetrics(test *ManagedTest) *LiveMetrics {
 	}
 	metrics := cloneLiveMetrics(test.LiveMetrics)
 	annotateLiveObservation(metrics, test.Status, time.Now())
+	attachTelemetryStageDistributions(metrics, test)
+	attachTelemetryAcceptance(metrics, test)
 	return metrics
 }
 

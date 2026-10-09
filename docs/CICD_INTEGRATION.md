@@ -11,7 +11,7 @@ surface the result in its native test UI.
 
 | Command | Exit 0 | Exit 1 | Exit 2+ |
 | --- | --- | --- | --- |
-| `apexctl ci run` | passed | SLA breach, or a run the project's validity gate fails (`run_invalid`) | configuration, execution, timeout, or cancellation (see JSON `outcome`) |
+| `apexctl ci run` | passed | SLA breach, a run the project's validity gate fails (`run_invalid`), or a `fail_ci` telemetry acceptance failure (`telemetry_failed`) | configuration (including an unmapped inconclusive telemetry verdict, `telemetry_inconclusive`), execution, timeout, or cancellation (see JSON `outcome`) |
 | `apexctl run` | test ran, no SLA breach | execution error **or** SLA breach | — |
 | `apexctl status` | not breached, not failed | SLA breached, or test FAILED/ABORTED | bad args / fetch error |
 | `apexctl wait` | terminal COMPLETE, not breached | breach, FAILED/ABORTED, or timeout | bad args |
@@ -519,6 +519,24 @@ retry is unaffected, but as with any Actions policy change, CI runs still
 queued for capacity fail at promotion. Use an `apexctl` that knows
 `run_invalid` before enabling the gate; an older one rejects the outcome as an
 invalid controller response and exits `3`.
+
+#### Telemetry acceptance gate
+
+A run that pinned a project `telemetry_acceptance_policy` (see [Telemetry acceptance verdicts](guides/TELEMETRY_POLICY_RECEIPTS.md#telemetry-acceptance-verdicts)) has a `telemetry_verdict` beside the application outcome. It appears in the run response, in `apexctl ci run`'s JSON result and in the `telemetry-verdict` output. The Check lists it in its own section, the job summary shows it in its own rows, and the JUnit report has a separate `telemetry_acceptance` test case. The field holds the verdict (`pass`, `fail` or `inconclusive`), the policy revision, `mode`, every criterion with its evidence, and `enforced`.
+
+Only a `fail_ci` policy can change the outcome, and only for a run that would otherwise pass:
+
+| Verdict under `fail_ci` | Outcome | Exit |
+| --- | --- | --- |
+| `pass` | `passed` | `0` |
+| `fail` | `telemetry_failed` | `1` |
+| `inconclusive`, `--telemetry-inconclusive=pass` | `passed` | `0` |
+| `inconclusive`, `--telemetry-inconclusive=fail` | `telemetry_failed` | `1` |
+| `inconclusive`, no mapping | `telemetry_inconclusive` | `2` |
+
+There is no default mapping. The controller refuses to create a CI run (`400`) without `telemetry_inconclusive` (`apexctl --telemetry-inconclusive`, action input `telemetry-inconclusive`) when the project's default acceptance policy is `fail_ci`. If the policy becomes `fail_ci` between acceptance and Start, an inconclusive verdict is `telemetry_inconclusive`, never a pass.
+
+An advisory verdict never changes the outcome or the exit code. Neither does a verdict on a run that already failed for another reason, or a provisional verdict over live evidence. In JUnit, an advisory verdict that did not pass is a skipped case with its reasons, so a test-report gate does not fail on it. Use an `apexctl` that knows the telemetry outcomes before setting a policy to `fail_ci`; an older one rejects them as an invalid controller response and exits `3`.
 
 Controller-backed CI currently rejects the `browser` protocol. Browser routing
 hooks cannot enforce the target-host boundary across every Chromium redirect

@@ -255,8 +255,15 @@ func TestBrowserActualKeyboardTargetsAfterTheGesture(t *testing.T) {
 
 // A runtime secret in the page's path never reaches the recorded route.
 func TestBrowserActualInteractionRouteIsRuntimeRedacted(t *testing.T) {
+	// BE-4: controlled pages in Chromium and WebKit.
+	for _, engine := range []string{"chromium", "webkit"} {
+		t.Run(engine, func(t *testing.T) { testInteractionRouteIsRuntimeRedacted(t, engine) })
+	}
+}
+
+func testInteractionRouteIsRuntimeRedacted(t *testing.T, engine string) {
 	server, _ := interactionFixtureServer(t)
-	b, ctx := interactionFixtureBrowser(t, "chromium", server.URL, true)
+	b, ctx := interactionFixtureBrowser(t, engine, server.URL, true)
 	// No digits and no long hex run: route sanitization alone would keep it.
 	secret := "magicLinkTokenQxZrTmWpLk"
 	b.SetRuntimeTextRedactor(func(value string) string { return strings.ReplaceAll(value, secret, "[redacted]") })

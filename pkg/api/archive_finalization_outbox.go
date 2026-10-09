@@ -569,6 +569,14 @@ func (tr *TestRunner) attachFinalizedRunArchive(testID string, record *storage.R
 	tr.archives[testID] = &archived
 	attached := archived
 	current.Archive = &attached
+	// The archive is committed: the batches held for its joint sidecar (B5)
+	// are released, and counted as dropped so a sidecar written later (its
+	// first write failed, then a refresh) is marked truncated.
+	releaseHeldJointPublicationsLocked(current)
+	if hook := tr.archiveAttachedHook; hook != nil {
+		// Outside the runner lock: the hook reads the run and its archive.
+		go hook(testID)
+	}
 }
 
 // publishRunArchive uploads all object-backed artifacts before manifest.json.

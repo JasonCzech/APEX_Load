@@ -10,14 +10,22 @@ import { type WSMessage } from '../types'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-const { requestMock, bridgeRequestMock } = vi.hoisted(() => ({
+const { requestMock, bridgeRequestMock, apiFetchMock, downloadBlobMock } = vi.hoisted(() => ({
   requestMock: vi.fn(),
   bridgeRequestMock: vi.fn(),
+  apiFetchMock: vi.fn(),
+  downloadBlobMock: vi.fn(async () => 'saved'),
 }))
 
 vi.mock('../hooks/apiClient', async importOriginal => ({
   ...await importOriginal<typeof import('../hooks/apiClient')>(),
   request: requestMock,
+  apiFetch: apiFetchMock,
+}))
+
+vi.mock('../utils/fileUtils', async importOriginal => ({
+  ...await importOriginal<typeof import('../utils/fileUtils')>(),
+  downloadBlob: downloadBlobMock,
 }))
 
 vi.mock('../hooks/api/browserRecorderBridge', () => ({
@@ -113,6 +121,31 @@ describe('BrowserReplayProgress', () => {
     expect(container.textContent).toContain('Verified ✓')
     expect(container.textContent).toContain('Self-heal suggestions')
     expect(container.textContent).toContain('Stabilize selector')
+  })
+
+  it('offers a finished controller replay\'s HAR and evidence, never a bridge replay\'s', async () => {
+    await act(async () => {
+      root.render(<BrowserReplayProgress replaySessionId="rep-har" />)
+    })
+    const downloads = () => container.querySelector('[aria-label="Replay HAR downloads"]')
+    expect(downloads(), 'not while the replay runs').toBeNull()
+    await send({ type: 'browser_replay_completed', replay_session_id: 'rep-har', report: { events: [] } } as any)
+    const button = (text: string) => Array.from(downloads()?.querySelectorAll('button') || []).find(element => element.textContent === text)
+    apiFetchMock.mockResolvedValue({ ok: true, status: 200, headers: new Headers(), blob: async () => new Blob(['{}']), json: async () => ({}) })
+    await act(async () => { button('Download replay HAR')!.click() })
+    await act(async () => { button('Download replay evidence')!.click() })
+    expect(apiFetchMock.mock.calls.map(call => call[0])).toEqual(['/browser-replay/sessions/rep-har/har', '/browser-replay/sessions/rep-har/evidence'])
+    expect(downloadBlobMock).toHaveBeenCalledTimes(2)
+
+    await act(async () => { root.unmount() })
+    root = createRoot(container)
+    const bridge = { origin: 'http://127.0.0.1:27777', token: 'bridge-token', session_id: 'bridge-session', paired_at: '2026-06-22T00:00:00Z' }
+    await act(async () => {
+      root.render(<BrowserReplayProgress replaySessionId="rep-bridge-har" bridge={bridge} />)
+    })
+    await send({ type: 'browser_replay_completed', replay_session_id: 'rep-bridge-har', report: { events: [] } } as any)
+    expect(container.textContent).toContain('Verified ✓')
+    expect(downloads(), 'a bridge replay is not on the controller').toBeNull()
   })
 
   it('shows the failed state', async () => {
@@ -382,6 +415,7 @@ describe('BrowserReplayProgress', () => {
     expect(onComplete).toHaveBeenCalledWith(null, [])
     expect(container.textContent).toContain('Replay session could not be confirmed')
     expect(container.textContent).toContain('Issues found')
+    expect(container.querySelector('[aria-label="Replay HAR downloads"]'), 'no downloads for a session the controller could not confirm').toBeNull()
   })
 
   it('does not let an older status response overwrite a newer terminal WebSocket result', async () => {

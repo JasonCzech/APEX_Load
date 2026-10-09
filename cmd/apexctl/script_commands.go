@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -113,6 +114,11 @@ func parseScriptArgs(raw []string) scriptArgs {
 func validateScriptFile(path string) scriptValidationResult {
 	script, err := dsl.ParseFile(path)
 	if err != nil {
+		// One issue per finding, as the API's validation routes list them.
+		var invalid *dsl.ValidationError
+		if errors.As(err, &invalid) {
+			return scriptValidationResult{Valid: false, Issues: append([]string{}, invalid.Issues...)}
+		}
 		return scriptValidationResult{Valid: false, Issues: []string{err.Error()}}
 	}
 	issues := dsl.ValidateScriptIssues(script)

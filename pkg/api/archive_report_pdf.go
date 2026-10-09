@@ -556,6 +556,7 @@ var pdfASCIITransliterations = map[rune]string{
 	' ': " ",             // non-breaking space
 	'•': "*",             // bullet
 	'«': "<<", '»': ">>", // guillemets
+	'≥': ">=", '≤': "<=", '÷': "/", '×': "x", // comparison and arithmetic signs
 	// Latin letters NFD does not decompose.
 	'ß': "ss", 'ẞ': "SS",
 	'ø': "o", 'Ø': "O",

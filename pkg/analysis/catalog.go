@@ -223,6 +223,7 @@ func Catalog() MetricCatalog {
 		profile.RequiredFilters = slices.Clone(profile.RequiredFilters)
 		profile.AllowedAggregations = slices.Clone(profile.AllowedAggregations)
 		profile.RequiredEvidence = slices.Clone(profile.RequiredEvidence)
+		profile.GroupingDimensions = slices.Clone(profile.GroupingDimensions)
 		out.QueryProfiles[i] = profile
 	}
 	return out

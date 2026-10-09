@@ -53,6 +53,7 @@ const SECTION_ALIASES: Record<string, string> = {
   soap: 'diagnostics',
   summary_timeline: 'timeline',
   technical_overview: 'kpis',
+  telemetry_acceptance: 'diagnostics',
   transaction_sla: 'sla',
   sla_compliance: 'sla',
   transaction_details: 'diagnostics',

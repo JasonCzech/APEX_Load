@@ -5,7 +5,7 @@ import NativeAnalyticsPanel, { NativePanelAuthoring, NativeProjectPanels } from 
 import ObjectHistory from './ObjectHistory'
 import { OrchestrationReturn } from './OrchestrationReturn'
 import RunOutcomeSummary from './RunOutcomeSummary'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   MetricsHistoryPoint,
@@ -22,6 +22,8 @@ import { useExecutionArchiveSummaryHistory } from './useExecutionArchiveSummaryH
 import { useExecutionArchiveModel } from './useExecutionArchiveModel'
 import { useExecutionLiveControls } from './useExecutionLiveControls'
 import { useExecutionMetricsStream } from './useExecutionMetricsStream'
+import { useClientRenderReporter } from './clientRenderReporter'
+import { ProjectContext } from '../hooks/projectContext'
 import { useRunActionConfirmation } from './useRunActionConfirmation'
 import { useExecutionTestPolling } from './useExecutionTestPolling'
 import { useExecutionViewState } from './useExecutionViewState'
@@ -196,6 +198,10 @@ export default function TestExecution({
     snapshotError,
   } = useExecutionScenarioPreviewModel(test, manifest, manifestLoading, manifestError)
   const { localMetricsHistory, latestMetrics } = useExecutionMetricsStream(testId, test?.status)
+  // Outside a project provider (embedded views, tests) nothing has opted in.
+  const projectContext = useContext(ProjectContext)
+  const clientRenderEvidence = Boolean(projectContext?.projects.find(project => project.id === test?.project_id)?.settings?.telemetry?.client_render_evidence)
+  useClientRenderReporter(testId, clientRenderEvidence, latestMetrics)
   const {
     archiveResourceHistory,
     archiveResourceError,

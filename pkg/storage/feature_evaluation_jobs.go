@@ -41,6 +41,11 @@ const (
 	EvaluationFailureAttemptsExhausted = "attempts_exhausted"
 )
 
+// EvaluationSubjectRequestedSuffix marks the subject of an evaluation of a
+// run under a named revision (the run's ID plus this suffix), which is never
+// the run's own result. A run's deletion removes both subjects' jobs.
+const EvaluationSubjectRequestedSuffix = "#requested"
+
 // EvaluationJob is one bounded analytical evaluation (browser intelligence,
 // telemetry acceptance, derived analysis, export) with its frozen inputs.
 type EvaluationJob struct {
@@ -51,18 +56,22 @@ type EvaluationJob struct {
 	IdempotencyKeyHash string `json:"-"`
 	// RequestDigest identifies the exact request an idempotency key was used
 	// with; InputFingerprint only records what the result was computed from.
-	RequestDigest    string     `json:"-"`
-	Request          string     `json:"request"`
-	InputFingerprint string     `json:"input_fingerprint"`
-	State            string     `json:"state"`
-	Revision         int64      `json:"revision"`
-	Owner            string     `json:"-"`
-	LeaseExpiresAt   *time.Time `json:"-"`
-	Progress         string     `json:"progress,omitempty"`
-	Result           string     `json:"result,omitempty"`
-	ResultSHA256     string     `json:"result_sha256,omitempty"`
-	Failure          string     `json:"failure,omitempty"`
-	FailureCode      string     `json:"failure_code,omitempty"`
+	RequestDigest    string `json:"-"`
+	Request          string `json:"request"`
+	InputFingerprint string `json:"input_fingerprint"`
+	// SubjectID, when set by the job's kind, is what the evaluation is about
+	// (a browser evaluation's canonical run ID), so its jobs are found by an
+	// index rather than by reading requests.
+	SubjectID      string     `json:"subject_id,omitempty"`
+	State          string     `json:"state"`
+	Revision       int64      `json:"revision"`
+	Owner          string     `json:"-"`
+	LeaseExpiresAt *time.Time `json:"-"`
+	Progress       string     `json:"progress,omitempty"`
+	Result         string     `json:"result,omitempty"`
+	ResultSHA256   string     `json:"result_sha256,omitempty"`
+	Failure        string     `json:"failure,omitempty"`
+	FailureCode    string     `json:"failure_code,omitempty"`
 	// Attempts counts claims; a job that keeps losing its runner expires.
 	Attempts int `json:"attempts"`
 	// ResultBytes is the stored result size; listings carry it instead of
@@ -83,6 +92,7 @@ type EvaluationJobStore interface {
 	CreateEvaluationJob(job *EvaluationJob, maxActivePerProject int) (*EvaluationJob, bool, error)
 	GetEvaluationJob(projectID, id string) (*EvaluationJob, error)
 	ListEvaluationJobs(projectID, kind string, limit, offset int) ([]*EvaluationJob, error)
+	ListEvaluationJobsForSubject(projectID, kind, subjectID string, limit int) ([]*EvaluationJob, error)
 	ClaimEvaluationJob(owner string, now time.Time, lease time.Duration, kinds []string, maxAttempts int) (*EvaluationJob, error)
 	RenewEvaluationJob(id, owner string, now time.Time, lease time.Duration) (bool, error)
 	CompleteEvaluationJobFenced(id, owner, state, result, resultSHA256, failureCode, failure string, now time.Time, leaseName, leaseOwner string, generation uint64) (bool, error)
@@ -93,12 +103,12 @@ type EvaluationJobStore interface {
 var _ EvaluationJobStore = (*SQLiteStore)(nil)
 
 const evaluationJobColumns = `id, project_id, actor, kind, idempotency_key_hash, request_digest, request, input_fingerprint, state, revision, owner,
-	lease_expires_at, progress, result, result_sha256, failure, failure_code, attempts, hidden_at, created_at, updated_at, completed_at, result_bytes`
+	lease_expires_at, progress, result, result_sha256, failure, failure_code, attempts, hidden_at, created_at, updated_at, completed_at, result_bytes, subject_id`
 
 // evaluationJobSummaryColumns leave the request and result bodies out; a
 // listing returns their size and hash only.
 const evaluationJobSummaryColumns = `id, project_id, actor, kind, idempotency_key_hash, request_digest, '' AS request, input_fingerprint, state, revision, owner,
-	lease_expires_at, progress, '' AS result, result_sha256, failure, failure_code, attempts, hidden_at, created_at, updated_at, completed_at, result_bytes`
+	lease_expires_at, progress, '' AS result, result_sha256, failure, failure_code, attempts, hidden_at, created_at, updated_at, completed_at, result_bytes, subject_id`
 
 func scanEvaluationJob(row interface{ Scan(...any) error }) (*EvaluationJob, error) {
 	var job EvaluationJob
@@ -106,7 +116,7 @@ func scanEvaluationJob(row interface{ Scan(...any) error }) (*EvaluationJob, err
 	var resultBytes sql.NullInt64
 	if err := row.Scan(&job.ID, &job.ProjectID, &job.Actor, &job.Kind, &job.IdempotencyKeyHash, &job.RequestDigest, &job.Request, &job.InputFingerprint,
 		&job.State, &job.Revision, &job.Owner, &lease, &job.Progress, &job.Result, &job.ResultSHA256, &job.Failure, &job.FailureCode, &job.Attempts, &hidden,
-		&job.CreatedAt, &job.UpdatedAt, &completed, &resultBytes); err != nil {
+		&job.CreatedAt, &job.UpdatedAt, &completed, &resultBytes, &job.SubjectID); err != nil {
 		return nil, err
 	}
 	job.ResultBytes = resultBytes.Int64
@@ -167,9 +177,9 @@ func (s *SQLiteStore) CreateEvaluationJob(job *EvaluationJob, maxActivePerProjec
 	}
 	now := time.Now().UTC()
 	if _, err := tx.Exec(`INSERT INTO feature_evaluation_jobs (id, project_id, actor, kind, idempotency_key_hash, request_digest, request, input_fingerprint,
-		state, revision, owner, lease_expires_at, progress, result, result_sha256, failure, failure_code, attempts, hidden_at, created_at, updated_at, completed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, '', NULL, '', '', '', '', '', 0, NULL, ?, ?, NULL)`,
-		job.ID, project, job.Actor, job.Kind, job.IdempotencyKeyHash, job.RequestDigest, job.Request, job.InputFingerprint, EvaluationJobQueued, now, now); err != nil {
+		state, revision, owner, lease_expires_at, progress, result, result_sha256, failure, failure_code, attempts, hidden_at, created_at, updated_at, completed_at, subject_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, '', NULL, '', '', '', '', '', 0, NULL, ?, ?, NULL, ?)`,
+		job.ID, project, job.Actor, job.Kind, job.IdempotencyKeyHash, job.RequestDigest, job.Request, job.InputFingerprint, EvaluationJobQueued, now, now, job.SubjectID); err != nil {
 		return nil, false, err
 	}
 	created, err := scanEvaluationJob(tx.QueryRow(`SELECT `+evaluationJobColumns+` FROM feature_evaluation_jobs WHERE id = ?`, job.ID))
@@ -185,6 +195,30 @@ func (s *SQLiteStore) GetEvaluationJob(projectID, id string) (*EvaluationJob, er
 		return nil, ErrEvaluationJobNotFound
 	}
 	return job, err
+}
+
+// ListEvaluationJobsForSubject returns the visible job summaries of one kind
+// about one subject, newest first, by index. Request and result bodies are
+// left out.
+func (s *SQLiteStore) ListEvaluationJobsForSubject(projectID, kind, subjectID string, limit int) ([]*EvaluationJob, error) {
+	if limit < 1 || limit > 1000 || strings.TrimSpace(kind) == "" || strings.TrimSpace(subjectID) == "" {
+		return nil, errors.New("invalid evaluation subject query")
+	}
+	rows, err := s.db.Query(`SELECT `+evaluationJobSummaryColumns+` FROM feature_evaluation_jobs
+		WHERE project_id = ? AND kind = ? AND subject_id = ? AND hidden_at IS NULL ORDER BY created_at DESC, id LIMIT ?`, normalizeProjectID(projectID), kind, subjectID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	jobs := []*EvaluationJob{}
+	for rows.Next() {
+		job, err := scanEvaluationJob(rows)
+		if err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, job)
+	}
+	return jobs, rows.Err()
 }
 
 // ListEvaluationJobs returns visible job summaries, newest first. Request and

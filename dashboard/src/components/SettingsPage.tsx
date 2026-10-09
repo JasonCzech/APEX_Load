@@ -63,6 +63,7 @@ import DomainDeploymentTargetCard from './DomainDeploymentTargetCard'
 import EntitlementsPanel from './EntitlementsPanel'
 import EntitlementHeadroom from './EntitlementHeadroom'
 import ProjectPoolQuotasCard, { type ProjectPoolQuotasDraftController } from './ProjectPoolQuotasCard'
+import ProjectTelemetryEvidenceCard from './ProjectTelemetryEvidenceCard'
 import ProjectSecretsPanel from './ProjectSecretsPanel'
 import { listAllFleetPools } from './fleetCatalogModel'
 import {
@@ -163,6 +164,9 @@ const NOTIFICATION_EVENTS = [
   'telemetry_breached',
   'telemetry_recovered',
   'threshold_alert',
+  'browser_finding',
+  'browser_finding_resolved',
+  'telemetry_acceptance',
   'load_phase',
   'fleet_alert',
   'fleet_alert_acknowledged',
@@ -185,7 +189,7 @@ const TELEMETRY_BUDGET_ROWS: Array<{ key: TelemetryBudgetKey; label: string; des
   { key: 'max_telemetry_generator_lag_ms', label: 'Max Generator Lag (ms)', desc: 'Budget for generator-side capture, aggregation, and serialization. Always enforced; 0 disables this budget.' },
   { key: 'max_telemetry_transport_lag_ms', label: 'Max Transport Lag (ms)', desc: 'Budget for generator-to-controller delivery. Always enforced; 0 disables this budget.' },
   { key: 'max_telemetry_controller_fanout_ms', label: 'Max Controller Fan-out (ms)', desc: 'Budget for controller receipt through websocket publish. Always enforced; 0 disables this budget.' },
-  { key: 'max_telemetry_browser_render_lag_ms', label: 'Max Browser Render Lag (ms)', desc: 'Budget reserved for dashboard client receive-to-render delay. Always enforced; 0 disables this budget.' },
+  { key: 'max_telemetry_browser_render_lag_ms', label: 'Max Browser Render Lag (ms)', desc: 'Advisory budget for dashboard client receive-to-render delay. It is captured in each run\'s telemetry budget policy (render samples appear in the run\'s stage distributions) but never affects run health or diagnostics; 0 disables it.' },
 ]
 
 function settingsDraftFieldValue(settings: DashboardSystemSettings, field: string): string | undefined {
@@ -4677,7 +4681,7 @@ export default function SettingsPage({
             {renderFieldIssues('thresholds.fleet_saturated_available_slots')}
             <div className="settings-subgroup-header">
               <span className="settings-subgroup-title">Telemetry Pipeline</span>
-              <span className="settings-subgroup-desc">Time budgets for each stage of the live metrics pipeline: generator capture, transport, controller fan-out, and browser render. Breaches surface as telemetry diagnostics warnings.</span>
+              <span className="settings-subgroup-desc">Time budgets for each stage of the live metrics pipeline. Sample age, generator capture, transport and controller fan-out breaches surface as telemetry diagnostics warnings; the browser render budget is advisory only.</span>
             </div>
             {TELEMETRY_BUDGET_ROWS.map(row => (
               <div key={row.key}>
@@ -5712,6 +5716,15 @@ export default function SettingsPage({
                       canManage={canManageProjects}
                       onUpdate={updateProject}
                       onDirtyChange={setPoolQuotaDraftDirty}
+                      onUpdated={updated => {
+                        commitSettingsProject(updated)
+                      }}
+                    />
+                  )}
+                  {selectedProject && (
+                    <ProjectTelemetryEvidenceCard
+                      project={selectedProject}
+                      canEdit={capabilityAllowed('manage_tests')}
                       onUpdated={updated => {
                         commitSettingsProject(updated)
                       }}

@@ -123,12 +123,22 @@ func TestLeadershipLossTeardownStopsRuntimeWithoutLifecyclePersistence(t *testin
 		executionFence:        oldToken,
 		remoteClient:          client,
 		remoteClientsByTarget: map[string]generatorClient{"generator-a": client},
+		jointHeldFromStart:    true,
+		// Joint batches held for the next point (B5).
+		pendingJointPublications: []*storage.NativePublicationEvidence{{SourceID: "generator-a", Sequence: 4}},
+		pendingJointBytes:        512,
 	}
 	if err := runner.saveManagedTestRecord(test); err != nil {
 		t.Fatalf("seed active test: %v", err)
 	}
+	// A finished run whose archive publication awaits its retry still holds
+	// joint batches; this controller will not commit them after losing the
+	// lease (B5).
+	finished := &ManagedTest{ID: "leadership-loss-finished", Status: "COMPLETE", ProjectID: storage.DefaultProjectID,
+		pendingJointPublications: []*storage.NativePublicationEvidence{{SourceID: "generator-a", Sequence: 9}}, pendingJointBytes: 256}
 	runner.mu.Lock()
 	runner.tests[test.ID] = test
+	runner.tests[finished.ID] = finished
 	runner.mu.Unlock()
 
 	// The durable lease is already owned by a successor. A normal StopTest would
@@ -158,6 +168,16 @@ func TestLeadershipLossTeardownStopsRuntimeWithoutLifecyclePersistence(t *testin
 	}
 	if test.cancel != nil || test.executionCtx != nil || test.remoteClient != nil || test.remoteClientsByTarget != nil {
 		t.Fatalf("stale runtime handles remained attached: %#v", test)
+	}
+	// The successor holds the run's batches from now on (B5).
+	if test.jointHeldFromStart {
+		t.Fatal("a run torn down after leadership loss is still held from its start")
+	}
+	if test.pendingJointPublications != nil || test.pendingJointBytes != 0 || test.jointPublicationsDropped != 1 {
+		t.Fatalf("held joint batches after leadership loss: %d held, %d bytes, %d dropped", len(test.pendingJointPublications), test.pendingJointBytes, test.jointPublicationsDropped)
+	}
+	if finished.pendingJointPublications != nil || finished.jointPublicationsDropped != 1 {
+		t.Fatalf("a finished run kept its held joint batches after leadership loss: %d held, %d dropped", len(finished.pendingJointPublications), finished.jointPublicationsDropped)
 	}
 	durable, err := store.GetTest(test.ID)
 	if err != nil {

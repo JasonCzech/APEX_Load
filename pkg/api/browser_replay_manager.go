@@ -70,6 +70,24 @@ type BrowserReplaySession struct {
 	terminalFenceEstablished bool
 	retainedEventJSONBytes   int
 	eventJSONBytes           []int
+	// harCopy is this record's retained native HAR copy (D7), set with its
+	// terminal state; the copy is removed when the record leaves the manager.
+	harCopy string
+	// workerRecordedTerminal is set when the worker records its final state
+	// (harCopy with it); a Stop makes the session terminal before that.
+	workerRecordedTerminal bool
+	// workerSettled is set on snapshots only: the worker had recorded its
+	// final state, finished or been abandoned when the snapshot was taken, so
+	// harCopy is final.
+	workerSettled bool
+}
+
+// workerWasAbandoned reports whether the abandon backstop orphaned this
+// record.
+func (s *BrowserReplaySession) workerWasAbandoned() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.workerAbandoned
 }
 
 // replayCompletionHook is invoked once a replay session reaches a terminal
@@ -90,6 +108,10 @@ type BrowserReplayManager struct {
 	closeOnce     sync.Once
 	closeDone     chan struct{}
 	closeTimeout  time.Duration
+	// har holds the replays' native HAR copies; harDownloads bounds
+	// concurrent replay HAR downloads.
+	har          replayHARStore
+	harDownloads chan struct{}
 }
 
 func NewBrowserReplayManager(hub *Hub) *BrowserReplayManager {
@@ -99,6 +121,7 @@ func NewBrowserReplayManager(hub *Hub) *BrowserReplayManager {
 		retention:    defaultReplaySessionRetentionConfig(),
 		closeDone:    make(chan struct{}),
 		closeTimeout: replaySessionCloseDrainTimeout,
+		harDownloads: make(chan struct{}, replayHARMaxDownloads),
 	}
 }
 
@@ -204,6 +227,7 @@ func (m *BrowserReplayManager) Close() {
 			waitFor = append(waitFor, cleanup.session.workerDone)
 		}
 		waitForReplaySessionWorkers(waitFor, m.closeTimeout)
+		m.har.close()
 		close(m.closeDone)
 	})
 	if m.closeDone != nil {
@@ -280,7 +304,12 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 	// Retained-lease releases collected during pruning/eviction run once m.mu is
 	// dropped (they are synchronous store calls in HA mode).
 	var pruneReleases []*replaySessionLeaseSignal
-	defer func() { releaseRetainedReplaySessionSignals(pruneReleases) }()
+	defer func() {
+		releaseRetainedReplaySessionSignals(pruneReleases)
+		// Pruning may have removed records that kept HAR copies, and a
+		// record reusing an ID never inherits the old one's copy.
+		m.sweepReplayHARs()
+	}()
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()
@@ -386,16 +415,25 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 			RedactionRules:  req.RedactionRules,
 			SecretResolver:  req.SecretResolver,
 			IgnoreThinkTime: ignoreThinkTime,
+			RecordHAR:       req.RecordHAR != nil && *req.RecordHAR,
+			DiscardHAR:      m.discardReplayHAR,
 			OnProgress: func(event engine.ReplayProgressEvent) {
 				m.handleReplayProgress(ctx, session, event)
 			},
 		})
-
 		completedAt := m.retention.clock()
 		messageType := "browser_replay_completed"
 		leaseErr := leaseFailure.retainForTerminal(m.retention.terminalTTL)
 		fenceErr := replayExecutionFenceError(executionCtx, leaseFailure)
 		terminalFenceEstablished := leaseErr == nil && fenceErr == nil
+		// The browser has closed: keep its native HAR before the session
+		// becomes terminal, so a terminal session's HAR is final. A record
+		// without its fence, or whose worker was abandoned, keeps nothing;
+		// the HAR directory's original is retired either way.
+		harCopy := ""
+		if report != nil {
+			harCopy = m.retainReplayHAR(session, report.TakeHARArtifacts(), terminalFenceEstablished && !session.workerWasAbandoned())
+		}
 		eventIndex := -1
 		abandoned := false
 		var terminalReport *engine.ReplayReport
@@ -411,6 +449,10 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 			}
 			session.CompletedAt = &completedAt
 			session.terminalFenceEstablished = terminalFenceEstablished
+			session.workerRecordedTerminal = true
+			if terminalFenceEstablished {
+				session.harCopy = harCopy
+			}
 			if report != nil && terminalFenceEstablished {
 				session.FinalReport = report
 				session.Events = nil
@@ -464,6 +506,9 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 			session.mu.Unlock()
 		})
 		if !current || abandoned {
+			if harCopy != "" {
+				m.har.remove(harCopy)
+			}
 			return
 		}
 		// Broadcast and run the completion hook only after the manager read lock
@@ -553,6 +598,7 @@ func (m *BrowserReplayManager) PruneExpired() int {
 	removed, releases := m.pruneExpiredLocked(now)
 	m.mu.Unlock()
 	releaseRetainedReplaySessionSignals(releases)
+	m.sweepReplayHARs()
 	return removed
 }
 
@@ -771,6 +817,7 @@ func (m *BrowserReplayManager) abandonUnresponsiveWorker(session *BrowserReplayS
 		session.mu.Unlock()
 	}
 	m.mu.Unlock()
+	m.sweepReplayHARs()
 
 	// Tear down whichever lifecycle state currently owns the reservation only
 	// after the local lookup surface has stopped exposing the old capability.
@@ -843,7 +890,12 @@ func (m *BrowserReplayManager) PauseForProject(sessionID, projectID string) (*Br
 func (m *BrowserReplayManager) pauseForProject(sessionID, projectID string) (*BrowserReplaySession, bool, bool) {
 	now := m.retention.clock()
 	var pruneReleases []*replaySessionLeaseSignal
-	defer func() { releaseRetainedReplaySessionSignals(pruneReleases) }()
+	defer func() {
+		releaseRetainedReplaySessionSignals(pruneReleases)
+		// Pruning may have removed records that kept HAR copies, and a
+		// record reusing an ID never inherits the old one's copy.
+		m.sweepReplayHARs()
+	}()
 	m.mu.Lock()
 	_, pruneReleases = m.pruneExpiredLocked(now)
 	session, ok := m.sessions[sessionID]
@@ -887,7 +939,12 @@ func (m *BrowserReplayManager) ResumeForProject(sessionID, projectID string) (*B
 func (m *BrowserReplayManager) resumeForProject(sessionID, projectID string) (*BrowserReplaySession, bool, bool) {
 	now := m.retention.clock()
 	var pruneReleases []*replaySessionLeaseSignal
-	defer func() { releaseRetainedReplaySessionSignals(pruneReleases) }()
+	defer func() {
+		releaseRetainedReplaySessionSignals(pruneReleases)
+		// Pruning may have removed records that kept HAR copies, and a
+		// record reusing an ID never inherits the old one's copy.
+		m.sweepReplayHARs()
+	}()
 	m.mu.Lock()
 	_, pruneReleases = m.pruneExpiredLocked(now)
 	session, ok := m.sessions[sessionID]
@@ -931,7 +988,12 @@ func (m *BrowserReplayManager) StopForProject(sessionID, projectID string) (*Bro
 func (m *BrowserReplayManager) stopForProject(sessionID, projectID string) (*BrowserReplaySession, bool) {
 	now := m.retention.clock()
 	var pruneReleases []*replaySessionLeaseSignal
-	defer func() { releaseRetainedReplaySessionSignals(pruneReleases) }()
+	defer func() {
+		releaseRetainedReplaySessionSignals(pruneReleases)
+		// Pruning may have removed records that kept HAR copies, and a
+		// record reusing an ID never inherits the old one's copy.
+		m.sweepReplayHARs()
+	}()
 	m.mu.Lock()
 	_, pruneReleases = m.pruneExpiredLocked(now)
 	session, ok := m.sessions[sessionID]
@@ -1002,6 +1064,7 @@ func (m *BrowserReplayManager) retireUnfencedSession(session *BrowserReplaySessi
 	}
 	m.mu.Unlock()
 	if retired {
+		m.sweepReplayHARs()
 		reservation.releaseAll()
 		if releaseID != nil {
 			releaseID()
@@ -1203,6 +1266,8 @@ func (s *BrowserReplaySession) snapshotBaseLocked() *BrowserReplaySession {
 		CurrentEventIndex: s.CurrentEventIndex,
 		DroppedEventCount: s.DroppedEventCount,
 		Error:             s.Error,
+		harCopy:           s.harCopy,
+		workerSettled:     s.workerRecordedTerminal || s.workerHasFinishedLocked(),
 	}
 }
 

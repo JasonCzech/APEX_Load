@@ -17,15 +17,19 @@ const (
 	BrowserHAROmittedSourceUnavailable = "source_unavailable"
 	// BrowserHAROmittedSafeExport: a safe archive export leaves HARs out.
 	BrowserHAROmittedSafeExport = "safe_export"
-	BrowserHAROmittedReceipt           = "receipt_refused"
+	BrowserHAROmittedReceipt    = "receipt_refused"
 )
 
 // BrowserHARArtifact is a completed, scrubbed native HAR that a browser
-// session published into its HAR directory: the artifact's path and the
-// working generation that recorded it.
+// session published into its HAR directory: the artifact's path, the
+// working generation that recorded it and the browser evidence generation
+// of the context it recorded (the SourceGeneration of that context's
+// resource evidence), which tells a synthetic HAR which entries a native one
+// already holds.
 type BrowserHARArtifact struct {
-	Path       string
-	Generation string
+	Path               string
+	Generation         string
+	EvidenceGeneration string
 }
 
 // BrowserHARArtifactProvider hands over each HAR artifact a session

@@ -87,6 +87,20 @@ type VUser struct {
 	// rng, when set, makes random template builtins ({{fn.random}}, {{fake.*}})
 	// deterministic. Set by the replay path; nil in load runs (time-seeded).
 	rng *rand.Rand
+	// currentIteration is the 1-based iteration being executed (0 during
+	// init and teardown); results are stamped with it.
+	currentIteration atomic.Int64
+	// runCtx is the context Run was given; without a HardStopCtx its
+	// cancellation interrupts the action in flight. abandoning is set while a
+	// stop or goal boundary records the failed transaction it leaves behind.
+	// A failure recorded under either is marked interrupted.
+	runCtx     context.Context
+	abandoning bool
+	// lifetime identifies this VUser's lifetime (see protocol.Result).
+	lifetime uint64
+	// transactionSpanStart, while set, is the real start of the transaction
+	// being recorded (see recordTransactionSpan).
+	transactionSpanStart time.Time
 	// unresolvedSecretRefs collects {{secret.*}} references that failed to resolve
 	// during the most recent resolveAction; the execution path fails the action
 	// closed rather than sending the literal placeholder. Per-VUser (single
@@ -137,7 +151,10 @@ type VUser struct {
 	iterationThinkTime time.Duration
 	userWorkStarted    bool
 	resultPhase        string
-	resultSequence     uint64
+	// endingIteration marks the transactions recorded because the iteration
+	// ended on its own (Result.EndsIteration).
+	endingIteration bool
+	resultSequence  uint64
 }
 
 // resolvedActionCredentialComposites pins credential spellings to the exact
@@ -242,7 +259,17 @@ func (vu *VUser) Run(ctx context.Context) {
 		}
 	}()
 	vu.resultPhase = "action"
+	vu.runCtx = ctx
+	if vu.lifetime == 0 {
+		vu.lifetime = newVUserLifetime()
+	}
 
+	// genuineExit records that the VUser ended on its own (its iterations
+	// done, its data exhausted, a genuine failure with continue_on_error off)
+	// rather than because a stop, ramp-down, scale-down or goal boundary ended
+	// it. It is recorded where the loop ends, never inferred from contexts: a
+	// goal limiter can refuse a slot without cancelling anything.
+	genuineExit := false
 	if err := vu.prepareRuntimeState(); err != nil {
 		vu.recordDataRowError(err)
 		return
@@ -282,7 +309,15 @@ func (vu *VUser) Run(ctx context.Context) {
 	// the normal path; the defer covers every early return and panic unwind.
 	defer func() {
 		runTeardown()
+		// A VUser that leaves because it was told to stop (the run, its
+		// group, a scale-down or a goal boundary) leaves its open
+		// transactions cut, not failed; one that ended on its own (its
+		// iterations done, a genuine failure) ends their iteration.
+		stopped := !genuineExit
+		previousAbandoning, previousEnding := vu.abandoning, vu.endingIteration
+		vu.abandoning, vu.endingIteration = previousAbandoning || stopped, !stopped
 		vu.finalizeOpenSourceTransactions("source transaction ended without a matching end marker")
+		vu.abandoning, vu.endingIteration = previousAbandoning, previousEnding
 	}()
 
 	// --- Init phase ---
@@ -297,6 +332,8 @@ func (vu *VUser) Run(ctx context.Context) {
 		stopInitBoundaryLink()
 		cancelInitBoundary()
 		if !ok {
+			// Init failed on its own unless a stop ended it.
+			genuineExit = ctx.Err() == nil && iterCtx.Err() == nil && entitledBoundaryCtx.Err() == nil
 			return
 		}
 	}
@@ -399,6 +436,7 @@ func (vu *VUser) Run(ctx context.Context) {
 		}
 		// Check iteration limit
 		if maxIter > 0 && iteration >= maxIter {
+			genuineExit = true
 			break
 		}
 		// Must precede the goal reservations below: once a reservation is
@@ -422,7 +460,10 @@ func (vu *VUser) Run(ctx context.Context) {
 				// becomes definitive and the peer can release its iteration.
 				reserved = vu.ExecutionGoals.TryReserveIteration()
 				if !reserved {
+					// The goal boundary, not the target, ends it.
+					vu.abandoning = true
 					vu.finalizeOpenSourceTransactions("source transaction could not acquire a global iteration slot")
+					vu.abandoning = false
 				}
 			} else {
 				reserved = vu.ExecutionGoals.WaitReserveIteration(iterationBoundaryCtx)
@@ -442,7 +483,9 @@ func (vu *VUser) Run(ctx context.Context) {
 				// relinquish any earlier iteration reservation.
 				reserved = vu.ExecutionGoals.TryReserveTransaction()
 				if !reserved {
+					vu.abandoning = true
 					vu.finalizeOpenSourceTransactions("source transaction could not acquire a per-iteration transaction slot")
+					vu.abandoning = false
 				}
 			} else {
 				reserved = vu.ExecutionGoals.WaitReserveTransaction(iterationBoundaryCtx)
@@ -496,6 +539,10 @@ func (vu *VUser) Run(ctx context.Context) {
 
 		iterStart := time.Now()
 		previousIterStart = iterStart
+		vu.currentIteration.Store(int64(iteration + 1))
+		// A transaction still open from an earlier iteration is carried into
+		// this one, so the iteration it is recorded in never goes backward.
+		vu.carryOpenSourceTransactions(int64(iteration + 1))
 		if pacingCfg.activeClock != nil {
 			pacingCfg.iterStartActive = pacingCfg.activeClock()
 		}
@@ -509,6 +556,8 @@ func (vu *VUser) Run(ctx context.Context) {
 				vu.restoreDataBindings(cleanupBindings)
 				vu.recordDataRowError(err)
 				releasePreIterationReservations()
+				// Its data ran out: the VUser ends on its own.
+				genuineExit = true
 				goto teardown
 			}
 			if vu.Parameters != nil {
@@ -575,6 +624,8 @@ func (vu *VUser) Run(ctx context.Context) {
 			if !iterationTxMode || iterTxRecorded {
 				return
 			}
+			vu.endingIteration = true
+			defer func() { vu.endingIteration = false }()
 			duration := iterTxDuration
 			if duration <= 0 {
 				duration = time.Since(iterTxStart) - vu.iterationThinkTime
@@ -586,10 +637,27 @@ func (vu *VUser) Run(ctx context.Context) {
 			if !success {
 				source = iterTransactionSource
 			}
-			vu.recordTransaction(vu.iterationTransactionName(), duration, success, source)
+			vu.recordTransactionSpan(vu.iterationTransactionName(), duration, success, source, iterTxStart)
 			iterTxRecorded = true
 		}
 
+		// failIteration ends the iteration on a genuine failure with
+		// continue_on_error off: the VUser ends on its own. A block's failure
+		// can also be a goal limit refusing one of its slots (a parallel
+		// branch, a WebSocket callback step), which the block cannot tell
+		// apart: once a shared goal is spent, the failure is taken for the
+		// goal boundary's (interrupted, the VUser stopped), never the
+		// target's.
+		failIteration := func() {
+			if vu.ExecutionGoals.spent() {
+				vu.abandoning = true
+				recordIterationTransaction(false)
+				vu.abandoning = false
+				return
+			}
+			genuineExit = true
+			recordIterationTransaction(false)
+		}
 		iterSuccess := true
 		iterationExitRequested := false
 
@@ -685,6 +753,9 @@ func (vu *VUser) Run(ctx context.Context) {
 				if action.Control == nil || depth >= maxControlDepth {
 					iterSuccess = false
 					if !continueOnError {
+						// A genuine failure ends the iteration: record it as one,
+						// never as a boundary abort.
+						failIteration()
 						return flowTeardown
 					}
 					return flowNext
@@ -692,6 +763,7 @@ func (vu *VUser) Run(ctx context.Context) {
 				if !vu.executeParallelBlock(iterCtx, action, "action") {
 					iterSuccess = false
 					if !continueOnError {
+						failIteration()
 						return flowTeardown
 					}
 				}
@@ -854,7 +926,7 @@ func (vu *VUser) Run(ctx context.Context) {
 					logger.Error("action error", "action", action.Name, "err", scrubSensitiveError(err, vu.RedactionConfig))
 					iterSuccess = false
 					if !continueOnError {
-						recordIterationTransaction(false)
+						failIteration()
 						return flowTeardown
 					}
 				}
@@ -913,7 +985,7 @@ func (vu *VUser) Run(ctx context.Context) {
 					logger.Error("action error", "action", action.Name, "err", scrubSensitiveError(err, vu.RedactionConfig))
 					iterSuccess = false
 					if !continueOnError {
-						recordIterationTransaction(false)
+						failIteration()
 						return flowTeardown
 					}
 					return flowNext
@@ -933,7 +1005,7 @@ func (vu *VUser) Run(ctx context.Context) {
 						logger.Error("action failed", actionLogAttrs(action.Name, nil, result, logCfg, true, vu.RedactionConfig)...)
 					}
 					if !continueOnError {
-						recordIterationTransaction(false)
+						failIteration()
 						return flowTeardown
 					}
 				} else if logCfg.Level == "extended" || logCfg.OnErrorOnly {
@@ -953,7 +1025,7 @@ func (vu *VUser) Run(ctx context.Context) {
 			}
 			if err := vu.beforeWebSocketAction(iterCtx, action.Type); err != nil {
 				logger.Error("WebSocket callback failed", "err", scrubSensitiveError(err, vu.RedactionConfig))
-				recordIterationTransaction(false)
+				failIteration()
 				return flowTeardown
 			}
 			leasedCtx, releasePause, pauseErr := vu.admitRuntimePauseAction(iterCtx)
@@ -976,7 +1048,7 @@ func (vu *VUser) Run(ctx context.Context) {
 				!reservedActionTransaction {
 				if !vu.reserveGoalTransaction(iterationBoundaryCtx) {
 					if actionTxMode {
-						vu.recordTransaction(action.Name, time.Since(actionTxStart), false, nil)
+						vu.recordAbandonedTransaction(action.Name, time.Since(actionTxStart), nil)
 						restoreIterationBoundary()
 					}
 					return flowTeardown
@@ -1011,7 +1083,7 @@ func (vu *VUser) Run(ctx context.Context) {
 						// The automatic action slot was claimed before protocol
 						// execution. Preserve one metric for that consumed slot even
 						// when an additional streamed child is refused by the goal.
-						vu.recordTransaction(action.Name, time.Since(actionTxStart), false, nil)
+						vu.recordAbandonedTransaction(action.Name, time.Since(actionTxStart), nil)
 						restoreIterationBoundary()
 					}
 					return flowTeardown
@@ -1024,7 +1096,7 @@ func (vu *VUser) Run(ctx context.Context) {
 					restoreIterationBoundary()
 				}
 				if !continueOnError {
-					recordIterationTransaction(false)
+					failIteration()
 					return flowTeardown
 				}
 				if iterCtx.Err() == nil && iterationBoundaryCtx.Err() == nil {
@@ -1041,7 +1113,7 @@ func (vu *VUser) Run(ctx context.Context) {
 					restoreIterationBoundary()
 				}
 				if actionTxMode {
-					vu.recordTransaction(action.Name, vu.sourceSampleDuration(actionTxStart, result), false, result)
+					vu.recordAbandonedTransaction(action.Name, vu.sourceSampleDuration(actionTxStart, result), result)
 					restoreIterationBoundary()
 				}
 				return flowTeardown
@@ -1086,7 +1158,7 @@ func (vu *VUser) Run(ctx context.Context) {
 					logger.Error("action failed", actionLogAttrs(action.Name, resolved, result, logCfg, true, vu.RedactionConfig)...)
 				}
 				if !continueOnError {
-					recordIterationTransaction(false)
+					failIteration()
 					return flowTeardown
 				}
 			} else if logCfg.Level == "extended" || logCfg.OnErrorOnly {
@@ -1123,7 +1195,9 @@ func (vu *VUser) Run(ctx context.Context) {
 				// Once the automatic per-iteration reservation is committed,
 				// every post-setup boundary abort must emit the corresponding
 				// failed transaction instead of silently consuming the goal.
+				vu.abandoning = true
 				recordIterationTransaction(false)
+				vu.abandoning = false
 				releaseReservedActionTransaction()
 				goto teardown
 			case flowBreak, flowContinue:
@@ -1143,6 +1217,7 @@ func (vu *VUser) Run(ctx context.Context) {
 	}
 
 teardown:
+	vu.currentIteration.Store(0)
 	releasePreIterationReservations()
 	runTeardown()
 }

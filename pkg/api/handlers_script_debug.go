@@ -229,6 +229,7 @@ func (s *Server) handleStartScriptDebugRequest(w http.ResponseWriter, r *http.Re
 		return
 	}
 	script = applyScriptDebugOverrides(script, req)
+	submitted := script
 	var prepared bool
 	script, prepared = prepareTransientExecutableScript(
 		w,
@@ -257,7 +258,7 @@ func (s *Server) handleStartScriptDebugRequest(w http.ResponseWriter, r *http.Re
 		return
 	}
 	issues := append(
-		validateScriptForReplayWithImportTrust(script, req.trustedPreservedImport),
+		s.transientStaticIssues(submitted, script, req.trustedPreservedImport),
 		refIssues...,
 	)
 	warnings := append(validationWarnings(script), refWarnings...)

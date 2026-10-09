@@ -703,6 +703,7 @@ func schemaCreateTableStatements() []string {
 			dynatrace_capture_json TEXT,
 			monitor_bindings_json TEXT,
 			trace_context_json TEXT,
+			joint_evidence_json TEXT,
 			start_authorization_json TEXT,
 			execution_plan_approval_json TEXT,
 			initial_provenance_json TEXT,
@@ -1751,6 +1752,18 @@ func schemaCreateTableStatements() []string {
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS dashboard_definition_revisions (
+			definition_id TEXT NOT NULL,
+			project_id TEXT NOT NULL,
+			revision BIGINT NOT NULL,
+			name TEXT NOT NULL,
+			description TEXT,
+			owner TEXT,
+			visibility TEXT NOT NULL,
+			definition_json TEXT NOT NULL,
+			saved_at DATETIME NOT NULL,
+			PRIMARY KEY (definition_id, revision)
+		)`,
 		`CREATE TABLE IF NOT EXISTS grafana_dashboard_snapshots (
 			test_id TEXT PRIMARY KEY,
 			project_id TEXT NOT NULL,
@@ -1839,7 +1852,8 @@ func schemaCreateTableStatements() []string {
 			hidden_at DATETIME,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL,
-			completed_at DATETIME
+			completed_at DATETIME,
+			subject_id TEXT NOT NULL DEFAULT ''
 		)`,
 		// Append-only qualification evidence behind support claims.
 		`CREATE TABLE IF NOT EXISTS feature_acceptance_records (
@@ -1944,6 +1958,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "tests.dynatrace_capture_json", query: `ALTER TABLE tests ADD COLUMN dynatrace_capture_json TEXT`},
 		{name: "tests.monitor_bindings_json", query: `ALTER TABLE tests ADD COLUMN monitor_bindings_json TEXT`},
 		{name: "tests.trace_context_json", query: `ALTER TABLE tests ADD COLUMN trace_context_json TEXT`},
+		{name: "tests.joint_evidence_json", query: `ALTER TABLE tests ADD COLUMN joint_evidence_json TEXT`},
 		{name: "tests.start_authorization_json", query: `ALTER TABLE tests ADD COLUMN start_authorization_json TEXT`},
 		{name: "tests.timeslot_id", query: `ALTER TABLE tests ADD COLUMN timeslot_id TEXT`},
 		{name: "tests.shakeout_enabled", query: `ALTER TABLE tests ADD COLUMN shakeout_enabled INTEGER DEFAULT 0`},
@@ -2162,6 +2177,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "feature_evaluation_jobs.attempts", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0`},
 		{name: "feature_evaluation_jobs.failure_code", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN failure_code TEXT NOT NULL DEFAULT ''`},
 		{name: "feature_evaluation_jobs.result_bytes", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN result_bytes INTEGER NOT NULL DEFAULT 0`},
+		{name: "feature_evaluation_jobs.subject_id", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN subject_id TEXT NOT NULL DEFAULT ''`},
 		{name: "feature_acceptance_records.seq", query: `ALTER TABLE feature_acceptance_records ADD COLUMN seq BIGINT NOT NULL DEFAULT 0`},
 	}
 }
@@ -2271,6 +2287,7 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_monitoring_collectors_project ON monitoring_collectors(project_id)`, "idx_monitoring_collectors_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_grafana_dashboards_project ON grafana_dashboards(project_id)`, "idx_grafana_dashboards_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_dashboard_definitions_project ON dashboard_definitions(project_id)`, "idx_dashboard_definitions_project"},
+	{`CREATE INDEX IF NOT EXISTS idx_dashboard_definition_revisions_project ON dashboard_definition_revisions(project_id)`, "idx_dashboard_definition_revisions_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_grafana_import_sessions_project_expiry ON grafana_import_sessions(project_id, expires_at)`, "idx_grafana_import_sessions_project_expiry"},
 	{`CREATE INDEX IF NOT EXISTS idx_grafana_dashboard_snapshots_project ON grafana_dashboard_snapshots(project_id)`, "idx_grafana_dashboard_snapshots_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_reusable_blocks_project ON reusable_blocks(project_id)`, "idx_reusable_blocks_project"},
@@ -2315,6 +2332,7 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_feature_evaluation_jobs_key ON feature_evaluation_jobs(project_id, actor, kind, idempotency_key_hash) WHERE idempotency_key_hash <> ''`, "idx_feature_evaluation_jobs_key"},
 	{`CREATE INDEX IF NOT EXISTS idx_feature_evaluation_jobs_claim ON feature_evaluation_jobs(state, created_at)`, "idx_feature_evaluation_jobs_claim"},
 	{`CREATE INDEX IF NOT EXISTS idx_feature_evaluation_jobs_project ON feature_evaluation_jobs(project_id, created_at)`, "idx_feature_evaluation_jobs_project"},
+	{`CREATE INDEX IF NOT EXISTS idx_feature_evaluation_jobs_subject ON feature_evaluation_jobs(project_id, kind, subject_id, created_at)`, "idx_feature_evaluation_jobs_subject"},
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_feature_acceptance_records_seq ON feature_acceptance_records(seq) WHERE seq > 0`, "idx_feature_acceptance_records_seq"},
 	{`CREATE INDEX IF NOT EXISTS idx_feature_acceptance_records_subject ON feature_acceptance_records(requirement_id, feature, recorded_at)`, "idx_feature_acceptance_records_subject"},
 }

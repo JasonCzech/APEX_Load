@@ -47,6 +47,9 @@ import SynchronizedTimeline, { type TimelineAnnotation } from './runReport/Synch
 import ReleaseReadinessSummary from './runReport/ReleaseReadinessSummary'
 import ImportedDashboardPanels from './runReport/ImportedDashboardPanels'
 import TransactionSlaScoreboard from './runReport/TransactionSlaScoreboard'
+import JourneyRiskPanel from './runReport/JourneyRiskPanel'
+import BrowserFindingsPanel from './runReport/BrowserFindingsPanel'
+import BrowserInteractionsPanel from './runReport/BrowserInteractionsPanel'
 import TransactionResponseTimeSLATable from './TransactionResponseTimeSLATable'
 import {
   alignBaselineTimeline,
@@ -629,6 +632,7 @@ export default function RunReportPage({
             <TransactionSlaScoreboard rows={slaRows} selectedAction={population === slaPopulation && slaRows.some(row => row.name === archiveModel.selectedArchiveAction) ? archiveModel.selectedArchiveAction : ''} drilldownTransactions={population === slaPopulation ? archiveModel.archiveTransactions : []} loadingTransactions={archiveModel.archiveTransactionsLoading} onSelectAction={name => { setPopulationChoice(slaPopulation); archiveModel.onSelectedArchiveGroupChange(''); archiveModel.onSelectedArchiveActionChange(name) }} />
           )}
           <div data-report-focus="action-summary">{renderEvidence('action-summary')}</div>
+          <JourneyRiskPanel testId={testId} />
           <details data-report-focus="load-impact"><summary>Load impact</summary>{renderEvidence('load-impact')}</details>
         </>}
         {area === 'Diagnostics' && hasArchive && <>
@@ -638,7 +642,7 @@ export default function RunReportPage({
           <RunReportDiagnostics report={report} loading={archiveModel.archiveAnalysisLoading} error={archiveModel.archiveAnalysisError} />
           {renderEvidence('report-error-patterns')}
           <div data-report-focus="transaction-drilldown">{renderEvidence('transactions')}</div>
-          <details><summary>Browser evidence</summary>{renderEvidence('report-browser-summary')}{renderEvidence('report-browser-resources')}</details>
+          <details><summary>Browser evidence</summary><BrowserFindingsPanel testId={testId} projectId={test.project_id || 'default'} canEvaluate={canPublishConfluence} /><BrowserInteractionsPanel testId={testId} />{renderEvidence('report-browser-summary')}{renderEvidence('report-browser-resources')}</details>
           <details><summary>Execution path analysis</summary>{renderEvidence('report-analysis')}</details>
         </>}
         {area === 'Evidence' && hasArchive && <>

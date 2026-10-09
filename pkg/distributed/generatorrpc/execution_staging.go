@@ -1201,7 +1201,12 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	if engine.HasAllocatedParameters(&script) && (request.GetParameterPopulation() == 0 || uint64(request.GetParameterOffset())+uint64(request.GetVuserCount()) > uint64(request.GetParameterPopulation())) {
 		return nil, fmt.Errorf("invalid distributed parameter allocation")
 	}
+	jointProjection, err := jointProjectionFromProto(request.GetJointEvidenceProjection())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "joint_evidence_projection: %v", err)
+	}
 	groupConfig := engine.MultiGroupConfig{
+		JointProjection: jointProjection,
 		TerminationMode: request.GetTerminationMode(),
 		Groups: []engine.GroupConfig{{
 			RuntimeResourcePeakFrozen:    plan.runtimeResources.managed,

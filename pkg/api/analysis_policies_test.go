@@ -142,8 +142,15 @@ func TestRunPolicyPinsFreezeTheDefaultsInForceAtStart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after := decodeStoredInitialProvenance(stored.InitialProvenance); after == nil || !reflect.DeepEqual(after.PolicyPins, want) {
+	after := decodeStoredInitialProvenance(stored.InitialProvenance)
+	if after == nil || !reflect.DeepEqual(after.PolicyPins, want) {
 		t.Fatalf("pins changed after Start: %#v", after)
+	}
+	// The acceptance definition is frozen beside its pin (C7), so the run is
+	// judged by the revision in force at Start, not the later edit.
+	frozen := after.TelemetryAcceptancePolicy
+	if frozen == nil || frozen.Pin != want[0] || frozen.Definition.EffectiveMode() != "fail_ci" || frozen.Definition.MinWallTimeCoverage == nil || *frozen.Definition.MinWallTimeCoverage != 0.9 {
+		t.Fatalf("frozen acceptance policy: %#v", frozen)
 	}
 	runner.mu.RLock()
 	live := cloneRunPolicyPins(test.initialArchiveProvenance.PolicyPins)

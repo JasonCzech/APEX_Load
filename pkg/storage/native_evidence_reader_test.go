@@ -67,6 +67,20 @@ func TestForEachNativeIntervalEvidencePagesInTimestampOrder(t *testing.T) {
 }
 
 func TestForEachNativeIntervalEvidenceReadsDuplicateTimestampsOnce(t *testing.T) {
+	readDuplicateTimestampsOnce(t)
+}
+
+// Pages that end on their byte bound (here every row or two) resume exactly
+// where they stopped, including inside a run of one repeated timestamp.
+func TestForEachNativeIntervalEvidencePagesByBytes(t *testing.T) {
+	previous := nativeEvidencePageBytes
+	nativeEvidencePageBytes = 150
+	t.Cleanup(func() { nativeEvidencePageBytes = previous })
+	readDuplicateTimestampsOnce(t)
+}
+
+func readDuplicateTimestampsOnce(t *testing.T) {
+	t.Helper()
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "native.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -114,5 +128,68 @@ func TestForEachNativeIntervalEvidenceReadsDuplicateTimestampsOnce(t *testing.T)
 		if n != 1 {
 			t.Fatalf("row %d read %d times", id, n)
 		}
+	}
+}
+
+// A distributed point's carried joint publications survive the history write
+// and are read back with it.
+func TestForEachNativeIntervalEvidenceReadsCarriedPublications(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "native.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.SaveTest(&TestRecord{ID: "run", Name: "run", ProjectID: DefaultProjectID, Status: "COMPLETE", Groups: []any{}, StartTime: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 10, 8, 12, 0, 1, 0, time.UTC)
+	carried := &NativePublicationEvidence{SourceID: "gen-b", SourceEpoch: "epoch-b", Sequence: 9, ExecutionGeneration: 2, Timestamp: at.Add(-300 * time.Millisecond), WindowSeconds: 1,
+		Dimensions: map[string]map[string]NativeIntervalMetric{NativeJointDimension: {`["login"]`: {Count: 4}}},
+		Joint:      &NativeJointEvidence{Population: "action", Dimensions: []string{"name"}, Availability: "measured"}}
+	evidence := &NativeIntervalEvidence{Version: 2, WindowSeconds: 1, Publication: &NativePublicationEvidence{SourceID: "gen-a", Sequence: 7, Timestamp: at}, JointPublications: []*NativePublicationEvidence{carried}}
+	if err := store.SaveHistory("run", at, map[string]any{"timestamp": at, "native_evidence": evidence}); err != nil {
+		t.Fatal(err)
+	}
+	var read []*NativePublicationEvidence
+	if err := store.ForEachNativeIntervalEvidence(context.Background(), "run", func(_ time.Time, evidence *NativeIntervalEvidence) error {
+		read = append(read, evidence.JointPublications...)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(read) != 1 || read[0].SourceID != "gen-b" || read[0].SourceEpoch != "epoch-b" || read[0].Sequence != 9 || read[0].Dimensions[NativeJointDimension][`["login"]`].Count != 4 || read[0].Joint == nil || read[0].Joint.Availability != "measured" {
+		t.Fatalf("carried publications read back as %+v", read)
+	}
+}
+
+// A run whose persisted interval rows reached the retention cap may have lost
+// its oldest; one below it has not.
+func TestNativeIntervalEvidenceTrimmedAtTheRetentionCap(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "native.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.SaveTest(&TestRecord{ID: "run", Name: "run", ProjectID: DefaultProjectID, Status: "COMPLETE", Groups: []any{}, StartTime: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	save := func(i int) {
+		at := start.Add(time.Duration(i) * time.Second)
+		evidence := &NativeIntervalEvidence{Version: 2, WindowSeconds: 1, Dimensions: map[string]map[string]NativeIntervalMetric{"transaction": {"Purchase": {Count: 1}}}}
+		if err := store.SaveHistory("run", at, map[string]any{"timestamp": at, "native_evidence": evidence}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < maxPersistedTestHistoryPoints-1; i++ {
+		save(i)
+	}
+	if trimmed, err := store.NativeIntervalEvidenceTrimmed(context.Background(), "run"); err != nil || trimmed {
+		t.Fatalf("below the cap: trimmed %v %v", trimmed, err)
+	}
+	save(maxPersistedTestHistoryPoints)
+	save(maxPersistedTestHistoryPoints + 1) // trims the oldest row
+	if trimmed, err := store.NativeIntervalEvidenceTrimmed(context.Background(), "run"); err != nil || !trimmed {
+		t.Fatalf("at the cap: trimmed %v %v", trimmed, err)
 	}
 }

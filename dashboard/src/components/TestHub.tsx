@@ -32,7 +32,7 @@ import { getErrorMessage } from '../utils/errorUtils'
 import { formatTimeCompact, isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
 import './TestHub.css'
 import './CreateTestModal.css'
-import { buildCreateTestPayload, buildScenarioUpsertPayload } from './scenarioPayloadUtils'
+import { goalConfigFromForm, maxStageVUsers, scenarioDraftFromForm, scenarioDraftGroupFromForm, scenarioEstimateRequest, scenarioTimelineGroups, scenarioUpsertPayload } from './scenarioAssembly'
 import { SortHeader } from './SortHeader'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import RuntimeSettingsGroupEditor from './RuntimeSettingsGroupEditor'
@@ -379,24 +379,6 @@ function reconstructedGoalTarget(groups: ScenarioFormGroup[], index: number, tot
   return totalTarget * Math.max(0, Number(groups[index]?.vusers) || 0) / totalSeed
 }
 
-function goalConfigFromForm(form: ScenarioFormState): GoalConfig {
-  // Preserve authored absence and explicit nested values during unrelated edits.
-  const goal: GoalConfig = structuredClone(form.goal_config || {})
-  const setNumber = (field: keyof GoalConfig, value: number | undefined) => {
-    if (value === undefined || value === null) {
-      delete goal[field]
-      return
-    }
-    goal[field] = Number(value) as never
-  }
-  setNumber('target_average_tps', form.goal_target_average_tps)
-  setNumber('min_vusers', form.goal_min_vusers)
-  setNumber('max_vusers', form.goal_max_vusers)
-  setNumber('p95_latency_ms', form.goal_p95_latency_ms)
-  setNumber('max_error_pct', form.goal_max_error_pct)
-  return goal
-}
-
 function scenarioFormWithGoalField<K extends keyof GoalConfig>(
   form: ScenarioFormState,
   field: K,
@@ -421,10 +403,6 @@ function scenarioFormWithGoalField<K extends keyof GoalConfig>(
     case 'max_error_pct': next.goal_max_error_pct = numberValue; break
   }
   return next
-}
-
-function maxStageVUsers(stages: LoadStageDraft[]) {
-  return stages.reduce((max, stage) => Math.max(max, Number(stage.target_vusers) || 0), 0)
 }
 
 function scenarioSeedFromPreset(preset: ScenarioShapePreset): ScenarioSeed {
@@ -490,40 +468,6 @@ function scenarioSeedFromForm(form: ScenarioFormState): ScenarioSeed {
     auto_transactions: form.runtime_auto_transactions,
     continue_on_error: form.continue_on_error,
     snapshot_on_error: form.snapshot_on_error,
-  }
-}
-
-function normalizeStageForPayload(stage: LoadStageDraft) {
-  return {
-    ...(stage.name ? { name: stage.name } : {}),
-    type: stage.type,
-    duration: stage.duration,
-    ...(stage.target_vusers !== undefined ? { target_vusers: Number(stage.target_vusers) || 0 } : {}),
-    ...(stage.target_tps !== undefined ? { target_tps: Number(stage.target_tps) || 0 } : {}),
-  }
-}
-
-function normalizeGroupForPayload(group: ScenarioFormGroup) {
-  const runtimeOwnsIterations = group.runtimeSettings?.run_logic !== undefined
-    || group.runtimeSettings?.iterations !== undefined
-  return {
-    name: group.name,
-    scriptId: group.script_id,
-    role: group.role,
-    vusers: maxStageVUsers(group.stages) || Number(group.vusers) || 10,
-    rampUp: group.ramp_up,
-		rampDown: group.ramp_down,
-		startOffset: group.start_offset,
-    stages: group.stages.map(normalizeStageForPayload),
-    // A runtime iteration override and the compact legacy field are alternate
-    // representations of the same setting. Never serialize both: the backend
-    // rejects mismatched values and the runtime editor promotes edits into
-    // run_logic.
-    iterations: runtimeOwnsIterations ? undefined : group.iterations,
-    initialization: group.initialization,
-    runtimeSettings: group.runtimeSettings,
-    assignment: group.assignment,
-		transactionResponseTimeSlaMs: group.transactionResponseTimeSlaMs,
   }
 }
 
@@ -1192,6 +1136,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     () => form.groups.length > 0 ? form.groups : [emptyScenarioGroup()],
     [form.groups],
   )
+  const compositionTimelineGroups = useMemo(() => scenarioTimelineGroups(formGroups.map(scenarioDraftGroupFromForm)), [formGroups])
   const allScenarioGroupsHaveScripts = formGroups.every(group => Boolean(group.script_id.trim()))
   const duplicateGroupNameIndexes = useMemo(
     () => duplicateScenarioGroupNameIndexes(formGroups.map(group => group.name)),
@@ -1454,27 +1399,9 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const scenarioBindings: ScenarioDataPoolBinding[] = (form.data_pools || []).map(binding => ({ ...binding, access_mode: 'read_only' }))
   const bindingErrors = dataBindingErrors(scenarioBindings)
   const updateDataBindings = (bindings: ScenarioDataPoolBinding[]) => setForm(current => ({ ...current, data_pools: bindings.map(binding => ({...binding})) }))
-  const buildScenarioDraftPayload = useCallback((draftForm: ScenarioFormState = form, shapeId: string = selectedShapeId) => {
-    const dataPoolsPayload = (draftForm.data_pools || []).map(binding => ({ ...binding, access_mode: 'read_only' as const }))
-
-    return buildScenarioUpsertPayload({
-      name: draftForm.name || 'Draft scenario',
-      projectId: activeProjectId,
-      workloadShapeId: shapeId,
-      duration: draftForm.termination_mode === 'iterations' ? '' : draftForm.duration || '1m',
-      termination_mode: draftForm.termination_mode,
-      startDelay: draftForm.start_delay,
-      scenarioMode: draftForm.scenario_mode,
-      scriptShakeout: draftForm.script_shakeout,
-      resourceBaseline: draftForm.resource_baseline,
-      assignment: assignmentFromForm(draftForm),
-      groups: draftForm.groups.map(normalizeGroupForPayload),
-      goalConfig: goalConfigFromForm(draftForm),
-      runtimeSettings: runtimeSettingsFromForm(draftForm, showBrowserRuntimeSettings),
-      trafficProfile: draftForm.traffic_profile,
-      dataPools: dataPoolsPayload,
-    })
-  }, [activeProjectId, form, selectedShapeId, showBrowserRuntimeSettings])
+  const buildScenarioDraftPayload = useCallback((draftForm: ScenarioFormState = form, shapeId: string = selectedShapeId) => (
+    scenarioUpsertPayload(scenarioDraftFromForm(draftForm, { includeBrowser: showBrowserRuntimeSettings }), { projectId: activeProjectId, workloadShapeId: shapeId, fallbackName: 'Draft scenario' })
+  ), [activeProjectId, form, selectedShapeId, showBrowserRuntimeSettings])
 
   const refresh = useCallback(async () => {
     const requestedArchiveState = archiveStateRef.current
@@ -1624,19 +1551,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     const timer = window.setTimeout(() => {
       if (cancelled) return
       setEstimateLoading(true)
-      const draftPayload = buildScenarioDraftPayload()
-      api.estimateTest(buildCreateTestPayload({
-        name: form.name,
-        duration: draftPayload.duration,
-        startDelay: '',
-        scenarioMode: draftPayload.scenario_mode,
-        scriptShakeout: false,
-        resourceBaseline: false,
-        assignment: draftPayload.assignment,
-        groups: form.groups.map(normalizeGroupForPayload),
-        goalConfig: goalConfigFromForm(form),
-        runtimeSettings: runtimeSettingsFromForm(form, showBrowserRuntimeSettings),
-      }))
+      api.estimateTest(scenarioEstimateRequest(scenarioDraftFromForm(form, { includeBrowser: showBrowserRuntimeSettings }), { projectId: activeProjectId }))
       .then((estimate) => {
         if (cancelled) return
         setDraftEstimate(estimate)
@@ -1656,7 +1571,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [api, buildScenarioDraftPayload, form, showBrowserRuntimeSettings, showForm])
+  }, [activeProjectId, api, form, showBrowserRuntimeSettings, showForm])
 
   const scenarioReleaseOptions = useMemo(() => {
     const names = new Set<string>()
@@ -4438,7 +4353,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
           {scenarioSettingsSection === 'composition' && <>
 		  <ScenarioCompositionTimeline
 			duration={form.duration}
-			groups={formGroups}
+			groups={compositionTimelineGroups}
 			onOffsetChange={(index, value) => updateScenarioGroup(index, { start_offset: value })}
             selectedGroupIndex={activeGroupIndex}
             onGroupSelect={setStageGroupIndex}
@@ -5001,7 +4916,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                   shapeLabel={shapeLabel}
                   dataPoolLabel={dataPoolLabel}
                   validationStatus={goalSizingIncomplete && validationLabel === 'Not validated' ? 'Sizing incomplete' : validationLabel}
-                  compositionGroups={showCompositionPreview ? formGroups : undefined}
+                  compositionGroups={showCompositionPreview ? compositionTimelineGroups : undefined}
                 />
 				{isSteppedRamp && !activeSteppedRampPlan.error && (
 					<div className="stepped-ramp-stage-preview">

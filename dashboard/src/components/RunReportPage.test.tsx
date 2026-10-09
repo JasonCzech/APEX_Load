@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
     requestRootCauseAnalysis: vi.fn(),
     getTestArchiveExemplars: vi.fn(),
     getRootCauseCritiques: vi.fn(),
+    getTestArchiveJourneys: vi.fn().mockResolvedValue({ availability: 'unavailable', reason: 'no_journey_policy', journeys: [], notes: [] }),
   },
   polling: {
     test: null as TestSummary | null,

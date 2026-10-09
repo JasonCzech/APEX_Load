@@ -25,6 +25,9 @@ type ciValidatedArchiveEvidence struct {
 	// built over the archive, which ValidityUnavailable then says.
 	Validity            *ciRunValidity
 	ValidityUnavailable bool
+	// TelemetryVerdict is the run's telemetry acceptance verdict, nil when
+	// it pinned no acceptance policy.
+	TelemetryVerdict *TelemetryAcceptanceVerdict
 }
 
 func (s *Server) validatedCIRunArchiveEvidence(ctx context.Context, test *ManagedTest) (*ciValidatedArchiveEvidence, error) {
@@ -114,7 +117,8 @@ func (s *Server) validatedCIRunArchiveEvidence(ctx context.Context, test *Manage
 		return nil, fmt.Errorf("load durable archive terminal metrics: %w", err)
 	}
 	validity, validityErr := cachedRunArchiveValidity(record)
-	return &ciValidatedArchiveEvidence{Manifest: manifest, FinalSummary: finalSummary, Validity: validity, ValidityUnavailable: validityErr != nil}, nil
+	return &ciValidatedArchiveEvidence{Manifest: manifest, FinalSummary: finalSummary, Validity: validity, ValidityUnavailable: validityErr != nil,
+		TelemetryVerdict: telemetryAcceptanceForManifest(manifest)}, nil
 }
 
 // cachedRunArchiveValidity is the validity verdict of the report built over
@@ -190,6 +194,9 @@ func mergeCIRunArchiveEvidence(response *ciRunResponse, evidence *ciValidatedArc
 		validity := *evidence.Validity
 		validity.Reasons = append([]string{}, validity.Reasons...)
 		response.Validity = &validity
+	}
+	if evidence.TelemetryVerdict != nil {
+		response.TelemetryVerdict = &ciTelemetryVerdict{TelemetryAcceptanceVerdict: *cloneTelemetryAcceptanceVerdict(evidence.TelemetryVerdict)}
 	}
 }
 

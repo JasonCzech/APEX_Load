@@ -6,6 +6,7 @@ import { useApi } from '../../hooks/useApi'
 import type { RcaAssessment, RcaCritique, RcaHypothesis } from '../../types/rca'
 import { formatNumber } from '../runReport/runReportModel'
 import RootCauseInvestigation from './RootCauseInvestigation'
+import RcaBrowserBaselineSection from './RcaBrowserBaseline'
 import {
   formatRcaDuration,
   formatRcaEffect,
@@ -202,6 +203,7 @@ export default function RootCausePanel({ testId, model, report, history, history
             </table>
           )}
         </details>
+        <RcaBrowserBaselineSection baseline={assessment.browser_baseline} />
         <details>
           <summary>Evidence coverage ({assessment.coverage.filter(c => c.status !== 'complete').length} gaps)</summary>
           <ul className="rca-coverage">{assessment.coverage.map((c, i) => <li key={i}><Badge tone={rcaTone(c.status)}>{rcaStatusLabel(c.status)}</Badge> {rcaStatusLabel(c.evidence)}{c.detail ? `: ${c.detail}` : ''}</li>)}</ul>

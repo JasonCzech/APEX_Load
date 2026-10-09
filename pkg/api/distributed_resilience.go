@@ -1282,7 +1282,8 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 				secretBundleID := runSecrets.ID
 				correlation := tr.runCorrelationAssignment(testID)
 				messagingCarrier := tr.testUsesMessagingTraceCarrier(testID)
-				if len(correlation.Origins) > 0 || messagingCarrier {
+				jointProjection := runJointProjection(managedTest)
+				if len(correlation.Origins) > 0 || messagingCarrier || jointProjection != nil {
 					// One probe answers every feature the replacement must support.
 					ctx, cancel := context.WithTimeout(parent, b.timeout)
 					snapshot := b.probeGeneratorLoad(ctx, shard.Target, client)
@@ -1295,6 +1296,11 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 					}
 					if messagingCarrier && !stringSliceContainsEqualFold(snapshot.CompatibleFeatures, generatorrpc.FeatureMessagingTraceCarrierV1) {
 						return fail(fmt.Errorf("generator %q lacks messaging_trace_carrier_v1 for evacuation", shard.Target))
+					}
+					// Joint evidence is passive: a replacement without it publishes
+					// none, so it simply does not receive the projection.
+					if !generatorAcceptsJointEvidence(snapshot.CompatibleFeatures) {
+						jointProjection = nil
 					}
 				}
 				if len(secretBundle) > 0 {
@@ -1341,6 +1347,7 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 					RunCorrelationOrigins:      correlation.Origins,
 					CorrelationCarriers:        correlation.Carriers,
 					CorrelationTestName:        correlation.TestName,
+					JointEvidenceProjection:    jointProjection,
 					RequireTestExecutionLease:  requireTestExecutionLease,
 					GroupName:                  groupName,
 					TargetDuration:             remainingDuration,

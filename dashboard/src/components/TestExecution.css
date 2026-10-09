@@ -141,6 +141,24 @@
   border-color: var(--success-border);
 }
 
+.telemetry-acceptance-outcome {
+  font-weight: 600;
+  padding: 1px 8px;
+  border: 1px solid var(--warning-border);
+  border-radius: 999px;
+  color: var(--warning-text);
+}
+
+.telemetry-acceptance-pass {
+  border-color: var(--success-border);
+  color: var(--success-text);
+}
+
+.telemetry-acceptance-fail {
+  border-color: var(--danger);
+  color: var(--danger-text);
+}
+
 .throughput-status-card {
   background: linear-gradient(135deg, var(--warning-bg), var(--bg-card));
   border-color: var(--warning-border);

@@ -270,6 +270,10 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	if req.Settings.Authoring == nil {
 		req.Settings.Authoring = project.Settings.Authoring
 	}
+	// The telemetry opt-ins change only through their own route
+	// (PUT /projects/{id}/telemetry-policy, audited there): a settings form
+	// resending a stale copy must never revert one.
+	req.Settings.Telemetry = project.Settings.Telemetry
 	project.Settings = req.Settings
 	updater, supported := s.store.(interface {
 		UpdateProjectIfUnchanged(project *storage.Project, expectedUpdatedAt time.Time) (bool, error)

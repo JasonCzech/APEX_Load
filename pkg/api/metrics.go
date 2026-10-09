@@ -198,6 +198,11 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 		}
 		addNativeDimensionEvidence(live.NativeEvidence, dimensions)
 	}
+	if snap.Joint != nil {
+		// A local run's engine counts under the run's own projection.
+		published, tuples, other, omitted, incomplete := jointEvidenceFromEngine(snap.Joint, snap.Window)
+		setNativeJointEvidence(live.NativeEvidence, nil, published, tuples, other, omitted, incomplete || telemetryWindowLost(live.Telemetry))
+	}
 	return live
 }
 
@@ -551,6 +556,7 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 			return false
 		}
 	}
+	sampleTelemetryStagesLocked(test, live)
 	live.ActiveRuntimeSeconds = activeRuntimeSecondsLocked(test, now)
 	live.LoadLevels = activeLoadLevelsLocked(test)
 	test.runTotals.apply(live, test.History)
@@ -683,6 +689,7 @@ func trimManagedTestHistoryToLimits(test *ManagedTest, maxPoints int, maxBytes i
 	for len(test.History) > 0 && (len(test.History) > maxPoints || test.historyBytes > maxBytes) {
 		test.historyBytes -= test.historyWeights[0]
 		test.History[0] = nil
+		test.historyTrimmed++
 		test.historyWeights[0] = 0
 		test.History = test.History[1:]
 		test.historyWeights = test.historyWeights[1:]

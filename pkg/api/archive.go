@@ -160,10 +160,24 @@ type RunArchiveManifest struct {
 	TelemetrySourcesFile      string `json:"telemetry_sources_file,omitempty"`
 	TelemetrySourceEpochCount int64  `json:"telemetry_source_epoch_count,omitempty"`
 	TelemetrySourcesTruncated bool   `json:"telemetry_sources_truncated,omitempty"`
+	// JointIntervalsFile holds the run's joint evidence v4 rows (one per
+	// measured tuple of each retained source publication), also as Parquet.
+	JointIntervalsFile        string `json:"joint_intervals_file,omitempty"`
+	JointIntervalsParquetFile string `json:"joint_intervals_parquet_file,omitempty"`
+	JointIntervalCount        int64  `json:"joint_interval_count,omitempty"`
+	JointIntervalsTruncated   bool   `json:"joint_intervals_truncated,omitempty"`
 	// TelemetryCoverage is the run's wall-time telemetry account: observed
 	// and unknown time per source, and healthy, degraded, breached and
 	// unknown time with explicit denominators.
 	TelemetryCoverage *TelemetryCoverageRecord `json:"telemetry_coverage,omitempty"`
+	// TelemetryStageDistributions are the run's per-stage latency
+	// distributions as this controller sampled them, and
+	// TelemetryStageDigests the mergeable digests behind them.
+	TelemetryStageDistributions []TelemetryStageDistribution      `json:"telemetry_stage_distributions,omitempty"`
+	TelemetryStageDigests       map[string]engine.TDigestSnapshot `json:"telemetry_stage_digests,omitempty"`
+	// TelemetryLoss is the run's total of each loss counter at finalize:
+	// exact, an observed lower bound or unavailable, with the reason.
+	TelemetryLoss *TelemetryLossAccounting `json:"telemetry_loss,omitempty"`
 	// PhaseEventsFile holds generated load-phase transitions and their sink
 	// outcomes (apexload.phase_event.v1), apart from analyst annotations.
 	PhaseEventsFile      string `json:"phase_events_file,omitempty"`
@@ -224,28 +238,34 @@ type RunArchiveProvenance struct {
 	// PolicyPins are the project policy revisions in force at Start: null on
 	// runs admitted before policies existed, an empty list when no default
 	// policy was configured. The field is always present so the two differ.
-	PolicyPins            []RunPolicyPin                      `json:"policy_pins"`
-	ComparisonFingerprint string                              `json:"comparison_fingerprint,omitempty"`
-	ComparisonMetrics     map[string]BaselineMetricDefinition `json:"comparison_metrics,omitempty"`
-	TerminationMode       string                              `json:"termination_mode,omitempty"`
-	CSVExports            []RunArchiveCSVExport               `json:"csv_exports,omitempty"`
-	ApplicationID         string                              `json:"application_id,omitempty"`
-	ReleaseID             string                              `json:"release_id,omitempty"`
-	ScenarioID            string                              `json:"scenario_id,omitempty"`
-	ProjectID             string                              `json:"project_id,omitempty"`
-	RequestedAt           time.Time                           `json:"requested_at,omitempty"`
-	StartedAt             *time.Time                          `json:"started_at,omitempty"`
-	ScheduledStartAt      *time.Time                          `json:"scheduled_start_at,omitempty"`
-	ScenarioMode          string                              `json:"scenario_mode,omitempty"`
-	ScriptShakeout        bool                                `json:"script_shakeout,omitempty"`
-	ResourceBaseline      bool                                `json:"resource_baseline,omitempty"`
-	StartDelay            string                              `json:"start_delay,omitempty"`
-	TotalVUsers           int                                 `json:"total_vusers,omitempty"`
-	Duration              string                              `json:"duration,omitempty"`
-	Assignment            *GeneratorAssignmentSettings        `json:"assignment,omitempty"`
-	GeneratorShards       []GeneratorShardSummary             `json:"generator_shards,omitempty"`
-	GoalConfig            *GoalConfig                         `json:"goal_config,omitempty"`
-	TrafficProfile        *TrafficProfile                     `json:"traffic_profile,omitempty"`
+	PolicyPins []RunPolicyPin `json:"policy_pins"`
+	// TelemetryAcceptancePolicy is the pinned telemetry acceptance policy's
+	// definition, frozen at Start so the run's verdict never follows a later
+	// edit (C7).
+	TelemetryAcceptancePolicy *TelemetryAcceptancePolicySnapshot  `json:"telemetry_acceptance_policy,omitempty"`
+	ComparisonFingerprint     string                              `json:"comparison_fingerprint,omitempty"`
+	ComparisonMetrics         map[string]BaselineMetricDefinition `json:"comparison_metrics,omitempty"`
+	TerminationMode           string                              `json:"termination_mode,omitempty"`
+	CSVExports                []RunArchiveCSVExport               `json:"csv_exports,omitempty"`
+	ApplicationID             string                              `json:"application_id,omitempty"`
+	ReleaseID                 string                              `json:"release_id,omitempty"`
+	ScenarioID                string                              `json:"scenario_id,omitempty"`
+	ProjectID                 string                              `json:"project_id,omitempty"`
+	RequestedAt               time.Time                           `json:"requested_at,omitempty"`
+	StartedAt                 *time.Time                          `json:"started_at,omitempty"`
+	ScheduledStartAt          *time.Time                          `json:"scheduled_start_at,omitempty"`
+	ScenarioMode              string                              `json:"scenario_mode,omitempty"`
+	ScriptShakeout            bool                                `json:"script_shakeout,omitempty"`
+	ResourceBaseline          bool                                `json:"resource_baseline,omitempty"`
+	StartDelay                string                              `json:"start_delay,omitempty"`
+	TotalVUsers               int                                 `json:"total_vusers,omitempty"`
+	Duration                  string                              `json:"duration,omitempty"`
+	Assignment                *GeneratorAssignmentSettings        `json:"assignment,omitempty"`
+	GeneratorShards           []GeneratorShardSummary             `json:"generator_shards,omitempty"`
+	GoalConfig                *GoalConfig                         `json:"goal_config,omitempty"`
+	TrafficProfile            *TrafficProfile                     `json:"traffic_profile,omitempty"`
+	// JointEvidence is the run's joint evidence v4 projection, frozen at Start.
+	JointEvidence         *engine.JointProjection             `json:"joint_evidence,omitempty"`
 	RuntimeSettings       *RuntimeSettingsOverride            `json:"runtime_settings,omitempty"`
 	ELKCapture            *ELKCaptureConfig                   `json:"elk_capture,omitempty"`
 	DynatraceCapture      *DynatraceCaptureConfig             `json:"dynatrace_capture,omitempty"`
@@ -325,6 +345,12 @@ type TransactionEvent struct {
 	HasDetail             bool                      `json:"has_detail"`
 	MessageDetailPriority int                       `json:"message_detail_priority,omitempty"`
 	ActionName            string                    `json:"action_name,omitempty"`
+	VUserID               int                       `json:"vuser_id,omitempty"`
+	Iteration             int64                     `json:"iteration,omitempty"`
+	Interrupted           bool                      `json:"interrupted,omitempty"`
+	VUserLifetime         uint64                    `json:"vuser_lifetime,omitempty"`
+	EndsIteration         bool                      `json:"ends_iteration,omitempty"`
+	ElapsedMs             float64                   `json:"elapsed_ms,omitempty"`
 	BusinessTransaction   bool                      `json:"business_transaction,omitempty"`
 	CorrelationID         string                    `json:"correlation_id,omitempty"`
 	TraceID               string                    `json:"trace_id,omitempty"`
@@ -611,6 +637,10 @@ type RunArchiveReport struct {
 	// Validity says whether the run's load generators and telemetry could
 	// carry the load it reports (apexload rules validity.v1).
 	Validity *rca.Validity `json:"validity,omitempty"`
+
+	// TelemetryAcceptance is the run's telemetry verdict under its pinned
+	// acceptance policy, apart from the application verdict (C7).
+	TelemetryAcceptance *TelemetryAcceptanceVerdict `json:"telemetry_acceptance,omitempty"`
 }
 
 // RunArchiveLoadLevelSummary preserves the evidence collected while one

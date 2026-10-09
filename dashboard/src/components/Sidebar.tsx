@@ -176,6 +176,10 @@ const NAV_GROUPS: { label: string; itemIds: NavPage[] }[] = [
   { label: 'Support', itemIds: ['docs'] },
 ]
 
+// Anything a click on the collapsed rail should leave to its own handler
+// rather than treating as "empty space".
+const RAIL_CONTROL_SELECTOR =
+  'a, button, input, select, textarea, label, summary, [role="button"], [role="link"], [role="menuitem"], [role="option"], [role="dialog"], [tabindex]:not([tabindex="-1"])'
 
 export default function Sidebar({
   active,
@@ -376,6 +380,24 @@ export default function Sidebar({
       document.removeEventListener('keydown', handleKeyDown)
     }
   }, [anyMenuOpen, anyModalOpen, closeWorkspaceMenus, collapsed])
+
+  // While collapsed, a click on any empty part of the rail (such as the space
+  // below the icons) opens the sidebar. This is a pointer convenience only:
+  // keyboard and screen-reader users have the Expand sidebar button.
+  useEffect(() => {
+    const aside = asideRef.current
+    if (!collapsed || !aside) {
+      return undefined
+    }
+    const expandFromEmptySpace = (event: MouseEvent) => {
+      if (event.button !== 0 || !(event.target instanceof Element) || event.target.closest(RAIL_CONTROL_SELECTOR)) {
+        return
+      }
+      setCollapsed(false)
+    }
+    aside.addEventListener('click', expandFromEmptySpace)
+    return () => aside.removeEventListener('click', expandFromEmptySpace)
+  }, [collapsed])
 
   const navigateTo = (page: NavPage) => {
     onNavigate(page)

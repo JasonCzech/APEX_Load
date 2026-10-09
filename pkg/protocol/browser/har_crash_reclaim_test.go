@@ -359,7 +359,7 @@ func TestHAROwnershipReclaimsKilledNativeRecording(t *testing.T) {
 		b := &Browser{}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if err := b.Init(ctx, map[string]any{"base_url": server, "browser_engine": "chromium", "browser_headless": true, "browser_har_capture": "always", "browser_har_dir": dir}); err != nil {
+		if err := b.Init(ctx, map[string]any{"base_url": server, "browser_engine": os.Getenv("APEX_HAR_NATIVE_CRASH_ENGINE"), "browser_headless": true, "browser_har_capture": "always", "browser_har_dir": dir}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := b.Execute(ctx, &protocol.Action{Name: "navigate", Type: "browser_navigate", Target: "/"}); err != nil {
@@ -374,6 +374,13 @@ func TestHAROwnershipReclaimsKilledNativeRecording(t *testing.T) {
 		writeReadyToken(dir, fmt.Sprintf("%s %d", owner.generation, playwrightDriverPID()))
 		select {} // Wait here for SIGKILL.
 	}
+	// BE-4: controlled pages in Chromium and WebKit.
+	for _, engine := range []string{"chromium", "webkit"} {
+		t.Run(engine, func(t *testing.T) { testHAROwnershipReclaimsKilledNativeRecording(t, engine) })
+	}
+}
+
+func testHAROwnershipReclaimsKilledNativeRecording(t *testing.T, engine string) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = fmt.Fprint(w, `<!doctype html><title>recorded</title><body>native HAR recording</body>`)
@@ -381,7 +388,7 @@ func TestHAROwnershipReclaimsKilledNativeRecording(t *testing.T) {
 	defer server.Close()
 	dir := t.TempDir()
 	child := exec.Command(os.Args[0], "-test.run=^TestHAROwnershipReclaimsKilledNativeRecording$")
-	child.Env = append(os.Environ(), "APEX_HAR_NATIVE_CRASH_DIR="+dir, "APEX_HAR_NATIVE_CRASH_URL="+server.URL)
+	child.Env = append(os.Environ(), "APEX_HAR_NATIVE_CRASH_DIR="+dir, "APEX_HAR_NATIVE_CRASH_URL="+server.URL, "APEX_HAR_NATIVE_CRASH_ENGINE="+engine)
 	log, err := os.Create(filepath.Join(t.TempDir(), "child.log"))
 	if err != nil {
 		t.Fatal(err)
@@ -402,7 +409,7 @@ func TestHAROwnershipReclaimsKilledNativeRecording(t *testing.T) {
 	}
 	if !validHARGeneration(generation) || driver <= 0 {
 		data, _ := os.ReadFile(log.Name())
-		requireBrowserRuntime(t, "chromium", fmt.Errorf("child did not start a native recording: %s", data))
+		requireBrowserRuntime(t, engine, fmt.Errorf("child did not start a native recording: %s", data))
 	}
 	generationDir := filepath.Join(dir, runtimeHARWorkingDirectory, generation)
 	host, err := currentHARHost()

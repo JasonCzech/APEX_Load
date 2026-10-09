@@ -194,6 +194,7 @@ func (s *Server) handleAnalysisImports(w http.ResponseWriter, r *http.Request) {
 			for j := range list[i].Files {
 				list[i].Files[j].Chunks = nil
 			}
+			reportAnalysisArtifactDigest(&list[i])
 		}
 		writeJSON(w, 200, list)
 		return
@@ -249,6 +250,7 @@ func (s *Server) handleAnalysisImport(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 404, "committed dataset not found")
 			return
 		}
+		reportAnalysisArtifactDigest(in)
 		writeJSON(w, 200, in)
 		return
 	}
@@ -609,6 +611,7 @@ func (s *Server) handleAnalysisCommit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if in.State == "ready" {
+		reportAnalysisArtifactDigest(in)
 		writeJSON(w, 200, in)
 		return
 	}

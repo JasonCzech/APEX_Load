@@ -60,6 +60,9 @@ func TestDeleteTestAtomicallyReleasesReservationAndEnqueuesArchiveCleanup(t *tes
 	if err := store.SaveSetting("report:annotations:"+testID+":engineer", `{}`); err != nil {
 		t.Fatal(err)
 	}
+	if claimed, err := store.ClaimRunNotification(testID, "telemetry_acceptance", now); err != nil || !claimed {
+		t.Fatalf("notification claim = %v %v", claimed, err)
+	}
 	if _, err := store.db.Exec(`INSERT INTO runtime_secret_provisioning_attempts
 		(id, project_id, test_id, actor_subject, secret_names_json, lease_expires_at, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`, "secret-attempt-delete", project.ID, testID, "secret-attempt-owner", `[]`, now.Add(time.Hour), now); err != nil {
@@ -141,6 +144,7 @@ func TestDeleteTestAtomicallyReleasesReservationAndEnqueuesArchiveCleanup(t *tes
 	for _, query := range []string{
 		`SELECT COUNT(*) FROM powerbi_publishes WHERE test_id = 'delete-with-reservation'`,
 		`SELECT COUNT(*) FROM app_settings WHERE key = 'report:annotations:delete-with-reservation:engineer'`,
+		`SELECT COUNT(*) FROM app_settings WHERE key = 'run:notifications:delete-with-reservation:telemetry_acceptance'`,
 	} {
 		var count int
 		if err := store.db.QueryRow(query).Scan(&count); err != nil {

@@ -22,6 +22,7 @@ export type ScenarioDraftAction =
   | { type: 'updateGroup'; index: number; patch: Partial<ScenarioDraftGroup> }
   | { type: 'addGroup'; group: ScenarioDraftGroup }
   | { type: 'removeGroup'; index: number }
+  | { type: 'moveGroup'; from: number; to: number }
 
 function cloneGeneratorAssignment(assignment?: GeneratorAssignmentSettings): GeneratorAssignmentSettings {
   return {
@@ -242,6 +243,8 @@ export function buildInitialScenarioDraft(initialScenario: ScenarioDraft | undef
       ? structuredClone(initialScenario.goalConfig)
       : { stop_on_sla_breach: false, stop_on_max_errors: false, sla_breach_window: '30s' },
     runtimeSettings: cloneRuntimeSettingsDraft(initialScenario?.runtimeSettings),
+    ...(initialScenario?.trafficProfile ? { trafficProfile: structuredClone(initialScenario.trafficProfile) } : {}),
+    ...(initialScenario?.dataPools ? { dataPools: initialScenario.dataPools.map(binding => ({ ...binding })) } : {}),
     groups: initialScenario?.groups.length
       ? initialScenario.groups.map(cloneScenarioGroup)
       : [buildDefaultScenarioGroup(scripts)],
@@ -381,6 +384,16 @@ export function scenarioDraftReducer(state: ScenarioDraftState, action: Scenario
         ...state,
         groups: state.groups.filter((_, index) => index !== action.index),
       }
+    case 'moveGroup': {
+      // A moved group keeps its own identity (and a revision's source group
+      // index), so a reorder never re-points an override at another group.
+      const { from, to } = action
+      if (from === to || from < 0 || to < 0 || from >= state.groups.length || to >= state.groups.length) return state
+      const groups = [...state.groups]
+      const [moved] = groups.splice(from, 1)
+      groups.splice(to, 0, moved)
+      return { ...state, groups }
+    }
     default:
       return state
   }

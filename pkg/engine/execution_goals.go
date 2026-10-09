@@ -353,6 +353,31 @@ func (l *ExecutionGoalLimiter) hasIterationLimit() bool {
 	return l != nil && l.maxIterations > 0
 }
 
+// spent reports whether a shared goal has handed out all its slots, so a
+// further claim is refused at the goal boundary.
+func (l *ExecutionGoalLimiter) spent() bool {
+	if l == nil {
+		return false
+	}
+	if l.maxTransactions > 0 {
+		l.transactionMu.Lock()
+		full := l.transactions >= l.maxTransactions
+		l.transactionMu.Unlock()
+		if full {
+			return true
+		}
+	}
+	if l.maxIterations > 0 {
+		l.iterationMu.Lock()
+		full := l.iterations >= l.maxIterations
+		l.iterationMu.Unlock()
+		if full {
+			return true
+		}
+	}
+	return false
+}
+
 func (l *ExecutionGoalLimiter) cancelIfConfigured() {
 	if l != nil && l.cancel != nil {
 		l.cancelOnce.Do(l.cancel)

@@ -60,6 +60,14 @@ func TestCatalogCannotBeMutatedThroughReturnedSlices(t *testing.T) {
 	if !slices.Contains(metric.Populations, PopulationAction) || metric.QueryProfiles[0] == "sql" || Catalog().QueryProfiles[0].AllowedFilters[0] != "action" || metric.RequiredEvidence[0] == "none" || !slices.Contains(operation.InputKinds, KindGauge) {
 		t.Fatal("caller changed process-wide validation")
 	}
+	for i, profile := range catalog.QueryProfiles {
+		if profile.JointEvidence {
+			catalog.QueryProfiles[i].GroupingDimensions[0] = "sql"
+			if Catalog().QueryProfiles[i].GroupingDimensions[0] == "sql" || JointEvidenceDimensions[0] == "sql" {
+				t.Fatal("a caller changed the joint grouping dimensions")
+			}
+		}
+	}
 	metric.Aggregations[0] = "sql"
 	if err := ValidateMetricAggregation("response_time", PopulationAction, "avg"); err != nil {
 		t.Fatal("lookup mutation changed catalog")

@@ -101,6 +101,18 @@ func TestBuildDynatraceNotificationPayloadUsesErrorEventForFailures(t *testing.T
 	}
 }
 
+// A failed telemetry acceptance verdict is a Dynatrace error; an
+// inconclusive one an alert.
+func TestBuildDynatraceNotificationPayloadForTelemetryAcceptance(t *testing.T) {
+	for outcome, want := range map[string]string{TelemetryAcceptanceFail: "ERROR_EVENT", TelemetryAcceptanceInconclusive: "CUSTOM_ALERT"} {
+		severity := telemetryAcceptanceEventSeverity(outcome)
+		payload := buildDynatraceNotificationPayload(NotificationWebhookSettings{}, NotificationEvent{Type: "telemetry_acceptance", TestID: "run-1", TestName: "nightly", Severity: severity, Timestamp: time.Date(2026, time.October, 9, 12, 0, 0, 0, time.UTC)})
+		if payload["eventType"] != want {
+			t.Fatalf("telemetry_acceptance %s (%s) eventType = %#v, want %s", outcome, severity, payload["eventType"], want)
+		}
+	}
+}
+
 func TestBuildTelemetryNotificationPayloadIncludesDiagnosticContext(t *testing.T) {
 	event := NotificationEvent{
 		Type:       "telemetry_breached",

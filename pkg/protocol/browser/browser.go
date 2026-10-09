@@ -81,6 +81,9 @@ type Browser struct {
 	// publishedHARArtifacts are the artifacts published since the engine last
 	// took them (see TakeBrowserHARArtifacts).
 	publishedHARArtifacts []protocol.BrowserHARArtifact
+	// harEvidenceGeneration is the current context's browser evidence
+	// generation, published with its native HAR.
+	harEvidenceGeneration string
 	// interactionsEnabled records gesture interaction evidence (E3).
 	interactionsEnabled  bool
 	interactions         browserInteractionState

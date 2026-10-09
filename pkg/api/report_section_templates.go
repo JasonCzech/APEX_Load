@@ -529,6 +529,32 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{else}}<p class="section-copy">No controller failover occurred during this run.</p>{{end}}
 {{end}}
 
+{{define "telemetry_acceptance"}}
+<h2>Telemetry Acceptance</h2>
+{{with .TelemetryAcceptanceView}}
+<p class="section-copy">{{.Summary}}</p>
+{{if .Pins}}<table><thead><tr><th>Policy</th><th>Name</th><th class="num">Revision</th><th>SHA-256</th></tr></thead><tbody>
+{{range .Pins}}<tr><td>{{.Kind}}</td><td>{{.Name}}</td><td class="num">{{.Revision}}</td><td>{{.SHA256}}</td></tr>{{end}}
+</tbody></table>{{end}}
+{{if .Criteria}}<table><thead><tr><th>Criterion</th><th>Result</th><th>Observed</th><th>Bound</th><th>Threshold</th><th>Basis</th><th>Reason</th></tr></thead><tbody>
+{{range .Criteria}}<tr><td>{{.Criterion}}</td><td>{{.Outcome}}</td><td>{{.Observed}}</td><td>{{.Bound}}</td><td>{{.Threshold}}</td><td>{{.Basis}}</td><td>{{.Reason}}</td></tr>{{end}}
+</tbody></table>{{end}}
+{{if .Loss}}<table><thead><tr><th>Loss counter</th><th>Total</th><th>State</th><th>Reason</th></tr></thead><tbody>
+{{range .Loss}}<tr><td>{{.Counter}}</td><td>{{.Value}}</td><td>{{.State}}</td><td>{{.Reason}}</td></tr>{{end}}
+</tbody></table>{{else}}<p class="section-copy">Run-level loss totals were not recorded for this run.</p>{{end}}
+<p class="section-copy">Coverage: {{.Coverage}}</p>
+{{if .Sources}}<table><thead><tr><th>Source</th><th>Observed</th></tr></thead><tbody>
+{{range .Sources}}<tr><td>{{.Source}}</td><td>{{.Observed}}</td></tr>{{end}}
+</tbody></table>{{end}}
+<p class="section-copy">Classified time: {{.Breach}}</p>
+<p class="section-copy">Clock quality: {{.Clock}}</p>
+{{if .Stages}}<table><thead><tr><th>Stage</th><th>Availability</th><th class="num">Samples</th><th class="num">p50 ms</th><th class="num">p95 ms</th><th class="num">p99 ms</th><th class="num">max ms</th><th>Excluded</th></tr></thead><tbody>
+{{range .Stages}}<tr><td>{{.Stage}}</td><td>{{.Availability}}</td><td class="num">{{.Samples}}</td><td class="num">{{.P50}}</td><td class="num">{{.P95}}</td><td class="num">{{.P99}}</td><td class="num">{{.Max}}</td><td>{{.Excluded}}</td></tr>{{end}}
+</tbody></table>{{end}}
+{{if .Exclusions}}<ul>{{range .Exclusions}}<li>Excluded — {{.}}</li>{{end}}</ul>{{end}}
+{{end}}
+{{end}}
+
 {{define "completeness"}}
 <h2>Completeness Score</h2>
 <p class="section-copy">{{formatFloat .Report.Completeness.ScorePct}}% — {{.Report.Completeness.Status}}</p>

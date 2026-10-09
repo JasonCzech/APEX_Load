@@ -42,6 +42,9 @@ type NativeEvidenceResponse struct {
 	Warnings       []string                               `json:"warnings"`
 	Overlay        []analysis.MetricPoint                 `json:"overlay,omitempty"`
 	Correlation    map[string][]analysis.CorrelationScore `json:"correlation,omitempty"`
+	// CorrelationSemantics describes, per correlated series, both sides'
+	// semantics and excluded evidence.
+	CorrelationSemantics map[string]analysis.CorrelationSemantics `json:"correlation_semantics,omitempty"`
 	// Derivation names the catalog operation the series values are, when the
 	// query asked for one.
 	Derivation *analysis.QueryDerivation `json:"derivation,omitempty"`
@@ -117,6 +120,11 @@ func (s *Server) handleNativeEvidenceSeries(w http.ResponseWriter, r *http.Reque
 	}
 	if err == nil && q.OverlaySelection != nil {
 		err = s.attachNativeOverlay(ctx, run.ProjectID, run.ID, q, &result)
+	}
+	if errors.Is(err, errAnalysisDatasetChanged) {
+		// The overlay's pinned dataset conflicts with its current artifacts.
+		writeError(w, 409, err.Error())
+		return
 	}
 	if err != nil {
 		writeError(w, 422, err.Error())
@@ -463,11 +471,11 @@ func (s *Server) attachNativeOverlay(ctx context.Context, project, runID string,
 			return errors.New("explicitly associate the dataset with this run before overlaying")
 		}
 	}
-	selection := AnalysisSeriesSelection{DatasetID: o.DatasetID, SourceID: o.SourceID, Metric: o.Metric, Aggregation: o.Aggregation, Host: o.Host, Dimensions: o.Dimensions}
+	selection := AnalysisSeriesSelection{DatasetID: o.DatasetID, SourceID: o.SourceID, Metric: o.Metric, Aggregation: o.Aggregation, Host: o.Host, Dimensions: o.Dimensions, DatasetArtifactSHA256: o.DatasetArtifactSHA256}
 	if o.DatasetID == "" {
 		selection.RunID = runID
 	}
-	request := AnalysisComparisonRequest{From: out.From, To: out.To, BucketSeconds: q.BucketSeconds, MaxLagSeconds: o.MaxLagSeconds}
+	request := AnalysisComparisonRequest{From: out.From, To: out.To, BucketSeconds: q.BucketSeconds, MaxLagSeconds: o.MaxLagSeconds, sampleExclusions: map[analysisSeriesSelectionKey]map[string]int{}}
 	points, associated, err := s.loadAnalysisSelection(ctx, project, selection, request)
 	if err != nil {
 		return err
@@ -491,6 +499,7 @@ func (s *Server) attachNativeOverlay(ctx context.Context, project, runID string,
 		return nil
 	}
 	out.Correlation = map[string][]analysis.CorrelationScore{}
+	out.CorrelationSemantics = map[string]analysis.CorrelationSemantics{}
 	// Shared correlation validates alignment and excludes missing/invalid quality.
 	right := append([]analysis.MetricPoint(nil), points...)
 	for i := range right {
@@ -506,13 +515,29 @@ func (s *Server) attachNativeOverlay(ctx context.Context, project, runID string,
 			if p.Value == nil {
 				quality = analysis.QualityMissing
 			}
-			left = append(left, analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, Source: "native-panel", ProjectID: project, TimestampUTC: p.From.UTC(), MetricName: q.Metric, Unit: series.Unit, Kind: analysis.KindGauge, Value: p.Value, Quality: quality})
+			left = append(left, analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, Source: "native-panel", ProjectID: project, TimestampUTC: p.From.UTC(), MetricName: q.Metric, Population: q.Population, Unit: series.Unit, Kind: analysis.KindGauge, Value: p.Value, Quality: quality})
 		}
 		scores, err := analysis.LaggedCorrelation(left, right, out.From, out.To, q.BucketSeconds, o.MaxLagSeconds)
 		if err != nil {
 			return err
 		}
 		out.Correlation[series.Name] = scores
+		semantics := analysis.DescribeCorrelation(q.Metric, q.Aggregation, left, o.Metric, o.Aggregation, points)
+		if q.Derivation != nil {
+			semantics.Left.Derivation = analysis.CanonicalDerivation(q.Derivation.Operation)
+			// A derived bucket left unscored is excluded for its own reason.
+			for _, p := range series.Points {
+				if p.Value == nil && p.Reason != "" && semantics.Left.Excluded[analysis.QualityMissing] > 0 {
+					semantics.Left.Excluded[analysis.QualityMissing]--
+					semantics.Left.Excluded[p.Reason]++
+				}
+			}
+			if semantics.Left.Excluded[analysis.QualityMissing] == 0 {
+				delete(semantics.Left.Excluded, analysis.QualityMissing)
+			}
+		}
+		semantics.Right.ExcludedSamples = request.sampleExclusions[analysisSelectionKey(selection)]
+		out.CorrelationSemantics[series.Name] = semantics
 	}
 	return nil
 }

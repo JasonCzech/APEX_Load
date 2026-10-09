@@ -215,3 +215,46 @@ func TestTruncateMessage(t *testing.T) {
 		t.Fatalf("expected ellipsis suffix")
 	}
 }
+
+func TestBuildJUnitReportTelemetryAcceptanceCase(t *testing.T) {
+	tests := []struct {
+		name                    string
+		verdict                 *CITelemetryVerdict
+		failure, error, skipped bool
+	}{
+		{name: "enforced failure", verdict: &CITelemetryVerdict{Outcome: "fail", Mode: "fail_ci", Enforced: true, Reasons: []string{"coverage 70.0% is below the 90.0% floor"}}, failure: true},
+		{name: "unmapped inconclusive", verdict: &CITelemetryVerdict{Outcome: "inconclusive", Mode: "fail_ci", Enforced: true}, error: true},
+		{name: "inconclusive mapped to fail", verdict: &CITelemetryVerdict{Outcome: "inconclusive", Mode: "fail_ci", InconclusivePolicy: "fail", Enforced: true}, failure: true},
+		{name: "inconclusive mapped to pass", verdict: &CITelemetryVerdict{Outcome: "inconclusive", Mode: "fail_ci", InconclusivePolicy: "pass"}},
+		{name: "advisory failure is skipped", verdict: &CITelemetryVerdict{Outcome: "fail", Mode: "advisory"}, skipped: true},
+		{name: "pass", verdict: &CITelemetryVerdict{Outcome: "pass", Mode: "fail_ci"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			report := buildJUnitReport(junitInput{suiteName: "apexload:ci", telemetry: test.verdict})
+			suite := report.Suites[0]
+			var testcase *junitTestcase
+			for index := range suite.Cases {
+				if suite.Cases[index].Name == "telemetry_acceptance" {
+					testcase = &suite.Cases[index]
+				}
+			}
+			if testcase == nil {
+				t.Fatalf("no telemetry_acceptance test case: %+v", suite.Cases)
+			}
+			if (testcase.Failure != nil) != test.failure || (testcase.Error != nil) != test.error || (testcase.Skipped != nil) != test.skipped {
+				t.Fatalf("test case = %+v", testcase)
+			}
+			if test.failure && !strings.Contains(testcase.Failure.Message, "telemetry") {
+				t.Fatalf("failure message = %q", testcase.Failure.Message)
+			}
+		})
+	}
+	// Without a verdict there is no telemetry test case.
+	report := buildJUnitReport(junitInput{suiteName: "apexload:ci"})
+	for _, testcase := range report.Suites[0].Cases {
+		if testcase.Name == "telemetry_acceptance" {
+			t.Fatal("a run without a telemetry verdict has a telemetry test case")
+		}
+	}
+}
