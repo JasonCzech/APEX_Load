@@ -936,18 +936,18 @@ func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) error {
 		return nil
 	}
 	if _, distributed := tr.execution.(*distributedExecutionBackend); distributed && runAdoptionStatus(test.Status) {
-		// A fail-policy run has no durable participant journal. A continue-policy
-		// run reaching here has a missing or unusable adoption checkpoint. The
-		// current fleet list cannot identify a vanished old target, which may
-		// still run through its process lease or supervision grace. Preserve the
-		// timeslot until external process-fence reconciliation supplies proof.
+		// A fail-policy run has no adoption checkpoint. A continue-policy run
+		// reaching here has a missing or unusable one. The current fleet list
+		// cannot identify a vanished old target, which may still run through
+		// its process lease or supervision grace. Preserve the timeslot until
+		// the generators prove the load stopped or an administrator attests it.
 		if err := tr.claimTestExecutionFence(test); err != nil {
 			return err
 		}
 		// After admission, runInterruptedRunResolution finalizes the run once
 		// every generator in its participant journal proves the load is gone.
 		const reason = interruptedDistributedStopReason
-		newError := test.Error
+		newError := strings.ReplaceAll(test.Error, legacyInterruptedDistributedStopReason, reason)
 		if !strings.Contains(newError, reason) {
 			if newError == "" {
 				newError = reason

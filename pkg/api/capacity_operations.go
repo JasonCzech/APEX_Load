@@ -1153,6 +1153,14 @@ func (s *Server) reconcileOrphanedCapacityForTerm(ctx context.Context, generatio
 			continue
 		}
 		backend, target, resolveErr := s.capacityBackendForMaintenance(ctx, pool)
+		if errors.Is(resolveErr, errCapacityOwnerUnavailable) {
+			// Without the owner identity this pool's instances cannot be
+			// recognized; keep it gated and retry rather than skip its sweep.
+			resolveErr = fmt.Errorf("pool %s: %w", pool.ID, resolveErr)
+			s.capacitySweep.markFailed(generation, pool.ID, resolveErr)
+			errs = append(errs, resolveErr)
+			continue
+		}
 		if resolveErr != nil || target.Kind == storage.ExecutionTargetKubernetes {
 			s.capacitySweep.markSwept(generation, pool.ID)
 			continue

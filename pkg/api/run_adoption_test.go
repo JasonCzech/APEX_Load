@@ -831,7 +831,7 @@ func TestDistributedUnprovableRunStaysStoppingUntilExternalFence(t *testing.T) {
 			}
 			record, err = store.GetTest(test.ID)
 			if err != nil || record.Status != "STOPPING" || record.EndTime != nil ||
-				!strings.Contains(record.Error, "external generator process-fence reconciliation is required") || record.TimeslotID == nil || *record.TimeslotID != slotID {
+				!strings.Contains(record.Error, "/interrupted-stop/resolve") || record.TimeslotID == nil || *record.TimeslotID != slotID {
 				t.Fatalf("unprovable stopping run released its reservation: %+v, %v", record, err)
 			}
 			if test.Status != "STOPPING" || test.EndedAt != nil {

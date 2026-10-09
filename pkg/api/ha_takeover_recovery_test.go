@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -588,7 +589,11 @@ func TestCapacityOwnerIdentityIsSharedAcrossReplicas(t *testing.T) {
 		if !ok {
 			t.Fatalf("capacity backends = %T", server.capacityBackends)
 		}
-		return resolver.controllerID
+		owner, err := resolver.capacityOwnerID()
+		if err != nil {
+			t.Fatalf("capacity owner: %v", err)
+		}
+		return owner
 	}
 	first := NewServer(ServerConfig{Store: store, HAExecutionLeadership: true})
 	second := NewServer(ServerConfig{Store: store, HAExecutionLeadership: true})
@@ -606,5 +611,75 @@ func TestCapacityOwnerIdentityIsSharedAcrossReplicas(t *testing.T) {
 	configured := NewServer(ServerConfig{Store: store})
 	if got := owner(configured); got != "operator-configured" {
 		t.Fatalf("configured capacity owner = %q, want the explicit APEXLOAD_CONTROLLER_ID", got)
+	}
+}
+
+type flakyOwnerSettings struct {
+	failures int
+	stored   string
+}
+
+func (f *flakyOwnerSettings) EnsureSetting(_ string, candidate string) (string, error) {
+	if f.failures > 0 {
+		f.failures--
+		return "", errors.New("database unavailable")
+	}
+	if f.stored == "" {
+		f.stored = candidate
+	}
+	return f.stored, nil
+}
+
+// A boot-time database blip must not freeze the process onto its per-process
+// identity: instances launched under it would again be invisible to every
+// successor. The owner is retried and only cached once durable.
+func TestCapacityOwnerRetriesInsteadOfFallingBack(t *testing.T) {
+	t.Setenv("APEXLOAD_CONTROLLER_ID", "")
+	settings := &flakyOwnerSettings{failures: 1}
+	owner := newCapacityOwner(settings, "per-process-identity")
+	if got, err := owner.identity(); err == nil || !errors.Is(err, errCapacityOwnerUnavailable) || got != "" {
+		t.Fatalf("owner during outage = (%q, %v), want errCapacityOwnerUnavailable", got, err)
+	}
+	got, err := owner.identity()
+	if err != nil || got == "" || got == "per-process-identity" || got != settings.stored {
+		t.Fatalf("owner after recovery = (%q, %v), want the durable identity %q", got, err, settings.stored)
+	}
+}
+
+func TestTakeoverSweepKeepsPoolGatedWhileOwnerUnavailable(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	saveCapacityTestPool(t, store, &storage.FleetPool{ID: "pool-owner", Name: "owner", Status: "active", ExecutionTargetID: "target-owner", LifecycleMode: storage.FleetLifecycleWarmBurst})
+	server.capacityBackends = ownerUnavailableResolver{}
+	server.capacitySweep.begin(9)
+	if err := server.reconcileOrphanedCapacityForTerm(context.Background(), 9); err == nil || !errors.Is(err, errCapacityOwnerUnavailable) {
+		t.Fatalf("sweep error = %v, want the owner outage", err)
+	}
+	if ready, _ := server.capacitySweep.poolReady("pool-owner"); ready {
+		t.Fatal("a pool whose instances cannot be recognized yet must stay gated, not be treated as swept")
+	}
+}
+
+type ownerUnavailableResolver struct{}
+
+func (ownerUnavailableResolver) BackendForPool(context.Context, *storage.FleetPool) (compute.Backend, *storage.ExecutionTarget, error) {
+	return nil, nil, fmt.Errorf("%w: %w", errCapacityBackendUnavailable, errCapacityOwnerUnavailable)
+}
+
+// Cloud targets must not build a backend under a guessed identity while the
+// owner is unavailable; Kubernetes and static targets never use it.
+func TestCapacityResolverRequiresOwnerOnlyForCloudTargets(t *testing.T) {
+	t.Setenv("APEXLOAD_CONTROLLER_ID", "")
+	resolver := &capacityBackendResolver{enabled: true, controllerID: "per-process-identity", owner: newCapacityOwner(&flakyOwnerSettings{failures: 1 << 20}, "per-process-identity")}
+	for _, kind := range []string{storage.ExecutionTargetAWSECSFargate, storage.ExecutionTargetAzureContainerApps, storage.ExecutionTargetAzureContainerInstances} {
+		_, err := resolver.BackendForTarget(context.Background(), &storage.ExecutionTarget{ID: "t", Kind: kind})
+		if !errors.Is(err, errCapacityOwnerUnavailable) || !errors.Is(err, errCapacityBackendUnavailable) {
+			t.Fatalf("%s backend during owner outage: %v", kind, err)
+		}
+	}
+	for _, kind := range []string{storage.ExecutionTargetKubernetes, storage.ExecutionTargetStatic} {
+		_, err := resolver.BackendForTarget(context.Background(), &storage.ExecutionTarget{ID: "t", Kind: kind})
+		if errors.Is(err, errCapacityOwnerUnavailable) || !errors.Is(err, errCapacityBackendUnavailable) {
+			t.Fatalf("%s backend should keep its legacy-adapter result: %v", kind, err)
+		}
 	}
 }

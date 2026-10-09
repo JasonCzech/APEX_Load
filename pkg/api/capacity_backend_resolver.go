@@ -40,7 +40,17 @@ type capacityBackendResolver struct {
 	targets      storage.ExecutionTargetStore
 	clouds       storage.CloudConnectionStore
 	controllerID string
-	server       *Server
+	// owner, when set, supplies the installation-wide capacity owner in place
+	// of controllerID (see capacityOwner).
+	owner  *capacityOwner
+	server *Server
+}
+
+func (r *capacityBackendResolver) capacityOwnerID() (string, error) {
+	if r.owner != nil {
+		return r.owner.identity()
+	}
+	return r.controllerID, nil
 }
 
 func (r *capacityBackendResolver) BackendForPool(ctx context.Context, pool *storage.FleetPool) (compute.Backend, *storage.ExecutionTarget, error) {
@@ -87,6 +97,10 @@ func (r *capacityBackendResolver) backendForTarget(ctx context.Context, target *
 	if r == nil || target == nil {
 		return nil, errCapacityBackendUnavailable
 	}
+	ownerID, ownerErr := r.capacityOwnerID()
+	if ownerErr != nil && target.Kind != storage.ExecutionTargetKubernetes && target.Kind != storage.ExecutionTargetStatic {
+		return nil, fmt.Errorf("%w: %w", errCapacityBackendUnavailable, ownerErr)
+	}
 	switch target.Kind {
 	case storage.ExecutionTargetAzureContainerApps:
 		connection, err := r.cloudConnection(target.CloudConnectionID, storage.CloudProviderAzure, maintenance)
@@ -103,7 +117,7 @@ func (r *capacityBackendResolver) backendForTarget(ctx context.Context, target *
 		}[connection.AzureCloud]
 		return &computeazure.Backend{
 			API:    &computeazure.RESTClient{Endpoint: endpoint, Credential: credential},
-			Target: target, SubscriptionID: connection.AzureSubscriptionID, ControllerID: r.controllerID,
+			Target: target, SubscriptionID: connection.AzureSubscriptionID, ControllerID: ownerID,
 		}, nil
 	case storage.ExecutionTargetAzureContainerInstances:
 		connection, err := r.cloudConnection(target.CloudConnectionID, storage.CloudProviderAzure, maintenance)
@@ -120,7 +134,7 @@ func (r *capacityBackendResolver) backendForTarget(ctx context.Context, target *
 		}[connection.AzureCloud]
 		return &computeazure.InstancesBackend{
 			API:    &computeazure.RESTClient{Endpoint: endpoint, Credential: credential},
-			Target: target, SubscriptionID: connection.AzureSubscriptionID, ControllerID: r.controllerID,
+			Target: target, SubscriptionID: connection.AzureSubscriptionID, ControllerID: ownerID,
 		}, nil
 	case storage.ExecutionTargetAWSECSFargate:
 		connection, err := r.cloudConnection(target.CloudConnectionID, storage.CloudProviderAWS, maintenance)
@@ -134,7 +148,7 @@ func (r *capacityBackendResolver) backendForTarget(ctx context.Context, target *
 		return &computeaws.Backend{
 			API:            &computeaws.JSONClient{Region: connection.AWSRegion, Credentials: provider},
 			AutoscalingAPI: &computeaws.ApplicationAutoscalingJSONClient{Region: connection.AWSRegion, Credentials: provider},
-			Target:         target, ControllerID: r.controllerID, ContainerName: "generator",
+			Target:         target, ControllerID: ownerID, ContainerName: "generator",
 		}, nil
 	default:
 		return nil, fmt.Errorf("%w: target kind %q uses the legacy scaler adapter", errCapacityBackendUnavailable, target.Kind)

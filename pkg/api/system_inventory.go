@@ -2,11 +2,13 @@ package api
 
 import (
 	"context"
-	"log/slog"
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -263,29 +265,54 @@ type capacityOwnerSettingStore interface {
 	EnsureSetting(key string, candidate string) (string, error)
 }
 
-// capacityOwnerIdentity returns the identity that tags and claims cloud
-// capacity. It must be shared by every controller replica of an installation
-// and survive restarts: provider discovery and adoption only trust instances
-// carrying it, so a per-process identity hid a predecessor's instances from an
-// HA successor (or a restarted controller) and left them running. An explicit
+// errCapacityOwnerUnavailable means the installation-wide capacity owner could
+// not be read or stored yet. Callers retry rather than act under another identity.
+var errCapacityOwnerUnavailable = errors.New("cloud capacity owner identity is unavailable")
+
+// capacityOwner is the identity that tags and claims cloud capacity. It must be
+// shared by every controller replica of an installation and survive restarts:
+// provider discovery and adoption only trust instances carrying it, so a
+// per-process identity hid a predecessor's instances from an HA successor (or
+// a restarted controller) and left them running. An explicit
 // APEXLOAD_CONTROLLER_ID keeps the identity it already tagged instances with;
 // otherwise the first replica stores a random identity in the shared database.
-// The per-process instance identity remains only as a fallback when the store
-// cannot hold the setting.
-func capacityOwnerIdentity(store any, fallback string) string {
+// A store that cannot hold settings keeps the per-process identity. A failed
+// read or write is retried on the next use and never replaced by the
+// per-process identity, which would silently reintroduce the leak.
+type capacityOwner struct {
+	mu       sync.Mutex
+	settings capacityOwnerSettingStore
+	resolved string
+}
+
+func newCapacityOwner(store any, fallback string) *capacityOwner {
 	if configured := strings.TrimSpace(os.Getenv("APEXLOAD_CONTROLLER_ID")); configured != "" {
-		return configured
+		return &capacityOwner{resolved: configured}
 	}
-	settings, ok := store.(capacityOwnerSettingStore)
-	if !ok || settings == nil {
-		return fallback
+	if settings, ok := store.(capacityOwnerSettingStore); ok && settings != nil {
+		return &capacityOwner{settings: settings}
 	}
-	owner, err := settings.EnsureSetting(capacityOwnerSettingKey, "apexload-"+uuid.NewString())
-	if err != nil || strings.TrimSpace(owner) == "" {
-		slog.Warn("cloud capacity owner identity is unavailable; using this controller process's identity", "error", err)
-		return fallback
+	return &capacityOwner{resolved: fallback}
+}
+
+func (o *capacityOwner) identity() (string, error) {
+	if o == nil {
+		return "", errCapacityOwnerUnavailable
 	}
-	return strings.TrimSpace(owner)
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.resolved != "" {
+		return o.resolved, nil
+	}
+	owner, err := o.settings.EnsureSetting(capacityOwnerSettingKey, "apexload-"+uuid.NewString())
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", errCapacityOwnerUnavailable, err)
+	}
+	if owner = strings.TrimSpace(owner); owner == "" {
+		return "", errCapacityOwnerUnavailable
+	}
+	o.resolved = owner
+	return owner, nil
 }
 
 func controllerInstanceID() string {

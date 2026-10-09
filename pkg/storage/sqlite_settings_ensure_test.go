@@ -11,6 +11,11 @@ func TestEnsureSettingKeepsTheFirstValue(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
+	testEnsureSettingKeepsTheFirstValue(t, store)
+}
+
+func testEnsureSettingKeepsTheFirstValue(t *testing.T, store *SQLiteStore) {
+	t.Helper()
 	first, err := store.EnsureSetting("controller.capacity_owner_id", "owner-a")
 	if err != nil || first != "owner-a" {
 		t.Fatalf("first EnsureSetting = (%q, %v), want owner-a", first, err)

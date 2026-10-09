@@ -71,7 +71,7 @@ func TestInterruptedDistributedRunIsFinalizedOnceEveryGeneratorConfirms(t *testi
 	_, generation := leadership.executionLeaseTerm()
 	interruptedRunFixture(t, runner, store, "interrupted-proven", "gen-a:9091", "gen-b:9091")
 
-	if pending := runner.resolveInterruptedDistributedRuns(context.Background(), generation); pending != 0 {
+	if pending := runner.resolveInterruptedDistributedRuns(context.Background(), generation, nil); pending != 0 {
 		t.Fatalf("pending interrupted runs = %d, want 0", pending)
 	}
 	record := storedStatus(t, store, "interrupted-proven")
@@ -90,7 +90,7 @@ func TestInterruptedDistributedRunWaitsForEveryGenerator(t *testing.T) {
 	interruptedRunFixture(t, runner, store, "interrupted-partial", "gen-a:9091", "gen-b:9091")
 	interruptedRunFixture(t, runner, store, "interrupted-no-journal")
 
-	if pending := runner.resolveInterruptedDistributedRuns(context.Background(), generation); pending != 2 {
+	if pending := runner.resolveInterruptedDistributedRuns(context.Background(), generation, nil); pending != 2 {
 		t.Fatalf("pending interrupted runs = %d, want 2", pending)
 	}
 	for _, id := range []string{"interrupted-partial", "interrupted-no-journal"} {
@@ -131,5 +131,79 @@ func TestInterruptedRunOperatorOverrideRequiresAttestation(t *testing.T) {
 	}
 	if rec := call("missing-run", `{"attestation":"all-generator-processes-stopped"}`); rec.Code != http.StatusNotFound {
 		t.Fatalf("override of a missing run = %d, want 404", rec.Code)
+	}
+}
+
+// A target that accepted this term's claim stays proven for the term, so later
+// cycles neither re-claim it nor need it reachable again.
+func TestInterruptedRunProofsAccumulateWithinATerm(t *testing.T) {
+	runner, store, leadership := newAdoptionTestRunner(t)
+	_, generation := leadership.executionLeaseTerm()
+	interruptedRunBackend(runner, map[string]bool{"gen-a:9091": true})
+	interruptedRunFixture(t, runner, store, "interrupted-accumulating", "gen-a:9091", "gen-b:9091")
+	proven := make(interruptedRunProofs)
+	if pending := runner.resolveInterruptedDistributedRuns(context.Background(), generation, proven); pending != 1 {
+		t.Fatalf("first cycle pending = %d, want 1", pending)
+	}
+	if !proven["interrupted-accumulating"]["gen-a:9091"] || proven["interrupted-accumulating"]["gen-b:9091"] {
+		t.Fatalf("proofs after first cycle = %v", proven)
+	}
+	interruptedRunBackend(runner, map[string]bool{"gen-b:9091": true})
+	if pending := runner.resolveInterruptedDistributedRuns(context.Background(), generation, proven); pending != 0 {
+		t.Fatalf("second cycle pending = %d, want 0", pending)
+	}
+	if record := storedStatus(t, store, "interrupted-accumulating"); record.Status != "FAILED" {
+		t.Fatalf("run after both generators confirmed = %s", record.Status)
+	}
+}
+
+// Rows held by an older controller carry the earlier marker text, which told
+// operators to reconcile process fences by hand. They are still interrupted
+// runs: reconcile upgrades the guidance and resolution strips either form.
+func TestLegacyInterruptedRunMarkerIsUpgradedAndResolved(t *testing.T) {
+	runner, store, leadership := newAdoptionTestRunner(t)
+	interruptedRunBackend(runner, map[string]bool{"gen-a:9091": true})
+	owner, generation := leadership.executionLeaseTerm()
+	started := time.Now().UTC().Add(-time.Minute)
+	if err := store.SaveTest(&storage.TestRecord{ID: "interrupted-legacy", Name: "interrupted-legacy", Status: "STOPPING", Error: "earlier failure; " + legacyInterruptedDistributedStopReason, ProjectID: storage.DefaultProjectID, StartTime: started, StartedAt: &started, Groups: []any{}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, saved, err := store.PrepareRunArchiveCollection("interrupted-legacy", storage.DefaultProjectID, started, map[string]string{"gen-a:9091": strings.Repeat("a", 64)}, executionLeaseName, owner); err != nil || !saved {
+		t.Fatalf("prepare participant journal = (%v, %v)", saved, err)
+	}
+	if err := runner.reloadStoredTests(); err != nil {
+		t.Fatal(err)
+	}
+	record := storedStatus(t, store, "interrupted-legacy")
+	if record.Status != "STOPPING" || record.Error != "earlier failure; "+interruptedDistributedStopReason {
+		t.Fatalf("reconciled legacy row = %s %q", record.Status, record.Error)
+	}
+
+	if pending := runner.resolveInterruptedDistributedRuns(context.Background(), generation, nil); pending != 0 {
+		t.Fatalf("pending interrupted runs = %d, want 0", pending)
+	}
+	record = storedStatus(t, store, "interrupted-legacy")
+	if record.Status != "FAILED" || !strings.HasPrefix(record.Error, "earlier failure; controller execution ownership was interrupted before the run completed") ||
+		strings.Contains(record.Error, "held STOPPING") || strings.Contains(record.Error, "process-fence") {
+		t.Fatalf("resolved legacy run = %s %q", record.Status, record.Error)
+	}
+}
+
+func TestInterruptedRunMarkerStripsEitherForm(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{interruptedDistributedStopReason, ""},
+		{legacyInterruptedDistributedStopReason, ""},
+		{"earlier; " + interruptedDistributedStopReason, "earlier"},
+		{"earlier; " + legacyInterruptedDistributedStopReason, "earlier"},
+	} {
+		if !hasInterruptedDistributedStopReason(tc.in) {
+			t.Fatalf("marker not recognised in %q", tc.in)
+		}
+		if got := withoutInterruptedDistributedStopReason(tc.in); got != tc.want {
+			t.Fatalf("strip(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+	if hasInterruptedDistributedStopReason("controller execution ownership was interrupted") {
+		t.Fatal("a partial marker matched")
 	}
 }

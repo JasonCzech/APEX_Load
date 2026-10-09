@@ -683,7 +683,16 @@ The remaining review items are covered in §17.
   operator and note are recorded on the run). The automatic proof needs HA
   execution generations: a single controller that restarts during a
   distributed run holds it STOPPING the same way, and there only the operator
-  override resolves it.
+  override resolves it. The held run's error now names that override instead
+  of asking for manual process-fence reconciliation; rows written with the
+  earlier text are still recognised, and reconcile rewrites them.
+- **The override also covers interrupted evacuations.** A run whose generator
+  evacuation was cut off by a leadership change is fenced automatically only
+  while every possible participant (the evacuated source included) can
+  acknowledge the successor's epoch. When one is gone for good, the same
+  endpoint records the administrator's attestation as the evacuation's fence
+  proof; evacuation recovery then performs only its archive and pod-capacity
+  cleanup.
 - **Leader-only routes reach the leader.** The Helm, AKS, EKS and on-prem
   Ingresses also route `/api/v1/fleet`, `/api/v1/projects`, `/api/v1/archives`,
   `/api/v1/system/generators`, `/api/v1/system/restarts` and
@@ -703,3 +712,13 @@ The remaining review items are covered in §17.
   `expired` past its deadline, without the old owner fence, and takeover always
   fails the prepared (INITIALIZING) run. `TestPreparationTakeoverAndExpiredAuditRecovery`
   pins this; a successor deliberately never adopts the old term's reservation.
+- **Harness evidence (2026-10-09, branch merged with main 23b81fe36).**
+  kill -9 of the leader with the `fail` policy: the generators' epoch deadman
+  stopped the load about 19 seconds after the kill, the successor acquired
+  about 24 seconds after it, and after the 30-second settle it finalized the
+  run FAILED from generator proof at +100s (55 seconds after the kill).
+  Before this phase the run stayed STOPPING indefinitely. SIGTERM with the
+  `continue` policy: COMPLETE, the old leader handed the run off and exited
+  within a second, and the target saw load in every one of the 151 seconds
+  (about 40 requests per second throughout). The successor's observation gap
+  was 8.0 seconds on a heavily loaded machine.
