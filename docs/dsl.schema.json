@@ -24,7 +24,7 @@
                 "type": "string"
               },
               "body_encoding": {
-                "description": "Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail.",
+                "description": "Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\\xNN`, octal, `\\\\`, `\\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary).",
                 "type": "string"
               },
               "body_file": {
@@ -96,7 +96,7 @@
                 "type": "string"
               },
               "body_encoding": {
-                "description": "Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail.",
+                "description": "Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\\xNN`, octal, `\\\\`, `\\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary).",
                 "type": "string"
               },
               "body_file": {
@@ -168,7 +168,7 @@
                 "type": "string"
               },
               "body_encoding": {
-                "description": "Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail.",
+                "description": "Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\\xNN`, octal, `\\\\`, `\\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary).",
                 "type": "string"
               },
               "body_file": {
@@ -240,7 +240,7 @@
                 "type": "string"
               },
               "body_encoding": {
-                "description": "Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail.",
+                "description": "Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\\xNN`, octal, `\\\\`, `\\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary).",
                 "type": "string"
               },
               "body_file": {
@@ -312,7 +312,7 @@
                 "type": "string"
               },
               "body_encoding": {
-                "description": "Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail.",
+                "description": "Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\\xNN`, octal, `\\\\`, `\\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary).",
                 "type": "string"
               },
               "body_file": {
@@ -384,7 +384,7 @@
                 "type": "string"
               },
               "body_encoding": {
-                "description": "Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail.",
+                "description": "Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\\xNN`, octal, `\\\\`, `\\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary).",
                 "type": "string"
               },
               "body_file": {
@@ -456,7 +456,7 @@
                 "type": "string"
               },
               "body_encoding": {
-                "description": "Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail.",
+                "description": "Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\\xNN`, octal, `\\\\`, `\\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary).",
                 "type": "string"
               },
               "body_file": {

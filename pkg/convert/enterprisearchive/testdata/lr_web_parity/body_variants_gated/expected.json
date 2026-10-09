@@ -1,6 +1,0 @@
-{
-  "description": "BodyBinary, BodyFilePath and BodyUnicode bodies. Until WP1.1 rebuilds them, the import must be gated rather than send an empty body.",
-  "source": "VuGen 26.1 Function Reference: web_custom_request (BodyBinary \\xHH escapes, BodyUnicode UTF-16LE, BodyFilePath).",
-  "outcome": "gated",
-  "gate_reason_codes": ["request_body_variant_unsupported"]
-}

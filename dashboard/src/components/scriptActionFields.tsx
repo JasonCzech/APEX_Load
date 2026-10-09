@@ -16,6 +16,7 @@ import CodeLineWrapToggle from './CodeLineWrapToggle'
 import SourceCodeViewer from './SourceCodeViewer'
 import { useCodeLineWrapPreference } from './codeLineWrapPreference'
 import { formatXMLForDisplay } from './xmlDisplayFormat'
+import { BODY_ENCODING_OPTIONS, bodyEncodingLabel, knownBodyEncoding } from './bodyEncodings'
 
 type Action = ScriptActionDefinition
 type Assertion = ScriptAssertionDefinition
@@ -788,12 +789,12 @@ export function HttpActionFields({
     || action.body_encoding !== undefined
     || ['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(method)
   const bodyEncoding = action.body_encoding || ''
-  const normalizedBodyEncoding = bodyEncoding.trim().toLowerCase()
-  const bodyEncodingKnown = normalizedBodyEncoding === '' || normalizedBodyEncoding === 'base64'
-  const bodyEncodingSelection = normalizedBodyEncoding === 'base64' ? 'base64' : bodyEncoding
+  const knownEncoding = knownBodyEncoding(bodyEncoding)
+  const bodyEncodingKnown = Boolean(knownEncoding)
+  const bodyEncodingSelection = knownEncoding ? knownEncoding.value : bodyEncoding
   const formattedXmlBody = useMemo(
-    () => wrapLines || normalizedBodyEncoding === 'base64' ? null : formatXMLForDisplay(action.body || ''),
-    [action.body, normalizedBodyEncoding, wrapLines],
+    () => wrapLines || bodyEncodingSelection === 'base64' || bodyEncodingSelection === 'c_escaped' ? null : formatXMLForDisplay(action.body || ''),
+    [action.body, bodyEncodingSelection, wrapLines],
   )
   const showFormattedXmlBody = !wrapLines && Boolean(formattedXmlBody)
 
@@ -815,7 +816,7 @@ export function HttpActionFields({
         />
       )}
 
-      {!isBrowserScript && bodyVisible && openBody && <div className="sub-section"><h4>Request body</h4><p>{(action.body || '').length.toLocaleString()} characters · {action.body_encoding ? 'Base64 wire bytes' : bodyLanguage(action).toUpperCase()}</p><button type="button" className="btn btn-secondary" onClick={openBody}>Edit request body in center</button></div>}
+      {!isBrowserScript && bodyVisible && openBody && <div className="sub-section"><h4>Request body</h4><p>{(action.body || '').length.toLocaleString()} characters · {action.body_encoding ? bodyEncodingLabel(action.body_encoding) : bodyLanguage(action).toUpperCase()}</p><button type="button" className="btn btn-secondary" onClick={openBody}>Edit request body in center</button></div>}
       {!isBrowserScript && bodyVisible && !openBody && (
         <div className="sub-section">
           <div className="sub-header">
@@ -829,16 +830,13 @@ export function HttpActionFields({
                 value={bodyEncodingSelection}
                 onChange={event => onUpdate(index, 'body_encoding', event.target.value || undefined)}
               >
-                <option value="">Plain text</option>
-                <option value="base64">Base64-encoded wire bytes</option>
+                {BODY_ENCODING_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                 {!bodyEncodingKnown && <option value={bodyEncoding}>Legacy/unknown: {bodyEncoding}</option>}
               </select>
             </label>
           </div>
-          {normalizedBodyEncoding === 'base64' && (
-            <p className="sequence-summary-note">
-              This text is standard Base64. The HTTP runtime decodes it before sending the request body.
-            </p>
+          {knownEncoding?.note && (
+            <p className="sequence-summary-note">{knownEncoding.note}</p>
           )}
           {!bodyEncodingKnown && (
             <p className="sequence-summary-note">

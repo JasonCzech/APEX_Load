@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/credential"
+	"github.com/jasonczech/apexload/pkg/internal/bodyencoding"
 	"github.com/jasonczech/apexload/pkg/internal/contentdecode"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"go.opentelemetry.io/otel"
@@ -331,6 +332,20 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		}
 		if len(redactedRequestBody) > 0 {
 			redactedRequestBody, _ = encodeWindows1252Body(redactedRequestBody)
+		}
+	}
+	if bodyencoding.IsUTF16LE(action.BodyEncoding) {
+		encoded, err := bodyencoding.EncodeUTF16LE(string(action.Body))
+		if err != nil {
+			result.ErrorMessage = "HTTP body cannot be represented in UTF-16LE"
+			result.Duration = time.Since(result.StartTime)
+			return result, nil
+		}
+		requestBody = encoded
+		if len(redactedRequestBody) > 0 {
+			if encodedRedacted, err := bodyencoding.EncodeUTF16LE(string(redactedRequestBody)); err == nil {
+				redactedRequestBody = encodedRedacted
+			}
 		}
 	}
 	requestBytes := int64(len(requestBody))
@@ -1609,7 +1624,7 @@ func (h *HTTP) attachCorrelationEvidence(result *protocol.Result, action *protoc
 	result.CorrelationEvidence = &protocol.CorrelationEvidence{
 		RequestURL:             requestURL,
 		RequestBody:            string(fallbackBody),
-		RequestBodyTransformed: action != nil && (strings.EqualFold(strings.TrimSpace(action.BodyEncoding), "base64") || strings.EqualFold(action.BodyEncoding, "windows-1252")),
+		RequestBodyTransformed: action != nil && (strings.EqualFold(strings.TrimSpace(action.BodyEncoding), "base64") || strings.EqualFold(action.BodyEncoding, "windows-1252") || bodyencoding.IsUTF16LE(action.BodyEncoding) || bodyencoding.IsCEscaped(action.BodyEncoding)),
 		RequestHeaders:         correlationEvidenceRequestHeaders(wireRequest),
 		ResponseBody:           string(responseBody),
 		ResponseHeaders:        responseHeaders,

@@ -7,6 +7,7 @@ import (
 	stdhttp "net/http"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/internal/bodyencoding"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -60,6 +61,11 @@ func (h *HTTP) ValidateSharedSessionAction(action *protocol.Action) error {
 	}
 	if strings.EqualFold(strings.TrimSpace(action.BodyEncoding), "windows-1252") {
 		if _, err := encodeWindows1252Body(action.Body); err != nil {
+			return fmt.Errorf("HTTP body encoding is invalid")
+		}
+	}
+	if bodyencoding.IsUTF16LE(action.BodyEncoding) {
+		if _, err := bodyencoding.EncodeUTF16LE(string(action.Body)); err != nil {
 			return fmt.Errorf("HTTP body encoding is invalid")
 		}
 	}

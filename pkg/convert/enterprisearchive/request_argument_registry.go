@@ -17,8 +17,9 @@ import (
 // web_custom_request, web_submit_data, web_submit_form and web_rest.
 const (
 	// requestBodyVariantReasonCode gates a body the converter cannot rebuild
-	// yet (BodyBinary, BodyUnicode, BodyFilePath, RAW_BODY_START): the request
-	// would otherwise be sent with an empty or partial body.
+	// exactly (RAW_BODY_START, or a BodyBinary, BodyUnicode or BodyFilePath
+	// form request_body_variants.go refuses): the request would otherwise be
+	// sent with an empty or partial body.
 	requestBodyVariantReasonCode = "request_body_variant_unsupported"
 	// requestArgumentReasonCode gates any other attribute that changes the
 	// request on the wire in a way APEX does not reproduce yet.
@@ -36,7 +37,8 @@ const (
 	// requestArgumentInert: recording metadata or a response hint; it never
 	// changes the request on the wire.
 	requestArgumentInert
-	// requestArgumentBody: a body form the converter cannot rebuild yet.
+	// requestArgumentBody: a body form rebuilt by request_body_variants.go,
+	// gated when it cannot be rebuilt exactly.
 	requestArgumentBody
 	// requestArgumentGated: changes the wire; not reproduced yet.
 	requestArgumentGated
@@ -161,11 +163,13 @@ func appendUniqueFold(values []string, value string) []string {
 // according to its source attributes. It returns the unknown attribute names
 // so the caller can report them once per script, and whether execution was
 // gated.
-func applyRequestArgumentReview(action *dsl.Action, fn ParsedFunction) ([]string, bool) {
+func applyRequestArgumentReview(action *dsl.Action, fn ParsedFunction, opts ConvertOptions) ([]string, bool) {
 	if action == nil {
 		return nil, false
 	}
 	report := classifyRequestArguments(fn)
+	bodyRebuild := rebuildSourceBodyVariants(action, fn, opts.archiveFiles, opts.sourceEncoding)
+	report.body = withoutFold(report.body, bodyRebuild.rebuilt)
 	if report.userAgnt != "" {
 		if _, exists := headerValueCaseInsensitive(action.Headers, "User-Agent"); !exists {
 			value := convertParamReferences(report.userAgnt)
@@ -181,12 +185,17 @@ func applyRequestArgumentReview(action *dsl.Action, fn ParsedFunction) ([]string
 	ref := fmt.Sprintf("%s:%d", fn.Filename, fn.LineNumber)
 	step := convertutil.FirstNonEmpty(fn.StepName, fn.Name)
 	var findings []importreview.Finding
+	findings = append(findings, bodyRebuild.findings...)
 	if len(report.body) > 0 {
+		why := "which the importer cannot rebuild yet"
+		if bodyRebuild.reason != "" {
+			why = "which the importer cannot rebuild exactly: " + bodyRebuild.reason
+		}
 		findings = append(findings, importreview.Finding{
 			Code: requestBodyVariantReasonCode, ReasonCode: requestBodyVariantReasonCode, Severity: diag.Blocker, Gate: importreview.GateExecution,
 			Source: "enterprise_script_archive", SourceRef: ref, Resolution: "rebuild_body",
-			Detail: fmt.Sprintf("%s %q sends its body through %s, which the importer cannot rebuild yet; without the gate the request would be sent with an empty or partial body.",
-				fn.Name, step, strings.Join(report.body, ", ")),
+			Detail: fmt.Sprintf("%s %q sends its body through %s, %s; without the gate the request would be sent with an empty or partial body.",
+				fn.Name, step, strings.Join(report.body, ", "), why),
 		})
 	}
 	if len(report.gated) > 0 {
@@ -215,7 +224,28 @@ func applyRequestArgumentReview(action *dsl.Action, fn ParsedFunction) ([]string
 		}
 		action.Metadata["source_unmodelled_args"] = append([]string(nil), report.unknown...)
 	}
-	return report.unknown, len(report.body) > 0 || len(report.gated) > 0
+	return report.unknown, len(report.body) > 0 || len(report.gated) > 0 || len(bodyRebuild.findings) > 0
+}
+
+// withoutFold returns values minus every entry of remove, ignoring case.
+func withoutFold(values, remove []string) []string {
+	if len(remove) == 0 {
+		return values
+	}
+	kept := values[:0:0]
+	for _, value := range values {
+		drop := false
+		for _, candidate := range remove {
+			if strings.EqualFold(value, candidate) {
+				drop = true
+				break
+			}
+		}
+		if !drop {
+			kept = append(kept, value)
+		}
+	}
+	return kept
 }
 
 // unmodelledRequestArgumentsWarning summarizes, once per script, the request

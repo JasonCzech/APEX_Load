@@ -16,6 +16,7 @@ import (
 	"unicode"
 
 	"github.com/jasonczech/apexload/pkg/fileasset"
+	"github.com/jasonczech/apexload/pkg/internal/bodyencoding"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
@@ -861,6 +862,7 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 	}
 	issues = append(issues, validateBodyFileIssues(path, action)...)
 	issues = append(issues, validateBase64BodyEncodingIssues(path, action)...)
+	issues = append(issues, validateCEscapedBodyEncodingIssues(path, action)...)
 	issues = append(issues, validateExtractorIssues(protocol, path, action)...)
 	if protocol == "http" || protocol == "soap" || protocol == "java_http" {
 		issues = append(issues, validateHTTPActionBoundsIssues(path, action)...)
@@ -928,6 +930,19 @@ func validateBase64BodyEncodingIssues(path string, action Action) []string {
 	}
 	if _, err := base64.StdEncoding.DecodeString(body); err != nil {
 		return []string{fmt.Sprintf("%s: body_encoding base64 body must be valid standard base64: %v", label, err)}
+	}
+	return nil
+}
+
+// validateCEscapedBodyEncodingIssues checks the authored escapes of a
+// c_escaped body. Templates are resolved before decoding and their values are
+// sent verbatim, so only the text outside {{...}} must decode.
+func validateCEscapedBodyEncodingIssues(path string, action Action) []string {
+	if !bodyencoding.IsCEscaped(action.BodyEncoding) || action.Body == "" {
+		return nil
+	}
+	if _, err := bodyencoding.DecodeCEscapes(runIdentityTemplatePattern.ReplaceAllString(action.Body, "")); err != nil {
+		return []string{fmt.Sprintf("%s: body_encoding c_escaped body has an invalid escape: %v", actionLabel(path, action), err)}
 	}
 	return nil
 }

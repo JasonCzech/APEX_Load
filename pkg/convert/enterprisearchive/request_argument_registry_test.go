@@ -125,7 +125,7 @@ func TestRequestArgumentReviewGatesAndWarnsOncePerScript(t *testing.T) {
 	result := convertSingleWebSource(t, `
 	web_url("a", "URL=https://x.test/a", "Frobnicate=1", LAST);
 	web_url("b", "URL=https://x.test/b", "Frobnicate=2", "Wibble=3", LAST);
-	web_custom_request("c", "URL=https://x.test/c", "Method=POST", "EncType=application/octet-stream", "BodyBinary=\\x01", LAST);
+	web_custom_request("c", "URL=https://x.test/c", "Method=POST", "EncType=application/octet-stream", "BodyBinary=\\q", LAST);
 	web_url("d", "URL=https://x.test/d", "UserAgent=Agent/1.0", LAST);`)
 	actions := result.Script.Actions
 	if len(actions) != 4 {
@@ -135,7 +135,7 @@ func TestRequestArgumentReviewGatesAndWarnsOncePerScript(t *testing.T) {
 		t.Fatalf("source_unmodelled_args = %v", actions[1].Metadata["source_unmodelled_args"])
 	}
 	if blockers, _ := actions[2].Metadata["execution_blockers"].([]string); !reflect.DeepEqual(blockers, []string{requestBodyVariantReasonCode}) {
-		t.Fatalf("BodyBinary gate = %v", actions[2].Metadata["execution_blockers"])
+		t.Fatalf("a BodyBinary escape the importer cannot decode must keep the body gate, got %v", actions[2].Metadata["execution_blockers"])
 	}
 	if actions[3].Headers["User-Agent"] != "Agent/1.0" {
 		t.Fatalf("User-Agent header = %v", actions[3].Headers)

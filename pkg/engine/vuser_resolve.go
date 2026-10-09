@@ -17,6 +17,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/aurapayload"
+	"github.com/jasonczech/apexload/pkg/internal/bodyencoding"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
@@ -480,6 +481,9 @@ func (vu *VUser) interpolateActionBody(body, encoding, templateValueEncoding str
 		vu.bodyResolutionError = &aurapayload.Error{Code: aurapayload.InvalidTemplateContract}
 		return body, body
 	}
+	if bodyencoding.IsCEscaped(encoding) {
+		return vu.resolveCEscapedBody(body)
+	}
 	interpolate := vu.interpolateWithSecrets
 	if templateValueEncoding == dsl.ImportURLFormTemplateValueEncodingQueryComponent {
 		interpolate = vu.interpolateURLFormTemplateValuesWithSecrets
@@ -524,6 +528,24 @@ func (vu *VUser) interpolateActionBody(body, encoding, templateValueEncoding str
 	}
 	return base64.StdEncoding.EncodeToString([]byte(resolved)),
 		base64.StdEncoding.EncodeToString([]byte(redacted))
+}
+
+// resolveCEscapedBody resolves a c_escaped body (LoadRunner BodyBinary):
+// templates first, with each value escaped so it is sent verbatim, then the
+// authored escapes are decoded into the wire bytes.
+func (vu *VUser) resolveCEscapedBody(body string) (string, string) {
+	resolved, redacted := vu.interpolateWithSecretsTransform(body, bodyencoding.EscapeCText)
+	decoded, err := bodyencoding.DecodeCEscapes(resolved)
+	if err != nil {
+		vu.bodyResolutionError = err
+		return body, body
+	}
+	decodedRedacted, err := bodyencoding.DecodeCEscapes(redacted)
+	if err != nil {
+		// Never fall back to the resolved bytes: they carry secret values.
+		decodedRedacted = []byte(redacted)
+	}
+	return string(decoded), string(decodedRedacted)
 }
 
 // javaVuserSkipsParameterEvaluation reports the script-level "skip automatic

@@ -161,6 +161,35 @@ func TestNativeWindows1252WireBodyAndHTTP2ReadBuffer(t *testing.T) {
 		t.Fatal("lossy charset conversion accepted")
 	}
 }
+func TestUTF16LEAndCEscapedBodiesOnTheWire(t *testing.T) {
+	received := make(chan []byte, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		received <- body
+	}))
+	defer server.Close()
+	h := initCompatibilityHTTP(t, map[string]any{})
+	result, err := h.Execute(context.Background(), &protocol.Action{Type: "http_request", Method: "POST", Target: server.URL, Body: []byte("hé"), BodyEncoding: "utf-16le"})
+	if err != nil || !result.Success {
+		t.Fatalf("utf-16le request: %+v %v", result, err)
+	}
+	if got := <-received; string(got) != "h\x00\xe9\x00" {
+		t.Fatalf("utf-16le wire bytes = % x", got)
+	}
+	// The engine decodes c_escaped bodies; the protocol sends the bytes as given.
+	result, err = h.Execute(context.Background(), &protocol.Action{Type: "http_request", Method: "POST", Target: server.URL, Body: []byte("\x00\xff"), BodyEncoding: "c_escaped"})
+	if err != nil || !result.Success {
+		t.Fatalf("c_escaped request: %+v %v", result, err)
+	}
+	if got := <-received; string(got) != "\x00\xff" {
+		t.Fatalf("c_escaped wire bytes = % x", got)
+	}
+	result, err = h.Execute(context.Background(), &protocol.Action{Type: "http_request", Method: "POST", Target: server.URL, Body: []byte("\xff"), BodyEncoding: "utf-16le"})
+	if err != nil || result.Success {
+		t.Fatal("a body that is not text must not be sent as UTF-16LE")
+	}
+}
+
 func TestNativeMetaRefreshCrossOriginStripsAuthAndChecksEachResponse(t *testing.T) {
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "" || r.Header.Get("X-Secret") != "" {

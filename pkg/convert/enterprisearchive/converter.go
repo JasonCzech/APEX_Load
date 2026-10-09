@@ -91,7 +91,10 @@ type ConvertStats struct {
 
 // ConvertOptions controls the conversion behavior.
 type ConvertOptions struct {
-	sourceEncoding       string
+	sourceEncoding string
+	// archiveFiles holds the archive's files by archive-relative name, so
+	// request steps can read the files they reference (BodyFilePath).
+	archiveFiles         map[string]string
 	ScriptName           string  // Override the generated script name
 	BaseURL              string  // Override base URL (otherwise auto-detected from first URL)
 	DefaultThinkTimeMs   float64 // Default think time if none in script (0 = no default)
@@ -716,7 +719,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			argumentGated := false
 			if action != nil {
 				var unknownArgs []string
-				unknownArgs, argumentGated = applyRequestArgumentReview(action, fn)
+				unknownArgs, argumentGated = applyRequestArgumentReview(action, fn, opts)
 				for _, name := range unknownArgs {
 					unmodelledRequestArgs[name]++
 				}

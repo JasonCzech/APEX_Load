@@ -8,6 +8,7 @@ import { issueTitle } from './importReviewIssues'
 import { collectAuthoringIssues } from './scriptAuthoringAssist'
 import AuthHostsField from './AuthHostsField'
 import { parseAuthHosts } from './authHosts'
+import { bodyEncodingLabel, knownBodyEncoding } from './bodyEncodings'
 import type { ScriptDefinition } from '../types/scripts'
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -48,6 +49,7 @@ describe('LoadRunner web parity UI', () => {
     expect(issueTitle('html_navigation_requires_page_context')).toBe('Replace HTML-mode click with an explicit request')
     expect(issueTitle('integrated_auth_requires_configuration')).toBe('Configure NTLM or Kerberos credentials')
     expect(issueTitle('registration_dfe_unsupported')).toBe('Apply data-format extensions before extraction')
+    expect(issueTitle('request_body_file_missing')).toBe('Add the missing request body file')
     expect(issueTitle('some_future_code')).toBe('some future code')
   })
 
@@ -92,5 +94,16 @@ describe('LoadRunner web parity UI', () => {
     render(<AuthHostsField hosts={undefined} onChange={onChange} />)
     setInputValue(authHostsInput(), 'a.test')
     expect(onChange).toHaveBeenCalledWith(['a.test'])
+  })
+})
+
+describe('request body encodings', () => {
+  it('recognizes every encoding the runtime decodes, ignoring case and spaces', () => {
+    expect(knownBodyEncoding(' C_ESCAPED ')?.value).toBe('c_escaped')
+    expect(knownBodyEncoding('utf-16le')?.label).toBe('UTF-16LE text')
+    expect(knownBodyEncoding('windows-1252')?.note).toContain('Windows-1252')
+    expect(knownBodyEncoding('gzip')).toBeUndefined()
+    expect(bodyEncodingLabel('base64')).toBe('Base64-encoded wire bytes')
+    expect(bodyEncodingLabel('gzip')).toBe('Unknown encoding: gzip')
   })
 })

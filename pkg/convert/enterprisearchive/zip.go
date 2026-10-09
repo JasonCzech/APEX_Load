@@ -478,6 +478,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	case detected.APEXLoadProtocol == "http" || detected.APEXLoadProtocol == "soap":
 		opts.UseMaskedBodySecretReferences = true
 		opts.deferArchiveFinalization = true
+		opts.archiveFiles = files
 		result, convertErr = Convert(parsedActions, opts)
 		if result != nil {
 			result.DetectedProtocol = &detected
