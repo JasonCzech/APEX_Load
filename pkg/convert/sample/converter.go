@@ -16,6 +16,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 type ImportRequest struct {
@@ -41,6 +42,10 @@ type ConvertOptions struct {
 	// "in_step" attaches them to the page that requested them as explicit
 	// resources, and "separate" keeps them as their own steps.
 	ResourceMode string `json:"resource_mode,omitempty"`
+	// HTMLSteps turns the requests of the given 1-based HAR entries into
+	// HTML-mode steps (params.html_step) that resolve against the replayed
+	// page. The browser recorder supplies them for an HTML-level HTTP script.
+	HTMLSteps map[int]map[string]any `json:"-"`
 }
 
 type ConvertStats struct {
@@ -169,6 +174,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		return nil, errors.New("no requests found in sample input")
 	}
 	exchanges, normalizationWarnings := normalizeRecordedExchanges(exchanges, format)
+	if format == "har" && len(req.Options.HTMLSteps) > 0 {
+		forgetHTMLStepRequestValues(exchanges, req.Options.HTMLSteps)
+	}
 	warnings = append(warnings, normalizationWarnings...)
 	if len(exchanges) == 0 {
 		return nil, errors.New("no requests found in sample input")
@@ -314,6 +322,21 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			Body:         body,
 			BodyEncoding: ex.BodyEncoding,
 			Metadata:     cloneMetadata(ex.Metadata),
+		}
+		if htmlStep := req.Options.HTMLSteps[ex.SourceEntryID]; htmlStep != nil && format == "har" {
+			// The page decides the URL, body and encoding at replay.
+			if action.Params == nil {
+				action.Params = map[string]any{}
+			}
+			action.Params[httpprotocol.HTMLStepParam] = htmlStep
+			action.Target = "#html-step"
+			action.Body, action.BodyEncoding = "", ""
+			for name := range action.Headers {
+				if strings.EqualFold(name, "Content-Type") || strings.EqualFold(name, "Content-Length") {
+					delete(action.Headers, name)
+				}
+			}
+			action.HeaderList = withoutHeaders(action.HeaderList, "Content-Type", "Content-Length")
 		}
 		if ex.TimeoutMs > 0 {
 			action.TimeoutMs = ex.TimeoutMs
@@ -638,4 +661,38 @@ func correlationValues(correlations []Correlation) []string {
 		values = append(values, corr.Value)
 	}
 	return values
+}
+
+func withoutHeaders(list dsl.HeaderList, names ...string) dsl.HeaderList {
+	if len(list) == 0 {
+		return list
+	}
+	kept := list[:0:0]
+	for _, header := range list {
+		drop := false
+		for _, name := range names {
+			drop = drop || strings.EqualFold(header.Name, name)
+		}
+		if !drop {
+			kept = append(kept, header)
+		}
+	}
+	return kept
+}
+
+// forgetHTMLStepRequestValues drops the recorded body and query of requests
+// that become HTML-mode steps. The page supplies them at replay, so they must
+// not make the correlation pass extract hidden fields or link parameters that
+// nothing sends any more.
+func forgetHTMLStepRequestValues(exchanges []exchange, steps map[int]map[string]any) {
+	for i := range exchanges {
+		if steps[exchanges[i].SourceEntryID] == nil {
+			continue
+		}
+		exchanges[i].Body, exchanges[i].BodyEncoding = "", ""
+		if parsed, err := url.Parse(exchanges[i].URL); err == nil {
+			parsed.RawQuery = ""
+			exchanges[i].URL = parsed.String()
+		}
+	}
 }

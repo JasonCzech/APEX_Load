@@ -604,6 +604,9 @@ type browserRecordingConvertRequest struct {
 	// AlsoCreateHTTPScript additionally generates a protocol-level HTTP script
 	// from the recorded HAR (dual-script generation).
 	AlsoCreateHTTPScript bool `json:"also_create_http_script,omitempty"`
+	// HTTPScriptLevel is "url" (default) or "html": an HTML-level HTTP script
+	// turns recorded link, image and form clicks into HTML-mode steps.
+	HTTPScriptLevel string `json:"http_script_level,omitempty" enums:"url,html"`
 	// Parameterize applies safe auto-parameterization suggestions to the
 	// converted browser script(s) before preview/save.
 	Parameterize bool `json:"parameterize,omitempty"`
@@ -633,6 +636,7 @@ type browserRecordingPreviewRequest struct {
 	EndSeq               int    `json:"end_seq,omitempty"`
 	SplitAtTransactions  bool   `json:"split_at_transactions,omitempty"`
 	AlsoCreateHTTPScript bool   `json:"also_create_http_script,omitempty"`
+	HTTPScriptLevel      string `json:"http_script_level,omitempty" enums:"url,html"`
 	Parameterize         bool   `json:"parameterize,omitempty"`
 }
 
@@ -644,6 +648,7 @@ func (req browserRecordingPreviewRequest) convertRequest() browserRecordingConve
 		EndSeq:               req.EndSeq,
 		SplitAtTransactions:  req.SplitAtTransactions,
 		AlsoCreateHTTPScript: req.AlsoCreateHTTPScript,
+		HTTPScriptLevel:      req.HTTPScriptLevel,
 		Parameterize:         req.Parameterize,
 	}
 }
@@ -1988,6 +1993,13 @@ var browserRecordingImportWorkflow = importBatchWorkflow{
 }
 
 func (s *Server) createHTTPScriptFromHAR(artifact *recbrowser.Session, info *BrowserRecordingSession, name string) (*dsl.Script, []string, []scriptImportReviewSection, error) {
+	return s.createHTTPScriptFromHARAtLevel(artifact, info, name, recbrowser.HTTPScriptLevelURL)
+}
+
+// createHTTPScriptFromHARAtLevel builds the HTTP script at the requested
+// level: "url" replays recorded URLs; "html" resolves recorded link, image
+// and form clicks against the replayed page.
+func (s *Server) createHTTPScriptFromHARAtLevel(artifact *recbrowser.Session, info *BrowserRecordingSession, name, level string) (*dsl.Script, []string, []scriptImportReviewSection, error) {
 	if len(artifact.HAR) == 0 {
 		return nil, nil, nil, fmt.Errorf("no side-car HAR is available to build an HTTP script")
 	}
@@ -1996,10 +2008,20 @@ func (s *Server) createHTTPScriptFromHAR(artifact *recbrowser.Session, info *Bro
 		httpName = info.Name
 	}
 	httpName += " (HTTP)"
-	result, err := har.Convert(artifact.HAR, har.ConvertOptions{ScriptName: httpName})
+	options := har.ConvertOptions{ScriptName: httpName}
+	var levelNotes []string
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "", recbrowser.HTTPScriptLevelURL:
+	case recbrowser.HTTPScriptLevelHTML:
+		options.HTMLSteps, levelNotes = recbrowser.HTMLLevelSteps(artifact.Steps, artifact.HAR)
+	default:
+		return nil, nil, nil, fmt.Errorf("http_script_level must be url or html")
+	}
+	result, err := har.Convert(artifact.HAR, options)
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	result.Warnings = append(result.Warnings, levelNotes...)
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(info.ProjectID)
 		result.Script.GeneratedBy = "browser-recorder"
@@ -2065,7 +2087,7 @@ func (s *Server) handlePreviewBrowserRecordingConversion(w http.ResponseWriter, 
 	if req.AlsoCreateHTTPScript {
 		var httpWarnings []string
 		var err error
-		httpScript, httpWarnings, httpSections, err = s.createHTTPScriptFromHAR(artifact, info, req.Name)
+		httpScript, httpWarnings, httpSections, err = s.createHTTPScriptFromHARAtLevel(artifact, info, req.Name, req.HTTPScriptLevel)
 		if err != nil {
 			warnings = append(warnings, "HTTP script generation skipped: "+err.Error())
 		} else if httpScript != nil {
@@ -2185,7 +2207,7 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 		// The convert route persists the drafts and answers with StoredScripts,
 		// which carry no review sections; the preview route above is where the
 		// generated HTTP draft's sections are shown.
-		httpScript, httpWarnings, _, err = s.createHTTPScriptFromHAR(artifact, info, req.Name)
+		httpScript, httpWarnings, _, err = s.createHTTPScriptFromHARAtLevel(artifact, info, req.Name, req.HTTPScriptLevel)
 		if err != nil {
 			warnings = append(warnings, "HTTP script generation skipped: "+err.Error())
 		} else if httpScript == nil {
@@ -3063,7 +3085,7 @@ func (s *Server) handleVerifyBrowserRecording(w http.ResponseWriter, r *http.Req
 	result := s.convertBrowserRecording(artifact, info, req.Conversion)
 	scripts := append([]*dsl.Script(nil), result.Scripts...)
 	if req.Conversion.AlsoCreateHTTPScript {
-		httpScript, warnings, _, err := s.createHTTPScriptFromHAR(artifact, info, req.Conversion.Name)
+		httpScript, warnings, _, err := s.createHTTPScriptFromHARAtLevel(artifact, info, req.Conversion.Name, req.Conversion.HTTPScriptLevel)
 		if err != nil {
 			writeError(w, http.StatusUnprocessableEntity, "HTTP conversion failed: "+err.Error())
 			return

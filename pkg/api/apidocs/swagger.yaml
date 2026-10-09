@@ -33725,6 +33725,8 @@ paths:
                 folder_id:
                   type: string
                   nullable: true
+                http_script_level:
+                  type: string
                 max_think_time_ms:
                   type: integer
                   format: int64
@@ -33844,6 +33846,8 @@ paths:
                 end_seq:
                   type: integer
                   format: int64
+                http_script_level:
+                  type: string
                 max_think_time_ms:
                   type: integer
                   format: int64
@@ -34726,6 +34730,8 @@ paths:
                     folder_id:
                       type: string
                       nullable: true
+                    http_script_level:
+                      type: string
                     max_think_time_ms:
                       type: integer
                       format: int64

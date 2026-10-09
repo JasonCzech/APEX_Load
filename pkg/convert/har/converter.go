@@ -38,6 +38,9 @@ type ConvertOptions struct {
 	PageTitleChecks    *bool  `json:"page_title_checks,omitempty"`
 	ResourceMode       string `json:"resource_mode,omitempty"`
 	DefaultThinkTimeMs int    `json:"default_think_time_ms,omitempty"`
+	// HTMLSteps (set by the browser recorder) turns the requests of the given
+	// 1-based HAR entries into HTML-mode steps.
+	HTMLSteps map[int]map[string]any `json:"-"`
 	// SalvageTruncated imports the complete entries of a HAR file that was cut
 	// off partway through (see SalvageTruncated); the import warns what is lost.
 	SalvageTruncated *bool `json:"salvage_truncated,omitempty"`
@@ -102,6 +105,7 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			IncludeStaticAssets: opts.IncludeStaticAssets,
 			PageTitleChecks:     opts.PageTitleChecks,
 			ResourceMode:        opts.ResourceMode,
+			HTMLSteps:           opts.HTMLSteps,
 		},
 	})
 	if err != nil {

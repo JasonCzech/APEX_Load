@@ -27093,6 +27093,7 @@ export interface operations {
           "end_seq"?: number;
           "expected_script_count"?: number;
           "folder_id"?: (string) | null;
+          "http_script_level"?: string;
           "max_think_time_ms"?: number;
           "name"?: string;
           "parameterization_selections"?: Array<{
@@ -104007,6 +104008,7 @@ export interface operations {
         "application/json": {
           "also_create_http_script"?: boolean;
           "end_seq"?: number;
+          "http_script_level"?: string;
           "max_think_time_ms"?: number;
           "name"?: string;
           "parameterize"?: boolean;
@@ -164023,6 +164025,7 @@ export interface operations {
             "end_seq"?: number;
             "expected_script_count"?: number;
             "folder_id"?: (string) | null;
+            "http_script_level"?: string;
             "max_think_time_ms"?: number;
             "name"?: string;
             "parameterization_selections"?: Array<{

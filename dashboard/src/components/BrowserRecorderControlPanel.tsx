@@ -218,6 +218,7 @@ export default function BrowserRecorderControlPanel({
   const [noteText, setNoteText] = useState('')
   const [splitAtTransactions, setSplitAtTransactions] = useState(false)
   const [alsoCreateHTTP, setAlsoCreateHTTP] = useState(false)
+  const [httpScriptLevel, setHTTPScriptLevel] = useState<'url' | 'html'>('url')
   const [parameterizeInputs, setParameterizeInputs] = useState(false)
   const [suggestions, setSuggestions] = useState<BrowserRecorderTransactionSuggestion[]>([])
   const [replaySessionId, setReplaySessionId] = useState<string | null>(null)
@@ -451,6 +452,7 @@ export default function BrowserRecorderControlPanel({
     setNoteText('')
     setSplitAtTransactions(false)
     setAlsoCreateHTTP(false)
+    setHTTPScriptLevel('url')
     setParameterizeInputs(false)
     void refresh()
   }, [advancePreviewReviewGeneration, advanceSalesforceReviewGeneration, recorderRequestScope, refresh, sessionId])
@@ -649,6 +651,7 @@ export default function BrowserRecorderControlPanel({
     name: scriptName || undefined,
     split_at_transactions: splitAtTransactions,
     also_create_http_script: alsoCreateHTTP,
+    http_script_level: alsoCreateHTTP && httpScriptLevel === 'html' ? 'html' as const : undefined,
     parameterize: parameterizeInputs,
   })
 
@@ -1950,6 +1953,15 @@ export default function BrowserRecorderControlPanel({
             <label className="rec-checkbox-row">
               <input type="checkbox" checked={alsoCreateHTTP} disabled={busy} onChange={e => { advancePreviewReviewGeneration(); setAlsoCreateHTTP(e.target.checked) }} />
               <span>Also create a protocol-level HTTP script from the recorded HAR</span>
+            </label>
+          )}
+          {session.har_available && alsoCreateHTTP && (
+            <label className="rec-checkbox-row">
+              <span>HTTP script level</span>
+              <select aria-label="HTTP script level" value={httpScriptLevel} disabled={busy} onChange={e => { advancePreviewReviewGeneration(); setHTTPScriptLevel(e.target.value === 'html' ? 'html' : 'url') }}>
+                <option value="url">URL-based: replay recorded requests</option>
+                <option value="html">HTML-based: follow links and submit forms on the page</option>
+              </select>
             </label>
           )}
           <label className="rec-checkbox-row">
