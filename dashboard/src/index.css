@@ -69,6 +69,8 @@
   --accent-soft: rgba(139, 92, 246, 0.15);
   --accent-border: rgba(139, 92, 246, 0.4);
   --accent-contrast: #050508;
+  /* Logo wave: contrasts with both the accent tile and the accent-contrast letters. */
+  --logo-wave: #c4b5fd;
   /* Text-safe accent and filled-danger tokens (≥4.5:1). */
   --accent-text: #a78bfa;
   --danger-fill: #dc2626;
@@ -181,6 +183,7 @@
   --accent-soft: rgba(0, 114, 178, 0.09);
   --accent-border: rgba(0, 56, 143, 0.3);
   --accent-contrast: #ffffff;
+  --logo-wave: #009fdb;
   /* Text-safe accent and filled-danger tokens (≥4.5:1). */
   --accent-text: var(--accent);
   --danger-fill: #c70032;
@@ -269,6 +272,7 @@
   --accent-soft: rgba(103, 183, 225, 0.1);
   --accent-border: rgba(103, 183, 225, 0.38);
   --accent-contrast: #002b36;
+  --logo-wave: #fdf6e3;
   /* Text-safe accent and filled-danger tokens (≥4.5:1). */
   --accent-text: var(--accent);
   --danger-fill: #c0261f;
@@ -357,6 +361,7 @@
   --accent-soft: rgba(95, 111, 0, 0.11);
   --accent-border: rgba(95, 111, 0, 0.36);
   --accent-contrast: #fdf6e3;
+  --logo-wave: #a4b81c;
   /* Text-safe accent and filled-danger tokens (≥4.5:1). */
   --accent-text: var(--accent);
   --danger-fill: #c0261f;
@@ -439,6 +444,7 @@
   --accent-soft: rgba(255, 97, 136, 0.12);
   --accent-border: rgba(255, 97, 136, 0.3);
   --accent-contrast: #1e1f1c;
+  --logo-wave: #ffd866;
   /* Text-safe accent and filled-danger tokens (≥4.5:1). The accent pink stays
      the fill; text takes a lighter tint that also reads on --bg-elevated. */
   --accent-text: #ff86a4;
