@@ -278,7 +278,7 @@ func (d *runArchiveHTMLReportData) BrowserFindingsView() reportBrowserFindingsVi
 		case "failed":
 			return reportBrowserFindingsView{Summary: "The run's browser evaluation failed: " + response.Failure}
 		default:
-			return reportBrowserFindingsView{Summary: "This run has no browser evaluation. Runs that pin a browser policy are evaluated when their archive is finalized."}
+			return reportBrowserFindingsView{Summary: "This run has no browser evaluation. A run that pins a browser policy and captures document evidence is evaluated when its archive is finalized; an editor can evaluate any run."}
 		}
 	}
 	result := response.Result

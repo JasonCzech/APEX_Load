@@ -66,7 +66,7 @@ export default function BrowserFindingsPanel({ testId, projectId, canEvaluate, o
       ? 'A browser evaluation is queued or running.'
       : state.status === 'failed'
         ? `The browser evaluation failed: ${state.failure || 'no reason recorded'}.`
-        : `This run has no browser evaluation. Runs that pin a browser policy are queued for evaluation when their archive is finalized${canEvaluate ? '; evaluate it here if none was queued' : ''}.`}</p>}
+        : `This run has no browser evaluation. A run that pins a browser policy and captures document evidence is queued for evaluation when its archive is finalized${canEvaluate ? '; evaluate it here if none was queued' : ''}.`}</p>}
     {canEvaluate && !loading && <button type="button" className="btn btn-secondary" onClick={() => void evaluate()} disabled={queueing || state?.status === 'pending'}>Evaluate with the pinned policy</button>}
     {result && <>
       <p>

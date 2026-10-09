@@ -64,3 +64,7 @@ Each section reads its result when the report is exported. A section whose resul
 | Policies | `analysis policies list\|get\|save\|delete --project ID …` | `analysis_policy_list`, `_get`, `_create`, `_update`, `_delete` |
 
 `apexctl analysis policies save` with `--id` needs the `--revision` the policy was read at, as the editor does.
+
+## Acceptance
+
+[Browser intelligence acceptance](../qa/BROWSER_INTELLIGENCE_ACCEPTANCE.md) lists the tests that accept each of these behaviors, including a golden page run in Chromium and WebKit against measured ground truth.

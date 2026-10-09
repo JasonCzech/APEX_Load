@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 733,
+    "routes": 734,
     "public": 31,
-    "protected": 702,
-    "rbac": 697,
+    "protected": 703,
+    "rbac": 698,
     "handler_authenticated": 5,
     "role_metadata_missing": 0,
-    "green": 733,
+    "green": 734,
     "partial": 0,
     "missing": 0
   },

@@ -302,6 +302,21 @@ Deviations:
 - The baseline section reads the latest completed root-cause analysis; reports do not run one.
 - The drill-down workflow test runs a real HTTP run (its archive, policy pin, HAR list and HAR-entry API are real), but its document summary, findings result and resource page are transport fixtures; no live browser run proves the drill-down end to end.
 
+Delivery progress, 2026-10-09 (Wave 5, E7): [BROWSER_INTELLIGENCE_ACCEPTANCE.md](qa/BROWSER_INTELLIGENCE_ACCEPTANCE.md), generated and checked by `docs/qa/browser_intelligence_acceptance_test.go`, maps every BI-4 golden behavior to the tests that accept it and where each runs: in both engines, in Chromium alone for an API only Chromium exposes, or as a unit test. A listed real-browser test must start the engines it is listed for, a unit test must not start a browser, and each end-to-end spec must run in both authentication profiles.
+- **Golden:** `TestBrowserIntelligenceGoldenAcceptance` (`pkg/api`, `APEXLOAD_BROWSER_TESTS=require`) runs a controlled page in Chromium and WebKit. Its real evidence goes through the archive writer and the findings, interaction and journey readers. The results are checked against the page's own PerformanceObserver entries, the fixture server's 300 ms hold of the hero image, and the server's request counter. A local run (darwin-arm64, Chromium 149, WebKit 26.5) gave:
+  - Chromium: CLS equals the page's largest session window, and LCP and FCP equal their entries.
+  - WebKit: it has no Layout Instability API, so CLS is unavailable as `unsupported` and the score is unscored; its LCP and FCP equal their entries.
+  - Both engines: the repeated publications are counted once, three synthetic taps are one scripted repetition, the checkout journey is one failed attempt, and no target traffic was added.
+- **Matrix:** the Browser area and policy editor workflow now also runs in the local-auth profile (E6 had left it out). Its drill-down test also exports the engineer CSV and checks that the four browser intelligence sections say why their results are missing.
+- **F4:** the opt-in "browser intelligence acceptance" suite writes the golden's results and one BI-4 acceptance request per engine for an unchanged tree. A request is `pending` when the engine's golden held and `failed` when it did not.
+
+Deviations:
+- Baseline regressions are accepted by unit tests over seeded series; no two real runs are compared.
+- The golden drives the browser runtime directly, not the engine, so it writes the iteration-end row the engine would record.
+- INP is not part of the golden.
+- The blank document a browser context starts with records an unavailable FCP. It carries no value, and findings count it as an unavailable final observation.
+- No acceptance record is published; an operator posts the requests.
+
 ## 8. Telemetry reporting completion
 
 ### TEL-1: Immutable policy and time coverage

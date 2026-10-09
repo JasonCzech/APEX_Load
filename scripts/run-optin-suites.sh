@@ -85,24 +85,42 @@ run_kafka_fixture() {
   "./scripts/${wrapper}" --report "${report_dir}/report.json"
 }
 
+# acceptance_commit prints the commit acceptance requests may name: the
+# given APEXLOAD_COMMIT_SHA, or HEAD only when the code is unchanged (no
+# modified file and no untracked Go source), so requests never claim a commit
+# that was not the measured code. It prints nothing otherwise.
+acceptance_commit() {
+  if [[ -n "${APEXLOAD_COMMIT_SHA:-}" ]]; then
+    printf '%s' "${APEXLOAD_COMMIT_SHA}"
+  elif git diff --quiet HEAD 2>/dev/null && [[ -z "$(git ls-files --others --exclude-standard -- pkg cmd api third_party go.mod go.sum 2>/dev/null)" ]]; then
+    git rev-parse HEAD 2>/dev/null
+  else
+    printf 'The working tree differs from HEAD (or has untracked sources): no acceptance requests are written.\n' >&2
+  fi
+}
+
 # run_browser_acceptance runs the browser package with both engines required
 # and the acceptance benchmark, keeping the benchmark results at a fresh
-# private path. The acceptance requests name the commit only when the code is
-# unchanged (no modified file and no untracked Go source), so they never claim
-# a commit that was not the measured code.
+# private path.
 run_browser_acceptance() {
-  local out_dir commit=""
+  local out_dir commit
   out_dir="$(mktemp -d "${TMPDIR:-/tmp}/apexload-browser-acceptance.XXXXXX")" || return 1
   printf 'Browser benchmark results: %s\n' "${out_dir}"
-  if [[ -n "${APEXLOAD_COMMIT_SHA:-}" ]]; then
-    commit="${APEXLOAD_COMMIT_SHA}"
-  elif git diff --quiet HEAD 2>/dev/null && [[ -z "$(git ls-files --others --exclude-standard -- pkg cmd api third_party go.mod go.sum 2>/dev/null)" ]]; then
-    commit="$(git rev-parse HEAD 2>/dev/null)"
-  else
-    printf 'The working tree differs from HEAD (or has untracked sources): no acceptance requests are written.\n'
-  fi
+  commit="$(acceptance_commit)"
   APEXLOAD_BROWSER_TESTS=require APEXLOAD_BROWSER_BENCHMARKS=1 APEXLOAD_BROWSER_BENCHMARK_OUT="${out_dir}" APEXLOAD_COMMIT_SHA="${commit}" \
     go test -count=1 -timeout 30m -v ./pkg/protocol/browser
+}
+
+# run_browser_intelligence_acceptance runs the BI-4 golden in Chromium and
+# WebKit, keeping its results and F4 acceptance requests at a fresh private
+# path.
+run_browser_intelligence_acceptance() {
+  local out_dir commit
+  out_dir="$(mktemp -d "${TMPDIR:-/tmp}/apexload-browser-intelligence-acceptance.XXXXXX")" || return 1
+  printf 'Browser intelligence golden results: %s\n' "${out_dir}"
+  commit="$(acceptance_commit)"
+  APEXLOAD_BROWSER_TESTS=require APEXLOAD_BI_ACCEPTANCE_OUT="${out_dir}" APEXLOAD_COMMIT_SHA="${commit}" \
+    go test -count=1 -timeout 15m -v -run '^TestBrowserIntelligenceGoldenAcceptance$' ./pkg/api
 }
 
 run_suite "analytics_duckdb (embedded native analytics)" \
@@ -174,6 +192,10 @@ run_suite "browser native HAR qualifications (real Chromium replay recording and
 run_suite "browser acceptance (BE-4: the browser package with Chromium and WebKit required, and the acceptance benchmark)" \
   "--all and installed Playwright Chromium and WebKit (a missing runtime FAILS)" "[[ ${run_all} == 1 ]]" \
   run_browser_acceptance
+
+run_suite "browser intelligence acceptance (BI-4: the golden page in Chromium and WebKit, with F4 acceptance requests)" \
+  "--all and installed Playwright Chromium and WebKit (a missing runtime FAILS)" "[[ ${run_all} == 1 ]]" \
+  run_browser_intelligence_acceptance
 
 run_suite "root-cause v2 end to end (real local runs, about eight minutes)" \
   "--all" "[[ ${run_all} == 1 ]]" \

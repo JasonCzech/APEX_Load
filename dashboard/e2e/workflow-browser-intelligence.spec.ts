@@ -54,7 +54,7 @@ test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: 'wait' })
 // its archive, policy pin, HAR list and the HAR entry API are real; the
 // report's document summary, the findings result and the resource page are
 // bounded transport fixtures, as in the HAR and resource inspector workflows.
-test('the Browser area leads from a finding to its document resources and HAR entry', async ({ page, target, trackRun }) => {
+test('the Browser area leads from a finding to its document resources and HAR entry, and exports its sections', async ({ page, target, trackRun }) => {
   test.setTimeout(180_000)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
   const request = page.context().request
@@ -104,6 +104,16 @@ test('the Browser area leads from a finding to its document resources and HAR en
   await inspector.getByRole('button', { name: "Show this request's HAR entry", exact: true }).click()
   await expect(inspector.getByLabel('HAR entry', { exact: true })).toContainText(REQUEST_ID)
   await expect(inspector).toContainText('this archive keeps no headers')
+
+  // Exports: the engineer report's CSV (unrouted: the real archive) carries
+  // the browser intelligence sections, each saying why its result is missing.
+  const exported = await request.get(`/api/v1/tests/${id}/archive/report?format=csv&profile=engineer`)
+  expect(exported.status()).toBe(200)
+  const csv = await exported.text()
+  for (const section of ['browser_findings', 'browser_baseline', 'interaction_map', 'journey_risk']) expect(csv).toContain(section)
+  expect(csv).toContain('This run has no browser evaluation.')
+  expect(csv).toContain('No root-cause analysis has completed for this run')
+  expect(csv).toContain('This run captured no interaction evidence.')
 })
 
 // BI-4: an editor creates and edits a browser policy; a save based on a
@@ -116,6 +126,8 @@ test('browser policies save revisions, refuse stale edits and show past revision
   const workspace = await createWorkspace(request)
   const scope = `project_id=${encodeURIComponent(workspace.projectId)}`
   await page.goto(`/#/settings?setting=analysis-policies&${scopeQuery(workspace)}`)
+  // The workspace was created after sign-in: reload so the page knows it.
+  await page.reload()
   const panel = page.getByRole('region', { name: 'Browser and journey policies', exact: true })
   await expect(panel).toContainText('This project has no browser policies yet.')
 
