@@ -63,7 +63,7 @@ export function HeatmapGrid({ map }: { map: BrowserInteractionHeatmap }) {
 
 export default function BrowserInteractionsPanel({ testId }: { testId: string }) {
   const [analysis, setAnalysis] = useState<BrowserInteractionAnalysis | null>(null)
-  const [error, setError] = useState<{ notFinalized: boolean; detail: string } | null>(null)
+  const [error, setError] = useState<{ state: 'missing' | 'not_finalized' | 'error'; detail: string } | null>(null)
   const [loading, setLoading] = useState(true)
   const [attempt, setAttempt] = useState(0)
   useEffect(() => {
@@ -77,14 +77,17 @@ export default function BrowserInteractionsPanel({ testId }: { testId: string })
         setAnalysis(null)
         // A run without a finalized archive is a state, said plainly; the
         // server's text for anything else stays behind the notice's details.
-        setError({ notFinalized: (err as { status?: unknown } | null)?.status === 409, detail: getErrorMessage(err, 'Unable to load interaction patterns') })
+        const status = (err as { status?: unknown } | null)?.status
+        const detail = getErrorMessage(err, 'Unable to load interaction patterns')
+        setError({ state: status === 404 && /archive not found/i.test(detail) ? 'missing' : status === 409 ? 'not_finalized' : 'error', detail })
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
   }, [testId, attempt])
 
   if (loading) return <p role="status">Loading interaction patterns…</p>
-  if (error?.notFinalized) return <section className="run-report-panel" aria-label="Interaction patterns"><h3>Interaction patterns</h3><p role="note">Interaction patterns need the run's finalized archive, which is not available. <button type="button" className="btn btn-secondary" onClick={() => setAttempt(value => value + 1)}>Check again</button></p></section>
+  if (error?.state === 'missing') return <section className="run-report-panel" aria-label="Interaction patterns"><h3>Interaction patterns</h3><p role="note">This run's saved archive is not available yet (it may still be publishing), so no interaction patterns can be shown. <button type="button" className="btn btn-secondary" onClick={() => setAttempt(value => value + 1)}>Check again</button></p></section>
+  if (error?.state === 'not_finalized') return <section className="run-report-panel" aria-label="Interaction patterns"><h3>Interaction patterns</h3><p role="note">Interaction patterns appear once the run's archive is finalized. <button type="button" className="btn btn-secondary" onClick={() => setAttempt(value => value + 1)}>Check again</button></p></section>
   if (error) return <Notice tone="error" title="Interaction patterns could not be loaded" details={error.detail} action={<button type="button" className="btn btn-secondary" onClick={() => setAttempt(value => value + 1)}>Retry interaction patterns</button>} />
   if (!analysis || analysis.status === 'not_captured') return <section className="run-report-panel" aria-label="Interaction patterns"><h3>Interaction patterns</h3><p>This run recorded no interaction evidence.</p></section>
   if (analysis.status === 'unavailable') return <section className="run-report-panel" aria-label="Interaction patterns"><h3>Interaction patterns</h3><p role="note">The run captured interaction evidence, but none reached its archive{analysis.coverage?.dropped ? ` (${analysis.coverage.dropped} gestures lost)` : ''}, so no pattern or heatmap can be shown.</p></section>
@@ -102,7 +105,7 @@ export default function BrowserInteractionsPanel({ testId }: { testId: string })
       <p className="run-report-muted">
         {coverage.interactions} recorded gestures ({Object.entries(coverage.by_provenance).map(([provenance, count]) => `${count} ${provenance}`).join(', ') || 'none'}); {coverage.mapped} mapped.
         {coverage.dropped > 0 ? ` ${coverage.dropped} gestures were dropped by capture bounds or lost before the archive.` : ''}{coverage.incomplete ? ' Some interaction evidence is incomplete.' : ''}
-        {' '}A repeat is at least {thresholds.repeat_min_gestures} click or tap gestures within {thresholds.repeat_window_ms} ms and {thresholds.repeat_radius_px} CSS px (or with one action name when no point was dispatched).
+        {' '}A repeat is at least {thresholds.repeat_min_gestures} click, tap or check gestures within {thresholds.repeat_window_ms} ms and {thresholds.repeat_radius_px} CSS px (or with one action name, gesture kind and target when no point was dispatched).
       </p>
       {patterns.length === 0 ? <p>No pattern was found.</p> : (
         <table className="run-report-table" aria-label="Interaction patterns found">

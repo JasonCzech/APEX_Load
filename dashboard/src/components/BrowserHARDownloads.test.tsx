@@ -88,15 +88,20 @@ describe('browser HAR downloads', () => {
     } finally { await act(async () => root.unmount()) }
   })
 
-  it('says plainly when the run has no saved archive and alerts on other list failures', async () => {
+  it('says plainly when the saved archive is not available yet, checks again, and alerts on other list failures', async () => {
     const node = document.createElement('div'); const root = createRoot(node)
-    const failing = (message: string, status: number) => async () => { throw new ApiError(message, status) }
+    let missingCalls = 0
+    const missingThenListed = async () => { missingCalls++; if (missingCalls === 1) throw new ApiError('archive not found', 404); return list(true) }
     try {
-      await act(async () => root.render(<BrowserResourceInspector testID="run-one" projectID="project-one" sourceIdentity="source-one" loadPage={async () => resourcePageFixture()} loadHARList={failing('archive not found', 404)} />))
+      await act(async () => root.render(<BrowserResourceInspector testID="run-one" projectID="project-one" sourceIdentity="source-one" loadPage={async () => resourcePageFixture()} loadHARList={missingThenListed} />))
       const hars = node.querySelector('[aria-label="Browser HARs"]')!
       expect(hars.querySelector('[role="alert"]')).toBeNull()
-      expect(hars.querySelector('[role="note"]')?.textContent).toBe('This run has no saved archive, so it has no browser HARs.')
+      expect(hars.querySelector('[role="note"]')?.textContent).toBe("This run's saved archive is not available yet (it may still be publishing), so its browser HARs cannot be listed yet. Check again")
       expect(hars.textContent).not.toContain('archive not found')
+      // Once the archive is published, checking again lists its HARs.
+      await act(async () => button(node, 'Check again')!.click())
+      expect(missingCalls).toBe(2)
+      expect(button(node, 'Download native HAR')).toBeDefined()
       // Any other list failure, including another 404, is a load failure:
       // plain title, the server's text behind Details, and a retry.
       let calls = 0

@@ -315,10 +315,11 @@ func TestMonitoringEvidenceFiltersAndBounds(t *testing.T) {
 
 func TestAnalysisPanelCatalogAndRunQueryCommands(t *testing.T) {
 	var gotPath, gotQuery, gotMethod string
+	answered := `{"ok":true}`
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath, gotQuery, gotMethod = r.URL.Path, r.URL.RawQuery, r.Method
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"ok":true}`))
+		_, _ = w.Write([]byte(answered))
 	}))
 	defer s.Close()
 	dir := t.TempDir()
@@ -333,7 +334,6 @@ func TestAnalysisPanelCatalogAndRunQueryCommands(t *testing.T) {
 		{[]string{"catalog", "--project", "p"}, "GET", "/api/v1/analysis/capabilities", "project_id=p"},
 		{[]string{"panels", "--project", "p"}, "GET", "/api/v1/monitoring/dashboard-definitions", "project_id=p"},
 		{[]string{"panel", "--id", "d1"}, "GET", "/api/v1/monitoring/dashboard-definitions/d1", ""},
-		{[]string{"panel", "--id", "d1", "--revision", "3"}, "GET", "/api/v1/monitoring/dashboard-definitions/d1", "revision=3"},
 		{[]string{"save-panel", "--file", definition}, "POST", "/api/v1/monitoring/dashboard-definitions", ""},
 		{[]string{"update-panel", "--id", "d1", "--file", definition}, "PATCH", "/api/v1/monitoring/dashboard-definitions/d1", ""},
 		{[]string{"delete-panel", "--id", "d1", "--revision", "4"}, "DELETE", "/api/v1/monitoring/dashboard-definitions/d1", "revision=4"},
@@ -347,6 +347,22 @@ func TestAnalysisPanelCatalogAndRunQueryCommands(t *testing.T) {
 			t.Fatalf("%v: request %s %s?%s output %q", tc.args, gotMethod, gotPath, gotQuery, output.String())
 		}
 	}
+	// --revision prints exactly that saved revision, and refuses an answer
+	// that is another one (a controller that ignores ?revision).
+	answered = `{"id":"d1","revision":3,"current_revision":4}`
+	var output bytes.Buffer
+	if err := executeWorkflowCommand(context.Background(), "analysis", []string{"panel", "--id", "d1", "--revision", "3", "--api", s.URL}, &output); err != nil || gotQuery != "revision=3" || strings.TrimSpace(output.String()) != answered {
+		t.Fatalf("panel --revision 3: %v %q %q", err, gotQuery, output.String())
+	}
+	// A revision written with a leading zero is the same revision.
+	if err := executeWorkflowCommand(context.Background(), "analysis", []string{"panel", "--id", "d1", "--revision", "03", "--api", s.URL}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("panel --revision 03: %v", err)
+	}
+	answered = `{"id":"d1","revision":4}`
+	if err := executeWorkflowCommand(context.Background(), "analysis", []string{"panel", "--id", "d1", "--revision", "3", "--api", s.URL}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "returned revision 4, not the requested revision 3") {
+		t.Fatalf("a different revision was accepted: %v", err)
+	}
+	answered = `{"ok":true}`
 	for _, args := range [][]string{
 		{"panel"}, {"panel", "--id", "d1", "--revision", "x"}, {"delete-panel", "--id", "d1"}, {"update-panel", "--id", "d1"},
 		{"save-panel"}, {"run-query", "--id", "run-1"}, {"panels"},

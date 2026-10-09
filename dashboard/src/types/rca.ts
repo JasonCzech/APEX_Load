@@ -217,6 +217,9 @@ export interface RcaBrowserBaseline {
   version: string
   status: string
   params: { min_baseline_buckets: number; sigma: number; timing_floor_ms: number; timing_floor_fraction: number; cls_floor: number; level_tolerance: number; max_results: number }
+  // The run's pinned browser policy (id@revision), when its floors and
+  // baseline mode applied.
+  policy?: string
   baseline: { test_id?: string; qualification?: string; reasons?: string[] }
   results: RcaBrowserBaselineResult[]
   excluded?: Record<string, number>

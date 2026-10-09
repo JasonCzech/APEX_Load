@@ -3519,10 +3519,14 @@ export interface operations {
                 "classified_ms"?: number;
                 "coverage"?: {
                   "observed_ms"?: number;
+                  "observer_lost"?: string;
+                  "source_requirements"?: boolean;
                   "sources"?: Array<{
                     "observed_ms"?: number;
+                    "required_ms"?: number;
                     "source"?: string;
                     "truncated"?: boolean;
+                    "unknown_ms"?: number;
                   }>;
                   "truncated"?: boolean;
                   "unknown_ms"?: number;
@@ -30650,6 +30654,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -34890,10 +34899,14 @@ export interface operations {
                   "controller_received_at"?: string;
                   "coverage"?: ({
                     "observed_ms": number;
+                    "observer_lost"?: string;
+                    "source_requirements"?: boolean;
                     "sources": Array<{
                       "observed_ms": number;
+                      "required_ms": number;
                       "source": string;
                       "truncated"?: boolean;
+                      "unknown_ms": number;
                     }>;
                     "truncated"?: boolean;
                     "unknown_ms": number;
@@ -35482,10 +35495,14 @@ export interface operations {
                   "controller_received_at"?: string;
                   "coverage"?: ({
                     "observed_ms": number;
+                    "observer_lost"?: string;
+                    "source_requirements"?: boolean;
                     "sources": Array<{
                       "observed_ms": number;
+                      "required_ms": number;
                       "source": string;
                       "truncated"?: boolean;
+                      "unknown_ms": number;
                     }>;
                     "truncated"?: boolean;
                     "unknown_ms": number;
@@ -42746,10 +42763,14 @@ export interface operations {
                 "controller_received_at"?: string;
                 "coverage"?: ({
                   "observed_ms": number;
+                  "observer_lost"?: string;
+                  "source_requirements"?: boolean;
                   "sources": Array<{
                     "observed_ms": number;
+                    "required_ms": number;
                     "source": string;
                     "truncated"?: boolean;
+                    "unknown_ms": number;
                   }>;
                   "truncated"?: boolean;
                   "unknown_ms": number;
@@ -44410,10 +44431,14 @@ export interface operations {
                 "controller_received_at"?: string;
                 "coverage"?: ({
                   "observed_ms": number;
+                  "observer_lost"?: string;
+                  "source_requirements"?: boolean;
                   "sources": Array<{
                     "observed_ms": number;
+                    "required_ms": number;
                     "source": string;
                     "truncated"?: boolean;
+                    "unknown_ms": number;
                   }>;
                   "truncated"?: boolean;
                   "unknown_ms": number;
@@ -60365,10 +60390,14 @@ export interface operations {
                 "controller_received_at"?: string;
                 "coverage"?: ({
                   "observed_ms": number;
+                  "observer_lost"?: string;
+                  "source_requirements"?: boolean;
                   "sources": Array<{
                     "observed_ms": number;
+                    "required_ms": number;
                     "source": string;
                     "truncated"?: boolean;
+                    "unknown_ms": number;
                   }>;
                   "truncated"?: boolean;
                   "unknown_ms": number;
@@ -62025,10 +62054,14 @@ export interface operations {
                 "controller_received_at"?: string;
                 "coverage"?: ({
                   "observed_ms": number;
+                  "observer_lost"?: string;
+                  "source_requirements"?: boolean;
                   "sources": Array<{
                     "observed_ms": number;
+                    "required_ms": number;
                     "source": string;
                     "truncated"?: boolean;
+                    "unknown_ms": number;
                   }>;
                   "truncated"?: boolean;
                   "unknown_ms": number;
@@ -64267,10 +64300,14 @@ export interface operations {
                   "controller_received_at"?: string;
                   "coverage"?: ({
                     "observed_ms": number;
+                    "observer_lost"?: string;
+                    "source_requirements"?: boolean;
                     "sources": Array<{
                       "observed_ms": number;
+                      "required_ms": number;
                       "source": string;
                       "truncated"?: boolean;
+                      "unknown_ms": number;
                     }>;
                     "truncated"?: boolean;
                     "unknown_ms": number;
@@ -64859,10 +64896,14 @@ export interface operations {
                   "controller_received_at"?: string;
                   "coverage"?: ({
                     "observed_ms": number;
+                    "observer_lost"?: string;
+                    "source_requirements"?: boolean;
                     "sources": Array<{
                       "observed_ms": number;
+                      "required_ms": number;
                       "source": string;
                       "truncated"?: boolean;
+                      "unknown_ms": number;
                     }>;
                     "truncated"?: boolean;
                     "unknown_ms": number;
@@ -68159,10 +68200,14 @@ export interface operations {
               "classified_ms": number;
               "coverage": {
                 "observed_ms": number;
+                "observer_lost"?: string;
+                "source_requirements"?: boolean;
                 "sources": Array<{
                   "observed_ms": number;
+                  "required_ms": number;
                   "source": string;
                   "truncated"?: boolean;
+                  "unknown_ms": number;
                 }>;
                 "truncated"?: boolean;
                 "unknown_ms": number;
@@ -71579,10 +71624,14 @@ export interface operations {
                 "classified_ms": number;
                 "coverage": {
                   "observed_ms": number;
+                  "observer_lost"?: string;
+                  "source_requirements"?: boolean;
                   "sources": Array<{
                     "observed_ms": number;
+                    "required_ms": number;
                     "source": string;
                     "truncated"?: boolean;
+                    "unknown_ms": number;
                   }>;
                   "truncated"?: boolean;
                   "unknown_ms": number;
@@ -79534,10 +79583,14 @@ export interface operations {
                 "controller_received_at"?: string;
                 "coverage"?: ({
                   "observed_ms": number;
+                  "observer_lost"?: string;
+                  "source_requirements"?: boolean;
                   "sources": Array<{
                     "observed_ms": number;
+                    "required_ms": number;
                     "source": string;
                     "truncated"?: boolean;
+                    "unknown_ms": number;
                   }>;
                   "truncated"?: boolean;
                   "unknown_ms": number;
@@ -81198,10 +81251,14 @@ export interface operations {
                 "controller_received_at"?: string;
                 "coverage"?: ({
                   "observed_ms": number;
+                  "observer_lost"?: string;
+                  "source_requirements"?: boolean;
                   "sources": Array<{
                     "observed_ms": number;
+                    "required_ms": number;
                     "source": string;
                     "truncated"?: boolean;
+                    "unknown_ms": number;
                   }>;
                   "truncated"?: boolean;
                   "unknown_ms": number;
@@ -96646,6 +96703,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "default": {
         content?: never;
       };
@@ -100544,10 +100606,14 @@ export interface operations {
                 "controller_received_at"?: string;
                 "coverage"?: ({
                   "observed_ms": number;
+                  "observer_lost"?: string;
+                  "source_requirements"?: boolean;
                   "sources": Array<{
                     "observed_ms": number;
+                    "required_ms": number;
                     "source": string;
                     "truncated"?: boolean;
+                    "unknown_ms": number;
                   }>;
                   "truncated"?: boolean;
                   "unknown_ms": number;
@@ -102208,10 +102274,14 @@ export interface operations {
                 "controller_received_at"?: string;
                 "coverage"?: ({
                   "observed_ms": number;
+                  "observer_lost"?: string;
+                  "source_requirements"?: boolean;
                   "sources": Array<{
                     "observed_ms": number;
+                    "required_ms": number;
                     "source": string;
                     "truncated"?: boolean;
+                    "unknown_ms": number;
                   }>;
                   "truncated"?: boolean;
                   "unknown_ms": number;
@@ -115978,10 +116048,14 @@ export interface operations {
                   "controller_received_at"?: string;
                   "coverage"?: ({
                     "observed_ms": number;
+                    "observer_lost"?: string;
+                    "source_requirements"?: boolean;
                     "sources": Array<{
                       "observed_ms": number;
+                      "required_ms": number;
                       "source": string;
                       "truncated"?: boolean;
+                      "unknown_ms": number;
                     }>;
                     "truncated"?: boolean;
                     "unknown_ms": number;
@@ -116570,10 +116644,14 @@ export interface operations {
                   "controller_received_at"?: string;
                   "coverage"?: ({
                     "observed_ms": number;
+                    "observer_lost"?: string;
+                    "source_requirements"?: boolean;
                     "sources": Array<{
                       "observed_ms": number;
+                      "required_ms": number;
                       "source": string;
                       "truncated"?: boolean;
+                      "unknown_ms": number;
                     }>;
                     "truncated"?: boolean;
                     "unknown_ms": number;
@@ -117919,10 +117997,14 @@ export interface operations {
                   "controller_received_at"?: string;
                   "coverage"?: ({
                     "observed_ms": number;
+                    "observer_lost"?: string;
+                    "source_requirements"?: boolean;
                     "sources": Array<{
                       "observed_ms": number;
+                      "required_ms": number;
                       "source": string;
                       "truncated"?: boolean;
+                      "unknown_ms": number;
                     }>;
                     "truncated"?: boolean;
                     "unknown_ms": number;
@@ -118511,10 +118593,14 @@ export interface operations {
                   "controller_received_at"?: string;
                   "coverage"?: ({
                     "observed_ms": number;
+                    "observer_lost"?: string;
+                    "source_requirements"?: boolean;
                     "sources": Array<{
                       "observed_ms": number;
+                      "required_ms": number;
                       "source": string;
                       "truncated"?: boolean;
+                      "unknown_ms": number;
                     }>;
                     "truncated"?: boolean;
                     "unknown_ms": number;
@@ -119860,10 +119946,14 @@ export interface operations {
                   "controller_received_at"?: string;
                   "coverage"?: ({
                     "observed_ms": number;
+                    "observer_lost"?: string;
+                    "source_requirements"?: boolean;
                     "sources": Array<{
                       "observed_ms": number;
+                      "required_ms": number;
                       "source": string;
                       "truncated"?: boolean;
+                      "unknown_ms": number;
                     }>;
                     "truncated"?: boolean;
                     "unknown_ms": number;
@@ -120452,10 +120542,14 @@ export interface operations {
                   "controller_received_at"?: string;
                   "coverage"?: ({
                     "observed_ms": number;
+                    "observer_lost"?: string;
+                    "source_requirements"?: boolean;
                     "sources": Array<{
                       "observed_ms": number;
+                      "required_ms": number;
                       "source": string;
                       "truncated"?: boolean;
+                      "unknown_ms": number;
                     }>;
                     "truncated"?: boolean;
                     "unknown_ms": number;
@@ -121801,10 +121895,14 @@ export interface operations {
                   "controller_received_at"?: string;
                   "coverage"?: ({
                     "observed_ms": number;
+                    "observer_lost"?: string;
+                    "source_requirements"?: boolean;
                     "sources": Array<{
                       "observed_ms": number;
+                      "required_ms": number;
                       "source": string;
                       "truncated"?: boolean;
+                      "unknown_ms": number;
                     }>;
                     "truncated"?: boolean;
                     "unknown_ms": number;
@@ -122393,10 +122491,14 @@ export interface operations {
                   "controller_received_at"?: string;
                   "coverage"?: ({
                     "observed_ms": number;
+                    "observer_lost"?: string;
+                    "source_requirements"?: boolean;
                     "sources": Array<{
                       "observed_ms": number;
+                      "required_ms": number;
                       "source": string;
                       "truncated"?: boolean;
+                      "unknown_ms": number;
                     }>;
                     "truncated"?: boolean;
                     "unknown_ms": number;
@@ -123742,10 +123844,14 @@ export interface operations {
                   "controller_received_at"?: string;
                   "coverage"?: ({
                     "observed_ms": number;
+                    "observer_lost"?: string;
+                    "source_requirements"?: boolean;
                     "sources": Array<{
                       "observed_ms": number;
+                      "required_ms": number;
                       "source": string;
                       "truncated"?: boolean;
+                      "unknown_ms": number;
                     }>;
                     "truncated"?: boolean;
                     "unknown_ms": number;
@@ -124334,10 +124440,14 @@ export interface operations {
                   "controller_received_at"?: string;
                   "coverage"?: ({
                     "observed_ms": number;
+                    "observer_lost"?: string;
+                    "source_requirements"?: boolean;
                     "sources": Array<{
                       "observed_ms": number;
+                      "required_ms": number;
                       "source": string;
                       "truncated"?: boolean;
+                      "unknown_ms": number;
                     }>;
                     "truncated"?: boolean;
                     "unknown_ms": number;
@@ -149029,10 +149139,14 @@ export interface operations {
                 "controller_received_at"?: string;
                 "coverage"?: ({
                   "observed_ms": number;
+                  "observer_lost"?: string;
+                  "source_requirements"?: boolean;
                   "sources": Array<{
                     "observed_ms": number;
+                    "required_ms": number;
                     "source": string;
                     "truncated"?: boolean;
+                    "unknown_ms": number;
                   }>;
                   "truncated"?: boolean;
                   "unknown_ms": number;
@@ -150693,10 +150807,14 @@ export interface operations {
                 "controller_received_at"?: string;
                 "coverage"?: ({
                   "observed_ms": number;
+                  "observer_lost"?: string;
+                  "source_requirements"?: boolean;
                   "sources": Array<{
                     "observed_ms": number;
+                    "required_ms": number;
                     "source": string;
                     "truncated"?: boolean;
+                    "unknown_ms": number;
                   }>;
                   "truncated"?: boolean;
                   "unknown_ms": number;

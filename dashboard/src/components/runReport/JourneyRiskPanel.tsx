@@ -21,10 +21,11 @@ function policyLabel(selection: JourneySelection): string {
   return `"${selection.policy}"${selection.revision ? ` revision ${selection.revision}` : ''}`
 }
 
-// A missing or not-yet-finalized archive is a state of the run, and a refused
-// policy request is the viewer's to correct; both are said plainly, without a
-// retry that would fail the same way. Anything else is a load failure with
-// the server's text kept behind the notice's details.
+// A missing or not-yet-finalized archive is a state of the run, said plainly
+// with a Check again (an HA controller answers 404 until the archive is
+// published). A refused policy request is the viewer's to correct, said
+// plainly without a retry that would fail the same way. Anything else is a
+// load failure with the server's text kept behind the notice's details.
 function journeyLoadFailure(err: unknown, selection: JourneySelection): JourneyLoadFailure {
   const detail = getErrorMessage(err, 'Unable to load journey accounting')
   const status = (err as { status?: unknown } | null)?.status
@@ -84,8 +85,8 @@ export default function JourneyRiskPanel({ testId }: { testId: string }) {
       <label>Revision <input value={revisionDraft} onChange={event => setRevisionDraft(event.target.value)} placeholder="Latest" inputMode="numeric" size={6} /></label>
       <button type="submit" className="btn btn-secondary" disabled={loading}>Apply</button>
     </form>
-    {loading && <p role="status">Accounting journeys...</p>}
-    {!loading && failure?.kind === 'archive_missing' && <p role="note">This run's saved archive could not be found, so its journeys cannot be accounted.</p>}
+    {loading && <p role="status">Accounting journeys…</p>}
+    {!loading && failure?.kind === 'archive_missing' && <p role="note">This run's saved archive is not available yet (it may still be publishing), so its journeys cannot be accounted. <button type="button" className="btn btn-secondary" onClick={() => setAttempt(value => value + 1)}>Check again</button></p>}
     {!loading && failure?.kind === 'not_finalized' && <p role="note">Journeys are accounted once the run's archive is finalized. <button type="button" className="btn btn-secondary" onClick={() => setAttempt(value => value + 1)}>Check again</button></p>}
     {!loading && failure?.kind === 'policy' && <Notice tone="error" title={failure.message} details={failure.detail} />}
     {!loading && failure?.kind === 'error' && <Notice tone="error" title="Journey accounting could not be loaded" details={failure.detail} action={<button type="button" className="btn btn-secondary" onClick={() => setAttempt(value => value + 1)}>Retry journeys</button>} />}

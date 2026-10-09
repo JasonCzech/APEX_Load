@@ -522,6 +522,20 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 			return err
 		}
 	}
+	if kind == "analysis" && action == "panel" && *revision != "" {
+		// A controller that predates saved revisions ignores ?revision and
+		// answers the current definition: refuse it rather than print it as
+		// the saved revision.
+		response, err := client.workflowRequest(ctx, method, path, nil, "")
+		if err != nil {
+			return err
+		}
+		if err := checkPanelRevision(response, *revision); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(out, string(response))
+		return err
+	}
 	if !*failOnRegression {
 		// Results stream to the output as they arrive; nothing holds a
 		// whole response in memory.
@@ -541,6 +555,25 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 		return checkBaselineVerdict(response)
 	}
 	return err
+}
+
+// checkPanelRevision refuses a panel response that is not the revision asked
+// for.
+func checkPanelRevision(response []byte, requested string) error {
+	var panel struct {
+		Revision int64 `json:"revision"`
+	}
+	if err := json.Unmarshal(response, &panel); err != nil {
+		return fmt.Errorf("the panel response could not be read: %w", err)
+	}
+	want, err := strconv.ParseInt(requested, 10, 64)
+	if err != nil {
+		return fmt.Errorf("--revision must be a positive integer")
+	}
+	if panel.Revision != want {
+		return fmt.Errorf("the controller returned revision %d, not the requested revision %d (a controller that predates saved revisions answers the current one)", panel.Revision, want)
+	}
+	return nil
 }
 
 // verdictError is a command's verdict on what it checked, with the exit

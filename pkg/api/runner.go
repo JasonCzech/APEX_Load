@@ -1123,6 +1123,10 @@ type TelemetryHealth struct {
 	// Acceptance is the run's provisional telemetry verdict under its pinned
 	// acceptance policy; the finalized verdict is in the run report.
 	Acceptance *TelemetryAcceptanceVerdict `json:"acceptance,omitempty"`
+	// restoredFromHistory marks health rebuilt from a stored interval
+	// summary (a restarted controller, a follower): it carries none of the
+	// loss, coverage or stage evidence a verdict reads, so none is shown.
+	restoredFromHistory bool
 	// TransportLagQuality and SampleAgeQuality qualify the stages measured
 	// across a generator's clock and the controller's: qualified when a
 	// current offset calibration corrected them. Absent for a run executed

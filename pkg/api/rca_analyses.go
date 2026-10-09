@@ -768,6 +768,15 @@ func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *st
 	}
 	input.Detection.Series = append(input.Detection.Series, documents...)
 	input.Detection.Limitations = append(input.Detection.Limitations, limitations...)
+	input.Detection.DocumentsIncomplete, input.Detection.DocumentsUnreadable = rcaDocumentEvidenceLoss(limitations)
+	// The run's pinned browser policy sets the browser baselines' effect
+	// floors and baseline mode; a run without document series has no
+	// browser baseline to apply it to.
+	if len(documents) > 0 {
+		if input.Detection.BrowserPolicy, err = s.rcaBrowserBaselinePolicy(analysis.ProjectID, manifest); err != nil {
+			return nil, nil, err
+		}
+	}
 	if budget.MaxSeries > 0 {
 		var gaveWay int
 		if input.Detection.Series, gaveWay = trimRCAJointSeries(input.Detection.Series, budget.MaxSeries); gaveWay > 0 {

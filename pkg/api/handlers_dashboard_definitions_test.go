@@ -2,8 +2,11 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -65,6 +68,102 @@ func TestDashboardDefinitionRejectsArbitraryPanelKind(t *testing.T) {
 	}
 }
 
+// dashboardSaveFailingStore is a store whose definition saves fail with err.
+type dashboardSaveFailingStore struct {
+	*storage.SQLiteStore
+	err error
+}
+
+func (s dashboardSaveFailingStore) UpdateDashboardDefinitionIfRevision(*storage.DashboardDefinition, int64) (bool, error) {
+	return false, s.err
+}
+
+func (s dashboardSaveFailingStore) SaveDashboardDefinition(*storage.DashboardDefinition) error {
+	return s.err
+}
+
+// dashboardRevisionRaceStore answers the revision list as if an edit
+// committed after the definition was read: one revision newer than it.
+type dashboardRevisionRaceStore struct {
+	*storage.SQLiteStore
+}
+
+func (s dashboardRevisionRaceStore) ListDashboardDefinitionRevisions(id string) ([]storage.DashboardDefinitionRevision, error) {
+	retained, err := s.SQLiteStore.ListDashboardDefinitionRevisions(id)
+	if err != nil || len(retained) == 0 {
+		return retained, err
+	}
+	newer := retained[0]
+	newer.Revision++
+	return append([]storage.DashboardDefinitionRevision{newer}, retained...), nil
+}
+
+// An edit that commits between the definition read and the revision list
+// never makes a read inconsistent: a plain read lists no revision newer than
+// the definition it returns, and a revision read names the newer current one.
+func TestDashboardDefinitionReadsStayConsistentAcrossAConcurrentEdit(t *testing.T) {
+	server, projectID := newGrafanaDashboardAPIServer(t)
+	created := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/monitoring/dashboard-definitions", map[string]any{
+		"project_id": projectID, "name": "Operations", "visibility": "project", "tabs": []map[string]any{{"id": "overview", "title": "Overview", "panels": []map[string]any{}}},
+	})
+	var definition storage.DashboardDefinition
+	if created.Code != http.StatusCreated || json.Unmarshal(created.Body.Bytes(), &definition) != nil {
+		t.Fatalf("create = %d %s", created.Code, created.Body.String())
+	}
+	server.store = dashboardRevisionRaceStore{SQLiteStore: server.store.(*storage.SQLiteStore)}
+	item := "/api/v1/monitoring/dashboard-definitions/" + definition.ID
+	read := func(path string) storage.DashboardDefinition {
+		t.Helper()
+		response := dashboardAPIRequest(t, server, http.MethodGet, path, nil)
+		var got storage.DashboardDefinition
+		if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &got) != nil {
+			t.Fatalf("%s = %d %s", path, response.Code, response.Body.String())
+		}
+		return got
+	}
+	if plain := read(item); plain.Revision != 1 || plain.CurrentRevision != 0 || len(plain.RetainedRevisions) != 1 || plain.RetainedRevisions[0].Revision != 1 {
+		t.Fatalf("plain read = %#v", plain)
+	}
+	if named := read(item + "?revision=1"); named.Revision != 1 || named.CurrentRevision != 2 {
+		t.Fatalf("revision read = %#v", named)
+	}
+}
+
+// A definition refused for its content is the caller's 400; a store that
+// fails to save it is the server's 500, whose response carries no cause.
+func TestDashboardDefinitionSaveFailureIsTheServers(t *testing.T) {
+	server, projectID := newGrafanaDashboardAPIServer(t)
+	created := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/monitoring/dashboard-definitions", map[string]any{
+		"project_id": projectID, "name": "Operations", "visibility": "project", "tabs": []map[string]any{{"id": "overview", "title": "Overview", "panels": []map[string]any{}}},
+	})
+	var definition storage.DashboardDefinition
+	if created.Code != http.StatusCreated || json.Unmarshal(created.Body.Bytes(), &definition) != nil {
+		t.Fatalf("create = %d %s", created.Code, created.Body.String())
+	}
+	item := "/api/v1/monitoring/dashboard-definitions/" + definition.ID
+	if invalid := dashboardAPIRequest(t, server, http.MethodPatch, item, map[string]any{"revision": 1, "visibility": "everyone"}); invalid.Code != http.StatusBadRequest {
+		t.Fatalf("invalid edit = %d %s", invalid.Code, invalid.Body.String())
+	}
+	// The project's definition limit is the caller's to fix.
+	for i := 1; i < storage.MaxDashboardDefinitionsPerProject; i++ {
+		if created := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/monitoring/dashboard-definitions", map[string]any{"project_id": projectID, "name": fmt.Sprintf("Operations %d", i), "visibility": "project", "tabs": []map[string]any{{"id": "overview", "title": "Overview", "panels": []map[string]any{}}}}); created.Code != http.StatusCreated {
+			t.Fatalf("create %d = %d %s", i, created.Code, created.Body.String())
+		}
+	}
+	if limited := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/monitoring/dashboard-definitions", map[string]any{"project_id": projectID, "name": "One too many", "visibility": "project", "tabs": []map[string]any{{"id": "overview", "title": "Overview", "panels": []map[string]any{}}}}); limited.Code != http.StatusBadRequest || !strings.Contains(limited.Body.String(), "maximum") {
+		t.Fatalf("over the limit = %d %s", limited.Code, limited.Body.String())
+	}
+	server.store = dashboardSaveFailingStore{SQLiteStore: server.store.(*storage.SQLiteStore), err: errors.New("database is locked")}
+	failed := dashboardAPIRequest(t, server, http.MethodPatch, item, map[string]any{"revision": 1, "name": "Operations v2"})
+	if failed.Code != http.StatusInternalServerError || strings.Contains(failed.Body.String(), "locked") {
+		t.Fatalf("store failure = %d %s", failed.Code, failed.Body.String())
+	}
+	failed = dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/monitoring/dashboard-definitions", map[string]any{"project_id": projectID, "name": "Operations new", "visibility": "project", "tabs": []map[string]any{{"id": "overview", "title": "Overview", "panels": []map[string]any{}}}})
+	if failed.Code != http.StatusInternalServerError || strings.Contains(failed.Body.String(), "locked") {
+		t.Fatalf("create store failure = %d %s", failed.Code, failed.Body.String())
+	}
+}
+
 func TestDashboardDefinitionReopensAnExactSavedRevision(t *testing.T) {
 	server, projectID := newGrafanaDashboardAPIServer(t)
 	panel := func(aggregation string) map[string]any {
@@ -104,8 +203,9 @@ func TestDashboardDefinitionReopensAnExactSavedRevision(t *testing.T) {
 	if status != http.StatusOK || current.Revision != 2 || current.CurrentRevision != 0 || current.Tabs[0].Panels[0].Query.Aggregation != "p99" {
 		t.Fatalf("current = %d %#v", status, current)
 	}
-	if status, _ := read(item + "?revision=2"); status != http.StatusOK {
-		t.Fatalf("current revision by number = %d", status)
+	// A read of the current revision by number still says it is current.
+	if status, named := read(item + "?revision=2"); status != http.StatusOK || named.Revision != 2 || named.CurrentRevision != 2 {
+		t.Fatalf("current revision by number = %d %#v", status, named)
 	}
 	if status, _ := read(item + "?revision=7"); status != http.StatusNotFound {
 		t.Fatalf("unsaved revision = %d", status)

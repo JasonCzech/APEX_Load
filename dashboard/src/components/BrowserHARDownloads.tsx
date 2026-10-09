@@ -28,7 +28,7 @@ export default function BrowserHARDownloads({ testID, list, listError = '', arch
     <p>Native HARs are the browser&apos;s own recordings. The synthetic HAR is built from retained network entries for contexts without one; it never invents timings or content.</p>
     {listError && <Notice tone="error" title="Browser HARs could not be listed" details={listError} action={onRetryList && <button type="button" className="btn btn-secondary btn-sm" onClick={onRetryList}>Retry browser HARs</button>} />}
     {downloadError && <Notice tone="error" title={downloadError.key === 'zip' ? 'The run archive could not be downloaded' : 'The HAR could not be downloaded'} details={downloadError.message} />}
-    {!list ? archiveMissing ? <p role="note">This run has no saved archive, so it has no browser HARs.</p> : !listError && <p role="status">Loading browser HARs…</p> : <>
+    {!list ? archiveMissing ? <p role="note">This run's saved archive is not available yet (it may still be publishing), so its browser HARs cannot be listed yet.{onRetryList && <> <button type="button" className="btn btn-secondary btn-sm" onClick={onRetryList}>Check again</button></>}</p> : !listError && <p role="status">Loading browser HARs…</p> : <>
       {!list.can_download && <p role="status">Downloading a HAR needs {list.download_role} access to this project.</p>}
       {list.incomplete && <p>Some native HARs were not retained{list.omitted ? `: ${Object.entries(list.omitted).map(([reason, count]) => `${count} ${reason.replace(/_/g, ' ')}`).join(', ')}` : ''}.</p>}
       <table className="tx-table"><thead><tr><th scope="col">HAR</th><th scope="col">Fidelity</th><th scope="col">Size</th><th scope="col">Download</th></tr></thead>

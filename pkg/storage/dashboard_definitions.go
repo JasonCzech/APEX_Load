@@ -32,9 +32,10 @@ type DashboardDefinition struct {
 	Tabs              []DashboardTab `json:"tabs"`
 	CreatedAt         time.Time      `json:"created_at"`
 	UpdatedAt         time.Time      `json:"updated_at"`
-	// CurrentRevision is set when an older saved revision is returned: the
-	// definition's revision now. RetainedRevisions lists the saved revisions
-	// a viewer can reopen, newest first. Neither is stored.
+	// CurrentRevision is set on a read of a named revision: the
+	// definition's revision now (equal to Revision when the current one was
+	// named). RetainedRevisions lists the saved revisions a viewer can
+	// reopen, newest first. Neither is stored.
 	CurrentRevision   int64                         `json:"current_revision,omitempty"`
 	RetainedRevisions []DashboardDefinitionRevision `json:"retained_revisions,omitempty"`
 }
@@ -223,9 +224,19 @@ func validateDashboardDefinition(d *DashboardDefinition) error {
 	return nil
 }
 
+// DashboardDefinitionInvalid marks a definition refused for its own content
+// (validation, its encoded size, the project's definition limit, a missing
+// expected revision); any other save error is the store's own.
+type DashboardDefinitionInvalid struct{ Err error }
+
+func (e *DashboardDefinitionInvalid) Error() string { return e.Err.Error() }
+func (e *DashboardDefinitionInvalid) Unwrap() error { return e.Err }
+
+func invalidDashboardDefinition(err error) error { return &DashboardDefinitionInvalid{Err: err} }
+
 func (s *SQLiteStore) SaveDashboardDefinition(d *DashboardDefinition) error {
 	if err := validateDashboardDefinition(d); err != nil {
-		return err
+		return invalidDashboardDefinition(err)
 	}
 	d.ProjectID = normalizeProjectID(d.ProjectID)
 	now := time.Now()
@@ -241,7 +252,7 @@ func (s *SQLiteStore) SaveDashboardDefinition(d *DashboardDefinition) error {
 		Tabs              []DashboardTab `json:"tabs"`
 	}{d.SlideshowInterval, d.Tabs})
 	if err != nil || len(payload) > MaxDashboardDefinitionBytes {
-		return errors.New("dashboard definition exceeds its encoded size limit")
+		return invalidDashboardDefinition(errors.New("dashboard definition exceeds its encoded size limit"))
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -249,6 +260,9 @@ func (s *SQLiteStore) SaveDashboardDefinition(d *DashboardDefinition) error {
 	}
 	defer tx.Rollback()
 	if d.ProjectID, err = lockProjectForOwnedMutation(tx, d.ProjectID); err != nil {
+		if errors.Is(err, ErrOwnedProjectNotFound) {
+			return invalidDashboardDefinition(err)
+		}
 		return err
 	}
 	var count int
@@ -256,7 +270,7 @@ func (s *SQLiteStore) SaveDashboardDefinition(d *DashboardDefinition) error {
 		return err
 	}
 	if count >= MaxDashboardDefinitionsPerProject {
-		return fmt.Errorf("project already has the maximum of %d dashboard definitions", MaxDashboardDefinitionsPerProject)
+		return invalidDashboardDefinition(fmt.Errorf("project already has the maximum of %d dashboard definitions", MaxDashboardDefinitionsPerProject))
 	}
 	_, err = tx.Exec(`INSERT INTO dashboard_definitions (id, project_id, name, description, owner, visibility, revision, definition_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, d.ID, d.ProjectID, d.Name, d.Description, d.Owner, d.Visibility, d.Revision, string(payload), d.CreatedAt, d.UpdatedAt)
 	if err != nil {
@@ -318,17 +332,17 @@ func (s *SQLiteStore) ListDashboardDefinitions(projectID string, limit, offset i
 }
 func (s *SQLiteStore) UpdateDashboardDefinitionIfRevision(d *DashboardDefinition, expected int64) (bool, error) {
 	if expected <= 0 {
-		return false, errors.New("expected revision is required")
+		return false, invalidDashboardDefinition(errors.New("expected revision is required"))
 	}
 	if err := validateDashboardDefinition(d); err != nil {
-		return false, err
+		return false, invalidDashboardDefinition(err)
 	}
 	payload, err := json.Marshal(struct {
 		SlideshowInterval int            `json:"slideshow_interval_seconds,omitempty"`
 		Tabs              []DashboardTab `json:"tabs"`
 	}{d.SlideshowInterval, d.Tabs})
 	if err != nil || len(payload) > MaxDashboardDefinitionBytes {
-		return false, errors.New("dashboard definition exceeds its encoded size limit")
+		return false, invalidDashboardDefinition(errors.New("dashboard definition exceeds its encoded size limit"))
 	}
 	now := time.Now()
 	tx, err := s.db.Begin()

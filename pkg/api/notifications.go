@@ -433,9 +433,11 @@ func buildDynatraceNotificationPayload(webhook NotificationWebhookSettings, even
 		// A load step is context for the monitored entities, not an incident.
 		eventType = "CUSTOM_ANNOTATION"
 	} else if event.Type == "test_failed" || event.Type == "telemetry_breached" ||
-		((event.Type == "fleet_alert" || event.Type == "threshold_alert") && strings.EqualFold(event.Severity, "danger")) {
+		((event.Type == "fleet_alert" || event.Type == "threshold_alert" || event.Type == "telemetry_acceptance") && strings.EqualFold(event.Severity, "danger")) {
+		// A failed telemetry acceptance verdict is an error; an
+		// inconclusive one is an alert.
 		eventType = "ERROR_EVENT"
-	} else if event.Type == "telemetry_degraded" || event.Type == "fleet_alert" || event.Type == "fleet_degraded" || event.Type == "threshold_alert" {
+	} else if event.Type == "telemetry_degraded" || event.Type == "fleet_alert" || event.Type == "fleet_degraded" || event.Type == "threshold_alert" || event.Type == "telemetry_acceptance" {
 		eventType = "CUSTOM_ALERT"
 	}
 	payload := map[string]any{

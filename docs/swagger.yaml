@@ -9834,6 +9834,10 @@ paths:
                                 observed_ms:
                                   type: integer
                                   format: int64
+                                observer_lost:
+                                  type: string
+                                source_requirements:
+                                  type: boolean
                                 sources:
                                   type: array
                                   items:
@@ -9842,10 +9846,16 @@ paths:
                                       observed_ms:
                                         type: integer
                                         format: int64
+                                      required_ms:
+                                        type: integer
+                                        format: int64
                                       source:
                                         type: string
                                       truncated:
                                         type: boolean
+                                      unknown_ms:
+                                        type: integer
+                                        format: int64
                                 truncated:
                                   type: boolean
                                 unknown_ms:
@@ -63185,6 +63195,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "503":
           description: Service Unavailable
           content:
@@ -63679,6 +63695,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "413":
           description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
           content:
             application/json:
               schema:
@@ -86329,6 +86351,10 @@ paths:
                                     observed_ms:
                                       type: integer
                                       format: int64
+                                    observer_lost:
+                                      type: string
+                                    source_requirements:
+                                      type: boolean
                                     sources:
                                       type: array
                                       items:
@@ -86337,13 +86363,21 @@ paths:
                                           observed_ms:
                                             type: integer
                                             format: int64
+                                          required_ms:
+                                            type: integer
+                                            format: int64
                                           source:
                                             type: string
                                           truncated:
                                             type: boolean
+                                          unknown_ms:
+                                            type: integer
+                                            format: int64
                                         required:
                                           - observed_ms
+                                          - required_ms
                                           - source
+                                          - unknown_ms
                                     truncated:
                                       type: boolean
                                     unknown_ms:
@@ -88267,6 +88301,10 @@ paths:
                                   observed_ms:
                                     type: integer
                                     format: int64
+                                  observer_lost:
+                                    type: string
+                                  source_requirements:
+                                    type: boolean
                                   sources:
                                     type: array
                                     items:
@@ -88275,13 +88313,21 @@ paths:
                                         observed_ms:
                                           type: integer
                                           format: int64
+                                        required_ms:
+                                          type: integer
+                                          format: int64
                                         source:
                                           type: string
                                         truncated:
                                           type: boolean
+                                        unknown_ms:
+                                          type: integer
+                                          format: int64
                                       required:
                                         - observed_ms
+                                        - required_ms
                                         - source
+                                        - unknown_ms
                                   truncated:
                                     type: boolean
                                   unknown_ms:
@@ -92316,6 +92362,10 @@ paths:
                                     observed_ms:
                                       type: integer
                                       format: int64
+                                    observer_lost:
+                                      type: string
+                                    source_requirements:
+                                      type: boolean
                                     sources:
                                       type: array
                                       items:
@@ -92324,13 +92374,21 @@ paths:
                                           observed_ms:
                                             type: integer
                                             format: int64
+                                          required_ms:
+                                            type: integer
+                                            format: int64
                                           source:
                                             type: string
                                           truncated:
                                             type: boolean
+                                          unknown_ms:
+                                            type: integer
+                                            format: int64
                                         required:
                                           - observed_ms
+                                          - required_ms
                                           - source
+                                          - unknown_ms
                                     truncated:
                                       type: boolean
                                     unknown_ms:
@@ -94254,6 +94312,10 @@ paths:
                                   observed_ms:
                                     type: integer
                                     format: int64
+                                  observer_lost:
+                                    type: string
+                                  source_requirements:
+                                    type: boolean
                                   sources:
                                     type: array
                                     items:
@@ -94262,13 +94324,21 @@ paths:
                                         observed_ms:
                                           type: integer
                                           format: int64
+                                        required_ms:
+                                          type: integer
+                                          format: int64
                                         source:
                                           type: string
                                         truncated:
                                           type: boolean
+                                        unknown_ms:
+                                          type: integer
+                                          format: int64
                                       required:
                                         - observed_ms
+                                        - required_ms
                                         - source
+                                        - unknown_ms
                                   truncated:
                                     type: boolean
                                   unknown_ms:
@@ -98304,6 +98374,10 @@ paths:
                                     observed_ms:
                                       type: integer
                                       format: int64
+                                    observer_lost:
+                                      type: string
+                                    source_requirements:
+                                      type: boolean
                                     sources:
                                       type: array
                                       items:
@@ -98312,13 +98386,21 @@ paths:
                                           observed_ms:
                                             type: integer
                                             format: int64
+                                          required_ms:
+                                            type: integer
+                                            format: int64
                                           source:
                                             type: string
                                           truncated:
                                             type: boolean
+                                          unknown_ms:
+                                            type: integer
+                                            format: int64
                                         required:
                                           - observed_ms
+                                          - required_ms
                                           - source
+                                          - unknown_ms
                                     truncated:
                                       type: boolean
                                     unknown_ms:
@@ -100242,6 +100324,10 @@ paths:
                                   observed_ms:
                                     type: integer
                                     format: int64
+                                  observer_lost:
+                                    type: string
+                                  source_requirements:
+                                    type: boolean
                                   sources:
                                     type: array
                                     items:
@@ -100250,13 +100336,21 @@ paths:
                                         observed_ms:
                                           type: integer
                                           format: int64
+                                        required_ms:
+                                          type: integer
+                                          format: int64
                                         source:
                                           type: string
                                         truncated:
                                           type: boolean
+                                        unknown_ms:
+                                          type: integer
+                                          format: int64
                                       required:
                                         - observed_ms
+                                        - required_ms
                                         - source
+                                        - unknown_ms
                                   truncated:
                                     type: boolean
                                   unknown_ms:
@@ -104304,6 +104398,10 @@ paths:
                                     observed_ms:
                                       type: integer
                                       format: int64
+                                    observer_lost:
+                                      type: string
+                                    source_requirements:
+                                      type: boolean
                                     sources:
                                       type: array
                                       items:
@@ -104312,13 +104410,21 @@ paths:
                                           observed_ms:
                                             type: integer
                                             format: int64
+                                          required_ms:
+                                            type: integer
+                                            format: int64
                                           source:
                                             type: string
                                           truncated:
                                             type: boolean
+                                          unknown_ms:
+                                            type: integer
+                                            format: int64
                                         required:
                                           - observed_ms
+                                          - required_ms
                                           - source
+                                          - unknown_ms
                                     truncated:
                                       type: boolean
                                     unknown_ms:
@@ -106242,6 +106348,10 @@ paths:
                                   observed_ms:
                                     type: integer
                                     format: int64
+                                  observer_lost:
+                                    type: string
+                                  source_requirements:
+                                    type: boolean
                                   sources:
                                     type: array
                                     items:
@@ -106250,13 +106360,21 @@ paths:
                                         observed_ms:
                                           type: integer
                                           format: int64
+                                        required_ms:
+                                          type: integer
+                                          format: int64
                                         source:
                                           type: string
                                         truncated:
                                           type: boolean
+                                        unknown_ms:
+                                          type: integer
+                                          format: int64
                                       required:
                                         - observed_ms
+                                        - required_ms
                                         - source
+                                        - unknown_ms
                                   truncated:
                                     type: boolean
                                   unknown_ms:
@@ -110304,6 +110422,10 @@ paths:
                                     observed_ms:
                                       type: integer
                                       format: int64
+                                    observer_lost:
+                                      type: string
+                                    source_requirements:
+                                      type: boolean
                                     sources:
                                       type: array
                                       items:
@@ -110312,13 +110434,21 @@ paths:
                                           observed_ms:
                                             type: integer
                                             format: int64
+                                          required_ms:
+                                            type: integer
+                                            format: int64
                                           source:
                                             type: string
                                           truncated:
                                             type: boolean
+                                          unknown_ms:
+                                            type: integer
+                                            format: int64
                                         required:
                                           - observed_ms
+                                          - required_ms
                                           - source
+                                          - unknown_ms
                                     truncated:
                                       type: boolean
                                     unknown_ms:
@@ -112242,6 +112372,10 @@ paths:
                                   observed_ms:
                                     type: integer
                                     format: int64
+                                  observer_lost:
+                                    type: string
+                                  source_requirements:
+                                    type: boolean
                                   sources:
                                     type: array
                                     items:
@@ -112250,13 +112384,21 @@ paths:
                                         observed_ms:
                                           type: integer
                                           format: int64
+                                        required_ms:
+                                          type: integer
+                                          format: int64
                                         source:
                                           type: string
                                         truncated:
                                           type: boolean
+                                        unknown_ms:
+                                          type: integer
+                                          format: int64
                                       required:
                                         - observed_ms
+                                        - required_ms
                                         - source
+                                        - unknown_ms
                                   truncated:
                                     type: boolean
                                   unknown_ms:
@@ -116304,6 +116446,10 @@ paths:
                                     observed_ms:
                                       type: integer
                                       format: int64
+                                    observer_lost:
+                                      type: string
+                                    source_requirements:
+                                      type: boolean
                                     sources:
                                       type: array
                                       items:
@@ -116312,13 +116458,21 @@ paths:
                                           observed_ms:
                                             type: integer
                                             format: int64
+                                          required_ms:
+                                            type: integer
+                                            format: int64
                                           source:
                                             type: string
                                           truncated:
                                             type: boolean
+                                          unknown_ms:
+                                            type: integer
+                                            format: int64
                                         required:
                                           - observed_ms
+                                          - required_ms
                                           - source
+                                          - unknown_ms
                                     truncated:
                                       type: boolean
                                     unknown_ms:
@@ -118242,6 +118396,10 @@ paths:
                                   observed_ms:
                                     type: integer
                                     format: int64
+                                  observer_lost:
+                                    type: string
+                                  source_requirements:
+                                    type: boolean
                                   sources:
                                     type: array
                                     items:
@@ -118250,13 +118408,21 @@ paths:
                                         observed_ms:
                                           type: integer
                                           format: int64
+                                        required_ms:
+                                          type: integer
+                                          format: int64
                                         source:
                                           type: string
                                         truncated:
                                           type: boolean
+                                        unknown_ms:
+                                          type: integer
+                                          format: int64
                                       required:
                                         - observed_ms
+                                        - required_ms
                                         - source
+                                        - unknown_ms
                                   truncated:
                                     type: boolean
                                   unknown_ms:
@@ -122304,6 +122470,10 @@ paths:
                                     observed_ms:
                                       type: integer
                                       format: int64
+                                    observer_lost:
+                                      type: string
+                                    source_requirements:
+                                      type: boolean
                                     sources:
                                       type: array
                                       items:
@@ -122312,13 +122482,21 @@ paths:
                                           observed_ms:
                                             type: integer
                                             format: int64
+                                          required_ms:
+                                            type: integer
+                                            format: int64
                                           source:
                                             type: string
                                           truncated:
                                             type: boolean
+                                          unknown_ms:
+                                            type: integer
+                                            format: int64
                                         required:
                                           - observed_ms
+                                          - required_ms
                                           - source
+                                          - unknown_ms
                                     truncated:
                                       type: boolean
                                     unknown_ms:
@@ -124242,6 +124420,10 @@ paths:
                                   observed_ms:
                                     type: integer
                                     format: int64
+                                  observer_lost:
+                                    type: string
+                                  source_requirements:
+                                    type: boolean
                                   sources:
                                     type: array
                                     items:
@@ -124250,13 +124432,21 @@ paths:
                                         observed_ms:
                                           type: integer
                                           format: int64
+                                        required_ms:
+                                          type: integer
+                                          format: int64
                                         source:
                                           type: string
                                         truncated:
                                           type: boolean
+                                        unknown_ms:
+                                          type: integer
+                                          format: int64
                                       required:
                                         - observed_ms
+                                        - required_ms
                                         - source
+                                        - unknown_ms
                                   truncated:
                                     type: boolean
                                   unknown_ms:
@@ -330096,6 +330286,10 @@ paths:
                                 observed_ms:
                                   type: integer
                                   format: int64
+                                observer_lost:
+                                  type: string
+                                source_requirements:
+                                  type: boolean
                                 sources:
                                   type: array
                                   items:
@@ -330104,13 +330298,21 @@ paths:
                                       observed_ms:
                                         type: integer
                                         format: int64
+                                      required_ms:
+                                        type: integer
+                                        format: int64
                                       source:
                                         type: string
                                       truncated:
                                         type: boolean
+                                      unknown_ms:
+                                        type: integer
+                                        format: int64
                                     required:
                                       - observed_ms
+                                      - required_ms
                                       - source
+                                      - unknown_ms
                                 truncated:
                                   type: boolean
                                 unknown_ms:
@@ -335783,6 +335985,10 @@ paths:
                               observed_ms:
                                 type: integer
                                 format: int64
+                              observer_lost:
+                                type: string
+                              source_requirements:
+                                type: boolean
                               sources:
                                 type: array
                                 items:
@@ -335791,13 +335997,21 @@ paths:
                                     observed_ms:
                                       type: integer
                                       format: int64
+                                    required_ms:
+                                      type: integer
+                                      format: int64
                                     source:
                                       type: string
                                     truncated:
                                       type: boolean
+                                    unknown_ms:
+                                      type: integer
+                                      format: int64
                                   required:
                                     - observed_ms
+                                    - required_ms
                                     - source
+                                    - unknown_ms
                               truncated:
                                 type: boolean
                               unknown_ms:
@@ -343148,6 +343362,10 @@ paths:
                                 observed_ms:
                                   type: integer
                                   format: int64
+                                observer_lost:
+                                  type: string
+                                source_requirements:
+                                  type: boolean
                                 sources:
                                   type: array
                                   items:
@@ -343156,13 +343374,21 @@ paths:
                                       observed_ms:
                                         type: integer
                                         format: int64
+                                      required_ms:
+                                        type: integer
+                                        format: int64
                                       source:
                                         type: string
                                       truncated:
                                         type: boolean
+                                      unknown_ms:
+                                        type: integer
+                                        format: int64
                                     required:
                                       - observed_ms
+                                      - required_ms
                                       - source
+                                      - unknown_ms
                                 truncated:
                                   type: boolean
                                 unknown_ms:
@@ -348835,6 +349061,10 @@ paths:
                               observed_ms:
                                 type: integer
                                 format: int64
+                              observer_lost:
+                                type: string
+                              source_requirements:
+                                type: boolean
                               sources:
                                 type: array
                                 items:
@@ -348843,13 +349073,21 @@ paths:
                                     observed_ms:
                                       type: integer
                                       format: int64
+                                    required_ms:
+                                      type: integer
+                                      format: int64
                                     source:
                                       type: string
                                     truncated:
                                       type: boolean
+                                    unknown_ms:
+                                      type: integer
+                                      format: int64
                                   required:
                                     - observed_ms
+                                    - required_ms
                                     - source
+                                    - unknown_ms
                               truncated:
                                 type: boolean
                               unknown_ms:
@@ -359625,6 +359863,10 @@ paths:
                           observed_ms:
                             type: integer
                             format: int64
+                          observer_lost:
+                            type: string
+                          source_requirements:
+                            type: boolean
                           sources:
                             type: array
                             items:
@@ -359633,13 +359875,21 @@ paths:
                                 observed_ms:
                                   type: integer
                                   format: int64
+                                required_ms:
+                                  type: integer
+                                  format: int64
                                 source:
                                   type: string
                                 truncated:
                                   type: boolean
+                                unknown_ms:
+                                  type: integer
+                                  format: int64
                               required:
                                 - observed_ms
+                                - required_ms
                                 - source
+                                - unknown_ms
                           truncated:
                             type: boolean
                           unknown_ms:
@@ -371461,6 +371711,10 @@ paths:
                               observed_ms:
                                 type: integer
                                 format: int64
+                              observer_lost:
+                                type: string
+                              source_requirements:
+                                type: boolean
                               sources:
                                 type: array
                                 items:
@@ -371469,13 +371723,21 @@ paths:
                                     observed_ms:
                                       type: integer
                                       format: int64
+                                    required_ms:
+                                      type: integer
+                                      format: int64
                                     source:
                                       type: string
                                     truncated:
                                       type: boolean
+                                    unknown_ms:
+                                      type: integer
+                                      format: int64
                                   required:
                                     - observed_ms
+                                    - required_ms
                                     - source
+                                    - unknown_ms
                               truncated:
                                 type: boolean
                               unknown_ms:
@@ -385849,6 +386111,10 @@ paths:
                                 observed_ms:
                                   type: integer
                                   format: int64
+                                observer_lost:
+                                  type: string
+                                source_requirements:
+                                  type: boolean
                                 sources:
                                   type: array
                                   items:
@@ -385857,13 +386123,21 @@ paths:
                                       observed_ms:
                                         type: integer
                                         format: int64
+                                      required_ms:
+                                        type: integer
+                                        format: int64
                                       source:
                                         type: string
                                       truncated:
                                         type: boolean
+                                      unknown_ms:
+                                        type: integer
+                                        format: int64
                                     required:
                                       - observed_ms
+                                      - required_ms
                                       - source
+                                      - unknown_ms
                                 truncated:
                                   type: boolean
                                 unknown_ms:
@@ -391536,6 +391810,10 @@ paths:
                               observed_ms:
                                 type: integer
                                 format: int64
+                              observer_lost:
+                                type: string
+                              source_requirements:
+                                type: boolean
                               sources:
                                 type: array
                                 items:
@@ -391544,13 +391822,21 @@ paths:
                                     observed_ms:
                                       type: integer
                                       format: int64
+                                    required_ms:
+                                      type: integer
+                                      format: int64
                                     source:
                                       type: string
                                     truncated:
                                       type: boolean
+                                    unknown_ms:
+                                      type: integer
+                                      format: int64
                                   required:
                                     - observed_ms
+                                    - required_ms
                                     - source
+                                    - unknown_ms
                               truncated:
                                 type: boolean
                               unknown_ms:
@@ -398845,6 +399131,10 @@ paths:
                                 observed_ms:
                                   type: integer
                                   format: int64
+                                observer_lost:
+                                  type: string
+                                source_requirements:
+                                  type: boolean
                                 sources:
                                   type: array
                                   items:
@@ -398853,13 +399143,21 @@ paths:
                                       observed_ms:
                                         type: integer
                                         format: int64
+                                      required_ms:
+                                        type: integer
+                                        format: int64
                                       source:
                                         type: string
                                       truncated:
                                         type: boolean
+                                      unknown_ms:
+                                        type: integer
+                                        format: int64
                                     required:
                                       - observed_ms
+                                      - required_ms
                                       - source
+                                      - unknown_ms
                                 truncated:
                                   type: boolean
                                 unknown_ms:
@@ -404532,6 +404830,10 @@ paths:
                               observed_ms:
                                 type: integer
                                 format: int64
+                              observer_lost:
+                                type: string
+                              source_requirements:
+                                type: boolean
                               sources:
                                 type: array
                                 items:
@@ -404540,13 +404842,21 @@ paths:
                                     observed_ms:
                                       type: integer
                                       format: int64
+                                    required_ms:
+                                      type: integer
+                                      format: int64
                                     source:
                                       type: string
                                     truncated:
                                       type: boolean
+                                    unknown_ms:
+                                      type: integer
+                                      format: int64
                                   required:
                                     - observed_ms
+                                    - required_ms
                                     - source
+                                    - unknown_ms
                               truncated:
                                 type: boolean
                               unknown_ms:
@@ -419007,6 +419317,10 @@ paths:
                                 observed_ms:
                                   type: integer
                                   format: int64
+                                observer_lost:
+                                  type: string
+                                source_requirements:
+                                  type: boolean
                                 sources:
                                   type: array
                                   items:
@@ -419015,13 +419329,21 @@ paths:
                                       observed_ms:
                                         type: integer
                                         format: int64
+                                      required_ms:
+                                        type: integer
+                                        format: int64
                                       source:
                                         type: string
                                       truncated:
                                         type: boolean
+                                      unknown_ms:
+                                        type: integer
+                                        format: int64
                                     required:
                                       - observed_ms
+                                      - required_ms
                                       - source
+                                      - unknown_ms
                                 truncated:
                                   type: boolean
                                 unknown_ms:
@@ -424682,6 +425004,10 @@ paths:
                               observed_ms:
                                 type: integer
                                 format: int64
+                              observer_lost:
+                                type: string
+                              source_requirements:
+                                type: boolean
                               sources:
                                 type: array
                                 items:
@@ -424690,13 +425016,21 @@ paths:
                                     observed_ms:
                                       type: integer
                                       format: int64
+                                    required_ms:
+                                      type: integer
+                                      format: int64
                                     source:
                                       type: string
                                     truncated:
                                       type: boolean
+                                    unknown_ms:
+                                      type: integer
+                                      format: int64
                                   required:
                                     - observed_ms
+                                    - required_ms
                                     - source
+                                    - unknown_ms
                               truncated:
                                 type: boolean
                               unknown_ms:

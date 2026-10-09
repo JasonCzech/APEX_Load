@@ -92,8 +92,19 @@ func buildTelemetryAcceptanceReportView(manifest *RunArchiveManifest, verdict *T
 		if coverage.Truncated {
 			view.Coverage += " Observed time is a lower bound: a source's spans exceeded their bound."
 		}
+		switch coverage.ObserverLost {
+		case telemetryCoverageLedgerLost:
+			view.Coverage += " Observed time is a lower bound: the run was finalized without the record of what was observed (after a restart, or by a controller that never executed it)."
+		case telemetryCoverageAdopted:
+			view.Coverage += " Observed time is a lower bound: a controller adopted the run and observed it only from then."
+		}
 		for _, source := range coverage.Sources {
-			view.Sources = append(view.Sources, telemetryAcceptanceReportSource{Source: source.Source, Observed: fmt.Sprintf("%d of %d ms", source.ObservedMs, coverage.WindowMs)})
+			observed := fmt.Sprintf("%d ms observed; required for %d ms, unknown %d ms", source.ObservedMs, source.RequiredMs, source.UnknownMs)
+			if !coverage.SourceRequirements {
+				// Coverage recorded before each source's requirement was.
+				observed = fmt.Sprintf("%d of %d ms", source.ObservedMs, coverage.WindowMs)
+			}
+			view.Sources = append(view.Sources, telemetryAcceptanceReportSource{Source: source.Source, Observed: observed})
 		}
 		view.Breach = fmt.Sprintf("Classified %d ms: healthy %d, degraded %d, breached %d; unknown %d ms.", record.ClassifiedMs, record.HealthyMs, record.DegradedMs, record.BreachedMs, record.UnknownMs)
 		if record.BreachedKnownFraction != nil {

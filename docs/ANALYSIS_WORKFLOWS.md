@@ -221,7 +221,12 @@ one policy of each kind may set `apply_by_default`. A browser policy's
 a queued run is promoted, the project's default policy of each kind is pinned
 into the run's admission record and appears as `policy_pins` in its provenance
 and archive manifest; a later edit never changes a pinned run. Pins are
-recorded with `applied: false`: no evaluation consumes them yet. A project
+recorded with `applied: false`, a field kept for compatibility that says
+nothing about enforcement (the pin is written at admission, before any
+consumer judges the run). The consumers that judge a run against its pins say
+so in their own results: telemetry acceptance verdicts (`enforced` under
+`fail_ci`), browser findings, journey accounting and RCA's browser baseline
+(`browser_baseline.policy`) each name the pinned revision they used. A project
 whose defaults cannot be read unambiguously refuses Start (and a queued run's
 promotion) instead of running without its pins. Only project defaults are
 pinned; system-wide telemetry defaults and scenario-level policy selection
@@ -622,7 +627,20 @@ plan's starting values.
 An assessment of a run with browser document evidence also carries
 `browser_baseline` (`pkg/rca/browser_baseline.go`, version
 `browser_baseline.v1`). It compares each browser document cohort with the same
-cohort of the workload-qualified baseline run, at the same steady load.
+cohort of the workload-qualified baseline run, at the same steady load. Only
+it compares browser document series with the baseline: the general detector
+judges them within the run, so the two never disagree about one cohort.
+
+The run's pinned `browser_policy` applies here: its effect floors raise the
+defaults below (never lower them), and its baseline mode decides whether a
+comparison is made. `none` turns it off (`policy_baseline_off`), `pinned_run`
+compares only when the analysis's baseline is the pinned run
+(`policy_pinned_run` when it compares with another run; without a qualified
+baseline the section says `no_qualified_baseline`), and `latest_compatible`
+uses the analysis's baseline run. The section names the policy (`policy`, id@revision). A pinned
+revision that is missing, no longer matches its pin or is invalid leaves the
+defaults (`policy_unavailable`, `partial`); a store that cannot read it fails
+the analysis, which can be retried.
 
 - **Cohorts.** A cohort is one exact measurement tuple: metric and algorithm
   version, engine, device profile, scenario group and region, frame scope,
@@ -658,6 +676,12 @@ cohort of the workload-qualified baseline run, at the same steady load.
     fully read (unreadable, dropped observations or cut by the series
     budget), so its matching cohort may be missing; the section is then
     `partial`.
+
+  When the run's own document evidence was not fully read (dropped
+  observations or series the budget left out), the section is `partial` with
+  `run_evidence_incomplete`, and a cohort left out has no result (`unavailable`
+  when none was read); when it could not be read at all, the section is
+  `unavailable` with `run_evidence_unavailable` rather than missing.
 
   Every result carries current and baseline bucket and document counts, the
   baseline run with its qualification and reasons, its own evidence
@@ -857,7 +881,9 @@ MCP tools keep returning v1.
 - **Frozen inputs.** An analysis's `input_digest` hashes the archive's
   manifest digest, the evidence revision, the baseline archive's digest, the
   digest of the mapping decisions frozen into the evidence revision, the
-  policy revision (none yet), the signature set and the engine version. The
+  policy revision (unused: the pinned `browser_policy` the browser baseline
+  applies is covered by the archive manifest digest, and its revision is
+  immutable), the signature set and the engine version. The
   engine version (`rca.EngineVersion`) carries the rules', parameters' and
   signatures' versions and a fingerprint of every value the stages use: the
   budget, detection parameters, validity rules, hypothesis, graph and
@@ -1092,9 +1118,12 @@ or its project.
 
 - **Reopening a revision.** `GET
   /api/v1/monitoring/dashboard-definitions/{id}?revision=N` returns exactly what
-  was saved as revision N, with `current_revision` beside it. Reading one
-  definition lists its `retained_revisions`, newest first (the list of
-  definitions does not). A revision that was never saved, or that
+  was saved as revision N, with `current_revision` (the definition's revision
+  now; equal to N when N is current) beside it. Reading one definition lists
+  its `retained_revisions`, newest first (the list of definitions does not),
+  never one newer than the definition returned. `apexctl analysis panel
+  --revision N` refuses an answer that is not revision N (a controller that
+  predates saved revisions answers the current one). A revision that was never saved, or that
   was pruned, is `404`. Access is resolved from the stored definition's project,
   never from the request. On the run page, **Saved revision** opens a past
   revision read-only; a definition saved before revisions were kept has only its
@@ -1120,9 +1149,9 @@ or its project.
 controller's response as it is streams it to standard output instead of
 loading it whole. Commands that read the response first still read it within
 a response limit: `journeys`, `browser-findings`, `browser-har list`,
-`browser-documents`, `telemetry-policy`, `telemetry-reevaluate` and
-`baseline --fail-on-regression` (8 MiB), and `browser-resources` (one 2 MiB
-page at a time):
+`browser-documents`, `telemetry-policy`, `telemetry-reevaluate`,
+`panel --revision` and `baseline --fail-on-regression` (8 MiB), and
+`browser-resources` (one 2 MiB page at a time):
 
 | Command | Does |
 | --- | --- |

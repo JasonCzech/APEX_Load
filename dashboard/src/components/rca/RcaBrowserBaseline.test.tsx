@@ -56,6 +56,8 @@ describe('RcaBrowserBaselineSection', () => {
     expect(row).toContain('lcp chromium desktop checkout')
     expect(row).toContain('vusers=10 from 2026-10-08 12:00:00 UTC')
     expect(container.textContent).toContain('(partial: Pacing changed)')
+    act(() => root.render(<RcaBrowserBaselineSection baseline={{ ...labelled, policy: 'web@2' }} />))
+    expect(container.textContent).toContain("floors and baseline mode from the run's browser policy web@2")
     act(() => root.unmount())
   })
 

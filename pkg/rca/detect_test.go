@@ -200,6 +200,23 @@ func TestDetectAgainstTheBaselineRun(t *testing.T) {
 	}
 }
 
+// A browser document series is compared with the baseline by
+// browser_baseline.v1 alone: this detector never reports a baseline anomaly
+// for it, so the two cannot disagree about one cohort.
+func TestDetectLeavesBrowserDocumentBaselinesToBrowserBaseline(t *testing.T) {
+	rng := rand.New(rand.NewSource(17))
+	current := detectSeries("browser_document/lcp/p75", noisy(rng, 30, 2600, 10))
+	baseline := detectSeries("browser_document/lcp/p75", noisy(rng, 30, 2000, 10))
+	current.Kind, baseline.Kind = SeriesBrowserDocument, SeriesBrowserDocument
+	input := DetectionInput{Levels: oneLevel(30), Series: []Series{current}, Baseline: &DetectionBaseline{TestID: "base", Qualification: BaselineQualified, Levels: []LoadLevel{{Start: detectStart, End: detectStart.Add(30 * detectBucket), VUsers: 49}}, Series: []Series{baseline}}}
+	anomalies, _, _ := detect(t, input)
+	for _, anomaly := range anomalies {
+		if anomaly.Baseline.TestID != "" {
+			t.Fatalf("a browser document series was compared with the baseline: %+v", anomaly)
+		}
+	}
+}
+
 func TestDetectExcludesCumulativeSeriesAndKeepsBudgets(t *testing.T) {
 	rng := rand.New(rand.NewSource(19))
 	counter := detectSeries("monitor/elastic/hits_total", noisy(rng, 40, 100, 1))

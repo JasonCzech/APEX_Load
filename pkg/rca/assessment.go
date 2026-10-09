@@ -239,7 +239,7 @@ func Analyze(input AnalysisInput, budgeter *Budgeter) Assessment {
 		out.Limitations = append(out.Limitations, limitations...)
 		// Browser document cohorts against the baseline run's: advisory,
 		// apart from onsets and hypotheses.
-		out.BrowserBaseline = DetectBrowserBaseline(input.Detection, DefaultBrowserBaselineParams)
+		out.BrowserBaseline = DetectBrowserBaseline(input.Detection, BrowserBaselineParamsFor(input.Detection.BrowserPolicy))
 	}
 	if budgeter.Exhausted() {
 		out.Graph = Graph{Schema: GraphSchemaVersion, Nodes: []GraphNode{}, Edges: []GraphEdge{}, Cycles: [][]string{}}

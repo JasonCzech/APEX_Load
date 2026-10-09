@@ -3,6 +3,11 @@ package api
 import (
 	"cmp"
 	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -18,6 +23,63 @@ import (
 // rcaBrowserDocumentMetrics are the document metrics RCA judges, those the
 // metric catalog defines.
 var rcaBrowserDocumentMetrics = []string{"fcp", "lcp", "cls", "inp"}
+
+// rcaBrowserBaselinePolicy reads what the run's pinned browser_policy sets
+// for its browser baselines. A run that pinned none has nil (the defaults). A
+// pinned revision that is missing, no longer matches its pin or is invalid
+// is reported and the defaults apply; a store that fails to read it fails
+// the analysis, which can be retried.
+func (s *Server) rcaBrowserBaselinePolicy(projectID string, manifest *RunArchiveManifest) (*rca.BrowserBaselinePolicy, error) {
+	var pin *RunPolicyPin
+	for index := range manifest.Provenance.PolicyPins {
+		if manifest.Provenance.PolicyPins[index].Kind == storage.AnalysisDefinitionKindBrowserPolicy {
+			pin = &manifest.Provenance.PolicyPins[index]
+		}
+	}
+	if pin == nil {
+		return nil, nil
+	}
+	out := &rca.BrowserBaselinePolicy{Ref: fmt.Sprintf("%s@%d", pin.ID, pin.Revision)}
+	store, ok := s.store.(storage.AnalysisDefinitionStore)
+	if !ok {
+		return nil, errors.New("analysis policies are unavailable")
+	}
+	definition, err := store.GetAnalysisDefinition(normalizeProjectID(projectID), pin.ID, pin.Revision)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("the run's pinned browser policy could not be read: %w", err)
+	}
+	if err != nil || definition == nil || definition.Kind != storage.AnalysisDefinitionKindBrowserPolicy {
+		out.Unavailable = "its revision was not found"
+		return out, nil
+	}
+	if digest := sha256.Sum256(definition.Definition); hex.EncodeToString(digest[:]) != pin.SHA256 {
+		out.Unavailable = "its revision no longer matches the pin"
+		return out, nil
+	}
+	var policy BrowserPolicyDefinition
+	if json.Unmarshal(definition.Definition, &policy) != nil || policy.validate() != nil {
+		out.Unavailable = "its revision is invalid"
+		return out, nil
+	}
+	out.TimingMs, out.TimingRelative, out.CLS = policy.EffectFloors.TimingMs, policy.EffectFloors.TimingRelative, policy.EffectFloors.CLS
+	out.Mode, out.RunID = policy.Baseline.Mode, policy.Baseline.RunID
+	return out, nil
+}
+
+// rcaDocumentEvidenceLoss reads what rcaBrowserDocumentSeries's limitations
+// say about the run's document evidence: each says some is missing
+// (dropped observations or series the budget left out), and an unreadable
+// sidecar that none could be read.
+func rcaDocumentEvidenceLoss(limitations []rca.Limitation) (incomplete, unreadable bool) {
+	for _, limitation := range limitations {
+		if limitation.Code == limitationDetectionEvidenceUnreadable {
+			unreadable = true
+		} else {
+			incomplete = true
+		}
+	}
+	return incomplete, unreadable
+}
 
 // rcaBrowserDocumentSeries reads the run's browser document metrics as
 // detection series on the run's interval grid: per measurement tuple, the

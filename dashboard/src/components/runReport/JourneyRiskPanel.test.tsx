@@ -161,8 +161,13 @@ describe('JourneyRiskPanel', () => {
     act(() => root.render(<JourneyRiskPanel testId="run-1" />))
     await flush()
     expect(container.querySelector('[role="alert"]')).toBeNull()
-    expect(container.textContent).toContain("This run's saved archive could not be found")
+    expect(container.textContent).toContain("This run's saved archive is not available yet (it may still be publishing)")
     expect(container.textContent).not.toContain('archive not found')
+    // Once the archive is published, checking again accounts the journeys.
+    mocks.api.getTestArchiveJourneys.mockResolvedValueOnce(report)
+    act(() => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Check again')?.click() })
+    await flush()
+    expect(container.textContent).toContain('Checkout journeys revision 2')
 
     mocks.api.getTestArchiveJourneys.mockRejectedValueOnce(new ApiError('the run archive is not finalized', 409)).mockResolvedValueOnce(report)
     act(() => root.render(<JourneyRiskPanel testId="run-2" />))

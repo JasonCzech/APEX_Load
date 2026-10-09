@@ -288,6 +288,29 @@ type telemetrySourceLedger struct {
 	coverage     map[string]*coverageSpans
 	requirements map[string]*telemetrySourceRequirement
 	cursors      map[string]*coverageCursor
+	// adopted says this controller adopted the run, so it observed the run
+	// only from the adoption: time before it counts as unknown here.
+	adopted bool
+}
+
+// markAdopted records that this controller adopted the run.
+func (l *telemetrySourceLedger) markAdopted() {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	l.adopted = true
+	l.mu.Unlock()
+}
+
+// wasAdopted reports whether this controller adopted the run.
+func (l *telemetrySourceLedger) wasAdopted() bool {
+	if l == nil {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.adopted
 }
 
 func newTelemetrySourceLedger() *telemetrySourceLedger {

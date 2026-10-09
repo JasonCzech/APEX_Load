@@ -153,10 +153,15 @@ type coverageCursor struct {
 }
 
 // TelemetrySourceCoverage is the time one source was observed in the run's
-// window.
+// window. RequiredMs is the part of the window it had to be observed for
+// (from its assignment until its retirement: an evacuated, replaced or
+// completed generator is required for less than the window) and UnknownMs
+// the part of that it was not observed for.
 type TelemetrySourceCoverage struct {
 	Source     string `json:"source"`
 	ObservedMs int64  `json:"observed_ms"`
+	RequiredMs int64  `json:"required_ms"`
+	UnknownMs  int64  `json:"unknown_ms"`
 	Truncated  bool   `json:"truncated,omitempty"`
 }
 
@@ -174,7 +179,23 @@ type TelemetryCoverage struct {
 	// Truncated means a source's observed spans exceeded their bound, so
 	// observed time is a lower bound.
 	Truncated bool `json:"truncated,omitempty"`
+	// ObserverLost says the controller reporting coverage did not observe
+	// the whole run, so time another controller observed counts as unknown
+	// and observed time is a lower bound: ledger_lost (a distributed run
+	// finalized without its source ledger: after a restart, or by a
+	// controller that never executed it) or adopted (a controller adopted
+	// the run and observed it only from then).
+	ObserverLost string `json:"observer_lost,omitempty"`
+	// SourceRequirements says each source's RequiredMs and UnknownMs were
+	// recorded; coverage written before them has only observed time.
+	SourceRequirements bool `json:"source_requirements,omitempty"`
 }
+
+// Why a distributed run's observed time can be a lower bound.
+const (
+	telemetryCoverageLedgerLost = "ledger_lost"
+	telemetryCoverageAdopted    = "adopted"
+)
 
 // TelemetryPolicySegment is a span of the run classified under one telemetry
 // budget policy. An intentional policy change during a run would open a new
@@ -326,7 +347,7 @@ type telemetryCoverageInterval struct {
 // window; a distributed run without a known source for none of it.
 func telemetryCoverageOver(observed map[string]*coverageSpans, required map[string]telemetryCoverageInterval, inProcess bool, from, to time.Time) (TelemetryCoverage, *coverageSpans) {
 	start, end := from.UnixMilli(), to.UnixMilli()
-	coverage := TelemetryCoverage{WindowStart: from.UTC(), WindowEnd: to.UTC(), Sources: []TelemetrySourceCoverage{}}
+	coverage := TelemetryCoverage{WindowStart: from.UTC(), WindowEnd: to.UTC(), Sources: []TelemetrySourceCoverage{}, SourceRequirements: true}
 	if end <= start {
 		return coverage, &coverageSpans{}
 	}
@@ -348,9 +369,9 @@ func telemetryCoverageOver(observed map[string]*coverageSpans, required map[stri
 			if spans != nil && spans.truncated {
 				entry.Truncated, coverage.Truncated = true, true
 			}
-			coverage.Sources = append(coverage.Sources, entry)
 			span := [2]int64{max(interval.startMs, start), min(interval.endMs, end)}
 			if span[1] <= span[0] {
+				coverage.Sources = append(coverage.Sources, entry)
 				continue
 			}
 			requiredSpans = append(requiredSpans, span)
@@ -358,7 +379,13 @@ func telemetryCoverageOver(observed map[string]*coverageSpans, required map[stri
 			if spans != nil {
 				seen = spans.spans
 			}
-			missing = append(missing, subtractSpans([][2]int64{span}, seen)...)
+			unseen := subtractSpans([][2]int64{span}, seen)
+			entry.RequiredMs = span[1] - span[0]
+			for _, gap := range unseen {
+				entry.UnknownMs += gap[1] - gap[0]
+			}
+			coverage.Sources = append(coverage.Sources, entry)
+			missing = append(missing, unseen...)
 		}
 		// Time no source was required for is unknown too.
 		unknown := unionSpans(append(subtractSpans(window, unionSpans(requiredSpans)), missing...))
@@ -515,7 +542,11 @@ func telemetryLiveCoverageLocked(test *ManagedTest, now time.Time) *TelemetryCov
 		return nil
 	}
 	observed, requirements := test.telemetrySources.coverageSnapshot()
-	coverage, _ := telemetryCoverageOver(observed, requiredTelemetrySources(observed, requirements, assignedTelemetrySourcesLocked(test), from, to), false, from, to)
+	assigned := assignedTelemetrySourcesLocked(test)
+	coverage, _ := telemetryCoverageOver(observed, requiredTelemetrySources(observed, requirements, assigned, from, to), false, from, to)
+	// An adopting controller observed the run only from the adoption, as
+	// the coverage recorded at finalize will say.
+	coverage.ObserverLost = telemetryCoverageObserverLost(test.telemetrySources, assigned, len(test.continuityFailovers) > 0 || test.telemetrySources.wasAdopted())
 	return &coverage
 }
 
@@ -534,8 +565,10 @@ type coverageIntervalRow struct {
 // executed in this process counts its whole window as observed. A
 // distributed run — known from its ledger, its clients or its durable shard
 // placement, which survive finalize, restarts and adoption — counts only the
-// time every required source was observed by this controller; with no ledger
-// here (a restart or adoption before finalize) its whole window is unknown.
+// time every required source was observed by this controller. Finalized
+// without the run's ledger (after a restart, or by a controller that never
+// executed the run) its whole window is unknown; after an adoption, the time
+// before it. Either way observer_lost says observed time is a lower bound.
 func (tr *TestRunner) persistTelemetryCoverage(ctx context.Context, test *ManagedTest, record *storage.RunArchiveRecord, manifest *RunArchiveManifest) error {
 	if test == nil || manifest == nil || manifest.TelemetryCoverage != nil {
 		return nil
@@ -545,6 +578,7 @@ func (tr *TestRunner) persistTelemetryCoverage(ctx context.Context, test *Manage
 	ledger := test.telemetrySources
 	assigned := assignedTelemetrySourcesLocked(test)
 	segments := telemetryPolicySegments(test, from, to)
+	adopted := len(test.continuityFailovers) > 0 || ledger.wasAdopted()
 	tr.mu.RUnlock()
 	if !ok {
 		return nil
@@ -563,7 +597,21 @@ func (tr *TestRunner) persistTelemetryCoverage(ctx context.Context, test *Manage
 		return err
 	}
 	manifest.TelemetryCoverage = telemetryRunCoverageRecord(ledger, assigned, from, to, rows, segments)
+	manifest.TelemetryCoverage.Coverage.ObserverLost = telemetryCoverageObserverLost(ledger, assigned, adopted)
 	return nil
+}
+
+// telemetryCoverageObserverLost says why a distributed run's observed time
+// is only a lower bound: no ledger here at finalize (another controller
+// observed the run, then the record was lost), or a controller adoption.
+func telemetryCoverageObserverLost(ledger *telemetrySourceLedger, assigned []string, adopted bool) string {
+	switch {
+	case ledger == nil && len(assigned) > 0:
+		return telemetryCoverageLedgerLost
+	case adopted:
+		return telemetryCoverageAdopted
+	}
+	return ""
 }
 
 // telemetryRunCoverageRecord is a finished run's coverage account. A run

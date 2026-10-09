@@ -2,6 +2,7 @@ package rca
 
 import (
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -89,6 +90,64 @@ func TestBrowserBaselineNeedsAPracticalEffect(t *testing.T) {
 	current = documentSeries("cls", "cls", "score", "c", chromium141, browserNoisy(10, 0.09, 0), 1)
 	if got := DetectBrowserBaseline(browserBaselineInput([]Series{current}, []Series{baseline}, BaselineQualified), DefaultBrowserBaselineParams).Results[0]; got.State != BrowserBaselineAnomaly {
 		t.Fatalf("CLS above its floor = %+v", got)
+	}
+}
+
+// A run's pinned browser policy raises the effect floors and sets the
+// baseline mode: none turns the comparison off, pinned_run compares only with
+// its run, and a policy that could not be used leaves the defaults, said so.
+func TestBrowserBaselineFollowsThePinnedBrowserPolicy(t *testing.T) {
+	floor := func(v float64) *float64 { return &v }
+	if params := BrowserBaselineParamsFor(&BrowserBaselinePolicy{TimingMs: floor(250), TimingRelative: floor(0.05), CLS: floor(0.1)}); params.TimingFloorMs != 250 || params.TimingFloorFraction != 0.10 || params.CLSFloor != 0.1 {
+		t.Fatalf("policy floors only raise the defaults: %+v", params)
+	}
+	if params := BrowserBaselineParamsFor(&BrowserBaselinePolicy{TimingMs: floor(250), Unavailable: "missing"}); !reflect.DeepEqual(params, DefaultBrowserBaselineParams) {
+		t.Fatalf("an unusable policy applied its floors: %+v", params)
+	}
+	// A 150 ms regression clears the default 100 ms floor but not a 250 ms one.
+	baseline := documentSeries("lcp", "lcp", "ms", "f", chromium141, browserNoisy(40, 1000, 1), 1)
+	current := documentSeries("lcp", "lcp", "ms", "f", chromium141, browserNoisy(10, 1150, 0), 1)
+	input := browserBaselineInput([]Series{current}, []Series{baseline}, BaselineQualified)
+	if got := DetectBrowserBaseline(input, DefaultBrowserBaselineParams).Results[0]; got.State != BrowserBaselineAnomaly {
+		t.Fatalf("default floors = %+v", got)
+	}
+	input.BrowserPolicy = &BrowserBaselinePolicy{Ref: "web@2", TimingMs: floor(250), Mode: "latest_compatible"}
+	result := DetectBrowserBaseline(input, BrowserBaselineParamsFor(input.BrowserPolicy))
+	if result.Policy != "web@2" || result.Results[0].State != BrowserBaselineWithinRange || !browserNear(result.Results[0].EffectFloor, 250) {
+		t.Fatalf("policy floor = %+v", result)
+	}
+	for _, tc := range []struct {
+		policy BrowserBaselinePolicy
+		status string
+		code   string
+	}{
+		{BrowserBaselinePolicy{Ref: "web@2", Mode: "none"}, DetectionUnavailable, BrowserBaselinePolicyOff},
+		{BrowserBaselinePolicy{Ref: "web@2", Mode: "pinned_run", RunID: "golden"}, DetectionUnavailable, BrowserBaselinePolicyPinnedRun},
+		{BrowserBaselinePolicy{Ref: "web@2", Unavailable: "its revision was not found"}, DetectionPartial, BrowserBaselinePolicyUnavailable},
+	} {
+		input.BrowserPolicy = &tc.policy
+		result := DetectBrowserBaseline(input, BrowserBaselineParamsFor(input.BrowserPolicy))
+		if result.Status != tc.status || len(result.Limitations) == 0 || result.Limitations[0].Code != tc.code {
+			t.Fatalf("%+v: %+v", tc.policy, result)
+		}
+		// A policy that could not be used is named in its limitation, never
+		// as the policy whose floors applied.
+		if (tc.policy.Unavailable != "") != (result.Policy == "") {
+			t.Fatalf("%+v names policy %q", tc.policy, result.Policy)
+		}
+	}
+	// pinned_run without a usable baseline is unavailable for that reason,
+	// not because the analysis named another run.
+	unqualified := input
+	unqualified.Baseline = nil
+	unqualified.BrowserPolicy = &BrowserBaselinePolicy{Ref: "web@2", Mode: "pinned_run", RunID: "golden"}
+	if result := DetectBrowserBaseline(unqualified, BrowserBaselineParamsFor(unqualified.BrowserPolicy)); result.Status != DetectionUnavailable || result.Limitations[0].Code != BrowserBaselineNoBaselineRun {
+		t.Fatalf("pinned run without a usable baseline = %+v", result)
+	}
+	// pinned_run compares when the analysis's baseline is that run.
+	input.BrowserPolicy = &BrowserBaselinePolicy{Ref: "web@2", Mode: "pinned_run", RunID: "baseline"}
+	if result := DetectBrowserBaseline(input, BrowserBaselineParamsFor(input.BrowserPolicy)); result.Status != DetectionComplete || len(result.Results) != 1 {
+		t.Fatalf("pinned run is the baseline: %+v", result)
 	}
 }
 
@@ -222,6 +281,32 @@ func TestBrowserBaselineUnreadBaselineEvidenceIsNotAbsence(t *testing.T) {
 	result := DetectBrowserBaseline(input, DefaultBrowserBaselineParams)
 	if result.Status != DetectionPartial || result.Results[0].Reason != BrowserBaselineEvidenceUnavailable || result.Limitations[0].Code != BrowserBaselineEvidenceUnavailable {
 		t.Fatalf("unread baseline evidence = %+v", result)
+	}
+}
+
+// The run's own document evidence that was not fully read makes the section
+// partial; evidence it could not read at all makes it unavailable, never
+// missing as if the run had no document evidence.
+func TestBrowserBaselineRunEvidenceLossIsDisclosed(t *testing.T) {
+	current := documentSeries("lcp", "lcp", "ms", "f", chromium141, browserNoisy(10, 1400, 20), 1)
+	input := browserBaselineInput([]Series{current}, nil, BaselineQualified)
+	input.DocumentsIncomplete = true
+	if result := DetectBrowserBaseline(input, DefaultBrowserBaselineParams); result.Status != DetectionPartial || result.Limitations[0].Code != BrowserBaselineRunEvidenceIncomplete {
+		t.Fatalf("incomplete run evidence = %+v", result)
+	}
+	unreadable := browserBaselineInput(nil, nil, BaselineQualified)
+	unreadable.DocumentsUnreadable = true
+	if result := DetectBrowserBaseline(unreadable, DefaultBrowserBaselineParams); result == nil || result.Status != DetectionUnavailable || len(result.Results) != 0 || result.Limitations[0].Code != BrowserBaselineRunEvidenceUnavailable {
+		t.Fatalf("unreadable run evidence = %+v", result)
+	}
+	// Every series left out by the budget is not a run without documents.
+	cut := browserBaselineInput(nil, nil, BaselineQualified)
+	cut.DocumentsIncomplete = true
+	if result := DetectBrowserBaseline(cut, DefaultBrowserBaselineParams); result == nil || result.Status != DetectionUnavailable || result.Limitations[0].Code != BrowserBaselineRunEvidenceIncomplete {
+		t.Fatalf("every series cut = %+v", result)
+	}
+	if result := DetectBrowserBaseline(browserBaselineInput(nil, nil, BaselineQualified), DefaultBrowserBaselineParams); result != nil {
+		t.Fatalf("a run without document evidence = %+v", result)
 	}
 }
 

@@ -137,18 +137,21 @@ was lost. The response states its thresholds and coverage: interactions,
 records, dropped (by capture bounds, or lost before the archive) and
 incomplete evidence (the archive's own account, which includes sources that
 never arrived), counts by provenance, gestures mapped,
-and gestures left out by reason. An archive not yet finalized answers `409`,
-and unreadable evidence `500`. Nothing is replayed or injected.
+and gestures left out by reason. A run without an archive answers `404` (on
+an HA controller, also until the finalized archive is published, so the run
+report offers to check again), an archive not yet finalized `409`, and
+unreadable evidence or an archive that cannot be read `500`. Nothing is
+replayed or injected.
 
 Patterns are found per document, in capture order:
 
 | Pattern | Rule |
 | --- | --- |
-| `scripted_repetition` | At least 3 clicks or taps (a double click is one gesture; hovers, drags, swipes and long presses do not count) within 2 s, on one route and layout, when any of them is scripted or of unknown provenance. Gestures with dispatched points repeat within 32 CSS px of the first; gestures without points (touch gestures are dispatched synthetically) repeat when they share an action name. |
+| `scripted_repetition` | At least 3 clicks, taps or checks (a double click is one gesture; hovers, drags, swipes and long presses do not count) within 2 s, on one route and layout, when any of them is scripted or of unknown provenance. Gestures with dispatched points repeat within 32 CSS px of the first; gestures without points (touch gestures are dispatched synthetically) repeat when they share an action name and gesture kind, and their target's role and label when one is recorded. The 2 s window is measured on capture time, taken after each gesture's wait and page reads (E3 records no dispatch time), so gestures dispatched closer together than their waits may not count. |
 | `repeated_gesture` | The same, when every gesture was recorded with consent. It is the only pattern that can suggest human frustration. |
 | `retry` | A failed gesture followed at once by further attempts of the same step (its action name and gesture kind: each engine retry is a new execution with its own action ID), up to the first that succeeded. Retries never count as repetition. Distinct steps that share an action name and kind are one step here. |
 | `dead_interaction` | A gesture whose authored outcome (its post-action `sync`) asserts that the page responded (`element_visible`, `load` or `domcontentloaded`) observed as `missed` within its deadline. A missed `dom_stable`, `network_idle` or pause says nothing about whether the page responded, and an unchanged page alone is never one. Authored assertion, dialog and download outcomes are not used. |
-| `unexpected_navigation` | A gesture that declared an in-page outcome (`element_visible`, `dom_stable` or a pause) but navigated away. A gesture that navigated away is never a dead interaction. |
+| `unexpected_navigation` | A gesture that navigated away while its declared `element_visible` outcome was `missed`: the element the step waited for never appeared. Navigating is otherwise normal (a recorded step waits for the next page's element, met), and a `dom_stable` or pause outcome says nothing about which page the gesture should leave. A gesture that navigated away is never a dead interaction. |
 
 Each pattern lists its route, layout, action, count, window and up to 16
 interaction IDs.

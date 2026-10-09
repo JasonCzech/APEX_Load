@@ -46,7 +46,7 @@ describe('BrowserInteractionsPanel', () => {
     expect(rows[0]).toContain('Tap buy')
     expect(rows[1]).toContain('Dead interaction')
     expect(container.textContent).toContain('2 gestures were dropped by capture bounds or lost before the archive')
-    expect(container.textContent).toContain('A repeat is at least 3 click or tap gestures within 2000 ms and 32 CSS px')
+    expect(container.textContent).toContain('A repeat is at least 3 click, tap or check gestures within 2000 ms and 32 CSS px (or with one action name, gesture kind and target when no point was dispatched)')
     const cells = [...container.querySelectorAll('rect[data-cell]')]
     expect(cells.map(cell => cell.getAttribute('data-cell'))).toEqual(['0,0', '63,63'])
     expect(Number(cells[1].getAttribute('fill-opacity'))).toBeGreaterThan(Number(cells[0].getAttribute('fill-opacity')))
@@ -88,14 +88,14 @@ describe('BrowserInteractionsPanel', () => {
 
   it('describes an unfinalized archive plainly and retries other failures', async () => {
     const rejectWith = (message: string, status: number) => Object.assign(new Error(message), { status })
-    mocks.request.mockRejectedValueOnce(rejectWith('the run has no finalized archive', 409)).mockResolvedValueOnce(analysis)
+    mocks.request.mockRejectedValueOnce(rejectWith('the run archive is not finalized', 409)).mockResolvedValueOnce(analysis)
     const container = document.createElement('div')
     const root = createRoot(container)
     await act(async () => root.render(<BrowserInteractionsPanel testId="run-1" />))
     await act(async () => { await Promise.resolve() })
     expect(container.querySelector('[role="alert"]')).toBeNull()
-    expect(container.textContent).toContain("Interaction patterns need the run's finalized archive, which is not available.")
-    expect(container.textContent).not.toContain('no finalized archive')
+    expect(container.textContent).toContain("Interaction patterns appear once the run's archive is finalized.")
+    expect(container.textContent).not.toContain('the run archive is not finalized')
     await act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === 'Check again')?.click() })
     await act(async () => { await Promise.resolve() })
     expect(container.textContent).toContain('Scripted repetition')
@@ -109,6 +109,18 @@ describe('BrowserInteractionsPanel', () => {
     await act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === 'Retry interaction patterns')?.click() })
     await act(async () => { await Promise.resolve() })
     expect(container.querySelector('[role="alert"]')).toBeNull()
+    expect(container.textContent).toContain('Scripted repetition')
+
+    mocks.request.mockRejectedValueOnce(rejectWith('archive not found', 404))
+    await act(async () => root.render(<BrowserInteractionsPanel testId="run-3" />))
+    await act(async () => { await Promise.resolve() })
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+    // An HA controller answers 404 until the finalized archive is published,
+    // so the panel offers to check again.
+    expect(container.querySelector('[role="note"]')?.textContent).toBe("This run's saved archive is not available yet (it may still be publishing), so no interaction patterns can be shown. Check again")
+    mocks.request.mockResolvedValueOnce(analysis)
+    await act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === 'Check again')?.click() })
+    await act(async () => { await Promise.resolve() })
     expect(container.textContent).toContain('Scripted repetition')
     await act(async () => root.unmount())
   })

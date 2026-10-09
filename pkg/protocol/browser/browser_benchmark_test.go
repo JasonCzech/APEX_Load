@@ -276,7 +276,23 @@ func benchmarkMedian(values []float64) float64 {
 	}
 	sorted := append([]float64(nil), values...)
 	sort.Float64s(sorted)
-	return sorted[len(sorted)/2]
+	middle := len(sorted) / 2
+	if len(sorted)%2 == 0 {
+		// An even count's median is the mean of its two middle values.
+		return (sorted[middle-1] + sorted[middle]) / 2
+	}
+	return sorted[middle]
+}
+
+func TestBenchmarkMedian(t *testing.T) {
+	for _, tc := range []struct {
+		values []float64
+		want   float64
+	}{{nil, 0}, {[]float64{3}, 3}, {[]float64{4, 1, 3}, 3}, {[]float64{4, 1, 3, 2}, 2.5}} {
+		if got := benchmarkMedian(tc.values); got != tc.want {
+			t.Fatalf("benchmarkMedian(%v) = %v, want %v", tc.values, got, tc.want)
+		}
+	}
 }
 
 // browserDescendants are the test process's descendant processes (the

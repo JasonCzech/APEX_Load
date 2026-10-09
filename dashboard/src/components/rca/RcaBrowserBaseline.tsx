@@ -40,7 +40,7 @@ export default function RcaBrowserBaselineSection({ baseline }: { baseline?: Rca
       <p className="run-report-muted">
         {baseline.version} compares each browser document cohort (metric, engine, profile and the actual runtime cohort) with the same cohort of
         {baseline.baseline?.test_id ? ` baseline run ${baseline.baseline.test_id}` : ' a baseline run'}{baseline.baseline?.qualification ? ` (${baseline.baseline.qualification}${baseline.baseline.reasons?.length ? `: ${baseline.baseline.reasons.map(rcaStatusLabel).join(', ')}` : ''})` : ''} at the same load: at least {baseline.params.min_baseline_buckets} baseline buckets,
-        |z| ≥ {baseline.params.sigma} and an effect of at least max({baseline.params.timing_floor_ms} ms, {Math.round(baseline.params.timing_floor_fraction * 100)}% of the baseline) for timings or {baseline.params.cls_floor} for layout shift. Advisory only.
+        |z| ≥ {baseline.params.sigma} and an effect of at least max({baseline.params.timing_floor_ms} ms, {Math.round(baseline.params.timing_floor_fraction * 100)}% of the baseline) for timings or {baseline.params.cls_floor} for layout shift{baseline.policy ? ` (floors and baseline mode from the run's browser policy ${baseline.policy})` : ''}. Advisory only.
       </p>
       {(baseline.limitations || []).map((limitation, i) => <p key={i} className="run-report-muted" role="note">{rcaStatusLabel(limitation.code)}{limitation.detail ? `: ${limitation.detail}` : ''}</p>)}
       {results.length > 0 && <table className="rca-table" aria-label="Browser baseline results">

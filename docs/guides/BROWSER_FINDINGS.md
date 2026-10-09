@@ -21,9 +21,12 @@ contains:
   score.
 - **Applicability:** optional engine (`chromium`, `webkit`) and device
   profile lists. A cohort outside them is suppressed, never scored.
-- **Effect floors and baseline mode:** these are used by baseline anomalies
-  (a separate rule set). A threshold finding records the baseline mode with
-  status `not_evaluated`.
+- **Effect floors and baseline mode:** these are used by RCA's browser
+  baseline anomalies (`browser_baseline.v1`, a separate rule set). The floors
+  can only raise its minimums. Mode `none` turns the comparison off,
+  `pinned_run` compares only when the analysis's baseline is that run, and
+  `latest_compatible` uses the analysis's baseline run. A threshold finding
+  records the baseline mode with status `not_evaluated`.
 
 A policy marked `apply_by_default` is pinned to every run started in the
 project, by revision and digest.

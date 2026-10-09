@@ -443,6 +443,14 @@ func TestPhaseAInstallsAdoptedAndCompletedRuns(t *testing.T) {
 			if adoptedAt.IsZero() || !since.Equal(adoptedAt) {
 				t.Fatalf("the kept stage recorder samples from %v, want the adoption at %v", since, adoptedAt)
 			}
+			// Coverage observed here starts at the adoption, which the ledger
+			// records so finalize says observed time is a lower bound.
+			runner.mu.RLock()
+			ledger := test.telemetrySources
+			runner.mu.RUnlock()
+			if !ledger.wasAdopted() {
+				t.Fatal("the adopting controller's source ledger is not marked adopted")
+			}
 			if status != "RUNNING" || resume == nil || len(resume.adopted) != tc.adopted || len(resume.completed) != tc.finished {
 				t.Fatalf("after Phase A: status=%s resume=%+v", status, resume)
 			}
@@ -582,6 +590,14 @@ func TestStoppingRunKeepsItsOutcomeAfterFailover(t *testing.T) {
 			}
 			if test.remoteArchiveClientsByTarget["retired:9091"] == nil {
 				t.Fatal("stopping adoption discarded retired participant evidence")
+			}
+			// A controller that only finishes the run observed none of it
+			// before the adoption, which its ledger records.
+			runner.mu.RLock()
+			ledger := test.telemetrySources
+			runner.mu.RUnlock()
+			if !ledger.wasAdopted() {
+				t.Fatal("the source ledger of a run finished after adoption is not marked adopted")
 			}
 			runner.resumeAdoptedRuns()
 			record, err := store.GetTest(test.ID)

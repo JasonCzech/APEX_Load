@@ -29,9 +29,12 @@ const analysisPolicyVersion = 1
 
 // RunPolicyPin is one policy revision a run was admitted under. SHA256 hashes
 // the stored definition bytes, so a report can prove which rules it applied.
-// Applied says whether anything enforced the pinned revision for this run.
-// Policies are pinned before their consumers exist, so it is false for now;
-// later reports and verdicts must not treat an unapplied pin as enforced.
+// The pin is part of the run's immutable admission receipt, written before
+// any consumer judges the run, so Applied stays false and says nothing about
+// enforcement: it is kept for compatibility. The consumers that judge a run
+// against its pins say so in their own results (a telemetry verdict's
+// enforced flag under fail_ci; browser findings, journey accounting and RCA's
+// browser baseline name the pinned revision they used).
 type RunPolicyPin struct {
 	Kind     string `json:"kind"`
 	ID       string `json:"id"`

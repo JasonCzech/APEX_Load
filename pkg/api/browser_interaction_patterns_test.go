@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 const e4Generation = "fedcba9876543210fedcba9876543210"
@@ -96,10 +97,16 @@ func TestRetriesDeadInteractionsAndUnexpectedNavigation(t *testing.T) {
 	quiet := e4Tap(6, 3*time.Second, 10, 10)
 	navigated := e4Tap(7, 4*time.Second, 10, 10)
 	navigated.Points, navigated.UnavailableReason = nil, protocol.InteractionUnavailableDocumentChanged
-	navigated.Outcome = protocol.BrowserInteractionOutcome{Declared: "dom_stable", DeadlineMS: 5000, Observed: protocol.InteractionOutcomeMet}
+	navigated.Outcome = protocol.BrowserInteractionOutcome{Declared: "element_visible", DeadlineMS: 5000, Observed: protocol.InteractionOutcomeMissed}
 	loaded := navigated
 	loaded.InteractionID, loaded.Outcome.Declared = e4Generation+"-interaction-8", "load"
-	analysis = analyzeE4(missed, notReached, quiet, navigated, loaded)
+	// A recorded step that navigates and waits for the next page's element
+	// (met), or for a stable DOM, is an ordinary navigation.
+	recorded := navigated
+	recorded.InteractionID, recorded.Outcome.Observed = e4Generation+"-interaction-9", protocol.InteractionOutcomeMet
+	settled := navigated
+	settled.InteractionID, settled.Outcome = e4Generation+"-interaction-10", protocol.BrowserInteractionOutcome{Declared: "dom_stable", DeadlineMS: 5000, Observed: protocol.InteractionOutcomeMissed}
+	analysis = analyzeE4(missed, notReached, quiet, navigated, loaded, recorded, settled)
 	dead := e4Patterns(analysis, interactionPatternDeadInteraction)
 	if len(dead) != 1 || dead[0].Declared != "element_visible" || dead[0].DeadlineMs != 5000 || dead[0].Interactions[0] != missed.InteractionID {
 		t.Fatalf("dead = %+v", analysis.Patterns)
@@ -186,7 +193,18 @@ func TestRunArchiveBrowserInteractionsEndpoint(t *testing.T) {
 		_ = json.Unmarshal(recorder.Body.Bytes(), &analysis)
 		return recorder.Code, analysis
 	}
-	// An archive not yet finalized has no analysis.
+	// A run without an archive is not found, as on the sibling archive
+	// routes; one whose archive is not yet finalized has no analysis yet.
+	if err := store.SaveTest(&storage.TestRecord{ID: "e4-no-archive", ProjectID: storage.DefaultProjectID, Name: "no archive", Status: "COMPLETE", StartTime: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	missing := httptest.NewRecorder()
+	missingRequest := httptest.NewRequest(http.MethodGet, "/api/v1/tests/e4-no-archive/archive/browser-interactions", nil)
+	missingRequest.SetPathValue("id", "e4-no-archive")
+	server.handleGetRunArchiveBrowserInteractions(missing, missingRequest)
+	if missing.Code != http.StatusNotFound || !strings.Contains(missing.Body.String(), "archive not found") {
+		t.Fatalf("missing archive = %d %s", missing.Code, missing.Body.String())
+	}
 	if status, _ := get(); status != http.StatusConflict {
 		t.Fatalf("unfinalized archive = %d", status)
 	}
@@ -197,6 +215,16 @@ func TestRunArchiveBrowserInteractionsEndpoint(t *testing.T) {
 	record.ManifestSHA256 = sha256BytesHex(finalized)
 	if status, analysis := get(); status != http.StatusOK || analysis.Status != "not_captured" || analysis.Version != browserInteractionAnalysisVersion {
 		t.Fatalf("no evidence = %d %+v", status, analysis)
+	}
+	// A cancelled request is unavailable, never a panic or a server error.
+	cancelledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cancelled := httptest.NewRecorder()
+	cancelledRequest := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+current.ID+"/archive/browser-interactions", nil).WithContext(cancelledCtx)
+	cancelledRequest.SetPathValue("id", current.ID)
+	server.handleGetRunArchiveBrowserInteractions(cancelled, cancelledRequest)
+	if cancelled.Code != http.StatusServiceUnavailable {
+		t.Fatalf("cancelled request = %d %s", cancelled.Code, cancelled.Body.String())
 	}
 	evidence := &protocol.BrowserInteractionEvidence{Version: protocol.BrowserInteractionVersion, SourceGeneration: e4Generation,
 		Interactions: []protocol.BrowserInteraction{e4Tap(1, 0, 100, 100), e4Tap(2, 300*time.Millisecond, 100, 100), e4Tap(3, 600*time.Millisecond, 100, 100)}, Dropped: 2}

@@ -586,6 +586,7 @@ func (tr *TestRunner) installAdoptedRun(b *distributedExecutionBackend, candidat
 		// This controller requires each generator from the adoption; one
 		// that completed during the gap is never required here.
 		ledger := telemetrySourceLedgerLocked(test)
+		ledger.markAdopted()
 		for target := range adopted {
 			ledger.assign(target, adoptedAt)
 		}
@@ -635,6 +636,7 @@ func (tr *TestRunner) bindRunAdoptionOutcome(b *distributedExecutionBackend, tes
 		test.remoteArchiveClientsByTarget = archives
 		adoptedAt := time.Now().UTC()
 		ledger := telemetrySourceLedgerLocked(test)
+		ledger.markAdopted()
 		for target := range completed {
 			test.remoteTargetStates[target] = "complete"
 			// Completed during the gap: never observed or required here.

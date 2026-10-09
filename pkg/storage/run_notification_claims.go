@@ -7,7 +7,8 @@ import "time"
 // leader) never announces the same run again.
 type RunNotificationClaimStore interface {
 	// ClaimRunNotification reports true for the first claim of a run's
-	// notification kind and false once it was claimed.
+	// notification kind, and false once it was claimed or when the run no
+	// longer exists (a deletion that raced the announcement).
 	ClaimRunNotification(testID, kind string, now time.Time) (bool, error)
 }
 
@@ -18,7 +19,16 @@ func RunNotificationClaimPrefix(testID string) string {
 }
 
 func (s *SQLiteStore) ClaimRunNotification(testID, kind string, now time.Time) (bool, error) {
-	result, err := s.db.Exec(`INSERT INTO app_settings(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO NOTHING`, RunNotificationClaimPrefix(testID)+kind, now.UTC().Format(time.RFC3339Nano), now.UTC())
+	// The claim is written only while its run exists, so a deletion racing
+	// the announcement leaves no claim behind and nothing is sent. SQLite
+	// serializes writers; PostgreSQL's READ COMMITTED would let the check
+	// read a run row a deletion has locked but not yet removed, so there it
+	// takes a share lock and waits for the deletion to finish.
+	exists := `SELECT 1 FROM tests WHERE id = ?`
+	if s.db.dialect == storeDialectPostgres {
+		exists += ` FOR SHARE`
+	}
+	result, err := s.db.Exec(`INSERT INTO app_settings(key,value,updated_at) SELECT ?,?,? WHERE EXISTS (`+exists+`) ON CONFLICT(key) DO NOTHING`, RunNotificationClaimPrefix(testID)+kind, now.UTC().Format(time.RFC3339Nano), now.UTC(), testID)
 	if err != nil {
 		return false, err
 	}

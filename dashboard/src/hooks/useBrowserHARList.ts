@@ -14,8 +14,9 @@ export function useBrowserHARList(testID: string, loadList: typeof listArchiveBr
     loadList(testID, controller.signal).then(setList, (reason: unknown) => {
       if (controller.signal.aborted) return
       const message = reason instanceof Error ? reason.message : 'Browser HARs could not be listed.'
-      // A run without a saved archive has no HARs; that is a state, not a
-      // failure, so it is said plainly instead of echoing the server.
+      // A run whose saved archive is not available (yet: an HA controller
+      // answers 404 until it is published) is a state, not a failure, so it
+      // is said plainly with a reload instead of echoing the server.
       if ((reason as { status?: unknown } | null)?.status === 404 && /archive not found/i.test(message)) setArchiveMissing(true)
       else setError(message)
     })

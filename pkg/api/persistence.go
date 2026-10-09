@@ -1559,6 +1559,7 @@ func intervalSummaryRecordToLiveMetrics(record storage.IntervalSummaryRecord) *L
 			TransportLagMs:           record.TransportLagMs,
 			ControllerFanoutLagMs:    record.ControllerFanoutLagMs,
 			SampleAgeMs:              record.SampleAgeMs,
+			restoredFromHistory:      true,
 		}
 	}
 	return live

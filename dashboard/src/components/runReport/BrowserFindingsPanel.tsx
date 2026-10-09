@@ -58,7 +58,7 @@ export default function BrowserFindingsPanel({ testId, projectId, canEvaluate }:
   const findings = [...(result?.findings || [])].sort((a, b) => (stateOrder[a.state] ?? 3) - (stateOrder[b.state] ?? 3) || a.summary.localeCompare(b.summary))
   return <section className="run-report-panel browser-findings" aria-label="Browser findings">
     <h2>Browser findings</h2>
-    {loading && !state && <p role="status">Loading browser findings...</p>}
+    {loading && !state && <p role="status">Loading browser findings…</p>}
     {!loading && error && <p role="alert" className="run-report-error">{error}</p>}
     {state && !result && <p>{state.status === 'pending'
       ? 'A browser evaluation is queued or running.'

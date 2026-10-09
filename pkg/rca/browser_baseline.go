@@ -49,6 +49,17 @@ const (
 	// BrowserBaselineEvidenceUnavailable: the baseline's document evidence
 	// was not fully read, so a missing cohort may exist there.
 	BrowserBaselineEvidenceUnavailable = "baseline_evidence_unavailable"
+	// BrowserBaselineRunEvidenceIncomplete and ...Unavailable: the run's own
+	// document evidence was not fully read, or could not be read, so a
+	// cohort it left out has no result.
+	BrowserBaselineRunEvidenceIncomplete  = "run_evidence_incomplete"
+	BrowserBaselineRunEvidenceUnavailable = "run_evidence_unavailable"
+	// The run's pinned browser policy turned baseline comparison off, pins
+	// another baseline run than the analysis compares with, or could not
+	// be read (the default floors then apply).
+	BrowserBaselinePolicyOff           = "policy_baseline_off"
+	BrowserBaselinePolicyPinnedRun     = "policy_pinned_run"
+	BrowserBaselinePolicyUnavailable   = "policy_unavailable"
 	browserBaselineUnscoredDetailLimit = 8
 )
 
@@ -70,6 +81,39 @@ type BrowserBaselineParams struct {
 	// level. MaxResults bounds the output; anomalies are kept first.
 	LevelTolerance float64 `json:"level_tolerance"`
 	MaxResults     int     `json:"max_results"`
+}
+
+// BrowserBaselinePolicy is what a run's pinned browser_policy sets for its
+// browser baselines: effect floors, which only raise the defaults, and the
+// baseline mode (none, latest_compatible, or pinned_run with RunID).
+// Unavailable says why the pinned policy could not be used.
+type BrowserBaselinePolicy struct {
+	Ref            string   `json:"ref"`
+	TimingMs       *float64 `json:"timing_ms,omitempty"`
+	TimingRelative *float64 `json:"timing_relative,omitempty"`
+	CLS            *float64 `json:"cls,omitempty"`
+	Mode           string   `json:"mode,omitempty"`
+	RunID          string   `json:"run_id,omitempty"`
+	Unavailable    string   `json:"unavailable,omitempty"`
+}
+
+// BrowserBaselineParamsFor are the defaults with a pinned policy's effect
+// floors applied; a floor can only raise its default.
+func BrowserBaselineParamsFor(policy *BrowserBaselinePolicy) BrowserBaselineParams {
+	params := DefaultBrowserBaselineParams
+	if policy == nil || policy.Unavailable != "" {
+		return params
+	}
+	if policy.TimingMs != nil {
+		params.TimingFloorMs = max(params.TimingFloorMs, *policy.TimingMs)
+	}
+	if policy.TimingRelative != nil {
+		params.TimingFloorFraction = max(params.TimingFloorFraction, *policy.TimingRelative)
+	}
+	if policy.CLS != nil {
+		params.CLSFloor = max(params.CLSFloor, *policy.CLS)
+	}
+	return params
 }
 
 // DefaultBrowserBaselineParams are the specification's values.
@@ -96,6 +140,10 @@ type BrowserBaseline struct {
 	Version string                `json:"version"`
 	Status  string                `json:"status"`
 	Params  BrowserBaselineParams `json:"params"`
+	// Policy names the run's pinned browser policy (id@revision) when its
+	// floors and baseline mode applied; one that could not be used is named
+	// in a limitation instead.
+	Policy string `json:"policy,omitempty"`
 	// Baseline names the workload-qualified baseline run, when there was one.
 	Baseline BaselineRef             `json:"baseline"`
 	Results  []BrowserBaselineResult `json:"results"`
@@ -153,9 +201,44 @@ func DetectBrowserBaseline(input DetectionInput, params BrowserBaselineParams) *
 		}
 	}
 	if len(documents) == 0 {
+		// Evidence the run kept but that could not be read, or that the
+		// series budget left out entirely, is not absence.
+		switch {
+		case input.DocumentsUnreadable:
+			return &BrowserBaseline{Version: BrowserBaselineVersion, Status: DetectionUnavailable, Params: params, Results: []BrowserBaselineResult{},
+				Limitations: []Limitation{{Code: BrowserBaselineRunEvidenceUnavailable, Detail: "the run's browser document evidence could not be read, so no cohort was compared"}}}
+		case input.DocumentsIncomplete:
+			return &BrowserBaseline{Version: BrowserBaselineVersion, Status: DetectionUnavailable, Params: params, Results: []BrowserBaselineResult{},
+				Limitations: []Limitation{{Code: BrowserBaselineRunEvidenceIncomplete, Detail: "none of the run's browser document series was read (the series budget or dropped observations left them out), so no cohort was compared"}}}
+		}
 		return nil
 	}
 	out := &BrowserBaseline{Version: BrowserBaselineVersion, Status: DetectionComplete, Params: params, Results: []BrowserBaselineResult{}, Limitations: []Limitation{}}
+	if policy := input.BrowserPolicy; policy != nil {
+		// The section names the policy only when its floors and mode applied.
+		if policy.Unavailable == "" {
+			out.Policy = policy.Ref
+		}
+		switch {
+		case policy.Unavailable != "":
+			out.Status = DetectionPartial
+			out.Limitations = append(out.Limitations, Limitation{Code: BrowserBaselinePolicyUnavailable, Detail: "the run's pinned browser policy " + policy.Ref + " could not be used (" + policy.Unavailable + "), so the default effect floors applied"})
+		case policy.Mode == "none":
+			out.Status = DetectionUnavailable
+			out.Limitations = append(out.Limitations, Limitation{Code: BrowserBaselinePolicyOff, Detail: "the run's pinned browser policy " + policy.Ref + " turns baseline comparison off"})
+			return out
+		case policy.Mode == "pinned_run" && input.Baseline != nil && input.Baseline.TestID != policy.RunID:
+			// Without a usable baseline the comparison is unavailable for that
+			// reason (below), whichever run was named.
+			out.Status = DetectionUnavailable
+			out.Limitations = append(out.Limitations, Limitation{Code: BrowserBaselinePolicyPinnedRun, Detail: "the run's pinned browser policy " + policy.Ref + " compares with run " + policy.RunID + ", but this analysis compares with run " + input.Baseline.TestID + ", so no cohort was compared"})
+			return out
+		}
+	}
+	if input.DocumentsIncomplete {
+		out.Status = DetectionPartial
+		out.Limitations = append(out.Limitations, Limitation{Code: BrowserBaselineRunEvidenceIncomplete, Detail: "the run's browser document evidence was not fully read; a cohort it left out has no result"})
+	}
 	levels := sortedLevels(input.Levels)
 	if len(levels) == 0 {
 		out.Status = DetectionUnavailable

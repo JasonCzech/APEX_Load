@@ -31,9 +31,10 @@ import (
 
 const (
 	browserInteractionAnalysisVersion = "browser_interaction_patterns.v1"
-	// A repeated gesture is at least repeatMinGestures pointer gestures
-	// within repeatWindow and repeatRadiusPx CSS pixels of the first, on one
-	// document, route and layout.
+	// A repeated gesture is at least repeatMinGestures clicks, taps or checks
+	// within repeatWindow on one document, route and layout: within
+	// repeatRadiusPx CSS pixels of the first when points were dispatched, else
+	// with one action name, gesture kind and target (see repeatedGestures).
 	repeatMinGestures = 3
 	repeatWindow      = 2 * time.Second
 	repeatRadiusPx    = 32.0
@@ -240,7 +241,7 @@ func newInteractionAnalyzer(runID string, cohorts map[string]browserGenerationCo
 			"A dead interaction needs an authored expected outcome whose deadline was missed; an unchanged page alone is never one.",
 			"Heatmaps show where gestures were dispatched on an abstract grid of the viewport, not production user behavior. Screenshot overlays are not produced.",
 			"A cell is a viewport position (CSS pixels) at dispatch: gestures made at different scroll offsets share the map, whose scroll range is stated. A map's layout revision is the layout read after the gesture and its wait.",
-			"Gestures without dispatched points (touch gestures are dispatched synthetically) repeat when they share an action name; pointer gestures with points repeat within the radius. Steps are told apart by action name and gesture kind, so distinct steps that share a name are one step here.",
+			"Only clicks, taps and checks repeat. Those without dispatched points (touch gestures are dispatched synthetically) repeat when they share an action name, gesture kind and recorded target; those with points repeat within the radius. The repeat window is measured on capture time, after each gesture's wait. Steps are told apart by action name and gesture kind, so distinct steps that share a name are one step here.",
 		},
 	}}
 }
@@ -409,11 +410,13 @@ func findInteractionPatterns(interactions []protocol.BrowserInteraction) []Brows
 		for index, g := range gestures {
 			switch {
 			case g.UnavailableReason == protocol.InteractionUnavailableDocumentChanged:
-				// A gesture that navigated away is never a dead interaction;
-				// it is unexpected when it declared an in-page outcome.
-				if inPageOutcome(g.Outcome.Declared) {
+				// A gesture that navigated away is never a dead interaction.
+				// Navigating is normal (a recorded step waits for the next
+				// page's element); it is unexpected only when the element the
+				// step waited for never appeared.
+				if inPageOutcome(g.Outcome.Declared) && g.Outcome.Observed == protocol.InteractionOutcomeMissed {
 					patterns = append(patterns, interactionPattern(interactionPatternUnexpectedNavigation, []protocol.BrowserInteraction{g},
-						fmt.Sprintf("the gesture declared an in-page %s outcome but navigated away", g.Outcome.Declared)))
+						fmt.Sprintf("the gesture navigated away and its declared %s outcome was not observed within %d ms", g.Outcome.Declared, g.Outcome.DeadlineMS)))
 				}
 			case g.Outcome.Observed == protocol.InteractionOutcomeMissed && pageResponseOutcome(g.Outcome.Declared):
 				// The authored outcome's deadline passed.
@@ -472,19 +475,20 @@ func pageResponseOutcome(declared string) bool {
 	return false
 }
 
-// inPageOutcome reports whether a declared outcome expects the page to stay:
-// an element, a stable DOM or a pause, rather than a load.
+// inPageOutcome reports whether a declared outcome waits for an element. A
+// stable DOM or a pause says nothing about which page the gesture should
+// leave the browser on.
 func inPageOutcome(declared string) bool {
 	switch declared {
-	case "element_visible", "visible", "dom_stable", "duration", "sleep":
+	case "element_visible", "visible":
 		return true
 	}
 	return false
 }
 
 // repeatGestureKind reports whether a gesture kind counts toward repeated
-// gestures: a click or tap (a double click is one declared gesture), not a
-// hover, drag, swipe or long press.
+// gestures: a click, tap or check (a double click is one declared gesture),
+// not a hover, drag, swipe or long press.
 func repeatGestureKind(kind string) bool {
 	switch kind {
 	case "click", "dblclick", "tap", "check":
@@ -516,7 +520,7 @@ func repeatedGestures(gestures []protocol.BrowserInteraction, retried map[string
 		return math.Hypot(next.Points[0].X-first.Points[0].X, next.Points[0].Y-first.Points[0].Y) <= repeatRadiusPx
 	}
 	patterns := repeatRuns(positioned, near, fmt.Sprintf("within %d ms and %.0f CSS px", repeatWindow.Milliseconds(), repeatRadiusPx))
-	return append(patterns, repeatRuns(targeted, sameInteractionTarget, fmt.Sprintf("within %d ms with one action name (no dispatched points)", repeatWindow.Milliseconds()))...)
+	return append(patterns, repeatRuns(targeted, sameInteractionTarget, fmt.Sprintf("within %d ms with one action name, gesture kind and target (no dispatched points)", repeatWindow.Milliseconds()))...)
 }
 
 func sameInteractionTarget(first, next protocol.BrowserInteraction) bool {
@@ -577,24 +581,30 @@ func interactionPattern(kind string, members []protocol.BrowserInteraction, deta
 func (s *Server) handleGetRunArchiveBrowserInteractions(w http.ResponseWriter, r *http.Request) {
 	// Materializing an object-backed archive can outlast the write timeout.
 	extendArtifactWriteDeadline(w)
-	analysis, err := s.runArchiveBrowserInteractions(r.Context(), r.PathValue("id"))
+	ctx := r.Context()
+	analysis, err := s.runArchiveBrowserInteractions(ctx, r.PathValue("id"))
 	switch {
-	case errors.Is(err, errInteractionRunNotFound):
+	case err == nil:
+		writeJSON(w, http.StatusOK, analysis)
+	case errors.Is(err, errInteractionRunNotFound), errors.Is(err, errInteractionArchiveNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, errInteractionArchiveNotFinalized):
 		writeError(w, http.StatusConflict, err.Error())
-	case errors.Is(err, errInteractionEvidenceUnreadable):
-		writeError(w, http.StatusInternalServerError, err.Error())
-	case err != nil:
-		writeError(w, http.StatusServiceUnavailable, err.Error())
+	case ctx.Err() != nil:
+		// The request was cancelled or timed out while reading.
+		writeError(w, http.StatusServiceUnavailable, ctx.Err().Error())
 	default:
-		writeJSON(w, http.StatusOK, analysis)
+		// Unreadable evidence, or an archive that could not be materialized
+		// or whose manifest could not be read, as the sibling archive routes
+		// answer.
+		writeError(w, http.StatusInternalServerError, err.Error())
 	}
 }
 
 var (
 	errInteractionRunNotFound         = errors.New("test not found")
-	errInteractionArchiveNotFinalized = errors.New("the run has no finalized archive")
+	errInteractionArchiveNotFound     = errors.New("archive not found")
+	errInteractionArchiveNotFinalized = errors.New("the run archive is not finalized")
 	errInteractionEvidenceUnreadable  = errors.New("the run's interaction evidence could not be read")
 )
 
@@ -604,12 +614,21 @@ func (s *Server) runArchiveBrowserInteractions(ctx context.Context, id string) (
 		return nil, errInteractionRunNotFound
 	}
 	record, ok := s.archiveDomainService().GetRunArchiveContext(ctx, test.ID)
-	if !ok || record == nil || strings.TrimSpace(record.ManifestSHA256) == "" {
+	if !ok || record == nil {
+		return nil, errInteractionArchiveNotFound
+	}
+	if strings.TrimSpace(record.ManifestSHA256) == "" {
 		return nil, errInteractionArchiveNotFinalized
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	lease, err := acquireArchiveMaterialized(ctx, record)
 	if err != nil {
-		return nil, errors.New("the run archive is unavailable")
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, errors.New("the run archive could not be materialized")
 	}
 	defer lease.Release()
 	manifest, err := loadRunArchiveManifestFromRecord(record)

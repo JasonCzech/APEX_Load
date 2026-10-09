@@ -28,7 +28,7 @@ func acceptanceManifest(definition TelemetryAcceptancePolicyDefinition) *RunArch
 
 func coverageRecord(observed, window int64) *TelemetryCoverageRecord {
 	return &TelemetryCoverageRecord{Coverage: TelemetryCoverage{WindowMs: window, ObservedMs: observed, UnknownMs: window - observed,
-		Sources: []TelemetrySourceCoverage{{Source: "generator-a", ObservedMs: observed}}}}
+		Sources: []TelemetrySourceCoverage{{Source: "generator-a", ObservedMs: observed, RequiredMs: window, UnknownMs: window - observed}}, SourceRequirements: true}}
 }
 
 func TestTelemetryAcceptanceCoverageBelowTheFloorFailsWithTheReason(t *testing.T) {
@@ -366,6 +366,54 @@ func TestTelemetryAcceptanceReportLabelsAdvisoryCriteria(t *testing.T) {
 	}
 }
 
+// The webhook names each source's unknown time over its requirement, and over
+// the window for coverage recorded before requirements.
+func TestTelemetryAcceptanceSourceConditions(t *testing.T) {
+	coverage := TelemetryCoverage{WindowMs: 100_000, SourceRequirements: true, Sources: []TelemetrySourceCoverage{
+		{Source: "gen-a", ObservedMs: 50_000, RequiredMs: 50_000}, {Source: "gen-b", ObservedMs: 40_000, RequiredMs: 50_000, UnknownMs: 10_000}}}
+	if got := telemetryAcceptanceSourceConditions(coverage); len(got) != 1 || got[0] != "source:gen-b unknown_ms:10000" {
+		t.Fatalf("conditions = %q", got)
+	}
+	coverage.SourceRequirements = false
+	coverage.Sources = []TelemetrySourceCoverage{{Source: "gen-old", ObservedMs: 70_000}, {Source: "gen-silent"}}
+	if got := telemetryAcceptanceSourceConditions(coverage); len(got) != 2 || got[0] != "source:gen-old unknown_ms:30000" || got[1] != "source:gen-silent unknown_ms:100000" {
+		t.Fatalf("legacy conditions = %q", got)
+	}
+}
+
+// The report says each source's unknown time over the time it was required
+// (an older archive's sources keep their observed-of-window line) and why
+// observed time is a lower bound when the observer was lost.
+func TestTelemetryAcceptanceReportCoverageSourcesAndLostObserver(t *testing.T) {
+	manifest := acceptanceManifest(TelemetryAcceptancePolicyDefinition{Version: 1, Mode: "fail_ci", MinWallTimeCoverage: acceptanceRatio(0.9)})
+	manifest.TelemetryCoverage = coverageRecord(40_000, 100_000)
+	manifest.TelemetryCoverage.Coverage.ObserverLost = telemetryCoverageAdopted
+	view := buildTelemetryAcceptanceReportView(manifest, telemetryAcceptanceForManifest(manifest))
+	if !strings.Contains(view.Coverage, "a controller adopted the run and observed it only from then") {
+		t.Fatalf("coverage = %s", view.Coverage)
+	}
+	if len(view.Sources) != 1 || view.Sources[0].Observed != "40000 ms observed; required for 100000 ms, unknown 60000 ms" {
+		t.Fatalf("sources = %+v", view.Sources)
+	}
+	// Coverage recorded before source requirements lists each source's
+	// observed time of the window, including a source never observed.
+	legacy := *manifest.TelemetryCoverage
+	legacy.Coverage.SourceRequirements = false
+	legacy.Coverage.Sources = []TelemetrySourceCoverage{{Source: "generator-old", ObservedMs: 30_000}, {Source: "generator-silent"}}
+	manifest.TelemetryCoverage = &legacy
+	lines := map[string]string{}
+	for _, source := range buildTelemetryAcceptanceReportView(manifest, nil).Sources {
+		lines[source.Source] = source.Observed
+	}
+	if lines["generator-old"] != "30000 of 100000 ms" || lines["generator-silent"] != "0 of 100000 ms" {
+		t.Fatalf("legacy sources = %v", lines)
+	}
+	manifest.TelemetryCoverage.Coverage.ObserverLost = telemetryCoverageLedgerLost
+	if view := buildTelemetryAcceptanceReportView(manifest, nil); !strings.Contains(view.Coverage, "finalized without the record of what was observed") {
+		t.Fatalf("coverage = %s", view.Coverage)
+	}
+}
+
 func TestTelemetryAcceptanceReportSectionRendersEveryFormat(t *testing.T) {
 	maxLost := int64(0)
 	manifest := acceptanceManifest(TelemetryAcceptancePolicyDefinition{Version: 1, Mode: "fail_ci", MinWallTimeCoverage: acceptanceRatio(0.9), MaxLostRecords: &maxLost})
@@ -440,7 +488,12 @@ func TestTelemetryComparisonShowsEachRunsAcceptanceVerdict(t *testing.T) {
 
 func TestTelemetryAcceptanceWebhookAnnouncesAFailedVerdictOnce(t *testing.T) {
 	t.Setenv("APEXLOAD_ALLOW_PRIVATE_WEBHOOKS", "true")
-	server, _ := baselineTestServer(t)
+	server, store := baselineTestServer(t)
+	for _, id := range []string{"run-1", "run-changes", "run-legacy", "run-2", "run-3"} {
+		if err := store.SaveTest(&storage.TestRecord{ID: id, ProjectID: storage.DefaultProjectID, Name: id, Status: "COMPLETE", StartTime: time.Now().UTC()}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	type delivery struct {
 		payload map[string]any
 		key     string
@@ -524,6 +577,9 @@ func TestTelemetryAcceptanceWebhookAnnouncesAFailedVerdictOnce(t *testing.T) {
 	manifest.TelemetryCoverage = coverageRecord(95_000, 100_000)
 	server.notifyTelemetryAcceptance("run-2", manifest)
 	server.notifyTelemetryAcceptance("run-3", &RunArchiveManifest{})
+	// A run deleted before its verdict is announced is never announced.
+	manifest.TelemetryCoverage = coverageRecord(70_000, 100_000)
+	server.notifyTelemetryAcceptance("deleted-run", manifest)
 	select {
 	case got := <-received:
 		t.Fatalf("unexpected webhook %v", got.payload)
@@ -576,6 +632,62 @@ func TestTelemetryStageRecorderCoversTheRunFromItsStart(t *testing.T) {
 	adopted := &ManagedTest{StartedAt: &started, continuityFailovers: []RunFailover{{AdoptedAt: time.Now().UTC()}}}
 	if since := stageRecorderLocked(adopted).since; !since.After(started) {
 		t.Fatalf("adopting controller samples from %v", since)
+	}
+}
+
+// Coverage the finalizing controller could not have observed (a restart lost
+// its ledger, or it adopted the run) is a lower bound: below the floor the
+// criterion is inconclusive, never a failure; at or above it, a pass.
+func TestTelemetryAcceptanceCoverageAfterALostObserverIsALowerBound(t *testing.T) {
+	manifest := acceptanceManifest(TelemetryAcceptancePolicyDefinition{Version: 1, Mode: "fail_ci", MinWallTimeCoverage: acceptanceRatio(0.9)})
+	for _, tc := range []struct {
+		lost     string
+		observed int64
+		outcome  string
+		reason   string
+	}{
+		{telemetryCoverageLedgerLost, 0, TelemetryAcceptanceInconclusive, "finalized without the record of what was observed"},
+		{telemetryCoverageAdopted, 50_000, TelemetryAcceptanceInconclusive, "adopted the run"},
+		{telemetryCoverageAdopted, 95_000, TelemetryAcceptancePass, ""},
+		{"", 50_000, TelemetryAcceptanceFail, "below the 90.0% floor"},
+	} {
+		manifest.TelemetryCoverage = coverageRecord(tc.observed, 100_000)
+		manifest.TelemetryCoverage.Coverage.ObserverLost = tc.lost
+		criterion := telemetryAcceptanceForManifest(manifest).Criteria[0]
+		wantBound := telemetryAcceptanceLowerBound
+		if tc.lost == "" {
+			wantBound = telemetryAcceptanceExact
+		}
+		if criterion.Outcome != tc.outcome || criterion.Bound != wantBound || !strings.Contains(criterion.Reason, tc.reason) {
+			t.Fatalf("%q at %d ms: %+v", tc.lost, tc.observed, criterion)
+		}
+	}
+}
+
+// Health rebuilt from interval history (a restarted controller, a follower)
+// carries no loss, coverage or stage evidence, so no provisional verdict is
+// shown for it.
+func TestLiveTelemetryAcceptanceSkipsHealthRestoredFromHistory(t *testing.T) {
+	ceiling := 0.001
+	definition := TelemetryAcceptancePolicyDefinition{Version: 1, Mode: "fail_ci", MaxLossRatio: &ceiling}
+	pin := RunPolicyPin{Kind: storage.AnalysisDefinitionKindTelemetryAcceptancePolicy, ID: "gate", Revision: 1, SHA256: "abc"}
+	restored := intervalSummaryRecordToLiveMetrics(storage.IntervalSummaryRecord{TotalTx: 500, DroppedResultsAvailable: true, TransportLagMs: 12})
+	if restored.Telemetry == nil {
+		t.Fatal("fixture: the restored summary carries no telemetry health")
+	}
+	test := &ManagedTest{Status: "RUNNING", initialArchiveProvenance: &RunArchiveProvenance{PolicyPins: []RunPolicyPin{pin}, TelemetryAcceptancePolicy: &TelemetryAcceptancePolicySnapshot{Pin: pin, Definition: definition}}, LiveMetrics: restored}
+	if verdict := cloneRunLiveMetrics(test).Telemetry.Acceptance; verdict != nil {
+		t.Fatalf("restored health got a provisional verdict: %+v", verdict)
+	}
+	total, errs := int64(999_000), int64(990)
+	test.LiveMetrics = &LiveMetrics{TotalTx: 500, RunTotalTx: &total, RunTotalErrors: &errs, Telemetry: &TelemetryHealth{Loss: &TelemetryLossAccounting{DroppedResults: &TelemetryCounterTotal{State: TelemetryCounterExact, Value: 10}}}}
+	if verdict := cloneRunLiveMetrics(test).Telemetry.Acceptance; verdict == nil || verdict.Outcome != TelemetryAcceptancePass {
+		t.Fatalf("live health verdict = %+v", verdict)
+	}
+	// A finished run's verdict is the archived one, never a provisional one.
+	test.Status = "COMPLETE"
+	if verdict := cloneRunLiveMetrics(test).Telemetry.Acceptance; verdict != nil {
+		t.Fatalf("finished run got a provisional verdict: %+v", verdict)
 	}
 }
 

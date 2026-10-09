@@ -182,6 +182,14 @@ type DetectionInput struct {
 	Baseline *DetectionBaseline
 	// Limitations the caller found while building the series.
 	Limitations []Limitation
+	// DocumentsIncomplete says the run's own browser document evidence was
+	// not fully read (dropped observations or series the budget left out);
+	// DocumentsUnreadable that it could not be read at all.
+	DocumentsIncomplete bool
+	DocumentsUnreadable bool
+	// BrowserPolicy is what the run's pinned browser_policy sets for its
+	// browser baselines; nil when the run pinned none.
+	BrowserPolicy *BrowserBaselinePolicy
 }
 
 // JudgedSeries records, per scope, the series detection compared with a
@@ -253,6 +261,13 @@ func Detect(input DetectionInput, params DetectParams, budgeter *Budgeter) ([]An
 		comparable, _ := comparableSeries(b.Series)
 		baseline = make(map[string]Series, len(comparable))
 		for _, s := range comparable {
+			// Browser document series are compared with the baseline by
+			// browser_baseline.v1, which refuses cohorts whose authored
+			// pages changed; here they are judged within the run only, so
+			// the two never disagree about one cohort.
+			if s.Kind == SeriesBrowserDocument {
+				continue
+			}
 			baseline[s.ID] = boundedSeries(s, budgeter)
 		}
 	}

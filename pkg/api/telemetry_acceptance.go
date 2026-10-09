@@ -243,16 +243,25 @@ func telemetryCoverageCriterion(floor float64, evidence telemetryAcceptanceEvide
 	ratio := float64(coverage.ObservedMs) / float64(coverage.WindowMs)
 	criterion.Observed, criterion.Numerator, criterion.Denominator = &ratio, acceptanceFloat(float64(coverage.ObservedMs)), acceptanceFloat(float64(coverage.WindowMs))
 	criterion.Bound = telemetryAcceptanceExact
-	if coverage.Truncated {
+	lowerBound := ""
+	switch {
+	case coverage.Truncated:
+		lowerBound = "observed time is a lower bound"
+	case coverage.ObserverLost == telemetryCoverageLedgerLost:
+		lowerBound = "the run was finalized without the record of what was observed (after a restart, or by a controller that never executed it), so that time is unknown"
+	case coverage.ObserverLost != "":
+		lowerBound = "a controller adopted the run and observed it only from then, so time observed before is unknown"
+	}
+	if lowerBound != "" {
 		criterion.Bound = telemetryAcceptanceLowerBound
 	}
 	switch {
 	case ratio >= floor:
 		criterion.Outcome = TelemetryAcceptancePass
-	case coverage.Truncated:
+	case lowerBound != "":
 		// Observed time is a lower bound: the run may have met the floor.
 		criterion.Outcome = TelemetryAcceptanceInconclusive
-		criterion.Reason = fmt.Sprintf("wall-time coverage is at least %s, below the %s floor, but observed time is a lower bound", formatAcceptanceRatio(ratio), formatAcceptanceRatio(floor))
+		criterion.Reason = fmt.Sprintf("wall-time coverage is at least %s, below the %s floor, but %s", formatAcceptanceRatio(ratio), formatAcceptanceRatio(floor), lowerBound)
 	default:
 		criterion.Outcome = TelemetryAcceptanceFail
 		criterion.Reason = fmt.Sprintf("wall-time coverage %s is below the %s floor (%d of %d ms observed)", formatAcceptanceRatio(ratio), formatAcceptanceRatio(floor), coverage.ObservedMs, coverage.WindowMs)
@@ -605,7 +614,12 @@ func telemetryAcceptanceForManifest(manifest *RunArchiveManifest) *TelemetryAcce
 // attachTelemetryAcceptance adds the run's provisional verdict to a public
 // projection of its current snapshot (a clone; tr.mu is held).
 func attachTelemetryAcceptance(metrics *LiveMetrics, test *ManagedTest) {
-	if metrics == nil || metrics.Telemetry == nil || test == nil || test.initialArchiveProvenance == nil {
+	// Health rebuilt from interval history holds no loss, coverage or stage
+	// evidence: a verdict from it would read as inconclusive although the
+	// run's own evidence exists. A finished run's verdict is the archived
+	// one (breached time, say, is only known at finalize), so a provisional
+	// verdict is shown only while the run executes.
+	if metrics == nil || metrics.Telemetry == nil || metrics.Telemetry.restoredFromHistory || test == nil || test.initialArchiveProvenance == nil || isTerminalTestStatus(test.Status) {
 		return
 	}
 	telemetry := metrics.Telemetry
@@ -632,8 +646,11 @@ func cloneTelemetryAcceptanceVerdict(in *TelemetryAcceptanceVerdict) *TelemetryA
 // persistTelemetryLoss records the run's loss totals in the manifest at
 // finalize, once. A distributed run's totals come from its source ledger; a
 // run executed in this process reads its final collector snapshot. A
-// distributed run finalized without its ledger (a restart or adoption) has
-// every counter unavailable, so a verdict cannot pass on missing loss. An
+// distributed run finalized without its ledger (after a restart, or by a
+// controller that never executed it) has every counter unavailable, so a
+// verdict cannot pass on missing loss; after an adoption the adopting
+// controller's ledger supplies them, and generations it never observed make
+// them lower bounds. An
 // adjunct refresh never writes ledger_lost: a manifest without loss totals
 // then predates them.
 func (tr *TestRunner) persistTelemetryLoss(test *ManagedTest, manifest *RunArchiveManifest, refresh bool) {
@@ -695,6 +712,33 @@ func (s *Server) notifyRunTelemetryAcceptance(testID string) {
 	s.notifyTelemetryAcceptance(testID, manifest)
 }
 
+// telemetryAcceptanceSourceConditions names each source not observed for all
+// the time it was required, with that unknown time; coverage recorded before
+// source requirements measures it over the window.
+func telemetryAcceptanceSourceConditions(coverage TelemetryCoverage) []string {
+	var conditions []string
+	for _, source := range coverage.Sources {
+		unknown := source.UnknownMs
+		if !coverage.SourceRequirements {
+			unknown = coverage.WindowMs - source.ObservedMs
+		}
+		if unknown > 0 {
+			conditions = append(conditions, fmt.Sprintf("source:%s unknown_ms:%d", source.Source, unknown))
+		}
+	}
+	return conditions
+}
+
+// telemetryAcceptanceEventSeverity is a verdict's notification severity: a
+// failure is danger (a Dynatrace error event), anything else a warning (an
+// alert).
+func telemetryAcceptanceEventSeverity(outcome string) string {
+	if outcome == TelemetryAcceptanceFail {
+		return "danger"
+	}
+	return "warning"
+}
+
 // maxTelemetryAcceptanceEventConditions bounds the conditions one
 // telemetry_acceptance event lists.
 const maxTelemetryAcceptanceEventConditions = 20
@@ -743,17 +787,16 @@ func (s *Server) notifyTelemetryAcceptance(testID string, manifest *RunArchiveMa
 		}
 	}
 	if coverage := manifest.TelemetryCoverage; coverage != nil {
-		// Sources observed for less than the window, with their unknown time.
-		for _, source := range coverage.Coverage.Sources {
-			if unknown := coverage.Coverage.WindowMs - source.ObservedMs; unknown > 0 && len(conditions) < maxTelemetryAcceptanceEventConditions {
-				conditions = append(conditions, fmt.Sprintf("source:%s unknown_ms:%d", source.Source, unknown))
+		// Sources not observed for all the time they were required, with that
+		// unknown time (a retired or replacement source is required for less
+		// than the window).
+		for _, condition := range telemetryAcceptanceSourceConditions(coverage.Coverage) {
+			if len(conditions) < maxTelemetryAcceptanceEventConditions {
+				conditions = append(conditions, condition)
 			}
 		}
 	}
-	severity := "warning"
-	if verdict.Outcome == TelemetryAcceptanceFail {
-		severity = "critical"
-	}
+	severity := telemetryAcceptanceEventSeverity(verdict.Outcome)
 	summary := "telemetry acceptance " + verdict.Outcome
 	if len(verdict.Reasons) > 0 {
 		summary += ": " + verdict.Reasons[0]
