@@ -3,13 +3,11 @@ package recorder
 import (
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
 
-	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -86,422 +84,6 @@ func TestConvertSession_Basic(t *testing.T) {
 	}
 }
 
-func TestPrepareRecorderCorrelationApplicationRejectsEncodedRawLiteralCollision(t *testing.T) {
-	const rawValue = "opaque token/123456"
-	encodedValue := url.QueryEscape(rawValue)
-	requests := []RecordedRequest{
-		{Seq: 1, URL: "https://api.example.test/source-a"},
-		{Seq: 2, URL: "https://api.example.test/source-b"},
-		{Seq: 3, URL: "https://api.example.test/use?token=" + encodedValue},
-	}
-	correlations := []Correlation{
-		{
-			Name:        "corr_a",
-			Source:      "body",
-			ExtractType: "regex",
-			Expression:  `(opaque token/123456)`,
-			Value:       rawValue,
-			FoundInSeq:  1,
-			UsedInSeqs:  []int{3},
-			Confidence:  0.9,
-		},
-		{
-			Name:        "corr_b",
-			Source:      "body",
-			ExtractType: "regex",
-			Expression:  `(opaque\+token%2F123456)`,
-			Value:       encodedValue,
-			FoundInSeq:  2,
-			UsedInSeqs:  []int{3},
-			Confidence:  0.9,
-		},
-	}
-
-	application := prepareRecorderCorrelationApplication(requests, correlations)
-	if len(application.vars) != 0 || len(application.sourceSequences) != 0 || len(application.extractors) != 0 {
-		t.Fatalf("ambiguous collision application = %#v, want no automatic rewrite", application)
-	}
-	for _, correlation := range correlations {
-		if correlation.PreApplied || correlation.ReviewAction != recorderManualCorrelationReplacement {
-			t.Fatalf("collision correlation = %#v, want manual and not pre-applied", correlation)
-		}
-	}
-}
-
-func TestPrepareRecorderCorrelationApplicationRejectsEncodedValueBeyondRuntimeResultLimit(t *testing.T) {
-	// Raw value fits the 16 KiB per-extraction ceiling, while QueryEscape
-	// expands it beyond that ceiling.
-	value := strings.Repeat("?", 6_000)
-	encoded := url.QueryEscape(value)
-	requests := []RecordedRequest{
-		{Seq: 1, URL: "https://api.example.test/source"},
-		{Seq: 2, URL: "https://api.example.test/use?token=" + encoded},
-	}
-	correlations := []Correlation{{
-		Name:        "corr_token",
-		Source:      "body",
-		ExtractType: "regex",
-		Expression:  `(token)`,
-		Value:       value,
-		FoundInSeq:  1,
-		UsedInSeqs:  []int{2},
-		Confidence:  0.9,
-	}}
-	application := prepareRecorderCorrelationApplication(requests, correlations)
-	if len(application.vars) != 0 || len(application.sourceSequences) != 0 || len(application.extractors) != 0 {
-		t.Fatalf("oversized encoded application = %#v, want none", application)
-	}
-	if correlations[0].PreApplied || correlations[0].ReviewAction != recorderManualCorrelationReplacement {
-		t.Fatalf("oversized encoded correlation = %#v, want manual review", correlations[0])
-	}
-}
-
-func TestPrepareRecorderCorrelationApplicationRespectsAggregateRuntimeResultLimit(t *testing.T) {
-	requests := []RecordedRequest{{Seq: 1, URL: "https://api.example.test/source"}}
-	correlations := make([]Correlation, 0, 5)
-	extractionLimit := 0
-	for index := 0; index < 5; index++ {
-		value := fmt.Sprintf("token-%d-%s", index, strings.Repeat(string(rune('a'+index)), 12))
-		name := fmt.Sprintf("corr_token_%d", index)
-		if index < 4 {
-			entryBytes, ok := correlate.CorrelationExtractionEntryBytes(name, value)
-			if !ok {
-				t.Fatalf("test entry %d unexpectedly exceeds the per-entry runtime limit", index)
-			}
-			extractionLimit += entryBytes
-		}
-		requests = append(requests, RecordedRequest{
-			Seq: index + 2,
-			URL: "https://api.example.test/use?token=" + value,
-		})
-		correlations = append(correlations, Correlation{
-			Name:        name,
-			Source:      "body",
-			ExtractType: "regex",
-			Expression:  `(token)`,
-			Value:       value,
-			FoundInSeq:  1,
-			UsedInSeqs:  []int{index + 2},
-			Confidence:  0.9,
-		})
-	}
-
-	application := prepareRecorderCorrelationApplicationWithExtractionLimit(requests, correlations, extractionLimit)
-	if len(application.vars) != 4 || len(application.sourceSequences) != 4 || len(application.extractors[1]) != 4 {
-		t.Fatalf("aggregate-limited application = vars %d sources %d extractors %d, want four", len(application.vars), len(application.sourceSequences), len(application.extractors[1]))
-	}
-	for index := range correlations {
-		if index < 4 {
-			if !correlations[index].PreApplied || correlations[index].ReviewAction != "" {
-				t.Fatalf("correlation %d = %#v, want pre-applied", index, correlations[index])
-			}
-			continue
-		}
-		if correlations[index].PreApplied || correlations[index].ReviewAction != recorderManualCorrelationReplacement {
-			t.Fatalf("correlation %d = %#v, want aggregate-budget manual review", index, correlations[index])
-		}
-	}
-}
-
-func TestPrepareRecorderCorrelationApplicationRejectsSubstringEncodedRawLiteralCollision(t *testing.T) {
-	const rawValue = "opaque token/123456"
-	encodedValue := url.QueryEscape(rawValue)
-	containingRawValue := "prefix-" + encodedValue + "-suffix"
-	requests := []RecordedRequest{
-		{Seq: 1, URL: "https://api.example.test/source-a"},
-		{Seq: 2, URL: "https://api.example.test/source-b"},
-		{Seq: 3, URL: "https://api.example.test/use?token=" + containingRawValue},
-	}
-	correlations := []Correlation{
-		{
-			Name:        "corr_a",
-			Source:      "body",
-			ExtractType: "regex",
-			Expression:  `(opaque token/123456)`,
-			Value:       rawValue,
-			FoundInSeq:  1,
-			UsedInSeqs:  []int{3},
-			Confidence:  0.9,
-		},
-		{
-			Name:        "corr_b",
-			Source:      "body",
-			ExtractType: "regex",
-			Expression:  `(prefix-opaque\+token%2F123456-suffix)`,
-			Value:       containingRawValue,
-			FoundInSeq:  2,
-			UsedInSeqs:  []int{3},
-			Confidence:  0.9,
-		},
-	}
-
-	application := prepareRecorderCorrelationApplication(requests, correlations)
-	if len(application.vars) != 0 || len(application.sourceSequences) != 0 || len(application.extractors) != 0 {
-		t.Fatalf("substring collision application = %#v, want no automatic rewrite", application)
-	}
-	for _, correlation := range correlations {
-		if correlation.PreApplied || correlation.ReviewAction != recorderManualCorrelationReplacement {
-			t.Fatalf("substring collision correlation = %#v, want manual and not pre-applied", correlation)
-		}
-	}
-}
-
-func TestPrepareRecorderCorrelationApplicationRejectsMergedSuffixPrefixCollision(t *testing.T) {
-	const (
-		leftValue  = "TOKENabc123"
-		rightValue = "123SESSIONxyz"
-	)
-	requests := []RecordedRequest{
-		{Seq: 1, URL: "https://api.example.test/source-a"},
-		{Seq: 2, URL: "https://api.example.test/source-b"},
-		{Seq: 3, URL: "https://api.example.test/use?blob=TOKENabc123SESSIONxyz"},
-	}
-	correlations := []Correlation{
-		{
-			Name: "corr_left", Source: "body", ExtractType: "regex", Expression: `(TOKENabc123)`,
-			Value: leftValue, FoundInSeq: 1, UsedInSeqs: []int{3}, Confidence: 0.9,
-		},
-		{
-			Name: "corr_right", Source: "body", ExtractType: "regex", Expression: `(123SESSIONxyz)`,
-			Value: rightValue, FoundInSeq: 2, UsedInSeqs: []int{3}, Confidence: 0.9,
-		},
-	}
-
-	application := prepareRecorderCorrelationApplication(requests, correlations)
-	if len(application.vars) != 0 || len(application.sourceSequences) != 0 || len(application.extractors) != 0 {
-		t.Fatalf("partial-overlap collision application = %#v, want no automatic rewrite", application)
-	}
-	for _, correlation := range correlations {
-		if correlation.PreApplied || correlation.ReviewAction != recorderManualCorrelationReplacement {
-			t.Fatalf("partial-overlap correlation = %#v, want manual and not pre-applied", correlation)
-		}
-	}
-}
-
-func TestPrepareRecorderCorrelationApplicationAllowsDisjointSuffixPrefixLiterals(t *testing.T) {
-	const (
-		leftValue  = "TOKENabc123"
-		rightValue = "123SESSIONxyz"
-	)
-	requests := []RecordedRequest{
-		{Seq: 1, URL: "https://api.example.test/source-a"},
-		{Seq: 2, URL: "https://api.example.test/source-b"},
-		{Seq: 3, URL: "https://api.example.test/use?a=" + leftValue + "&b=" + rightValue},
-	}
-	correlations := []Correlation{
-		{
-			Name: "corr_left", Source: "body", ExtractType: "regex", Expression: `(TOKENabc123)`,
-			Value: leftValue, FoundInSeq: 1, UsedInSeqs: []int{3}, Confidence: 0.9,
-		},
-		{
-			Name: "corr_right", Source: "body", ExtractType: "regex", Expression: `(123SESSIONxyz)`,
-			Value: rightValue, FoundInSeq: 2, UsedInSeqs: []int{3}, Confidence: 0.9,
-		},
-	}
-
-	application := prepareRecorderCorrelationApplication(requests, correlations)
-	if len(application.vars) != 2 || len(application.extractors) != 2 {
-		t.Fatalf("disjoint suffix-prefix application = %#v, want both automatic rewrites", application)
-	}
-	for _, correlation := range correlations {
-		if !correlation.PreApplied || correlation.ReviewAction != "" {
-			t.Fatalf("disjoint suffix-prefix correlation = %#v, want pre-applied", correlation)
-		}
-	}
-}
-
-func TestPrepareRecorderCorrelationApplicationFailsClosedWhenOverlapBudgetExhausts(t *testing.T) {
-	const repeatedBytes = 64 << 10
-	leftValue := "x" + strings.Repeat("a", repeatedBytes)
-	rightValue := strings.Repeat("a", repeatedBytes) + "y"
-	requests := []RecordedRequest{
-		{Seq: 1, URL: "https://api.example.test/source-a"},
-		{Seq: 2, URL: "https://api.example.test/source-b"},
-		{Seq: 3, Body: leftValue + " " + rightValue},
-	}
-	correlations := []Correlation{
-		{
-			Name: "corr_left", Source: "body", ExtractType: "regex", Expression: `(left)`,
-			Value: leftValue, FoundInSeq: 1, UsedInSeqs: []int{3}, Confidence: 0.9,
-		},
-		{
-			Name: "corr_right", Source: "body", ExtractType: "regex", Expression: `(right)`,
-			Value: rightValue, FoundInSeq: 2, UsedInSeqs: []int{3}, Confidence: 0.9,
-		},
-	}
-
-	application := prepareRecorderCorrelationApplication(requests, correlations)
-	if len(application.vars) != 0 || len(application.extractors) != 0 {
-		t.Fatalf("budget-exhausted application = %#v, want no automatic rewrite", application)
-	}
-	for _, correlation := range correlations {
-		if correlation.PreApplied || correlation.ReviewAction != recorderManualCorrelationReplacement {
-			t.Fatalf("budget-exhausted correlation = %#v, want manual and not pre-applied", correlation)
-		}
-	}
-}
-
-func TestRecorderCorrelationReplacementCollisionsFailClosedWhenSurfaceLimitExhausts(t *testing.T) {
-	const (
-		leftValue  = "TOKENabc123"
-		rightValue = "123SESSIONxyz"
-	)
-	requests := []RecordedRequest{{
-		Seq:     1,
-		URL:     "https://api.example.test/use?left=" + leftValue,
-		Body:    "right=" + rightValue,
-		Headers: map[string]string{"X-Third-Surface": "present"},
-	}}
-	plans := []recorderCorrelationPlan{
-		{automatic: true, value: leftValue, usage: recorderCorrelationUse{raw: true}},
-		{automatic: true, value: rightValue, usage: recorderCorrelationUse{raw: true}},
-	}
-
-	ambiguousLiterals, ambiguousPlans := recorderCorrelationReplacementCollisionsWithSurfaceLimit(requests, plans, 2)
-	for index, value := range []string{leftValue, rightValue} {
-		if !ambiguousLiterals[value] || !ambiguousPlans[index] {
-			t.Fatalf("surface-limited collision result = literals %#v plans %#v; want every automatic claim ambiguous", ambiguousLiterals, ambiguousPlans)
-		}
-	}
-}
-
-func TestRecorderRequestReplacementSurfacesUseOnlyEditableFields(t *testing.T) {
-	requests := []RecordedRequest{
-		{
-			Seq:          1,
-			Path:         "/fallback",
-			QueryString:  "token=path-value",
-			Body:         "body-value",
-			Headers:      map[string]string{"X-Editable": "header-value", "User-Agent": "filtered-value"},
-			HeadersMulti: map[string][]string{"X-Repeated": {"first-value", "second-value"}},
-		},
-		{Seq: 2, URL: "https://example.test/excluded", Excluded: true},
-		{Seq: 3, URL: "https://example.test/encoded", Body: "encoded-body", BodyEncoding: "base64"},
-	}
-
-	surfaces, complete := recorderRequestReplacementSurfaces(requests, 10)
-	if !complete {
-		t.Fatal("replacement surfaces unexpectedly exceeded the limit")
-	}
-	joined := strings.Join(surfaces, "\n")
-	for _, want := range []string{"/fallback?token=path-value", "body-value", "header-value", "first-value", "second-value", "https://example.test/encoded"} {
-		if !strings.Contains(joined, want) {
-			t.Fatalf("replacement surfaces = %#v, missing %q", surfaces, want)
-		}
-	}
-	for _, unwanted := range []string{"filtered-value", "https://example.test/excluded", "encoded-body"} {
-		if strings.Contains(joined, unwanted) {
-			t.Fatalf("replacement surfaces = %#v, unexpectedly include %q", surfaces, unwanted)
-		}
-	}
-}
-
-func TestIndexRecordedRequestsBySequencePreservesFirstMatch(t *testing.T) {
-	requests := []RecordedRequest{
-		{Seq: 7, URL: "https://example.test/first"},
-		{Seq: 9, URL: "https://example.test/other"},
-		{Seq: 7, URL: "https://example.test/duplicate"},
-	}
-	indexed := indexRecordedRequestsBySequence(requests)
-	if len(indexed) != 2 {
-		t.Fatalf("indexed requests = %#v, want two sequence entries", indexed)
-	}
-	if indexed[7] != &requests[0] || indexed[9] != &requests[1] {
-		t.Fatalf("indexed requests = %#v, want direct first-occurrence pointers", indexed)
-	}
-}
-
-func TestPrepareRecorderCorrelationApplicationIncludesReviewOnlyOwnersInCollisionCheck(t *testing.T) {
-	const shortValue = "token-123456"
-	const longValue = "token-123456-extra"
-	requests := []RecordedRequest{
-		{Seq: 1, URL: "https://api.example.test/source-a"},
-		{Seq: 2, URL: "https://api.example.test/source-b"},
-		{Seq: 3, URL: "https://api.example.test/use?token=" + longValue},
-	}
-	correlations := []Correlation{
-		{
-			Name: "corr_short", Source: "body", ExtractType: "regex", Expression: `(token-123456)`,
-			Value: shortValue, FoundInSeq: 1, UsedInSeqs: []int{3}, Confidence: 0.9,
-		},
-		{
-			Name: "corr_long", Source: "body", ExtractType: "regex", Expression: `(token-123456-extra)`,
-			Value: longValue, FoundInSeq: 2, UsedInSeqs: []int{3}, Confidence: 0.6,
-		},
-	}
-
-	application := prepareRecorderCorrelationApplication(requests, correlations)
-	if len(application.vars) != 0 || len(application.extractors) != 0 {
-		t.Fatalf("mixed-confidence collision application = %#v, want no automatic rewrite", application)
-	}
-	for _, correlation := range correlations {
-		if correlation.PreApplied || correlation.ReviewAction != recorderManualCorrelationReplacement {
-			t.Fatalf("mixed-confidence owner = %#v, want manual value replacement", correlation)
-		}
-	}
-}
-
-func TestPrepareRecorderCorrelationApplicationCapsSourceExtractorsIncludingEncodedSibling(t *testing.T) {
-	const mixedValue = "mixed token/000000"
-	correlations := make([]Correlation, 0, dsl.MaxActionExtractors)
-	correlations = append(correlations, Correlation{
-		Name:        "corr_mixed",
-		Source:      "body",
-		ExtractType: "regex",
-		Expression:  `(mixed token/000000)`,
-		Value:       mixedValue,
-		FoundInSeq:  1,
-		UsedInSeqs:  []int{2},
-		Confidence:  0.9,
-	})
-	rawValues := []string{mixedValue}
-	for index := 1; index < dsl.MaxActionExtractors; index++ {
-		value := fmt.Sprintf("value-%06d-abcdef", index)
-		correlations = append(correlations, Correlation{
-			Name:        fmt.Sprintf("corr_value_%06d", index),
-			Source:      "body",
-			ExtractType: "regex",
-			Expression:  `(` + value + `)`,
-			Value:       value,
-			FoundInSeq:  1,
-			UsedInSeqs:  []int{2},
-			Confidence:  0.9,
-		})
-		rawValues = append(rawValues, value)
-	}
-	requests := []RecordedRequest{
-		{Seq: 1, URL: "https://api.example.test/source"},
-		{
-			Seq:  2,
-			URL:  "https://api.example.test/use?mixed=" + url.QueryEscape(mixedValue),
-			Body: strings.Join(rawValues, "|"),
-		},
-	}
-
-	application := prepareRecorderCorrelationApplication(requests, correlations)
-	if got := len(application.extractors[1]); got != dsl.MaxActionExtractors {
-		t.Fatalf("source extractors = %d, want capped at %d", got, dsl.MaxActionExtractors)
-	}
-	if application.extractors[1][1].Name != "corr_mixed_encoded" {
-		t.Fatalf("encoded sibling extractor = %#v, want reserved corr_mixed_encoded", application.extractors[1][1])
-	}
-	for _, extractor := range application.extractors[1] {
-		if extractor.OnMiss != "fail" {
-			t.Fatalf("automatic extractor %q on_miss = %q, want fail", extractor.Name, extractor.OnMiss)
-		}
-	}
-	if len(application.vars) != dsl.MaxActionExtractors || len(application.sourceSequences) != dsl.MaxActionExtractors {
-		t.Fatalf("replacement maps = %d/%d, want %d safe replacements", len(application.vars), len(application.sourceSequences), dsl.MaxActionExtractors)
-	}
-	overflow := correlations[len(correlations)-1]
-	if overflow.PreApplied || overflow.ReviewAction != recorderManualCorrelationReplacement {
-		t.Fatalf("overflow correlation = %#v, want manual and not pre-applied", overflow)
-	}
-	if _, exists := application.vars[overflow.Value]; exists {
-		t.Fatalf("overflow value %q was exposed as an automatic replacement", overflow.Value)
-	}
-}
-
 func TestConvertSessionWarnsWhenCorrelationAnalysisExceedsWorkLimit(t *testing.T) {
 	requests := make([]RecordedRequest, 4097)
 	for index := range requests {
@@ -513,7 +95,7 @@ func TestConvertSessionWarnsWhenCorrelationAnalysisExceedsWorkLimit(t *testing.T
 		}
 	}
 	result := ConvertSession(&Session{Name: "limit", BaseURL: "https://api.example.test", Requests: requests}, "")
-	if !strings.Contains(strings.Join(result.Warnings, "\n"), "Correlation analysis was not completed") {
+	if !strings.Contains(strings.ToLower(strings.Join(result.Warnings, "\n")), "correlation analysis was not completed") {
 		t.Fatalf("warnings = %#v, want explicit correlation work-limit warning", result.Warnings)
 	}
 	if len(result.Correlations) != 0 {
@@ -743,7 +325,7 @@ func TestConvertSession_WebSocketContinuationFramesAreCoalesced(t *testing.T) {
 	}
 }
 
-func TestConvertSession_CorrelatesCapturedCookies(t *testing.T) {
+func TestConvertSession_LeavesCapturedJarCookiesToTheJar(t *testing.T) {
 	s := &Session{
 		ID:      "test",
 		Name:    "Cookie Flow",
@@ -775,33 +357,22 @@ func TestConvertSession_CorrelatesCapturedCookies(t *testing.T) {
 		},
 	}
 
+	// The shared recorded-traffic rule leaves a cookie that an earlier
+	// recorded response set to the replay cookie jar instead of sending it
+	// twice; the other captured cookie stays.
 	result := ConvertSession(s, "")
-	if len(result.Correlations) != 1 {
-		t.Fatalf("correlations = %#v, want one cookie correlation", result.Correlations)
+	if got := result.Script.Actions[1].Headers["Cookie"]; got != "theme=dark" {
+		t.Fatalf("cookie header = %q, want the jar to send the session cookie", got)
 	}
-	corr := result.Correlations[0]
-	if corr.Name != "corr_cookie_session" || corr.Source != "header" || corr.ExtractType != "regex" {
-		t.Fatalf("unexpected correlation: %#v", corr)
-	}
-	// The rules-engine ranking metadata must flow through to the import-review UI.
-	if corr.RuleID == "" {
-		t.Fatalf("expected rule id on correlation, got %#v", corr)
-	}
-	if corr.Confidence <= 0 {
-		t.Fatalf("expected positive confidence, got %v", corr.Confidence)
-	}
-	if len(corr.Reasons) == 0 {
-		t.Fatalf("expected confidence reasons, got %#v", corr.Reasons)
-	}
-	if len(result.Script.Actions[0].Extractors) != 1 {
-		t.Fatalf("first action extractors = %#v", result.Script.Actions[0].Extractors)
-	}
-	if got := result.Script.Actions[1].Headers["Cookie"]; got != "session={{var.corr_cookie_session}}; theme=dark" {
-		t.Fatalf("correlated cookie header = %q", got)
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), "left to the replay cookie jar") {
+		t.Fatalf("warnings = %v", result.Warnings)
 	}
 }
 
-func TestConvertSession_UsesRawHeadersForCorrelationWithoutLeakingUnmatchedSecrets(t *testing.T) {
+// A recording keeps the credentials its requests carried, as every import
+// does: the operator recorded them, and replay needs them. Correlation still
+// replaces the values a response supplies.
+func TestConvertSession_UsesRawHeadersAndKeepsRecordedCredentials(t *testing.T) {
 	s := &Session{
 		ID:      "test",
 		Name:    "Header Token Flow",
@@ -843,8 +414,17 @@ func TestConvertSession_UsesRawHeadersForCorrelationWithoutLeakingUnmatchedSecre
 	if got := headers["Authorization"]; got != "Bearer {{var.corr_access_token}}" {
 		t.Fatalf("authorization header = %q, want correlated variable", got)
 	}
-	if got := headers["X-Api-Key"]; got != "[redacted]" {
-		t.Fatalf("unmatched API key header = %q, want redacted", got)
+	if got := headers["X-Api-Key"]; got != "raw-api-secret" {
+		t.Fatalf("unmatched API key header = %q, want the recorded value", got)
+	}
+	// The rules-engine ranking flows through to the import-review UI, with
+	// the recorder's request sequence numbers.
+	corr := result.Correlations[0]
+	if corr.RuleID == "" || corr.Confidence <= 0 || len(corr.Reasons) == 0 || corr.FoundInSeq != 1 || len(corr.UsedInSeqs) != 1 || corr.UsedInSeqs[0] != 2 || !corr.PreApplied {
+		t.Fatalf("correlation = %#v, want rule ranking and recorder sequences", corr)
+	}
+	if corr.Value != "" || corr.SampleValue != "" {
+		t.Fatalf("correlation discloses its value: %#v", corr)
 	}
 }
 
@@ -971,21 +551,6 @@ func TestConvertSession_PreservesAndCorrelatesRepeatedRequestHeaders(t *testing.
 	}
 }
 
-func TestCorrelatedRecordedHeadersDoesNotEmitPartialRawOnlyHeaderList(t *testing.T) {
-	const token = "raw-only-repeated-token-abcdef123456"
-	projection := correlatedRecordedHeaders(RecordedRequest{
-		Headers:         map[string]string{"X-Request-ID": "safe-summary"},
-		RawHeadersMulti: map[string][]string{"X-Request-ID": {"unmatched-raw-first", token}},
-	}, headerPolicy{cookies: false}, map[string]string{token: "{{var.corr_x_request_id}}"})
-
-	if len(projection.Repeated) != 0 {
-		t.Fatalf("partial raw-only HeaderList = %#v, want omitted so it cannot shadow the safe summary", projection.Repeated)
-	}
-	if projection.Summary["X-Request-ID"] != "safe-summary" {
-		t.Fatalf("summary header = %#v, want disclosure-safe fallback preserved", projection.Summary)
-	}
-}
-
 func TestConvertSession_DropsRecorderControlHeadersFromLegacyInputs(t *testing.T) {
 	const controlSecret = "recorder-control-secret-abcdef123456"
 	s := &Session{
@@ -1021,18 +586,12 @@ func TestConvertSession_DropsRecorderControlHeadersFromLegacyInputs(t *testing.T
 		},
 	}
 
-	correlationInputs := convertibleCorrelationRequests(s.Requests)
-	for _, req := range correlationInputs {
-		for name := range req.Headers {
-			if isRecorderControlHeader(name) {
-				t.Fatalf("correlation input retained recorder control request header %q", name)
-			}
-		}
-		for name := range req.ResponseHeaders {
-			if isRecorderControlHeader(name) {
-				t.Fatalf("correlation input retained recorder control response header %q", name)
-			}
-		}
+	content, _, err := conversionHAR(s, headerPolicy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.ToLower(string(content)), "x-apexload-recorder") || strings.Contains(string(content), controlSecret) {
+		t.Fatalf("the conversion input retained a recorder control header: %s", content)
 	}
 
 	result := ConvertSession(s, "")
@@ -1054,11 +613,10 @@ func TestConvertSession_DropsRecorderControlHeadersFromLegacyInputs(t *testing.T
 	}
 }
 
-// TestConvertSession_PartialHeaderCorrelationKeepsRedacted locks in that when a
-// correlation matches only a substring of a redacted secret header, leaving
-// live credential material around the {{var}}, the header stays redacted rather
-// than splicing the un-correlated remainder of the secret into the script.
-func TestConvertSession_PartialHeaderCorrelationKeepsRedacted(t *testing.T) {
+// TestConvertSession_PartialHeaderCorrelation: when a correlation matches only
+// part of a recorded header, the correlated part becomes the variable and the
+// rest of the recorded value stays, so replay sends what the browser sent.
+func TestConvertSession_PartialHeaderCorrelation(t *testing.T) {
 	s := &Session{
 		ID:      "test",
 		Name:    "Partial Header Correlation",
@@ -1092,34 +650,8 @@ func TestConvertSession_PartialHeaderCorrelationKeepsRedacted(t *testing.T) {
 	if len(result.Correlations) != 1 {
 		t.Fatalf("correlations = %#v, want the access token correlated", result.Correlations)
 	}
-	got := result.Script.Actions[1].Headers["Authorization"]
-	if strings.Contains(got, "residualsecretmaterial") {
-		t.Fatalf("authorization header leaked residual raw secret: %q", got)
-	}
-	if got != "[redacted]" {
-		t.Fatalf("authorization header = %q, want it kept redacted (partial correlation must not splice raw secret)", got)
-	}
-}
-
-func TestCorrelatedRecordedHeadersMatchesSanitizedKeysCaseInsensitively(t *testing.T) {
-	const token = "tok-abcdef123456"
-	safe := correlatedRecordedHeaders(RecordedRequest{
-		Headers:    map[string]string{"Authorization": "[redacted]"},
-		RawHeaders: map[string]string{"authorization": "Bearer " + token},
-	}, headerPolicy{cookies: false}, map[string]string{token: "{{var.corr_access_token}}"})
-	if got := safe.Summary["Authorization"]; got != "Bearer {{var.corr_access_token}}" {
-		t.Fatalf("case-insensitive correlated authorization = %q", got)
-	}
-	if _, duplicate := safe.Summary["authorization"]; duplicate {
-		t.Fatalf("case-only raw key created a duplicate header: %#v", safe.Summary)
-	}
-
-	partial := correlatedRecordedHeaders(RecordedRequest{
-		Headers:    map[string]string{"Authorization": "[redacted]"},
-		RawHeaders: map[string]string{"authorization": "Bearer " + token + " !!!"},
-	}, headerPolicy{cookies: false}, map[string]string{token: "{{var.corr_access_token}}"})
-	if got := partial.Summary["Authorization"]; got != "[redacted]" {
-		t.Fatalf("punctuation-only residual secret was disclosed: %q", got)
+	if got := result.Script.Actions[1].Headers["Authorization"]; got != "Bearer {{var.corr_access_token}} residualsecretmaterial" {
+		t.Fatalf("authorization header = %q, want the token correlated and the rest kept", got)
 	}
 }
 
@@ -1356,132 +888,20 @@ func TestConvertSession_Assertions(t *testing.T) {
 
 	result := ConvertSession(s, "")
 	a1 := result.Script.Actions[0]
-	if len(a1.Assertions) != 1 || a1.Assertions[0].Expected != 200 {
+	if len(a1.Assertions) != 1 || fmt.Sprint(a1.Assertions[0].Expected) != "200" {
 		t.Fatalf("expected status_code assertion 200, got %+v", a1.Assertions)
 	}
 	a2 := result.Script.Actions[1]
-	if len(a2.Assertions) != 1 || a2.Assertions[0].Expected != 201 {
+	if len(a2.Assertions) != 1 || fmt.Sprint(a2.Assertions[0].Expected) != "201" {
 		t.Fatalf("expected status_code assertion 201, got %+v", a2.Assertions)
 	}
-	for i, action := range result.Script.Actions[2:] {
-		if len(action.Assertions) != 0 {
-			t.Fatalf("action %d should not assert redirect/error status, got %+v", i+3, action.Assertions)
+	// A recording converts through the shared HAR pipeline, which asserts
+	// every recorded status: replay should see what the recording saw.
+	for i, want := range []int{302, 404} {
+		action := result.Script.Actions[i+2]
+		if len(action.Assertions) != 1 || fmt.Sprint(action.Assertions[0].Expected) != fmt.Sprint(want) {
+			t.Fatalf("action %d assertions = %+v, want the recorded status %d", i+3, action.Assertions, want)
 		}
-	}
-}
-
-func TestDetectCorrelations(t *testing.T) {
-	requests := []RecordedRequest{
-		{
-			Seq:          1,
-			Method:       "POST",
-			URL:          "http://example.com/login",
-			Path:         "/login",
-			StatusCode:   200,
-			ResponseBody: `{"token":"eyJhbGciOiJIUzI1NiJ9.testpayload.signature","session_id":"sess-abcdef-123456"}`,
-			ResponseHeaders: map[string]string{
-				"X-Csrf-Token": "csrf-token-value-here",
-			},
-		},
-		{
-			Seq:    2,
-			Method: "GET",
-			URL:    "http://example.com/api/data?token=eyJhbGciOiJIUzI1NiJ9.testpayload.signature",
-			Path:   "/api/data",
-			Headers: map[string]string{
-				"X-Csrf-Token": "csrf-token-value-here",
-			},
-			StatusCode:   200,
-			ResponseBody: `{"items":[]}`,
-		},
-		{
-			Seq:    3,
-			Method: "POST",
-			URL:    "http://example.com/api/action",
-			Path:   "/api/action",
-			Body:   `{"session":"sess-abcdef-123456"}`,
-			Headers: map[string]string{
-				"Authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.testpayload.signature",
-			},
-			StatusCode:   200,
-			ResponseBody: `{"ok":true}`,
-		},
-	}
-
-	correlations := detectCorrelations(requests)
-
-	if len(correlations) == 0 {
-		t.Fatal("expected at least one correlation detected")
-	}
-
-	foundToken := false
-	for _, c := range correlations {
-		if c.Name == "corr_token" || c.Name == "corr_session_id" || c.Name == "corr_x_csrf_token" {
-			foundToken = true
-			if len(c.UsedInSeqs) == 0 {
-				t.Fatalf("correlation %s should have used_in_seqs", c.Name)
-			}
-		}
-	}
-	if !foundToken {
-		t.Fatalf("expected token/session correlation, got %+v", correlations)
-	}
-}
-
-func TestDetectCorrelations_HTMLFormToken(t *testing.T) {
-	requests := []RecordedRequest{
-		{
-			Seq:        1,
-			Method:     "GET",
-			URL:        "http://example.com/login",
-			Path:       "/login",
-			StatusCode: 200,
-			ResponseHeaders: map[string]string{
-				"Content-Type": "text/html",
-			},
-			ResponseBody: `<form method="post"><input type="hidden" name="csrf_token" value="tok-9f8e7d6c5b4a"><input type="text" name="user"></form>`,
-		},
-		{
-			Seq:        2,
-			Method:     "POST",
-			URL:        "http://example.com/login",
-			Path:       "/login",
-			Body:       `csrf_token=tok-9f8e7d6c5b4a&user=demo`,
-			StatusCode: 200,
-		},
-	}
-
-	correlations := detectCorrelations(requests)
-
-	var csrf *Correlation
-	for i := range correlations {
-		if correlations[i].Name == "corr_csrf_token" {
-			csrf = &correlations[i]
-		}
-	}
-	if csrf == nil {
-		t.Fatalf("expected corr_csrf_token correlation, got %+v", correlations)
-	}
-	if csrf.ExtractType != "regex" || csrf.Source != "body" {
-		t.Fatalf("expected regex/body extractor, got %s/%s", csrf.ExtractType, csrf.Source)
-	}
-	if !strings.Contains(csrf.Expression, `name="csrf_token"`) || !strings.Contains(csrf.Expression, `value="([^"]{4,})"`) {
-		t.Fatalf("unexpected expression: %q", csrf.Expression)
-	}
-	if len(csrf.UsedInSeqs) == 0 {
-		t.Fatal("expected the form token to be used in a later request")
-	}
-}
-
-func TestApplyCorrelationVars_LongestFirst(t *testing.T) {
-	// A short value that is a substring of a longer value must not clobber it.
-	corrMap := map[string]string{
-		"123":       "{{var.short_id}}",
-		"123456789": "{{var.long_token}}",
-	}
-	result := applyCorrelationVars("token=123456789", corrMap)
-	if result != "token={{var.long_token}}" {
-		t.Fatalf("expected longest value replaced first, got %q", result)
 	}
 }
 
@@ -1552,30 +972,6 @@ func TestSimplifyPath(t *testing.T) {
 		if got != tt.expect {
 			t.Errorf("simplifyPath(%q) = %q, want %q", tt.path, got, tt.expect)
 		}
-	}
-}
-
-func TestApplyCorrelationVars(t *testing.T) {
-	corrMap := map[string]string{
-		"abc123":  "{{var.corr_token}}",
-		"sess-42": "{{var.corr_session_id}}",
-	}
-
-	input := "http://example.com/api?token=abc123&session=sess-42"
-	result := applyCorrelationVars(input, corrMap)
-
-	if result != "http://example.com/api?token={{var.corr_token}}&session={{var.corr_session_id}}" {
-		t.Fatalf("unexpected result: %s", result)
-	}
-}
-
-func TestTruncate(t *testing.T) {
-	if truncate("short", 10) != "short" {
-		t.Fatal("short string should not be truncated")
-	}
-	result := truncate("this is a long string that should be truncated", 20)
-	if len(result) != 23 { // 20 + "..."
-		t.Fatalf("expected 23 chars, got %d: %q", len(result), result)
 	}
 }
 

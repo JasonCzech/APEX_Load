@@ -55,6 +55,13 @@ type ConvertOptions struct {
 	// content-type filters, header drop list, think-time threshold and
 	// correlation settings apply.
 	Profile *recordingprofile.Profile `json:"-"`
+	// OmitSourceReview skips the source review, which embeds a scrubbed copy
+	// of the input. The proxy recorder sets it: it keeps the recording itself.
+	OmitSourceReview bool `json:"-"`
+	// HighConfidenceOnly rewrites only high-confidence correlations
+	// (correlate.HighConfidence); the rest stay review candidates. The proxy
+	// recorder sets it.
+	HighConfidenceOnly bool `json:"-"`
 }
 
 type ConvertStats struct {
@@ -84,6 +91,21 @@ type Correlation struct {
 	// of being mislabeled as already applied.
 	PreApplied   bool   `json:"pre_applied,omitempty"`
 	ReviewAction string `json:"review_action,omitempty"`
+
+	// FoundInEntry and UsedInEntries are the 1-based HAR entries of
+	// FoundInStep and UsedInSteps, and RuleID, Confidence and Reasons the
+	// detector's ranking. They are for adapters (the proxy recorder maps
+	// entries back to its request sequence) and are not serialized.
+	FoundInEntry  int      `json:"-"`
+	UsedInEntries []int    `json:"-"`
+	RuleID        string   `json:"-"`
+	Confidence    float64  `json:"-"`
+	Reasons       []string `json:"-"`
+
+	// reviewOnly keeps a correlation out of the automatic rewrite (see
+	// ConvertOptions.HighConfidenceOnly) while it still takes part in
+	// collision checks.
+	reviewOnly bool
 }
 
 type ConvertResult struct {
@@ -98,6 +120,12 @@ type ConvertResult struct {
 	// values needed to bind the generated {{secret.*}} references. It is never
 	// serialized with the conversion result.
 	ProtectedRequirements credentialpolicy.ProtectedRequirements `json:"-"`
+
+	// Baseline holds the raw recorded observation of each converted request
+	// (HAR input), with ID the index of its action in the final script.
+	// Requests folded into a background conversation are left out. It holds
+	// source values and is never serialized.
+	Baseline []correlate.Observation `json:"-"`
 }
 
 type exchange struct {
@@ -123,6 +151,12 @@ type exchange struct {
 	// projected request surface (for example cURL -u input or arguments of an
 	// unsupported option). It is consumed only by source-review redaction.
 	SourceSecrets []string
+	// StepName names the generated action (the recorder's step name), and
+	// RecordedThinkTimeMs is the pause the recorder measured, or the tester
+	// edited, before this request (HasRecordedThinkTime).
+	StepName             string
+	RecordedThinkTimeMs  int64
+	HasRecordedThinkTime bool
 }
 
 type response struct {
@@ -237,6 +271,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			correlations = nil
 			warnings = append(warnings, fmt.Sprintf("correlation analysis was not completed and no automatic correlation rewrites were applied: %v", err))
 		}
+		if req.Options.HighConfidenceOnly {
+			for index := range correlations {
+				correlations[index].reviewOnly = !correlate.HighConfidence(correlate.Correlation{Confidence: correlations[index].Confidence})
+			}
+		}
 		if len(analysisWarnings) > 0 {
 			// Incomplete analysis misses correlations; it does not invalidate the
 			// ones found. Each detected correlation finished its reuse and
@@ -310,8 +349,12 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		result.Script.Config.JavaHTTP = javaHTTPConfig
 		result.Warnings = append(result.Warnings, "Java-over-HTTP serialized-object traffic was imported in byte-preserving embedded mode; request/object mappings are not applied without a governed java_vuser sidecar flow")
 	}
-	sourceFiles := sampleSourceFiles(format, req.Content, req.ResponseContent)
-	sourceLocations := sampleSourceLocations(format, req.Content, req.ResponseContent, exchanges)
+	var sourceFiles map[string]string
+	var sourceLocations []sampleSourceLocation
+	if !req.Options.OmitSourceReview {
+		sourceFiles = sampleSourceFiles(format, req.Content, req.ResponseContent)
+		sourceLocations = sampleSourceLocations(format, req.Content, req.ResponseContent, exchanges)
+	}
 	sourceMappings := make([]sourceview.Mapping, 0, len(exchanges))
 	finalizationReports := make([]requestimport.Report, 0, len(exchanges))
 	defer func() {
@@ -340,7 +383,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		}
 		action := dsl.Action{
 			Params:       actionParams,
-			Name:         actionName(idx, ex.Method, ex.URL),
+			Name:         exchangeActionName(idx, ex),
 			Type:         "request",
 			Method:       strings.ToUpper(ex.Method),
 			Target:       target,
@@ -501,13 +544,72 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 	if format == "har" {
 		var shapeWarnings []string
-		sourceMappings, shapeWarnings = shapeRecordedHAR(result.Script, exchanges, req.Content, convertutil.BoolOption(req.Options.AsyncScan, true), sourceMappings)
+		var newIndex []int
+		sourceMappings, newIndex, shapeWarnings = shapeRecordedHAR(result.Script, exchanges, req.Content, convertutil.BoolOption(req.Options.AsyncScan, true), sourceMappings)
 		result.Warnings = append(result.Warnings, shapeWarnings...)
+		result.Baseline = recordedBaseline(exchanges, newIndex)
+	}
+	for index := range result.Correlations {
+		corr := &result.Correlations[index]
+		corr.FoundInEntry = exchangeEntry(exchanges, corr.FoundInStep)
+		corr.UsedInEntries = make([]int, 0, len(corr.UsedInSteps))
+		for _, step := range corr.UsedInSteps {
+			corr.UsedInEntries = append(corr.UsedInEntries, exchangeEntry(exchanges, step))
+		}
 	}
 	result.Unsupported = append(diagnostics.Items(), finalized.Diagnostics...)
 	result.Stats.CorrelationsDetected = len(correlations)
-	result.SourceReview = sourceview.Build(sourceFiles, sourceMappings)
+	if !req.Options.OmitSourceReview {
+		result.SourceReview = sourceview.Build(sourceFiles, sourceMappings)
+	}
 	return result, nil
+}
+
+// exchangeEntry is the source entry of a 1-based step.
+func exchangeEntry(exchanges []exchange, step int) int {
+	if step < 1 || step > len(exchanges) {
+		return 0
+	}
+	return exchanges[step-1].SourceEntryID
+}
+
+// recordedBaseline is the raw observation of each converted exchange, with
+// ID its action index after shaping (newIndex, when the script was shaped);
+// exchanges folded into a conversation are left out.
+func recordedBaseline(exchanges []exchange, newIndex []int) []correlate.Observation {
+	baseline := make([]correlate.Observation, 0, len(exchanges))
+	for index, ex := range exchanges {
+		id := index
+		if newIndex != nil {
+			if index >= len(newIndex) || newIndex[index] < 0 {
+				continue
+			}
+			id = newIndex[index]
+		}
+		observation := correlate.Observation{
+			ID:                     id,
+			RequestURL:             ex.URL,
+			RequestBody:            ex.Body,
+			RequestBodyTransformed: ex.BodyEncoding != "",
+			RequestHeaders:         correlationObservationHeaders(ex.Headers, ex.HeaderList),
+		}
+		if ex.Response != nil {
+			observation.ResponseBody = ex.Response.Body
+			observation.ResponseHeaders = requestimport.ResponseContentBaselineHeaders(correlationObservationHeaders(ex.Response.Headers, ex.Response.HeaderList), ex.Response.ContentCapture)
+			observation.ResponseStatus = ex.Response.Status
+		}
+		baseline = append(baseline, observation)
+	}
+	return baseline
+}
+
+// exchangeActionName names an exchange's action: its recorded step name, or
+// its method and path.
+func exchangeActionName(index int, ex exchange) string {
+	if name := strings.TrimSpace(ex.StepName); name != "" {
+		return fmt.Sprintf("%02d - %s", index+1, name)
+	}
+	return actionName(index, ex.Method, ex.URL)
 }
 
 func isExplicitRedirectStep(ex exchange) bool {
@@ -579,6 +681,14 @@ func thinkTimeAfterThreshold(exchanges []exchange, index int, threshold time.Dur
 	}
 	current := exchanges[index]
 	next := exchanges[index+1]
+	if next.HasRecordedThinkTime {
+		// The recorder measured the pause before the next request, or the
+		// tester edited it.
+		if time.Duration(next.RecordedThinkTimeMs)*time.Millisecond > threshold {
+			return float64(next.RecordedThinkTimeMs), true
+		}
+		return 0, false
+	}
 	if current.HasStartedAt && next.HasStartedAt {
 		gap := next.StartedAt.Sub(current.StartedAt) - time.Duration(current.DurationMs*float64(time.Millisecond))
 		if gap > threshold {

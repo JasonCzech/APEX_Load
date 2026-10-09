@@ -186,6 +186,10 @@ func extractHARItems(payload any) ([]map[string]any, error) {
 }
 
 func isStaticHAREntry(item map[string]any) bool {
+	if static, ok := item[harStaticKey].(bool); ok {
+		// The recorder classified the request itself.
+		return static
+	}
 	requestData, _ := item["request"].(map[string]any)
 	method := strings.ToUpper(strings.TrimSpace(stringValue(requestData["method"])))
 	if method != "" && method != http.MethodGet && method != http.MethodHead {
@@ -314,7 +318,41 @@ func parseHARItemWithProvenance(item map[string]any, diagnostics *diag.Collector
 	}
 	normalizeHARContentLength(&ex, requestData, diagnostics, location)
 	normalizeHARPseudoHeaders(&ex, diagnostics, location)
+	applyRecorderEntryFields(&ex, item, index)
 	return ex, nil
+}
+
+// HAR entry fields the APEX Load proxy recorder writes, for what a HAR
+// cannot say: its own static classification, the step and transaction
+// names the tester gave, the measured (or edited) pause before the request,
+// and a request body cut off at the capture limit.
+const (
+	harStaticKey             = "_apexload_static"
+	harStepNameKey           = "_apexload_step_name"
+	harTransactionKey        = "_apexload_transaction"
+	harThinkTimeKey          = "_apexload_think_time_ms"
+	harRequestTruncatedKey   = "_apexload_request_body_truncated"
+	harRecordedBodyBytesKey  = "_apexload_request_body_bytes"
+	harSourceTransactionMeta = "source_transaction"
+)
+
+func applyRecorderEntryFields(ex *exchange, item map[string]any, index int) {
+	ex.StepName = strings.TrimSpace(stringValue(item[harStepNameKey]))
+	if transaction := strings.TrimSpace(stringValue(item[harTransactionKey])); transaction != "" {
+		// The engine groups metrics by this metadata key.
+		if ex.Metadata == nil {
+			ex.Metadata = map[string]any{}
+		}
+		ex.Metadata[harSourceTransactionMeta] = transaction
+	}
+	if raw, ok := item[harThinkTimeKey]; ok {
+		if thinkMs := int64(floatValue(raw)); thinkMs >= 0 {
+			ex.RecordedThinkTimeMs, ex.HasRecordedThinkTime = thinkMs, true
+		}
+	}
+	if truncated, _ := item[harRequestTruncatedKey].(bool); truncated {
+		ex.ReviewFindings = append(ex.ReviewFindings, requestimport.RecordedBodyTruncatedFinding("har", fmt.Sprintf("entry-%d", index+1), intValue(item[harRecordedBodyBytesKey])))
+	}
 }
 
 func harRequestHeaderList(raw any) dsl.HeaderList {
@@ -509,6 +547,9 @@ func itemListMetadata(value any) ([]map[string]any, bool) {
 func isHARWebSocketUpgrade(item map[string]any) bool {
 	requestData, _ := item["request"].(map[string]any)
 	responseData, _ := item["response"].(map[string]any)
+	if messages, ok := item["_webSocketMessages"].([]any); ok && len(messages) > 0 {
+		return true
+	}
 	return strings.EqualFold(rawHARHeaderLookup(requestData["headers"], "Upgrade"), "websocket") ||
 		strings.EqualFold(rawHARHeaderLookup(responseData["headers"], "Upgrade"), "websocket") ||
 		intValue(responseData["status"]) == 101

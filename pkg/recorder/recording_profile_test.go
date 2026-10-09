@@ -49,20 +49,25 @@ func TestConvertSessionAppliesRecordingProfile(t *testing.T) {
 	if order := actions[1]; !strings.Contains(order.Target, "{{var.orderid}}") && !strings.Contains(order.Target, "{{var.OrderID}}") {
 		t.Fatalf("the order id must be correlated: %q", order.Target)
 	}
-	if !strings.Contains(strings.Join(result.Warnings, "\n"), `Recording profile "Default" left 1 request(s) out`) {
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), `recording profile "Default" left 1 request(s) out`) {
 		t.Fatalf("warnings = %v", result.Warnings)
 	}
 }
 
-func TestProxyRecorderRecordsSeparateResourcesInStep(t *testing.T) {
-	result := ConvertSessionWithOptions(pageOptionsSession(), "pages", ConvertOptions{Profile: &recordingprofile.Profile{ID: "r", Name: "R", ResourceMode: "separate"}})
-	if result.Script == nil || len(result.Script.Actions) != 2 {
-		t.Fatalf("resources must not become steps: %+v", result.Script)
+// Converted through the shared pipeline, a proxy recording keeps resources
+// as their own steps with resource_mode separate, and its replay baseline
+// lines up with those steps.
+func TestProxyRecorderRecordsSeparateResourcesAsSteps(t *testing.T) {
+	off := false
+	result := ConvertSessionWithOptions(pageOptionsSession(), "pages", ConvertOptions{AsyncScan: &off, Profile: &recordingprofile.Profile{ID: "r", Name: "R", ResourceMode: "separate"}})
+	if result.Script == nil || len(result.Script.Actions) != 3 {
+		t.Fatalf("the page, its logo and the poll must each be a step: %+v", result.Script)
 	}
-	if resources, _ := result.Script.Actions[0].Params["resources"].([]any); len(resources) != 1 {
-		t.Fatalf("the logo must be attached to its page: %v", result.Script.Actions[0].Params["resources"])
+	logo := result.Script.Actions[1]
+	if !strings.HasSuffix(logo.Target, "/logo.png") {
+		t.Fatalf("second step = %q, want the logo", logo.Target)
 	}
-	if !strings.Contains(strings.Join(result.Warnings, "\n"), "cannot keep resources as separate steps") {
-		t.Fatalf("warnings = %v", result.Warnings)
+	if len(result.Baseline) != 3 || result.Baseline[1].ID != 1 || !strings.HasSuffix(result.Baseline[1].RequestURL, "/logo.png") {
+		t.Fatalf("baseline = %+v, want one observation per step", result.Baseline)
 	}
 }

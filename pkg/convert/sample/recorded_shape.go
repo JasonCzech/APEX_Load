@@ -20,18 +20,21 @@ import (
 // script must hold one action per exchange. Source mappings are re-pointed
 // at the shaped actions; a shaped script that does not validate is dropped
 // in favour of the original.
-func shapeRecordedHAR(script *dsl.Script, exchanges []exchange, content string, asyncScan bool, mappings []sourceview.Mapping) ([]sourceview.Mapping, []string) {
+//
+// It also returns where each original action went (nil when the script was
+// not reshaped; -1 for an action folded into a conversation).
+func shapeRecordedHAR(script *dsl.Script, exchanges []exchange, content string, asyncScan bool, mappings []sourceview.Mapping) ([]sourceview.Mapping, []int, []string) {
 	if script == nil || len(script.Actions) != len(exchanges) {
-		return mappings, nil
+		return mappings, nil, nil
 	}
 	sockets := harWebSockets(content)
 	if !asyncScan && len(sockets) == 0 {
-		return mappings, nil
+		return mappings, nil, nil
 	}
 	steps := make([]recordedshape.Step, len(exchanges))
 	for i, ex := range exchanges {
 		if !ex.HasStartedAt {
-			return mappings, nil
+			return mappings, nil, nil
 		}
 		contentType := ""
 		if ex.Response != nil {
@@ -56,11 +59,11 @@ func shapeRecordedHAR(script *dsl.Script, exchanges []exchange, content string, 
 	original := cloneScriptActions(script.Actions)
 	shaped := recordedshape.Shape(script, steps, sockets, recordedshape.Options{AsyncScan: asyncScan})
 	if !shaped.Changed() {
-		return mappings, append(warnings, shaped.Warnings...)
+		return mappings, nil, append(warnings, shaped.Warnings...)
 	}
 	if issues := dsl.ValidateScriptIssues(script); len(issues) != 0 {
 		script.Actions = original
-		return mappings, append(warnings, "the recording's background requests and WebSocket traffic were left as recorded because the reshaped script did not validate: "+strings.Join(issues, "; "))
+		return mappings, nil, append(warnings, "the recording's background requests and WebSocket traffic were left as recorded because the reshaped script did not validate: "+strings.Join(issues, "; "))
 	}
 	remapped := make([]sourceview.Mapping, 0, len(mappings))
 	for _, mapping := range mappings {
@@ -69,7 +72,7 @@ func shapeRecordedHAR(script *dsl.Script, exchanges []exchange, content string, 
 			remapped = append(remapped, mapping)
 		}
 	}
-	return remapped, append(warnings, shaped.Warnings...)
+	return remapped, shaped.NewIndex, append(warnings, shaped.Warnings...)
 }
 
 func cloneScriptActions(actions []dsl.Action) []dsl.Action {
@@ -134,8 +137,14 @@ func harWebSockets(content string) []recordedshape.Socket {
 	return sockets
 }
 
-// harEpochSeconds reads a _webSocketMessages time (seconds since the epoch).
+// harEpochSeconds reads a _webSocketMessages time: seconds since the epoch,
+// as browsers write it, or an RFC 3339 time, as recorder exports write it.
 func harEpochSeconds(value any) time.Time {
+	if text, ok := value.(string); ok {
+		if parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(text)); err == nil {
+			return parsed
+		}
+	}
 	seconds := floatValue(value)
 	if seconds <= 0 || math.IsNaN(seconds) || math.IsInf(seconds, 0) {
 		return time.Time{}

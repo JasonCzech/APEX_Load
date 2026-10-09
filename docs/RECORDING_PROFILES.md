@@ -35,12 +35,38 @@ The proxy recorder and HAR import reject an unknown profile ID with 400. The
 browser recorder still saves its browser script, skips the HTTP script, and
 says why in a warning.
 
+## One conversion pipeline
+
+The proxy recorder, the browser recorder's HTTP script and HAR import all
+convert through the same pipeline (`pkg/convert/sample`). A proxy session
+is written as an in-memory HAR, and conversion then applies one set of rules
+to all three: redirects, bodies, headers, cookies, correlation, the async
+scan, WebSocket placement and the replay baseline.
+
+The proxy recorder adds a few rules of its own:
+
+- **Headers.** It drops browser-supplied headers such as `User-Agent`,
+  `Accept` and `Sec-Fetch-*`. It drops `Cookie` unless cookie capture is on.
+  A profile's header lists override both.
+- **Recorded values.** The step names, transaction names and think-time edits
+  a tester made in Recording Studio carry through, as does the recorder's own
+  static-resource classification.
+- **Correlation.** Only high-confidence correlations are rewritten
+  automatically; the rest stay review candidates.
+
+A recording keeps the credentials its requests carried, as every import does.
+Correlation still replaces the values that a response supplied.
+
+An exported recording HAR carries the same `_apexload_*` entry fields. If it
+is imported again, its steps, transactions, think times and resource
+classification are kept.
+
 ## Settings
 
 | Group | Field | Effect |
 | --- | --- | --- |
 | General | `http_script_level` | `url` (default) or `html` for the browser recorder's HTTP script |
-| General | `resource_mode` | `runtime` (default: resources are not recorded and are discovered at replay), `in_step` (attached to their page), or `separate` (their own steps; HAR import only, see below) |
+| General | `resource_mode` | `runtime` (default: resources are not recorded and are discovered at replay), `in_step` (attached to their page), or `separate` (their own steps) |
 | General | `think_time_threshold_ms` | The smallest recorded pause kept as think time (default 500 ms) |
 | Code generation | `page_title_checks` | A `<title>` check on each recorded HTML page (default on) |
 | Code generation | `async_scan` | Turns repeated background requests into polling, long-polling or push conversations (default on) |
@@ -69,7 +95,7 @@ recording.
 | Recording level: HTML-based | `http_script_level: html` | Browser recorder only. The proxy recorder and HAR import see requests but not the user actions that HTML-mode steps describe |
 | Recording level: URL-based | `http_script_level: url` (default) | Every recorder |
 | Advanced HTML: user actions vs explicit URLs | `http_script_level` | The two choices are the `html` and `url` levels |
-| Advanced HTML: non-HTML resources in step, in concurrent groups, or not recorded | `resource_mode: in_step, separate, runtime` | The proxy recorder records `separate` as `in_step` with a warning. Its replay baseline lines up recorded steps with non-static requests |
+| Advanced HTML: non-HTML resources in step, in concurrent groups, or not recorded | `resource_mode: in_step, separate, runtime` | Every recorder. The replay baseline follows the resulting steps |
 | Advanced URL: concurrent groups; `web_custom_request` only | Not a recording choice | Native scripts are always explicit requests, which is what `web_custom_request` gives VuGen. Resources a page fetches in parallel replay as that step's resources (`in_step`) |
 | HTTP properties: `web_reg_find` for page titles | `page_title_checks` | |
 | HTTP properties: generate `web_add_cookie` | `capture_cookies` | Off: replay's cookie jar sends cookies, the equivalent of not generating cookie steps. On: the recorded `Cookie` headers are kept |

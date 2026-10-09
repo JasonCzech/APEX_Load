@@ -87,6 +87,9 @@ func sampleCorrelations(shared []correlate.Correlation) []Correlation {
 			SampleValue: corr.SampleValue,
 			FoundInStep: corr.FoundInID,
 			UsedInSteps: corr.UsedInIDs,
+			RuleID:      corr.RuleID,
+			Confidence:  corr.Confidence,
+			Reasons:     corr.Reasons,
 		})
 	}
 	return correlations
@@ -239,6 +242,14 @@ func prepareCorrelationApplicationWithExtractionLimit(exchanges []exchange, corr
 	for planIndex := range plans {
 		plan := &plans[planIndex]
 		corr := &correlations[plan.index]
+		if corr.reviewOnly {
+			// Below the automatic-rewrite confidence: the candidate stays
+			// for review, after it took part in the collision check above.
+			plan.rawMapped, plan.encodedMapped = false, false
+			corr.PreApplied = false
+			corr.ReviewAction = "manual_review_required"
+			continue
+		}
 		if plan.usage.unsupportedEncoded || (plan.usage.encoded && !plan.encodedSupported) {
 			corr.ReviewAction = manualCorrelationValueReplacement
 		}

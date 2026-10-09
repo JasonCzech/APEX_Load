@@ -417,7 +417,9 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if result.Script != nil && stored.ID != "" {
-		if err := s.persistRecordedBaseline(stored.ID, "proxy_recording", stored.Script, recorder.SessionBaseline(session)); err != nil {
+		// The conversion's own baseline lines up with the options it used
+		// (resource mode, profile filters, async shaping).
+		if err := s.persistRecordedBaseline(stored.ID, "proxy_recording", stored.Script, result.Baseline); err != nil {
 			slog.Warn("failed to persist proxy recording baseline", "script_id", stored.ID, "error", err)
 		}
 	}
