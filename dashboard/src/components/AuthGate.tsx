@@ -2,6 +2,7 @@ import {
   ReactNode,
   FormEvent,
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -9,6 +10,7 @@ import {
 } from "react";
 
 import {
+  ApiError,
   apiFetch,
   openDesktopBrowserWithPreview,
   requestApiNavigation,
@@ -23,6 +25,15 @@ import { useAuthApi } from "../hooks/api/useAuthApi";
 import ErrorDiagnostic from "./ErrorDiagnostic";
 import Logo from "./Logo";
 import "./AuthGate.css";
+
+// Server sign-in errors are terse machine strings; the card speaks in plain copy.
+function localLoginErrorMessage(cause: unknown): string {
+  if (cause instanceof ApiError) {
+    if (cause.status === 401) return "Incorrect username or password.";
+    if (cause.status === 429) return "Too many sign-in attempts. Wait a minute, then try again.";
+  }
+  return cause instanceof Error && cause.message ? cause.message : "Unable to sign in.";
+}
 
 function validatedTrustedHeaderLoginURL(loginURL: string | undefined): string {
   const trimmed = loginURL?.trim() || "";
@@ -71,6 +82,10 @@ export default function AuthGate({
   const [logoutPending, setLogoutPending] = useState(false);
   const [loginPending, setLoginPending] = useState(false);
   const [loginError, setLoginError] = useState("");
+  const loginErrorRef = useRef<HTMLParagraphElement | null>(null);
+  useEffect(() => {
+    if (loginError) loginErrorRef.current?.focus();
+  }, [loginError]);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [desktopOpenPending, setDesktopOpenPending] = useState(false);
@@ -97,7 +112,9 @@ export default function AuthGate({
     requestAuthStatusRefresh();
   };
   const signInAgainLocally = async (nextUsername: string, nextPassword: string) => {
-    const response = await login(nextUsername, nextPassword);
+    const response = await login(nextUsername, nextPassword).catch((cause: unknown) => {
+      throw new Error(localLoginErrorMessage(cause));
+    });
     if (!response.authenticated) throw new Error("Authentication did not complete.");
     // Signed in: from here on, never report failure. If the identity check
     // fails, the in-place refresh re-checks and retries on its own.
@@ -300,7 +317,7 @@ export default function AuthGate({
               ? "user"
               : undefined;
         if (!previewMode) {
-          throw new Error("Invalid development persona credentials.");
+          throw new Error("Incorrect persona username or password. Use one of the test credentials below.");
         }
         onDevPersonaLogin?.(previewMode);
         return;
@@ -309,7 +326,9 @@ export default function AuthGate({
       if (!response.authenticated) throw new Error("Authentication did not complete.");
       reloadAuthentication();
     } catch (cause: unknown) {
-      setLoginError(cause instanceof Error ? cause.message : "Unable to sign in.");
+      // Clear the rejected password and take focus to the reason.
+      setPassword("");
+      setLoginError(localLoginErrorMessage(cause));
     } finally {
       setLoginPending(false);
     }
@@ -360,7 +379,7 @@ export default function AuthGate({
                 disabled={desktopOpenPending}
               >
                 {desktopOpenPending
-                  ? "Opening browser..."
+                  ? "Opening browser…"
                   : "Open dashboard in system browser"}
               </button>
             </p>
@@ -395,7 +414,7 @@ export default function AuthGate({
               {loginPending ? "Signing in…" : "Sign in"}
             </button>
           </form>
-          {loginError && <p className="auth-gate-error" role="alert">{loginError}</p>}
+          {loginError && <p ref={loginErrorRef} tabIndex={-1} className="auth-gate-error" role="alert">{loginError}</p>}
           <div className="auth-gate-personas" aria-label="Development test credentials">
             <strong>Test credentials</strong>
             <ul>
@@ -447,7 +466,7 @@ export default function AuthGate({
                 {loginPending ? "Signing in…" : "Sign in"}
               </button>
             </form>
-            {loginError && <p className="auth-gate-error" role="alert">{loginError}</p>}
+            {loginError && <p ref={loginErrorRef} tabIndex={-1} className="auth-gate-error" role="alert">{loginError}</p>}
             {desktopOpenError && <p className="auth-gate-error" role="alert">{desktopOpenError}</p>}
             {desktopIntentError && <p className="auth-gate-error" role="alert">{desktopIntentError}</p>}
             {state.auth.logout_url && state.auth.logout_csrf_token && (
@@ -493,7 +512,7 @@ export default function AuthGate({
                 disabled={desktopOpenPending}
               >
                 {desktopOpenPending
-                  ? "Opening browser..."
+                  ? "Opening browser…"
                   : "Open authenticated dashboard"}
               </button>
             </p>
@@ -542,7 +561,7 @@ export default function AuthGate({
               </a>
             </p>
           )}
-          {loginError && <p role="alert">{loginError}</p>}
+          {loginError && <p ref={loginErrorRef} tabIndex={-1} role="alert">{loginError}</p>}
           {desktopOpenError && <p role="alert">{desktopOpenError}</p>}
           {desktopIntentError && <p role="alert">{desktopIntentError}</p>}
           {state.auth.logout_url && state.auth.logout_csrf_token && (
@@ -553,7 +572,7 @@ export default function AuthGate({
                 onClick={signOutLocalSession}
                 disabled={logoutPending}
               >
-                {logoutPending ? "Signing out..." : "Sign out local session"}
+                {logoutPending ? "Signing out…" : "Sign out local session"}
               </button>
             </p>
           )}

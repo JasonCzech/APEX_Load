@@ -10,5 +10,5 @@
 .repository-readiness-note { display: block; color: var(--text-secondary); font-size: 12px; line-height: 1.5; margin-top: 6px; }
 .repository-asset-name details { color: var(--text-secondary); font-size: 12px; }
 .repository-asset-name details code { overflow-wrap: anywhere; }
-.repository-structure-panel article:focus { outline: 2px solid var(--accent); outline-offset: 3px; }
+.repository-structure-panel article:focus { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
 @media (max-width: 760px) { .repository-inspection dl { grid-template-columns: minmax(0, 1fr); } }

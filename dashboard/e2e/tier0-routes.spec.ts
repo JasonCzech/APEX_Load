@@ -39,7 +39,7 @@ test('[U22] every top-level view renders under a real workspace scope', async ({
 
     try {
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
-      await expect(page.getByText('Loading page...', { exact: true })).toBeHidden()
+      await expect(page.getByText('Loading page…', { exact: true })).toBeHidden()
       await expect(page.locator('main').locator('.page, .command-center-page, .dashboard-workspace').first()).toBeVisible()
       await expect(page.locator('main').getByText('This dashboard page could not be loaded.', { exact: true })).toBeHidden()
       await expect.poll(() => page.locator('main').locator('table, section, [role="tabpanel"], .page > :not(.page-header)').count()).toBeGreaterThan(0)

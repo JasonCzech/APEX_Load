@@ -18,7 +18,7 @@ import (
 const (
 	menuEventZoom        = "menu:zoom"           // payload: "in" | "out" | "reset"
 	menuEventAbout       = "menu:about"          // open the in-app About dialog
-	menuEventAction      = "menu:action"         // payload: action id ("new-test" | "open-script" | "import")
+	menuEventAction      = "menu:action"         // payload: action id ("new-test" | "open-script" | "import" | "help" | "shortcuts")
 	menuEventOpenBrowser = "menu:open-browser"   // renderer transfers its current dev preview/project context
 	eventOpenRecent      = "desktop:open-recent" // payload: the recent item's dashboard route
 	eventRecentsChanged  = "desktop:recents-changed"
@@ -84,6 +84,11 @@ func buildAppMenuForOS(app *App, goos string) *menu.Menu {
 	}
 
 	helpMenu := appMenu.AddSubmenu("Help")
+	// In-app help and the shortcut list are owned by the dashboard; the menu
+	// only asks for them, like File's actions.
+	helpMenu.AddText("APEX Load Help", nil, app.menuAction("help"))
+	helpMenu.AddText("Keyboard Shortcuts…", nil, app.menuAction("shortcuts"))
+	helpMenu.AddSeparator()
 	helpMenu.AddText("About APEX Load", nil, app.menuEmit(menuEventAbout))
 	// The renderer owns the live development preview/project selection. Route
 	// this menu action through it so the native call cannot silently fall back to

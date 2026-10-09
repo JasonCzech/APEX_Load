@@ -18,4 +18,4 @@
 .scenario-script-data tbody th { min-width: 145px; }
 .scenario-script-data thead th { color: var(--text-muted); font-weight: 500; }
 .scenario-script-data small { display: block; margin-top: 4px; font-weight: 400; }
-.scenario-script-data :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.scenario-script-data :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }

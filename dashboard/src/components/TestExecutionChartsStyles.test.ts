@@ -15,7 +15,7 @@ describe('Test Execution chart axis styles', () => {
     const css = await readStylesheet(new URL('./TestExecution.css', import.meta.url))
     const focusRule = ruleBody(css, /\.chart-y-axis-click-target:focus-visible \{([\s\S]*?)\n\}/)
 
-    expect(focusRule).toContain('outline: 2px solid var(--accent);')
+    expect(focusRule).toContain('outline: 2px solid var(--focus-ring);')
     expect(focusRule).not.toContain('outline: none;')
   })
 

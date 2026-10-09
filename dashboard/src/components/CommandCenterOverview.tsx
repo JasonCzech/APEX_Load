@@ -54,7 +54,7 @@ export default function CommandCenterOverview(props: CommandCenterOverviewProps)
     {scopeReady && <p role="status">{updatedAt ? `${error ? 'Stale list' : 'Run list'} · Last updated ${new Date(updatedAt).toLocaleTimeString()}` : loading ? 'Looking for active runs…' : error ? 'Run list unavailable' : 'No run list loaded'}{loading && updatedAt ? ' · Refreshing…' : ''}</p>}
     {empty && <p>Start a new test or choose a saved scenario. Live controls and metrics will appear when you open its run.</p>}
     {runs.length > 0 && <>
-      <p>{runs.length} active runs · {runs.length - waiting} executing or paused · {waiting} waiting or scheduled</p>
+      <p>{runs.length} active {runs.length === 1 ? 'run' : 'runs'} · {runs.length - waiting} executing or paused · {waiting} waiting or scheduled</p>
       <div className="command-overview-filters">
         <label>Find a run<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Name or run reference" /></label>
         <label>Status<select value={status} onChange={event => setStatus(event.target.value)}><option value="all">All statuses</option>{[...new Set([...statuses, ...(status === 'all' ? [] : [status])])].map(value => <option key={value} value={value}>{value}</option>)}</select></label>

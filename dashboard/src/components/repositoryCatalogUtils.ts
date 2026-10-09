@@ -444,11 +444,19 @@ export function summarizeRepositoryRows(rows: RepositoryAssetRow[]) {
   })
 }
 
+/** True when both custom activity dates are set and From falls after To. */
+export function customRangeInverted(filters: Pick<RepositoryCatalogFilters, 'customStartDate' | 'customEndDate'>) {
+  return Boolean(filters.customStartDate && filters.customEndDate && filters.customStartDate > filters.customEndDate)
+}
+
 export function filterRepositoryRows(rows: RepositoryAssetRow[], tab: RepositoryCatalogTab, filters: RepositoryCatalogFilters) {
   const query = filters.query.trim().toLowerCase()
   const now = Date.now()
-  const customStart = filters.customStartDate ? Date.parse(`${filters.customStartDate}T00:00:00`) : Number.NaN
-  const customEnd = filters.customEndDate ? Date.parse(`${filters.customEndDate}T23:59:59.999`) : Number.NaN
+  // An inverted range is shown as a validation error; until it is corrected
+  // the rows stay filtered as if no custom dates were set.
+  const invertedRange = customRangeInverted(filters)
+  const customStart = filters.customStartDate && !invertedRange ? Date.parse(`${filters.customStartDate}T00:00:00`) : Number.NaN
+  const customEnd = filters.customEndDate && !invertedRange ? Date.parse(`${filters.customEndDate}T23:59:59.999`) : Number.NaN
   return rows.filter(row => {
     if (tab !== 'all' && tab !== 'structure' && row.kind !== tab) return false
     if (filters.projectId !== 'all' && row.projectId !== filters.projectId) return false

@@ -8,6 +8,7 @@ import { type ProjectSecretMetadata, type ProjectSecretUsage } from '../types/se
 import { getErrorMessage } from '../utils/errorUtils'
 import { isValidSecretBindingName } from './secretBindingUtils'
 import './ProjectSecretsPanel.css'
+import { formatDateTime } from '../utils/dateTime'
 
 interface Props {
   projectId: string
@@ -26,10 +27,9 @@ type SecretReconciliation = {
   failureMessage: string
 }
 
+// Shared formatter: dates read the same, zone included, as the rest of the app.
 function formatTimestamp(value?: string): string {
-  if (!value) return 'Not recorded'
-  const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
+  return formatDateTime(value, { seconds: true, fallback: 'Not recorded' })
 }
 
 function metadataCaughtUp(listed: ProjectSecretMetadata, committed: ProjectSecretMetadata): boolean {
@@ -459,7 +459,7 @@ export default function ProjectSecretsPanel({
             )}
           </div>
         )}
-        {loading && <p className="new-test-inline-note" role="status">Loading secret metadata...</p>}
+        {loading && <p className="new-test-inline-note" role="status">Loading secret metadata…</p>}
 
         {!loading && secrets.length > 0 ? (
           <div className="project-secret-list">
@@ -489,7 +489,7 @@ export default function ProjectSecretsPanel({
                           disabled={Boolean(usageLoadingName)}
                           onClick={() => { void loadMoreConsumers(secret.name) }}
                         >
-                          {usageLoadingName === secret.name ? 'Loading consumers...' : 'Load more consumers'}
+                          {usageLoadingName === secret.name ? 'Loading consumers…' : 'Load more consumers'}
                         </button>
                       )}
                     </details>
@@ -524,7 +524,7 @@ export default function ProjectSecretsPanel({
                       onClick={() => { void rotateSecret(secret.name) }}
                       disabled={!secret.writable || !canRotate || !writable || !replaceSupported || !rotateValue || Boolean(busyName) || ((usageByName[secret.name]?.consumer_count || 0) > 1 && !rotationAcknowledged)}
                     >
-                      {busyName === secret.name ? 'Rotating...' : 'Rotate'}
+                      {busyName === secret.name ? 'Rotating…' : 'Rotate'}
                     </button>
                     <button
                       className="btn btn-ghost btn-sm"
@@ -616,7 +616,7 @@ export default function ProjectSecretsPanel({
             onClick={() => { void createSecret() }}
             disabled={!canCreate || !writable || !createSupported || !normalizedNewName || !newValue || Boolean(nameError) || Boolean(busyName)}
           >
-            {busyName && busyName === normalizedNewName ? 'Creating...' : 'Create Secret'}
+            {busyName && busyName === normalizedNewName ? 'Creating…' : 'Create Secret'}
           </button>
         </div>
         {nameError && <p id={nameErrorId} className="settings-error-inline" role="alert">{nameError}</p>}

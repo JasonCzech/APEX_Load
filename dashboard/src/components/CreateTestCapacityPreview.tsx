@@ -97,7 +97,7 @@ export default function CreateTestCapacityPreview({ chartData, groups, draftEsti
       <div className={`draft-capacity-card ${draftEstimate?.capacity_advisory?.requires_override ? 'warning' : 'ready'}`}>
         <div className="draft-capacity-header">
           <h4>Draft Capacity Estimate</h4>
-          {estimateLoading && <span className="draft-capacity-status">Refreshing...</span>}
+          {estimateLoading && <span className="draft-capacity-status">Refreshing…</span>}
         </div>
         {estimateError ? (
           <p className="draft-capacity-error">{estimateError}</p>

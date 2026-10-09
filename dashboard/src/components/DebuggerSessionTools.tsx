@@ -24,10 +24,24 @@ export function DebugProfiles({ options, onChange, disabled }: { options: Replay
   </div>
 }
 
-export function DebugVariableWatches({ events, seed, latest, selected, onSelect, evidenceUnavailable = false, snapshot = null, currentReason = 'Current state unavailable. Pause at an engine boundary to inspect values.', mode, onModeChange, completed = false, canInspectFrame, onInspectFrame }: { events: BrowserReplayEvent[]; seed: Record<string, string>; latest: Record<string, string> | null; selected: number | null; onSelect: (index: number) => void; evidenceUnavailable?: boolean; snapshot?: ReplayRuntimeSnapshot | null; currentReason?: string; mode?: RuntimeInspectionMode; onModeChange?: (mode: RuntimeInspectionMode) => void; completed?: boolean; canInspectFrame?: (frame: ReplayRuntimeSnapshot['frames'][number]) => boolean; onInspectFrame?: (frame: ReplayRuntimeSnapshot['frames'][number]) => void }) {
+export function DebugVariableWatches({ events, seed, latest, selected, onSelect, evidenceUnavailable = false, snapshot = null, currentReason = 'Current state unavailable. Pause at an engine boundary to inspect values.', mode, onModeChange, completed = false, finalValuesRecorded = false, canInspectFrame, onInspectFrame }: { events: BrowserReplayEvent[]; seed: Record<string, string>; latest: Record<string, string> | null; selected: number | null; onSelect: (index: number) => void; evidenceUnavailable?: boolean; snapshot?: ReplayRuntimeSnapshot | null; currentReason?: string; mode?: RuntimeInspectionMode; onModeChange?: (mode: RuntimeInspectionMode) => void; completed?: boolean; finalValuesRecorded?: boolean; canInspectFrame?: (frame: ReplayRuntimeSnapshot['frames'][number]) => boolean; onInspectFrame?: (frame: ReplayRuntimeSnapshot['frames'][number]) => void }) {
   const [localMode, setLocalMode] = useState<RuntimeInspectionMode>('current')
-  const scope = mode || localMode
-  const changeMode = (value: RuntimeInspectionMode) => { setLocalMode(value); onModeChange?.(value) }
+  const [explicitCurrent, setExplicitCurrent] = useState(false)
+  const requested = mode || localMode
+  // Once the session has ended "Current paused state" can only say it is
+  // unavailable, so show the recorded values by default until the engineer
+  // asks for the current state.
+  // The choice is published to the shared mode, so every debugger panel shows the same point in time.
+  // Final values are only supplied once a recorded scope is chosen, so the caller says they exist.
+  const hasRecordedValues = events.length > 0 || finalValuesRecorded || Object.keys(latest || {}).length > 0
+  const fallbackScope: RuntimeInspectionMode | null = requested === 'current' && completed && !snapshot && !explicitCurrent && hasRecordedValues ? selected != null ? 'selected' : 'retained' : null
+  const scope: RuntimeInspectionMode = fallbackScope || requested
+  useEffect(() => {
+    if (!fallbackScope) return
+    setLocalMode(fallbackScope)
+    onModeChange?.(fallbackScope)
+  }, [fallbackScope, onModeChange])
+  const changeMode = (value: RuntimeInspectionMode) => { setExplicitCurrent(value === 'current'); setLocalMode(value); onModeChange?.(value) }
   const [search, setSearch] = useState('')
   const [changedOnly, setChangedOnly] = useState(false)
   const [pinned, setPinned] = useState<string[]>([])

@@ -5,7 +5,7 @@ import { useState, useEffect, createContext, useContext } from 'react'
 import type { ScriptActionDefinition, ScriptAssertionDefinition, ScriptParameterDefinition, ScriptValidationResponse } from '../types/scripts'
 import type { ActionEditorParameterDraft } from './scriptEditorState'
 import type { ActionEditorSelectionState } from './scriptEditorJsonModel'
-import { asString, httpSequenceRequests, isControlAction, isReviewGatedJavaScriptAction, actionExecutionBlockers, actionRequiresReview, actionSelectorFallbackCount } from './scriptActionHelpers'
+import { asString, httpSequenceRequests, isControlAction, isSourceFunctionAction, isReviewGatedJavaScriptAction, actionExecutionBlockers, actionRequiresReview, actionSelectorFallbackCount } from './scriptActionHelpers'
 import { appendActionStep, moveActionStep, removeActionStep, updateActionStepField, actionTransactionName, setActionTransactionName } from './scriptEditorWorkbench'
 import { dslActionTypesForProtocol, dslActionUsesSelector, dslActionUsesValue } from './dslActionCatalog'
 import { ProtocolExtractorsSection, ProtocolAssertionsSection, BrowserActionFields, DatabaseActionFields, GrpcActionFields, HttpActionFields, JmsActionFields, NetworkActionFields, WebSocketActionFields } from './scriptActionFields'
@@ -21,6 +21,19 @@ const HTTP_RUNTIME_ACTION_TYPES = new Set(['cookie_clear', 'cache_clear', 'http_
 
 function isHTTPRuntimeAction(action: Action): boolean {
   return HTTP_RUNTIME_ACTION_TYPES.has(action.type)
+}
+
+/** The imported LoadRunner call an action replays, in place of request fields it does not have. */
+function SourceFunctionSummary({ action }: { action: Action }) {
+  const params = (action.params || {}) as Record<string, unknown>
+  if (action.type === 'rendezvous' && !Array.isArray(params.args)) {
+    return <div className="form-hint full-width">VUsers wait at rendezvous point <code>{asString(params.key) || action.name}</code> until the others arrive. It has no request target, headers or body.</div>
+  }
+  const fn = asString(params.function) || action.type
+  const args = Array.isArray(params.args) ? params.args.map(value => typeof value === 'string' ? value : JSON.stringify(value)) : []
+  return <div className="form-hint full-width">
+    Replays the source call <code>{fn}({args.join(', ')})</code> at its original position. It has no request target, headers or body.
+  </div>
 }
 
 export function ActionEditor({ inspector = false, initialSection = 'request', onOpenBody, action, index, parameters, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, onBeginParameterEdit, methodColor, protocol, scriptHTTPVersion, isBrowserScript, isJmsScript, isSoapScript, issues }: {
@@ -58,6 +71,7 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
   const isNetworkScript = protocol === 'network'
   const isHTTPSequence = action.type === 'http_sequence'
   const isHTTPRuntimeControl = isHTTPRuntimeAction(action)
+  const isSourceFunction = isSourceFunctionAction(action)
   const { selectionState, openSelectionMenu, openParameterEditor } = useActionParameterMenu({
     index,
     onBeginParameterEdit,
@@ -69,7 +83,7 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
       <ActionEditorHeader action={action} issues={issues} methodColor={methodColor} />
 
       {inspector && <div className="inspector-section-tabs" role="group" aria-label="Action property sections">
-        {['request', 'checks', 'timing', 'metadata'].map(value => <button type="button" key={value} aria-pressed={section === value} onClick={() => setSection(value)}>{value === 'checks' ? `Correlation & checks (${(action.extractors?.length || 0) + (action.assertions?.length || 0)})` : value === 'request' ? isControlAction(action) ? 'Control flow' : isHTTPRuntimeControl ? 'State control' : 'Request' : value === 'timing' ? 'Timing' : 'Metadata'}</button>)}
+        {['request', 'checks', 'timing', 'metadata'].map(value => <button type="button" key={value} aria-pressed={section === value} onClick={() => setSection(value)}>{value === 'checks' ? `Correlation & checks (${(action.extractors?.length || 0) + (action.assertions?.length || 0)})` : value === 'request' ? isControlAction(action) ? 'Control flow' : isHTTPRuntimeControl ? 'State control' : isSourceFunction ? 'Source call' : 'Request' : value === 'timing' ? 'Timing' : 'Metadata'}</button>)}
       </div>}
       <div hidden={inspector && section !== 'request'}>
       <OpenActionBody.Provider value={inspector ? onOpenBody : undefined}>
@@ -109,7 +123,7 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
             <ControlFlowFields action={action} index={index} onUpdate={onUpdate} />
           )}
 
-          {!isHTTPRuntimeControl && !isControlAction(action) && (isWebSocketScript ? (
+          {!isHTTPRuntimeControl && !isControlAction(action) && !isSourceFunction && (isWebSocketScript ? (
             <WebSocketActionFields
               action={action}
               index={index}
@@ -871,14 +885,15 @@ function ActionCoreFields({ hideActionType = false, typeOnly = false, action, in
           {['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].map(method => <option key={method}>{method}</option>)}
         </select>
       </label>}
-      <label><span>Transaction</span>
+      {/* A transaction marker opens or closes a transaction itself; wrapping it in another is meaningless. */}
+      {action.type !== 'source_transaction' && <label><span>Transaction</span>
         <input
           value={actionTransactionName(action)}
           placeholder="(none)"
           title="Wrap this action in a named transaction — timed and aggregated (TPS, percentiles, pass/fail); SLAs attach to it."
           onChange={e => onUpdate(index, 'metadata', setActionTransactionName(action, e.target.value).metadata)}
         />
-      </label>
+      </label>}
       {isOAuthTokenAction ? (
         <>
           <label><span>Grant Type</span>
@@ -912,6 +927,8 @@ function ActionCoreFields({ hideActionType = false, typeOnly = false, action, in
             </>
           )}
         </>
+      ) : isSourceFunctionAction(action) ? (
+        <SourceFunctionSummary action={action} />
       ) : isRuntimeStateAction || isControlAction(action) ? (
         <div className="form-hint full-width">This action controls execution and has no request target.</div>
       ) : (

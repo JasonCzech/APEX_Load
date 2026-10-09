@@ -24,6 +24,6 @@ export function isApiGuideContentPageID(value: string | null | undefined): value
 }
 export function apiGuideHashForToggle(value: ApiGuideToggleID): string {
   if (value === 'swagger') return '#/swagger'
-  if (value === 'repo-guide') return '#/repository-guide'
+  if (value === 'repo-guide') return '#/docs?article=api-workflows'
   return value === API_GUIDE_DEFAULT_PAGE ? '#/docs' : `#/docs?guide=${value}`
 }

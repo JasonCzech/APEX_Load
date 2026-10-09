@@ -98,17 +98,17 @@ export default function RunReportCompareBar({
           </button>
         )}
         <button className="btn btn-sm btn-primary" type="button" onClick={() => void pin()} disabled={pinning || !compareId}>
-          {pinning ? 'Pinning...' : 'Pin baseline'}
+          {pinning ? 'Pinning…' : 'Pin baseline'}
         </button>
         {pinMessage && <span role="status">{pinMessage}</span>}
       </div>
-      {loading && <p role="status">Loading baseline...</p>}
+      {loading && <p role="status">Loading baseline…</p>}
       {error && <p className="run-report-error">{error}</p>}
       {compareId && <div className="run-report-compare-deltas">
         <DeltaCell label="Avg latency" value={deltas.avgLatency} />
         <DeltaCell label="P95" value={deltas.p95} />
         <DeltaCell label="Error rate" value={deltas.errorRate} />
-        <DeltaCell label="Peak attempts/s" value={deltas.peakTps} />
+        <DeltaCell label="Peak TPS (attempts/s)" value={deltas.peakTps} />
         <DeltaCell label="Peak VUsers" value={deltas.peakVusers} />
       </div>}
     </section>

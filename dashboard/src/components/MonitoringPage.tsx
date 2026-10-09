@@ -588,6 +588,12 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const telemetryWarningCount = telemetryDiagnostics.filter(entry => entry.diagnostic.severity === 'warning').length
   const telemetryDangerCount = telemetryDiagnostics.filter(entry => entry.diagnostic.severity === 'danger').length
   const telemetryLatestEntry = telemetryDiagnostics[0] ?? null
+  // The summary shows the worst current condition the header counts, not
+  // whichever sample arrived last (newest entries come first).
+  const telemetryFocusEntry = telemetryDiagnostics.find(entry => entry.diagnostic.severity === 'danger')
+    ?? telemetryDiagnostics.find(entry => entry.diagnostic.severity === 'warning')
+    ?? telemetryLatestEntry
+  const telemetryFocusLabel = telemetryFocusEntry?.diagnostic.severity === 'danger' ? 'Latest danger' : telemetryFocusEntry?.diagnostic.severity === 'warning' ? 'Latest warning' : 'Latest sample'
   const telemetryHeaderSeverity = telemetryDangerCount > 0 ? 'danger' : telemetryWarningCount > 0 ? 'warning' : telemetryDiagnostics.length ? 'healthy' : 'unknown'
   const telemetryHeaderLabel = telemetryDangerCount > 0
     ? `${telemetryDangerCount} danger`
@@ -1124,8 +1130,8 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
 
   const capacitySummary = useMemo(() => fleetCapacitySummary(fleetCapacity, health), [fleetCapacity, health])
   const cards = useMemo<MonitorCard[]>(() => [
-    { id: 'run-monitor-sources', title: 'Run monitor sources', icon: <span aria-hidden="true">M</span>, content: <RunMonitorSources key={activeProjectId} projectId={activeProjectId} canManage={canManageProjects} /> },
-    { id: 'parquet-analysis', title: 'Analysis workspace', icon: <span aria-hidden="true">PT</span>, content: <AnalysisWorkspace key={activeProjectId} projectId={activeProjectId} canEdit={canManageTests} /> },
+    { id: 'run-monitor-sources', title: 'Run monitor sources', icon: <span aria-hidden="true">M</span>, content: <RunMonitorSources key={activeProjectId} projectId={activeProjectId} canManage={canManageProjects} showEnableHint={canManageSystem} /> },
+    { id: 'parquet-analysis', title: 'Analysis workspace', icon: <span aria-hidden="true">PT</span>, content: <AnalysisWorkspace key={activeProjectId} projectId={activeProjectId} canEdit={canManageTests} showEnableHint={canManageSystem} /> },
     {
       id: 'system-health',
       title: 'Control Plane',
@@ -1145,7 +1151,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
             <span className="monitor-label">API</span>
             <span className="monitor-stat">
               <span className={`monitor-indicator ${apiHealthSeverity === 'healthy' ? 'healthy' : 'unknown'}`} />
-              <span className="monitor-value">{health?.status || 'Checking...'}</span>
+              <span className="monitor-value">{health?.status || 'Checking…'}</span>
             </span>
           </div>
           <div className="monitor-row">
@@ -1315,13 +1321,14 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
               </div>
               <div className="telemetry-summary-details">
                 <div className="telemetry-summary-headline">
-                  <span className={`telemetry-diagnostic-badge ${telemetryLatestEntry ? telemetryDiagnosticSeverityClass(telemetryLatestEntry.diagnostic.severity) : 'healthy'}`}>
-                    {telemetryLatestEntry?.diagnostic.severity || 'No diagnostic samples'}
+                  <span className="telemetry-summary-label">{telemetryFocusLabel}</span>
+                  <span className={`telemetry-diagnostic-badge ${telemetryFocusEntry ? telemetryDiagnosticSeverityClass(telemetryFocusEntry.diagnostic.severity) : 'healthy'}`}>
+                    {telemetryFocusEntry?.diagnostic.severity || 'No diagnostic samples'}
                   </span>
-                  <span className="telemetry-diagnostic-time">{telemetryLatestEntry ? formatTelemetryDiagnosticTime(telemetryLatestEntry.timestamp) : 'No issues'}</span>
+                  <span className="telemetry-diagnostic-time">{telemetryFocusEntry ? formatTelemetryDiagnosticTime(telemetryFocusEntry.timestamp) : 'No issues'}</span>
                 </div>
                 <div className="telemetry-diagnostic-summary">
-                  {telemetryLatestEntry ? `${telemetryLatestEntry.test_name || telemetryLatestEntry.test_id}: ${telemetryLatestEntry.diagnostic.summary}` : 'No issues detected.'}
+                  {telemetryFocusEntry ? `${telemetryFocusEntry.test_name || telemetryFocusEntry.test_id}: ${telemetryFocusEntry.diagnostic.summary}` : 'No issues detected.'}
                 </div>
                 <div className="telemetry-summary-cta">View details</div>
               </div>
@@ -1461,7 +1468,8 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
                 <span className={`status-badge ${provisioner.can_provision ? 'status-running' : 'status-idle'}`}>
                   {provisioner.can_provision ? 'on-demand' : 'static fleet'}
                 </span>
-                {' '}{provisioner.name}
+                {/* The built-in provisioner's name only repeats the badge. */}
+                {provisioner.name.replace(/[-_]+/g, ' ').toLowerCase() !== (provisioner.can_provision ? 'on-demand' : 'static fleet') && <>{' '}{provisioner.name}</>}
                 {provisioner.supported_regions && provisioner.supported_regions.length > 0 && (
                   <span className="cell-muted"> · {provisioner.supported_regions.join(', ')}</span>
                 )}
@@ -1496,15 +1504,13 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
             <span className="monitor-label">Source</span>
             <span className="monitor-value">{capacitySummary.sourceLabel}</span>
           </div>
-          {fleetCapacity?.project_slots?.length ? (
-            <div className="monitor-warning-list">
-              {fleetCapacity.project_slots.slice(0, 3).map(slots => (
-                <p key={slots.project_id}>
-                  {slots.project_name || slots.project_id}: {slots.active_slots.toLocaleString()} active / {slots.pending_slots.toLocaleString()} pending slots ({slots.fair_share_tier})
-                </p>
-              ))}
+          {/* Usage is information, not a fault: neutral rows, unlike rejection reasons below. */}
+          {fleetCapacity?.project_slots?.length ? fleetCapacity.project_slots.slice(0, 3).map(slots => (
+            <div className="monitor-row" key={slots.project_id}>
+              <span className="monitor-label">{slots.project_name || slots.project_id}</span>
+              <span className="monitor-value">{slots.active_slots.toLocaleString()} active / {slots.pending_slots.toLocaleString()} pending slots ({slots.fair_share_tier})</span>
             </div>
-          ) : null}
+          )) : null}
           {fleetCapacity?.pending_runs?.length ? <div className="monitor-warning-list"><strong>Pending runs</strong>{fleetCapacity.pending_runs.map(run => <p key={run.id}><button type="button" className="btn btn-secondary btn-sm" onClick={() => onSelectTest?.(run.id)} disabled={!onSelectTest}>{run.name || run.id}</button> · {run.status} · {run.vusers.toLocaleString()} slots</p>)}</div> : null}
           {fleetCapacity?.compatible_features?.length ? (
             <div className="monitor-row">
@@ -1656,7 +1662,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
                         onClick={() => void toggleFleetAlertAck(alert)}
                         aria-label={`${alert.acknowledged ? 'Clear acknowledgement of' : 'Acknowledge'} ${alert.target || alert.summary}`}
                       >
-                        {fleetAlertActionBusy === alert.id ? 'Saving...' : alert.acknowledged ? 'Clear' : 'Ack'}
+                        {fleetAlertActionBusy === alert.id ? 'Saving…' : alert.acknowledged ? 'Clear' : 'Ack'}
                       </button>
                     ) : null}
                   </div>
@@ -1691,7 +1697,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         <div className="monitor-body">
           {!canManageSystem ? (
             <p className="monitor-hint">System admin access is required to view fleet audit activity.</p>
-          ) : <><AuditEventTable events={fleetAuditEvents} emptyMessage="No recent fleet audit activity was returned." /><a href={settingsHref('audit')}>Filter and export audit history</a></>}
+          ) : <><AuditEventTable events={fleetAuditEvents} emptyMessage="No recent fleet audit activity was returned." emptyHint={null} /><a href={settingsHref('audit')}>Filter and export audit history</a></>}
 
         </div>
       ),
@@ -1769,7 +1775,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     },
     { id: 'prometheus-test-connections', title: 'Prometheus Test Monitoring', icon: <span aria-hidden="true">P</span>, content: <PrometheusConnectionsCard summaryOnly projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} /> },
 
-  ], [capacitySummary, activeProjectId, activeProject?.id, allConfiguredReadinessChecksPassing, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, showQueuedRuns, canManageTests, canManageProjects, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertActionBusy, fleetAlertActionError, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlertList, fleetAlertsUnknown, fleetAlertFilter.query, fleetAlertFilter.severity, fleetAlertFilter.status, filteredFleetAlerts, visibleFleetAlerts, fleetConfiguration, fleetAuditEvents, fleetAuditHeaderLabel, fleetAuditHeaderSeverity, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, hasAllRequiredInfrastructureChecks, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onScheduleForDate, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessDisplayedCheckCount, readinessFailureChecks, readinessFetchState, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, thresholdAlertHeaderLabel, thresholdAlertHeaderSeverity, toggleFleetAlertAck, websocketLabel, websocketValueClass])
+  ], [capacitySummary, activeProjectId, activeProject?.id, allConfiguredReadinessChecksPassing, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, showQueuedRuns, canManageTests, canManageProjects, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertActionBusy, fleetAlertActionError, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlertList, fleetAlertsUnknown, fleetAlertFilter.query, fleetAlertFilter.severity, fleetAlertFilter.status, filteredFleetAlerts, visibleFleetAlerts, fleetConfiguration, fleetAuditEvents, fleetAuditHeaderLabel, fleetAuditHeaderSeverity, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, hasAllRequiredInfrastructureChecks, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onScheduleForDate, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessDisplayedCheckCount, readinessFailureChecks, readinessFetchState, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryFocusEntry, telemetryFocusLabel, telemetryDiagnostics, telemetryWarningCount, thresholdAlertHeaderLabel, thresholdAlertHeaderSeverity, toggleFleetAlertAck, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => {
@@ -1790,8 +1796,11 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   }, [cards, cardOrder])
 
   const activeCategory = MONITOR_CATEGORIES.find(category => category.id === activeCategoryId) ?? MONITOR_CATEGORIES[0]
-  const activeCategoryCardIds = new Set<string>(activeCategory.cardIds.filter(id => id !== 'parquet-analysis' || nativeAnalysisAvailable))
-  const activeVisibleCards = orderedCards.filter(card => activeCategoryCardIds.has(card.id)).sort((a, b) => (a.id === 'production-readiness' ? -1 : b.id === 'production-readiness' ? 1 : 0))
+  // A gated-off analysis card stays as a one-line note, so the capability is discoverable.
+  const activeCategoryCardIds = new Set<string>(activeCategory.cardIds)
+  // Readiness leads; a gated-off analysis note trails the cards that have content.
+  const cardRank = (card: MonitorCard) => card.id === 'production-readiness' ? -1 : card.id === 'parquet-analysis' && !nativeAnalysisAvailable ? 1 : 0
+  const activeVisibleCards = orderedCards.filter(card => activeCategoryCardIds.has(card.id)).sort((a, b) => cardRank(a) - cardRank(b))
 
   const selectCategory = useCallback((id: MonitorCategoryId) => {
     runGuarded(() => {
@@ -1894,11 +1903,11 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       : overallSeverity === 'unknown'
         ? readinessHeaderSeverity === 'unknown'
           ? readinessFetchState === 'loading' && !systemReadiness
-            ? 'Waiting for system data...'
+            ? 'Waiting for system data…'
             : readinessFetchState === 'error' && !systemReadiness
               ? 'Readiness unavailable'
               : 'Readiness data incomplete'
-          : 'Waiting for system data...'
+          : 'Waiting for system data…'
         : 'All systems operational'
   const advisoryEntries = severityEntries.filter(entry => entry.severity === 'danger' || entry.severity === 'warning')
   const advisoryTone: TopbarMetaTone | null = overallSeverity === 'danger'
@@ -1984,7 +1993,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           <div
             key={card.id}
             data-card-id={card.id}
-            className={`monitor-card${['parquet-analysis', 'run-monitor-sources'].includes(card.id) ? ' monitor-card-full' : ''}${staleCardIds.includes(card.id) ? ' stale' : ''}`}
+            className={`monitor-card${(card.id === 'parquet-analysis' ? nativeAnalysisAvailable : card.id === 'run-monitor-sources') ? ' monitor-card-full' : ''}${staleCardIds.includes(card.id) ? ' stale' : ''}`}
           >
             <div className="monitor-header">
               {card.icon}
@@ -2620,7 +2629,7 @@ function RunCalendarPanel({
                 <div className="run-calendar-detail-actions">
                   <button type="button" className="btn btn-secondary btn-sm" onClick={onCloseDetails}>Close</button>
                   {canOpenSelectedTest && (
-                    <button type="button" className="btn btn-accent-action btn-sm" onClick={onOpenSelectedTest}>Open Test</button>
+                    <button type="button" className="btn btn-primary btn-sm" onClick={onOpenSelectedTest}>Open Test</button>
                   )}
                 </div>
               </div>

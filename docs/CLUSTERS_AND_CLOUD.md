@@ -144,9 +144,9 @@ default. That local Role does not authorize a registered remote cluster; remote
 cluster RBAC and the optional node ClusterRole must still be applied separately
 in each target cluster.
 
-### Host resource allocation
+### Load generator allocation
 
-Per pool: CPU and memory requests and limits, a node pool, a zone, additional
+Settings › **Load generator allocation** sets, per pool: CPU and memory requests and limits, a node pool, a zone, additional
 node selectors, and tolerations.
 
 The change is applied as a strategic-merge patch on the generator StatefulSet's

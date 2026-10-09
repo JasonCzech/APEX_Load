@@ -109,7 +109,7 @@ function renderMarkdownInline(text: string, keyPrefix: string, options: InlineOp
       if (linkMatch && href) {
         const external = /^https?:\/\//i.test(href)
         nodes.push(
-          <a key={key} href={href} {...(external ? { target: '_blank', rel: 'noreferrer' } : {})}>
+          <a key={key} href={href} {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}>
             {renderLabel(linkMatch[1], key, plain)}
           </a>,
         )

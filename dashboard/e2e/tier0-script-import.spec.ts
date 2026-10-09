@@ -28,7 +28,7 @@ test('[U05] OpenAPI validation stays dry-run until the reviewed script is commit
   await page.getByRole('button', { name: /OpenAPI \/ Swagger/ }).click()
 
   const importControls = page.getByRole('group', { name: 'Script import controls' })
-  await expect(importControls.getByRole('heading', { level: 2, name: 'Import OpenAPI' })).toBeVisible()
+  await expect(importControls.getByRole('heading', { level: 2, name: 'OpenAPI / Swagger' })).toBeVisible()
   await importControls.locator('input[type="file"]').setInputFiles(fixturePath)
   await importControls.getByRole('textbox', { name: 'Script Name' }).fill('Tier-0 Orders API')
 

@@ -60,7 +60,7 @@ function createRendererSessionID(): string {
   return `renderer-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
-const MENU_ACTIONS = new Set(["new-test", "open-script", "import"]);
+const MENU_ACTIONS = new Set(["new-test", "open-script", "import", "help", "shortcuts"]);
 const MENU_ZOOM_ACTIONS = new Set(["in", "out", "reset"]);
 
 function parsePendingDesktopRendererEvent(

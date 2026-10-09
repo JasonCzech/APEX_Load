@@ -77,9 +77,13 @@ describe('BusinessKeyLookup', () => {
     expect(parseBusinessKeyValues(' ORD-1 \n\nORD-2\nORD-1\n')).toEqual(['ORD-1', 'ORD-2'])
   })
 
-  it('stays hidden where the project does not use business keys', async () => {
+  it('says the capability is off where the project does not use business keys', async () => {
     routes({ '/analysis/business-key-mappings': new mocks.ApiError('analysis is not enabled for project', 409) })
     await render()
+    expect(container.querySelector('[role="note"]')?.textContent).toContain('not enabled for this project')
+    expect(container.querySelector('textarea')).toBeNull()
+    // Without lookup permission there is nothing to tell.
+    await render({ canLookup: false })
     expect(container.innerHTML).toBe('')
   })
 

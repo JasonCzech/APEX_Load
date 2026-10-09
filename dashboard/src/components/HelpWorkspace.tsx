@@ -3,17 +3,22 @@ import { helpArticles, helpArticleHash, loadHelpSource, searchHelp, type HelpArt
 import { type HelpAreaID } from '../apiGuideNavigation'
 import { useHelpHash } from '../hooks/useHelpHash'
 import './HelpWorkspace.css'
+import { useSectionListKeys } from './ux/useSectionListKeys'
+
+const UTILITY_ARTICLE_IDS = new Set(['capabilities', 'changes', 'support'])
 
 export default function HelpWorkspace({ area, activeArticle, isAdmin, children }: { area: HelpAreaID; activeArticle: string; isAdmin: boolean; children: ReactNode }) {
   const hash = useHelpHash()
-  const articles = helpArticles.filter(article => article.area === area && (isAdmin || article.area !== 'admin-guide'))
+  const sidebarRef = useSectionListKeys()
+  // Utility articles live in More help only, so no entry is listed twice.
+  const articles = helpArticles.filter(article => article.area === area && (isAdmin || article.area !== 'admin-guide') && !UTILITY_ARTICLE_IDS.has(article.id))
   const groups = Array.from(new Set(articles.map(article => article.group || 'Articles')))
   // Keying the search form to navigation clears stale searches after opening a result.
   return <div className="help-workspace">
     <HelpSearch key={hash} isAdmin={isAdmin} />
     <div className="help-columns">
       {/* The same always-visible section list as Settings and Access. */}
-      <aside className="section-nav help-sidebar">
+      <aside ref={sidebarRef} className="section-nav help-sidebar">
         <nav aria-label="Help articles">
           {/* Named groups label the list visually; the area heading stays for screen readers. */}
           <h2 className={groups.length > 1 ? 'sr-only' : undefined}>In this area</h2>
@@ -27,9 +32,9 @@ export default function HelpWorkspace({ area, activeArticle, isAdmin, children }
         </nav>
         <nav aria-label="Help utilities" className="help-utilities">
           <h3>More help</h3>
-          <a href="#/docs?guide=user-guide&article=capabilities">Capabilities & limitations</a>
-          <a href="#/docs?article=changes">Changes & version</a>
-          <a href="#/docs?guide=troubleshooting&article=support">Contact support</a>
+          <a href="#/docs?guide=user-guide&article=capabilities" aria-current={activeArticle === 'capabilities' ? 'page' : undefined}>Capabilities & limitations</a>
+          <a href="#/docs?article=changes" aria-current={activeArticle === 'changes' ? 'page' : undefined}>Changes & version</a>
+          <a href="#/docs?guide=troubleshooting&article=support" aria-current={activeArticle === 'support' ? 'page' : undefined}>Contact support</a>
         </nav>
       </aside>
       <div className="help-reading-pane">{children}</div>

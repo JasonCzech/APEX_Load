@@ -90,7 +90,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const isReviseMode = mode === 'revise-queued-run'
   const modalTitle = isReviseMode ? 'Create Revised Queued Run' : 'Create Queued Run'
   const submitLabel = isReviseMode ? 'Create Revised Copy' : 'Create Queued Run'
-  const loadingLabel = isReviseMode ? 'Creating revised copy...' : 'Creating queued run...'
+  const loadingLabel = isReviseMode ? 'Creating revised copy…' : 'Creating queued run…'
   const errorMessage = isReviseMode ? 'Failed to create revised queued run' : 'Failed to create queued run'
 
   const updateScenarioField = <K extends ScenarioDraftField>(field: K, value: ScenarioDraftState[K]) => {
@@ -474,7 +474,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
                 </div>
               </label>
               <label className="setting-checkbox-row">
-                <span>Resource Baseline</span>
+                <span>Resource baseline</span>
                 <div className="setting-checkbox-control">
                   <input
                     type="checkbox"

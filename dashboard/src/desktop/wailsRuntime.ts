@@ -9,6 +9,7 @@ export interface WailsEventRuntime {
   EventsOn?: (eventName: string, callback: (...data: unknown[]) => void) => WailsEventCancel
   EventsEmit?: (eventName: string, ...data: unknown[]) => void
   Quit?: () => void
+  WindowSetTitle?: (title: string) => void
 }
 
 export interface WailsEventRuntimeWindow extends Window {

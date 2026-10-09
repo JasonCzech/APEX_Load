@@ -122,7 +122,7 @@ export default function CloudTestParityDashboard() {
                     <td><strong>{capability.name}</strong><code>{capability.id} · {capability.workstream}</code></td>
                     <td><span className={`repository-status-pill ${statusTone(capability.apex_status)}`}>{label(capability.apex_status)}</span></td>
                     <td>{label(capability.implementation_status)}</td>
-                    <td><a href={capability.cloudtest_evidence_url} target="_blank" rel="noreferrer">{label(capability.evidence_confidence)}</a></td>
+                    <td><a href={capability.cloudtest_evidence_url} target="_blank" rel="noopener noreferrer">{label(capability.evidence_confidence)}<span className="sr-only"> evidence for {capability.name}</span></a></td>
                     <td>{capability.acceptance_test}</td>
                   </tr>
                 ))}

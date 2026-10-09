@@ -14,9 +14,6 @@ export interface TopbarAction {
   hidden?: boolean
   icon?: ReactNode
   pressed?: boolean
-  shortcut?: string | string[]
-  shortcutGroup?: string
-  allowShortcutInEditable?: boolean
   title?: string
   tone?: TopbarActionTone
 }

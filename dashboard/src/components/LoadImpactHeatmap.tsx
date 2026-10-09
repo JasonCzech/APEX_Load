@@ -24,6 +24,7 @@ import {
   type LoadImpactSortState,
 } from './loadImpactHeatmapUtils'
 import './LoadImpactHeatmap.css'
+import LoadingState from './ux/LoadingState'
 
 const LoadImpact3DHeatmap = lazy(() => import('./LoadImpact3DHeatmap'))
 
@@ -344,7 +345,7 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
 
       {loading ? (
         <div className="load-impact-state" role="status" aria-live="polite">
-          Loading load impact samples...
+          Loading load impact samples…
         </div>
       ) : model.rows.length === 0 || model.buckets.length === 0 ? (
         <div className="load-impact-state">
@@ -369,7 +370,7 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
           </div>
           {viewMode === '3d' ? (
             <LazyLoadBoundary title="The 3D heatmap could not be loaded." className="load-impact-state lazy-load-error">
-              <Suspense fallback={<div className="load-impact-state" role="status">Loading 3D view…</div>}>
+              <Suspense fallback={<LoadingState what="3D view" className="load-impact-state" />}>
                 <LoadImpact3DHeatmap
                   model={displayModel}
                   selectedCellKey={selectedCellKey}
@@ -434,8 +435,9 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
                           className={rowHighlighted ? 'load-impact-axis-highlighted' : undefined}
                           data-axis-active={rowHighlighted ? 'true' : undefined}
                         >
+                          {/* The unit once, in parentheses: "ART (ms)", never "ARTms" or "% %". */}
                           <span>{row.metric.label}</span>
-                          {row.metric.unit && <small>{row.metric.unit}</small>}
+                          {row.metric.unit && <small> ({row.metric.unit})</small>}
                         </th>
                         {row.cells.map(cell => {
                           const selected = selectedCellKey === loadImpactCellKey(cell)

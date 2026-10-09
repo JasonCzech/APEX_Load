@@ -1,5 +1,5 @@
 import { type DashboardAuthStatus } from '../types'
-import { type DashboardThemePreference } from '../hooks/useDashboardTheme'
+import { THEME_OPTIONS, type DashboardThemePreference } from '../hooks/useDashboardTheme'
 import { usePersonalPreferences } from '../hooks/usePersonalPreferences'
 import { useCodeLineWrapPreference } from './codeLineWrapPreference'
 import { isDesktopSurface } from '../desktop/desktopBridge'
@@ -17,7 +17,7 @@ export default function PersonalSettings({ theme, onThemeChange, authStatus, sec
   const show = (id: PersonalSection) => !section || section === id
   return <div className="personal-settings-content">
     {show('appearance') && <section className="settings-section" aria-label="Appearance preferences"><h3>Appearance</h3>
-      <FormField label="Dashboard Theme" htmlFor="personal-theme" hint="Choose a theme or follow your device's light/dark setting."><select className="settings-input" value={theme} onChange={event => onThemeChange(event.target.value as DashboardThemePreference)}>{[['system','System (Auto)'],['dark','Dark'],['light','Light'],['solarized-dark','Solarized Dark'],['solarized-light','Solarized Light'],['monokai-dimmed','Monokai Dimmed']].map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></FormField>
+      <FormField label="Dashboard Theme" htmlFor="personal-theme" hint="Choose a theme or follow your device's light/dark setting."><select className="settings-input" value={theme} onChange={event => onThemeChange(event.target.value as DashboardThemePreference)}>{THEME_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></FormField>
       <FormField label="Motion" htmlFor="personal-motion" hint="Reduce interface animations and smooth scrolling. Following your device also respects its accessibility preference."><select className="settings-input" value={preferences.motion} onChange={event => updatePreferences({motion:event.target.value as 'system' | 'reduce'})}><option value="system">Follow device preference</option><option value="reduce">Reduce motion</option></select></FormField>
     </section>}
     {show('workspace') && <section className="settings-section" aria-label="Tables and editor preferences"><h3>Tables &amp; editor</h3>

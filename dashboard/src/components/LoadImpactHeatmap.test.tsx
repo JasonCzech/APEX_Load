@@ -69,11 +69,11 @@ describe('LoadImpactHeatmap', () => {
     expect(container.textContent).toContain('Load Impact')
     expect(container.textContent).toContain('5 VUsers')
     expect(container.textContent).toContain('10 VUsers')
-    expect(rowLabels()).toContain('ARTms')
-    expect(rowLabels()).toContain('P95ms')
+    expect(rowLabels()).toContain('ART (ms)')
+    expect(rowLabels()).toContain('P95 (ms)')
     expect(rowLabels()).toContain('TPS')
-    expect(rowLabels()).toContain('CPU VUsers%')
-    expect(rowLabels()).not.toContain('Memory VUsersMB')
+    expect(rowLabels()).toContain('Load generator CPU (%)')
+    expect(rowLabels()).not.toContain('Load generator memory (MB)')
   })
 
   it('configures displayed metrics and VUser load points', async () => {
@@ -162,7 +162,7 @@ describe('LoadImpactHeatmap', () => {
       )
     })
 
-    expect(rowLabels()[0]).toBe('ARTms')
+    expect(rowLabels()[0]).toBe('ART (ms)')
 
     expect(sortButtonByLabel('5 VUsers')).not.toBeNull()
 
@@ -170,13 +170,13 @@ describe('LoadImpactHeatmap', () => {
       sortButtonByLabel('Metric')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(rowLabels().slice(0, 4)).toEqual(['ARTms', 'CPU VUsers%', 'P95ms', 'TPS'])
+    expect(rowLabels().slice(0, 4)).toEqual(['ART (ms)', 'Load generator CPU (%)', 'P95 (ms)', 'TPS'])
 
     await act(async () => {
       sortButtonByLabel('5 VUsers')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(rowLabels()[0]).toBe('P95ms')
+    expect(rowLabels()[0]).toBe('P95 (ms)')
     expect(sortButtonByLabel('5 VUsers')?.closest('th')?.getAttribute('aria-sort')).toBe('descending')
   })
 

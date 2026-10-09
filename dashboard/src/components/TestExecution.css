@@ -1222,7 +1222,7 @@
   border-radius: 999px;
   background: color-mix(in srgb, var(--bg-primary) 76%, transparent);
   color: inherit;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 800;
   line-height: 1.5;
   text-align: center;
@@ -1814,7 +1814,7 @@
 
 .chart-series-legend-heading {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 800;
   letter-spacing: var(--label-tracking, 0);
   text-transform: var(--label-case, uppercase);
@@ -2360,7 +2360,7 @@
 
 /* The class sits on the focusable tick <text>, so the ring has to render on that node. */
 .chart-y-axis-click-target:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
   fill: var(--accent);
 }
@@ -2381,7 +2381,7 @@
 .chart-axis-label-popover-title {
   margin-bottom: 4px;
   color: #aeb7c8;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   line-height: 1.1;
   letter-spacing: var(--label-tracking, 0.04em);
@@ -2620,7 +2620,7 @@
 }
 
 .chart-metric-name:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 3px;
   border-radius: 3px;
 }
@@ -3746,7 +3746,7 @@
 }
 
 .gm-label {
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   text-transform: var(--label-case, uppercase);
   letter-spacing: var(--label-tracking, 0.05em);
@@ -4155,24 +4155,6 @@
   border-radius: 4px;
 }
 
-.execution .btn-accent {
-  background: var(--accent);
-  color: var(--accent-contrast);
-  border: none;
-  cursor: pointer;
-  font-weight: 600;
-  transition: opacity 0.15s;
-}
-
-.execution .btn-accent:hover:not(:disabled) {
-  opacity: 0.85;
-}
-
-.execution .btn-accent:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
 .control-feedback {
   font-size: 13px;
   padding: 8px 12px;
@@ -4216,7 +4198,7 @@
 
 .execution-load-levels th {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   letter-spacing: var(--label-tracking, 0.05em);
   text-transform: var(--label-case, uppercase);
 }

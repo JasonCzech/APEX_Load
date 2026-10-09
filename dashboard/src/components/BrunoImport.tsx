@@ -1,4 +1,6 @@
 import ImportIssueSeverityTag from './ImportIssueSeverityTag';
+import { importSourceName } from '../appTopbar';
+import { importReviewExpiresText } from './protectedImportSession';
 import ImportWorkflowGuide from './ImportWorkflowGuide';
 import ImportSaveConfirmation from './ImportSaveConfirmation';
 import TabList from './ux/TabList';
@@ -731,7 +733,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     const protectedSessionLabel = Number.isFinite(protectedSessionExpiry)
         ? protectedSessionExpired
             ? 'This Bruno import session has expired. Re-inspect the source before saving.'
-            : `Bruno import session available until ${new Date(protectedSessionExpiry).toLocaleString()}.`
+            : importReviewExpiresText(protectedSessionExpiry, protectedSessionNow)
         : '';
     // Native batches need a script folder. When none is chosen and this session
     // may create one, save creates the suggested folder instead of blocking.
@@ -1070,7 +1072,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
       <header className="bruno-import-header">
         <div>
           <span className="bruno-kicker">{'Native API conversion'}</span>
-          <h2>Import Bruno Collection</h2>
+          <h2>{importSourceName('bruno')}</h2>
           <p>{'Convert every HTTP API in an OpenCollection YAML folder into its own native APEX script.'}</p>
         </div>
         {onClose && <button className="btn btn-secondary" onClick={close}>Back</button>}
@@ -1219,7 +1221,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                       <table className="bruno-native-table">
                         <thead>
                           <tr>
-                            <th aria-label="Selected"/>
+                            <th><span className="sr-only">Selected</span></th>
                             <th aria-sort={nativeCandidateSort.key === 'source' ? (nativeCandidateSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>{sortableHeader('Source', 'source')}</th>
                             <th aria-sort={nativeCandidateSort.key === 'script' ? (nativeCandidateSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>{sortableHeader('Script name', 'script')}</th>
                             <th aria-sort={nativeCandidateSort.key === 'request' ? (nativeCandidateSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>{sortableHeader('Request', 'request')}</th>

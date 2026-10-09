@@ -91,7 +91,7 @@ describe('FeatureAccessPanel', () => {
     expect(toggles[1].checked).toBe(true)
     expect(container.textContent).toContain('Disabled by parent')
 
-    const save = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save Feature Access')
+    const save = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save domain feature policy')
     expect(save).toBeDefined()
     await act(async () => save?.click())
     await flush()

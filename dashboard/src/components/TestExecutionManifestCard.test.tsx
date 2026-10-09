@@ -49,7 +49,7 @@ describe('TestExecutionManifestCard', () => {
     expect(container.textContent).toContain('Current Configuration')
     expect(container.textContent).toContain('Scripts & Groups')
     expect(container.textContent).toContain('Checkout Flow')
-    expect(container.textContent).toContain('Load Generators')
+    expect(container.textContent).toContain('Load generators')
     expect(container.textContent).toContain('generator-a')
     expect(container.textContent).toContain('Runtime Changes')
     expect(container.textContent).toContain('VUsers changed')
@@ -102,7 +102,7 @@ describe('TestExecutionManifestCard', () => {
     await renderCard(makeManifest())
     await click(buttonNamed('Copy JSON'))
 
-    expect(container.textContent).toContain('Copying...')
+    expect(container.textContent).toContain('Copying…')
 
     await act(async () => {
       vi.advanceTimersByTime(1500)
@@ -129,7 +129,7 @@ describe('TestExecutionManifestCard', () => {
       },
     })
 
-    expect(container.textContent).toContain('Continue On Error')
+    expect(container.textContent).toContain('Continue on error')
     expect(container.textContent).toContain('scenario default')
     expect(container.textContent).toContain('search')
     expect(container.textContent).toContain('Group runtime settings')

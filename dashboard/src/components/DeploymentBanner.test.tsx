@@ -50,7 +50,7 @@ describe('DeploymentBanner', () => {
       root.render(<DeploymentBanner />)
     })
 
-    expect(container.textContent).toContain('Browser · Hosted K8s')
+    expect(container.textContent).toContain('Web app · Hosted K8s')
     expect(container.textContent).toContain('Wide unauthenticated')
     expect(container.textContent).not.toContain('Desktop available')
   })
@@ -112,7 +112,7 @@ describe('DeploymentBanner', () => {
       root.render(<DeploymentBanner />)
     })
 
-    expect(container.textContent).toContain('Browser · Hosted K8s')
+    expect(container.textContent).toContain('Web app · Hosted K8s')
     expect(container.textContent).toContain('Desktop available')
   })
 
@@ -137,7 +137,7 @@ describe('DeploymentBanner', () => {
       root.render(<DeploymentBanner />)
     })
 
-    expect(container.textContent).toContain('Desktop · Local engine')
+    expect(container.textContent).toContain('Desktop app · Local engine')
     expect(container.textContent).not.toContain('Wide unauthenticated')
     expect(container.textContent).not.toContain('Desktop available')
   })

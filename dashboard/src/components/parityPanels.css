@@ -141,6 +141,25 @@
   border-radius: var(--radius, 8px);
 }
 
+.ux-empty-state p {
+  margin: 0;
+}
+.ux-empty-state p + p,
+.ux-empty-state p + .btn {
+  margin-top: 4px;
+}
+.ux-empty-state .ux-empty-title {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* Loading is not empty: no dashed "nothing here" frame while data is on its way. */
+.pp-loading {
+  padding: 16px;
+  color: var(--text-muted, var(--text-secondary));
+  font-size: 13px;
+}
+
 .pp-empty-compact {
   padding: 10px 12px;
   text-align: left;
@@ -242,6 +261,13 @@
 .pp-field textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-soft, rgba(var(--accent-rgb), 0.25));
+}
+.pp-field :is(input, select, textarea)[aria-invalid='true'] {
+  border-color: var(--danger-text);
+}
+.pp-field-error {
+  color: var(--danger-text);
+  font-size: var(--font-size-xs);
 }
 .pp-field-row {
   display: flex;

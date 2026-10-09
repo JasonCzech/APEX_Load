@@ -24,6 +24,7 @@ import {
   quotaHeadroom,
 } from './poolAllocationModel'
 import { headroomTone } from './resourceHeadroomModel'
+import LoadingState from './ux/LoadingState'
 
 interface Props {
   resourceId?: string
@@ -200,7 +201,7 @@ export default function PoolAllocationCard({ canManage = false, resourceId = '' 
   guardState.current = { dirty, save, discard }
   const guard = useMemo<NavigationGuard>(() => ({
     id: 'host-resource-allocation',
-    label: 'Host resource allocation',
+    label: 'Load generator allocation',
     isDirty: () => guardState.current.dirty,
     save: () => guardState.current.save(),
     discard: () => guardState.current.discard(),
@@ -211,7 +212,7 @@ export default function PoolAllocationCard({ canManage = false, resourceId = '' 
   return (
     <div className="monitor-body pp-panel">
       <div className="pp-toolbar">
-        <span className="pp-toolbar-title">Host resource allocation</span>
+        <span className="pp-toolbar-title">Load generator allocation</span>
       </div>
 
       {/* The fleet-pool and cluster-capacity reads behind this card are also
@@ -232,7 +233,7 @@ export default function PoolAllocationCard({ canManage = false, resourceId = '' 
       {notice && <div className="pp-muted" data-testid="allocation-notice">{notice}</div>}
 
       {loading ? (
-        <div className="pp-empty">Loading pools…</div>
+        <LoadingState what="pools" className="pp-loading" />
       ) : pools.length === 0 ? (
         <div className="pp-empty">No fleet pools yet. Create a pool and bind it to a cluster to allocate host resources.</div>
       ) : (

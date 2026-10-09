@@ -98,6 +98,15 @@ describe('ScriptsLibraryTable federation', () => {
     expect(container.textContent).not.toContain('Move to folder')
   })
 
+  it('flags scripts that share a name within one folder', async () => {
+    const twin = { ...script, id: 'script-twin', ref_key: 'LOC-SCR-0002-v1', name: ` ${script.name.toUpperCase()} ` } as StoredScript
+    const elsewhere = { ...script, id: 'script-elsewhere', ref_key: 'LOC-SCR-0003-v1', folder_id: 'folder-2' } as StoredScript
+    await act(async () => root.render(<ScriptsLibraryTable {...baseProps} scripts={[script, twin, elsewhere]} />))
+    const flagged = Array.from(container.querySelectorAll('tbody tr')).filter(row => row.textContent?.includes('Duplicate name in this folder'))
+    expect(flagged).toHaveLength(2)
+    expect(flagged.some(row => row.textContent?.includes('LOC-SCR-0003-v1'))).toBe(false)
+  })
+
   it('paginates local and remote assets together and selects only local rows on the page', async () => {
     const scripts = Array.from({ length: 11 }, (_, index) => ({ ...script, id: `script-${index}`, name: `Script ${index}` }))
     const onToggleScriptSelection = vi.fn()

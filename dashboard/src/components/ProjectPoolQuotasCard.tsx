@@ -174,7 +174,7 @@ const ProjectPoolQuotasCard = forwardRef<ProjectPoolQuotasDraftController, Props
     <div className="settings-subsection">
       <div className="settings-manager-summary" style={{ marginTop: 16 }}>
         <div>
-          <span className="setting-label">Per-Pool Quotas</span>
+          <span className="setting-label">Per-pool quotas</span>
           <span className="setting-desc">
             Cap this project's concurrent VUsers / tests on a specific fleet pool. Additive to the
             project-wide limits — a pool-assigned run must clear both.

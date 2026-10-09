@@ -352,7 +352,7 @@ describe('ReportComposer test notes source panel', () => {
     await renderComposer('executive')
 
     const metrics = container.querySelector('.report-metrics')?.textContent ?? ''
-    expect(metrics).toContain('Peak attempts/s')
+    expect(metrics).toContain('Peak TPS (attempts/s)')
     expect(metrics).toContain('61.2')
     expect(metrics).toContain('1.00%')
     expect(metrics).not.toContain('10.20%')

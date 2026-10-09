@@ -96,6 +96,21 @@ body :is(.settings-task-navigation, .section-nav) :is(button, a):focus-visible {
   outline-offset: -2px;
 }
 
+/* Entries owned by another page (Access, Repository) say where they go, so
+   they never read as an in-page section. */
+body :is(.settings-task-navigation, .section-nav) .settings-nav-elsewhere {
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs, 11px);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+body :is(.settings-task-navigation, .section-nav) .settings-nav-elsewhere::after {
+  content: ' \2192' / '';
+}
+
 /* The show/hide control for the list is a quiet text action. */
 body .settings-tabbed-layout .settings-browse-button {
   border: 0;

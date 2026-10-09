@@ -739,13 +739,13 @@ describe('Sidebar', () => {
     await openDevView()
     expect(container.textContent).toContain('Dev View')
     expect(container.textContent).toContain('Admin')
-    expect(container.textContent).toContain('User')
+    expect(container.textContent).toContain('Editor')
     expect(container.textContent).toContain('New Test')
     expect(container.textContent).toContain('Help & documentation')
     expect(container.textContent).toContain('Settings')
     expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button')).some(button => button.textContent?.trim() === 'Sign out')).toBe(true)
 
-    const userButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'User')
+    const userButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Editor')
     expect(userButton).toBeDefined()
     if (!userButton) {
       return
@@ -1157,7 +1157,7 @@ describe('Sidebar', () => {
     await openDevView()
     await act(async () => {
       Array.from(container.querySelectorAll('button'))
-        .find(button => button.textContent === 'User')
+        .find(button => button.textContent === 'Editor')
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 

@@ -13,6 +13,9 @@ import { dialogBackdropProps } from './dialogBackdropProps'
 import { listAllMonitoringCollectors } from './monitoringCatalogModel'
 import './parityPanels.css'
 import './MonitoringWorkspace.css'
+import LoadingState from './ux/LoadingState'
+import EmptyState from './ux/EmptyState'
+import { formatDateTime } from '../utils/dateTime'
 
 interface Props {
   projectId?: string
@@ -41,10 +44,9 @@ function textToPacks(text: string): string[] {
     .filter(Boolean)
 }
 
+// Shared formatter: dates read the same, zone included, as the rest of the app.
 function formatTimestamp(value?: string): string {
-  if (!value) return '—'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+  return formatDateTime(value, { seconds: true, fallback: '—' })
 }
 
 function freshness(snapshot: CollectorMetricSnapshot): { label: string; cls: string } {
@@ -365,14 +367,11 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
       {error && <div className="pp-error" role="alert">{error} {lastLoaded ? 'Previously loaded collector data may be stale.' : ''}</div>}
 
       {!projectId ? (
-        <div className="pp-empty">Select a project to view its monitoring collectors.</div>
+        <EmptyState title="No project selected." hint="Select a project to view its monitoring collectors." />
       ) : loading && !lastLoaded ? (
-        <div className="pp-empty">Loading collectors…</div>
+        <LoadingState what="collectors" className="pp-loading" />
       ) : collectors.length === 0 ? (
-        <div className="pp-empty">
-          No monitoring collectors registered. Collectors are restricted-network agents that report
-          scoped metric packs.
-        </div>
+        <EmptyState title="No monitoring collectors yet." hint="Collectors are restricted-network agents that report scoped metric packs." />
       ) : (
         <div className="pp-list">
           {collectors.map(collector => (
@@ -569,7 +568,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
                 {typeof metrics.snapshot.age_seconds === 'number' ? <span>age: {metrics.snapshot.age_seconds}s</span> : null}
               </div>
               {metrics.snapshot.packs.length === 0 ? (
-                <div className="pp-empty">No metrics ingested yet. Run the collector agent to push a heartbeat.</div>
+                <EmptyState title="No metrics ingested yet." hint="Run the collector agent to push a heartbeat." />
               ) : (
                 <div className="pp-list">
                   {metrics.snapshot.packs.map(pack => (

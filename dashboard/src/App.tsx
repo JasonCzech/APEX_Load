@@ -17,9 +17,10 @@ import {
 import { usePersonalAppearance } from "./hooks/usePersonalPreferences";
 import "./components/PersonalSettings.css";
 import { useDashboardTheme } from "./hooks/useDashboardTheme";
-import { useDashboardZoomShortcuts } from "./hooks/useDashboardZoomShortcuts";
+import { requestDashboardZoom, useDashboardZoomShortcuts } from "./hooks/useDashboardZoomShortcuts";
+import { useDesktopWindowTitle } from "./desktop/useDesktopWindowTitle";
 import { useAsyncTask } from "./hooks/useAsyncTask";
-import { useKeyboardShortcuts } from "./hooks/KeyboardShortcutProvider";
+import { useKeyboardShortcutHelp, useKeyboardShortcuts } from "./hooks/KeyboardShortcutProvider";
 import { KeyboardShortcutProvider } from "./hooks/KeyboardShortcutRoot";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { ApplicationProvider } from "./hooks/ApplicationProvider";
@@ -58,6 +59,8 @@ import {
   withAppHistoryIndex,
   workspaceScopeForAppView,
 } from "./appRouting";
+import { requestProjectPicker } from "./workspacePickerEvents";
+import type { CommandCenterRouteView } from "./appRouting";
 import { appendBoundedMetricsHistory } from "./appMetricsHistory";
 import { mapExecutionMetricToHistoryPoint } from "./components/testExecutionMetricsModel";
 import AuthGate from "./components/AuthGate";
@@ -188,15 +191,14 @@ const TestHub = lazy(() => import("./components/TestHub"));
 const TestExecution = lazy(() => import("./components/TestExecution"));
 const RunReportPage = lazy(() => import("./components/RunReportPage"));
 import ActivityWarning from "./components/ActivityWarning";
+import DesktopStatusMenu from "./components/DesktopStatusMenu";
+import LoadingState from "./components/ux/LoadingState";
 const ActivityPage = lazy(() => import("./components/ActivityPage"));
 const ResultsPage = lazy(() => import("./components/ResultsPage"));
 const NewTestPage = lazy(() => import("./components/NewTestPage"));
 const MonitoringPage = lazy(() => import("./components/MonitoringPage"));
 const ApiGuidePage = lazy(() => import("./components/ApiGuidePage"));
 const SwaggerDocsPage = lazy(() => import("./components/SwaggerDocsPage"));
-const RepositoryGuidePage = lazy(
-  () => import("./components/RepositoryGuidePage"),
-);
 const ApplicationRepositoryPage = lazy(
   () => import("./components/ApplicationRepositoryPage"),
 );
@@ -225,14 +227,6 @@ type PendingGuardedHistoryTraversal = {
   targetIndex: number;
   targetView: AppView;
 };
-
-function formatDesktopRemoteHealth(status?: DesktopStatusResponse) {
-  const count = status?.remote_libraries?.count || 0;
-  if (count === 0) return "0 hosts";
-  const statuses = status?.remote_libraries?.statuses || {};
-  const healthy = statuses.healthy || 0;
-  return `${healthy}/${count} hosts`;
-}
 
 function topbarActionClass(action: TopbarAction): string {
   const tone = action.tone || "secondary";
@@ -429,6 +423,7 @@ function AppShell({
   const [scriptsTopbarState, setScriptsTopbarState] = useState<{
     subView: ScriptsAuthoringSubView;
     editingId: string | null;
+    importLauncher?: string | null;
   } | null>(null);
   const [effectiveAccessResources, setEffectiveAccessResources] = useState<
     import("./types").DashboardAuthEffectiveAccessResource[]
@@ -1865,9 +1860,9 @@ function AppShell({
   const routeProjectScopeError = projectsError && requestedRouteProjectID
     ? projectsError
     : routeProjectMissing
-    ? `Project ${requestedRouteProjectID} is unavailable. Select an accessible project to continue.`
+    ? `The project in this link (ID ${requestedRouteProjectID}) is not available to you or no longer exists. Choose a project to continue.`
     : routeProjectDomainMissing
-      ? `The owning domain ${requestedRouteDomainID} for project ${requestedRouteProjectID} is unavailable. Select an accessible project to continue.`
+      ? `The domain that owns the project in this link (domain ID ${requestedRouteDomainID}, project ID ${requestedRouteProjectID}) is not available to you. Choose a project to continue.`
       : "";
   const routeAssetOwnerScopeError =
     unscopedRouteScopeError || scopedRouteScopeError;
@@ -2107,6 +2102,15 @@ function AppShell({
     [],
   );
   // Activity filters and page follow the URL without adding history entries.
+  const handleCommandCenterViewChange = useCallback((ccView: CommandCenterRouteView | undefined) => {
+    setView((current) => {
+      if (current.page !== "command-center" || current.ccView === ccView) return current;
+      replaceRouteOnNextViewSync.current = true;
+      const next = { ...current };
+      delete next.ccView;
+      return ccView ? { ...next, ccView } : next;
+    });
+  }, []);
   const handleActivityQueryChange = useCallback((activityQuery: string) => {
     setView((current) => {
       if (current.page !== "activity" || (current.activityQuery || "") === activityQuery) return current;
@@ -2146,6 +2150,8 @@ function AppShell({
         page: "command-center",
         ...(id ? { testId: id } : {}),
         ...(projectID ? { projectId: projectID } : {}),
+        // Switching runs inside Command Center keeps the analysis view open.
+        ...(id && viewRef.current.page === "command-center" && viewRef.current.ccView ? { ccView: viewRef.current.ccView } : {}),
       });
     },
     [activeProject?.id, setGuardedView],
@@ -2315,12 +2321,15 @@ function AppShell({
     else void bridge?.OpenAppDataFolder?.();
   }, []);
 
+  const openShortcutHelp = useKeyboardShortcutHelp();
   const handleDesktopMenuAction = useCallback(
     (action: string) => {
       if (action === "new-test") setGuardedView({ page: "new-test" });
+      else if (action === "help") handleNavigate("docs");
+      else if (action === "shortcuts") openShortcutHelp();
       else handleNavigate("scripts");
     },
-    [setGuardedView, handleNavigate],
+    [setGuardedView, handleNavigate, openShortcutHelp],
   );
   const handleDesktopOpenFile = useCallback(
     async (path: string) => {
@@ -2390,7 +2399,7 @@ function AppShell({
   useDockBadge(desktopShellActiveRunCount);
 
   const handleScriptsAuthoringStateChange = useCallback(
-    (state: { subView: ScriptsAuthoringSubView; editingId: string | null }) => {
+    (state: { subView: ScriptsAuthoringSubView; editingId: string | null; importLauncher?: string | null }) => {
       setScriptsTopbarState(state);
       // Keep the URL naming what is open (library, editor, import) so a
       // refresh or a shared link returns to it. replaceState, not setView:
@@ -2499,7 +2508,7 @@ function AppShell({
         group: "Global",
         preventDefault: false,
         priority: 20,
-        onTrigger: () => undefined,
+        onTrigger: () => requestDashboardZoom("in"),
       },
       {
         id: "global.zoom-out",
@@ -2508,7 +2517,7 @@ function AppShell({
         group: "Global",
         preventDefault: false,
         priority: 20,
-        onTrigger: () => undefined,
+        onTrigger: () => requestDashboardZoom("out"),
       },
       {
         id: "global.zoom-reset",
@@ -2517,7 +2526,7 @@ function AppShell({
         group: "Global",
         preventDefault: false,
         priority: 20,
-        onTrigger: () => undefined,
+        onTrigger: () => requestDashboardZoom("reset"),
       },
       ...buildNavigationShortcuts({
         canUseAccessWorkspace,
@@ -3023,7 +3032,7 @@ function AppShell({
     : undefined;
   const topbarPageTitle =
     view.page === "scripts" && scriptsTopbarState
-      ? pageTitleForScriptSubView(scriptsTopbarState.subView)
+      ? pageTitleForScriptSubView(scriptsTopbarState.subView, scriptsTopbarState.importLauncher)
       : pageTitleForView(view, {
           testName: currentTestRun?.name,
         });
@@ -3101,6 +3110,8 @@ function AppShell({
     // behind a loading fallback and moved keyboard focus off the tab list.
     ...(view.page === "test" ? { tab: undefined } : {}),
     ...(view.page === "activity" ? { activityQuery: undefined } : {}),
+    // Command Center analysis views switch in place.
+    ...(view.page === "command-center" ? { ccView: undefined } : {}),
     applicationId: undefined,
     releaseId: undefined,
   });
@@ -3134,28 +3145,6 @@ function AppShell({
     (returnTarget || mainContentRef.current)?.focus({ preventScroll: true });
   }, [routeBoundaryKey, view.page, returningCommandCenter]);
 
-  const topbarActionShortcuts = useMemo(
-    () =>
-      [...topbarSecondaryActions, ...topbarPrimaryActions]
-        .filter((action) => action.shortcut)
-        .map((action) => ({
-          id: `topbar.${activeTopbarContribution?.id || "active"}.${action.id}`,
-          label: action.label,
-          keys: action.shortcut!,
-          group: action.shortcutGroup || "Current Page",
-          disabled: action.disabled,
-          hidden: action.hidden,
-          allowInEditable: action.allowShortcutInEditable,
-          priority: 700,
-          onTrigger: action.onClick,
-        })),
-    [
-      activeTopbarContribution?.id,
-      topbarPrimaryActions,
-      topbarSecondaryActions,
-    ],
-  );
-  useKeyboardShortcuts(topbarActionShortcuts);
 
   // The recorder control panel renders chrome-less so it works as a compact
   // companion popup window next to the recording browser.
@@ -3169,7 +3158,7 @@ function AppShell({
         projectValue={scopedProjectContextValue}
         applicationValue={scopedApplicationContextValue}
       >
-        <Suspense fallback={<div className="page-loading">Loading…</div>}>
+        <Suspense fallback={<LoadingState what="page" />}>
           <BrowserRecorderControlPanel sessionId={view.sessionId} folderId={view.folderId} standalone />
         </Suspense>
       </ScopedAppContextProviders>
@@ -3345,49 +3334,12 @@ function AppShell({
                 </div>
               )}
               {showDesktopStatus && (
-                <div
-                  className="desktop-status-strip"
-                  aria-label="Desktop controller status"
-                >
-                  <span className="script-health-token healthy">Desktop</span>
-                  <span className="desktop-status-address">
-                    {desktopStatus?.browser_url || desktopStatus?.api_address}
-                  </span>
-                  <span className="script-health-token">
-                    {formatDesktopRemoteHealth(desktopStatus || undefined)}
-                  </span>
-                  {desktopBridge?.OpenInBrowser && (
-                    <button
-                      className="btn btn-sm btn-ghost"
-                      type="button"
-                      onClick={handleOpenDesktopBrowser}
-                    >
-                      Open Browser
-                    </button>
-                  )}
-                  {desktopBridge?.OpenLogsFolder && (
-                    <button
-                      className="btn btn-sm btn-ghost"
-                      type="button"
-                      onClick={() => {
-                        void desktopBridge.OpenLogsFolder?.();
-                      }}
-                    >
-                      Logs
-                    </button>
-                  )}
-                  {desktopBridge?.OpenAppDataFolder && (
-                    <button
-                      className="btn btn-sm btn-ghost"
-                      type="button"
-                      onClick={() => {
-                        void desktopBridge.OpenAppDataFolder?.();
-                      }}
-                    >
-                      App Data
-                    </button>
-                  )}
-                </div>
+                <DesktopStatusMenu
+                  status={desktopStatus}
+                  onOpenBrowser={desktopBridge?.OpenInBrowser ? () => void handleOpenDesktopBrowser() : undefined}
+                  onOpenLogs={desktopBridge?.OpenLogsFolder ? () => void desktopBridge.OpenLogsFolder?.() : undefined}
+                  onOpenAppData={desktopBridge?.OpenAppDataFolder ? () => void desktopBridge.OpenAppDataFolder?.() : undefined}
+                />
               )}
               {showTopbarClientDownloads && <ClientDownloadsMenu />}
               <DeploymentBanner />
@@ -3429,7 +3381,7 @@ function AppShell({
             title="This dashboard page could not be loaded."
             onRetry={retryRouteBoundary}
           >
-            <Suspense fallback={<div className="page">Loading page...</div>}>
+            <Suspense fallback={<LoadingState what="page" className="page" />}>
               {routeAssetScopeBlocked && (
                 <div
                   className={routeAssetScopeError ? "error-message" : "page-loading"}
@@ -3445,6 +3397,22 @@ function AppShell({
                       : routeTestScopePending
                         ? "Loading the run's application and release workspace…"
                         : "Loading project workspace…")}
+                  {routeProjectScopeError && !projectsError && routeAssetScopeError === routeProjectScopeError && (
+                    <div className="route-scope-recovery">
+                      <button className="btn btn-sm btn-secondary" type="button" onClick={requestProjectPicker}>
+                        Choose project
+                      </button>
+                      {activeProject && activeProject.id !== requestedRouteProjectID && (
+                        <button
+                          className="btn btn-sm btn-ghost"
+                          type="button"
+                          onClick={() => setGuardedView(resetProjectScopedAssetView(view, activeProject.id))}
+                        >
+                          Open in {activeProject.name}
+                        </button>
+                      )}
+                    </div>
+                  )}
                   {routeTestScopeError && routeAssetScopeError === routeTestScopeError && (
                     <div className="route-scope-recovery">
                       <button
@@ -3527,6 +3495,8 @@ function AppShell({
               {(view.page === "command-center" || retainedCommandCenter) && !routeAssetScopeBlocked && (
                 <div hidden={view.page !== "command-center"}>
                 <CommandCenterPrototype
+                  routeView={view.page === "command-center" ? view.ccView : undefined}
+                  onRouteViewChange={handleCommandCenterViewChange}
                   canManageTests={effectiveAccessLoaded && !effectiveAccessError && isEffectiveOperationAllowed(effectiveAccessResources, "manage_tests", false)}
                   // Only when access is known: the server still enforces every control.
                   liveStreamState={connectionState}
@@ -3616,6 +3586,7 @@ function AppShell({
                   canPublishConfluence={effectiveAccessLoaded && !effectiveAccessError && isEffectiveOperationAllowed(effectiveAccessResources, "manage_tests", false)}
                   canManageProject={canManageProjects}
                   initialSection={view.section}
+                  initialFocus={view.focus}
                   initialLens={view.lens}
                   initialCompare={view.compare}
                   initialComparisonId={view.comparisonId}
@@ -3707,9 +3678,6 @@ function AppShell({
                   effectiveAccessLoaded={effectiveAccessLoaded}
                   effectiveAccessError={effectiveAccessError}
                 />
-              )}
-              {view.page === "repository-guide" && !routeAssetScopeBlocked && (
-                <RepositoryGuidePage effectiveAccessResources={effectiveAccessResources} />
               )}
               {view.page === "repository" && !view.setting && !routeAssetScopeBlocked && (
                 <ApplicationRepositoryPage
@@ -3817,6 +3785,7 @@ function AppContent() {
   );
   const [aboutOpen, setAboutOpen] = useState(false);
   useDashboardZoomShortcuts();
+  useDesktopWindowTitle();
 
   // Own the renderer handshake above AuthGate. In native-auth configurations
   // AppShell is intentionally not rendered, but About, Zoom, external-link

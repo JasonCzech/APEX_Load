@@ -115,6 +115,9 @@ import {
   thinkTimeUsesStdDeviation,
 } from './thinkTimeConfig'
 import ThinkTimeMultiplierInput from './ThinkTimeMultiplierInput'
+import DurationField from './DurationField'
+import { confirmAction } from './ux/confirmAction'
+import { ApiError } from '../hooks/apiClient'
 import { validateGeneratorAssignment } from './generatorAssignmentValidation'
 import {
   SECONDS_INPUT_STEP,
@@ -380,6 +383,8 @@ function ScheduleWindowListEditor({ title, description, windows, fallbackTimezon
     const has = w.days_of_week.includes(day)
     update(i, { days_of_week: has ? w.days_of_week.filter(d => d !== day) : [...w.days_of_week, day].sort((a, b) => a - b) })
   }
+  // "Blackout windows" names the list; each entry is a "blackout window".
+  const kind = title.replace(/\s+windows$/i, '')
   return (
     <div className="setting-row schedule-window-editor">
       <div className="setting-info">
@@ -390,17 +395,17 @@ function ScheduleWindowListEditor({ title, description, windows, fallbackTimezon
         {windows.length === 0 && <span className="setting-desc schedule-window-empty">None configured.</span>}
         {windows.map((w, i) => (
           <div key={i} className="schedule-window-row">
-            <input aria-label={`${title} window ${i + 1} name`} className="settings-input schedule-window-name" placeholder="Name (optional)" value={w.name} disabled={disabled} onChange={e => update(i, { name: e.target.value })} />
-            <div className="schedule-window-days" role="group" aria-label={`${title} window ${i + 1} days of week`}>
+            <input aria-label={`${kind} window ${i + 1} name`} className="settings-input schedule-window-name" placeholder="Name (optional)" value={w.name} disabled={disabled} onChange={e => update(i, { name: e.target.value })} />
+            <div className="schedule-window-days" role="group" aria-label={`${kind} window ${i + 1} days of week`}>
               {SCHEDULE_WEEKDAYS.map(d => (
                 <button type="button" key={d.value} className={`schedule-day-toggle ${w.days_of_week.includes(d.value) ? 'active' : ''}`} disabled={disabled} aria-pressed={w.days_of_week.includes(d.value)} onClick={() => toggleDay(i, d.value)}>{d.label}</button>
               ))}
             </div>
-            <input aria-label={`${title} window ${i + 1} start time`} type="time" className="settings-input schedule-window-time" value={w.start_time} disabled={disabled} onChange={e => update(i, { start_time: e.target.value })} />
+            <input aria-label={`${kind} window ${i + 1} start time`} type="time" className="settings-input schedule-window-time" value={w.start_time} disabled={disabled} onChange={e => update(i, { start_time: e.target.value })} />
             <span className="schedule-window-sep">to</span>
-            <input aria-label={`${title} window ${i + 1} end time`} type="time" className="settings-input schedule-window-time" value={w.end_time} disabled={disabled} onChange={e => update(i, { end_time: e.target.value })} />
+            <input aria-label={`${kind} window ${i + 1} end time`} type="time" className="settings-input schedule-window-time" value={w.end_time} disabled={disabled} onChange={e => update(i, { end_time: e.target.value })} />
             <select
-              aria-label={`${title} window ${i + 1} timezone`}
+              aria-label={`${kind} window ${i + 1} timezone`}
               className="settings-input schedule-window-timezone"
               value={w.timezone?.trim() || fallbackTimezone.trim() || 'UTC'}
               disabled={disabled}
@@ -408,10 +413,10 @@ function ScheduleWindowListEditor({ title, description, windows, fallbackTimezon
             >
               {COMMON_TIMEZONES.map(tz => <option key={tz} value={tz}>{tz}</option>)}
             </select>
-            <button type="button" className="btn btn-ghost btn-sm" disabled={disabled} onClick={() => remove(i)} aria-label={`Remove ${title.toLowerCase()} window ${i + 1}`}>Remove</button>
+            <button type="button" className="btn btn-ghost btn-sm" disabled={disabled} onClick={() => remove(i)} aria-label={`Remove ${kind.toLowerCase()} window ${i + 1}`}>Remove</button>
           </div>
         ))}
-        <button type="button" className="btn btn-secondary btn-sm" disabled={disabled} aria-label={`Add ${title.toLowerCase()} window`} onClick={add}>+ Add window</button>
+        <button type="button" className="btn btn-secondary btn-sm" disabled={disabled} aria-label={`Add ${kind.toLowerCase()} window`} onClick={add}>+ Add window</button>
       </div>
     </div>
   )
@@ -560,8 +565,10 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const [captureRetry, setCaptureRetry] = useState(0)
   const [elkLoading, setELKLoading] = useState(false)
   const [elkError, setELKError] = useState(false)
+  const [elkForbidden, setELKForbidden] = useState(false)
   const [dynatraceLoading, setDynatraceLoading] = useState(false)
   const [dynatraceError, setDynatraceError] = useState(false)
+  const [dynatraceForbidden, setDynatraceForbidden] = useState(false)
   const [elkConnections, setELKConnections] = useState<ELKConnection[]>([])
   const [elkConnectionId, setELKConnectionId] = useState('')
   const [dynatraceConnections, setDynatraceConnections] = useState<DynatraceConnection[]>([])
@@ -616,8 +623,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     let cancelled = false
     const list = api.listDynatraceConnections
     if (!activeProjectID || typeof list !== 'function') { setDynatraceConnections([]); setDynatraceConnectionId(''); return () => { cancelled = true } }
-    setDynatraceLoading(true); setDynatraceError(false)
-    void list(activeProjectID).then(response => { if (cancelled) return; const ready = (response.connections || []).filter(connection => (connection.legacy_capture_status ?? connection.status) === 'ready'); setDynatraceConnections(ready);  }).catch(() => { if (!cancelled) { setDynatraceConnections([]); setDynatraceError(true) } }).finally(() => { if (!cancelled) setDynatraceLoading(false) })
+    setDynatraceLoading(true); setDynatraceError(false); setDynatraceForbidden(false)
+    void list(activeProjectID).then(response => { if (cancelled) return; const ready = (response.connections || []).filter(connection => (connection.legacy_capture_status ?? connection.status) === 'ready'); setDynatraceConnections(ready);  }).catch((cause: unknown) => { if (!cancelled) { setDynatraceConnections([]); if (cause instanceof ApiError && cause.status === 403) setDynatraceForbidden(true); else setDynatraceError(true) } }).finally(() => { if (!cancelled) setDynatraceLoading(false) })
     return () => { cancelled = true }
   }, [api, activeProjectID, captureRetry])
   useEffect(() => {
@@ -628,14 +635,14 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       setELKConnectionId('')
       return () => { cancelled = true }
     }
-    setELKLoading(true); setELKError(false)
+    setELKLoading(true); setELKError(false); setELKForbidden(false)
     void listELKConnections(activeProjectID).then(response => {
       if (cancelled) return
       const ready = (response.connections || []).filter(legacyELKCaptureReady)
       setELKConnections(ready)
       // Retain an unavailable selection until the user explicitly reviews it.
-    }).catch(() => {
-      if (!cancelled) { setELKConnections([]); setELKError(true) }
+    }).catch((cause: unknown) => {
+      if (!cancelled) { setELKConnections([]); if (cause instanceof ApiError && cause.status === 403) setELKForbidden(true); else setELKError(true) }
     }).finally(() => { if (!cancelled) setELKLoading(false) })
     return () => { cancelled = true }
   }, [api, activeProjectID, captureRetry])
@@ -677,7 +684,6 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const [creating, setCreating] = useState(false)
   const creatingRef = useRef(false)
   const [error, setError] = useState('')
-  const [confirmDeleteScheduleId, setConfirmDeleteScheduleId] = useState<string | null>(null)
   const [showAllRuntimeDefaults, setShowAllRuntimeDefaults] = useState(false)
   const [runDefaultOverrides, setRunDefaultOverrides] = useState<RunDefaultOverrides>(() => buildEmptyRunDefaultOverrides())
   const [editingDefaultKey, setEditingDefaultKey] = useState<RunDefaultKey | null>(null)
@@ -692,6 +698,12 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const [estimateCheckedAt, setEstimateCheckedAt] = useState('')
   const [preflightCheckedAt, setPreflightCheckedAt] = useState('')
   const [estimateLoading, setEstimateLoading] = useState(false)
+  const [estimateFailed, setEstimateFailed] = useState(false)
+  // Duration fields report text they cannot turn into a duration; saving waits for a fix.
+  const [invalidDurationFields, setInvalidDurationFields] = useState<Record<string, boolean>>({})
+  const reportDurationValidity = useCallback((field: string) => (invalid: boolean) => {
+    setInvalidDurationFields(current => current[field] === invalid ? current : { ...current, [field]: invalid })
+  }, [])
   const [immediatePreflight, setImmediatePreflight] = useState<LaunchPreflightResponse | null>(null)
   const [immediatePreflightLoading, setImmediatePreflightLoading] = useState(false)
   const [immediatePreflightError, setImmediatePreflightError] = useState('')
@@ -743,7 +755,6 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   groupRunOverridesRef.current = groupRunOverrides
   const runDefaultDialogRef = useRef<HTMLDivElement>(null)
   const runGroupDialogRef = useRef<HTMLDivElement>(null)
-  const deleteScheduleDialogRef = useRef<HTMLDivElement>(null)
 
   useModalDialog({
     dialogRef: runDefaultDialogRef,
@@ -754,11 +765,6 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     dialogRef: runGroupDialogRef,
     enabled: Boolean(editingGroupKey),
     onClose: () => setEditingGroupKey(null),
-  })
-  useModalDialog({
-    dialogRef: deleteScheduleDialogRef,
-    enabled: Boolean(confirmDeleteScheduleId),
-    onClose: () => setConfirmDeleteScheduleId(null),
   })
 
   useLayoutEffect(() => {
@@ -783,7 +789,6 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     setExpandedScheduleId(null)
     setScheduleOccurrenceLoading(null)
     setScheduleOccurrences({})
-    setConfirmDeleteScheduleId(null)
     const nextScheduleDraft = buildDefaultScheduleDraft()
     setScheduleDraft(nextScheduleDraft)
     setScheduleDraftBaseline(nextScheduleDraft)
@@ -1047,7 +1052,6 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     setExpandedScheduleId(null)
     setScheduleOccurrenceLoading(null)
     setScheduleOccurrences({})
-    setConfirmDeleteScheduleId(null)
     replaceScheduleDraft(buildDefaultScheduleDraft())
   }, [activeProjectID, replaceScheduleDraft, scenarioId])
 
@@ -1203,13 +1207,6 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       label: editingGroup.name || editingGroup.script_name || 'Script group',
     }) || ''
   }, [editingGroup, editingGroupStagePeak, groupEditDraft.vusers])
-  const defaultDurationInvalid = editingDefaultKey === 'duration'
-    && defaultEditDraft.value.trim().length > 0
-    && !isValidDurationInput(defaultEditDraft.value.trim())
-  const groupRampUpInvalid = groupEditDraft.ramp_up.trim().length > 0
-    && !isValidNonNegativeDurationInput(groupEditDraft.ramp_up.trim())
-  const groupRampDownInvalid = groupEditDraft.ramp_down.trim().length > 0
-    && !isValidNonNegativeDurationInput(groupEditDraft.ramp_down.trim())
   const generatorByTarget = useMemo(() => new Map(generatorInventory.map(generator => [generator.target, generator])), [generatorInventory])
   const availableLabels = useMemo(() => {
     const labels = new Map<string, Set<string>>()
@@ -1309,22 +1306,26 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       : dataPools.length
         ? dataPools.map(pool => pool.alias || pool.pool_name || pool.pool_id).join(', ')
         : 'None'
+    // Both sources of an estimate failed: say so instead of "pending" forever.
+    const estimateUnavailable = estimateFailed && !immediatePreflight && Boolean(immediatePreflightError)
     const launchConflict = firstLaunchConflict(immediatePreflight)
     const launchBlocked = Boolean(immediatePreflight?.blocking_conflicts?.length)
     const capacityValue = !scenario
       ? 'Select a scenario'
       : immediatePreflightLoading || estimateLoading
-        ? 'Refreshing estimate...'
+        ? 'Refreshing estimate…'
         : capacityAdvisory
           ? `${formatCount(capacityAdvisory.recommended_generators, 'generator')} estimated; ${capacityAdvisory.available_generators} targets in the capacity estimate. Check live host inventory below. Updated ${immediatePreflight?.capacity_advisory ? preflightCheckedAt : estimateCheckedAt}.`
-          : 'Pending estimate'
+          : estimateUnavailable
+            ? 'Estimate unavailable. Use Refresh host inventory to retry.'
+            : 'Pending estimate'
     const bottleneckValue = !scenario
       ? 'Not available'
       : immediatePreflightLoading || estimateLoading
-        ? 'Refreshing...'
+        ? 'Refreshing…'
         : capacityAdvisory
           ? `${capacityAdvisory.bottleneck}, ${capacityAdvisory.headroom_pct}% headroom`
-          : 'Pending estimate'
+          : estimateUnavailable ? 'Estimate unavailable' : 'Pending estimate'
 
     return [
       { label: 'Run Name', value: runName.trim() || scenario?.name || 'Unnamed' },
@@ -1344,7 +1345,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       { label: 'Conflicts', value: launchConflict ? launchConflict.message : 'None', tone: launchConflict ? 'warning' : 'normal' },
       { label: 'Next Blocking Event', value: formatNextBlockingEvent(immediatePreflight), tone: launchBlocked ? 'warning' : 'normal' },
     ]
-  }, [estimateCheckedAt, preflightCheckedAt, draftEstimate?.capacity_advisory, effectiveRunDuration, effectiveScenarioGroups.length, estimateLoading, groupRunOverrides, immediatePreflight, immediatePreflightLoading, protocols, release?.name, runName, runOverridesCount, scenario, totalVUsers])
+  }, [estimateCheckedAt, preflightCheckedAt, draftEstimate?.capacity_advisory, effectiveRunDuration, effectiveScenarioGroups.length, estimateFailed, estimateLoading, groupRunOverrides, immediatePreflight, immediatePreflightError, immediatePreflightLoading, protocols, release?.name, runName, runOverridesCount, scenario, totalVUsers])
   const readiness = useMemo(() => {
     const checks = [
       { label: activeApplication ? `Application: ${activeApplication.name}` : 'Select an application', ready: !!activeApplication },
@@ -1445,12 +1446,13 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     }
     let cancelled = false
     setEstimateLoading(true)
+    setEstimateFailed(false)
     const timer = window.setTimeout(async () => {
       try {
         const estimate = await api.estimateTest(runCreatePayload)
         if (!cancelled) { setDraftEstimate(estimate); setEstimateCheckedAt(new Date().toLocaleTimeString()) }
       } catch {
-        if (!cancelled) setDraftEstimate(null)
+        if (!cancelled) { setDraftEstimate(null); setEstimateFailed(true) }
       } finally {
         if (!cancelled) setEstimateLoading(false)
       }
@@ -1476,7 +1478,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       } catch (cause: unknown) {
         if (!cancelled) {
           setImmediatePreflight(null)
-          setImmediatePreflightError(getErrorMessage(cause, 'Unable to check launch readiness. Retry after recovery.'))
+          setImmediatePreflightError(`Launch readiness could not be checked (${getErrorMessage(cause, 'no response')}). Use Refresh host inventory to retry.`)
         }
       } finally {
         if (!cancelled) setImmediatePreflightLoading(false)
@@ -1958,6 +1960,10 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     }
     if (key === 'duration') {
       const duration = defaultEditDraft.value.trim()
+      if (invalidDurationFields.duration) {
+        setError('Run duration must be a positive Go duration such as 30s, 5m, or 1h30m.')
+        return false
+      }
       if (!duration) {
         setError('Duration is required for a run override.')
         return false
@@ -1991,7 +1997,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       setShowAllRuntimeDefaults(true)
     }
     setError('')
-    setDefaultSaveNotice(`Saved ${editingDefaultCard.label} for this run only. Scenario defaults were not changed.`)
+    setDefaultSaveNotice(`Saved ${editingDefaultCard.label.charAt(0).toLowerCase()}${editingDefaultCard.label.slice(1)} for this run only. Scenario defaults were not changed.`)
     setEditingDefaultKey(null)
     return true
   }
@@ -1999,19 +2005,15 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const renderRunDefaultEditorControl = () => {
     if (!editingDefaultKey) return null
     if (editingDefaultKey === 'duration') {
+      // The same number + unit control the scenario builder uses for durations.
       return (
-        <label>
-          <span>Run duration</span>
-          <input
-            className="settings-input"
-            value={defaultEditDraft.value}
-            aria-invalid={defaultDurationInvalid}
-            aria-describedby={defaultDurationInvalid ? 'new-test-run-duration-error' : undefined}
-            onChange={event => { setError(''); setDefaultEditDraft(prev => ({ ...prev, value: event.target.value })) }}
-            placeholder="30m0s"
-          />
-          {defaultDurationInvalid && <small id="new-test-run-duration-error" className="new-test-group-field-error">Use a duration such as 30s, 5m, or 1h30m.</small>}
-        </label>
+        <DurationField
+          label="Run duration"
+          required
+          onInvalidChange={reportDurationValidity('duration')}
+          value={defaultEditDraft.value}
+          onChange={value => { setError(''); setDefaultEditDraft(prev => ({ ...prev, value })) }}
+        />
       )
     }
     if (editingDefaultKey === 'iterations') {
@@ -2276,6 +2278,16 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
 
   const saveGroupOverride = (): boolean => {
     if (!editingGroupKey || !editingGroup || !scenario) return false
+    // Text a duration field could not read leaves its draft empty, so check
+    // the fields themselves before "no changes" can close the dialog.
+    if (invalidDurationFields.ramp_up) {
+      setError('Ramp up must be a non-negative Go duration such as 0s, 30s, or 5m.')
+      return false
+    }
+    if (invalidDurationFields.ramp_down) {
+      setError('Ramp down must be a non-negative Go duration such as 0s, 30s, or 5m.')
+      return false
+    }
     if (!hasGroupEditChanges) return true
     const existingOverride = groupRunOverridesRef.current[editingGroupKey]
     const nextOverride: GroupRunOverride = existingOverride
@@ -2560,6 +2572,12 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
 	}
   }
 
+  // Uses the same destructive confirmation as every other library delete.
+  const requestDeleteSchedule = async (schedule: { id: string; name?: string }) => {
+    if (!(await confirmAction(`Permanently delete schedule “${schedule.name || 'this schedule'}”? Future runs managed by this schedule will no longer fire. This cannot be undone.`, { title: 'Delete schedule', confirmLabel: 'Delete schedule', destructive: true }))) return
+    await deleteSchedule(schedule.id)
+  }
+
   const deleteSchedule = async (scheduleId: string) => {
 	if (!canManageSchedules) {
 	  setError('Current session cannot manage scenario schedules for this project.')
@@ -2567,7 +2585,6 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
 	}
 	if (!scenario) return
 	const scope = { projectID: activeProjectID, scenarioID: scenario.id, generation: scheduleScopeGenerationRef.current }
-	setConfirmDeleteScheduleId(null)
 	setError('')
 	try {
 	  await api.deleteScenarioSchedule(scenario.id, scheduleId)
@@ -2820,7 +2837,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                     </button>
                   )}
                   <button type="button" className="btn btn-primary" onClick={submitSchedule} disabled={!scenario || scheduleSubmitting || !canManageSchedules || schedulePreviewPending || Boolean(scheduleFormError) || (!editingScheduleId && !scheduleDraft.release_id)}>
-                    {editingScheduleId ? 'Update Schedule' : 'Save Schedule'}
+                    {editingScheduleId ? 'Save schedule' : 'Create schedule'}
                   </button>
                 </div>
               </div>
@@ -3092,7 +3109,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                                   <button className="btn btn-secondary" onClick={() => toggleScheduleOccurrences(item)}>{expandedScheduleId === item.id ? 'Hide Audit' : 'Audit Trail'}</button>
                                   <button className="btn btn-secondary" onClick={() => editSchedule(item)} disabled={!canManageSchedules}>Edit</button>
                                   <button className="btn btn-secondary" onClick={() => toggleSchedule(item)} disabled={!canManageSchedules}>{item.enabled ? 'Pause' : 'Enable'}</button>
-                                  <button className="btn btn-secondary" onClick={() => setConfirmDeleteScheduleId(item.id)} disabled={!canManageSchedules}>Delete</button>
+                                  <button className="btn btn-secondary" onClick={() => { void requestDeleteSchedule(item) }} disabled={!canManageSchedules}>Delete</button>
                                 </div>
                               </td>
                             </tr>
@@ -3102,10 +3119,10 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                                   <div className="schedule-occurrence-panel">
                                     <div className="schedule-occurrence-header">
                                       <strong>Occurrence Audit Trail</strong>
-                                      <span>{scheduleOccurrenceLoading === item.id ? 'Loading...' : `${occurrences.length} records`}</span>
+                                      <span>{scheduleOccurrenceLoading === item.id ? 'Loading…' : `${occurrences.length} records`}</span>
                                     </div>
                                     {scheduleOccurrenceLoading === item.id ? (
-                                      <div className="cell-muted">Loading schedule occurrence history...</div>
+                                      <div className="cell-muted">Loading schedule occurrence history…</div>
                                     ) : occurrences.length === 0 ? (
                                       <div className="cell-muted">No materialized occurrences recorded yet.</div>
                                     ) : (
@@ -3271,23 +3288,22 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                                 <Fragment key={item.id}>
                                   <tr
                                     className={`new-test-scenario-table-row clickable-row ${selected ? 'selected' : ''}`}
-                                    tabIndex={0}
-                                    aria-selected={selected}
-                                    aria-expanded={expanded}
-                                    aria-controls={`new-test-scenario-groups-${item.id}`}
                                     onClick={() => selectScenario(item.id)}
-                                    onKeyDown={event => {
-                                      if (event.currentTarget !== event.target) return
-                                      if (event.key === 'Enter' || event.key === ' ') {
-                                        event.preventDefault()
-                                        selectScenario(item.id)
-                                      }
-                                    }}
                                   >
                                     <td className="cell-name">
                                       <div className="new-test-scenario-name-cell">
-                                        <span className="new-test-row-expander" aria-hidden="true">{expanded ? 'v' : '>'}</span>
-                                        <span>{item.name}<small className="new-test-reference">{item.ref_key || item.id}</small></span>
+                                        {/* The row's keyboard control carries its state; table rows cannot. */}
+                                        <button
+                                          type="button"
+                                          className="new-test-row-toggle"
+                                          aria-expanded={expanded}
+                                          aria-controls={expanded ? `new-test-scenario-groups-${item.id}` : undefined}
+                                          aria-current={selected ? 'true' : undefined}
+                                          onClick={event => { event.stopPropagation(); selectScenario(item.id) }}
+                                        >
+                                          <span className="new-test-row-expander" aria-hidden="true">{expanded ? 'v' : '>'}</span>
+                                          <span>{item.name}<small className="new-test-reference">{item.ref_key || item.id}</small></span>
+                                        </button>
                                         <span className={`new-test-scenario-card-mode ${item.scenario_mode === 'goal_oriented' ? 'goal' : ''}`}>{formatScenarioModeShort(item.scenario_mode)}</span>
                                       </div>
                                       <div className="new-test-scenario-card-meta">{formatScenarioWorkloadSummary(item)}</div>
@@ -3433,7 +3449,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                       <button className="btn btn-ghost btn-sm" onClick={() => { setShowNewRelease(false); setNewReleaseName('') }}>Cancel</button>
                     </div>
                   ) : (
-                    <button className="btn btn-ghost btn-sm btn-accent-action new-test-add-release-link" onClick={() => setShowNewRelease(true)}>+ New Release</button>
+                    <button className="btn btn-ghost btn-sm btn-primary new-test-add-release-link" onClick={() => setShowNewRelease(true)}>+ New Release</button>
                   )}
                 </div>
                 {(bindableTimeslots.length > 0 || selectedTimeslotId) && (
@@ -3465,7 +3481,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                     {elkConnectionId && !elkConnections.some(c => c.id === elkConnectionId) && <option value={elkConnectionId}>Selected connection unavailable — review required</option>}
                     {elkConnections.map(connection => <option key={connection.id} value={connection.id}>{connection.name}</option>)}
                   </select>
-                  <CaptureSelectionHelp provider="elk" count={elkConnections.length} error={elkError} loading={elkLoading} retry={() => setCaptureRetry(value => value + 1)} selected={elkConnections.find(c => c.id === elkConnectionId)?.name} canManage={canManageProjects} />
+                  <CaptureSelectionHelp provider="elk" count={elkConnections.length} error={elkError} forbidden={elkForbidden} loading={elkLoading} retry={() => setCaptureRetry(value => value + 1)} selected={elkConnections.find(c => c.id === elkConnectionId)?.name} canManage={canManageProjects} />
                 </div>
                 <div className="setting-row">
                   <div className="setting-info">
@@ -3477,7 +3493,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                     {dynatraceConnectionId && !dynatraceConnections.some(c => c.id === dynatraceConnectionId) && <option value={dynatraceConnectionId}>Selected connection unavailable — review required</option>}
                     {dynatraceConnections.map(connection => <option key={connection.id} value={connection.id}>{connection.name}</option>)}
                   </select>
-                  <CaptureSelectionHelp provider="dynatrace" capabilities={dynatraceCapabilities(dynatraceConnections.find(c => c.id === dynatraceConnectionId))} count={dynatraceConnections.length} error={dynatraceError} loading={dynatraceLoading} retry={() => setCaptureRetry(value => value + 1)} selected={dynatraceConnections.find(c => c.id === dynatraceConnectionId)?.name} canManage={canManageProjects} />
+                  <CaptureSelectionHelp provider="dynatrace" capabilities={dynatraceCapabilities(dynatraceConnections.find(c => c.id === dynatraceConnectionId))} count={dynatraceConnections.length} error={dynatraceError} forbidden={dynatraceForbidden} loading={dynatraceLoading} retry={() => setCaptureRetry(value => value + 1)} selected={dynatraceConnections.find(c => c.id === dynatraceConnectionId)?.name} canManage={canManageProjects} />
                 </div>
                 <RunTraceContextSelector value={traceContext} onChange={setTraceContext} suggest={Boolean(elkConnectionId || dynatraceConnectionId || (monitorBindings?.length ?? 0) > 0)} />
               </div>
@@ -3738,7 +3754,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
               )}
               <div className="new-test-schedule-launch">
                 <label>
-                  <span>Scheduled Start ({Intl.DateTimeFormat().resolvedOptions().timeZone})</span>
+                  <span>Scheduled start ({Intl.DateTimeFormat().resolvedOptions().timeZone})</span>
                   <input
                     className="settings-input"
                     type="datetime-local"
@@ -3749,7 +3765,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                     aria-describedby={scheduledStartInPast ? 'new-test-scheduled-start-error' : undefined}
                   />
                 </label>
-                <button className="btn btn-secondary" onClick={() => createRun('schedule')} disabled={!canLaunch || scheduledPreflightLoading || !scheduleAllowed} aria-describedby={launchBlockers.length && !creating ? 'new-test-launch-blockers' : undefined}>Schedule Run</button>
+                <button className="btn btn-secondary" onClick={() => createRun('schedule')} disabled={!canLaunch || scheduledPreflightLoading || !scheduleAllowed} aria-describedby={launchBlockers.length && !creating ? 'new-test-launch-blockers' : undefined}>Schedule run</button>
                 {scheduledStartInPast && (
                   <div id="new-test-scheduled-start-error" className="new-test-launch-feedback warning" role="alert">That time has already passed. Choose a start time in the future.</div>
                 )}
@@ -3866,16 +3882,30 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                         <option value="at_once">At once</option>
                       </select>
                     </label>
-                    <label className={changedFieldClass(groupEditChanges.ramp_up)}>
-                      <span>Ramp up <ChangedBadge changed={groupEditChanges.ramp_up} /></span>
-                      <input className="settings-input" value={groupEditDraft.ramp_up} aria-invalid={groupRampUpInvalid} aria-describedby={groupRampUpInvalid ? 'new-test-group-ramp-up-error' : undefined} onChange={event => { setError(''); setGroupEditDraft(prev => ({ ...prev, ramp_up: event.target.value })) }} placeholder="Scenario default" />
-                      {groupRampUpInvalid && <small id="new-test-group-ramp-up-error" className="new-test-group-field-error">Use a duration such as 30s, 5m, or 1h30m.</small>}
-                    </label>
-                    <label className={changedFieldClass(groupEditChanges.ramp_down)}>
-                      <span>Ramp down <ChangedBadge changed={groupEditChanges.ramp_down} /></span>
-                      <input className="settings-input" value={groupEditDraft.ramp_down} aria-invalid={groupRampDownInvalid} aria-describedby={groupRampDownInvalid ? 'new-test-group-ramp-down-error' : undefined} onChange={event => { setError(''); setGroupEditDraft(prev => ({ ...prev, ramp_down: event.target.value })) }} placeholder="Scenario default" />
-                      {groupRampDownInvalid && <small id="new-test-group-ramp-down-error" className="new-test-group-field-error">Use a duration such as 30s, 5m, or 1h30m.</small>}
-                    </label>
+                    <div className={changedFieldClass(groupEditChanges.ramp_up)}>
+                      <DurationField
+                        label="Ramp up"
+                        allowEmpty
+                        allowZero
+                        onInvalidChange={reportDurationValidity('ramp_up')}
+                        placeholder="Scenario default"
+                        value={groupEditDraft.ramp_up}
+                        onChange={value => { setError(''); setGroupEditDraft(prev => ({ ...prev, ramp_up: value })) }}
+                      />
+                      <ChangedBadge changed={groupEditChanges.ramp_up} />
+                    </div>
+                    <div className={changedFieldClass(groupEditChanges.ramp_down)}>
+                      <DurationField
+                        label="Ramp down"
+                        allowEmpty
+                        allowZero
+                        onInvalidChange={reportDurationValidity('ramp_down')}
+                        placeholder="Scenario default"
+                        value={groupEditDraft.ramp_down}
+                        onChange={value => { setError(''); setGroupEditDraft(prev => ({ ...prev, ramp_down: value })) }}
+                      />
+                      <ChangedBadge changed={groupEditChanges.ramp_down} />
+                    </div>
                   </div>
                 </section>
                 <section>
@@ -3883,7 +3913,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                   <button type="button" className="btn btn-secondary btn-sm" onClick={() => setInventoryRefresh(value => value + 1)}>Refresh host inventory</button>
                   <p className="new-test-inline-note">Saved host placement applies only to this run. Multiple hosts split this group by available capacity.</p>
                   {generatorInventoryLoading ? (
-                    <div className="new-test-empty compact">Loading generator inventory...</div>
+                    <div className="new-test-empty compact">Loading generator inventory…</div>
                   ) : (
                     <>
                       {generatorInventory.length === 0 && (
@@ -4155,7 +4185,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
               <div className="modal-actions">
                 <button type="button" className="btn btn-secondary" onClick={() => setEditingGroupKey(null)}>Cancel</button>
                 <button type="button" className="btn btn-secondary" onClick={clearGroupOverride}>Use Scenario Defaults</button>
-                <button type="button" className="btn btn-primary" onClick={saveGroupOverride} disabled={!hasGroupEditChanges || Boolean(groupEditEnvelopeError)}>Save For This Run</button>
+                <button type="button" className="btn btn-primary" onClick={saveGroupOverride} disabled={(!hasGroupEditChanges && !invalidDurationFields.ramp_up && !invalidDurationFields.ramp_down) || Boolean(groupEditEnvelopeError)}>Save For This Run</button>
               </div>
             </div>
           </div>
@@ -4163,30 +4193,6 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
         document.body,
       )}
 
-      {confirmDeleteScheduleId && (
-        <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(() => setConfirmDeleteScheduleId(null))}>
-          <div
-            ref={deleteScheduleDialogRef}
-            className="modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="new-test-delete-schedule-dialog-title"
-          >
-            <div className="modal-header">
-              <h3 id="new-test-delete-schedule-dialog-title">Delete Schedule</h3>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmDeleteScheduleId(null)}>Cancel</button>
-            </div>
-            <div className="monitor-body">
-              <p>Permanently delete schedule <strong>{schedules.find(s => s.id === confirmDeleteScheduleId)?.name || 'this schedule'}</strong>? Future runs managed by this schedule will no longer fire.</p>
-              <p style={{ color: 'var(--danger-text)', fontWeight: 600 }}>This action cannot be undone.</p>
-              <div className="settings-inline-actions">
-                <button className="btn btn-secondary" type="button" onClick={() => setConfirmDeleteScheduleId(null)}>Cancel</button>
-                <button className="btn btn-danger" type="button" onClick={() => deleteSchedule(confirmDeleteScheduleId)}>Delete Schedule</button>
-              </div>
-            </div>
-          </div>
-        </div></DialogLayer>
-      )}
     </div>
   )
 }

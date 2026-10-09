@@ -107,7 +107,7 @@ export default function RunReportPowerBIPublish({ testId, publish, getStatus }: 
           onClick={() => void runPublish(false)}
           disabled={busy || confirmingForce}
         >
-          {busy ? 'Publishing...' : 'Publish to Power BI'}
+          {busy ? 'Publishing…' : 'Publish to Power BI'}
         </button>
         {confirmingForce && (
           <>

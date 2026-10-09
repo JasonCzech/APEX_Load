@@ -20,6 +20,9 @@ describe('UserSettingsPage', () => {
     expect(change).toHaveBeenCalledWith('solarized-dark')
     expect(host.textContent).not.toContain('Authentication')
     expect(host.querySelector('[role=note]')?.textContent).toContain('requires administrator access')
+    // Same non-collapsible section list as administrator Settings, and the top bar's theme names.
+    expect([...host.querySelectorAll('button')].some(button => /Collapse|Settings navigation/.test(button.textContent || '') || /Settings navigation/.test(button.getAttribute('aria-label') || ''))).toBe(false)
+    expect([...select.options].map(option => option.textContent)).toEqual(['System (Auto)', 'Dark Theme', 'Light Theme', 'Solarized Dark', 'Solarized Light', 'Monokai Dimmed'])
   })
   it('links sections and presents the signed-in account without editable identity fields', () => {
     const navigate = vi.fn()

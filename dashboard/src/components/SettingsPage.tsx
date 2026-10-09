@@ -17,7 +17,7 @@ import ConnectionDiagnostics from './ConnectionDiagnostics'
 import RedactionPreview from './RedactionPreview'
 import NotificationDiagnostics from './NotificationDiagnostics'
 import { handleTabKey } from './tabKeyboard'
-import { SETTINGS_DESTINATIONS, matchesSettingsSearch, settingsSearchControl, settingsDestination, settingsOwner } from './settingsNavigation'
+import { SETTINGS_DESTINATIONS, destinationTitle, matchesSettingsSearch, settingsSearchControl, settingsDestination, settingsOwner } from './settingsNavigation'
 import ComputeInfrastructureCard from './ComputeInfrastructureCard'
 import ClustersCard from './ClustersCard'
 import FleetPoolsCard from './FleetPoolsCard'
@@ -140,6 +140,7 @@ import type { FleetPool } from '../types/fleet'
 import { consumeProjectSecretsSettingsProjectId } from './projectSecretsNavigation'
 import { reconcileSettingsProjectSnapshots } from './settingsProjectCatalog'
 import FeatureAccessPanel, { type FeatureAccessController } from './FeatureAccessPanel'
+import { useSectionListKeys } from './ux/useSectionListKeys'
 
 const AUDIT_BATCH_SIZE = 20
 
@@ -501,6 +502,7 @@ export default function SettingsPage({
   const [confirmDeletePool, setConfirmDeletePool] = useState<SharedDataPool | null>(null)
   const [confirmDeleteRow, setConfirmDeleteRow] = useState<SharedDataPoolRow | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
+  const settingsNavRef = useSectionListKeys()
   const [selectedProjectId, setSelectedProjectId] = useState('')
   const [newProjectName, setNewProjectName] = useState('')
   const [newProjectDomainId, setNewProjectDomainId] = useState('')
@@ -705,19 +707,6 @@ export default function SettingsPage({
     setConfirmArchiveRelease(null)
   }, [activeApplication?.id])
 
-  useEffect(() => {
-    let cancelled = false
-    listAllFleetPools(fleetApi.listFleetPools)
-      .then(nextPools => {
-        if (!cancelled) setFleetPools(nextPools)
-      })
-      .catch(() => {
-        if (!cancelled) setFleetPools(null)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [fleetApi])
 
   const selectedAccessProject = projects.find(project => project.id === selectedProjectId)
   const effectiveAuthAccessProjectId = selectedAccessProject?.id || activeProject?.id
@@ -771,26 +760,6 @@ export default function SettingsPage({
     effectiveAuthAccessScope,
   ])
 
-  useEffect(() => {
-  let cancelled = false
-  const loadAuthDiagnostics = async () => {
-    try {
-      const response = await api.getAuthDiagnostics()
-      if (!cancelled) {
-        setAuthDiagnostics(response)
-      }
-    } catch {
-      if (!cancelled) {
-        setAuthDiagnostics(null)
-      }
-    }
-  }
-
-  loadAuthDiagnostics()
-  return () => {
-    cancelled = true
-  }
-  }, [api])
 
   useEffect(() => {
     let cancelled = false
@@ -816,26 +785,6 @@ export default function SettingsPage({
     }
   }, [api])
 
-  useEffect(() => {
-    let cancelled = false
-    const loadServiceAccounts = async () => {
-      try {
-        const response = await api.listAuthServiceAccounts()
-        if (!cancelled) {
-          setServiceAccounts(response.service_accounts || [])
-        }
-      } catch {
-        if (!cancelled) {
-          setServiceAccounts([])
-        }
-      }
-    }
-
-    loadServiceAccounts()
-    return () => {
-      cancelled = true
-    }
-  }, [api])
 
   const fetchAuditBatch = useCallback((offset: number) => api.listAuthAuditEvents({
     limit: AUDIT_BATCH_SIZE,
@@ -848,38 +797,6 @@ export default function SettingsPage({
     status: auditStatusFilter.trim() || undefined,
   }), [api, auditActionFilter, auditActorTypeFilter, auditStatusFilter, auditProjectFilter, auditAfter, auditBefore])
 
-  // Filters reload the first batch; it supersedes any older-events load in flight.
-  useEffect(() => {
-    let cancelled = false
-    auditLoadGenerationRef.current += 1
-    // An inverted date range is reported beside the fields, not queried.
-    if (auditDateError) return () => { cancelled = true }
-    const loadAuditEvents = async () => {
-      setAuditLoading(true)
-      setAuditLoadError('')
-      setAuditOlderLoading(false)
-      setAuditOlderError('')
-      try {
-        const response = await fetchAuditBatch(0)
-        if (!cancelled) {
-          const events = response.events || []
-          setAuditEvents(events)
-          setAuditHasMore(events.length === AUDIT_BATCH_SIZE)
-        }
-      } catch {
-        if (!cancelled) {
-          setAuditEvents([])
-          setAuditHasMore(false)
-          setAuditLoadError('Unable to load audit history. Retry or check your access.')
-        }
-      } finally { if (!cancelled) setAuditLoading(false) }
-    }
-
-    loadAuditEvents()
-    return () => {
-      cancelled = true
-    }
-  }, [auditDateError, fetchAuditBatch])
 
   // Older events append to the loaded rows. The next offset is the number of
   // rows already loaded (duplicates from newly recorded events are dropped),
@@ -1020,6 +937,101 @@ export default function SettingsPage({
   const canManageScripts = capabilityAllowed('manage_scripts')
   const canManageServiceAccounts = capabilityAllowed('manage_service_accounts')
   const canViewAudit = capabilityAllowed('view_audit')
+
+  // Global, admin-only resources load only for callers who may read them;
+  // a project admin on a policy page otherwise collects a 403 for each.
+  useEffect(() => {
+    if (!canManageSystem) return
+    let cancelled = false
+    listAllFleetPools(fleetApi.listFleetPools)
+      .then(nextPools => {
+        if (!cancelled) setFleetPools(nextPools)
+      })
+      .catch(() => {
+        if (!cancelled) setFleetPools(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [canManageSystem, fleetApi])
+
+  useEffect(() => {
+  if (!canManageSystem) return
+  let cancelled = false
+  const loadAuthDiagnostics = async () => {
+    try {
+      const response = await api.getAuthDiagnostics()
+      if (!cancelled) {
+        setAuthDiagnostics(response)
+      }
+    } catch {
+      if (!cancelled) {
+        setAuthDiagnostics(null)
+      }
+    }
+  }
+
+  loadAuthDiagnostics()
+  return () => {
+    cancelled = true
+  }
+  }, [api, canManageSystem])
+
+  useEffect(() => {
+    if (!canManageServiceAccounts) return
+    let cancelled = false
+    const loadServiceAccounts = async () => {
+      try {
+        const response = await api.listAuthServiceAccounts()
+        if (!cancelled) {
+          setServiceAccounts(response.service_accounts || [])
+        }
+      } catch {
+        if (!cancelled) {
+          setServiceAccounts([])
+        }
+      }
+    }
+
+    loadServiceAccounts()
+    return () => {
+      cancelled = true
+    }
+  }, [api, canManageServiceAccounts])
+
+  // Filters reload the first batch; it supersedes any older-events load in flight.
+  useEffect(() => {
+    if (!canViewAudit) return
+    let cancelled = false
+    auditLoadGenerationRef.current += 1
+    // An inverted date range is reported beside the fields, not queried.
+    if (auditDateError) return () => { cancelled = true }
+    const loadAuditEvents = async () => {
+      setAuditLoading(true)
+      setAuditLoadError('')
+      setAuditOlderLoading(false)
+      setAuditOlderError('')
+      try {
+        const response = await fetchAuditBatch(0)
+        if (!cancelled) {
+          const events = response.events || []
+          setAuditEvents(events)
+          setAuditHasMore(events.length === AUDIT_BATCH_SIZE)
+        }
+      } catch {
+        if (!cancelled) {
+          setAuditEvents([])
+          setAuditHasMore(false)
+          setAuditLoadError('Unable to load audit history. Retry or check your access.')
+        }
+      } finally { if (!cancelled) setAuditLoading(false) }
+    }
+
+    loadAuditEvents()
+    return () => {
+      cancelled = true
+    }
+  }, [auditDateError, canViewAudit, fetchAuditBatch])
 
   const canSave = validationErrors.length === 0 && !loading && !loadFailed && !settingsMutationBusy && hasUnsavedChanges && canManageSystem
   const formDisabled = loading || loadFailed || settingsMutationBusy || effectiveAuthAccessLoading || !canManageSystem
@@ -3309,17 +3321,17 @@ export default function SettingsPage({
       {/* The section list is always shown, like every page's section list; it is not collapsible. */}
       <div className={`settings-tabbed-layout ${repositorySettings ? "navigation-collapsed" : ""}`}>
         {accessSettings && <AccessNavigation currentSetting={destinationId} />}
-        <nav hidden={accessSettings || repositorySettings} id="settings-task-navigation" className="settings-task-navigation is-open" aria-label="Settings sections">
+        <nav ref={settingsNavRef} hidden={accessSettings || repositorySettings} id="settings-task-navigation" className="settings-task-navigation is-open" aria-label="Settings sections">
           <label className="settings-navigation-search">Find settings<input className="settings-input" type="search" value={navigationSearch} onChange={event => setNavigationSearch(event.target.value)} placeholder="Search connections, policies…" /></label>
           {Array.from(new Set(SETTINGS_DESTINATIONS.map(item => item.group))).map(group => {
             const entries = SETTINGS_DESTINATIONS.filter(item => item.group === group && (item.id !== 'features' || canManageSystem) && matchesSettingsSearch(item, navigationSearch))
-            return entries.length ? <div key={group}><h3>{group}</h3>{entries.map(item => <button type="button" key={item.id} aria-current={currentDestination.id === item.id ? 'page' : undefined} onClick={() => selectDestination(item.id)}>{item.title}{(() => {
+            return entries.length ? <div key={group}><h3>{group}</h3>{entries.map(item => <button type="button" key={item.id} aria-current={currentDestination.id === item.id ? 'page' : undefined} onClick={() => selectDestination(item.id)}>{item.title}{settingsOwner(item.id) !== 'settings' && <span className="settings-nav-elsewhere">{settingsOwner(item.id) === 'access' ? 'Opens Access' : 'Opens Repository'}</span>}{(() => {
               const count = settingsIssuesForDestination(validationIssues, item).length
               return count ? <span className="settings-nav-issue-count" aria-label={`${count} validation issue${count === 1 ? '' : 's'}`}>{count}</span> : null
             })()}</button>)}</div> : null
           })}
           {navigationSearch && !SETTINGS_DESTINATIONS.some(item => matchesSettingsSearch(item, navigationSearch)) && <p role="status">No settings match.</p>}
-          <button type="button" onClick={() => onNavigate?.('access')}>Manage users & service accounts</button>
+          <button type="button" onClick={() => onNavigate?.('access')}>Manage users & service accounts<span className="settings-nav-elsewhere">Opens Access</span></button>
         </nav>
         <div className="settings-main">
           <header className="settings-task-heading"><p>{currentDestination.group}</p><h2 id="settings-destination-title" tabIndex={-1}>{currentDestination.title}</h2><p>Applies to: {destinationScopeLabel}</p><p className="setting-desc">{currentDestination.scope === 'browser' ? 'Preferences apply immediately in this browser.' : currentDestination.resource ? 'Changes are saved by the resource editor below.' : 'Save pending settings commits pending configuration and policy edits listed below. Resource actions have their own Save controls.'}</p>{hasAnyUnsavedChanges && <p role="status">Pending: {[
@@ -3341,7 +3353,7 @@ export default function SettingsPage({
             {destination.resource === 'allocation' && <PoolAllocationCard resourceId={resourceId} canManage={canManageSystem} />}
             {destination.resource === 'generators' && <FleetGeneratorsCard canManage={canManageSystem} />}
           </section>}
-          {loading && <p className="settings-notice" role="status" aria-live="polite">Loading settings...</p>}
+          {loading && <p className="settings-notice" role="status" aria-live="polite">Loading settings…</p>}
           {activeSectionMessages.notices.map(msg => (
             <p key={msg} className="settings-notice" role="status" aria-live="polite">{msg}</p>
           ))}
@@ -3537,7 +3549,7 @@ export default function SettingsPage({
                   Capture Snapshot
                 </button>
                 <button className="btn btn-secondary" type="button" onClick={exportUsageAccounting}>
-                  Export Usage CSV
+                  Export usage CSV
                 </button>
               </div>
               {usageActionMessage && <p className="settings-notice" role="status" aria-live="polite">{usageActionMessage}</p>}
@@ -3546,9 +3558,10 @@ export default function SettingsPage({
                 {usageSnapshots.slice(0, 5).map(snapshot => (
                   <div key={snapshot.id} className="settings-release-row">
                     <div className="settings-release-main">
-                      <span>{snapshot.id}</span>
-                      <small>Captured {formatDateTime(snapshot.created_at)}</small>
-                      <small>{snapshot.project_id || 'all projects'} / {snapshot.usage.totals.run_count} runs / {snapshot.usage.totals.vuser_seconds.toLocaleString()} VUser seconds</small>
+                      {/* Named by scope and capture time; the snapshot ID stays available for support. */}
+                      <span>{snapshot.project_id ? (projects.find(project => project.id === snapshot.project_id) || (activeProject?.id === snapshot.project_id ? activeProject : null))?.name || 'Project not available' : 'All projects'} · {formatDateTime(snapshot.created_at)}</span>
+                      <small>{snapshot.usage.totals.run_count.toLocaleString()} run{snapshot.usage.totals.run_count === 1 ? '' : 's'} · {snapshot.usage.totals.vuser_seconds.toLocaleString()} VUser seconds</small>
+                      <details className="settings-snapshot-id"><summary>Snapshot details</summary><small>Snapshot ID <code>{snapshot.id}</code>{snapshot.project_id ? <> · Project ID <code>{snapshot.project_id}</code></> : null}</small></details>
                     </div>
                     <span className="setting-value">{formatBytes(snapshot.usage.totals.archive_bytes)}</span>
                   </div>
@@ -4230,7 +4243,7 @@ export default function SettingsPage({
                       <div className="settings-subsection">
                         <div className="settings-manager-summary">
                           <div className="setting-info">
-                            <span className="setting-label">Scenario Schedule Defaults</span>
+                            <span className="setting-label">{destinationTitle('scheduling')}</span>
                             <span className="setting-desc">Administrator-owned governance and calendar-window defaults applied when new recurring schedules are created.</span>
                           </div>
                           <strong>{formatSchedulePolicyLabel(settings.schedule_defaults.approval_policy || 'auto')}</strong>
@@ -4320,7 +4333,7 @@ export default function SettingsPage({
                       <div className="settings-subsection">
                         <div className="settings-manager-summary">
                           <div className="setting-info">
-                            <span className="setting-label">Scenario Schedule Defaults</span>
+                            <span className="setting-label">{destinationTitle('scheduling')}</span>
                             <span className="setting-desc">Administrator-owned governance and calendar-window defaults applied when new recurring schedules are created.</span>
                           </div>
                           <strong>View only</strong>
@@ -4347,7 +4360,7 @@ export default function SettingsPage({
                     <div className="settings-subsection">
                       <div className="settings-manager-summary">
                         <div className="setting-info">
-                          <span className="setting-label">Source Credential Migration</span>
+                          <span className="setting-label">{destinationTitle('imports')}</span>
                           <span className="setting-desc">
                             Controls whether project and system administrators may opt in to copying recoverable credential values from a protected import session into the project secret provider.
                           </span>
@@ -4402,7 +4415,7 @@ export default function SettingsPage({
                           <span className="setting-desc">Use the dedicated Access page for CI, MCP, reporting, script import, and system automation key generation.</span>
                         </div>
                         <div className="settings-inline-actions">
-                          <button className="btn btn-secondary btn-accent-action" type="button" onClick={() => onNavigate?.('access')} disabled={!canManageServiceAccounts || !onNavigate}>
+                          <button className="btn btn-primary" type="button" onClick={() => onNavigate?.('access')} disabled={!canManageServiceAccounts || !onNavigate}>
                             Open Access & API Keys
                           </button>
                         </div>
@@ -4493,7 +4506,7 @@ export default function SettingsPage({
                     <div className="settings-subsection">
                       <div className="settings-manager-summary">
                         <div className="setting-info">
-                          <span className="setting-label">Recent Audit Events</span>
+                          <span className="setting-label">{destinationTitle('audit')}</span>
                           <span className="setting-desc">Backend-recorded governance history for settings changes, project administration, service-account provisioning, and core test control actions.</span>
                         </div>
                         <strong>{auditEvents.length}</strong>
@@ -4546,7 +4559,7 @@ export default function SettingsPage({
           <div className="settings-group">
             <fieldset className="settings-fieldset" disabled={formDisabled}>
             <div className="settings-subgroup-header">
-              <span className="settings-subgroup-title">Performance SLAs</span>
+              <span className="settings-subgroup-title">{destinationTitle('thresholds')}</span>
               <span className="settings-subgroup-desc">Alert and auto-stop thresholds for transaction-level quality gates</span>
             </div>
             <div className="setting-row">
@@ -5000,7 +5013,7 @@ export default function SettingsPage({
             <div className="settings-subsection">
               <div className="settings-manager-summary">
                 <div>
-                  <span className="setting-label">Archive Retention Executor</span>
+                  <span className="setting-label">{destinationTitle('retention')}</span>
                   <span className="setting-desc">Plan and apply audited archive pruning through the same retention executor used by the API.</span>
                 </div>
                 <strong>{archiveRetentionPlan ? archiveRetentionPlan.summary.candidate_count : '-'}</strong>
@@ -5198,7 +5211,7 @@ export default function SettingsPage({
               </div>
             </div>
 
-            {selectedDomain && (
+            {selectedDomain && capabilityAllowed('manage_deployment_targets', false) && (
               <DomainDeploymentTargetCard
                 key={selectedDomain.id}
                 domainId={selectedDomain.id}
@@ -5315,7 +5328,7 @@ export default function SettingsPage({
                 </button>
               ))}
               </div>
-              {applicationsLoading && <p className="new-test-inline-note" role="status">Loading applications...</p>}
+              {applicationsLoading && <p className="new-test-inline-note" role="status">Loading applications…</p>}
               {applicationCleanupNotice && <p className="settings-notice" role="status">{applicationCleanupNotice}</p>}
               {(applicationReconciliationWarning || applicationsError) && (
                 <div className="settings-inline-actions" role="alert">
@@ -5695,7 +5708,8 @@ export default function SettingsPage({
                     />
                   </div>
 
-                  {selectedProject && (
+                  {/* Pool quotas need the global pool list, a system-admin read. */}
+                  {selectedProject && canManageSystem && (
                     <ProjectPoolQuotasCard
                       ref={poolQuotaDraftRef}
                       project={selectedProject}
@@ -5907,7 +5921,7 @@ export default function SettingsPage({
                 <div className="settings-subsection">
                   <div className="settings-manager-summary">
                     <div>
-                      <span className="setting-label">Custom Redaction Rules</span>
+                      <span className="setting-label">{destinationTitle('redaction')}</span>
                       <span className="setting-desc">Each regex runs after the built-in scrubbing pass. Leave replacement empty to fall back to the engine default `[REDACTED]` token.</span>
                     </div>
                     <strong>{customRuleCount}</strong>
@@ -6157,7 +6171,7 @@ export default function SettingsPage({
                 />
                 <div className="settings-inline-actions">
                   <button className="btn btn-primary" type="button" disabled={dataPoolRowSaveBusy || dataPoolRowDeleteBusy} onClick={saveDataPoolRow}>
-                    {dataPoolRowSaveBusy ? 'Saving…' : editingDataPoolRowId ? 'Update Row' : 'Add Row'}
+                    {dataPoolRowSaveBusy ? 'Saving…' : editingDataPoolRowId ? 'Save row' : 'Add row'}
                   </button>
                   {editingDataPoolRowId && (
                     <button className="btn btn-secondary" type="button" disabled={dataPoolRowDeleteBusy} onClick={() => { setEditingDataPoolRowId(null); setEditingDataPoolRowVersion(null); setDataPoolRowJson('{\n  "customer_id": "C-10001"\n}') }}>
@@ -6359,6 +6373,7 @@ export default function SettingsPage({
             >
               <div className="settings-group">
             <GitHubIntegrationPanel
+              canEdit={canManageSystem}
               value={settings.github}
               onChange={(next) => {
                 setSettings((prev) => ({ ...prev, github: next }))
@@ -6528,7 +6543,7 @@ export default function SettingsPage({
             <div className="settings-subsection">
               <div className="settings-manager-summary">
                 <div>
-                  <span className="setting-label">Notification Webhooks</span>
+                  <span className="setting-label">{destinationTitle('notifications')}</span>
                   <span className="setting-desc">Send Slack, Microsoft Teams, Dynatrace Events API or Grafana annotation notifications when tests, load phases or telemetry health change state.</span>
                 </div>
                 <strong>{notificationWebhookCount}</strong>

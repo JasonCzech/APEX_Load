@@ -1,12 +1,12 @@
 export const SETTINGS_SECTIONS = [
   { id: 'general', title: 'General' },
-  { id: 'thresholds', title: 'Performance Thresholds' },
-  { id: 'capacity', title: 'Capacity Planning' },
+  { id: 'thresholds', title: 'Performance thresholds' },
+  { id: 'capacity', title: 'Capacity planning' },
   { id: 'domains', title: 'Domains' },
-  { id: 'feature-access', title: 'Feature Access' },
-  { id: 'projects', title: 'Projects & Compliance' },
-  { id: 'applications', title: 'Applications & Releases' },
-  { id: 'data-pools', title: 'Data Pools' },
+  { id: 'feature-access', title: 'Feature access' },
+  { id: 'projects', title: 'Projects & compliance' },
+  { id: 'applications', title: 'Applications & releases' },
+  { id: 'data-pools', title: 'Data pools' },
   { id: 'integrations', title: 'Integrations' },
 ] as const
 
@@ -28,10 +28,10 @@ export type GeneralSettingsSubsectionId = typeof GENERAL_SETTINGS_SUBSECTIONS[nu
 const GENERAL_SETTINGS_SUBSECTION_IDS = GENERAL_SETTINGS_SUBSECTIONS.map(section => section.id)
 
 export const GOVERNANCE_SETTINGS_SUBSECTIONS = [
-  { id: 'schedule-defaults', title: 'Schedule Defaults' },
-  { id: 'script-imports', title: 'Script Imports' },
-  { id: 'service-account-apis', title: 'Service Account APIs' },
-  { id: 'recent-audit-events', title: 'Recent Audit Events' },
+  { id: 'schedule-defaults', title: 'Schedule defaults' },
+  { id: 'script-imports', title: 'Script imports' },
+  { id: 'service-account-apis', title: 'Service account APIs' },
+  { id: 'recent-audit-events', title: 'Governance audit' },
 ] as const
 
 export type GovernanceSettingsSubsectionId = typeof GOVERNANCE_SETTINGS_SUBSECTIONS[number]['id']
@@ -40,7 +40,7 @@ const GOVERNANCE_SETTINGS_SUBSECTION_IDS = GOVERNANCE_SETTINGS_SUBSECTIONS.map(s
 
 export const CAPACITY_SETTINGS_SUBSECTIONS = [
   { id: 'availability', title: 'Availability' },
-  { id: 'generator', title: 'Generator Profile' },
+  { id: 'generator', title: 'Generator profile' },
   { id: 'reservations', title: 'Standing allocations' },
   { id: 'retention', title: 'Retention' },
 ] as const
@@ -50,11 +50,11 @@ export type CapacitySettingsSubsectionId = typeof CAPACITY_SETTINGS_SUBSECTIONS[
 const CAPACITY_SETTINGS_SUBSECTION_IDS = CAPACITY_SETTINGS_SUBSECTIONS.map(section => section.id)
 
 export const PROJECT_SETTINGS_SUBSECTIONS = [
-  { id: 'catalog', title: 'Project Catalog' },
+  { id: 'catalog', title: 'Project catalog' },
   { id: 'limits', title: 'Limits' },
-  { id: 'github', title: 'GitHub Policy' },
-  { id: 'redaction', title: 'Redaction Rules' },
-  { id: 'secrets', title: 'Project Secrets' },
+  { id: 'github', title: 'GitHub policy' },
+  { id: 'redaction', title: 'Redaction rules' },
+  { id: 'secrets', title: 'Project secrets' },
 ] as const
 
 export type ProjectSettingsSubsectionId = typeof PROJECT_SETTINGS_SUBSECTIONS[number]['id']
@@ -62,7 +62,7 @@ export type ProjectSettingsSubsectionId = typeof PROJECT_SETTINGS_SUBSECTIONS[nu
 const PROJECT_SETTINGS_SUBSECTION_IDS = PROJECT_SETTINGS_SUBSECTIONS.map(section => section.id)
 
 export const INTEGRATION_SETTINGS_SUBSECTIONS = [
-  { id: 'library', title: 'Library Federation' },
+  { id: 'library', title: 'Library federation' },
   { id: 'github', title: 'GitHub' },
   { id: 'elk-capture', title: 'Elastic test capture' },
   { id: 'dynatrace-capture', title: 'Dynatrace test capture' },

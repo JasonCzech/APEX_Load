@@ -77,9 +77,10 @@ export default function GitHubIntegrationPanel({
     [githubApi],
   );
 
+  // Enterprise health is a system-admin read; other callers would only collect a 403.
   useEffect(() => {
-    void refreshDiagnostics();
-  }, [refreshDiagnostics]);
+    if (canEdit) void refreshDiagnostics();
+  }, [canEdit, refreshDiagnostics]);
 
   async function connect() {
     setLoading(true);
@@ -209,7 +210,7 @@ export default function GitHubIntegrationPanel({
         </p>
       )}
 
-      <div className="settings-subsection">
+      {canEdit && <div className="settings-subsection">
         <div className="settings-manager-summary">
           <div>
             <span className="setting-label">Enterprise Health</span>
@@ -272,7 +273,7 @@ export default function GitHubIntegrationPanel({
         {diagnosticsError && (
           <p className="settings-error-inline">{diagnosticsError}</p>
         )}
-      </div>
+      </div>}
 
       {/* --- Global OAuth app config (SystemAdmin) --- */}
       <div className="project-redaction-rule-grid" style={{ marginTop: 12 }}>

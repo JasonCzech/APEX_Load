@@ -105,7 +105,7 @@ func devPreviewUserForRequest(r *http.Request, mode string) *AuthenticatedUser {
 	}
 	return &AuthenticatedUser{
 		Subject:     "dev-user",
-		DisplayName: "Dev User Preview",
+		DisplayName: "Dev Editor Preview",
 		Email:       "dev-user@apexload.local",
 		GlobalRoles: map[string]struct{}{
 			RoleViewer: {},

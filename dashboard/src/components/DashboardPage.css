@@ -28,7 +28,7 @@
 }
 
 .dash-card-button:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -504,7 +504,7 @@
 
 .release-panel-toggle:focus-visible,
 .release-panel-rail:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -580,7 +580,7 @@
 }
 
 .dash-release-option:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -638,7 +638,7 @@
 }
 
 .release-panel-stat.is-actionable:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -793,7 +793,7 @@
 
 .release-panel-feed-item:focus-visible,
 .release-panel-quality-callout:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -947,7 +947,7 @@
 }
 
 .dash-tab:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -1332,7 +1332,7 @@
 }
 
 .trend-table th.sortable button:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
 
@@ -1410,7 +1410,7 @@
 }
 
 .dash-source-link:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
   border-radius: 3px;
 }
@@ -1762,7 +1762,7 @@
 .dashboard-attention-item.tone-danger { border-left-color: var(--danger); }
 .dashboard-priority summary, .dashboard-run-details summary { cursor: pointer; color: var(--text-primary); font-size: 12px; padding: 8px 0; }
 .dashboard-priority details .dashboard-attention-item { margin-top: 8px; }
-.dashboard-attention-link:focus-visible, .dashboard-attention-dismiss:focus-visible, .dashboard-priority summary:focus-visible, .dashboard-run-details summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dashboard-attention-link:focus-visible, .dashboard-attention-dismiss:focus-visible, .dashboard-priority summary:focus-visible, .dashboard-run-details summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .dashboard-queue { display: grid; gap: 12px; }
 .dashboard-queue-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
 .dashboard-queue-row > div { min-width: 0; display: grid; gap: 4px; overflow-wrap: anywhere; }
@@ -1798,7 +1798,7 @@
 .analysis-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
 .analysis-controls label { display: flex; flex-direction: column; gap: 6px; flex: 1 1 180px; min-width: 0; color: var(--text-secondary); font-size: 12px; }
 .analysis-controls input, .analysis-controls select { box-sizing: border-box; min-height: 36px; width: 100%; min-width: 0; max-width: 100%; padding: 7px 10px; color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; font: inherit; }
-.analysis-controls input:focus-visible, .analysis-controls select:focus-visible, .analysis-run-button:focus-visible, .analysis-table-wrap:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.analysis-controls input:focus-visible, .analysis-controls select:focus-visible, .analysis-run-button:focus-visible, .analysis-table-wrap:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
 .analysis-settings, .analysis-qualification, .analysis-readiness { padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); }
 .analysis-settings summary, .analysis-qualification summary, .analysis-readiness summary { cursor: pointer; color: var(--text-primary); font-weight: 600; }
 .analysis-settings[open] summary, .analysis-qualification[open] summary { margin-bottom: 14px; }

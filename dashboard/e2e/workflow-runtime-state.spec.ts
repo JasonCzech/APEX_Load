@@ -253,6 +253,10 @@ test('current paused values and parameter receipts survive inspection without co
   const terminal = await getSession(request, initial.id)
   expectEnvelope(terminal)
   expect(terminal.runtime_state).toMatchObject({ state: 'unavailable', reason: 'session_terminal', snapshot: null })
+  // The ended session opens on recorded values; asking for the current state says it is gone.
+  await expect(watches.getByRole('combobox', { name: 'Values at', exact: true })).not.toHaveValue('current')
+  await expect(watches).toContainText('This is historical evidence, not current engine state.')
+  await watches.getByRole('combobox', { name: 'Values at', exact: true }).selectOption('current')
   await expect(watches).toContainText('Current state unavailable: the session has ended.')
   await expect(watches.getByRole('button', { name: 'Pin assigned_number', exact: true })).toHaveCount(0)
   await watches.getByRole('combobox', { name: 'Values at', exact: true }).selectOption('retained')

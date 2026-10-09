@@ -213,7 +213,7 @@ export default function WebHttpTab({ web, inheritedWeb, setWeb }: WebHttpTabProp
           <button type="button" className="link-button" onClick={() => patchWeb({ content_checks: contentChecks.filter((_, i) => i !== index) })}>Remove</button>
         </div>
       ))}
-      <button type="button" className="secondary-button" onClick={() => patchWeb({ content_checks: [...contentChecks, {}] })}>Add content check</button>
+      <button type="button" className="btn btn-sm btn-secondary" onClick={() => patchWeb({ content_checks: [...contentChecks, {}] })}>Add content check</button>
 
       <div className="scenario-assignment-header">
         <div><h4>Network profile mix</h4></div>
@@ -237,7 +237,7 @@ export default function WebHttpTab({ web, inheritedWeb, setWeb }: WebHttpTabProp
           <button type="button" className="link-button" onClick={() => patchWeb({ network_profiles: profiles.filter((_, i) => i !== index) })}>Remove</button>
         </div>
       ))}
-      <button type="button" className="secondary-button" onClick={() => patchWeb({ network_profiles: [...profiles, { name: '', weight: 1 }] })}>Add network profile</button>
+      <button type="button" className="btn btn-sm btn-secondary" onClick={() => patchWeb({ network_profiles: [...profiles, { name: '', weight: 1 }] })}>Add network profile</button>
 
       <div className="scenario-assignment-header">
         <div><h4>Data formatting</h4></div>
@@ -267,7 +267,7 @@ export default function WebHttpTab({ web, inheritedWeb, setWeb }: WebHttpTabProp
           <button type="button" className="link-button" onClick={() => patchWeb({ data_formatting: { ...web?.data_formatting, chain: chain.filter((_, i) => i !== index) } })}>Remove</button>
         </div>
       ))}
-      <button type="button" className="secondary-button" onClick={() => patchWeb({ data_formatting: { ...web?.data_formatting, chain: [...chain, {}] } })}>Add transform</button>
+      <button type="button" className="btn btn-sm btn-secondary" onClick={() => patchWeb({ data_formatting: { ...web?.data_formatting, chain: [...chain, {}] } })}>Add transform</button>
     </>
   )
 }

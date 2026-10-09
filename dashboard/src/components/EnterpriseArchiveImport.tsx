@@ -1,4 +1,5 @@
 import ImportReviewSectionHeader from './ImportReviewSectionHeader'
+import { importSourceName } from '../appTopbar'
 import { useUnsavedWorkGuard } from '../hooks/NavigationGuardProvider'
 import ImportRuntimeSettingsTable from './ImportRuntimeSettingsTable'
 import { ImportConversionDetails, ImportEvidenceFacts } from './ImportConversionDetails'
@@ -1684,8 +1685,8 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                     : 'Complete the required archive review choices before saving.'
   const saveActionLabel = saveBlockedByProtocolGate
     ? (reviewArtifactSaving
-      ? (combinedJavaVuserApprovalReady ? 'Saving Combined Java Draft...' : 'Saving Review Artifact...')
-      : (combinedJavaVuserApprovalReady ? 'Save Combined Java Draft for Approval' : 'Save Review Artifact Instead'))
+      ? (combinedJavaVuserApprovalReady ? 'Saving combined Java draft…' : 'Saving review artifact…')
+      : (combinedJavaVuserApprovalReady ? 'Save combined Java draft for approval' : 'Save review artifact instead'))
     : (reviewMode === 'validation'
       ? (queuedFileCount > 1 ? 'Save reviewed drafts' : browserImport ? 'Continue to browser replay' : 'Save draft')
       : (selectedResultScriptSaved
@@ -1695,14 +1696,14 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             ? `Prepare Credentials for Script ${activeResultScriptIndex + 1} of ${resultScripts.length}`
             : 'Review Required Credentials Before Atomic Save')
       : enterpriseCredentialBatchFlow
-        ? `Save Remaining ${pendingResultScriptIndices.length} Scripts Atomically`
+        ? `Save remaining ${pendingResultScriptIndices.length} scripts atomically`
       : (browserReplayInProgress
       ? 'Draft Browser Replay In Progress'
       : (saveRequiresBrowserReplay
           ? (browserReplayWasStarted ? 'Rerun Draft Browser Replay Before Saving' : 'Start Draft Browser Replay Before Saving')
           : needsExecutionRepair ? 'Save draft — execution blocked' : 'Save to Script Library'))))
   const replayActionLabel = replayValidationLoading
-    ? 'Starting Draft Browser Replay...'
+    ? 'Starting Draft Browser Replay…'
     : (browserReplayInProgress
         ? 'Draft Browser Replay In Progress'
       : (browserReplayWasStarted ? 'Rerun Draft Browser Replay' : 'Start Draft Browser Replay'))
@@ -1996,7 +1997,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             onClick={button.onClick}
             disabled={editorActionPreparing || scriptSaveInProgress}
           >
-            {editorActionPreparing ? 'Preparing credentials...' : button.label}
+            {editorActionPreparing ? 'Preparing credentials…' : button.label}
           </button>
         ))}
       </div>
@@ -4041,7 +4042,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     <div className={`lr-import ${result ? 'lr-import-reviewed' : ''}`}>
       <div className="lr-import-header">
         <div>
-          <h2>Import Loadrunner Script Archive</h2>
+          <h2>{importSourceName('enterprise_archive')}</h2>
           <p className="lr-subtitle">Choose an uncompressed VuGen script folder or a LoadRunner ZIP or USZ archive, including source, runtime settings, parameter files, and dependencies. We detect the protocol and show what can be saved, what needs repair, and whether a runner is required. Import checks do not execute your script.</p>
         </div>
         {onClose && <button type="button" className="btn btn-secondary" onClick={() => {
@@ -4365,10 +4366,10 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
           )}
           <div className="lr-import-action-buttons">
             <button className="btn btn-secondary btn-lg" onClick={() => runReview('validate')} disabled={queuedFileCount === 0 || operationBusy}>
-              {workingMode === 'validate' ? <><span className="spinner" /> Validating...</> : validateButtonLabel}
+              {workingMode === 'validate' ? <><span className="spinner" /> Validating…</> : validateButtonLabel}
             </button>
             {(queuedFileCount > 1 || reviewMode !== 'conversion') && <button className="btn btn-primary btn-lg" onClick={() => convertValidatedItems()} disabled={validatedFileCount === 0 || !allValidatedReviewsMatchOptions || operationBusy}>
-              {workingMode === 'convert' ? <><span className="spinner" /> Converting And Saving...</> : convertButtonLabel}
+              {workingMode === 'convert' ? <><span className="spinner" /> Converting and saving…</> : convertButtonLabel}
             </button>}
           </div>
           <p className="lr-subtitle">{conversionGateMessage}</p>
@@ -4537,7 +4538,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                 : 'This archive was classified without creating an executable APEX Load script.'}</p>
             </div>
             <button className="btn btn-primary" onClick={handleSaveReviewArtifact} disabled={reviewArtifactSaving || classpathUploadInProgress}>
-              {reviewArtifactSaving ? <><span className="spinner" /> Saving Review Artifact...</> : dependencyBundle ? 'Save Dependency Review' : 'Save Review Artifact'}
+              {reviewArtifactSaving ? <><span className="spinner" /> Saving review artifact...</> : dependencyBundle ? 'Save dependency review' : 'Save review artifact'}
             </button>
           </div>
 
@@ -4634,14 +4635,18 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
           {reviewProjectPicker}
           <TabList className="lr-validation-review-tabs"
  role="tablist" aria-label="Script archive review sections" onKeyDown={handleTabKey}>
-              {validationReviewTabs.map((tab) => (
+              {validationReviewTabs.map((tab) => {
+                // Unresolved grouped issues for this tab, named once in the tab's accessible name.
+                const issueCount = importedScript && ['overview', 'credentials', 'data', 'preserved'].includes(tab.id)
+                  ? tabIssues.filter(i => tab.id === 'overview' || (tab.id === 'credentials' && i.category === 'credentials') || (tab.id === 'data' && i.category === 'values') || (tab.id === 'preserved' && i.category === 'runtime')).length
+                  : 0
+                return (
                 <button
                   key={tab.id}
                   id={`lr-validation-review-tab-${tab.id}`}
                   type="button"
                   role="tab"
-                  aria-label={tab.label}
-                  aria-describedby={['overview', 'credentials', 'data', 'preserved'].includes(tab.id) ? `lr-review-count-${tab.id}` : undefined}
+                  aria-label={issueCount > 0 ? `${tab.label}, ${issueCount} unresolved grouped issue${issueCount === 1 ? '' : 's'}` : tab.label}
                   aria-selected={validationReviewTab === tab.id}
                   aria-controls="lr-validation-review-panel"
                   tabIndex={validationReviewTab === tab.id ? 0 : -1}
@@ -4665,9 +4670,10 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                       ?.focus()
                   }}
                 >
-                  {tab.label}{importedScript && ['overview', 'credentials', 'data', 'preserved'].includes(tab.id) && (() => { const issues = tabIssues; const count = issues.filter(i => tab.id === 'overview' || (tab.id === 'credentials' && i.category === 'credentials') || (tab.id === 'data' && i.category === 'values') || (tab.id === 'preserved' && i.category === 'runtime')).length; return <><span id={`lr-review-count-${tab.id}`} className="import-review-count-description">{count} unresolved grouped replay issues</span>{count > 0 && <span className="lr-tab-count" aria-hidden="true">{count}</span>}</> })()}
+                  {tab.label}{issueCount > 0 && <span className="lr-tab-count" aria-hidden="true">{issueCount}</span>}
                 </button>
-              ))}
+                )
+              })}
           </TabList>
           </div>
           <div
@@ -4751,7 +4757,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                     ? handleSaveCredentialBatch
                     : handleSaveConverted}
             onEdit={importedEditorAvailable && !selectedResultScriptSaved && (!editRequiresCredentialPreservingSave || (queuedFileCount === 1 && resultScripts.length === 1)) ? () => { openImportedScriptInEditor() } : undefined}
-            editLabel={editRequiresCredentialPreservingSave ? 'Save Draft and Open in Visual Editor' : 'Open Draft in Visual Editor'}
+            editLabel={editRequiresCredentialPreservingSave ? 'Save draft and open in Visual Editor' : 'Open draft in Visual Editor'}
             previewTitle="DSL Preview"
             previewData={importedScript}
             previewInitiallyOpen

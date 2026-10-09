@@ -91,7 +91,7 @@ test('Dashboard labels failed health refreshes stale and recovers independently 
   await expect(page.getByRole('button', { name: 'Healthy API Health', exact: true })).toBeVisible()
   failHealth = true
   await expect(page.getByRole('button', { name: 'Stale API Health', exact: true })).toBeVisible({ timeout: 25_000 })
-  await expect(page.getByRole('button', { name: '— Generators Ready', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '— Load generators ready', exact: true })).toBeVisible()
   await expect(page.getByRole('region', { name: 'Release readiness and attention' })).toContainText('Run data: last updated')
   failHealth = false
   await expect(page.getByRole('button', { name: 'Healthy API Health', exact: true })).toBeVisible({ timeout: 25_000 })

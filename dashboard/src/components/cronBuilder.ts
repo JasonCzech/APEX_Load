@@ -101,14 +101,20 @@ export function exprToCronModel(expr: string): CronModel | null {
 
   let m: RegExpExecArray | null
   if ((m = /^\*\/(\d+)$/.exec(minF)) && hourF === '*' && domF === '*' && dowF === '*') {
-    return { ...DEFAULT_CRON_MODEL, frequency: 'minutes', everyN: parseInt(m[1], 10) }
+    const everyN = parseInt(m[1], 10)
+    return everyN >= 1 && everyN <= 59 ? { ...DEFAULT_CRON_MODEL, frequency: 'minutes', everyN } : null
   }
   if (isInt(minF) && (m = /^\*\/(\d+)$/.exec(hourF)) && domF === '*' && dowF === '*') {
-    return { ...DEFAULT_CRON_MODEL, frequency: 'hourly', minute: parseInt(minF, 10), everyN: parseInt(m[1], 10) }
+    const minute = parseInt(minF, 10)
+    const everyN = parseInt(m[1], 10)
+    return minute <= 59 && everyN >= 1 && everyN <= 23 ? { ...DEFAULT_CRON_MODEL, frequency: 'hourly', minute, everyN } : null
   }
   if (!isInt(minF) || !isInt(hourF)) return null
   const minute = parseInt(minF, 10)
   const hour = parseInt(hourF, 10)
+  // Out-of-range times are not a schedule the builder can show (a time input
+  // would receive "87:99"); leave the builder untouched instead.
+  if (minute > 59 || hour > 23) return null
   if (domF === '*' && dowF === '*') {
     return { ...DEFAULT_CRON_MODEL, frequency: 'daily', minute, hour }
   }
@@ -118,7 +124,9 @@ export function exprToCronModel(expr: string): CronModel | null {
     return { ...DEFAULT_CRON_MODEL, frequency: 'weekly', minute, hour, daysOfWeek: days }
   }
   if (dowF === '*' && isInt(domF)) {
-    return { ...DEFAULT_CRON_MODEL, frequency: 'monthly', minute, hour, dayOfMonth: parseInt(domF, 10) }
+    const dayOfMonth = parseInt(domF, 10)
+    if (dayOfMonth < 1 || dayOfMonth > 31) return null
+    return { ...DEFAULT_CRON_MODEL, frequency: 'monthly', minute, hour, dayOfMonth }
   }
   return null
 }

@@ -555,6 +555,29 @@ input, select, textarea {
   outline: 2px solid var(--focus-ring) !important;
 }
 
+/* A link that opens a new tab says so: a visible arrow, and spoken text where
+   the browser supports alternative text for generated content. */
+a[target='_blank']::after {
+  content: '\2197';
+  content: '\2197' / ' (opens in a new tab)';
+  margin-left: 0.25em;
+  font-size: 0.85em;
+  text-decoration: none;
+}
+
+/* Forced colours (Windows High Contrast) drop box-shadow and tinted
+   backgrounds, which is how selected tabs and the current nav item are drawn,
+   and they paint every tab's underline the same. Mark selection with a system
+   colour instead, so position is not the only cue. */
+@media (forced-colors: active) {
+  :is([role='tab'][aria-selected='true'], [aria-current='page'], button[aria-pressed='true']) {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+}
+
 .lazy-load-error {
   display: flex;
   flex-direction: column;

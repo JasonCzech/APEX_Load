@@ -4,8 +4,10 @@ import type { DashboardAuditEvent } from '../types'
 import { detailsSummary, eventResourceLabel, formatTimestamp } from './accessUtils'
 
 /** Shared evidence presentation. Callers retain their authorized query/filter API. */
-export function AuditEventTable({ events, header, footer, scopeLabel, onSelect, selectedId, emptyMessage = 'No activity found', paginated = false }: {
+export function AuditEventTable({ events, header, footer, scopeLabel, onSelect, selectedId, emptyMessage = 'No activity found', emptyHint = 'Adjust filters or select a broader timeframe.', paginated = false }: {
   paginated?: boolean
+  /** Next step under the empty message; null where the surface has no filters to adjust. */
+  emptyHint?: string | null
   events: DashboardAuditEvent[]
   header?: ReactNode
   /** Rendered at the end of the scrolling box, after the last row (e.g. LoadOlderEvents). */
@@ -15,8 +17,9 @@ export function AuditEventTable({ events, header, footer, scopeLabel, onSelect, 
   selectedId?: string
   emptyMessage?: string
 }) {
-  // A server-batched list scrolls inside its box, so the box must be reachable by keyboard.
-  return <div className="access-table-wrap" data-table-pagination={paginated ? 'off' : undefined} {...(paginated ? { tabIndex: 0, role: 'region', 'aria-label': 'Audit events' } : {})}>
+  // The table scrolls inside its box (wide columns, server-batched rows), so the
+  // box must be reachable by keyboard.
+  return <div className="access-table-wrap" data-table-pagination={paginated ? 'off' : undefined} tabIndex={0} role="region" aria-label="Audit events">
     <table className="access-data-table">
       <caption className="sr-only">Audit events</caption>
       <thead><tr>{header || ['Time', 'Actor', 'Action', 'Resource', 'Scope', 'Status', 'Details'].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>
@@ -28,7 +31,7 @@ export function AuditEventTable({ events, header, footer, scopeLabel, onSelect, 
         <td>{onSelect ? <span className="access-table-stack">{detailsSummary(event.details)}</span> : <details><summary>Event details</summary><pre>{JSON.stringify(event.details || {}, null, 2)}</pre></details>}</td>
       </tr>)}</tbody>
     </table>
-    {!events.length && <div className="access-empty-state"><strong>{emptyMessage}</strong><span>Adjust filters or select a broader timeframe.</span></div>}
+    {!events.length && <div className="access-empty-state"><strong>{emptyMessage}</strong>{emptyHint && <span>{emptyHint}</span>}</div>}
     {footer}
   </div>
 }

@@ -68,7 +68,7 @@ describe('MonitoringCollectorsCard', () => {
     })
     await flush()
 		expect(collectorsApiMock.listCollectors).toHaveBeenCalledWith({ project_id: 'proj-a', limit: 100, offset: 0 })
-    expect(container.textContent).toContain('No monitoring collectors registered')
+    expect(container.textContent).toContain('No monitoring collectors yet')
     expect(container.textContent).toContain('Register Collector')
   })
 

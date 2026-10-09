@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { TrafficProfile } from '../types'
-import { formatTrafficProfileAxisTime, trafficProfileMappingForGroup, trafficProfileTargetAt, trafficProfileTimelineSeconds, trafficProfileTpsStatistics } from './trafficProfilePreviewModel'
+import { formatTrafficProfileAxisTime, inferTimestampMode, trafficProfileMappingForGroup, trafficProfileTargetAt, trafficProfileTimelineSeconds, trafficProfileTpsStatistics } from './trafficProfilePreviewModel'
 
 function profile(pointCount = 4): TrafficProfile {
   return {
@@ -80,5 +80,20 @@ describe('trafficProfilePreviewModel', () => {
     expect(formatTrafficProfileAxisTime(63)).toBe('1m3s')
     expect(formatTrafficProfileAxisTime(900)).toBe('15m')
     expect(formatTrafficProfileAxisTime(5400)).toBe('1h30m')
+  })
+})
+
+describe('inferTimestampMode', () => {
+  const columns = ['time', 'orders']
+  it('reads Go durations and elapsed H:MM[:SS] as relative', () => {
+    expect(inferTimestampMode([['0s', '1'], ['1m30s', '2']], columns, 'time')).toBe('relative')
+    expect(inferTimestampMode([['0:00:00', '1'], ['1:05:30.5', '2']], columns, 'time')).toBe('relative')
+  })
+  it('reads dated timestamps as absolute and leaves mixed or bare values undecided', () => {
+    expect(inferTimestampMode([['2026-01-01T00:00:00Z', '1']], columns, 'time')).toBe('absolute')
+    expect(inferTimestampMode([['0', '1'], ['60', '2']], columns, 'time')).toBeUndefined()
+    expect(inferTimestampMode([['0s', '1'], ['2026-01-01T00:01:00Z', '2']], columns, 'time')).toBeUndefined()
+    expect(inferTimestampMode([['0s', '1']], columns, 'missing')).toBeUndefined()
+    expect(inferTimestampMode(undefined, columns, 'time')).toBeUndefined()
   })
 })

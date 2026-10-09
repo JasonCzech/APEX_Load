@@ -3,6 +3,7 @@ import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
 
 import type { RunArchiveSLARow, TransactionEvent } from '../../types'
 import { formatMs, formatNumber, formatPct } from './runReportModel'
+import { MISSING_VALUE } from './reportPresentation'
 import { formatDateTime } from '../../utils/dateTime'
 
 type SortKey = 'name' | 'volume' | 'p50' | 'p90' | 'p95' | 'p99' | 'error' | 'result'
@@ -22,7 +23,8 @@ function resultLabel(kind: string) {
   if (kind === 'fail') return 'Fail'
   if (kind === 'warn') return 'Warn'
   if (kind === 'pass') return 'Pass'
-  return 'n/a'
+  // No SLA, no result: the same mark the SLA column shows.
+  return MISSING_VALUE
 }
 
 function sortValue(row: RunArchiveSLARow, key: SortKey) {
@@ -76,7 +78,7 @@ function ScoreboardRow({ row, selected, onSelect }: { row: RunArchiveSLARow; sel
       <td>{formatMs(row.p95_ms)}</td>
       <td>{formatMs(row.p99_ms)}</td>
       <td>{formatMs(row.max_ms)}</td>
-      <td>{row.has_sla ? formatMs(row.sla_ms) : '—'}</td>
+      <td>{row.has_sla ? formatMs(row.sla_ms) : MISSING_VALUE}</td>
       <td>{formatPct(row.error_pct)}</td>
       <td><span className={`run-report-sla-pill run-report-sla-${row.result_kind}`}>{resultLabel(row.result_kind)}</span></td>
     </tr>
@@ -140,7 +142,7 @@ export default function TransactionSlaScoreboard({
         <div className="run-report-table-controls">
           <input aria-label="Filter transactions" value={filter} onChange={event => setFilter(event.currentTarget.value)} placeholder="Filter transaction" />
           <select aria-label="Filter by SLA result" value={resultFilter} onChange={event => setResultFilter(event.currentTarget.value as (typeof RESULT_FILTERS)[number])}>
-            {RESULT_FILTERS.map(value => <option key={value} value={value}>{value === 'all' ? 'All results' : resultLabel(value)}</option>)}
+            {RESULT_FILTERS.map(value => <option key={value} value={value}>{value === 'all' ? 'All results' : value === 'na' ? 'No SLA' : resultLabel(value)}</option>)}
           </select>
         </div>
       </div>
@@ -193,7 +195,7 @@ export default function TransactionSlaScoreboard({
       <div className="run-report-drilldown">
         <h3>{selectedAction || 'Select a transaction'}</h3>
         {loadingTransactions ? (
-          <p role="status">Loading drill-down...</p>
+          <p role="status">Loading drill-down…</p>
         ) : selectedAction && drilldownTransactions.length > 0 ? (
           <ul>
             {drilldownTransactions.slice(0, 5).map((event, index) => (

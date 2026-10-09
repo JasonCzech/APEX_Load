@@ -129,7 +129,7 @@ export function buildReportKpis(report: RunArchiveReport | null, history: Metric
     },
     {
       id: 'peakTps',
-      label: 'Peak attempts/s',
+      label: 'Peak TPS (attempts/s)',
       value: formatNumber(overview?.peak_tps, 1),
       tone: 'neutral',
       delta: baselineDiff.peakTps?.label,

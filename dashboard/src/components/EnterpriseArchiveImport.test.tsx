@@ -942,7 +942,8 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('Review')
     expect(container.querySelector('[aria-label="enterprise protocol import coverage"]')).toBeNull()
     const conversionReviewTabs = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tablist"][aria-label="Script archive review sections"] [role="tab"]'))
-    expect(conversionReviewTabs.map(tab => tab.getAttribute('aria-label') || tab.textContent)).toEqual([
+    // Tab names may carry the unresolved count; compare the section labels.
+    expect(conversionReviewTabs.map(tab => (tab.getAttribute('aria-label') || tab.textContent || '').replace(/, \d+ unresolved grouped issues?$/, ''))).toEqual([
       'Review',
       'Credentials',
       'Data & parameters',
@@ -1274,7 +1275,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
       actions: [expect.objectContaining({ body: 'password={{secret.LOGIN_PASSWORD}}' })],
     }), 'project-1', undefined)
-    expect(findButton(container, 'Saving...')?.disabled).toBe(true)
+    expect(findButton(container, 'Saving…')?.disabled).toBe(true)
     const assertionOption = Array.from(container.querySelectorAll<HTMLLabelElement>('.lr-checkbox'))
       .find(label => label.textContent?.includes('Add default status_code assertions'))
       ?.querySelector<HTMLInputElement>('input')
@@ -1906,7 +1907,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickImportAction(container, 'Validate Only')
     await flushPromises()
 
-    await clickButton(findButton(container, 'Save and Open in Visual Editor')!)
+    await clickButton(findButton(container, 'Save and open in Visual Editor')!)
     await flushPromises()
     expect(apiMock.applySecretBindings).not.toHaveBeenCalled()
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
@@ -2013,7 +2014,7 @@ describe('EnterpriseArchiveImport', () => {
       },
     ))
     const prepareSecondCredentialLane = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => (
-      button.textContent?.includes('Save Remaining 2 Scripts Atomically') || button.textContent?.includes('Prepare Credentials')
+      button.textContent?.includes('Save remaining 2 scripts atomically') || button.textContent?.includes('Prepare Credentials')
     ))
     expect(prepareSecondCredentialLane).toBeDefined()
     await clickButton(prepareSecondCredentialLane!)
@@ -2074,7 +2075,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(apiMock.discardImportSecretSession).not.toHaveBeenCalled()
     expect(container.textContent).toContain('Credentialed Database')
 
-    const atomicSave = findButton(container, 'Save Remaining 2 Scripts Atomically')
+    const atomicSave = findButton(container, 'Save remaining 2 scripts atomically')
     expect(atomicSave).toBeDefined()
     await clickButton(atomicSave!)
     await flushPromises()
@@ -2117,7 +2118,7 @@ describe('EnterpriseArchiveImport', () => {
     })
     await clickImportAction(container, 'Validate Only')
     await clickButton(findButton(container, 'Save to Script Library')!)
-    const save = findButton(container, 'Save Remaining 2 Scripts Atomically with 1 secret to configure')!
+    const save = findButton(container, 'Save remaining 2 scripts atomically with 1 secret to configure')!
     act(() => save.click())
     await flushPromises()
     expect(apiMock.applySecretBindings).toHaveBeenCalledTimes(1)
@@ -2180,7 +2181,7 @@ describe('EnterpriseArchiveImport', () => {
 
     expect(container.textContent).toContain('Review and resolve')
     expect(container.textContent).toContain('Credential groups (1)')
-    expect(findButton(container, 'Open Draft in Visual Editor with 1 secret to configure')).toBeDefined()
+    expect(findButton(container, 'Open draft in Visual Editor with 1 secret to configure')).toBeDefined()
     const focusedEditorLink = findButton(container, 'Open First Unsupported Action In Editor')
     expect(focusedEditorLink).toBeDefined()
     await clickButton(focusedEditorLink!)
@@ -2394,7 +2395,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).not.toContain('persistent per-VUser lifecycle support')
     expect(container.textContent).toContain('Runner: java_vuser_jvm_runner')
     expect(container.textContent).toContain('Save this combined draft as an authoring session, then resume that session to edit and approve it')
-    expect(findButton(container, 'Open Draft in Visual Editor')).toBeUndefined()
+    expect(findButton(container, 'Open draft in Visual Editor')).toBeUndefined()
     expect(container.textContent).not.toContain('Open Imported Script In Editor')
     expect(container.textContent).not.toContain('import_promotion_blocked')
     await clickButton(findButton(container, 'DSL Preview')!)
@@ -2404,7 +2405,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(preview).toContain('"method": "action"')
     expect(preview).toContain('"method": "end"')
 
-    const saveButton = findButton(container, 'Save Combined Java Draft for Approval')
+    const saveButton = findButton(container, 'Save combined Java draft for approval')
     expect(saveButton).toBeDefined()
     await clickButton(saveButton!)
 
@@ -2486,7 +2487,7 @@ describe('EnterpriseArchiveImport', () => {
       project_id: 'project-1', entry: 'client.jar',
     })
     expect(container.textContent).toContain('1/2 attached')
-    await clickButton(findButton(container, 'Save Combined Java Draft for Approval')!)
+    await clickButton(findButton(container, 'Save combined Java draft for approval')!)
     const saved = apiMock.createAuthoringSession.mock.calls[0][0]
     // These are the exact fields used when the saved session is reopened and
     // the governed runner materializes its project-scoped JAR capability.
@@ -2497,11 +2498,11 @@ describe('EnterpriseArchiveImport', () => {
     await clickButton(container.querySelector<HTMLButtonElement>('.java-classpath-resolver .chip-remove')!)
     expect(container.textContent).toContain('0/2 attached')
     expect(container.textContent).toContain('0 review sessions saved')
-    await clickButton(findButton(container, 'Save Combined Java Draft for Approval')!)
+    await clickButton(findButton(container, 'Save combined Java draft for approval')!)
     const afterRemoval = apiMock.createAuthoringSession.mock.calls[1][0]
     expect(afterRemoval.draft.config.java_vuser.classpath_assets).toEqual([])
     expect(afterRemoval.idempotency_key).not.toBe(saved.idempotency_key)
-    await clickButton(findButton(container, 'Save Combined Java Draft for Approval')!)
+    await clickButton(findButton(container, 'Save combined Java draft for approval')!)
     expect(apiMock.createAuthoringSession.mock.calls[2][0]).toEqual(afterRemoval)
     expect(apiMock.saveEnterpriseArchiveImport).not.toHaveBeenCalled()
   })
@@ -2512,7 +2513,7 @@ describe('EnterpriseArchiveImport', () => {
     const onBusy = vi.fn()
     await reviewJavaDependencies(onBusy)
     await attachDependencyJar()
-    const save = findButton(container, 'Save Combined Java Draft for Approval')!
+    const save = findButton(container, 'Save combined Java draft for approval')!
     expect(save.disabled).toBe(true)
     expect(findButton(container, 'Attach Required File(s)')?.disabled).toBe(true)
     expect(container.querySelector<HTMLInputElement>('.java-classpath-resolver input[type="file"]')?.disabled).toBe(true)
@@ -2521,7 +2522,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(apiMock.createAuthoringSession).not.toHaveBeenCalled()
     await act(async () => finishUpload(uploadedJar))
     await flushPromises()
-    expect(findButton(container, 'Save Combined Java Draft for Approval')?.disabled).toBe(false)
+    expect(findButton(container, 'Save combined Java draft for approval')?.disabled).toBe(false)
     expect(onBusy).toHaveBeenLastCalledWith(false)
   })
 
@@ -2537,7 +2538,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickImportAction(container, 'Validate Only')
     expect(container.textContent).toContain('0/2 attached')
     expect(container.textContent).not.toContain('The import review changed during upload')
-    await clickButton(findButton(container, 'Save Combined Java Draft for Approval')!)
+    await clickButton(findButton(container, 'Save combined Java draft for approval')!)
     const saved = apiMock.createAuthoringSession.mock.calls[0][0]
     expect(saved.project_id).toBe('project-2')
     expect(saved.draft.config.java_vuser.classpath_assets).toBeUndefined()
@@ -2562,7 +2563,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('Java dependencies without a script project')
     expect(container.textContent).toContain('Attach this ZIP under Required Files')
     expect(container.textContent).toContain('1 JARs')
-    await clickButton(findButton(container, 'Save Dependency Review')!)
+    await clickButton(findButton(container, 'Save dependency review')!)
     const saved = apiMock.createAuthoringSession.mock.calls[0][0]
     expect(saved.draft.actions).toEqual([])
     expect(saved.review_state.review_artifact.metadata.java_dependency_inventory).toEqual(inventory)
@@ -2678,7 +2679,7 @@ describe('EnterpriseArchiveImport', () => {
     })
     expect(apiMock.discardImportSecretSession).not.toHaveBeenCalled()
 
-    const saveButton = findButton(container, 'Save Combined Java Draft for Approval with 1 secret to configure')
+    const saveButton = findButton(container, 'Save combined Java draft for approval with 1 secret to configure')
     expect(saveButton).toBeDefined()
     await clickButton(saveButton!)
     await flushPromises()
@@ -2779,7 +2780,7 @@ describe('EnterpriseArchiveImport', () => {
     })
     await clickImportAction(container, 'Validate Only')
 
-    const saveButton = findButton(container, 'Save Review Artifact')
+    const saveButton = findButton(container, 'Save review artifact')
     expect(saveButton).toBeDefined()
     await act(async () => {
       saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2794,8 +2795,8 @@ describe('EnterpriseArchiveImport', () => {
     await act(async () => {
       betaSelect?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(findButton(container, 'Saving Review Artifact')).toBeUndefined()
-    expect(findButton(container, 'Save Review Artifact')).toBeDefined()
+    expect(findButton(container, 'Saving review artifact')).toBeUndefined()
+    expect(findButton(container, 'Save review artifact')).toBeDefined()
 
     const alphaRow = Array.from(container.querySelectorAll<HTMLElement>('.lr-file-row'))
       .find(row => row.textContent?.includes('alpha.zip'))
@@ -2809,7 +2810,7 @@ describe('EnterpriseArchiveImport', () => {
       removeUnrelated.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const savingButton = findButton(container, 'Saving Review Artifact')
+    const savingButton = findButton(container, 'Saving review artifact')
     expect(savingButton?.disabled).toBe(true)
     savingButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     expect(apiMock.createAuthoringSession).toHaveBeenCalledTimes(1)
@@ -2899,7 +2900,7 @@ describe('EnterpriseArchiveImport', () => {
       await Promise.resolve()
     })
     expect(apiMock.createScript).toHaveBeenCalledTimes(1)
-    expect(findButton(container, 'Saving...')).toBeDefined()
+    expect(findButton(container, 'Saving…')).toBeDefined()
 
     const removeUnrelated = container.querySelector('[aria-label="Remove beta.zip"]') as HTMLButtonElement
     await act(async () => {
@@ -2908,7 +2909,7 @@ describe('EnterpriseArchiveImport', () => {
 
     // The POST for alpha is still running, so the save action must stay locked
     // instead of reverting to a clickable "Save to Script Library".
-    const savingButton = findButton(container, 'Saving...')
+    const savingButton = findButton(container, 'Saving…')
     expect(savingButton?.disabled).toBe(true)
     savingButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     expect(apiMock.createScript).toHaveBeenCalledTimes(1)
@@ -3091,8 +3092,8 @@ describe('EnterpriseArchiveImport', () => {
 
     expect(container.textContent).toContain('fidelity blockers must be resolved before authoring approval')
     expect(container.textContent).toContain('Fidelity blocker: Selected Actions class has no public zero-argument action method.')
-    expect(findButton(container, 'Save Combined Java Draft for Approval')).toBeUndefined()
-    const saveReview = findButton(container, 'Save Review Artifact Instead')
+    expect(findButton(container, 'Save combined Java draft for approval')).toBeUndefined()
+    const saveReview = findButton(container, 'Save review artifact instead')
     expect(saveReview).toBeDefined()
     await clickButton(saveReview!)
 
@@ -4364,7 +4365,7 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
     apiMock.discardImportSecretSession.mockClear()
 
-    await clickButton(findButton(container, 'Open Draft in Visual Editor')!)
+    await clickButton(findButton(container, 'Open draft in Visual Editor')!)
     await flushPromises()
 
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ name: 'alpha.zip' }), undefined)
@@ -4679,7 +4680,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('external required')
     expect(Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))).toBeUndefined()
 
-    const saveArtifactButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Review Artifact'))
+    const saveArtifactButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save review artifact'))
     expect(saveArtifactButton).toBeDefined()
     if (!saveArtifactButton) {
       return
@@ -4768,7 +4769,8 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.querySelector('[aria-label="enterprise protocol import coverage"]')).toBeNull()
 
     const reviewTabs = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tablist"][aria-label="Script archive review sections"] [role="tab"]'))
-    expect(reviewTabs.map(tab => tab.getAttribute('aria-label') || tab.textContent)).toEqual([
+    // Tab names may carry the unresolved count; compare the section labels.
+    expect(reviewTabs.map(tab => (tab.getAttribute('aria-label') || tab.textContent || '').replace(/, \d+ unresolved grouped issues?$/, ''))).toEqual([
       'Review',
       'Credentials',
       'Data & parameters',
@@ -5977,7 +5979,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('Starting')
     expect(container.textContent).toContain('Wait for the draft browser replay to finish before saving it to the library.')
     expect(container.textContent).toContain('Review the generated script, preserved metadata, and warnings. Wait for the draft browser replay to finish before saving it to the library.')
-    const startingReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Starting Draft Browser Replay...')) as HTMLButtonElement | undefined
+    const startingReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Starting Draft Browser Replay…')) as HTMLButtonElement | undefined
     expect(startingReplayButton).toBeDefined()
     expect(startingReplayButton?.disabled).toBe(true)
     const inProgressSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Draft Browser Replay In Progress')) as HTMLButtonElement | undefined
@@ -6058,7 +6060,7 @@ describe('EnterpriseArchiveImport', () => {
     await clickImportAction(container, 'Validate 2 Scripts')
     await clickButton(findButton(container, 'Save Ready Scripts and Continue Importing')!)
     await clickButton(findButton(container, 'Start Draft Browser Replay')!)
-    expect(findButton(container, 'Starting Draft Browser Replay...')).toBeDefined()
+    expect(findButton(container, 'Starting Draft Browser Replay…')).toBeDefined()
 
     const betaRow = Array.from(container.querySelectorAll<HTMLElement>('.lr-file-row'))
       .find(row => row.textContent?.includes('beta-browser.zip'))!
@@ -6078,7 +6080,7 @@ describe('EnterpriseArchiveImport', () => {
     await act(async () => alphaRow.click())
     await flushPromises()
 
-    expect(findButton(container, 'Starting Draft Browser Replay...')).toBeUndefined()
+    expect(findButton(container, 'Starting Draft Browser Replay…')).toBeUndefined()
   })
 
   it('starts draft browser replay validation when saving a browser import for the first time', async () => {
@@ -7194,7 +7196,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('Run draft browser replay before saving it to the library')
     expect(container.textContent).toContain('Open the imported draft in the visual editor and run draft browser replay. Update selectors or waits for any failed action.')
 
-    const openImportedScriptButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Draft in Visual Editor'))
+    const openImportedScriptButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open draft in Visual Editor'))
     expect(openImportedScriptButton).toBeDefined()
     if (!openImportedScriptButton) {
       return
@@ -7228,7 +7230,7 @@ function findButton(container: HTMLElement, label: string): HTMLButtonElement | 
   // the save action. Existing save-flow tests cover both stages.
   const nextLabel = label.replace('Save Ready Scripts and Continue Importing', 'Save reviewed drafts')
     .replace('Save to Script Library', 'Save draft')
-    .replace('Save and Open in Visual Editor', 'Save Draft and Open in Visual Editor')
+    .replace('Save and open in Visual Editor', 'Save draft and open in Visual Editor')
   return buttons.find(button => button.textContent?.includes(nextLabel))
     || (label === 'Save to Script Library' ? buttons.find(button => button.textContent?.includes('Save draft — execution blocked')) : undefined)
 }

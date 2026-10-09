@@ -74,7 +74,7 @@ describe('protected import sessions', () => {
 
   it('provides reader-facing active and expired labels', () => {
     const now = Date.parse('2026-07-26T12:00:00Z')
-    expect(protectedImportExpiryLabel('2026-07-26T12:30:00Z', now)).toContain('Protected server candidate available until')
+    expect(protectedImportExpiryLabel('2026-07-26T12:30:00Z', now)).toContain('This import review expires at')
     expect(protectedImportExpiryLabel('2026-07-26T11:59:59Z', now)).toContain('has expired')
   })
 
@@ -82,7 +82,7 @@ describe('protected import sessions', () => {
     const now = Date.parse('2026-07-26T12:00:00Z')
     expect(importDraftExpiryStatus('2026-07-26T12:30:00Z', now)).toEqual(expect.objectContaining({
       expired: false,
-      label: expect.stringContaining('Credential-preserving import draft available until'),
+      label: expect.stringContaining('This import review expires at'),
     }))
     expect(importDraftExpiryStatus('2026-07-26T11:59:59Z', now)).toEqual({
       expired: true,

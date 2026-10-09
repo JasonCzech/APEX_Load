@@ -39,6 +39,6 @@ export default function ResultHeadline({ testId }: { testId: string }) {
   const metrics = reportPopulationOverview(report, population)
   return <div ref={ref} className="result-headline">
     <strong>{report ? reportAcceptance(report).status : failed ? 'Assessment unavailable' : 'Assessment pending'}</strong>
-    {report && <span>{populationLabels[population]} · {metrics?.transactions ?? 0} samples · p95 {formatMs(metrics?.p95_ms)} · errors {formatReportPercent(metrics?.error_pct)}</span>}
+    {report && <span>{populationLabels[population]} · {metrics?.transactions ?? 0} samples · P95 {formatMs(metrics?.p95_ms)} · error rate {formatReportPercent(metrics?.error_pct)}</span>}
   </div>
 }

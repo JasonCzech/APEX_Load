@@ -9,6 +9,7 @@ import { Application, ApplicationRepository, DashboardAuthStatus, Domain, Projec
 import BuildBadge from './BuildBadge'
 import Logo from './Logo'
 import ProjectModal from './ProjectModal'
+import { OPEN_PROJECT_PICKER_EVENT } from '../workspacePickerEvents'
 import './Sidebar.css'
 
 export type NavPage = 'dashboard' | 'command-center' | 'repository' | 'tests' | 'new-test' | 'scripts' | 'results' | 'activity' | 'monitoring' | 'fleet' | 'schedules' | 'docs' | 'access' | 'settings'
@@ -411,6 +412,25 @@ export default function Sidebar({
     setCollapsed(false)
   }
 
+  // Another surface (a link to a project this session cannot open) asks for
+  // the picker: expand the rail, open the project menu and focus its button.
+  useEffect(() => {
+    const openProjectPicker = () => {
+      setWorkspaceOpen(true)
+      setDomainOpen(false)
+      setProjectOpen(true)
+      setApplicationOpen(false)
+      setReleaseOpen(false)
+      setCollapsed(false)
+      window.setTimeout(() => projectSelectorRef.current?.querySelector<HTMLElement>('.project-selector')?.focus(), 0)
+    }
+    window.addEventListener(OPEN_PROJECT_PICKER_EVENT, openProjectPicker)
+    return () => window.removeEventListener(OPEN_PROJECT_PICKER_EVENT, openProjectPicker)
+  }, [])
+
+  // The 'user' preview emulates an editor, so it is named for that role.
+  const devViewModeLabel = devViewMode === 'user' ? 'Editor' : 'Admin'
+
   const toggleApplicationMenu = () => {
     setWorkspaceOpen(true)
     setDomainOpen(false)
@@ -811,8 +831,8 @@ export default function Sidebar({
               <TooltipButton
                 type="button"
                 className="dev-view-toggle"
-                aria-label={`Preview permissions. Current mode: ${devViewMode}`}
-                title={collapsed ? `Preview permissions (${devViewMode})` : undefined}
+                aria-label={`Preview permissions. Current mode: ${devViewModeLabel}`}
+                title={collapsed ? `Preview permissions (${devViewModeLabel})` : undefined}
                 tooltipPlacement="right"
                 aria-expanded={devViewOpen && !collapsed}
                 aria-controls="sidebar-dev-view-panel"
@@ -845,7 +865,7 @@ export default function Sidebar({
                   aria-pressed={devViewMode === 'user'}
                   onClick={() => setDevViewMode('user')}
                 >
-                  User
+                  Editor
                 </button>
               </div>
               <button

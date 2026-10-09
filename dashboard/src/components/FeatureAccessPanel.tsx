@@ -1,10 +1,11 @@
 import './Access.css'
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react'
+import { forwardRef, useEffect, useId, useImperativeHandle, useMemo, useState } from 'react'
 
 import type { Domain } from '../types'
 import type { DomainFeaturePolicy, DomainFeatureState } from '../types/domainFeatures'
 import { useRepositoryApi } from '../hooks/api/useRepositoryApi'
 import { getErrorMessage } from '../utils/errorUtils'
+import { destinationTitle } from './settingsNavigation'
 
 export interface FeatureAccessController {
   save: () => Promise<boolean>
@@ -44,6 +45,7 @@ const FeatureAccessPanel = forwardRef<FeatureAccessController, Props>(function F
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
+  const domainLockedHintId = useId()
   const dirty = policy !== null && JSON.stringify([...disabledIds].sort()) !== JSON.stringify([...(policy?.disabled_feature_ids || [])].sort())
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange])
 
@@ -145,7 +147,7 @@ const FeatureAccessPanel = forwardRef<FeatureAccessController, Props>(function F
       <div className="settings-subsection">
         <div className="settings-manager-summary">
           <div>
-            <span className="setting-label">Domain Feature Access</span>
+            <span className="setting-label">{destinationTitle('features')}</span>
             <span className="setting-desc">Control Script Builder workflows, import sources, and named workload presets. Core workspace modules always remain available.</span>
           </div>
           <strong>{enabledCount} / {totalCount}</strong>
@@ -153,9 +155,10 @@ const FeatureAccessPanel = forwardRef<FeatureAccessController, Props>(function F
         <div className="access-table-toolbar">
           <label>
             <span>Domain</span>
-            <select aria-label="Feature policy domain" value={domainId} onChange={event => setDomainId(event.target.value)} disabled={dirty || loading || saving}>
+            <select aria-label="Feature policy domain" value={domainId} onChange={event => setDomainId(event.target.value)} disabled={dirty || loading || saving} aria-describedby={dirty ? domainLockedHintId : undefined} title={dirty ? 'Save or discard your changes to switch domain' : undefined}>
               {domains.map(domain => <option key={domain.id} value={domain.id}>{domain.name}</option>)}
             </select>
+            {dirty && <small id={domainLockedHintId} className="setting-desc">Save or discard your changes to switch domain.</small>}
           </label>
           <label>
             <span>Search</span>
@@ -210,7 +213,7 @@ const FeatureAccessPanel = forwardRef<FeatureAccessController, Props>(function F
       </div>
 
       <div className="settings-inline-actions">
-        <button type="button" className="btn btn-primary" disabled={!dirty || saving} onClick={() => void save()}>{saving ? 'Saving…' : 'Save Feature Access'}</button>
+        <button type="button" className="btn btn-primary" disabled={!dirty || saving} onClick={() => void save()}>{saving ? 'Saving…' : `Save ${destinationTitle('features').toLowerCase()}`}</button>
         <button type="button" className="btn btn-secondary" disabled={!dirty || saving} onClick={discard}>Discard</button>
         <button type="button" className="btn btn-ghost" disabled={saving || disabledIds.length === 0} onClick={() => { setDisabledIds([]); setNotice(''); setError('') }}>Reset to Defaults</button>
       </div>

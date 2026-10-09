@@ -1020,11 +1020,11 @@ describe("RecordingStudio", () => {
     expect(container.textContent).toContain("{{var.session_id}}");
     expect(container.textContent).toContain("85% confidence");
     expect(container.textContent).toContain("reused in a later request");
-    expect(container.textContent).toContain("Save To Script Library");
-    expect(container.textContent).toContain("Open In Visual Editor");
+    expect(container.textContent).toContain("Save to Script Library");
+    expect(container.textContent).toContain("Open in Visual Editor");
 
     const editButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Open In Visual Editor",
+      (button) => button.textContent?.trim() === "Open in Visual Editor",
     );
     expect(editButton).toBeDefined();
     if (!editButton) {
@@ -1057,7 +1057,7 @@ describe("RecordingStudio", () => {
     );
 
     const saveButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Save To Script Library",
+      (button) => button.textContent?.trim() === "Save to Script Library",
     );
     expect(saveButton).toBeDefined();
     if (!saveButton) {
@@ -1073,7 +1073,7 @@ describe("RecordingStudio", () => {
     expect(apiMock.createScript).toHaveBeenCalledTimes(1);
     const pendingSave = Array.from(
       container.querySelectorAll<HTMLButtonElement>("button"),
-    ).find((button) => button.textContent?.trim() === "Saving...");
+    ).find((button) => button.textContent?.trim() === "Saving…");
     expect(pendingSave?.disabled).toBe(true);
     const parameterizeInputs = container.querySelector<HTMLInputElement>(
       ".rec-convert-option input[type='checkbox']",
@@ -1225,7 +1225,7 @@ describe("RecordingStudio", () => {
     await act(async () => reviewButton?.click());
     await flushPromises();
 
-    expect(container.textContent).toContain("Parameterization Review (1)");
+    expect(container.textContent).toContain("Parameterization review (1)");
     await act(async () => {
       container
         .querySelector<HTMLButtonElement>(".paramize-review button.btn-primary")
@@ -1235,7 +1235,7 @@ describe("RecordingStudio", () => {
     });
     const saveButton = Array.from(
       container.querySelectorAll<HTMLButtonElement>("button"),
-    ).find((button) => button.textContent?.trim() === "Save To Script Library");
+    ).find((button) => button.textContent?.trim() === "Save to Script Library");
     await act(async () => {
       saveButton?.click();
       await Promise.resolve();
@@ -1342,7 +1342,7 @@ describe("RecordingStudio", () => {
     );
     const editButton = Array.from(
       container.querySelectorAll<HTMLButtonElement>("button"),
-    ).find((button) => button.textContent?.trim() === "Open In Visual Editor");
+    ).find((button) => button.textContent?.trim() === "Open in Visual Editor");
     const bindingInput = container.querySelector<HTMLInputElement>(
       '.secret-binding-review input[type="text"]',
     )!;
@@ -1562,7 +1562,7 @@ describe("RecordingStudio", () => {
       container.querySelectorAll<HTMLButtonElement>("button"),
     ).find(
       (button) =>
-        button.textContent?.trim() === "Save And Open In Visual Editor",
+        button.textContent?.trim() === "Save and open in Visual Editor",
     );
     await act(async () => {
       saveButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -1665,7 +1665,7 @@ describe("RecordingStudio", () => {
     await flushPromises();
     const editButton = Array.from(
       container.querySelectorAll<HTMLButtonElement>("button"),
-    ).find((button) => button.textContent?.trim() === "Open In Visual Editor");
+    ).find((button) => button.textContent?.trim() === "Open in Visual Editor");
     await act(async () => {
       editButton?.click();
       await Promise.resolve();
@@ -1677,7 +1677,7 @@ describe("RecordingStudio", () => {
         ".paramize-review button.btn-primary",
       )?.disabled,
     ).toBe(true);
-    expect(container.textContent).toContain("Preparing editor...");
+    expect(container.textContent).toContain("Preparing editor…");
   });
 
   it("ignores a late recorder credential result after a newer conversion", async () => {
@@ -1811,7 +1811,7 @@ describe("RecordingStudio", () => {
 
     expect(container.textContent).toContain("Unsaved Preview");
     const editButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Open In Visual Editor",
+      (button) => button.textContent?.trim() === "Open in Visual Editor",
     );
     await act(async () => {
       editButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -1821,7 +1821,7 @@ describe("RecordingStudio", () => {
     );
 
     const saveButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Save To Script Library",
+      (button) => button.textContent?.trim() === "Save to Script Library",
     );
     await act(async () => {
       saveButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -2112,7 +2112,7 @@ describe("RecordingStudio", () => {
 
     expect(container.textContent).toContain("stored-recorder-script");
     const editButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Open In Visual Editor",
+      (button) => button.textContent?.trim() === "Open in Visual Editor",
     );
     expect(editButton).toBeDefined();
     await act(async () => {
@@ -2123,7 +2123,7 @@ describe("RecordingStudio", () => {
     );
 
     const saveButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Save To Script Library",
+      (button) => button.textContent?.trim() === "Save to Script Library",
     );
     expect(saveButton).toBeDefined();
     await act(async () => {
@@ -2218,7 +2218,7 @@ describe("RecordingStudio", () => {
     expect(container.textContent).toContain("Save with 1 secret to configure");
     const editButton = Array.from(
       container.querySelectorAll<HTMLButtonElement>("button"),
-    ).find((button) => button.textContent?.trim() === "Open In Visual Editor");
+    ).find((button) => button.textContent?.trim() === "Open in Visual Editor");
     const deferredSaveButton = Array.from(
       container.querySelectorAll<HTMLButtonElement>("button"),
     ).find(
@@ -2264,7 +2264,7 @@ describe("RecordingStudio", () => {
       container.querySelector<HTMLButtonElement>(
         ".rec-convert-result .rec-result-actions .btn-primary",
       )?.textContent,
-    ).toBe("Saving...");
+    ).toBe("Saving…");
     expect(
       container.querySelector<HTMLButtonElement>(
         ".rec-convert-result .rec-result-actions .btn-primary",

@@ -689,7 +689,7 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('Auth Mode: development auth bypass is enabled')
     expect(container.textContent).toContain('Generator Inventory')
     expect(container.textContent).toContain('0/0 connected')
-    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts'])
+    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts', 'parquet-analysis'])
 
     await clickMonitorTab('Telemetry')
 
@@ -745,10 +745,10 @@ describe('MonitoringPage', () => {
       )
     })
 
-    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts'])
+    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts', 'parquet-analysis'])
     await clickMonitorTab('Telemetry')
     expect(onCategoryChange).toHaveBeenCalledWith('telemetry')
-    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts'])
+    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts', 'parquet-analysis'])
 
     await act(async () => {
       root.render(
@@ -779,9 +779,28 @@ describe('MonitoringPage', () => {
 
     await clickMonitorTab('Telemetry')
     expect(pending).not.toBeNull()
-    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts'])
+    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts', 'parquet-analysis'])
     await act(async () => (pending as unknown as () => void)())
     expect(visibleMonitorCardIds()).toEqual(['run-monitor-sources', 'telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors', 'elk-connections', 'dynatrace-connections'])
+  })
+
+  it('summarizes the worst telemetry condition the header counts, not the newest sample', async () => {
+    await act(async () => {
+      root.render(
+        <MonitoringPage
+          connectionState="connected"
+          initialCategoryId="telemetry"
+          telemetryDiagnostics={[
+            { test_id: 'run-1', test_name: 'Checkout', timestamp: '2026-05-12T20:01:00Z', diagnostic: { severity: 'healthy', summary: 'live telemetry healthy', conditions: [], samples: [] } },
+            { test_id: 'run-1', test_name: 'Checkout', timestamp: '2026-05-12T20:00:00Z', diagnostic: { severity: 'danger', summary: 'Publisher dropped samples', conditions: ['dropped_samples'], samples: [] } },
+          ]}
+        />,
+      )
+    })
+    const summary = container.querySelector<HTMLElement>('.telemetry-summary-details')
+    expect(summary?.textContent).toContain('Latest danger')
+    expect(summary?.textContent).toContain('Publisher dropped samples')
+    expect(summary?.textContent).not.toContain('live telemetry healthy')
   })
 
   it('traps focus in telemetry details, closes on Escape, and restores the trigger', async () => {
@@ -1084,7 +1103,7 @@ describe('MonitoringPage', () => {
     expect(readiness!.querySelectorAll('.monitor-infrastructure-status-checking')).toHaveLength(3)
     expect(readiness!.textContent).toContain('Waiting for readiness data.')
     expect(container.textContent).toContain('Waiting for /api/v1/system/readiness.')
-    expect(container.textContent).toContain('Waiting for system data...')
+    expect(container.textContent).toContain('Waiting for system data…')
     expect(container.textContent).not.toContain('Readiness data incomplete')
   })
 
@@ -1596,7 +1615,7 @@ describe('MonitoringPage', () => {
       root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
     })
 
-    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts'])
+    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts', 'parquet-analysis'])
     expect(container.textContent).toContain('Readiness & Services')
     expect(container.textContent).toContain('4/4 active')
     expect(container.textContent).toContain('Backend')
@@ -1643,7 +1662,7 @@ describe('MonitoringPage', () => {
       root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
     })
 
-    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts'])
+    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts', 'parquet-analysis'])
     expect(container.textContent).not.toContain('Active Services')
     const storedOrder = JSON.parse(window.localStorage.getItem('apexload.monitoring.cardOrder') || '[]') as string[]
     expect(storedOrder).not.toContain('active-services')
@@ -1855,7 +1874,10 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('10,000')
     expect(container.textContent).toContain('Project Active Slots')
     expect(container.textContent).toContain('Project Pending Slots')
-    expect(container.textContent).toContain('project-1: 250 active / 400 pending slots (reserved)')
+    // Project usage is a neutral row (label + value), not a warning entry.
+    const projectSlots = Array.from(container.querySelectorAll('.monitor-row')).find(row => row.querySelector('.monitor-label')?.textContent === 'project-1')
+    expect(projectSlots?.querySelector('.monitor-value')?.textContent).toBe('250 active / 400 pending slots (reserved)')
+    expect(Array.from(container.querySelectorAll('.monitor-warning-list')).some(list => list.textContent?.includes('250 active'))).toBe(false)
     expect(container.textContent).toContain('Live generator inventory (fleet placement)')
     expect(container.textContent).toContain('http, browser')
 

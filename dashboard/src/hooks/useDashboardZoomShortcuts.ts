@@ -71,6 +71,15 @@ function nextDashboardZoom(current: number, action: DashboardZoomAction) {
   return normalizeDashboardZoom(current + delta)
 }
 
+/**
+ * Zoom from a command (the command palette). It goes through the same single
+ * subscription as the desktop menu, so each request applies exactly once; the
+ * Cmd/Ctrl key presses are handled by the capture listener below.
+ */
+export function requestDashboardZoom(action: DashboardZoomAction) {
+  window.dispatchEvent(new CustomEvent(DESKTOP_QUEUED_MENU_ZOOM_EVENT, { detail: action }))
+}
+
 export function useDashboardZoomShortcuts() {
   const [zoom, setZoom] = useState(() => readStoredDashboardZoom())
 
