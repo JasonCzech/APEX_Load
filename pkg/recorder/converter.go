@@ -20,6 +20,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 )
 
 type Correlation struct {
@@ -61,12 +62,18 @@ type ConvertOptions struct {
 	PageTitleChecks *bool
 	// ResourceMode is "runtime" (default: static resources are dropped and
 	// discovered at replay) or "in_step" (each static resource is attached to
-	// the page that requested it as an explicit resource).
+	// the page that requested it as an explicit resource). "separate" is
+	// recorded as "in_step": the replay baseline aligns recorded steps with
+	// the non-static requests, so resources cannot become steps of their own.
 	ResourceMode string
 	// AsyncScan collapses requests a page repeated in the background (poll,
 	// long-poll, push) into background conversations. Nil means on; false
 	// keeps them as recorded steps.
 	AsyncScan *bool
+	// Profile is the project recording profile: its header lists, host and
+	// content-type filters, think-time threshold and correlation settings
+	// apply, and it supplies the options above that are left unset.
+	Profile *recordingprofile.Profile
 }
 
 // ConvertSession converts a recording with default options.
@@ -92,7 +99,43 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 		))
 	}
 
+	profile := opts.Profile
+	if profile != nil {
+		if opts.PageTitleChecks == nil {
+			opts.PageTitleChecks = profile.PageTitleChecks
+		}
+		if opts.ResourceMode == "" {
+			opts.ResourceMode = profile.ResourceMode
+		}
+		if opts.AsyncScan == nil {
+			opts.AsyncScan = profile.AsyncScan
+		}
+	}
+	policy := headerPolicy{cookies: session.Filters.CaptureCookies, profile: profile}
+	if profile != nil && profile.CaptureCookies != nil {
+		policy.cookies = *profile.CaptureCookies
+	}
+	thinkThreshold := int64(recordingprofile.DefaultThinkTimeMs)
+	if profile != nil {
+		thinkThreshold = int64(profile.ThinkTimeThreshold())
+	}
 	normalized := normalizeRecordedRequests(session.Requests)
+	if profile != nil {
+		filtered := 0
+		for i := range normalized.requests {
+			req := &normalized.requests[i]
+			if req.Excluded || req.IsStatic {
+				continue
+			}
+			if !profile.RecordsHost(req.Host) || !profile.RecordsContentType(recordedResponseHeader(*req, "Content-Type")) {
+				req.Excluded = true
+				filtered++
+			}
+		}
+		if filtered > 0 {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("Recording profile %q left %d request(s) out by host or content type.", profile.Name, filtered))
+		}
+	}
 	recordedRequests := normalized.requests
 	webSocketRequests := includedWebSocketRequests(recordedRequests)
 	hasHTTPRequests := hasIncludedHTTPRequests(recordedRequests)
@@ -101,7 +144,11 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 		return result
 	}
 
-	correlations, correlationErr := detectCorrelationsChecked(convertibleCorrelationRequests(recordedRequests))
+	var correlationSettings *recordingprofile.CorrelationSettings
+	if profile != nil {
+		correlationSettings = &profile.Correlation
+	}
+	correlations, correlationErr := detectCorrelationsWithSettings(convertibleCorrelationRequests(recordedRequests), correlationSettings)
 	if correlationErr != nil {
 		result.Warnings = append(result.Warnings, fmt.Sprintf("Correlation analysis was not completed and no automatic correlation rewrites were applied: %v", correlationErr))
 	}
@@ -129,6 +176,10 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 	recordedResourceSeen := make(map[string]struct{})
 
 	inStep := strings.EqualFold(strings.TrimSpace(opts.ResourceMode), "in_step")
+	if strings.EqualFold(strings.TrimSpace(opts.ResourceMode), "separate") {
+		inStep = true
+		result.Warnings = append(result.Warnings, "Proxy recordings cannot keep resources as separate steps; each resource was attached to the page that requested it (in_step).")
+	}
 	pageActionByURL := map[string]int{}
 	lastPageAction := -1
 	// steps holds the recorded timing of each generated action, for the
@@ -182,7 +233,7 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 			action.Metadata = map[string]any{"source_transaction": txn}
 		}
 
-		headers := correlatedRecordedHeaders(req, session.Filters.CaptureCookies, corrMap)
+		headers := correlatedRecordedHeaders(req, policy, corrMap)
 		if len(headers.Summary) > 0 {
 			action.Headers = headers.Summary
 		}
@@ -237,7 +288,7 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 			importreview.ApplyToAction(&action, findings)
 		}
 
-		if req.ThinkTimeMs > 500 && len(script.Actions) > 0 {
+		if req.ThinkTimeMs > thinkThreshold && len(script.Actions) > 0 {
 			prev := &script.Actions[len(script.Actions)-1]
 			prev.ThinkTimeAfter = true
 			prev.ThinkTime = dsl.ThinkTimeConfig{
@@ -291,7 +342,7 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 	}
 	var sockets []recordedshape.Socket
 	if hasHTTPRequests {
-		sockets = recordedSockets(webSocketRequests, session.Filters.CaptureCookies)
+		sockets = recordedSockets(webSocketRequests, policy)
 	}
 	asyncScan := opts.AsyncScan == nil || *opts.AsyncScan
 	if asyncScan || len(sockets) > 0 {
@@ -321,11 +372,11 @@ func recordedAt(req RecordedRequest) time.Time {
 
 // recordedSockets turns the WebSocket connections recorded alongside HTTP
 // traffic into sockets for recordedshape.
-func recordedSockets(requests []RecordedRequest, captureCookies bool) []recordedshape.Socket {
+func recordedSockets(requests []RecordedRequest, policy headerPolicy) []recordedshape.Socket {
 	sockets := make([]recordedshape.Socket, 0, len(requests))
 	for _, req := range requests {
 		started := recordedAt(req)
-		socket := recordedshape.Socket{URL: recordedshape.WebSocketURL(req.URL), StartedAt: started, EndedAt: started, Headers: filterRecordedHeaders(req.Headers, captureCookies)}
+		socket := recordedshape.Socket{URL: recordedshape.WebSocketURL(req.URL), StartedAt: started, EndedAt: started, Headers: filterRecordedHeaders(req.Headers, policy)}
 		for index, msg := range coalesceWebSocketMessages(req.WebSocketMessages) {
 			if msg.Timestamp.IsZero() {
 				msg.Timestamp = started.Add(time.Duration(index+1) * time.Microsecond)
@@ -405,9 +456,9 @@ type correlatedRecordedHeaderProjection struct {
 	Repeated dsl.HeaderList
 }
 
-func correlatedRecordedHeaders(req RecordedRequest, captureCookies bool, corrMap map[string]string) correlatedRecordedHeaderProjection {
-	headers := filterRecordedHeaders(req.Headers, captureCookies)
-	rawHeaders := filterRecordedHeaders(req.RawHeaders, captureCookies)
+func correlatedRecordedHeaders(req RecordedRequest, policy headerPolicy, corrMap map[string]string) correlatedRecordedHeaderProjection {
+	headers := filterRecordedHeaders(req.Headers, policy)
+	rawHeaders := filterRecordedHeaders(req.RawHeaders, policy)
 	rawNames := make([]string, 0, len(rawHeaders))
 	rawNameCounts := make(map[string]int, len(rawHeaders))
 	for key := range rawHeaders {
@@ -451,7 +502,7 @@ func correlatedRecordedHeaders(req RecordedRequest, captureCookies bool, corrMap
 	}
 	return correlatedRecordedHeaderProjection{
 		Summary:  headers,
-		Repeated: correlatedRepeatedRecordedHeaders(req, captureCookies, corrMap),
+		Repeated: correlatedRepeatedRecordedHeaders(req, policy, corrMap),
 	}
 }
 
@@ -483,11 +534,11 @@ func sortedStringMapKeys(values map[string]string) []string {
 // occurrences in HeaderList. The legacy Headers map intentionally remains a
 // first-value summary; HTTP replay gives HeaderList precedence for names found
 // there, so the list is the lossless wire representation for repeated values.
-func correlatedRepeatedRecordedHeaders(req RecordedRequest, captureCookies bool, corrMap map[string]string) dsl.HeaderList {
+func correlatedRepeatedRecordedHeaders(req RecordedRequest, policy headerPolicy, corrMap map[string]string) dsl.HeaderList {
 	names := repeatedRecordedHeaderNames(req.HeadersMulti, req.RawHeadersMulti)
 	result := make(dsl.HeaderList, 0)
 	for _, name := range names {
-		if !includeRecordedHeader(name, captureCookies) {
+		if !includeRecordedHeader(name, policy) {
 			continue
 		}
 		redactedValues, _ := recordedHeaderValues(req.HeadersMulti, name)
@@ -817,7 +868,7 @@ func convertWebSocketSession(session *Session, name string, requests []RecordedR
 			Type:   "ws_connect",
 			Target: target,
 		}
-		headers := filterRecordedHeaders(req.Headers, session.Filters.CaptureCookies)
+		headers := filterRecordedHeaders(req.Headers, headerPolicy{cookies: session.Filters.CaptureCookies})
 		if len(headers) > 0 {
 			connect.Headers = headers
 		}
@@ -989,6 +1040,12 @@ func detectCorrelations(requests []RecordedRequest) []Correlation {
 }
 
 func detectCorrelationsChecked(requests []RecordedRequest) ([]Correlation, error) {
+	return detectCorrelationsWithSettings(requests, nil)
+}
+
+// detectCorrelationsWithSettings detects correlations and applies a
+// recording profile's correlation settings, when given.
+func detectCorrelationsWithSettings(requests []RecordedRequest, settings *recordingprofile.CorrelationSettings) ([]Correlation, error) {
 	observations := make([]correlate.Observation, 0, len(requests))
 	for _, req := range requests {
 		observations = append(observations, correlate.Observation{
@@ -1004,6 +1061,9 @@ func detectCorrelationsChecked(requests []RecordedRequest) ([]Correlation, error
 	shared, err := correlate.DetectChecked(observations)
 	if err != nil {
 		return nil, err
+	}
+	if settings != nil {
+		shared = settings.ApplyCorrelation(observations, shared)
 	}
 	correlations := make([]Correlation, 0, len(shared))
 	for _, corr := range shared {
@@ -1423,7 +1483,7 @@ func recorderRequestReplacementSurfaces(requests []RecordedRequest, limit int) (
 		for _, headers := range []map[string]string{request.Headers, request.RawHeaders} {
 			names := make([]string, 0, len(headers))
 			for name := range headers {
-				if includeRecordedHeader(name, true) {
+				if includeRecordedHeader(name, headerPolicy{cookies: true}) {
 					names = append(names, name)
 				}
 			}
@@ -1437,7 +1497,7 @@ func recorderRequestReplacementSurfaces(requests []RecordedRequest, limit int) (
 		for _, headers := range []map[string][]string{request.HeadersMulti, request.RawHeadersMulti} {
 			names := make([]string, 0, len(headers))
 			for name := range headers {
-				if includeRecordedHeader(name, true) {
+				if includeRecordedHeader(name, headerPolicy{cookies: true}) {
 					names = append(names, name)
 				}
 			}
@@ -1834,20 +1894,39 @@ func csvEscapeField(value string) string {
 	return value
 }
 
-func filterRecordedHeaders(headers map[string]string, captureCookies bool) map[string]string {
+func filterRecordedHeaders(headers map[string]string, policy headerPolicy) map[string]string {
 	filtered := make(map[string]string)
 	for k, v := range headers {
-		if includeRecordedHeader(k, captureCookies) {
+		if includeRecordedHeader(k, policy) {
 			filtered[k] = v
 		}
 	}
 	return filtered
 }
 
-func includeRecordedHeader(name string, captureCookies bool) bool {
+// headerPolicy decides which recorded request headers a script keeps: the
+// recorder's defaults, the session's cookie capture, and a recording
+// profile's record/drop lists.
+type headerPolicy struct {
+	cookies bool
+	profile *recordingprofile.Profile
+}
+
+func includeRecordedHeader(name string, policy headerPolicy) bool {
 	if isRecorderControlHeader(name) {
 		return false
 	}
+	if policy.profile != nil {
+		if keep, decided := policy.profile.HeaderDecision(name); decided {
+			// Connection-specific headers stay with the transport.
+			switch strings.ToLower(strings.TrimSpace(name)) {
+			case "host", "content-length", "connection", "proxy-connection":
+				return false
+			}
+			return keep
+		}
+	}
+	captureCookies := policy.cookies
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "host", "content-length", "accept-encoding",
 		"connection", "proxy-connection", "user-agent",

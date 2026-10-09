@@ -976,7 +976,7 @@ func TestCorrelatedRecordedHeadersDoesNotEmitPartialRawOnlyHeaderList(t *testing
 	projection := correlatedRecordedHeaders(RecordedRequest{
 		Headers:         map[string]string{"X-Request-ID": "safe-summary"},
 		RawHeadersMulti: map[string][]string{"X-Request-ID": {"unmatched-raw-first", token}},
-	}, false, map[string]string{token: "{{var.corr_x_request_id}}"})
+	}, headerPolicy{cookies: false}, map[string]string{token: "{{var.corr_x_request_id}}"})
 
 	if len(projection.Repeated) != 0 {
 		t.Fatalf("partial raw-only HeaderList = %#v, want omitted so it cannot shadow the safe summary", projection.Repeated)
@@ -1106,7 +1106,7 @@ func TestCorrelatedRecordedHeadersMatchesSanitizedKeysCaseInsensitively(t *testi
 	safe := correlatedRecordedHeaders(RecordedRequest{
 		Headers:    map[string]string{"Authorization": "[redacted]"},
 		RawHeaders: map[string]string{"authorization": "Bearer " + token},
-	}, false, map[string]string{token: "{{var.corr_access_token}}"})
+	}, headerPolicy{cookies: false}, map[string]string{token: "{{var.corr_access_token}}"})
 	if got := safe.Summary["Authorization"]; got != "Bearer {{var.corr_access_token}}" {
 		t.Fatalf("case-insensitive correlated authorization = %q", got)
 	}
@@ -1117,7 +1117,7 @@ func TestCorrelatedRecordedHeadersMatchesSanitizedKeysCaseInsensitively(t *testi
 	partial := correlatedRecordedHeaders(RecordedRequest{
 		Headers:    map[string]string{"Authorization": "[redacted]"},
 		RawHeaders: map[string]string{"authorization": "Bearer " + token + " !!!"},
-	}, false, map[string]string{token: "{{var.corr_access_token}}"})
+	}, headerPolicy{cookies: false}, map[string]string{token: "{{var.corr_access_token}}"})
 	if got := partial.Summary["Authorization"]; got != "[redacted]" {
 		t.Fatalf("punctuation-only residual secret was disclosed: %q", got)
 	}
@@ -1498,7 +1498,7 @@ func TestFilterRecordedHeaders(t *testing.T) {
 		"X-APEXLoad-Recorder-Token": "recorder-control-secret",
 	}
 
-	filtered := filterRecordedHeaders(headers, false)
+	filtered := filterRecordedHeaders(headers, headerPolicy{})
 
 	if _, ok := filtered["Host"]; ok {
 		t.Fatal("Host should be filtered")
@@ -1528,7 +1528,7 @@ func TestFilterRecordedHeaders(t *testing.T) {
 		t.Fatal("Authorization should be kept")
 	}
 
-	withCookies := filterRecordedHeaders(headers, true)
+	withCookies := filterRecordedHeaders(headers, headerPolicy{cookies: true})
 	if v, ok := withCookies["Cookie"]; !ok || v != "session=abc" {
 		t.Fatalf("Cookie should be kept when cookie capture is enabled, got %q", v)
 	}

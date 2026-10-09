@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 )
 
 // A browser HAR's WebSocket entry (Chrome/Firefox _webSocketMessages)
@@ -55,5 +57,43 @@ func TestConvertPlacesHARWebSocketMessages(t *testing.T) {
 	}
 	if strings.Contains(strings.Join(result.Warnings, "\n"), "WebSocket upgrade entries were skipped") {
 		t.Fatalf("warnings = %v", result.Warnings)
+	}
+}
+
+func TestConvertAppliesRecordingProfile(t *testing.T) {
+	entry := func(at, url, contentType, body string, headers ...map[string]any) map[string]any {
+		requestHeaders := []any{}
+		for _, header := range headers {
+			requestHeaders = append(requestHeaders, header)
+		}
+		return map[string]any{
+			"startedDateTime": at, "time": 20,
+			"request":  map[string]any{"method": "GET", "url": url, "httpVersion": "HTTP/1.1", "headers": requestHeaders},
+			"response": map[string]any{"status": 200, "httpVersion": "HTTP/1.1", "headers": []any{map[string]any{"name": "Content-Type", "value": contentType}}, "content": map[string]any{"mimeType": contentType, "text": body}},
+		}
+	}
+	har := map[string]any{"log": map[string]any{"version": "1.2", "creator": map[string]any{"name": "Chrome"}, "entries": []any{
+		entry("2026-01-01T00:00:00.000Z", "https://shop.test/start", "text/html", `<a href="/order?order=A9F3K2&x=1">`, map[string]any{"name": "X-Debug", "value": "1"}),
+		entry("2026-01-01T00:00:00.500Z", "https://shop.test/logo.png", "image/png", "PNG"),
+		entry("2026-01-01T00:00:01.000Z", "https://shop.test/order?order=A9F3K2", "text/html", "<html>ok</html>"),
+	}}}
+	raw, _ := json.Marshal(har)
+	profile := &recordingprofile.Profile{
+		ID: "p", Name: "P", DropHeaders: []string{"X-Debug"}, ExcludeContentTypes: []string{"image/*"}, ThinkTimeThresholdMs: 2000,
+		Correlation: recordingprofile.CorrelationSettings{UserRules: []recordingprofile.UserRule{{Name: "OrderID", Type: "boundary", Left: "order=", Right: "&"}}},
+	}
+	result, err := Convert(raw, ConvertOptions{Profile: profile, IncludeStaticAssets: boolPointer(true)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	actions := result.Script.Actions
+	if len(actions) != 2 {
+		t.Fatalf("the excluded content type must not become a step: %+v", actions)
+	}
+	if _, ok := actions[0].Headers["X-Debug"]; ok || actions[0].ThinkTimeAfter {
+		t.Fatalf("drop list and think-time threshold: %+v", actions[0])
+	}
+	if !strings.Contains(actions[1].Target, "{{var.") {
+		t.Fatalf("the project rule must correlate the order id: %q", actions[1].Target)
 	}
 }

@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -270,6 +271,12 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	if req.Settings.Authoring == nil {
 		req.Settings.Authoring = project.Settings.Authoring
 	}
+	// Likewise, recording profiles are managed through
+	// /projects/{id}/recording-profiles; a settings form that omits them
+	// keeps them. Send "recording_profiles": [] to clear them.
+	if req.Settings.RecordingProfiles == nil {
+		req.Settings.RecordingProfiles = project.Settings.RecordingProfiles
+	}
 	project.Settings = req.Settings
 	updater, supported := s.store.(interface {
 		UpdateProjectIfUnchanged(project *storage.Project, expectedUpdatedAt time.Time) (bool, error)
@@ -369,6 +376,9 @@ func stringPtrValue(value *string) string {
 }
 
 func validateProjectSettings(settings storage.ProjectSettings) error {
+	if err := recordingprofile.Validate(settings.RecordingProfiles); err != nil {
+		return errProjectSettings(err.Error())
+	}
 	if settings.MaxConcurrentTests < 0 {
 		return errProjectSettings("max_concurrent_tests must be greater than or equal to 0")
 	}

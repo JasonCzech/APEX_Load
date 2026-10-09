@@ -11,6 +11,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/recordedshape"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 )
 
 // shapeRecordedHAR gives a converted HAR the shape of its recording (see
@@ -148,4 +149,29 @@ func webSocketHARDiagnostic(item map[string]any) string {
 		return fmt.Sprintf("WebSocket connection with %d recorded message(s) is converted to WebSocket steps", len(messages))
 	}
 	return "WebSocket connection without recorded messages is converted to a connect and close"
+}
+
+// applyRecordingProfileFilters drops the exchanges a recording profile does
+// not record (host or response content type) and the headers it drops.
+func applyRecordingProfileFilters(exchanges []exchange, profile *recordingprofile.Profile) ([]exchange, int) {
+	kept := exchanges[:0:0]
+	filtered := 0
+	for _, ex := range exchanges {
+		contentType := ""
+		if ex.Response != nil {
+			contentType = responseHeaderValue(ex.Response, "Content-Type")
+		}
+		if !profile.RecordsHost(exchangeHost(ex.URL)) || !profile.RecordsContentType(contentType) {
+			filtered++
+			continue
+		}
+		for name := range ex.Headers {
+			if keep, decided := profile.HeaderDecision(name); decided && !keep {
+				ex.Headers = headersWithoutFold(ex.Headers, name)
+				ex.HeaderList = headerListWithoutFold(ex.HeaderList, name)
+			}
+		}
+		kept = append(kept, ex)
+	}
+	return kept, filtered
 }

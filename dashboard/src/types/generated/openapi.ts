@@ -27147,6 +27147,7 @@ export interface operations {
             "selected_ids"?: Array<string>;
           }>;
           "parameterize"?: boolean;
+          "recording_profile_id"?: string;
           "secret_bindings"?: Array<{
             "requirement_id"?: string;
             "script_index"?: number;
@@ -27221,6 +27222,7 @@ export interface operations {
           "name"?: string;
           "page_title_checks"?: (boolean) | null;
           "parameterize"?: boolean;
+          "recording_profile_id"?: string;
           "resource_mode"?: string;
         };
       };
@@ -32207,6 +32209,7 @@ export interface operations {
               "max_concurrent_tests"?: number;
               "max_vusers"?: number;
             }>;
+            "recording_profiles"?: Array<Record<string, unknown>>;
             "redaction_rules"?: Array<{
               "name"?: string;
               "pattern"?: string;
@@ -61705,6 +61708,7 @@ export interface operations {
                 "max_concurrent_tests"?: number;
                 "max_vusers"?: number;
               }>;
+              "recording_profiles"?: Array<Record<string, unknown>>;
               "redaction_rules"?: Array<{
                 "name"?: string;
                 "pattern": string;
@@ -62173,6 +62177,7 @@ export interface operations {
               "exclude_hosts"?: Array<string>;
               "exclude_static": boolean;
               "include_hosts"?: Array<string>;
+              "recording_profile_id"?: string;
               "redact_headers"?: Array<string>;
             };
             "id": string;
@@ -62248,6 +62253,38 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetRecordingProfiles": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "profiles": Array<Record<string, unknown>>;
+            "rules": Array<Record<string, unknown>>;
+            "updated_at": string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -84503,6 +84540,7 @@ export interface operations {
         "include_static_assets"?: boolean;
         "name"?: string;
         "project_id"?: string;
+        "recording_profile_id"?: string;
         "redact_sensitive"?: boolean;
         "retention_days"?: number;
         "salvage_truncated"?: boolean;
@@ -84517,6 +84555,7 @@ export interface operations {
           "file"?: string;
           "include_static_assets"?: string;
           "name"?: string;
+          "recording_profile_id"?: string;
           "redact_sensitive"?: string;
           "retention_days"?: string;
           "salvage_truncated"?: string;
@@ -84875,6 +84914,7 @@ export interface operations {
         "include_static_assets"?: boolean;
         "name"?: string;
         "project_id"?: string;
+        "recording_profile_id"?: string;
         "redact_sensitive"?: boolean;
         "retention_days"?: number;
         "salvage_truncated"?: boolean;
@@ -84889,6 +84929,7 @@ export interface operations {
           "file"?: string;
           "include_static_assets"?: string;
           "name"?: string;
+          "recording_profile_id"?: string;
           "redact_sensitive"?: string;
           "retention_days"?: string;
           "salvage_truncated"?: string;
@@ -95548,6 +95589,7 @@ export interface operations {
               "exclude_hosts"?: Array<string>;
               "exclude_static": boolean;
               "include_hosts"?: Array<string>;
+              "recording_profile_id"?: string;
               "redact_headers"?: Array<string>;
             };
             "id": string;
@@ -104172,6 +104214,7 @@ export interface operations {
           "max_think_time_ms"?: number;
           "name"?: string;
           "parameterize"?: boolean;
+          "recording_profile_id"?: string;
           "split_at_transactions"?: boolean;
           "start_seq"?: number;
         };
@@ -109478,6 +109521,7 @@ export interface operations {
           "name"?: string;
           "page_title_checks"?: (boolean) | null;
           "parameterize"?: boolean;
+          "recording_profile_id"?: string;
           "resource_mode"?: string;
         };
       };
@@ -110562,6 +110606,70 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handlePutRecordingProfiles": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "expected_updated_at"?: (string) | null;
+          "profiles"?: Array<Record<string, unknown>>;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "profiles": Array<Record<string, unknown>>;
+            "rules": Array<Record<string, unknown>>;
+            "updated_at": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -124968,6 +125076,7 @@ export interface operations {
               "exclude_hosts"?: Array<string>;
               "exclude_static": boolean;
               "include_hosts"?: Array<string>;
+              "recording_profile_id"?: string;
               "redact_headers"?: Array<string>;
             };
             "id": string;
@@ -134514,6 +134623,7 @@ export interface operations {
           "include_hosts"?: Array<string>;
           "name"?: string;
           "project_id"?: string;
+          "recording_profile_id"?: string;
           "redact_headers"?: Array<string>;
         };
       };
@@ -142926,6 +143036,7 @@ export interface operations {
               "exclude_hosts"?: Array<string>;
               "exclude_static": boolean;
               "include_hosts"?: Array<string>;
+              "recording_profile_id"?: string;
               "redact_headers"?: Array<string>;
             };
             "id": string;
@@ -152957,6 +153068,7 @@ export interface operations {
               "max_concurrent_tests"?: number;
               "max_vusers"?: number;
             }>;
+            "recording_profiles"?: Array<Record<string, unknown>>;
             "redaction_rules"?: Array<{
               "name"?: string;
               "pattern"?: string;
@@ -153034,6 +153146,7 @@ export interface operations {
                 "max_concurrent_tests"?: number;
                 "max_vusers"?: number;
               }>;
+              "recording_profiles"?: Array<Record<string, unknown>>;
               "redaction_rules"?: Array<{
                 "name"?: string;
                 "pattern": string;
@@ -164268,6 +164381,7 @@ export interface operations {
               "selected_ids"?: Array<string>;
             }>;
             "parameterize"?: boolean;
+            "recording_profile_id"?: string;
             "secret_bindings"?: Array<{
               "requirement_id"?: string;
               "script_index"?: number;
@@ -165942,6 +166056,10 @@ export interface paths {
   };
   "/api/v1/projects/{id}/monitoring/prometheus-connections/{connection_id}/test": {
     "post": operations["handleTestPrometheusConnection"];
+  };
+  "/api/v1/projects/{id}/recording-profiles": {
+    "get": operations["handleGetRecordingProfiles"];
+    "put": operations["handlePutRecordingProfiles"];
   };
   "/api/v1/projects/{id}/releases": {
     "get": operations["handleListProjectReleases"];

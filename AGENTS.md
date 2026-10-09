@@ -47,6 +47,7 @@ pkg/
   api/static/    — Embedded dashboard build output (from dashboard/)
   storage/       — SQLite (default) / PostgreSQL persistence layer
   recorder/      — HTTP recording + HAR conversion + browser recording
+  recordingprofile/ — Project recording profiles (VuGen-style recording options) shared by the recorders and HAR import
   convert/       — Multi-format import hub (LR archive, Bruno, JMeter, k6, DevWeb, HAR, OpenAPI, WSDL, Postman, AsyncAPI, TruClient, SAP GUI, Java-family imports)
   selector/      — Shared element-selector model (CSS/XPath/role/text) + replay self-heal
   scrub/         — PII/credential redaction for recorder artifacts and HAR exports

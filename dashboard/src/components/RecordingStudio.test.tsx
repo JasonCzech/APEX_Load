@@ -74,6 +74,8 @@ const apiMock = {
   clearBrowserRecorderBridge: vi.fn(),
   getBrowserRecorderBridgeStatus: vi.fn(),
   exportBrowserRecording: vi.fn(),
+  getRecordingProfiles: vi.fn(),
+  saveRecordingProfiles: vi.fn(),
   browserRecorderBridge: null as any,
   browserRecorderRequestScope: "api:http://127.0.0.1:3000",
 };
@@ -129,6 +131,8 @@ describe("RecordingStudio", () => {
     hasDesktopApiCapabilityMock.mockReturnValue(false);
     apiMock.browserRecorderBridge = null;
     apiMock.browserRecorderRequestScope = "api:http://127.0.0.1:3000";
+    apiMock.getRecordingProfiles.mockReset();
+    apiMock.getRecordingProfiles.mockResolvedValue({ profiles: [], rules: [], updated_at: "2026-10-09T00:00:00Z" });
     clipboardWriteMock.mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -2512,6 +2516,50 @@ describe("RecordingStudio", () => {
         capture_cookies: true,
         exclude_static: true,
       }),
+    );
+  });
+
+  it("threads the selected recording profile into the proxy start request", async () => {
+    apiMock.getRecordingProfiles.mockResolvedValue({
+      profiles: [{ id: "checkout", name: "Checkout profile", http_script_level: "html" }],
+      rules: [],
+      updated_at: "2026-10-09T00:00:00Z",
+    });
+    apiMock.startRecording.mockResolvedValue({
+      session: {
+        id: "rec-profile",
+        name: "Recording Session",
+        status: "recording",
+        started_at: "2026-10-09T00:00:00Z",
+        requests: [],
+        filters: { exclude_static: true, recording_profile_id: "checkout" },
+      },
+      proxy_addr: ":8081",
+      ca_cert_path: "artifacts/recorder/ca-cert.pem",
+    });
+
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: "proj-1", name: "Web" } as any} />);
+    });
+    await flushPromises();
+    expect(apiMock.getRecordingProfiles).toHaveBeenCalledWith("proj-1");
+    const picker = container.querySelector('select[aria-label="Recording profile"]') as HTMLSelectElement;
+    expect(picker.textContent).toContain("Checkout profile");
+    await act(async () => {
+      picker.value = "checkout";
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await openProxyAdvanced(container);
+    const startButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Start Recording",
+    )!;
+    await act(async () => {
+      startButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushPromises();
+
+    expect(apiMock.startRecording).toHaveBeenCalledWith(
+      expect.objectContaining({ project_id: "proj-1", recording_profile_id: "checkout" }),
     );
   });
 

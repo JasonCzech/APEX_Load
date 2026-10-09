@@ -33797,6 +33797,8 @@ paths:
                           type: string
                 parameterize:
                   type: boolean
+                recording_profile_id:
+                  type: string
                 secret_bindings:
                   type: array
                   items:
@@ -33909,6 +33911,8 @@ paths:
                   type: string
                 parameterize:
                   type: boolean
+                recording_profile_id:
+                  type: string
                 split_at_transactions:
                   type: boolean
                 start_seq:
@@ -34808,6 +34812,8 @@ paths:
                               type: string
                     parameterize:
                       type: boolean
+                    recording_profile_id:
+                      type: string
                     secret_bindings:
                       type: array
                       items:
@@ -65460,6 +65466,12 @@ paths:
                           max_vusers:
                             type: integer
                             format: int64
+                    recording_profiles:
+                      type: array
+                      items:
+                        type: object
+                        description: 'Go type: recordingprofile.Profile'
+                        additionalProperties: true
                     redaction_rules:
                       type: array
                       items:
@@ -65762,6 +65774,12 @@ paths:
                             max_vusers:
                               type: integer
                               format: int64
+                      recording_profiles:
+                        type: array
+                        items:
+                          type: object
+                          description: 'Go type: recordingprofile.Profile'
+                          additionalProperties: true
                       redaction_rules:
                         type: array
                         items:
@@ -65980,6 +65998,12 @@ paths:
                           max_vusers:
                             type: integer
                             format: int64
+                    recording_profiles:
+                      type: array
+                      items:
+                        type: object
+                        description: 'Go type: recordingprofile.Profile'
+                        additionalProperties: true
                     redaction_rules:
                       type: array
                       items:
@@ -66156,6 +66180,12 @@ paths:
                             max_vusers:
                               type: integer
                               format: int64
+                      recording_profiles:
+                        type: array
+                        items:
+                          type: object
+                          description: 'Go type: recordingprofile.Profile'
+                          additionalProperties: true
                       redaction_rules:
                         type: array
                         items:
@@ -77036,6 +77066,164 @@ paths:
       tags:
         - Projects
       x-handler: handleTestPrometheusConnection
+  /api/v1/projects/{id}/recording-profiles:
+    get:
+      summary: Get Recording Profiles
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      operationId: handleGetRecordingProfiles
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profiles:
+                    type: array
+                    items:
+                      type: object
+                      description: 'Go type: recordingprofile.Profile'
+                      additionalProperties: true
+                  rules:
+                    type: array
+                    items:
+                      type: object
+                      description: 'Go type: correlate.RuleInfo'
+                      additionalProperties: true
+                  updated_at:
+                    type: string
+                    format: date-time
+                required:
+                  - profiles
+                  - rules
+                  - updated_at
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleGetRecordingProfiles
+    put:
+      summary: Put Recording Profiles
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
+      operationId: handlePutRecordingProfiles
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expected_updated_at:
+                  type: string
+                  format: date-time
+                  nullable: true
+                profiles:
+                  type: array
+                  items:
+                    type: object
+                    description: 'Go type: recordingprofile.Profile'
+                    additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profiles:
+                    type: array
+                    items:
+                      type: object
+                      description: 'Go type: recordingprofile.Profile'
+                      additionalProperties: true
+                  rules:
+                    type: array
+                    items:
+                      type: object
+                      description: 'Go type: correlate.RuleInfo'
+                      additionalProperties: true
+                  updated_at:
+                    type: string
+                    format: date-time
+                required:
+                  - profiles
+                  - rules
+                  - updated_at
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "501":
+          description: Not Implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handlePutRecordingProfiles
   /api/v1/projects/{id}/releases:
     get:
       summary: List Project Releases
@@ -78071,6 +78259,8 @@ paths:
                         type: array
                         items:
                           type: string
+                      recording_profile_id:
+                        type: string
                       redact_headers:
                         type: array
                         items:
@@ -78322,6 +78512,8 @@ paths:
                   nullable: true
                 parameterize:
                   type: boolean
+                recording_profile_id:
+                  type: string
                 resource_mode:
                   type: string
       responses:
@@ -78406,6 +78598,8 @@ paths:
                   nullable: true
                 parameterize:
                   type: boolean
+                recording_profile_id:
+                  type: string
                 resource_mode:
                   type: string
       responses:
@@ -78568,6 +78762,8 @@ paths:
                         type: array
                         items:
                           type: string
+                      recording_profile_id:
+                        type: string
                       redact_headers:
                         type: array
                         items:
@@ -79012,6 +79208,8 @@ paths:
                         type: array
                         items:
                           type: string
+                      recording_profile_id:
+                        type: string
                       redact_headers:
                         type: array
                         items:
@@ -79251,6 +79449,8 @@ paths:
                         type: array
                         items:
                           type: string
+                      recording_profile_id:
+                        type: string
                       redact_headers:
                         type: array
                         items:
@@ -79498,6 +79698,8 @@ paths:
                 name:
                   type: string
                 project_id:
+                  type: string
+                recording_profile_id:
                   type: string
                 redact_headers:
                   type: array
@@ -266155,6 +266357,8 @@ paths:
                   type: string
                 name:
                   type: string
+                recording_profile_id:
+                  type: string
                 redact_sensitive:
                   type: string
                 retention_days:
@@ -266234,6 +266438,12 @@ paths:
           schema:
             type: string
         - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: recording_profile_id
           in: query
           description: Handler-defined query parameter.
           required: false
@@ -289413,6 +289623,8 @@ paths:
                   type: string
                 name:
                   type: string
+                recording_profile_id:
+                  type: string
                 redact_sensitive:
                   type: string
                 retention_days:
@@ -289492,6 +289704,12 @@ paths:
           schema:
             type: string
         - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: recording_profile_id
           in: query
           description: Handler-defined query parameter.
           required: false

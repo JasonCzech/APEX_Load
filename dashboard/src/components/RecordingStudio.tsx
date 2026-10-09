@@ -78,6 +78,8 @@ import {
   recorderProxyPort,
 } from "./recordingProxyCommands";
 import "./RecordingStudio.css";
+import RecordingProfilesCard from "./RecordingProfilesCard";
+import type { RecordingProfile } from "../types/recordingProfiles";
 
 interface RecordedRequest {
   seq: number;
@@ -616,6 +618,18 @@ export default function RecordingStudio({
   const [includeHosts, setIncludeHosts] = useState("");
   const [excludeHosts, setExcludeHosts] = useState("");
   const [captureCookies, setCaptureCookies] = useState(false);
+  // The project recording profile recordings started here apply.
+  const [recordingProfileId, setRecordingProfileId] = useState("");
+  const [recordingProfileLevel, setRecordingProfileLevel] = useState<
+    "url" | "html" | undefined
+  >(undefined);
+  const selectRecordingProfile = useCallback(
+    (id: string, profile?: RecordingProfile) => {
+      setRecordingProfileId(id);
+      setRecordingProfileLevel(profile?.http_script_level || undefined);
+    },
+    [],
+  );
   const [feedback, setFeedback] = useState("");
   const [feedbackType, setFeedbackType] = useState<"success" | "error">(
     "success",
@@ -1575,6 +1589,7 @@ export default function RecordingStudio({
         exclude_static: true,
         capture_cookies: captureCookies,
       };
+      if (recordingProfileId) data.recording_profile_id = recordingProfileId;
       if (includeHosts.trim()) {
         data.include_hosts = includeHosts
           .split(",")
@@ -2462,6 +2477,11 @@ export default function RecordingStudio({
         <button className="btn btn-secondary" aria-pressed={recordingMode === 'browser'} onClick={() => setRecordingMode('browser')}>Browser actions</button>
         <button className="btn btn-secondary" aria-pressed={recordingMode === 'proxy'} onClick={() => setRecordingMode('proxy')}>HTTP proxy (advanced)</button>
       </div>
+      <RecordingProfilesCard
+        projectId={activeProject?.id}
+        selectedId={recordingProfileId}
+        onSelect={selectRecordingProfile}
+      />
       <div className="rec-recorder-options-grid" style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}>
         <div className="rec-controls-card rec-browser-launcher" hidden={recordingMode !== 'browser'}>
           <div className="rec-option-heading">
@@ -2903,6 +2923,8 @@ export default function RecordingStudio({
             <BrowserRecorderControlPanel
               destinationControl={recordingMode === 'browser' ? destinationControl : undefined}
               sessionId={browserPanelSessionId}
+              recordingProfileId={recordingProfileId || undefined}
+              recordingProfileHTTPScriptLevel={recordingProfileLevel}
               folderId={folderId}
               onImported={onImported}
               onEdit={onEdit}

@@ -17,6 +17,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 )
 
 type ImportRequest struct {
@@ -50,6 +51,10 @@ type ConvertOptions struct {
 	// the background (poll, long-poll, push) into background conversations.
 	// Off keeps them as recorded steps.
 	AsyncScan *bool `json:"async_scan,omitempty"`
+	// Profile is the project recording profile (HAR input): its host and
+	// content-type filters, header drop list, think-time threshold and
+	// correlation settings apply.
+	Profile *recordingprofile.Profile `json:"-"`
 }
 
 type ConvertStats struct {
@@ -177,6 +182,17 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if len(exchanges) == 0 {
 		return nil, errors.New("no requests found in sample input")
 	}
+	if format == "har" && req.Options.Profile != nil {
+		var profileFiltered int
+		exchanges, profileFiltered = applyRecordingProfileFilters(exchanges, req.Options.Profile)
+		filtered += profileFiltered
+		if profileFiltered > 0 {
+			warnings = append(warnings, fmt.Sprintf("recording profile %q left %d request(s) out by host or content type", req.Options.Profile.Name, profileFiltered))
+		}
+		if len(exchanges) == 0 {
+			return nil, errors.New("the recording profile filtered out every request")
+		}
+	}
 	exchanges, normalizationWarnings := normalizeRecordedExchanges(exchanges, format)
 	if format == "har" && len(req.Options.HTMLSteps) > 0 {
 		forgetHTMLStepRequestValues(exchanges, req.Options.HTMLSteps)
@@ -204,7 +220,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if inferExtractors {
 		var analysisWarnings []string
 		if format == "har" {
-			correlations, analysisWarnings, err = detectHARCorrelationsForReview(exchanges)
+			var settings *recordingprofile.CorrelationSettings
+			if req.Options.Profile != nil {
+				settings = &req.Options.Profile.Correlation
+			}
+			correlations, analysisWarnings, err = detectHARCorrelationsWithSettings(exchanges, settings)
 		} else {
 			correlations, err = detectCorrelationsChecked(exchanges)
 		}
@@ -353,7 +373,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			action.MaxRedirects = &zero
 		}
 		applyExchangeReviewFindings(&action, ex)
-		if thinkTimeMs, ok := thinkTimeAfter(exchanges, idx); ok {
+		if thinkTimeMs, ok := thinkTimeAfterThreshold(exchanges, idx, thinkThreshold(req.Options.Profile)); ok {
 			action.ThinkTimeAfter = true
 			action.ThinkTime = dsl.ThinkTimeConfig{
 				Type:   "fixed",
@@ -541,6 +561,19 @@ func mergeFileAssets(script *dsl.Script, assets []dsl.DataSource) {
 }
 
 func thinkTimeAfter(exchanges []exchange, index int) (float64, bool) {
+	return thinkTimeAfterThreshold(exchanges, index, 500*time.Millisecond)
+}
+
+func thinkThreshold(profile *recordingprofile.Profile) time.Duration {
+	if profile == nil {
+		return recordingprofile.DefaultThinkTimeMs * time.Millisecond
+	}
+	return time.Duration(profile.ThinkTimeThreshold()) * time.Millisecond
+}
+
+// thinkTimeAfterThreshold is the recorded pause after an exchange, when it
+// exceeds threshold.
+func thinkTimeAfterThreshold(exchanges []exchange, index int, threshold time.Duration) (float64, bool) {
 	if index < 0 || index >= len(exchanges)-1 {
 		return 0, false
 	}
@@ -548,7 +581,7 @@ func thinkTimeAfter(exchanges []exchange, index int) (float64, bool) {
 	next := exchanges[index+1]
 	if current.HasStartedAt && next.HasStartedAt {
 		gap := next.StartedAt.Sub(current.StartedAt) - time.Duration(current.DurationMs*float64(time.Millisecond))
-		if gap > 500*time.Millisecond {
+		if gap > threshold {
 			return float64(gap / time.Millisecond), true
 		}
 	}

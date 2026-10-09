@@ -2241,6 +2241,22 @@ describe('BrowserRecorderControlPanel', () => {
     }))
   })
 
+  it('passes the recording profile and its preselected HTTP script level to convert', async () => {
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    await renderPanel({ recordingProfileId: 'checkout', recordingProfileHTTPScriptLevel: 'html' })
+    const dualHTTP = (Array.from(container.querySelectorAll('.brp-convert input[type="checkbox"]')) as HTMLInputElement[])
+      .find(c => c.parentElement?.textContent?.includes('HTTP'))!
+    await act(async () => { dualHTTP.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect((container.querySelector('select[aria-label="HTTP script level"]') as HTMLSelectElement | null)?.value ?? 'html').toBe('html')
+    await clickButton('Save unverified draft')
+    await flushPromises()
+    expect(apiMock.convertBrowserRecording).toHaveBeenCalledWith('brec-1', expect.objectContaining({
+      also_create_http_script: true,
+      http_script_level: 'html',
+      recording_profile_id: 'checkout',
+    }))
+  })
+
   it('passes the embedded parameterize inputs toggle to convert', async () => {
     apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
     await renderPanel()

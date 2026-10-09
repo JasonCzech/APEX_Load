@@ -65,6 +65,9 @@ type harImportRequest struct {
 	SecondaryData []byte
 	ProjectID     string
 	Opts          har.ConvertOptions
+	// RecordingProfileID names a project recording profile the import
+	// applies.
+	RecordingProfileID string
 	// Salvage describes the truncated capture whose complete entries Data
 	// holds, when the import opted in to salvage_truncated.
 	Salvage *har.TruncationSalvage

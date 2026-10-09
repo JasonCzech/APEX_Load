@@ -3677,6 +3677,26 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/projects/{id}/recording-profiles",
+      "operationId": "handleGetRecordingProfiles",
+      "summary": "Get Recording Profiles",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{id}/recording-profiles",
+      "operationId": "handlePutRecordingProfiles",
+      "summary": "Put Recording Profiles",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/projects/{id}/releases",
       "operationId": "handleListProjectReleases",
       "summary": "List Project Releases",

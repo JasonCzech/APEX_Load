@@ -19,6 +19,12 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	profile, err := s.projectRecordingProfile(normalizeProjectID(importReq.ProjectID), importReq.RecordingProfileID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	importReq.Opts.Profile = profile
 
 	result, err := har.Convert(importReq.Data, importReq.Opts)
 	if err != nil {
@@ -243,6 +249,8 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportR
 			ComparisonContent string             `json:"comparison_content,omitempty"`
 			ContentB          string             `json:"content_b,omitempty"`
 			Options           har.ConvertOptions `json:"options,omitempty"`
+			// RecordingProfileID names a project recording profile to apply.
+			RecordingProfileID string `json:"recording_profile_id,omitempty"`
 		}
 		if err := json.Unmarshal(upload.Data, &req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
@@ -252,10 +260,11 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportR
 		secondary := firstNonEmpty(req.SecondaryContent, req.ComparisonContent, req.ContentB)
 		req.Options.ArtifactMode = normalizeHARArtifactMode(req.Options.ArtifactMode, secondary != "")
 		return &harImportRequest{
-			Data:          []byte(req.Content),
-			SecondaryData: []byte(secondary),
-			ProjectID:     upload.jsonProjectID(req.ProjectID),
-			Opts:          req.Options,
+			Data:               []byte(req.Content),
+			SecondaryData:      []byte(secondary),
+			ProjectID:          upload.jsonProjectID(req.ProjectID),
+			Opts:               req.Options,
+			RecordingProfileID: strings.TrimSpace(req.RecordingProfileID),
 		}, true
 	}
 
@@ -269,9 +278,10 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportR
 		}
 	}
 	return &harImportRequest{
-		Data:          upload.Data,
-		SecondaryData: secondaryData,
-		ProjectID:     upload.ProjectID,
+		Data:               upload.Data,
+		SecondaryData:      secondaryData,
+		ProjectID:          upload.ProjectID,
+		RecordingProfileID: strings.TrimSpace(upload.Value("recording_profile_id")),
 		Opts: har.ConvertOptions{
 			ScriptName:          firstNonEmpty(upload.Value("name"), upload.Name),
 			BaseURL:             upload.Value("base_url"),

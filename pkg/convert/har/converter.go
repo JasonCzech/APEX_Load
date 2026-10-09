@@ -12,6 +12,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
@@ -47,6 +48,10 @@ type ConvertOptions struct {
 	// AsyncScan (default on) collapses requests a page repeated in the
 	// background into background conversations; off keeps them inline.
 	AsyncScan *bool `json:"async_scan,omitempty"`
+	// Profile is the project recording profile; it applies its filters,
+	// header drop list, think-time threshold and correlation settings and
+	// supplies the options above that are left unset.
+	Profile *recordingprofile.Profile `json:"-"`
 }
 
 type ArtifactGovernance struct {
@@ -89,6 +94,17 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	if len(data) == 0 || strings.TrimSpace(string(data)) == "" {
 		return nil, fmt.Errorf("HAR content is required")
 	}
+	if profile := opts.Profile; profile != nil {
+		if opts.PageTitleChecks == nil {
+			opts.PageTitleChecks = profile.PageTitleChecks
+		}
+		if opts.ResourceMode == "" {
+			opts.ResourceMode = profile.ResourceMode
+		}
+		if opts.AsyncScan == nil {
+			opts.AsyncScan = profile.AsyncScan
+		}
+	}
 	artifactMode := normalizeArtifactMode(opts.ArtifactMode)
 	retentionDays := normalizeRetentionDays(opts.RetentionDays)
 	redactionEnabled := false
@@ -110,6 +126,7 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			ResourceMode:        opts.ResourceMode,
 			HTMLSteps:           opts.HTMLSteps,
 			AsyncScan:           opts.AsyncScan,
+			Profile:             opts.Profile,
 		},
 	})
 	if err != nil {

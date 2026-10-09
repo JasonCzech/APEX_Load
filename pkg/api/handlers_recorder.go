@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/recorder"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
@@ -23,6 +24,10 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 		BodyCaptureLimitBytes int      `json:"body_capture_limit_bytes,omitempty"`
 		RedactHeaders         []string `json:"redact_headers,omitempty"`
 		CaptureCookies        bool     `json:"capture_cookies,omitempty"`
+		// RecordingProfileID names a project recording profile: its host
+		// filters, capture limit and cookie capture fill the options left
+		// unset here, and conversions of the session apply it.
+		RecordingProfileID string `json:"recording_profile_id,omitempty"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -34,6 +39,25 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 	id := uuid.New().String()
 
 	projectID := normalizeProjectID(req.ProjectID)
+	profile, err := s.projectRecordingProfile(projectID, req.RecordingProfileID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if profile != nil {
+		if len(req.IncludeHosts) == 0 {
+			req.IncludeHosts = profile.IncludeHosts
+		}
+		if len(req.ExcludeHosts) == 0 {
+			req.ExcludeHosts = profile.ExcludeHosts
+		}
+		if req.BodyCaptureLimitBytes == 0 {
+			req.BodyCaptureLimitBytes = profile.BodyCaptureLimitBytes
+		}
+		if !req.CaptureCookies && profile.CaptureCookies != nil {
+			req.CaptureCookies = *profile.CaptureCookies
+		}
+	}
 	notify := func(evt recorder.SessionEvent) {
 		s.broadcastRecorderSessionEvent(projectID, evt)
 	}
@@ -44,6 +68,7 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 		BodyCaptureLimitBytes: req.BodyCaptureLimitBytes,
 		RedactHeaders:         req.RedactHeaders,
 		CaptureCookies:        req.CaptureCookies,
+		RecordingProfileID:    req.RecordingProfileID,
 	}
 	if req.ExcludeStatic != nil {
 		filters.ExcludeStatic = *req.ExcludeStatic
@@ -257,6 +282,7 @@ func sanitizeRecorderSessionForResponse(session *recorder.Session) *recorder.Ses
 			BodyCaptureLimitBytes: session.Filters.BodyCaptureLimitBytes,
 			RedactHeaders:         append([]string(nil), session.Filters.RedactHeaders...),
 			CaptureCookies:        session.Filters.CaptureCookies,
+			RecordingProfileID:    session.Filters.RecordingProfileID,
 		},
 	}
 	if session.StoppedAt != nil {
@@ -346,12 +372,20 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 		// AsyncScan (default on) turns requests a page repeated in the
 		// background into background conversations; false keeps them inline.
 		AsyncScan *bool `json:"async_scan,omitempty"`
+		// RecordingProfileID names a project recording profile; it defaults
+		// to the one the session was started with.
+		RecordingProfileID string `json:"recording_profile_id,omitempty"`
 	}
 	if !decodeOptionalJSONBody(w, r, &req) {
 		return
 	}
+	profile, err := s.sessionRecordingProfile(session, req.RecordingProfileID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
-	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize, PageTitleChecks: req.PageTitleChecks, ResourceMode: req.ResourceMode, AsyncScan: req.AsyncScan})
+	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize, PageTitleChecks: req.PageTitleChecks, ResourceMode: req.ResourceMode, AsyncScan: req.AsyncScan, Profile: profile})
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(session.ProjectID)
 		ensureCredentialPreservingImportMetadata(result.Script, "recorder")
@@ -427,12 +461,20 @@ func (s *Server) handlePreviewRecordingConversion(w http.ResponseWriter, r *http
 		// AsyncScan (default on) turns requests a page repeated in the
 		// background into background conversations; false keeps them inline.
 		AsyncScan *bool `json:"async_scan,omitempty"`
+		// RecordingProfileID names a project recording profile; it defaults
+		// to the one the session was started with.
+		RecordingProfileID string `json:"recording_profile_id,omitempty"`
 	}
 	if !decodeOptionalJSONBody(w, r, &req) {
 		return
 	}
+	profile, err := s.sessionRecordingProfile(session, req.RecordingProfileID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
-	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize, PageTitleChecks: req.PageTitleChecks, ResourceMode: req.ResourceMode, AsyncScan: req.AsyncScan})
+	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize, PageTitleChecks: req.PageTitleChecks, ResourceMode: req.ResourceMode, AsyncScan: req.AsyncScan, Profile: profile})
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(session.ProjectID)
 		ensureCredentialPreservingImportMetadata(result.Script, "recorder")
@@ -577,4 +619,13 @@ func (s *Server) handleRecorderStatus(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// sessionRecordingProfile resolves the recording profile a conversion of a
+// proxy session applies: the one named, or the one it was started with.
+func (s *Server) sessionRecordingProfile(session *recorder.Session, profileID string) (*recordingprofile.Profile, error) {
+	if profileID == "" {
+		profileID = session.Filters.RecordingProfileID
+	}
+	return s.projectRecordingProfile(normalizeProjectID(session.ProjectID), profileID)
 }

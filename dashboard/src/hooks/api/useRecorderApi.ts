@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react'
 
+import { type RecordingProfile, type RecordingProfilesResponse } from '../../types/recordingProfiles'
 import { type RecorderImportResult } from '../../types/scriptImports'
 import { request } from '../apiClient'
 
@@ -47,6 +48,7 @@ type RecorderSession = {
     exclude_hosts?: string[]
     include_hosts?: string[]
     capture_cookies?: boolean
+    recording_profile_id?: string
   }
 }
 
@@ -65,6 +67,9 @@ type RecorderStartRequest = {
   include_hosts?: string[]
   exclude_hosts?: string[]
   capture_cookies?: boolean
+  // A project recording profile: fills the options left unset here, and
+  // conversions of the session apply it.
+  recording_profile_id?: string
 }
 
 type RecorderStartResponse = {
@@ -156,6 +161,20 @@ export function useRecorderApi() {
     [],
   )
 
+  const getRecordingProfiles = useCallback(
+    (projectId: string) => request<RecordingProfilesResponse>(`/projects/${encodeURIComponent(projectId)}/recording-profiles`),
+    [],
+  )
+
+  const saveRecordingProfiles = useCallback(
+    (projectId: string, profiles: RecordingProfile[], expectedUpdatedAt?: string) =>
+      request<RecordingProfilesResponse>(`/projects/${encodeURIComponent(projectId)}/recording-profiles`, {
+        method: 'PUT',
+        body: JSON.stringify({ profiles, expected_updated_at: expectedUpdatedAt || undefined }),
+      }),
+    [],
+  )
+
   const getRecorderStatus = useCallback(
     (projectId?: string) => request<RecorderStatusResponse>(projectId ? `/recorder/status?project_id=${encodeURIComponent(projectId)}` : '/recorder/status'),
     [],
@@ -174,6 +193,8 @@ export function useRecorderApi() {
       convertRecording,
       previewRecordingConversion,
       getRecorderStatus,
+      getRecordingProfiles,
+      saveRecordingProfiles,
     }),
     [
       startRecording,
@@ -187,6 +208,8 @@ export function useRecorderApi() {
       convertRecording,
       previewRecordingConversion,
       getRecorderStatus,
+      getRecordingProfiles,
+      saveRecordingProfiles,
     ],
   )
 }

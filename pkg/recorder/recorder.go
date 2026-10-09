@@ -149,6 +149,9 @@ type SessionFilters struct {
 	BodyCaptureLimitBytes int      `json:"body_capture_limit_bytes,omitempty"`
 	RedactHeaders         []string `json:"redact_headers,omitempty"`
 	CaptureCookies        bool     `json:"capture_cookies,omitempty"`
+	// RecordingProfileID names the project recording profile the session was
+	// started with; conversions apply it unless they name another.
+	RecordingProfileID string `json:"recording_profile_id,omitempty"`
 }
 
 type SessionEvent struct {

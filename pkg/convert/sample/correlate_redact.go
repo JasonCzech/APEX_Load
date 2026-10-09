@@ -15,6 +15,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
@@ -53,9 +54,19 @@ func detectCorrelationsChecked(exchanges []exchange) ([]Correlation, error) {
 // HAR review can retain bounded discoveries from incomplete analysis. These
 // candidates must never be applied automatically unless analysis completed.
 func detectHARCorrelationsForReview(exchanges []exchange) ([]Correlation, []string, error) {
-	shared, warnings, err := correlate.DetectCheckedWithWarnings(sampleCorrelationObservations(exchanges))
+	return detectHARCorrelationsWithSettings(exchanges, nil)
+}
+
+// detectHARCorrelationsWithSettings detects correlations and applies a
+// recording profile's correlation settings, when given.
+func detectHARCorrelationsWithSettings(exchanges []exchange, settings *recordingprofile.CorrelationSettings) ([]Correlation, []string, error) {
+	observations := sampleCorrelationObservations(exchanges)
+	shared, warnings, err := correlate.DetectCheckedWithWarnings(observations)
 	if err != nil {
 		return nil, nil, err
+	}
+	if settings != nil {
+		shared = settings.ApplyCorrelation(observations, shared)
 	}
 	return sampleCorrelations(shared), warnings, nil
 }

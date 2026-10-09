@@ -160,6 +160,10 @@ export interface BrowserRecorderControlPanelProps {
   onDismiss?: () => void
   /** Reports nested save/review work so the parent can fence destination changes. */
   onOperationBusyChange?: (busy: boolean) => void
+  /** Project recording profile the HAR-derived HTTP script applies. */
+  recordingProfileId?: string
+  /** The profile's HTTP script level, which preselects the level control. */
+  recordingProfileHTTPScriptLevel?: 'url' | 'html'
 }
 
 function HistoricalVerification(props: BrowserReplayProgressProps) {
@@ -176,6 +180,8 @@ export default function BrowserRecorderControlPanel({
   onEdit,
   onDismiss,
   onOperationBusyChange,
+  recordingProfileId,
+  recordingProfileHTTPScriptLevel,
 }: BrowserRecorderControlPanelProps) {
   const api = useApi()
   const genericBatchSaveRef = useRef<{
@@ -457,6 +463,11 @@ export default function BrowserRecorderControlPanel({
     void refresh()
   }, [advancePreviewReviewGeneration, advanceSalesforceReviewGeneration, recorderRequestScope, refresh, sessionId])
 
+  // A selected recording profile preselects its HTTP script level.
+  useEffect(() => {
+    setHTTPScriptLevel(recordingProfileHTTPScriptLevel || 'url')
+  }, [recordingProfileHTTPScriptLevel, sessionId])
+
   useEffect(() => () => {
     if (feedbackTimerRef.current !== null) window.clearTimeout(feedbackTimerRef.current)
     void previewCredentialReviewRef.current?.discardSourceSession()
@@ -651,8 +662,11 @@ export default function BrowserRecorderControlPanel({
     name: scriptName || undefined,
     split_at_transactions: splitAtTransactions,
     also_create_http_script: alsoCreateHTTP,
-    http_script_level: alsoCreateHTTP && httpScriptLevel === 'html' ? 'html' as const : undefined,
+    // With a recording profile the chosen level is sent explicitly, since an
+    // unset level takes the profile's.
+    http_script_level: alsoCreateHTTP && (httpScriptLevel === 'html' || recordingProfileId) ? httpScriptLevel : undefined,
     parameterize: parameterizeInputs,
+    recording_profile_id: alsoCreateHTTP ? recordingProfileId : undefined,
   })
 
   const discardSourceSecretSession = async (

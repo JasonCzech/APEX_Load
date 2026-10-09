@@ -6,6 +6,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 )
 
 const DefaultProjectID = "unassigned"
@@ -1132,6 +1133,9 @@ type ProjectSettings struct {
 	// fields mean no limit; an absent key means no pool-specific cap.
 	PoolQuotas map[string]PoolProjectQuota `json:"pool_quotas,omitempty"`
 	Features   ProjectFeatureFlags         `json:"features,omitempty"`
+	// RecordingProfiles are the project's saved recording options, applied
+	// by the proxy and browser recorders and HAR imports.
+	RecordingProfiles []recordingprofile.Profile `json:"recording_profiles,omitempty"`
 }
 
 // ProjectFeatureFlags are explicit preview opt-ins. They default false so a
