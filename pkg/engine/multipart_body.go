@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 
+	"golang.org/x/text/encoding/charmap"
+
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -41,6 +43,17 @@ func (vu *VUser) applyMultipartBody(body *dsl.MultipartBody, resolved *protocol.
 				return
 			}
 			value, redactedValue = string(decoded), string(decoded)
+		} else if dsl.IsWindows1252ValueEncoding(part.ValueEncoding) {
+			encoded, err := charmap.Windows1252.NewEncoder().String(value)
+			if err != nil {
+				vu.bodyResolutionError = fmt.Errorf("body_multipart.parts[%d]: value is not representable in Windows-1252: %w", index, err)
+				return
+			}
+			// The redacted evidence copy follows the wire bytes when it can.
+			if redactedEncoded, err := charmap.Windows1252.NewEncoder().String(redactedValue); err == nil {
+				redactedValue = redactedEncoded
+			}
+			value = encoded
 		}
 		headers, redactedHeaders := vu.multipartPartHeaders(part.Headers)
 		if err := writeMultipartPart(writer, name, filename, part.Filename != "", contentType, headers, value); err != nil {

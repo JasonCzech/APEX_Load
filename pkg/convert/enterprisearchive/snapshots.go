@@ -39,7 +39,7 @@ func recordingSnapshotNote(files map[string]string, actions []*ParsedAction) str
 		}
 	}
 	if snapshotFiles == 0 {
-		return fmt.Sprintf("The archive has no recording snapshots (data/ folder) for its %d recorded step(s); re-export the script from VuGen with all files to enable the correlation scan.", steps)
+		return fmt.Sprintf("The archive has no VuGen recording snapshots (data/ folder) for its %d recorded step(s); APEX does not read snapshots yet, so the import is not affected.", steps)
 	}
 	return fmt.Sprintf("The archive includes VuGen recording snapshots (%d file(s) under data/ for %d recorded step(s)); they are not read yet because their file layout has not been confirmed against a real export.", snapshotFiles, steps)
 }

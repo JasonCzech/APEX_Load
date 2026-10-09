@@ -61,12 +61,12 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_reg_save_param_xpath` | web | `executable` | Extractor (xpath) | QueryString=/XPath=. |
 | `web_remove_auto_filter` | web | `native_noop` | config.web_runtime attribute | No auto-resource fetch; native no-op. |
 | `web_remove_auto_header` | web | `executable` | Request headers | Removes one persistent auto header. |
-| `web_remove_cookie` | web | `executable` | cookie_set action (remove) | Expires a cookie added with web_add_cookie; other names (or ALL) stop a registered cookie attaching downstream. |
+| `web_remove_cookie` | web | `executable` | cookie_set action (remove) | Expires the named cookie in the VUser's jar, whether web_add_cookie or the server set it, and stops a registered cookie attaching downstream; ALL stops every registered cookie. |
 | `web_report_data_point` | metric | `executable` | source_metric action | Custom data point, like lr_user_data_point. |
 | `web_rest` | web | `executable` | HTTP request action | REST method/body/HEADERS block. |
 | `web_revert_auto_header` | web | `executable` | Request headers | Removes one persistent auto header. |
 | `web_save_header` | web | `review_only` | Import review | Saving response headers to a parameter has no extractor equivalent. |
-| `web_save_param_length` | parameter | `executable` | source_parameter action | Saves the decimal length of a parameter as <Param>_Length; Base=Hexadecimal keeps review. |
+| `web_save_param_length` | parameter | `executable` | source_parameter action | Saves the decimal length of a parameter as <Param>_Length (Windows-1252 bytes in a code-page script); Base=Hexadecimal keeps review. |
 | `web_save_timestamp_param` | parameter | `executable` | source_parameter action | Saves the current time in milliseconds since the Unix epoch. |
 | `web_set_certificate` | web | `review_only` | Import review | Selects a cert by store index; no file path to map. |
 | `web_set_certificate_ex` | web | `executable` | config.http.tls client cert | CertFilePath=/KeyFilePath=. |

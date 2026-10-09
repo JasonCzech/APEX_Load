@@ -130,6 +130,60 @@ func tagRunLogicActions(script *dsl.Script, names map[string]string) {
 	}
 }
 
+// pruneEmptyRunLogicChildren leaves out run-logic actions that import no
+// steps (an Action() that only returns), which run nothing. In a sequential
+// block that is exact; in a random or percentage block the other children
+// are picked more often, which the returned notes say. A block left without
+// children goes too.
+func pruneEmptyRunLogicChildren(script *dsl.Script) []string {
+	if script == nil || len(script.Config.RunLogic.Blocks) == 0 {
+		return nil
+	}
+	groups := dsl.RunLogicActionGroups(script.Actions)
+	var notes []string
+	var prune func(block *dsl.RunLogicBlock) bool
+	prune = func(block *dsl.RunLogicBlock) bool {
+		kept := block.Children[:0]
+		for _, child := range block.Children {
+			if child.Block != nil {
+				if prune(child.Block) {
+					kept = append(kept, child)
+				}
+				continue
+			}
+			if len(groups[strings.ToLower(strings.TrimSpace(child.Action))]) > 0 {
+				kept = append(kept, child)
+				continue
+			}
+			if mode := strings.ToLower(block.Mode); mode == dsl.RunLogicRandom || mode == dsl.RunLogicPercentage {
+				notes = append(notes, fmt.Sprintf("run-logic action %s imports no steps and is left out of %s block %s, so its other children are picked more often than in LoadRunner", child.Action, mode, block.Name))
+			}
+		}
+		block.Children = kept
+		if block.Mode == dsl.RunLogicPercentage {
+			total := 0
+			for _, child := range kept {
+				total += max(child.Weight, 0)
+			}
+			if total == 0 {
+				block.Mode = dsl.RunLogicRandom
+			}
+		}
+		return len(kept) > 0
+	}
+	blocks := script.Config.RunLogic.Blocks[:0]
+	for _, block := range script.Config.RunLogic.Blocks {
+		if prune(&block) {
+			blocks = append(blocks, block)
+		}
+	}
+	script.Config.RunLogic.Blocks = blocks
+	if len(blocks) == 0 {
+		script.Config.RunLogic.Blocks = nil
+	}
+	return notes
+}
+
 // runLogicSourceFile is the source file of a step, or of the first step in
 // a control block.
 func runLogicSourceFile(action dsl.Action) string {

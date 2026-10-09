@@ -1,6 +1,7 @@
 package enterprisearchive
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -105,5 +106,40 @@ RunLogicObjectKind="Action"
 	blocks := result.Script.Config.RunLogic.Blocks
 	if len(blocks) != 1 || blocks[0].Mode != dsl.RunLogicRandom {
 		t.Fatalf("blocks = %+v", blocks)
+	}
+}
+
+// An action that imports no steps runs nothing, so it is left out of the
+// run logic; in a random block that changes the odds, which the import says.
+func TestImportRunLogicLeavesOutEmptyActions(t *testing.T) {
+	archive := zipFilesForTest(t, map[string]string{
+		"S.usr":        "[General]\nType=Web\nRuntimeSettings=default.cfg\n[Actions]\nvuser_init=vuser_init.c\nBrowse=Browse.c\nBuy=Buy.c\nEmpty=Empty.c\nvuser_end=vuser_end.c\n[RunLogicFiles]\nDefault Profile=default.usp\n",
+		"default.cfg":  "[General]\n",
+		"default.usp":  "[RunLogicRunRoot]\nRunLogicObjectKind=\"Group\"\nMercIniTreeSons=\"Empty,Browse,Pick\"\n[RunLogicRunRoot:Empty]\nRunLogicObjectKind=\"Action\"\n[RunLogicRunRoot:Browse]\nRunLogicObjectKind=\"Action\"\n[RunLogicRunRoot:Pick]\nRunLogicObjectKind=\"Group\"\nRunLogicRunMode=\"Random\"\nMercIniTreeSons=\"Buy,Empty\"\n[RunLogicRunRoot:Pick:Buy]\nRunLogicObjectKind=\"Action\"\n[RunLogicRunRoot:Pick:Empty]\nRunLogicObjectKind=\"Action\"\n",
+		"vuser_init.c": "vuser_init()\n{\n\treturn 0;\n}\n",
+		"vuser_end.c":  "vuser_end()\n{\n\treturn 0;\n}\n",
+		"Browse.c":     "Browse()\n{\n\tweb_url(\"browse\", \"URL=https://shop.test/browse\", LAST);\n\treturn 0;\n}\n",
+		"Buy.c":        "Buy()\n{\n\tweb_url(\"buy\", \"URL=https://shop.test/buy\", LAST);\n\treturn 0;\n}\n",
+		"Empty.c":      "Empty()\n{\n\treturn 0;\n}\n",
+	})
+	result, err := ConvertZip(archive, ConvertOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("issues = %v", issues)
+	}
+	blocks := result.Script.Config.RunLogic.Blocks
+	if len(blocks) != 1 || len(blocks[0].Children) != 2 || blocks[0].Children[0].Action != "Browse" || len(blocks[0].Children[1].Block.Children) != 1 {
+		t.Fatalf("blocks = %+v", blocks)
+	}
+	warned := 0
+	for _, warning := range result.Warnings {
+		if strings.Contains(warning, "Empty imports no steps") {
+			warned++
+		}
+	}
+	if warned != 1 {
+		t.Fatalf("only the random block's change of odds is worth a note: %v", result.Warnings)
 	}
 }

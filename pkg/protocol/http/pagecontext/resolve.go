@@ -51,7 +51,7 @@ func (p *Page) FindImage(alt, src string, ordinal int, caseInsensitive bool) (Im
 	resolvedSrc := p.resolve(src)
 	seen := 0
 	for _, image := range p.Images {
-		if alt != "" && !equalText(image.Alt, normalizeText(alt), caseInsensitive) {
+		if alt != "" && !equalText(normalizeText(image.Alt), normalizeText(alt), caseInsensitive) {
 			continue
 		}
 		if src != "" && image.RawSrc != src && image.Src != resolvedSrc {
@@ -91,7 +91,7 @@ func (p *Page) HasImage(alt, src string, caseInsensitive bool) bool {
 	}
 	resolvedSrc := p.resolve(src)
 	for _, image := range p.Images {
-		if alt != "" && !equalText(image.Alt, normalizeText(alt), caseInsensitive) {
+		if alt != "" && !equalText(normalizeText(image.Alt), normalizeText(alt), caseInsensitive) {
 			continue
 		}
 		if src != "" && image.RawSrc != src && image.Src != resolvedSrc {

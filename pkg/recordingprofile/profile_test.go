@@ -29,7 +29,9 @@ func TestValidate(t *testing.T) {
 		"boundary":         {[]Profile{{ID: "a", Name: "x", Correlation: CorrelationSettings{UserRules: []UserRule{{Name: "a", Type: "boundary", Left: "x"}}}}}, "left and a right"},
 		"regex group":      {[]Profile{{ID: "a", Name: "x", Correlation: CorrelationSettings{UserRules: []UserRule{{Name: "a", Type: "regex", Regex: "x+"}}}}}, "capture the value"},
 		"rule type":        {[]Profile{{ID: "a", Name: "x", Correlation: CorrelationSettings{UserRules: []UserRule{{Name: "a", Type: "xpath"}}}}}, "boundary or regex"},
-		"empty list entry": {[]Profile{{ID: "a", Name: "x", DropHeaders: []string{" "}}}, "non-empty"},
+		"empty list entry": {[]Profile{{ID: "a", Name: "x", DropHeaders: []string{" "}}}, "entries must be 1-4096 characters"},
+		"rule hosts":       {[]Profile{{ID: "a", Name: "x", Correlation: CorrelationSettings{UserRules: []UserRule{{Name: "a", Type: "regex", Regex: "(x)", Hosts: []string{""}}}}}}, "hosts entries must be"},
+		"rule boundary":    {[]Profile{{ID: "a", Name: "x", Correlation: CorrelationSettings{UserRules: []UserRule{{Name: "a", Type: "boundary", Left: strings.Repeat("x", 5000), Right: "y"}}}}}, "at most 4096 characters"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -58,6 +60,12 @@ func TestProfileDecisions(t *testing.T) {
 	for host, want := range map[string]bool{"www.shop.test": true, "shop.test:8443": true, "cdn.shop.test": false, "ads.test": false} {
 		if got := profile.RecordsHost(host); got != want {
 			t.Errorf("RecordsHost(%s) = %v", host, got)
+		}
+	}
+	ipv6 := Profile{IncludeHosts: []string{"::1"}}
+	for host, want := range map[string]bool{"[::1]:8080": true, "[::1]": true, "::2": false} {
+		if got := ipv6.RecordsHost(host); got != want {
+			t.Errorf("IPv6 RecordsHost(%s) = %v", host, got)
 		}
 	}
 	for contentType, want := range map[string]bool{"image/png": false, "font/woff2": false, "text/html; charset=utf-8": true, "": true} {

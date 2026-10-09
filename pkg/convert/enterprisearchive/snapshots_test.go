@@ -11,7 +11,7 @@ func TestRecordingSnapshotNote(t *testing.T) {
 		t.Fatal(err)
 	}
 	actions := []*ParsedAction{parsed}
-	if note := recordingSnapshotNote(map[string]string{"Action.c": ""}, actions); !strings.Contains(note, "no recording snapshots") || !strings.Contains(note, "2 recorded step(s)") || !strings.Contains(note, "all files") {
+	if note := recordingSnapshotNote(map[string]string{"Action.c": ""}, actions); !strings.Contains(note, "no VuGen recording snapshots") || !strings.Contains(note, "2 recorded step(s)") || !strings.Contains(note, "not affected") {
 		t.Fatalf("missing snapshots: %q", note)
 	}
 	if note := recordingSnapshotNote(map[string]string{"Action.c": "", "data/t1.inf": "", "data/t2.inf": ""}, actions); !strings.Contains(note, "2 file(s) under data/") || !strings.Contains(note, "not read yet") {

@@ -203,3 +203,21 @@ int Headers_ResponseHeadersCB(int aHttpStatusCode, const char * aAccumulatedHead
 		t.Fatalf("the response body argument must read var.async_response_body: %s", raw)
 	}
 }
+
+func TestAsyncRegistrationAppliesToItsOwnURL(t *testing.T) {
+	for _, tt := range []struct {
+		url, target string
+		want        bool
+	}{
+		{"https://shop.test/poll?x=1", "/poll?x=1", true},
+		{"https://{{var.host}}/poll/{{var.id}}", "/poll/{{var.id}}", true},
+		{"https://shop.test/poll/", "/", false},
+		{"https://shop.test", "/", true},
+		{"https://shop.test/other", "/poll", false},
+	} {
+		async := &sourceAsync{url: tt.url}
+		if got := async.appliesTo(ParsedFunction{}, &dsl.Action{Target: tt.target}); got != tt.want {
+			t.Errorf("URL=%s on %s = %v, want %v", tt.url, tt.target, got, tt.want)
+		}
+	}
+}

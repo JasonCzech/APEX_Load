@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/text/encoding/charmap"
+
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/bodyencoding"
 )
@@ -42,12 +44,19 @@ func multipartWire(t *testing.T, action dsl.Action) []wirePart {
 		var parts []wirePart
 		for _, part := range body.Parts {
 			value := part.Value
-			if part.ValueEncoding == "base64" {
+			switch part.ValueEncoding {
+			case "base64":
 				decoded, err := base64.StdEncoding.DecodeString(part.Value)
 				if err != nil {
 					t.Fatal(err)
 				}
 				value = string(decoded)
+			case "windows-1252":
+				encoded, err := charmap.Windows1252.NewEncoder().String(part.Value)
+				if err != nil {
+					t.Fatal(err)
+				}
+				value = encoded
 			}
 			contentType := part.ContentType
 			if contentType == "" && part.Filename != "" {
@@ -130,10 +139,22 @@ func TestMultipartItemDataIsSerialized(t *testing.T) {
 		}
 	})
 	t.Run("code-page scripts send code-page bytes", func(t *testing.T) {
-		action := convertMultipartSource(t, `"Name=city", "Value=Málaga", ENDITEM`, files, "windows-1252")
+		action := convertMultipartSource(t, `"Name=city", "Value=Málaga", ENDITEM, "Name=who", "Value={User}", ENDITEM, "Name=plain", "Value=x", ENDITEM`, files, "windows-1252")
 		parts := multipartWire(t, action)
-		if len(parts) != 1 || parts[0].body != "M\xe1laga" {
+		if len(parts) != 3 || parts[0].body != "M\xe1laga" {
 			t.Fatalf("parts = %#v", parts)
+		}
+		// Parameter values are code-page bytes too, so a templated text part
+		// is encoded after interpolation; plain ASCII needs no encoding.
+		got := []string{}
+		for _, part := range action.BodyMultipart.Parts {
+			got = append(got, part.ValueEncoding)
+		}
+		if strings.Join(got, ",") != "windows-1252,windows-1252," {
+			t.Fatalf("value encodings = %q", got)
+		}
+		if issues := dsl.ValidateScriptIssues(&dsl.Script{Name: "s", Protocol: "http", Config: dsl.ScriptConfig{BaseURL: "https://x.test"}, Actions: []dsl.Action{action}}); len(issues) != 0 {
+			t.Fatalf("issues = %v", issues)
 		}
 	})
 	t.Run("a missing file is its own gate", func(t *testing.T) {

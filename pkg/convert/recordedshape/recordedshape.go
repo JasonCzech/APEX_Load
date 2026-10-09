@@ -304,6 +304,9 @@ func retimeAroundSockets(items []item) {
 // variable references.
 func correlateReceivedFrames(items []item, socketItems []item) {
 	used := map[string]bool{}
+	// Variable names are unique across the script's frames: a later frame's
+	// value must not overwrite an earlier one that steps still send.
+	names := map[string]bool{}
 	for index := range socketItems {
 		receive := &socketItems[index]
 		if receive.action.Type != "ws_receive" || receive.action.Body == "" {
@@ -322,7 +325,8 @@ func correlateReceivedFrames(items []item, socketItems []item) {
 			if len(later) == 0 {
 				continue
 			}
-			name := uniqueName("ws_"+leaf.key, receive.action.Extractors)
+			name := uniqueName("ws_"+leaf.key, names)
+			names[name] = true
 			receive.action.Extractors = append(receive.action.Extractors, dsl.Extractor{Name: name, Source: "message", Type: "jsonpath", Expression: leaf.path, OnMiss: "fail"})
 			reference := "{{var." + name + "}}"
 			for _, use := range later {
@@ -432,21 +436,13 @@ func replaceValue(target, value, reference string, escaped bool) string {
 	return target
 }
 
-func uniqueName(base string, existing []dsl.Extractor) string {
+func uniqueName(base string, taken map[string]bool) string {
 	base = strings.ToLower(nonWord.ReplaceAllString(base, "_"))
 	name := base
-	for n := 2; ; n++ {
-		clash := false
-		for _, extractor := range existing {
-			if extractor.Name == name {
-				clash = true
-			}
-		}
-		if !clash {
-			return name
-		}
+	for n := 2; taken[name]; n++ {
 		name = fmt.Sprintf("%s_%d", base, n)
 	}
+	return name
 }
 
 var nonWord = regexp.MustCompile(`[^A-Za-z0-9_]+`)

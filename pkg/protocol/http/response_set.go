@@ -143,26 +143,33 @@ func onlyHeaders(headers http.Header, names []string) http.Header {
 }
 
 // MatchScopeGlob matches LoadRunner's filter wildcards case-insensitively:
-// "*" spans any text (including "/"), "?" one character, and a pattern
-// without wildcards matches as a substring.
+// "*" spans any text (including "/"), "?" one character, every other
+// character is literal, and a pattern without wildcards matches as a
+// substring.
 func MatchScopeGlob(pattern, value string) bool {
 	pattern = strings.ToLower(strings.TrimSpace(pattern))
 	value = strings.ToLower(strings.TrimSpace(value))
 	if pattern == "" {
 		return true
 	}
-	if !strings.ContainsAny(pattern, "*?[") {
+	if !strings.ContainsAny(pattern, "*?") {
 		return strings.Contains(value, pattern)
 	}
-	// path.Match treats "/" as a separator for "*"; LoadRunner's "*" spans it.
-	matched, err := path.Match(strings.ReplaceAll(pattern, "/", "\x00"), strings.ReplaceAll(value, "/", "\x00"))
+	// path.Match treats "/" as a separator for "*" (LoadRunner's "*" spans
+	// it) and "[", "]" and "\" as syntax (LoadRunner's are literal).
+	var literal strings.Builder
+	for _, r := range pattern {
+		switch r {
+		case '/':
+			literal.WriteByte(0)
+			continue
+		case '[', ']', '\\':
+			literal.WriteByte('\\')
+		}
+		literal.WriteRune(r)
+	}
+	matched, err := path.Match(literal.String(), strings.ReplaceAll(value, "/", "\x00"))
 	return err == nil && matched
-}
-
-// ValidScopeGlob reports whether MatchScopeGlob can use pattern.
-func ValidScopeGlob(pattern string) bool {
-	_, err := path.Match(strings.ReplaceAll(strings.ToLower(strings.TrimSpace(pattern)), "/", "\x00"), "")
-	return err == nil
 }
 
 // chargeCandidates charges the shared extractor budget for every candidate

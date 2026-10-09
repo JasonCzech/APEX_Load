@@ -1,6 +1,11 @@
 package dsl
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+)
 
 func TestExtractorScopeValidation(t *testing.T) {
 	script := func(ext Extractor) *Script {
@@ -10,9 +15,9 @@ func TestExtractorScopeValidation(t *testing.T) {
 	if issues := ValidateScriptIssues(script(valid)); len(issues) != 0 {
 		t.Fatalf("valid scope rejected: %v", issues)
 	}
-	invalid := Extractor{Name: "v", Source: "body", Type: "regex", Expression: "(x)", Scope: &ExtractorScope{Redirects: "always", RequestURL: "[bad", HeaderNames: []string{"Bad Name"}}}
+	invalid := Extractor{Name: "v", Source: "body", Type: "regex", Expression: "(x)", Scope: &ExtractorScope{Redirects: "always", RequestURL: strings.Repeat("*", httpprotocol.MaxExtractorExpressionBytes+1), HeaderNames: []string{"Bad Name"}}}
 	issues := ValidateScriptIssues(script(invalid))
-	for _, want := range []string{"scope.redirects must be", "scope.request_url is not a valid wildcard pattern", "scope.header_names applies only to the header, all or cookies sources", `scope.header_names has an invalid header name "Bad Name"`} {
+	for _, want := range []string{"scope.redirects must be", "scope.request_url exceeds", "scope.header_names applies only to the header, all or cookies sources", `scope.header_names has an invalid header name "Bad Name"`} {
 		if !hasIssue(issues, want) {
 			t.Errorf("missing %q in %v", want, issues)
 		}

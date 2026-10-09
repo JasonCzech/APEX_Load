@@ -66,3 +66,22 @@ func TestWebRegFindSaveCountOverHeaders(t *testing.T) {
 		t.Fatalf("extractor = %+v", extractor)
 	}
 }
+
+// A parameter in a counted text keeps its template, and its value is
+// matched literally, as LoadRunner substitutes it into the text.
+func TestWebRegFindSaveCountKeepsParameters(t *testing.T) {
+	for _, tt := range []struct{ call, body string }{
+		{`web_reg_find("Text=Order {OrderId}.", "SaveCount=n", LAST);`, "Order a+b. Order a+b. Order aab."},
+		{`web_reg_find("Text/IC=Order {OrderId}", "SaveCount=n", LAST);`, "ORDER A+B order a+b"},
+		{`web_reg_find("Text/DIG=#-{OrderId}", "SaveCount=n", LAST);`, "1-a+b 2-a+b x-a+b"},
+	} {
+		_, extractor, _, _, _ := convertFindAssertionWithFindings(parseSingleCall(t, tt.call))
+		if extractor == nil || !strings.Contains(extractor.Expression, `\Q{{var.orderid}}\E`) {
+			t.Fatalf("%s: extractor = %+v", tt.call, extractor)
+		}
+		resolved := strings.ReplaceAll(extractor.Expression, "{{var.orderid}}", "a+b")
+		if got := len(regexp.MustCompile(resolved).FindAllString(tt.body, -1)); got != 2 {
+			t.Errorf("%s: %q counts %d in %q, want 2", tt.call, resolved, got, tt.body)
+		}
+	}
+}

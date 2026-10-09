@@ -1317,6 +1317,11 @@ export function ScriptRuntimeSettingsView({
                 <label><span>Password</span>
                   <input type="password" value={script.config.http?.auth?.password || ''}
                     onChange={e => updateField('config.http', { ...script.config.http, auth: { ...script.config.http?.auth, password: e.target.value } })} /></label>
+                {['ntlm', 'negotiate'].includes(script.config.http?.auth?.type || '') && (
+                  <label><span>Domain</span>
+                    <input aria-label="Auth domain" value={script.config.http?.auth?.domain || ''} placeholder="CORP (sent as CORP\user)"
+                      onChange={e => updateField('config.http', { ...script.config.http, auth: { ...script.config.http?.auth, domain: e.target.value || undefined } })} /></label>
+                )}
               </>
             )}
             {script.config.http?.auth?.type === 'bearer' && (
@@ -1814,4 +1819,3 @@ export function ScriptRuntimeSettingsView({
 
   )
 }
-

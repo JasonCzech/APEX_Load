@@ -141,6 +141,7 @@ func TestRegistrationExtractorScope(t *testing.T) {
 			dsl.ExtractorScope{Redirects: "exclude", Resources: "include", RequestURL: "*token*", ContentType: "text/*"}},
 		{`web_reg_save_param_ex("ParamName=p", "LB=a", "RB=b", SEARCH_FILTERS, "Scope=Headers", "HeaderNames=Location, Set-Cookie", LAST);`,
 			dsl.ExtractorScope{Redirects: "include", Resources: "include", HeaderNames: []string{"Location", "Set-Cookie"}}},
+		{`web_reg_save_param("p", "LB=a", "RB=b", "Search=Noresource", LAST);`, dsl.ExtractorScope{Redirects: "include", Resources: "exclude"}},
 	}
 	for _, tt := range tests {
 		conversion := convertRegistration(parseSingleCall(t, tt.call))

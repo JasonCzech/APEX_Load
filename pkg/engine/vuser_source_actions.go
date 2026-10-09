@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/text/encoding/charmap"
+
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/strftime"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -1143,7 +1145,14 @@ func (vu *VUser) handleSourceParameterAction(function string, action dsl.Action)
 		// <Param>_Length. The importer keeps Base=Hexadecimal for review.
 		if len(args) >= 1 {
 			value := vu.Variables[strings.ToLower(strings.TrimSpace(args[0]))]
-			vu.setSourceVariable(strings.TrimSpace(args[0])+"_Length", strconv.Itoa(len(value)))
+			length := len(value)
+			if codePage, _ := actionParamString(action.Params, "code_page"); strings.EqualFold(strings.TrimSpace(codePage), "windows-1252") {
+				// A code-page script counts the value's Windows-1252 bytes.
+				if encoded, err := charmap.Windows1252.NewEncoder().String(value); err == nil {
+					length = len(encoded)
+				}
+			}
+			vu.setSourceVariable(strings.TrimSpace(args[0])+"_Length", strconv.Itoa(length))
 		}
 	case "web_convert_date_param":
 		vu.handleWebConvertDateParamAction(args)
@@ -1212,7 +1221,9 @@ func (vu *VUser) handleWebConvertDateParamAction(args []string) {
 		}
 	}
 	current := vu.Variables[strings.ToLower(name)]
-	parsed, err := strftime.Parse(current, sourceFormat, time.Local)
+	// The conversion is field for field, so parse in UTC: a local time zone
+	// would move a time inside a daylight-saving gap.
+	parsed, err := strftime.Parse(current, sourceFormat, time.UTC)
 	if err == nil {
 		var converted string
 		if converted, err = strftime.Format(parsed, targetFormat); err == nil {

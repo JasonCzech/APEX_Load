@@ -51,6 +51,29 @@ describe('MultipartPartsEditor', () => {
     expect(onChange).toHaveBeenLastCalledWith([parts[0], { ...parts[1], value: '{{file.upload_other}}', value_encoding: undefined }, parts[2]])
   })
 
+  it('labels a Windows-1252 text field and drops the encoding when it becomes a file', () => {
+    const onChange = vi.fn()
+    const codePage: ScriptMultipartPart = { name: 'city', value: 'Málaga {{var.who}}', value_encoding: 'windows-1252' }
+    act(() => root.render(<MultipartPartsEditor parts={[codePage]} fileSources={[]} onChange={onChange} />))
+    expect(container.querySelector('.multipart-part-value')?.textContent).toContain('Value (sent as Windows-1252)')
+    act(() => setValue(container.querySelector('select[aria-label="Field 1 kind"]') as HTMLSelectElement, 'file'))
+    expect(onChange).toHaveBeenLastCalledWith([{ ...codePage, filename: '', value_encoding: undefined }])
+  })
+
+  it('keeps each part\'s headers with it when an earlier part is removed', () => {
+    const onChange = vi.fn()
+    const withHeaders: ScriptMultipartPart[] = [
+      { name: 'first', value: '1', headers: { 'X-First': 'a' } },
+      { name: 'second', value: '2', headers: { 'X-Second': 'b' } },
+    ]
+    act(() => root.render(<MultipartPartsEditor parts={withHeaders} fileSources={[]} onChange={onChange} />))
+    act(() => root.render(<MultipartPartsEditor parts={withHeaders.slice(1)} fileSources={[]} onChange={onChange} />))
+    const headers = container.querySelector('textarea[aria-label="Field 1 headers"]') as HTMLTextAreaElement
+    expect(headers.value).toBe('X-Second: b')
+    act(() => { headers.dispatchEvent(new FocusEvent('focusout', { bubbles: true })) })
+    expect(onChange).toHaveBeenLastCalledWith([{ name: 'second', value: '2', headers: { 'X-Second': 'b' } }])
+  })
+
   it('adds and removes fields', () => {
     const onChange = vi.fn()
     act(() => root.render(<MultipartPartsEditor parts={parts.slice(0, 1)} fileSources={['upload_doc']} onChange={onChange} />))

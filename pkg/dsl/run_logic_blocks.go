@@ -23,6 +23,9 @@ const (
 	MaxRunLogicBlockDepth      = 8
 	MaxRunLogicBlockNodes      = 1024
 	MaxRunLogicBlockIterations = 100000
+	// MaxRunLogicOrderSteps bounds the steps one iteration runs: block
+	// iterations multiply through nesting.
+	MaxRunLogicOrderSteps = 100000
 )
 
 // RunLogicBlock is one block of run logic.
@@ -85,7 +88,8 @@ func RunLogicOrder(actions []Action, blocks []RunLogicBlock, pick func(n int) in
 		if passes <= 0 {
 			passes = 1
 		}
-		for pass := 0; pass < passes; pass++ {
+		// Validation bounds the order; this guards unvalidated scripts.
+		for pass := 0; pass < passes && len(order) < MaxRunLogicOrderSteps; pass++ {
 			switch strings.ToLower(strings.TrimSpace(block.Mode)) {
 			case RunLogicRandom:
 				if len(block.Children) > 0 {
@@ -118,7 +122,40 @@ func RunLogicOrder(actions []Action, blocks []RunLogicBlock, pick func(n int) in
 	for _, block := range blocks {
 		run(block)
 	}
+	if len(order) > MaxRunLogicOrderSteps {
+		order = order[:MaxRunLogicOrderSteps]
+	}
 	return order
+}
+
+// runLogicSteps is the most steps a block runs in one iteration, saturating
+// just above MaxRunLogicOrderSteps.
+func runLogicSteps(block RunLogicBlock, groups map[string][]int, depth int) int {
+	if depth > MaxRunLogicBlockDepth {
+		return 0
+	}
+	saturate := func(value int) int { return min(value, MaxRunLogicOrderSteps+1) }
+	per := 0
+	for _, child := range block.Children {
+		size := 0
+		switch {
+		case child.Block != nil:
+			size = runLogicSteps(*child.Block, groups, depth+1)
+		case child.Action != "":
+			size = len(groups[strings.ToLower(strings.TrimSpace(child.Action))])
+		}
+		switch strings.ToLower(strings.TrimSpace(block.Mode)) {
+		case RunLogicRandom, RunLogicPercentage:
+			per = max(per, size)
+		default:
+			per = saturate(per + size)
+		}
+	}
+	passes := max(block.Iterations, 1)
+	if per > 0 && passes > (MaxRunLogicOrderSteps+1)/per {
+		return MaxRunLogicOrderSteps + 1
+	}
+	return saturate(per * passes)
 }
 
 // validateRunLogicBlocks checks config.run_logic.blocks against the script.
@@ -170,8 +207,13 @@ func validateRunLogicBlocks(script *Script) []string {
 			issues = append(issues, path+": a percentage block needs weights above zero")
 		}
 	}
+	steps := 0
 	for index, block := range blocks {
 		check(block, fmt.Sprintf("config.run_logic.blocks[%d]", index), 1)
+		steps = min(steps+runLogicSteps(block, groups, 1), MaxRunLogicOrderSteps+1)
+	}
+	if steps > MaxRunLogicOrderSteps {
+		issues = append(issues, fmt.Sprintf("config.run_logic.blocks run more than %d steps in one iteration", MaxRunLogicOrderSteps))
 	}
 	if nodes > MaxRunLogicBlockNodes {
 		issues = append(issues, fmt.Sprintf("config.run_logic.blocks must not exceed %d blocks and children", MaxRunLogicBlockNodes))

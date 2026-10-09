@@ -471,6 +471,28 @@ func TestWebRemoveCookieStopsAttachingDownstream(t *testing.T) {
 	}
 }
 
+// LoadRunner removes the cookie from its cookie cache, so a cookie the
+// server set leaves the VUser's jar too, with the domain and path the
+// cookie string names.
+func TestWebRemoveCookieExpiresAServerSetCookie(t *testing.T) {
+	result := convertSingleWebSource(t, `
+	web_url("Login", "URL=https://app.example.test/login", LAST);
+	web_remove_cookie("JSESSIONID=x; path=/app; domain=app.example.test");
+	web_url("Home", "URL=https://app.example.test/home", LAST);`)
+	actions := result.Script.Actions
+	if len(actions) != 3 {
+		t.Fatalf("actions = %d, want the requests around a cookie_set removal: %#v", len(actions), actions)
+	}
+	removal := actions[1]
+	if removal.Type != "cookie_set" || removal.Params["remove"] != true || removal.Params["name"] != "JSESSIONID" ||
+		removal.Params["domain"] != "app.example.test" || removal.Params["path"] != "/app" {
+		t.Fatalf("removal = %#v, want cookie_set remove of JSESSIONID on app.example.test/app", removal)
+	}
+	if _, hasValue := removal.Params["value"]; hasValue {
+		t.Fatalf("removal carries a value: %#v", removal.Params)
+	}
+}
+
 func TestWebCleanupCookiesStopsAttachingDownstream(t *testing.T) {
 	// web_cleanup_cookies clears ALL cookies, so a cookie added earlier must not
 	// keep attaching to requests that come after the cleanup.

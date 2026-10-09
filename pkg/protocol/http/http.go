@@ -256,6 +256,15 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	}
 	resourceTimeoutWarned := false
 	callerCtx := ctx
+	// A resource step's failure becomes a warning once its request is sent
+	// (not for an action that cannot be sent). The defer is registered first
+	// so it runs last, after the page deadline's failure.
+	resourceStepStarted := false
+	defer func() {
+		if resourceStepStarted {
+			h.outcome.downgradeResourceStepFailure(result)
+		}
+	}()
 	if h.pageTimeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeoutCause(ctx, h.pageTimeout, errPageDeadline)
@@ -285,9 +294,6 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.Success = true
 		result.ProtocolEvidence = map[string]any{"legacy_html_check": "disabled"}
 		return result, nil
-	}
-	if isResourceStep(action) {
-		defer func() { h.outcome.downgradeResourceStepFailure(result) }()
 	}
 	if step, ok := action.Params[HTMLStepParam].(map[string]any); ok {
 		pageEvidence := pageContextEvidence(h.page.current())
@@ -643,6 +649,9 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.BytesSent = requestBytes
 	}
 
+	// From here a resource step's failure is the server's or the transport's,
+	// which LoadRunner reports as a warning.
+	resourceStepStarted = isResourceStep(action)
 	if !cacheHit {
 		var err error
 		resp, err = client.Do(req)
@@ -920,6 +929,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			result.Extractions = nil
 			result.ExtractionsIncomplete = true
 			result.ErrorMessage = fmt.Sprintf("extractor %q input rejected: %v", ext.Name, err)
+			deferredExtractors = nil
 			break
 		}
 		if resourcesPlanned && ext.Scope != nil && scopeIncludes(ext.Scope.Resources) {
@@ -932,9 +942,12 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			result.Extractions = nil
 			result.ExtractionsIncomplete = true
 			result.ErrorMessage = fmt.Sprintf("extractor %q input rejected: %v", ext.Name, err)
+			deferredExtractors = nil
 			break
 		}
 		if applyHTTPExtractor(result, ext, candidates) {
+			// Extraction stopped: the deferred extractors do not run either.
+			deferredExtractors = nil
 			break
 		}
 	}

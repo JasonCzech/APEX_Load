@@ -113,7 +113,7 @@ func translateSourceCallbackBody(file string, params []string, body string, line
 		switch {
 		case statement == "return WEB_ASYNC_CB_RC_OK" || statement == "return 0" || statement == "return":
 			continue
-		case strings.HasPrefix(statement, "return"):
+		case strings.HasPrefix(statement, "return ") || strings.HasPrefix(statement, "return("):
 			return nil, false, 0, "it returns " + strings.TrimSpace(strings.TrimPrefix(statement, "return")) + ", which decides the conversation in C"
 		case !sourceCallbackCallStatement.MatchString(statement):
 			return nil, false, 0, "it uses C variables or expressions"

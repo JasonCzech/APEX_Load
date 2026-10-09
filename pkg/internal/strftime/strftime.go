@@ -116,7 +116,7 @@ func Parse(value, format string, loc *time.Location) (time.Time, error) {
 	if match == nil {
 		return time.Time{}, fmt.Errorf("%q does not match the date format %q", value, format)
 	}
-	year, month, day, hour, minute, second, yearDay := 1900, time.January, 1, 0, 0, 0, 0
+	year, month, day, hour, minute, second, yearDay := 1900, time.January, 1, 0, 0, 0, -1
 	pm, twelveHour := false, false
 	group := 1
 	for _, part := range parts {
@@ -171,8 +171,12 @@ func Parse(value, format string, loc *time.Location) (time.Time, error) {
 	if loc == nil {
 		loc = time.Local
 	}
-	if yearDay > 0 {
-		return time.Date(year, time.January, yearDay, hour, minute, second, 0, loc), nil
+	if yearDay >= 0 {
+		parsed := time.Date(year, time.January, yearDay, hour, minute, second, 0, loc)
+		if yearDay == 0 || parsed.Year() != year {
+			return time.Time{}, fmt.Errorf("%q is not a valid day of the year for %q", value, format)
+		}
+		return parsed, nil
 	}
 	parsed := time.Date(year, month, day, hour, minute, second, 0, loc)
 	if parsed.Day() != day {

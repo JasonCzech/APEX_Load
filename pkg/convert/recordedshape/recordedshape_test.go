@@ -206,3 +206,26 @@ func TestIsPage(t *testing.T) {
 		t.Fatal("WebSocketURL")
 	}
 }
+
+// Two frames carrying the same key get their own variables, so a later
+// frame does not overwrite a value later steps still send.
+func TestShapeNamesFrameVariablesUniquely(t *testing.T) {
+	script, steps := build([]recorded{
+		{url: "/a?t=tok-first", contentType: "application/json", at: 3000, dur: 20},
+		{url: "/b?t=tok-second", contentType: "application/json", at: 4000, dur: 20},
+	})
+	sockets := []Socket{{URL: "wss://app.test/chat", StartedAt: at(1000), Frames: []Frame{
+		{Payload: `{"token":"tok-first"}`, At: at(1100)},
+		{Payload: `{"token":"tok-second"}`, At: at(1200)},
+	}}}
+	Shape(script, steps, sockets, Options{})
+	var targets []string
+	for _, action := range script.Actions {
+		if action.Type == "request" {
+			targets = append(targets, action.Target)
+		}
+	}
+	if strings.Join(targets, " ") != "/a?t={{var.ws_token}} /b?t={{var.ws_token_2}}" {
+		t.Fatalf("targets = %v", targets)
+	}
+}

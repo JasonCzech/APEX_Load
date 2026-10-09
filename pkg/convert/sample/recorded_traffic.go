@@ -34,15 +34,14 @@ func normalizeRecordedExchanges(exchanges []exchange, format string) ([]exchange
 	jarCookies := 0
 	for i := range kept {
 		ex := &kept[i]
-		host := exchangeHost(ex.URL)
 		if scheme := exchangeIntegratedAuthScheme(*ex); scheme != "" {
 			ex.Headers = headersWithoutFold(ex.Headers, "Authorization")
 			ex.HeaderList = headerListWithoutFold(ex.HeaderList, "Authorization")
 			ex.ReviewFindings = append(ex.ReviewFindings, requestimport.IntegratedAuthFinding(format, fmt.Sprintf("entry-%d", ex.SourceEntryID), scheme))
 		}
-		jarCookies += leaveJarCookiesToTheJar(ex, host, origins)
+		jarCookies += leaveJarCookiesToTheJar(ex, origins)
 		if ex.Response != nil {
-			origins.Observe(host, responseSetCookies(ex.Response))
+			origins.Observe(ex.URL, responseSetCookies(ex.Response))
 		}
 	}
 	var warnings []string
@@ -87,7 +86,7 @@ func exchangeIntegratedAuthScheme(ex exchange) string {
 
 // leaveJarCookiesToTheJar removes jar-provided cookies from the exchange's
 // Cookie header(s) and returns how many were removed.
-func leaveJarCookiesToTheJar(ex *exchange, host string, origins *requestimport.CookieOrigins) int {
+func leaveJarCookiesToTheJar(ex *exchange, origins *requestimport.CookieOrigins) int {
 	removed := 0
 	if len(ex.HeaderList) > 0 {
 		filtered := ex.HeaderList[:0:0]
@@ -97,7 +96,7 @@ func leaveJarCookiesToTheJar(ex *exchange, host string, origins *requestimport.C
 				filtered = append(filtered, entry)
 				continue
 			}
-			remaining, n := origins.WithoutJarCookies(host, entry.Value)
+			remaining, n := origins.WithoutJarCookies(ex.URL, entry.Value)
 			removed += n
 			if remaining != "" {
 				filtered = append(filtered, dsl.HeaderEntry{Name: entry.Name, Value: remaining})
@@ -118,7 +117,7 @@ func leaveJarCookiesToTheJar(ex *exchange, host string, origins *requestimport.C
 		if !strings.EqualFold(name, "Cookie") {
 			continue
 		}
-		remaining, n := origins.WithoutJarCookies(host, value)
+		remaining, n := origins.WithoutJarCookies(ex.URL, value)
 		if n == 0 {
 			return 0
 		}

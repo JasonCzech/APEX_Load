@@ -94,7 +94,20 @@ func (a *sourceAsync) appliesTo(fn ParsedFunction, action *dsl.Action) bool {
 		return true
 	}
 	want := convertParamReferences(a.url)
-	return want == action.Target || want == convertParamReferences(fn.URL) || strings.HasSuffix(want, action.Target) && strings.HasPrefix(action.Target, "/")
+	if want == action.Target || want == convertParamReferences(fn.URL) {
+		return true
+	}
+	// A target relative to the base URL matches the registration's path and
+	// query (templates stay as written, so the URL is not parsed).
+	_, rest, absolute := strings.Cut(want, "://")
+	if !absolute || !strings.HasPrefix(action.Target, "/") {
+		return false
+	}
+	path := "/"
+	if slash := strings.Index(rest, "/"); slash >= 0 {
+		path = rest[slash:]
+	}
+	return path == action.Target
 }
 
 // wrapAsyncConversation turns the converted step into the http_async_start

@@ -107,4 +107,9 @@ func TestExtractorDFEs(t *testing.T) {
 	if err != nil || len(values) != 0 {
 		t.Fatalf("save-all over an unreadable body = %v, %v; want no matches", values, err)
 	}
+	// A source that does not read the body is not affected by the chain.
+	got, err = extractResponse(protocol.Extractor{Source: "header", Expression: "X-Id", DFEs: []string{"base64"}}, responseSurfaces{headers: http.Header{"X-Id": {"H-1"}}, body: []byte("not base64!")})
+	if err != nil || got != "H-1" {
+		t.Fatalf("header extraction with a DFE chain = %q, %v", got, err)
+	}
 }

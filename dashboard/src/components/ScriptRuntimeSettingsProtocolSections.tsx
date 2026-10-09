@@ -658,13 +658,15 @@ export interface ImportedSourceRuntimeSectionProps {
 function RunLogicBlockItem({ block }: { block: RunLogicBlock }) {
   const mode = block.mode || 'sequential'
   const percentage = mode === 'percentage'
+  // Weights are relative, so each child's share is its weight over the total.
+  const totalWeight = block.children.reduce((sum, child) => sum + Math.max(child.weight || 0, 0), 0)
   return (
     <li>
       <strong>{block.name || 'Block'}</strong> <span>({mode}{block.iterations && block.iterations > 1 ? `, ${block.iterations} iterations` : ''})</span>
       <ul>
         {block.children.map((child, index) => child.block
           ? <RunLogicBlockItem key={index} block={child.block} />
-          : <li key={index}>{child.action}{percentage && child.weight !== undefined ? ` — ${child.weight}%` : ''}</li>)}
+          : <li key={index}>{child.action}{percentage && totalWeight > 0 ? ` — ${Math.round(Math.max(child.weight || 0, 0) * 1000 / totalWeight) / 10}%` : ''}</li>)}
       </ul>
     </li>
   )

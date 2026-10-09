@@ -162,6 +162,22 @@ func quoteTextCheckLiteral(text string) string {
 	return quoted.String()
 }
 
+// literalTemplateValues wraps each {{...}} template of an RE2 pattern in
+// \Q...\E. An extractor expression receives template values verbatim, while
+// LoadRunner (and APEX's text assertions) match a parameter's value
+// literally; a value that itself contains \E ends the quote early.
+func literalTemplateValues(pattern string) string {
+	var quoted strings.Builder
+	for _, span := range splitTemplateSpans(pattern) {
+		if span.template {
+			quoted.WriteString(`\Q` + span.text + `\E`)
+		} else {
+			quoted.WriteString(span.text)
+		}
+	}
+	return quoted.String()
+}
+
 // sourceTextCheckSource maps web_reg_find's Search= to a text assertion
 // source. Body and Noresource read the main body; ALL reads headers and body.
 func sourceTextCheckSource(search string) string {
@@ -224,13 +240,13 @@ func convertFindAssertionWithFindings(fn ParsedFunction) (*dsl.Assertion, *dsl.E
 		if name := canonicalSourceParameterName(saveCount); name != "" {
 			expression := check.value
 			if !check.pattern {
-				expression = regexp.QuoteMeta(check.value)
+				expression = quoteTextCheckLiteral(check.value)
 			}
 			saveCountExtractor = &dsl.Extractor{
 				Name:       name,
 				Source:     map[string]string{"": "body", "headers": "header", "all": "all"}[source],
 				Type:       "regex_count",
-				Expression: caseInsensitiveRegexPrefix(check.caseInsensitive) + expression,
+				Expression: caseInsensitiveRegexPrefix(check.caseInsensitive) + literalTemplateValues(expression),
 			}
 		}
 	}

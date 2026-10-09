@@ -92,7 +92,10 @@ func (s *pageContextState) observeMainDocument(action *protocol.Action, resp *ht
 	if resp.Request != nil {
 		pageURL = resp.Request.URL
 	}
-	s.set(pagecontext.Parse(body, pageURL))
+	decoded, charsetName := pagecontext.Decode(body, resp.Header.Get("Content-Type"))
+	page := pagecontext.Parse(decoded, pageURL)
+	page.Charset = charsetName
+	s.set(page)
 }
 
 func htmlStepFields(raw any) []pagecontext.Field {
@@ -202,7 +205,8 @@ func (h *HTTP) resolveHTMLStep(action *protocol.Action, step map[string]any) (*p
 			scripted = htmlStepFields(step["fields"])
 			fallback = htmlStepFields(step["hidden"])
 		}
-		if err := applyFormSubmission(&resolved, form, form.Submission(scripted, fallback, submitter)); err != nil {
+		fields := pagecontext.EncodeFields(form.Submission(scripted, fallback, submitter), page.Charset)
+		if err := applyFormSubmission(&resolved, form, fields); err != nil {
 			return nil, false, err
 		}
 	}
@@ -347,10 +351,11 @@ func (p replayOutcomePolicy) downgradeResourceStepFailure(result *protocol.Resul
 		return
 	}
 	transport := result.StatusCode == 0 && result.ErrorMessage != ""
-	if result.StatusCode < 400 && !transport {
+	timeout := (transport && strings.Contains(strings.ToLower(result.ErrorMessage), "timeout")) || result.ErrorMessage == errPageDeadline.Error()
+	if result.StatusCode < 400 && !transport && !timeout {
 		return
 	}
-	if transport && strings.Contains(strings.ToLower(result.ErrorMessage), "timeout") && p.timeoutConfigured && !p.resourceTimeoutWarning {
+	if timeout && p.timeoutConfigured && !p.resourceTimeoutWarning {
 		return
 	}
 	addReplayWarning(result, "resource_step_failed")

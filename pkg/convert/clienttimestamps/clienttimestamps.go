@@ -166,7 +166,8 @@ type occurrence struct {
 	number, key string
 }
 
-// Apply replaces client timestamps in request targets, bodies and headers.
+// Apply replaces client timestamps in request targets and text bodies
+// (multipart text values included). Headers are left as recorded.
 func Apply(script *dsl.Script, evidence Evidence) Report {
 	report := Report{}
 	if script == nil || evidence.From.IsZero() {

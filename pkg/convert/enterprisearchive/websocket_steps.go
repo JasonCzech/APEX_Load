@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -122,23 +123,40 @@ func convertWebSocketSend(fn ParsedFunction, state *sourceWebSockets) (dsl.Actio
 	action := dsl.Action{Name: webSocketStepName("send", id), Type: "ws_send"}
 	switch buffer, escaped := asyncCallArgRaw(fn, "Buffer"), asyncCallArgRaw(fn, "Buffer/Binary"); {
 	case escaped != "":
-		decoded, err := bodyencoding.DecodeCEscapes(escaped)
+		templated := convertParamReferences(escaped)
+		decoded, err := bodyencoding.DecodeCEscapes(templated)
 		if err != nil {
 			return dsl.Action{}, "its Buffer/Binary escapes do not decode"
 		}
-		action.Body = base64.StdEncoding.EncodeToString(decoded)
-		action.BodyEncoding = "base64"
-		action.Params = map[string]any{"type": "binary"}
+		if reason := setWebSocketBinaryBody(&action, decoded, templated != escaped); reason != "" {
+			return dsl.Action{}, reason
+		}
 	case buffer != "" && asyncCallArg(fn, "IsBinary") == "1":
-		action.Body = base64.StdEncoding.EncodeToString([]byte(buffer))
-		action.BodyEncoding = "base64"
-		action.Params = map[string]any{"type": "binary"}
+		templated := convertParamReferences(buffer)
+		if reason := setWebSocketBinaryBody(&action, []byte(templated), templated != buffer); reason != "" {
+			return dsl.Action{}, reason
+		}
 	case buffer != "":
 		action.Body = convertParamReferences(buffer)
 	default:
 		return dsl.Action{}, "it has no Buffer"
 	}
 	return action, ""
+}
+
+// setWebSocketBinaryBody sends data as a binary frame: fixed bytes as
+// base64, or, when it has parameters, text whose templates expand at replay.
+func setWebSocketBinaryBody(action *dsl.Action, data []byte, parameters bool) string {
+	action.Params = map[string]any{"type": "binary"}
+	if !parameters {
+		action.Body, action.BodyEncoding = base64.StdEncoding.EncodeToString(data), "base64"
+		return ""
+	}
+	if !utf8.Valid(data) {
+		return "its binary buffer mixes parameters with bytes that are not text"
+	}
+	action.Body = string(data)
+	return ""
 }
 
 // convertWebSocketClose maps web_websocket_close to ws_close with its Code
@@ -158,7 +176,7 @@ func convertWebSocketClose(fn ParsedFunction, state *sourceWebSockets) (dsl.Acti
 		params["code"] = code
 	}
 	if reason := asyncCallArg(fn, "Reason"); reason != "" {
-		params["reason"] = reason
+		params["reason"] = convertParamReferences(reason)
 	}
 	if len(params) > 0 {
 		action.Params = params

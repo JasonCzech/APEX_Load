@@ -52,6 +52,9 @@ type jsTranslator struct {
 	locals  map[string]bool
 	notes   []string
 	failure string
+	// topLevel holds the review steps of statements outside a function;
+	// C has nowhere to put them, so the next function starts with them.
+	topLevel []string
 }
 
 // translateJavaScriptToC translates one JavaScript action file. It returns
@@ -67,7 +70,9 @@ func translateJavaScriptToC(name, source string) (string, []string, error) {
 		function, ok := statement.(*ast.FunctionDeclaration)
 		if !ok || function.Function == nil || function.Function.Name == nil || function.Function.Body == nil {
 			if _, empty := statement.(*ast.EmptyStatement); !empty {
-				t.unsupported(statement, "a top-level statement outside a function")
+				note := fmt.Sprintf("line %d: a top-level statement outside a function", t.lineOf(statement.Idx0()))
+				t.topLevel = append(t.topLevel, note)
+				t.notes = append(t.notes, note)
 			}
 			continue
 		}
@@ -111,6 +116,10 @@ func (t *jsTranslator) function(function *ast.FunctionLiteral) {
 		sort.Strings(names)
 		t.write(" int " + strings.Join(names, ", ") + ";")
 	}
+	for _, note := range t.topLevel {
+		t.write(fmt.Sprintf(" %s(%s);", jsUnsupportedFunction, cStringLiteral(note)))
+	}
+	t.topLevel = nil
 	for _, statement := range function.Body.List {
 		t.statement(statement)
 	}

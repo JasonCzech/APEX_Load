@@ -44,6 +44,9 @@ func TestHTMLLevelHTTPScriptReplaysWithoutHiddenFieldCorrelation(t *testing.T) {
 			token := "TOKEN-" + string(rune('A'+issued.Add(1)))
 			io.WriteString(w, `<html><a href="/help">Help</a><form method="post" action="/session"><input type="hidden" name="token" value="`+token+`"><input name="user"><input type="submit" name="go" value="Sign in"></form></html>`)
 		case "/session":
+			if r.Referer() != "http://"+r.Host+"/login" {
+				t.Errorf("Referer = %q, want the live page", r.Referer())
+			}
 			body, _ := io.ReadAll(r.Body)
 			want := "token=TOKEN-" + string(rune('A'+issued.Load())) + "&user=ada&go=Sign+in"
 			if string(body) != want {
@@ -63,7 +66,7 @@ func TestHTMLLevelHTTPScriptReplaysWithoutHiddenFieldCorrelation(t *testing.T) {
 	nav := map[string]string{"Accept": "text/html", "Sec-Fetch-Dest": "document"}
 	recorded := map[string]any{"log": map[string]any{"version": "1.2", "creator": map[string]any{"name": "test", "version": "1"}, "entries": []any{
 		harEntry(started, "GET", server.URL+"/login", "text/html", `<html><a href="/help">Help</a><form method="post" action="/session"><input type="hidden" name="token" value="T-RECORDED"><input name="user"><input type="submit" name="go" value="Sign in"></form></html>`, nav, ""),
-		harEntry(started.Add(3*time.Second), "POST", server.URL+"/session", "text/html", `<html><a href="/account?id=7">Account</a></html>`, nav, "token=T-RECORDED&user=ada&go=Sign+in"),
+		harEntry(started.Add(3*time.Second), "POST", server.URL+"/session", "text/html", `<html><a href="/account?id=7">Account</a></html>`, map[string]string{"Accept": "text/html", "Sec-Fetch-Dest": "document", "Referer": server.URL + "/login?recorded=1"}, "token=T-RECORDED&user=ada&go=Sign+in"),
 		harEntry(started.Add(5*time.Second), "GET", server.URL+"/account?id=7", "text/html", `<html>account</html>`, nav, ""),
 	}}}
 	harBytes, _ := json.Marshal(recorded)
@@ -127,5 +130,20 @@ func TestHTMLLevelStepsFallBackToURLRequests(t *testing.T) {
 	}
 	if len(notes) != 2 || !strings.Contains(notes[0], "not a link, image or form submit") || !strings.Contains(notes[1], "inside a frame") {
 		t.Fatalf("notes = %v", notes)
+	}
+}
+
+// An XHR is never a main document, whatever order its headers are in.
+func TestHARDocumentsSkipXHRWhateverTheHeaderOrder(t *testing.T) {
+	started := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	xhr := harEntry(started, "GET", "https://shop.test/fragment", "text/html", "<p>x</p>", nil, "")
+	xhr["request"].(map[string]any)["headers"] = []any{
+		map[string]any{"name": "X-Requested-With", "value": "XMLHttpRequest"},
+		map[string]any{"name": "Sec-Fetch-Dest", "value": "document"},
+	}
+	harBytes, _ := json.Marshal(map[string]any{"log": map[string]any{"entries": []any{xhr}}})
+	documents, err := harDocuments(harBytes)
+	if err != nil || len(documents) != 0 {
+		t.Fatalf("documents = %+v, %v; want the XHR left out", documents, err)
 	}
 }

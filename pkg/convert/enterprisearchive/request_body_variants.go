@@ -112,7 +112,9 @@ func rebuildSourceBodyVariants(action *dsl.Action, fn ParsedFunction, files map[
 // rebuildSourceBinaryBody joins Body and BodyBinary segments into one
 // c_escaped text. Without parameters the bytes are fixed and are stored as
 // base64; with parameters the body stays c_escaped so the runtime decodes it
-// after interpolation, sending parameter values verbatim.
+// after interpolation, sending parameter values verbatim. A Windows-1252
+// script sends parameter values as code-page bytes too, so its body becomes
+// windows-1252 text when its bytes are code-page text.
 func rebuildSourceBinaryBody(action *dsl.Action, segments []sourceBodySegment, sourceEncoding string) sourceBodyRebuild {
 	cp1252 := strings.EqualFold(sourceEncoding, "windows-1252")
 	var escaped strings.Builder
@@ -132,7 +134,12 @@ func rebuildSourceBinaryBody(action *dsl.Action, segments []sourceBodySegment, s
 		return sourceBodyRebuild{reason: fmt.Sprintf("BodyBinary has an escape the importer does not recognize (%v)", err)}
 	}
 	templated := convertParamReferences(escaped.String())
-	if strings.Contains(templated, "{{") {
+	if text, ok := windows1252TemplatedText(templated); ok && cp1252 {
+		action.Body = text
+		action.BodyEncoding = "windows-1252"
+	} else if strings.Contains(templated, "{{") {
+		// Bytes Windows-1252 leaves undefined stay escaped; parameter values
+		// are then sent as UTF-8.
 		action.Body = templated
 		action.BodyEncoding = bodyencoding.CEscaped
 	} else {
@@ -142,6 +149,31 @@ func rebuildSourceBinaryBody(action *dsl.Action, segments []sourceBodySegment, s
 	}
 	setSourceBodyForm(action, "BodyBinary")
 	return sourceBodyRebuild{rebuilt: []string{"BodyBinary"}}
+}
+
+// windows1252TemplatedText decodes a templated c_escaped body to the text
+// whose Windows-1252 encoding is its bytes. It reports false without
+// templates, when a byte has no Windows-1252 character, or when decoding
+// would turn escaped braces into a template.
+func windows1252TemplatedText(templated string) (string, bool) {
+	if !strings.Contains(templated, "{{") {
+		return "", false
+	}
+	decoded, err := bodyencoding.DecodeCEscapes(templated)
+	if err != nil {
+		return "", false
+	}
+	text, err := charmap.Windows1252.NewDecoder().String(string(decoded))
+	if err != nil {
+		return "", false
+	}
+	if encoded, err := charmap.Windows1252.NewEncoder().String(text); err != nil || encoded != string(decoded) {
+		return "", false
+	}
+	if strings.Count(text, "{{") != strings.Count(templated, "{{") || strings.Count(text, "}}") != strings.Count(templated, "}}") {
+		return "", false
+	}
+	return text, true
 }
 
 // escapeSourceBodyBytes spells as a \xNN escape every byte that is not valid

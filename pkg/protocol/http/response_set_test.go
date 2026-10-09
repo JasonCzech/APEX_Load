@@ -1,9 +1,13 @@
 package http
 
 import (
+	"context"
 	"errors"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -104,12 +108,41 @@ func TestScopeGlob(t *testing.T) {
 		{"text/*", "text/html; charset=utf-8", true},
 		{"orders", "https://shop.test/app/orders?x=1", true},
 		{"*.css", "https://cdn.test/site.js", false},
+		{"*items[0]*", "https://shop.test/api?items[0]=a", true},
+		{"*items[0]*", "https://shop.test/api?items0=a", false},
+		{"*a\\b?", "C:\\a\\bc", true},
+		{"[unclosed*", "[unclosed.js", true},
 	} {
 		if got := MatchScopeGlob(tt.pattern, tt.value); got != tt.want {
 			t.Errorf("MatchScopeGlob(%q, %q) = %v", tt.pattern, tt.value, got)
 		}
 	}
-	if ValidScopeGlob("[unclosed") || !ValidScopeGlob("*ok?") {
-		t.Fatal("ValidScopeGlob disagrees with MatchScopeGlob's syntax")
+}
+
+// When extraction stops on an output limit, the extractors waiting for the
+// page's resources do not run either.
+func TestDeferredResourceExtractorsStopWithExtraction(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/asset.js" {
+			_, _ = io.WriteString(w, "id=RES;")
+			return
+		}
+		_, _ = io.WriteString(w, "big="+strings.Repeat("x", protocol.MaxExtractionValueBytes+1)+";")
+	}))
+	defer server.Close()
+	h := initHTTP(t, nil)
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Type: "http_request", Method: "GET", Target: server.URL,
+		Params: map[string]any{"resources": []any{map[string]any{"url": "/asset.js"}}},
+		Extractors: []protocol.Extractor{
+			{Name: "fromResource", Source: "body", Type: "boundary", Expression: "id=|||;", Scope: &protocol.ExtractorScope{Resources: "include"}},
+			{Name: "tooBig", Source: "body", Type: "boundary", Expression: "big=|||;"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || !result.ExtractionsIncomplete || len(result.Extractions) != 0 {
+		t.Fatalf("success = %v, incomplete = %v, extractions = %v; want a stopped extraction with nothing stored", result.Success, result.ExtractionsIncomplete, result.Extractions)
 	}
 }

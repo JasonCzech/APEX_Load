@@ -1118,8 +1118,10 @@ func (vu *VUser) Run(ctx context.Context) {
 		// Drive the top-level action list directly (rather than via runActions) so a
 		// stray break/continue with no enclosing control_loop is a no-op that
 		// proceeds to the next action — matching the replay path's runReplayPhase.
+		order := vu.iterationOrder()
 	actions:
-		for _, action := range vu.iterationActions() {
+		for position := 0; position < vu.iterationLength(order); position++ {
+			action := vu.iterationAction(order, position)
 			switch runOne(action, 0) {
 			case flowTeardown:
 				if iterationExitRequested {

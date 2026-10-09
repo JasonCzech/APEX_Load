@@ -33,6 +33,14 @@ func TestWebParameterHelpers(t *testing.T) {
 		t.Fatalf("Token_Length = %q, want 6", got)
 	}
 
+	vu.Variables["city"] = "Málaga"
+	codePage := sourceParameterAction("web_save_param_length", "City")
+	codePage.Params["code_page"] = "windows-1252"
+	vu.handleSourceParameterAction("web_save_param_length", codePage)
+	if got := vu.Variables["city_length"]; got != "6" {
+		t.Fatalf("City_Length = %q, want 6 Windows-1252 bytes", got)
+	}
+
 	convert := sourceParameterAction("web_convert_date_param", "Day", "SourceFormat=%d/%m/%Y", "TargetFormat=%Y-%m-%d")
 	vu.handleSourceParameterAction("web_convert_date_param", convert)
 	if got := vu.Variables["day"]; got != "2026-03-07" {

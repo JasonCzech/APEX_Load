@@ -124,3 +124,20 @@ func TestSubmission(t *testing.T) {
 		t.Fatalf("encoding = %q", got)
 	}
 }
+
+// Text is decoded once (the tokenizer unescapes it), an anchor left open
+// ends at the next one, and image alt text is matched after whitespace
+// normalization on both sides.
+func TestTextDecodingAndUnclosedAnchors(t *testing.T) {
+	pageURL, _ := url.Parse("https://shop.test/")
+	page := Parse([]byte(`<a href="/a">Show &amp;amp; tell<a href="/b">Next</a><img src="x.png" alt="  Sign   in "><a href="/c"><img src="y.png" alt="Go"></a>`), pageURL)
+	if len(page.Links) != 3 || page.Links[0].Text != "Show &amp; tell" || page.Links[1].Text != "Next" {
+		t.Fatalf("links = %+v", page.Links)
+	}
+	if href, err := page.FindLink("Show &amp; tell", 1, false); err != nil || href != "https://shop.test/a" {
+		t.Fatalf("decoded-once link = %q, %v", href, err)
+	}
+	if !page.HasImage("Sign in", "", false) {
+		t.Fatal("alt text with extra whitespace must match")
+	}
+}

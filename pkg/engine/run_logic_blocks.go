@@ -21,17 +21,22 @@ func (vu *VUser) iterationOrder() []int {
 	return order
 }
 
-// iterationActions is the actions this iteration runs, in order.
-func (vu *VUser) iterationActions() []dsl.Action {
-	order := vu.iterationOrder()
+// iterationAction returns the action at position in this iteration's order
+// (nil order: script.actions in order). Steps are not copied up front, so a
+// long run-logic order costs one index per step.
+func (vu *VUser) iterationAction(order []int, position int) dsl.Action {
 	if order == nil {
-		return vu.Script.Actions
+		return vu.Script.Actions[position]
 	}
-	actions := make([]dsl.Action, len(order))
-	for i, index := range order {
-		actions[i] = vu.Script.Actions[index]
+	return vu.Script.Actions[order[position]]
+}
+
+// iterationLength is the number of steps this iteration runs.
+func (vu *VUser) iterationLength(order []int) int {
+	if order == nil {
+		return len(vu.Script.Actions)
 	}
-	return actions
+	return len(order)
 }
 
 func (vu *VUser) pickRunLogicChild(n int) int {

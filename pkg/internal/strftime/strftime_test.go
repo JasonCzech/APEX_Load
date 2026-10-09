@@ -37,6 +37,14 @@ func TestFormatAndParse(t *testing.T) {
 	if _, err := Parse("2026-03-07", "%d/%m/%Y", time.UTC); err == nil {
 		t.Error("text that does not match the format must not parse")
 	}
+	for _, day := range []string{"2026 000", "2026 366", "2026 400"} {
+		if _, err := Parse(day, "%Y %j", time.UTC); err == nil {
+			t.Errorf("%q: a day outside the year must not parse", day)
+		}
+	}
+	if parsed, err := Parse("2024 366", "%Y %j", time.UTC); err != nil || parsed.Format("2006-01-02") != "2024-12-31" {
+		t.Errorf("leap-year day 366 = %v, %v", parsed, err)
+	}
 	if Supported("%Y-%Q") || !Supported("%Y-%m-%d") {
 		t.Error("Supported disagrees with the specifier table")
 	}

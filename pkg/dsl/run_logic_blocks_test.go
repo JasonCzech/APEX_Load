@@ -58,3 +58,19 @@ func TestRunLogicOrder(t *testing.T) {
 		}
 	}
 }
+
+// Block iterations multiply through nesting, so the steps one iteration
+// runs are bounded.
+func TestRunLogicBlocksBoundTheStepsOfAnIteration(t *testing.T) {
+	nested := []RunLogicBlock{{Iterations: 1000, Children: []RunLogicChild{{Block: &RunLogicBlock{Iterations: 1000, Children: []RunLogicChild{{Action: "Browse"}}}}}}}
+	if issues := ValidateScriptIssues(blockScript(nested)); !hasIssue(issues, "more than 100000 steps in one iteration") {
+		t.Fatalf("issues = %v", issues)
+	}
+	if order := RunLogicOrder(blockScript(nested).Actions, nested, func(int) int { return 0 }); len(order) != MaxRunLogicOrderSteps {
+		t.Fatalf("order = %d steps, want the cap", len(order))
+	}
+	fits := []RunLogicBlock{{Iterations: 100, Mode: RunLogicRandom, Children: []RunLogicChild{{Action: "Browse"}, {Action: "Checkout"}}}}
+	if issues := ValidateScriptIssues(blockScript(fits)); len(issues) != 0 {
+		t.Fatalf("issues = %v", issues)
+	}
+}

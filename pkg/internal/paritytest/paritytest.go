@@ -554,7 +554,13 @@ func (s *Server) compareOne(n int, want ExpectedRequest, got Recorded) []string 
 			add("header %s must be absent, got %q", name, strings.Join(values, ", "))
 		}
 	}
-	for spec, wantCount := range want.HeaderCounts {
+	countSpecs := make([]string, 0, len(want.HeaderCounts))
+	for spec := range want.HeaderCounts {
+		countSpecs = append(countSpecs, spec)
+	}
+	sort.Strings(countSpecs)
+	for _, spec := range countSpecs {
+		wantCount := want.HeaderCounts[spec]
 		header, item, ok := strings.Cut(spec, ":")
 		if !ok {
 			add("header_counts key %q must be Header:name", spec)
@@ -713,10 +719,6 @@ func collectMetadataCodes(script *dsl.Script, keys ...string) []string {
 	return codes
 }
 
-// CheckOutcome verifies a converted script against the expectation: gated
-// cases must carry their reason codes and be refused by replay; replay cases
-// must run and put exactly the expected requests on the wire. It returns one
-// line per problem.
 // checkExpectedFailures verifies that exactly the named actions failed, each
 // with its expected error fragment.
 func checkExpectedFailures(report *engine.ReplayReport, expected map[string]string) []string {
@@ -750,6 +752,10 @@ func checkExpectedFailures(report *engine.ReplayReport, expected map[string]stri
 	return problems
 }
 
+// CheckOutcome verifies a converted script against the expectation: gated
+// cases must carry their reason codes and be refused by replay; replay cases
+// must run and put exactly the expected requests on the wire. It returns one
+// line per problem.
 func CheckOutcome(ctx context.Context, server *Server, exp *Expectation, script *dsl.Script, warnings []string) []string {
 	var problems []string
 	joined := strings.Join(warnings, "\n")

@@ -1263,7 +1263,7 @@ type Extractor struct {
 	// DFEs transforms each searched HTTP response body, in order, before the
 	// expression runs (LoadRunner data-format extensions): base64, gzip,
 	// json_to_xml, xml_to_json, url_decode, url_encode, html_unescape,
-	// html_escape.
+	// html_escape. Sources that do not read the body ignore it.
 	DFEs []string `json:"dfes,omitempty"`
 }
 
@@ -1279,8 +1279,9 @@ type ExtractorScope struct {
 	// request fetches (explicit resources or Browser Emulation downloads).
 	Resources string `json:"resources,omitempty"`
 	// RequestURL keeps only responses whose request URL matches this glob
-	// ("*" spans any text, matched case-insensitively against the whole URL;
-	// a pattern without wildcards matches as a substring).
+	// ("*" spans any text and "?" one character, every other character is
+	// literal, matched case-insensitively against the whole URL; a pattern
+	// without wildcards matches as a substring).
 	RequestURL string `json:"request_url,omitempty"`
 	// ContentType keeps only responses whose Content-Type matches this glob.
 	ContentType string `json:"content_type,omitempty"`

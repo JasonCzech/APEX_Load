@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dslwalk"
 )
 
 // Multipart bodies import as body_multipart (pkg/dsl): replay builds them
@@ -107,7 +108,8 @@ var multipartAssetNameUnsafe = regexp.MustCompile(`[^A-Za-z0-9_]+`)
 
 // HoistMultipartFiles moves the bytes of each file part with a literal
 // value into a file data source and points the part at it ({{file.NAME}}),
-// so the file can be swapped without editing the request.
+// so the file can be swapped without editing the request. Steps nested in
+// control blocks are included.
 func HoistMultipartFiles(script *dsl.Script) {
 	if script == nil {
 		return
@@ -116,34 +118,32 @@ func HoistMultipartFiles(script *dsl.Script) {
 	for _, source := range script.DataSources {
 		used[strings.ToLower(strings.TrimSpace(source.Name))] = true
 	}
-	hoist := func(actions []dsl.Action) {
-		for actionIndex := range actions {
-			body := actions[actionIndex].BodyMultipart
-			if body == nil {
+	_ = dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+		if ref.Action == nil || ref.Action.BodyMultipart == nil {
+			return nil
+		}
+		body := ref.Action.BodyMultipart
+		for partIndex := range body.Parts {
+			part := &body.Parts[partIndex]
+			base64Value := strings.EqualFold(strings.TrimSpace(part.ValueEncoding), "base64")
+			literalText := part.ValueEncoding == "" && !strings.Contains(part.Value, "{{")
+			if part.Filename == "" || !base64Value && !literalText {
 				continue
 			}
-			for partIndex := range body.Parts {
-				part := &body.Parts[partIndex]
-				if part.Filename == "" || (strings.Contains(part.Value, "{{") && part.ValueEncoding == "") {
-					continue
-				}
-				content := part.Value
-				if part.ValueEncoding == "" {
-					content = base64.StdEncoding.EncodeToString([]byte(part.Value))
-				}
-				name := claimMultipartAssetName(part.Name, used)
-				source := dsl.DataSource{Name: name, Type: "file", ContentType: part.ContentType, InlineData: content, Encoding: "base64"}
-				if !strings.Contains(part.Filename, "{{") {
-					source.FileName = part.Filename
-				}
-				script.DataSources = append(script.DataSources, source)
-				part.Value, part.ValueEncoding = "{{file."+name+"}}", ""
+			content := part.Value
+			if literalText {
+				content = base64.StdEncoding.EncodeToString([]byte(part.Value))
 			}
+			name := claimMultipartAssetName(part.Name, used)
+			source := dsl.DataSource{Name: name, Type: "file", ContentType: part.ContentType, InlineData: content, Encoding: "base64"}
+			if !strings.Contains(part.Filename, "{{") {
+				source.FileName = part.Filename
+			}
+			script.DataSources = append(script.DataSources, source)
+			part.Value, part.ValueEncoding = "{{file."+name+"}}", ""
 		}
-	}
-	hoist(script.Init)
-	hoist(script.Actions)
-	hoist(script.Teardown)
+		return nil
+	})
 }
 
 func claimMultipartAssetName(field string, used map[string]bool) string {

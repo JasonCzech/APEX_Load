@@ -30,6 +30,9 @@ const (
 type Page struct {
 	// URL is the document's final URL after redirects.
 	URL string
+	// Charset is the document's character encoding (Decode), in which its
+	// forms are submitted.
+	Charset string
 	// Base resolves the page's relative URLs (<base href> when present).
 	Base   *url.URL
 	Links  []Link
@@ -105,9 +108,9 @@ type Frame struct {
 	Src  string // resolved URL
 }
 
-// Parse indexes an HTML document fetched from pageURL.
+// Parse indexes a UTF-8 HTML document fetched from pageURL (see Decode).
 func Parse(body []byte, pageURL *url.URL) *Page {
-	page := &Page{Base: pageURL}
+	page := &Page{Base: pageURL, Charset: "utf-8"}
 	if pageURL != nil {
 		page.URL = pageURL.String()
 	}
@@ -186,6 +189,11 @@ func Parse(body []byte, pageURL *url.URL) *Page {
 					}
 				}
 			case "a":
+				// An anchor cannot nest: a new one ends the open one.
+				if openLink >= 0 {
+					page.Links[openLink].Text = normalizeText(linkText.String())
+				}
+				openLink, openLinkHref = -1, ""
 				if present["href"] {
 					if len(page.Links) >= MaxLinks {
 						page.Truncated = true
@@ -329,9 +337,10 @@ func Parse(body []byte, pageURL *url.URL) *Page {
 }
 
 // normalizeText collapses whitespace runs to one space and trims, as a
-// browser renders link text.
+// browser renders link text. The text is already decoded (the tokenizer and
+// the DOM unescape entities), so it is not unescaped again.
 func normalizeText(text string) string {
-	return strings.Join(strings.Fields(html.UnescapeString(text)), " ")
+	return strings.Join(strings.Fields(text), " ")
 }
 
 // NormalizeText exposes the link-text normalization for matching.

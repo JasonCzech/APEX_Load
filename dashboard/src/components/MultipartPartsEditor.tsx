@@ -48,7 +48,7 @@ export function MultipartPartsEditor({ parts, fileSources, onChange }: {
             <li key={index} className="multipart-part">
               <div className="multipart-part-row">
                 <label>Name<input aria-label={`${label} name`} value={part.name} onChange={event => update(index, { name: event.target.value })} /></label>
-                <label>Kind<select aria-label={`${label} kind`} value={file ? 'file' : 'text'} onChange={event => update(index, event.target.value === 'file' ? { filename: part.filename || '' } : { filename: undefined, value: inline ? '' : part.value, value_encoding: undefined })}>
+                <label>Kind<select aria-label={`${label} kind`} value={file ? 'file' : 'text'} onChange={event => update(index, event.target.value === 'file' ? { filename: part.filename || '', value_encoding: inline ? part.value_encoding : undefined } : { filename: undefined, value: inline ? '' : part.value, value_encoding: undefined })}>
                   <option value="text">Text</option>
                   <option value="file">File</option>
                 </select></label>
@@ -69,11 +69,13 @@ export function MultipartPartsEditor({ parts, fileSources, onChange }: {
                   </select></label>
                 </div>
               ) : (
-                <label className="multipart-part-value">Value<textarea aria-label={`${label} value`} rows={2} value={inline ? '' : part.value || ''} placeholder={inline ? `Binary value (${base64ByteLength(part.value || '')} bytes)` : ''} disabled={inline} onChange={event => update(index, { value: event.target.value })} /></label>
+                <label className="multipart-part-value">{part.value_encoding === 'windows-1252' ? 'Value (sent as Windows-1252)' : 'Value'}<textarea aria-label={`${label} value`} rows={2} value={inline ? '' : part.value || ''} placeholder={inline ? `Binary value (${base64ByteLength(part.value || '')} bytes)` : ''} disabled={inline} onChange={event => update(index, { value: event.target.value })} /></label>
               )}
               <details>
                 <summary>Part headers ({Object.keys(part.headers || {}).length})</summary>
-                <textarea aria-label={`${label} headers`} rows={2} defaultValue={headersText(part.headers)} placeholder="Content-Transfer-Encoding: binary" onBlur={event => update(index, { headers: parseHeadersText(event.target.value) })} />
+                {/* Edited as free text and saved on blur; keyed by the part's headers so
+                    the text follows the part when rows shift. */}
+                <textarea key={headersText(part.headers)} aria-label={`${label} headers`} rows={2} defaultValue={headersText(part.headers)} placeholder="Content-Transfer-Encoding: binary" onBlur={event => update(index, { headers: parseHeadersText(event.target.value) })} />
               </details>
             </li>
           )

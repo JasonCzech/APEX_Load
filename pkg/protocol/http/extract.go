@@ -348,14 +348,14 @@ func extractAllResponse(ext protocol.Extractor, response responseSurfaces) ([]st
 	headers, body := response.headers, response.body
 	content := body
 	var values []string
-	directHeaderLookup := false
+	valuesCollected := false
 	switch ext.Source {
 	case "", "body":
 	case "all":
 		content = headersAndBodySurface(ext, headers, body)
 	case "header":
 		if ext.Type == "" || ext.Type == "header" {
-			directHeaderLookup = true
+			valuesCollected = true
 			values = append(values, headers.Values(ext.Expression)...)
 			break
 		}
@@ -364,7 +364,7 @@ func extractAllResponse(ext protocol.Extractor, response responseSurfaces) ([]st
 		content = response.textSurface(ext.Source)
 		if ext.Type == "" {
 			// A whole-value surface holds at most one value.
-			directHeaderLookup = true
+			valuesCollected = true
 			if len(content) > 0 {
 				values = append(values, string(content))
 			}
@@ -374,7 +374,7 @@ func extractAllResponse(ext protocol.Extractor, response responseSurfaces) ([]st
 	}
 
 	var err error
-	if !directHeaderLookup {
+	if !valuesCollected {
 		switch ext.Type {
 		case "regex":
 			values, err = extractAllRegex(ext.Expression, content)
@@ -507,23 +507,10 @@ func headersAndBodySurface(ext protocol.Extractor, headers http.Header, body []b
 	if !extractorTypeScansText(ext.Type) {
 		return body
 	}
-	keys := make([]string, 0, len(headers))
-	for key := range headers {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	var builder strings.Builder
-	for _, key := range keys {
-		for _, value := range headers.Values(key) {
-			builder.WriteString(key)
-			builder.WriteString(": ")
-			builder.WriteString(value)
-			builder.WriteString("\r\n")
-		}
-	}
-	builder.WriteString("\r\n")
-	surface := make([]byte, 0, builder.Len()+len(body))
-	surface = append(surface, builder.String()...)
+	block := rawHeaderBlock(headers)
+	surface := make([]byte, 0, len(block)+2+len(body))
+	surface = append(surface, block...)
+	surface = append(surface, "\r\n"...)
 	return append(surface, body...)
 }
 

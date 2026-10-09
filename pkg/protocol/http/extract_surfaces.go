@@ -80,9 +80,15 @@ const MaxExtractorDFEs = 8
 
 // withExtractorDFEs returns the response with its body transformed by the
 // extractor's DFE chain. A body the chain cannot transform (for example one
-// that is not Base64) is a miss, as LoadRunner finds no value in it.
+// that is not Base64) is a miss, as LoadRunner finds no value in it. Sources
+// that do not read the body (header, cookies, url, status) are untouched.
 func withExtractorDFEs(ext protocol.Extractor, response responseSurfaces) (responseSurfaces, error) {
 	if len(ext.DFEs) == 0 {
+		return response, nil
+	}
+	switch ext.Source {
+	case "", "body", "all":
+	default:
 		return response, nil
 	}
 	chain := make([]dataFormattingTransform, 0, len(ext.DFEs))

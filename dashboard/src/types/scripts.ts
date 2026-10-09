@@ -203,7 +203,7 @@ export interface ScriptMultipartBody {
 export interface ScriptMultipartPart {
   name: string
   value?: string
-  /** "base64" marks a literal binary value. */
+  /** "base64" marks a literal binary value; "windows-1252" sends the expanded text as Windows-1252 bytes. */
   value_encoding?: string
   filename?: string
   content_type?: string

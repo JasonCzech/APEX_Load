@@ -247,7 +247,7 @@ func harDocuments(har []byte) ([]harDocument, error) {
 			continue
 		}
 		isDocument := strings.EqualFold(entry.ResourceType, "document")
-		accept := ""
+		accept, xhr := "", false
 		for _, header := range entry.Request.Headers {
 			switch strings.ToLower(header.Name) {
 			case "sec-fetch-dest":
@@ -255,13 +255,11 @@ func harDocuments(har []byte) ([]harDocument, error) {
 			case "accept":
 				accept = header.Value
 			case "x-requested-with":
-				if header.Value != "" {
-					isDocument = false
-				}
+				xhr = xhr || header.Value != ""
 			}
 		}
 		html := strings.Contains(strings.ToLower(entry.Response.Content.MimeType), "text/html")
-		if !isDocument && !(html && strings.HasPrefix(strings.ToLower(accept), "text/html")) {
+		if xhr || (!isDocument && !(html && strings.HasPrefix(strings.ToLower(accept), "text/html"))) {
 			continue
 		}
 		text := entry.Response.Content.Text

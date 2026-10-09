@@ -27,7 +27,9 @@ type MultipartPart struct {
 	Name string `json:"name"`
 	// Value is the part's content; template variables are expanded.
 	Value string `json:"value,omitempty"`
-	// ValueEncoding "base64" marks a literal binary value.
+	// ValueEncoding "base64" marks a literal binary value; "windows-1252"
+	// sends the expanded text as Windows-1252 bytes (LoadRunner code-page
+	// scripts).
 	ValueEncoding string `json:"value_encoding,omitempty"`
 	// Filename makes the part a file upload; template variables are expanded.
 	Filename string `json:"filename,omitempty"`
@@ -78,6 +80,12 @@ func isBase64ValueEncoding(encoding string) bool {
 	return strings.EqualFold(strings.TrimSpace(encoding), "base64")
 }
 
+// IsWindows1252ValueEncoding reports a part whose expanded text is sent as
+// Windows-1252 bytes.
+func IsWindows1252ValueEncoding(encoding string) bool {
+	return strings.EqualFold(strings.TrimSpace(encoding), "windows-1252")
+}
+
 // validateMultipartBodyIssues checks body_multipart: where it may appear,
 // that it replaces the other body fields, and each part.
 func validateMultipartBodyIssues(protocol, path string, action Action) []string {
@@ -109,8 +117,9 @@ func validateMultipartBodyIssues(protocol, path string, action Action) []string 
 			} else if _, err := base64.StdEncoding.DecodeString(part.Value); err != nil {
 				issues = append(issues, fmt.Sprintf("%s: value is not valid base64: %v", partLabel, err))
 			}
+		case IsWindows1252ValueEncoding(part.ValueEncoding):
 		default:
-			issues = append(issues, partLabel+": value_encoding must be base64 or empty")
+			issues = append(issues, partLabel+": value_encoding must be base64, windows-1252 or empty")
 		}
 		if strings.ContainsAny(part.Name+part.Filename+part.ContentType, "\r\n") {
 			issues = append(issues, partLabel+": name, filename and content_type cannot contain line breaks")

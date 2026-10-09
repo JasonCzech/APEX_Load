@@ -6,6 +6,7 @@ import (
 	"mime"
 	"path"
 	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/text/encoding/charmap"
 
@@ -69,11 +70,9 @@ func rebuildSourceMultipart(action *dsl.Action, fn ParsedFunction, opts ConvertO
 			}
 			text := convertParamReferences(item.value)
 			if cp1252 {
-				encoded, err := charmap.Windows1252.NewEncoder().String(text)
-				if err != nil {
+				if _, err := charmap.Windows1252.NewEncoder().String(text); err != nil {
 					return false, fmt.Sprintf("item %d cannot be represented in the script's Windows-1252 code page", index+1), nil
 				}
-				text = encoded
 			}
 			part.Data = []byte(text)
 			parts = append(parts, part)
@@ -112,6 +111,16 @@ func rebuildSourceMultipart(action *dsl.Action, fn ParsedFunction, opts ConvertO
 	if structured, ok := requestimport.DSLMultipartBody(parts); ok {
 		// Replay builds the body from its parts with a fresh boundary; file
 		// parts become file data sources when the script is finished.
+		if cp1252 {
+			// A code-page script sends its text, parameter values included,
+			// as code-page bytes.
+			for index, item := range fn.itemDataMultipart {
+				part := &structured.Parts[index]
+				if !item.file && part.ValueEncoding == "" && (!isASCIIText(part.Value) || strings.Contains(part.Value, "{{")) {
+					part.ValueEncoding = "windows-1252"
+				}
+			}
+		}
 		action.BodyMultipart = structured
 		action.Body, action.BodyEncoding = "", ""
 		setSourceMultipartContentType(action, "multipart/form-data")
@@ -121,6 +130,14 @@ func rebuildSourceMultipart(action *dsl.Action, fn ParsedFunction, opts ConvertO
 		action.Metadata["source_itemdata_encoding"] = "multipart"
 		action.Metadata["source_multipart_parts"] = len(parts)
 		return true, "", nil
+	}
+	if cp1252 {
+		for index, item := range fn.itemDataMultipart {
+			if !item.file {
+				encoded, _ := charmap.Windows1252.NewEncoder().String(string(parts[index].Data))
+				parts[index].Data = []byte(encoded)
+			}
+		}
 	}
 	payload, contentType, err := requestimport.MaterializeMultipart(strings.TrimSpace(encType), parts, fmt.Sprintf("%s:%d:%s", fn.Filename, fn.LineNumber, fn.StepName))
 	if err != nil {
@@ -155,4 +172,13 @@ func setSourceMultipartContentType(action *dsl.Action, contentType string) {
 	if len(action.HeaderList) > 0 {
 		action.HeaderList = append(filterHeaderListCaseInsensitive(action.HeaderList, "Content-Type"), dsl.HeaderEntry{Name: "Content-Type", Value: contentType})
 	}
+}
+
+func isASCIIText(text string) bool {
+	for index := 0; index < len(text); index++ {
+		if text[index] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
 }

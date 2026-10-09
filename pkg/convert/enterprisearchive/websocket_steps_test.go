@@ -125,3 +125,45 @@ func TestConvertWebSocketReviewCases(t *testing.T) {
 		})
 	}
 }
+
+// A binary buffer with a parameter keeps its template, so the value is sent
+// as LoadRunner substitutes it; fixed bytes stay base64.
+func TestConvertWebSocketBinaryBuffersKeepParameters(t *testing.T) {
+	result := convertWebSocketSource(t, `
+	web_websocket_connect("ID=0", "URI=wss://chat.example.test/socket", LAST);
+	web_websocket_send("ID=0", "Buffer=hello {Name}", "IsBinary=1", LAST);
+	web_websocket_send("ID=0", "Buffer/Binary=\\x01{Name}\\x02", LAST);
+	web_websocket_close("ID=0", "Reason=bye {Name}", LAST);
+	web_websocket_connect("ID=1", "URI=wss://chat.example.test/socket", LAST);
+	web_websocket_send("ID=1", "Buffer/Binary=\\x7B\\x7Bnot a template}}", LAST);`, nil)
+	actions := result.Script.Actions
+	if literal := actions[5]; literal.BodyEncoding != "base64" || literal.Params["type"] != "binary" {
+		t.Fatalf("fixed bytes that spell {{ stay base64: %+v", literal)
+	}
+	actions = actions[:4]
+	if len(actions) != 4 {
+		t.Fatalf("actions = %+v", actions)
+	}
+	for i, want := range []string{"hello {{var.name}}", "\x01{{var.name}}\x02"} {
+		send := actions[1+i]
+		if send.Body != want || send.BodyEncoding != "" || send.Params["type"] != "binary" {
+			t.Fatalf("binary send %d = %+v, want body %q", i, send, want)
+		}
+	}
+	if actions[3].Params["reason"] != "bye {{var.name}}" {
+		t.Fatalf("close = %+v", actions[3])
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("issues = %v", issues)
+	}
+}
+
+func TestSourceCallbackReturnStatements(t *testing.T) {
+	_, _, _, reason := translateSourceCallbackBody("cb.c", nil, `return_ticket("x"); return WEB_ASYNC_CB_RC_OK;`, 1, nil)
+	if strings.Contains(reason, "it returns") {
+		t.Fatalf("a call to a function named return_* is not a return statement: %q", reason)
+	}
+	if _, _, _, reason := translateSourceCallbackBody("cb.c", nil, `return WEB_ASYNC_CB_RC_ABORT_ASYNC_NOT_REQUEST;`, 1, nil); !strings.Contains(reason, "it returns WEB_ASYNC_CB_RC_ABORT_ASYNC_NOT_REQUEST") {
+		t.Fatalf("reason = %q", reason)
+	}
+}

@@ -522,16 +522,21 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 
 		case "web_remove_cookie":
-			if name := strings.ToLower(sourceCookieRemovalName(fn)); name != "" && name != "all" {
-				if added, ok := addedCookies[name]; ok {
-					appendTrackedSourceAction(fn, cookieSetAction(fn, added, true), SourceFunctionSupportExecutable, "Converted to a positional cookie_set action that expires the cookie added earlier.")
-					delete(addedCookies, name)
-					break
-				}
-			}
 			// Drop a previously-added cookie (or ALL) from the persistent set so it
 			// stops attaching to downstream requests.
 			removed := removePersistentCookie(&persistentCookies, fn)
+			if cookie, ok := sourceCookieRemoval(fn); ok {
+				// LoadRunner removes the cookie from its cookie cache, so it leaves
+				// the VUser's jar whether web_add_cookie or the server set it.
+				notes := "Converted to a positional cookie_set action that expires the cookie in the VUser's cookie jar."
+				if added, found := addedCookies[strings.ToLower(cookie.Name)]; found {
+					cookie = added
+					delete(addedCookies, strings.ToLower(cookie.Name))
+					notes = "Converted to a positional cookie_set action that expires the cookie added earlier."
+				}
+				appendTrackedSourceAction(fn, cookieSetAction(fn, cookie, true), SourceFunctionSupportExecutable, notes)
+				break
+			}
 			targetPath := "actions[].headers.Cookie"
 			notes := "Removed a source cookie from downstream HTTP requests."
 			if !removed {
@@ -688,6 +693,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			// Cookie headers on later requests by applyPersistentCookies) would
 			// keep attaching after the cleanup, replaying cleared session/auth state.
 			persistentCookies = nil
+			clear(addedCookies)
 			preserveSourceRuntimeControl(result.Script, "source_runtime_controls", fn, map[string]any{
 				"mapped_to": "actions[].cookie_clear",
 			})
@@ -1023,6 +1029,13 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				continue
 			}
 			if action, mode, ok := convertSourceFunctionAction(fn); ok {
+				if fn.Name == "web_save_param_length" && action.Type != "source_review" && strings.EqualFold(opts.sourceEncoding, "windows-1252") {
+					// LoadRunner counts the value's code-page bytes.
+					if action.Params == nil {
+						action.Params = map[string]any{}
+					}
+					action.Params["code_page"] = "windows-1252"
+				}
 				appendTrackedSourceAction(fn, action, mode, sourceSupportNotes(fn, mode))
 				continue
 			}
@@ -1090,6 +1103,9 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 		mergeScriptConfig(&result.Script.Config, opts.RuntimeSettings)
 	}
 	tagRunLogicActions(result.Script, opts.runLogicActionNames)
+	for _, note := range pruneEmptyRunLogicChildren(result.Script) {
+		result.Warnings = append(result.Warnings, "Run logic: "+note+".")
+	}
 	for _, fn := range sourceRuntimeControls {
 		reapplySourceRuntimeControlConfig(result, fn)
 	}

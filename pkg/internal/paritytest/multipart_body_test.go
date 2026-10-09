@@ -118,3 +118,41 @@ func TestBodyMultipartValidation(t *testing.T) {
 		}
 	}
 }
+
+// A windows-1252 part sends its expanded text, parameter values included,
+// as code-page bytes, as a LoadRunner code-page script does.
+func TestBodyMultipartWindows1252Part(t *testing.T) {
+	server := NewServer([]Response{{Method: "POST", Path: "/upload", Status: 200, Body: "ok"}})
+	defer server.Close()
+	script := &dsl.Script{
+		Name: "multipart", Protocol: "http", Config: dsl.ScriptConfig{BaseURL: server.URL},
+		Actions: []dsl.Action{{
+			Name: "upload", Type: "request", Method: "POST", Target: "/upload",
+			BodyMultipart: &dsl.MultipartBody{Parts: []dsl.MultipartPart{
+				{Name: "city", Value: "Málaga {{var.who}}", ValueEncoding: "windows-1252"},
+			}},
+		}},
+	}
+	if issues := dsl.ValidateScriptIssues(script); len(issues) != 0 {
+		t.Fatalf("validate: %v", issues)
+	}
+	if _, err := ReplayOnce(context.Background(), script, map[string]string{"who": "José"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	recorded := server.Recorded()
+	if len(recorded) != 1 {
+		t.Fatalf("requests = %d", len(recorded))
+	}
+	_, params, err := mime.ParseMediaType(recorded[0].Header.Get("Content-Type"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	part, err := multipart.NewReader(bytes.NewReader(recorded[0].Body), params["boundary"]).NextRawPart()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := io.ReadAll(part)
+	if string(data) != "M\xe1laga Jos\xe9" {
+		t.Fatalf("part bytes = %q, want Windows-1252", data)
+	}
+}

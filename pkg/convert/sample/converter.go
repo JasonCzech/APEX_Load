@@ -401,12 +401,14 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			action.Params[httpprotocol.HTMLStepParam] = htmlStep
 			action.Target = "#html-step"
 			action.Body, action.BodyEncoding = "", ""
+			// The live page is the Referer, as for any HTML-mode step; the
+			// recorded one may carry the recorded page's values.
 			for name := range action.Headers {
-				if strings.EqualFold(name, "Content-Type") || strings.EqualFold(name, "Content-Length") {
+				if strings.EqualFold(name, "Content-Type") || strings.EqualFold(name, "Content-Length") || strings.EqualFold(name, "Referer") {
 					delete(action.Headers, name)
 				}
 			}
-			action.HeaderList = withoutHeaders(action.HeaderList, "Content-Type", "Content-Length")
+			action.HeaderList = withoutHeaders(action.HeaderList, "Content-Type", "Content-Length", "Referer")
 		}
 		if ex.TimeoutMs > 0 {
 			action.TimeoutMs = ex.TimeoutMs

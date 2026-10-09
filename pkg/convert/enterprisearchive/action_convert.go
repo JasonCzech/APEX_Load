@@ -420,6 +420,19 @@ func sourceCookieRemovalName(fn ParsedFunction) string {
 	return strings.TrimSpace(first)
 }
 
+// sourceCookieRemoval is the cookie a web_remove_cookie names, with the
+// domain and path its cookie string carries. It reports false for "ALL" or
+// no name.
+func sourceCookieRemoval(fn ParsedFunction) (ParsedCookie, bool) {
+	name := sourceCookieRemovalName(fn)
+	if name == "" || strings.EqualFold(name, "ALL") {
+		return ParsedCookie{}, false
+	}
+	cookie := parseSourceCookie(cleanConfigValue(sourceControlArgs(fn)[0]))
+	cookie.Name, cookie.Value = name, ""
+	return cookie, true
+}
+
 // removePersistentCookie drops the cookie named by web_remove_cookie (or every
 // cookie for "ALL") from the importer's persistent set so it stops attaching to
 // downstream requests. It reports whether anything was removed.

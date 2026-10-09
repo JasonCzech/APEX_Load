@@ -45,6 +45,20 @@ func TestRebuildSourceBinaryBodies(t *testing.T) {
 			cp1252:   true,
 		},
 		{
+			name:     "code-page scripts send parameter values as code-page bytes",
+			call:     `web_custom_request("b", "URL=https://x.test/", "Method=POST", "Body=café {Name}", "BodyBinary=\\x00\\xE8", LAST);`,
+			encoding: "windows-1252",
+			body:     "café {{var.name}}\x00è",
+			cp1252:   true,
+		},
+		{
+			name:     "code-page bytes without a character stay escaped",
+			call:     `web_custom_request("b", "URL=https://x.test/", "Method=POST", "BodyBinary=\\x81{Name}", LAST);`,
+			encoding: "c_escaped",
+			body:     `\x81{{var.name}}`,
+			cp1252:   true,
+		},
+		{
 			name:   "an unknown escape keeps the gate",
 			call:   `web_custom_request("b", "URL=https://x.test/", "Method=POST", "BodyBinary=\\q", LAST);`,
 			reason: "escape the importer does not recognize",

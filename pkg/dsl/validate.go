@@ -1362,8 +1362,6 @@ func validateExtractorScopeIssues(label string, index int, ext Extractor, httpFa
 		field, pattern := field[0], field[1]
 		if len(pattern) > httpprotocol.MaxExtractorExpressionBytes {
 			issues = append(issues, fmt.Sprintf("%s: extractors[%d] scope.%s exceeds %d bytes", label, index, field, httpprotocol.MaxExtractorExpressionBytes))
-		} else if !httpprotocol.ValidScopeGlob(pattern) {
-			issues = append(issues, fmt.Sprintf("%s: extractors[%d] scope.%s is not a valid wildcard pattern", label, index, field))
 		}
 	}
 	if len(scope.HeaderNames) > 0 {

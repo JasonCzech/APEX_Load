@@ -6,6 +6,7 @@ package recordingprofile
 
 import (
 	"fmt"
+	"net"
 	"regexp"
 	"strings"
 )
@@ -153,7 +154,7 @@ func (p Profile) validate(label string) error {
 		}
 		for _, entry := range list {
 			if strings.TrimSpace(entry) == "" || len(entry) > maxCorrelationValueLen {
-				return fmt.Errorf("%s.%s entries must be non-empty", label, name)
+				return fmt.Errorf("%s.%s entries must be 1-%d characters", label, name, maxCorrelationValueLen)
 			}
 		}
 	}
@@ -180,6 +181,19 @@ func (p Profile) validate(label string) error {
 			return fmt.Errorf("%s.name %q is duplicated", ruleLabel, rule.Name)
 		}
 		names[strings.ToLower(rule.Name)] = true
+		if len(rule.Left) > maxCorrelationValueLen || len(rule.Right) > maxCorrelationValueLen || len(rule.Regex) > maxCorrelationValueLen {
+			return fmt.Errorf("%s boundaries and regex must be at most %d characters", ruleLabel, maxCorrelationValueLen)
+		}
+		for field, list := range map[string][]string{"hosts": rule.Hosts, "content_types": rule.ContentTypes} {
+			if len(list) > MaxListEntries {
+				return fmt.Errorf("%s.%s holds at most %d entries", ruleLabel, field, MaxListEntries)
+			}
+			for _, entry := range list {
+				if strings.TrimSpace(entry) == "" || len(entry) > maxCorrelationValueLen {
+					return fmt.Errorf("%s.%s entries must be 1-%d characters", ruleLabel, field, maxCorrelationValueLen)
+				}
+			}
+		}
 		switch rule.Type {
 		case "boundary":
 			if rule.Left == "" || rule.Right == "" {
@@ -235,9 +249,10 @@ func (p Profile) HeaderDecision(name string) (keep, decided bool) {
 // RecordsHost reports whether a request to host is recorded.
 func (p Profile) RecordsHost(host string) bool {
 	host = strings.ToLower(strings.TrimSpace(host))
-	if hostname, _, found := strings.Cut(host, ":"); found {
+	if hostname, _, err := net.SplitHostPort(host); err == nil {
 		host = hostname
 	}
+	host = strings.Trim(host, "[]")
 	for _, excluded := range p.ExcludeHosts {
 		if hostMatches(host, excluded) {
 			return false

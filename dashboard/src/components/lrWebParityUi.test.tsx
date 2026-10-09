@@ -54,6 +54,7 @@ describe('LoadRunner web parity UI', () => {
     expect(issueTitle('registration_dfe_unsupported')).toBe('Apply data-format extensions before extraction')
     expect(issueTitle('request_body_file_missing')).toBe('Add the missing request body file')
     expect(issueTitle('async_callbacks_not_executed')).toBe('Rebuild async callbacks that do not run')
+    expect(issueTitle('javascript_web_script_unsupported')).toBe('Fix the JavaScript or re-record the script in C')
     expect(issueTitle('websocket_callbacks_not_executed')).toBe('Rebuild WebSocket callbacks that do not run')
     expect(issueTitle('recorded_async_conversation')).toBe('Review recorded background conversation')
     expect(issueTitle('some_future_code')).toBe('some future code')
@@ -85,7 +86,7 @@ describe('LoadRunner web parity UI', () => {
   })
 
   it('shapes the headers-and-body surface like the runtime', () => {
-    expect(headersAndBodySurface({ 'X-Ref': 'abc', 'Set-Cookie': 'sid=1' })).toBe('X-Ref: abc\r\nSet-Cookie: sid=1\r\n\r\n')
+    expect(headersAndBodySurface({ 'X-Ref': 'abc', 'Set-Cookie': 'sid=1\nlang=en' })).toBe('Set-Cookie: sid=1\r\nSet-Cookie: lang=en\r\nX-Ref: abc\r\n\r\n')
     expect(headersAndBodySurface(undefined)).toBe('\r\n')
   })
 
@@ -162,6 +163,23 @@ describe('HTTP extractor rows', () => {
     expect([...selectFor('Extractor 2 type').options].map(option => option.value)).toEqual(['regex', 'boundary', 'regex_count', 'regex_ordinal'])
     expect(selectedLabel('Extractor 3 source')).toBe('Unsupported: cookie')
   })
+
+  it('shows every type the validator accepts as supported', () => {
+    const action = {
+      name: 'a', type: 'http', method: 'GET', target: '/',
+      extractors: [
+        { name: 'location', source: 'header', type: 'header', expression: 'Location' },
+        { name: 'id', source: 'body', type: 'json_path', expression: '$.id' },
+        { name: 'second', source: 'body', type: 'regex_ordinal', expression: 'id=(\\d+)' },
+        { name: 'hops', source: 'header', type: 'regex_count', expression: 'Via' },
+      ],
+    }
+    render(<ProtocolExtractorsSection action={action as never} index={0} protocol="http" onAddExtractor={vi.fn()} onRemoveExtractor={vi.fn()} onUpdateExtractor={vi.fn()} />)
+    expect(selectedLabel('Extractor 1 type')).toBe('Named header')
+    expect(selectedLabel('Extractor 2 type')).toBe('JSONPath')
+    expect(selectedLabel('Extractor 3 type')).toBe('Regex ordinal')
+    expect(selectedLabel('Extractor 4 type')).toBe('Regex count')
+  })
 })
 
 describe('extractor scope summary', () => {
@@ -193,6 +211,19 @@ describe('HTTP text assertions', () => {
     expect(onUpdate).toHaveBeenCalledWith(0, 0, 'source', 'all')
     act(() => { ignoreCase.click() })
     expect(onUpdate).toHaveBeenCalledWith(0, 0, 'case_insensitive', undefined)
+    act(() => {
+      type.value = 'status_code'
+      type.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onUpdate).toHaveBeenCalledWith(0, 0, 'type', 'status_code')
+    expect(onUpdate).toHaveBeenCalledWith(0, 0, 'source', undefined)
+  })
+
+  it('shows an explicit body source as Body', () => {
+    const action = { name: 'a', type: 'http', method: 'GET', target: '/', assertions: [{ type: 'text_contains', value: 'Welcome', source: 'body' }] }
+    render(<ProtocolAssertionsSection action={action as never} index={0} protocol="http" onAddAssertion={vi.fn()} onRemoveAssertion={vi.fn()} onUpdateAssertion={vi.fn()} />)
+    const source = document.querySelector('select[aria-label="Assertion 1 source"]') as HTMLSelectElement
+    expect(source.options[source.selectedIndex].textContent).toBe('Body')
   })
 })
 

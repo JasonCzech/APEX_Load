@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -108,6 +109,32 @@ func TestResourceStepsAndHTTPMode(t *testing.T) {
 	if err != nil || !result.Success || result.ProtocolEvidence["resource_step_error"] == nil {
 		t.Fatalf("a missing resource step must warn: %+v %v", result, err)
 	}
+	// A resource step that runs past the page deadline warns too, unless
+	// resource timeouts are explicitly failures.
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		select {
+		case <-r.Context().Done():
+		case <-time.After(2 * time.Second):
+		}
+	}))
+	defer slow.Close()
+	slowResource := &protocol.Action{Type: "GET", Target: slow.URL + "/slow.png", Params: map[string]any{"resource_step": true}}
+	paced := initCompatibilityHTTP(t, map[string]any{"page_timeout_ms": 50})
+	if result, err := paced.Execute(context.Background(), slowResource); err != nil || !result.Success || result.ProtocolEvidence["resource_step_failed"] != true {
+		t.Fatalf("a resource step past the page deadline must warn: %+v %v", result, err)
+	}
+	timeoutsFail := initCompatibilityHTTP(t, map[string]any{"page_timeout_ms": 50, "resource_timeout_as_warning": false})
+	if result, _ := timeoutsFail.Execute(context.Background(), slowResource); result.Success {
+		t.Fatal("resource_timeout_as_warning=false must keep a resource step's timeout a failure")
+	}
+	// An invalid resource step is an authoring error, not a resource failure.
+	invalid := &protocol.Action{Type: "GET", Target: server.URL + "/missing.png", Params: map[string]any{"resource_step": true}, Headers: map[string]string{"Bad\nName": "x"}}
+	if result, _ := lenient.Execute(context.Background(), invalid); result.Success || result.ProtocolEvidence["resource_step_failed"] == true {
+		t.Fatalf("an invalid resource step must fail: %+v", result)
+	}
 	strict := initCompatibilityHTTP(t, map[string]any{"fail_noncritical_resources": true})
 	if result, _ := strict.Execute(context.Background(), resource); result.Success {
 		t.Fatal("fail_noncritical_resources must keep the failure")
@@ -123,5 +150,54 @@ func TestResourceStepsAndHTTPMode(t *testing.T) {
 	lenient.Execute(context.Background(), &protocol.Action{Type: "GET", Target: server.URL + "/page"})
 	if page := lenient.page.current(); page == nil || len(page.Links) != 1 {
 		t.Fatalf("an HTML-mode page must become the page context, got %+v", page)
+	}
+}
+
+// A page served in a legacy charset is decoded before it is indexed, so
+// non-ASCII link text matches, and its form is submitted in that charset as
+// a browser does (characters the charset lacks as &#NNNN; references).
+func TestHTMLStepsFollowThePageCharset(t *testing.T) {
+	var mu sync.Mutex
+	var bodies []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, r.URL.RequestURI()+" "+string(body))
+		mu.Unlock()
+		switch r.URL.Path {
+		case "/start":
+			w.Header().Set("Content-Type", "text/html; charset=windows-1252")
+			io.WriteString(w, "<a href=\"/overview\">\xdcbersicht</a><form method=\"post\" action=\"/save\"><input type=\"hidden\" name=\"size\" value=\"Gr\xf6\xdfe\"><input name=\"who\"></form>")
+		case "/meta":
+			w.Header().Set("Content-Type", "text/html")
+			io.WriteString(w, "<meta charset=\"iso-8859-1\"><a href=\"/caf\">Caf\xe9</a>")
+		default:
+			w.Header().Set("Content-Type", "text/html")
+			io.WriteString(w, "<p>done</p>")
+		}
+	}))
+	defer server.Close()
+	h := initCompatibilityHTTP(t, map[string]any{HTMLPageContextConfig: true})
+	run := func(action *protocol.Action) {
+		t.Helper()
+		result, err := h.Execute(context.Background(), action)
+		if err != nil || !result.Success {
+			t.Fatalf("%s: %v %v", action.Target, err, result)
+		}
+	}
+	step := func(fields map[string]any) *protocol.Action {
+		return &protocol.Action{Type: "GET", Target: "#html-step", Params: map[string]any{HTMLStepParam: fields}}
+	}
+	run(&protocol.Action{Type: "GET", Target: server.URL + "/start"})
+	run(step(map[string]any{"kind": "link", "text": "Übersicht"}))
+	run(&protocol.Action{Type: "GET", Target: server.URL + "/start"})
+	run(step(map[string]any{"kind": "form", "fields": []any{map[string]any{"name": "who", "value": "Müller €☃"}}}))
+	run(&protocol.Action{Type: "GET", Target: server.URL + "/meta"})
+	run(step(map[string]any{"kind": "link", "text": "Café"}))
+	mu.Lock()
+	defer mu.Unlock()
+	want := []string{"/start ", "/overview ", "/start ", "/save size=Gr%F6%DFe&who=M%FCller+%80%26%239731%3B", "/meta ", "/caf "}
+	if strings.Join(bodies, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("requests =\n%s\nwant\n%s", strings.Join(bodies, "\n"), strings.Join(want, "\n"))
 	}
 }

@@ -11,8 +11,9 @@ import (
 )
 
 // LoadRunner registrations (web_reg_save_param*, web_reg_find) search a
-// scope of the next step's responses. APEX extractors and assertions read the
-// final main response's body or headers only, so every scope or filter APEX
+// scope of the next step's responses. APEX extractors search the same
+// response set through their scope (sourceRegistrationExtractorScope);
+// assertions read the final main response only. Every scope or filter APEX
 // does not reproduce is surfaced here instead of being searched in the wrong
 // place silently.
 const (
@@ -60,10 +61,7 @@ func promotionFinding(fn ParsedFunction, code, detail string) importreview.Findi
 // registrations, which can search headers and body together; JSON, XPath and
 // attribute registrations always read the body.
 func sourceRegistrationScope(fn ParsedFunction, paramName string, textSearch bool) registrationScope {
-	raw := strings.TrimSpace(cleanConfigValue(firstNonEmptyArg(fn, "Scope")))
-	if raw == "" {
-		raw = strings.TrimSpace(cleanConfigValue(firstNonEmptyArg(fn, "Search")))
-	}
+	raw := sourceRegistrationScopeName(fn)
 	switch strings.ToLower(raw) {
 	case "headers", "header":
 		return registrationScope{source: "header"}
@@ -80,8 +78,8 @@ func sourceRegistrationScope(fn ParsedFunction, paramName string, textSearch boo
 			fmt.Sprintf("Parameter %q searches cookies (Scope=Cookies) with a structured query; APEX runs structured queries against the response body.", paramName))}}
 	case "all", "":
 		// LoadRunner's default (and explicit ALL) searches headers and body of
-		// every response of the step. "all" covers the main response's headers
-		// and body; redirect hops and resources are a separate, general gap.
+		// every response of the step: "all" is headers and body, and the
+		// extractor scope adds the redirect hops and resources.
 		if textSearch {
 			return registrationScope{source: "all"}
 		}
@@ -90,6 +88,15 @@ func sourceRegistrationScope(fn ParsedFunction, paramName string, textSearch boo
 		return registrationScope{source: "body", findings: []importreview.Finding{promotionFinding(fn, registrationScopeNarrowedReasonCode,
 			fmt.Sprintf("Parameter %q uses an unrecognized search scope %q; APEX searches the response body.", paramName, raw))}}
 	}
+}
+
+// sourceRegistrationScopeName is a registration's Scope= attribute, or its
+// Search= attribute when it has no Scope=.
+func sourceRegistrationScopeName(fn ParsedFunction) string {
+	if raw := strings.TrimSpace(cleanConfigValue(firstNonEmptyArg(fn, "Scope"))); raw != "" {
+		return raw
+	}
+	return strings.TrimSpace(cleanConfigValue(firstNonEmptyArg(fn, "Search")))
 }
 
 // loadRunnerDFETypes maps LoadRunner's built-in data-format extension names
@@ -139,6 +146,10 @@ func sourceRegistrationExtractorScope(fn ParsedFunction, source string) *dsl.Ext
 	scope := &dsl.ExtractorScope{Redirects: "include", Resources: "include"}
 	if strings.EqualFold(strings.TrimSpace(cleanConfigValue(firstNonEmptyArg(fn, "IgnoreRedirections"))), "yes") {
 		scope.Redirects = "exclude"
+	}
+	if strings.EqualFold(sourceRegistrationScopeName(fn), "noresource") {
+		// Noresource searches the main HTML body only, never a resource.
+		scope.Resources = "exclude"
 	}
 	scope.RequestURL = strings.TrimSpace(cleanConfigValue(firstNonEmptyArg(fn, "RequestUrl")))
 	scope.ContentType = strings.TrimSpace(cleanConfigValue(firstNonEmptyArg(fn, "ContentType")))
@@ -242,8 +253,9 @@ func explicitResourceURLs(action *dsl.Action) []string {
 	return urls
 }
 
-// loadRunnerGlobMatch matches LoadRunner's "*" wildcard filters
-// case-insensitively against the whole value.
+// loadRunnerGlobMatch matches LoadRunner's wildcard filters as the runtime
+// does (httpprotocol.MatchScopeGlob): case-insensitively, and as a substring
+// when the pattern has no wildcard.
 func loadRunnerGlobMatch(pattern, value string) bool {
 	return httpprotocol.MatchScopeGlob(pattern, value)
 }

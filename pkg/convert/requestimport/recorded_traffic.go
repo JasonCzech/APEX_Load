@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
@@ -138,7 +139,9 @@ func RecordedBodyTruncatedFinding(source, sourceRef string, recordedBytes int) i
 
 // CookieOrigins tracks which cookies earlier recorded responses set, so a
 // later request's Cookie header can leave them to the replay cookie jar
-// instead of sending them twice.
+// instead of sending them twice. It follows the jar's rules (RFC 6265): a
+// cookie is left to the jar only for requests the jar would send it with
+// (domain, path and Secure), and a cookie the response deleted is not.
 type CookieOrigins struct {
 	// byName maps a lower-cased cookie name to where it was set.
 	byName map[string][]cookieOrigin
@@ -149,6 +152,8 @@ type cookieOrigin struct {
 	// hostOnly: set without a Domain attribute, so it is sent to that exact
 	// host only (RFC 6265 section 5.3), not to its subdomains.
 	hostOnly bool
+	path     string
+	secure   bool
 }
 
 // NewCookieOrigins returns an empty tracker.
@@ -156,9 +161,9 @@ func NewCookieOrigins() *CookieOrigins {
 	return &CookieOrigins{byName: map[string][]cookieOrigin{}}
 }
 
-// Observe records the Set-Cookie values of a response from host.
-func (c *CookieOrigins) Observe(host string, setCookies []string) {
-	host = strings.ToLower(hostOnly(host))
+// Observe records the Set-Cookie values of the response to rawURL.
+func (c *CookieOrigins) Observe(rawURL string, setCookies []string) {
+	host, path, _ := cookieRequestTarget(rawURL)
 	for _, value := range setCookies {
 		for _, line := range strings.Split(value, "\n") {
 			if strings.TrimSpace(line) == "" {
@@ -166,22 +171,37 @@ func (c *CookieOrigins) Observe(host string, setCookies []string) {
 			}
 			header := http.Header{"Set-Cookie": {line}}
 			for _, cookie := range (&http.Response{Header: header}).Cookies() {
-				origin := cookieOrigin{domain: strings.TrimPrefix(strings.ToLower(cookie.Domain), ".")}
+				origin := cookieOrigin{domain: strings.TrimPrefix(strings.ToLower(cookie.Domain), "."), path: cookie.Path, secure: cookie.Secure}
 				if origin.domain == "" {
-					origin = cookieOrigin{domain: host, hostOnly: true}
+					origin.domain, origin.hostOnly = host, true
+				}
+				if !strings.HasPrefix(origin.path, "/") {
+					origin.path = defaultCookiePath(path)
 				}
 				name := strings.ToLower(cookie.Name)
-				c.byName[name] = append(c.byName[name], origin)
+				// A later Set-Cookie for the same cookie replaces the earlier one;
+				// a deleting one (Max-Age<=0 or an expiry in the past) removes it.
+				kept := c.byName[name][:0:0]
+				for _, existing := range c.byName[name] {
+					if existing.domain != origin.domain || existing.hostOnly != origin.hostOnly || existing.path != origin.path {
+						kept = append(kept, existing)
+					}
+				}
+				if cookie.MaxAge >= 0 && (cookie.Expires.IsZero() || cookie.Expires.After(time.Now())) {
+					kept = append(kept, origin)
+				}
+				c.byName[name] = kept
 			}
 		}
 	}
 }
 
-// WithoutJarCookies removes from a Cookie header value the cookies an earlier
-// response set for host (the replay jar will send them). It returns the
-// remaining header value, which may be empty, and how many were removed.
-func (c *CookieOrigins) WithoutJarCookies(host, cookieHeader string) (string, int) {
-	host = strings.ToLower(hostOnly(host))
+// WithoutJarCookies removes from the Cookie header value of a request to
+// rawURL the cookies an earlier response set that the replay jar will send
+// with it. It returns the remaining header value, which may be empty, and how
+// many were removed.
+func (c *CookieOrigins) WithoutJarCookies(rawURL, cookieHeader string) (string, int) {
+	host, path, secure := cookieRequestTarget(rawURL)
 	parts := strings.Split(cookieHeader, ";")
 	kept := make([]string, 0, len(parts))
 	removed := 0
@@ -191,7 +211,7 @@ func (c *CookieOrigins) WithoutJarCookies(host, cookieHeader string) (string, in
 			continue
 		}
 		name, _, _ := strings.Cut(trimmed, "=")
-		if c.setFor(strings.ToLower(strings.TrimSpace(name)), host) {
+		if c.jarSends(strings.ToLower(strings.TrimSpace(name)), host, path, secure) {
 			removed++
 			continue
 		}
@@ -200,13 +220,61 @@ func (c *CookieOrigins) WithoutJarCookies(host, cookieHeader string) (string, in
 	return strings.Join(kept, "; "), removed
 }
 
-func (c *CookieOrigins) setFor(name, host string) bool {
+func (c *CookieOrigins) jarSends(name, host, path string, secure bool) bool {
 	for _, origin := range c.byName[name] {
-		if host == origin.domain || (!origin.hostOnly && strings.HasSuffix(host, "."+origin.domain)) {
+		if origin.secure && !secure {
+			continue
+		}
+		if host != origin.domain && (origin.hostOnly || !strings.HasSuffix(host, "."+origin.domain)) {
+			continue
+		}
+		if cookiePathMatches(path, origin.path) {
 			return true
 		}
 	}
 	return false
+}
+
+// cookieRequestTarget is the host, path and whether the request is secure.
+func cookieRequestTarget(rawURL string) (string, string, bool) {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return "", "/", false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host == "" {
+		// A bare host[:port], as some callers record.
+		host = strings.ToLower(hostOnly(rawURL))
+	}
+	path := parsed.EscapedPath()
+	if path == "" || parsed.Host == "" {
+		path = "/"
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	return host, path, scheme == "https" || scheme == "wss"
+}
+
+// defaultCookiePath is RFC 6265 section 5.1.4's default-path of a request
+// path: its directory.
+func defaultCookiePath(path string) string {
+	if !strings.HasPrefix(path, "/") {
+		return "/"
+	}
+	if last := strings.LastIndex(path, "/"); last > 0 {
+		return path[:last]
+	}
+	return "/"
+}
+
+// cookiePathMatches is RFC 6265 section 5.1.4's path-match.
+func cookiePathMatches(requestPath, cookiePath string) bool {
+	if requestPath == cookiePath {
+		return true
+	}
+	if !strings.HasPrefix(requestPath, cookiePath) {
+		return false
+	}
+	return strings.HasSuffix(cookiePath, "/") || requestPath[len(cookiePath)] == '/'
 }
 
 func hostOnly(hostport string) string {

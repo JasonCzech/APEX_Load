@@ -108,3 +108,19 @@ func TestJavaScriptControlFlowImportsAsControlBlocks(t *testing.T) {
 		t.Fatalf("the for loop must become a 3-pass control_loop: %+v", loop)
 	}
 }
+
+// A statement outside a function becomes a review step at the start of the
+// next function, since C has no top-level statements.
+func TestTranslateJavaScriptTopLevelStatements(t *testing.T) {
+	source, notes, err := translateJavaScriptToC("Action.js", "var shared = compute();\nfunction Action()\n{\n\tweb.url({ name : 'home', url : 'http://shop.test/home' });\n\treturn 0;\n}\n")
+	if err != nil || len(notes) != 1 || !strings.Contains(notes[0], "line 1: a top-level statement") {
+		t.Fatalf("notes = %v, %v", notes, err)
+	}
+	parsed, err := ParseActionFile("Action.c", source)
+	if err != nil || len(parsed.ParseFailures) != 0 {
+		t.Fatalf("the C twin must parse: %v %+v\n%s", err, parsed.ParseFailures, source)
+	}
+	if len(parsed.Functions) != 2 || parsed.Functions[0].Name != jsUnsupportedFunction || parsed.Functions[1].Name != "web_url" || parsed.Functions[1].LineNumber != 4 {
+		t.Fatalf("functions = %+v", parsed.Functions)
+	}
+}

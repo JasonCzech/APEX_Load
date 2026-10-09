@@ -1071,14 +1071,23 @@ function extractorTypeOptions(protocol: string, source = ''): Array<[string, str
   }
   // HTTP family: include SSE modes for consuming text/event-stream responses
   // (Agentforce streaming) — sse_concat joins data: frames, sse_event picks a named event.
-  return [['jsonpath', 'JSONPath'], ['jmespath', 'JMESPath'], ['regex', 'Regex'], ['boundary', 'Boundary'], ['xpath', 'XPath'], ['css', 'CSS'], ['sse_concat', 'SSE concat'], ['sse_event', 'SSE event']]
+  return [['jsonpath', 'JSONPath'], ['jmespath', 'JMESPath'], ['regex', 'Regex'], ['boundary', 'Boundary'], ['regex_count', 'Regex count'], ['regex_ordinal', 'Regex ordinal'], ['xpath', 'XPath'], ['css', 'CSS'], ['sse_concat', 'SSE concat'], ['sse_event', 'SSE event']]
+}
+
+// displayedExtractorType shows a stored type under the option its runtime
+// spelling shares: json_path is jsonpath, and a header extractor's "header"
+// type is the named-header lookup ("").
+function displayedExtractorType(source: string | undefined, type: string | undefined): string {
+  if (type === 'json_path') return 'jsonpath'
+  if (type === 'header' && source === 'header') return ''
+  return type ?? ''
 }
 
 // HTTP extractor sources that are searched as text accept only the text
 // extractor types (the DSL validator enforces the same lists).
 const HTTP_TEXT_TYPES: Array<[string, string]> = [['regex', 'Regex'], ['boundary', 'Boundary'], ['regex_count', 'Regex count'], ['regex_ordinal', 'Regex ordinal']]
 const HTTP_EXTRACTOR_TEXT_SOURCES: Record<string, Array<[string, string]>> = {
-  header: [['', 'Named header'], ['regex', 'Regex'], ['boundary', 'Boundary']],
+  header: [['', 'Named header'], ...HTTP_TEXT_TYPES],
   all: HTTP_TEXT_TYPES,
   cookies: HTTP_TEXT_TYPES,
   url: [['', 'Whole value'], ...HTTP_TEXT_TYPES],
@@ -1124,8 +1133,8 @@ export function ProtocolExtractorsSection({ action, index, protocol, onAddExtrac
           <select aria-label={`Extractor ${extractorIndex + 1} source`} value={extractor.source} onChange={e => onUpdateExtractor(index, extractorIndex, 'source', e.target.value)}>
             {withCurrentOption(sourceOptions, extractor.source).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
-          <select aria-label={`Extractor ${extractorIndex + 1} type`} value={extractor.type ?? ''} onChange={e => onUpdateExtractor(index, extractorIndex, 'type', e.target.value)}>
-            {withCurrentOption(extractorTypeOptions(protocol, extractor.source), extractor.type).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          <select aria-label={`Extractor ${extractorIndex + 1} type`} value={displayedExtractorType(extractor.source, extractor.type)} onChange={e => onUpdateExtractor(index, extractorIndex, 'type', e.target.value)}>
+            {withCurrentOption(extractorTypeOptions(protocol, extractor.source), displayedExtractorType(extractor.source, extractor.type)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
           <input aria-label={`Extractor ${extractorIndex + 1} expression`} value={extractor.expression} onChange={e => onUpdateExtractor(index, extractorIndex, 'expression', e.target.value)} placeholder={extractorExpressionPlaceholder(protocol, extractor.source)} className="ext-expr" />
           <button aria-label={`Remove extractor ${extractorIndex + 1}`} className="btn-icon danger" onClick={() => onRemoveExtractor(index, extractorIndex)}>✕</button>
@@ -1210,6 +1219,8 @@ export function ProtocolAssertionsSection({ action, index, protocol, onAddAssert
           <select aria-label={`Assertion ${assertionIndex + 1} type`} value={assertion.type} onChange={e => {
             const type = e.target.value
             onUpdateAssertion(index, assertionIndex, 'type', type)
+            // Only text checks take a source; validation rejects it elsewhere.
+            if (!isTextAssertion(type) && assertion.source !== undefined) onUpdateAssertion(index, assertionIndex, 'source', undefined)
             if (type === 'aura_actions_success') {
               for (const field of ['value', 'expected', 'min', 'max', 'legacy_html_check'] as const) {
                 if (assertion[field] !== undefined) onUpdateAssertion(index, assertionIndex, field, undefined)
@@ -1224,7 +1235,7 @@ export function ProtocolAssertionsSection({ action, index, protocol, onAddAssert
           {assertion.type === 'response_time_ms' && <input aria-label={`Assertion ${assertionIndex + 1} maximum milliseconds`} type="number" min="1" value={assertion.max ?? 5000} onChange={e => onUpdateAssertion(index, assertionIndex, 'max', Number(e.target.value))} placeholder="Max ms" />}
           {assertionUsesTextValue(assertion.type) && <input aria-label={`Assertion ${assertionIndex + 1} ${assertion.type.startsWith('element_') ? 'selector' : 'value'}`} value={assertion.value ?? ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'value', e.target.value)} placeholder={assertion.type === 'element_visible' ? 'Element selector' : assertion.type.endsWith('matches') ? 'RE2 pattern' : 'Expected text'} />}
           {isTextAssertion(assertion.type) && (
-            <select aria-label={`Assertion ${assertionIndex + 1} source`} value={assertion.source ?? ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'source', e.target.value || undefined)}>
+            <select aria-label={`Assertion ${assertionIndex + 1} source`} value={assertion.source === 'body' ? '' : assertion.source ?? ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'source', e.target.value || undefined)}>
               {TEXT_ASSERTION_SOURCES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           )}
