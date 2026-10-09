@@ -416,6 +416,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 </div>
 {{end}}
 {{if .RootCause}}{{if gt (len .RootCause.Hypotheses) (len .RootCauseHypotheses)}}<p class="muted">{{sub (len .RootCause.Hypotheses) (len .RootCauseHypotheses)}} more ranked in the Detailed Technical report.</p>{{end}}
+{{with .RootCause.BrowserBaseline}}<div class="browser-baseline"><p>{{.Summary}}</p>{{if .Findings}}<ul>{{range .Findings}}<li>{{.}}</li>{{end}}</ul>{{end}}{{range .Limitations}}<p class="muted">Limitation: {{.}}</p>{{end}}</div>{{end}}
 {{if .RootCause.Limitations}}<details><summary>Limitations</summary><ul>{{range .RootCause.Limitations}}<li>{{.}}</li>{{end}}</ul></details>{{end}}{{end}}
 {{end}}
 

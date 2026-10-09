@@ -11406,6 +11406,35 @@ paths:
                           type: string
                         analysis_id:
                           type: string
+                        browser_baseline:
+                          type: object
+                          properties:
+                            anomalies:
+                              type: integer
+                              format: int64
+                            baseline:
+                              type: string
+                            compared:
+                              type: integer
+                              format: int64
+                            findings:
+                              type: array
+                              items:
+                                type: string
+                            limitations:
+                              type: array
+                              items:
+                                type: string
+                            status:
+                              type: string
+                            summary:
+                              type: string
+                            unscored:
+                              type: integer
+                              format: int64
+                            version:
+                              type: string
+                          nullable: true
                         completed_at:
                           type: string
                           format: date-time
@@ -377451,6 +377480,42 @@ paths:
                         type: string
                       analysis_id:
                         type: string
+                      browser_baseline:
+                        type: object
+                        properties:
+                          anomalies:
+                            type: integer
+                            format: int64
+                          baseline:
+                            type: string
+                          compared:
+                            type: integer
+                            format: int64
+                          findings:
+                            type: array
+                            items:
+                              type: string
+                          limitations:
+                            type: array
+                            items:
+                              type: string
+                          status:
+                            type: string
+                          summary:
+                            type: string
+                          unscored:
+                            type: integer
+                            format: int64
+                          version:
+                            type: string
+                        required:
+                          - anomalies
+                          - compared
+                          - status
+                          - summary
+                          - unscored
+                          - version
+                        nullable: true
                       completed_at:
                         type: string
                         format: date-time
@@ -378597,6 +378662,8 @@ paths:
               schema:
                 type: object
                 properties:
+                  analysis_enabled:
+                    type: boolean
                   analysis_id:
                     type: string
                   archive_changed:
@@ -378629,6 +378696,7 @@ paths:
                   state:
                     type: string
                 required:
+                  - analysis_enabled
                   - presented
                   - state
         "401":
@@ -378779,6 +378847,8 @@ paths:
               schema:
                 type: object
                 properties:
+                  analysis_enabled:
+                    type: boolean
                   analysis_id:
                     type: string
                   archive_changed:
@@ -378811,6 +378881,7 @@ paths:
                   state:
                     type: string
                 required:
+                  - analysis_enabled
                   - presented
                   - state
         "401":
@@ -379163,6 +379234,8 @@ paths:
               schema:
                 type: object
                 properties:
+                  analysis_enabled:
+                    type: boolean
                   analysis_id:
                     type: string
                   archive_changed:
@@ -379195,6 +379268,7 @@ paths:
                   state:
                     type: string
                 required:
+                  - analysis_enabled
                   - presented
                   - state
         "401":

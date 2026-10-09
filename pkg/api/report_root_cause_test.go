@@ -38,6 +38,13 @@ func reportRootCauseTestAssessment() *rca.Assessment {
 		Outcome:     rca.OutcomeSupported,
 		Coverage:    []rca.Coverage{{Evidence: "monitor_sources", Status: rca.CoveragePartial, Detail: "1 of 2 sources"}},
 		Limitations: []rca.Limitation{{Code: "validity_caps_confidence", Detail: "run validity is unknown"}},
+		BrowserBaseline: &rca.BrowserBaseline{Version: rca.BrowserBaselineVersion, Status: rca.DetectionComplete, Baseline: rca.BaselineRef{TestID: "base-run", Qualification: rca.BaselineQualified},
+			Results: []rca.BrowserBaselineResult{
+				{ID: "bb-1", Series: "browser_document/lcp/abc/p75", Metric: "lcp", Unit: "ms", Level: "vusers=20", State: rca.BrowserBaselineAnomaly, Direction: rca.DirectionIncrease, Current: 3100, ExpectedLow: 1800, ExpectedHigh: 2400,
+					Evidence: []rca.EvidenceRef{{Kind: "browser_document", Locator: "browser_documents.jsonl#lcp · chromium · profile=desktop · main_frame · navigation"}}},
+				{ID: "bb-2", Series: "browser_document/cls/def/p75", Metric: "cls", Unit: "score", Level: "vusers=20", State: rca.BrowserBaselineWithinRange, Current: 0.05, ExpectedLow: 0.03, ExpectedHigh: 0.08},
+				{ID: "bb-3", Series: "browser_document/inp/ghi/p75", Metric: "inp", Unit: "ms", Level: "vusers=20", State: rca.BrowserBaselineUnscored, Reason: rca.BrowserBaselineNoBaselineCohort},
+			}, Limitations: []rca.Limitation{}},
 	}
 }
 
@@ -99,7 +106,8 @@ func TestRootCauseSectionRendersOneModelInEveryFormat(t *testing.T) {
 		title string
 		extra []string
 	}{
-		{"v2", func(*RunArchiveReport) *ReportRootCause { return &v2 }, "Resource pressure", []string{"CPU stays below saturation while latency rises", "Contradicting evidence"}},
+		{"v2", func(*RunArchiveReport) *ReportRootCause { return &v2 }, "Resource pressure", []string{"CPU stays below saturation while latency rises", "Contradicting evidence",
+			"2 cohorts compared with baseline run base-run at the same load, 1 anomalies, 1 unscored", "p75 3100 ms, higher than the baseline"}},
 		{"v1", func(r *RunArchiveReport) *ReportRootCause {
 			view := reportRootCauseFromV1(buildRunRootCauseSummary("matrix-run", r))
 			if len(view.Hypotheses) == 0 {
@@ -140,6 +148,11 @@ func TestRootCauseSectionRendersOneModelInEveryFormat(t *testing.T) {
 			if !strings.Contains(pdf, "Root-Cause Analysis (generated)") || !strings.Contains(pdf, title) {
 				t.Fatalf("pdf lacks the root cause")
 			}
+			for _, want := range tc.extra {
+				if !strings.Contains(pdf, want) {
+					t.Fatalf("pdf lacks %q", want)
+				}
+			}
 
 			var out bytes.Buffer
 			if err := writeRunArchiveReportCSVWithProfileAndAnnotations(report, &out, "engineer", annotations, manifest); err != nil {
@@ -149,17 +162,25 @@ func TestRootCauseSectionRendersOneModelInEveryFormat(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			found := false
+			found, browser := false, false
 			for _, row := range rows {
 				if row[0] == "rca" && row[1] == "hypothesis_1" && row[2] == "title" && row[3] == title {
 					found = true
+				}
+				if row[0] == "rca" && row[1] == "browser_baseline" && row[2] == "finding" && strings.Contains(row[3], "p75 3100 ms") {
+					browser = true
 				}
 				if row[0] == "rca" && strings.Contains(strings.Join(row, ","), "Analyst-only finding") {
 					t.Fatalf("analyst finding in the rca rows: %v", row)
 				}
 			}
-			if !found {
-				t.Fatalf("csv lacks the rca hypothesis: %v", rows)
+			if !found || (tc.name == "v2") != browser {
+				t.Fatalf("csv lacks the rca hypothesis or browser baseline: %v", rows)
+			}
+			if tc.name == "v2" {
+				if b := report.RootCauseView.BrowserBaseline; b == nil || b.Compared != 2 || b.Anomalies != 1 || b.Unscored != 1 || len(b.Findings) != 1 {
+					t.Fatalf("browser baseline view: %+v", b)
+				}
 			}
 		})
 	}

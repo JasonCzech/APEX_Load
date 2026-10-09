@@ -158,6 +158,9 @@ type RCAAnalysisResponse struct {
 	// Presented says whether the project presents v2 in Summary,
 	// Diagnostics and reports.
 	Presented bool `json:"presented"`
+	// AnalysisEnabled says whether the project computes new analyses;
+	// saved ones stay readable when it does not.
+	AnalysisEnabled bool `json:"analysis_enabled"`
 
 	// ArchiveChanged says the run's archive changed after the analysis read
 	// it, as when late monitoring evidence arrives; it is not in the analysis.
@@ -400,7 +403,7 @@ func rcaAnalysisResponse(analysis *storage.RCAAnalysis) RCAAnalysisResponse {
 	payload := rcaAnalysisPayloadOf(analysis)
 	created := analysis.CreatedAt
 	out := RCAAnalysisResponse{AnalysisID: analysis.ID, Revision: analysis.Revision, State: analysis.State, CreatedAt: &created, CompletedAt: analysis.CompletedAt,
-		Inputs: &payload.Inputs, Error: payload.Error, Presented: rcaV2PresentEnabled(analysis.ProjectID)}
+		Inputs: &payload.Inputs, Error: payload.Error, Presented: rcaV2PresentEnabled(analysis.ProjectID), AnalysisEnabled: rcaV2ProjectEnabled(analysis.ProjectID)}
 	if analysis.State == storage.RCAStateCompleted {
 		out.Assessment = payload.Assessment
 	}
@@ -672,7 +675,7 @@ func (s *Server) handleGetRCAAssessmentV2(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if latest == nil {
-		writeJSON(w, http.StatusOK, RCAAnalysisResponse{State: "none", Presented: rcaV2PresentEnabled(project)})
+		writeJSON(w, http.StatusOK, RCAAnalysisResponse{State: "none", Presented: rcaV2PresentEnabled(project), AnalysisEnabled: rcaV2ProjectEnabled(project)})
 		return
 	}
 	writeJSON(w, http.StatusOK, s.currentRCAAnalysisResponse(r.Context(), latest))

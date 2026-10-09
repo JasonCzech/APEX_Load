@@ -159,6 +159,15 @@ describe('RootCausePanel', () => {
     expect(critiques.textContent).toContain('CPU rose 60 points before Checkout slowed.')
   })
 
+  it('offers no analysis where the project computes none', async () => {
+    // Saved analyses stay readable; the controls say why none can be requested.
+    await render(model(rcaTestResponse({ analysis_enabled: false })))
+    expect(container.querySelector('[role="note"]')?.textContent).toContain('New analyses are not enabled for this project')
+    expect(container.textContent).not.toContain('Re-analyze')
+    await render(model(rcaTestResponse({ analysis_enabled: true })))
+    expect(container.textContent).toContain('Re-analyze')
+  })
+
   it('stays hidden where the project does not present v2', async () => {
     // An analyst is told the capability is off; others see nothing.
     await render(model(rcaTestResponse({ presented: false })))

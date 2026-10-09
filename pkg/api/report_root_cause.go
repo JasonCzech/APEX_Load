@@ -47,6 +47,90 @@ type ReportRootCause struct {
 	NextActions     []string                    `json:"next_actions,omitempty"`
 	// Notes say why this source was chosen when it is not the one asked for.
 	Notes []string `json:"notes,omitempty"`
+	// BrowserBaseline is v2's comparison of the run's browser document
+	// cohorts with the baseline run's (browser_baseline.v1), when the run
+	// had document series.
+	BrowserBaseline *ReportBrowserBaseline `json:"browser_baseline,omitempty"`
+}
+
+// ReportBrowserBaseline presents the assessment's browser baseline: how many
+// document cohorts were scored against the baseline run at the same load,
+// how many moved, and the ones that did.
+type ReportBrowserBaseline struct {
+	Version string `json:"version"`
+	Status  string `json:"status"`
+	// Baseline names the baseline run the cohorts were compared with.
+	Baseline  string `json:"baseline,omitempty"`
+	Compared  int    `json:"compared"`
+	Anomalies int    `json:"anomalies"`
+	Unscored  int    `json:"unscored"`
+	// Summary is the one-line account every format prints.
+	Summary string `json:"summary"`
+	// Findings describe each anomaly, strongest first; the first
+	// reportBrowserBaselineFindings are kept.
+	Findings    []string `json:"findings,omitempty"`
+	Limitations []string `json:"limitations,omitempty"`
+}
+
+// reportBrowserBaselineFindings bounds the anomalies a report lists.
+const reportBrowserBaselineFindings = 10
+
+// reportBrowserBaselineFromV2 presents a browser baseline, or nil without one.
+func reportBrowserBaselineFromV2(b *rca.BrowserBaseline) *ReportBrowserBaseline {
+	if b == nil {
+		return nil
+	}
+	out := &ReportBrowserBaseline{Version: b.Version, Status: b.Status, Baseline: b.Baseline.TestID, Findings: []string{}, Limitations: []string{}}
+	for _, r := range b.Results {
+		switch r.State {
+		case rca.BrowserBaselineAnomaly:
+			out.Compared++
+			out.Anomalies++
+			if len(out.Findings) < reportBrowserBaselineFindings {
+				out.Findings = append(out.Findings, reportBrowserBaselineFinding(r))
+			}
+		case rca.BrowserBaselineWithinRange:
+			out.Compared++
+		default:
+			out.Unscored++
+		}
+	}
+	for _, l := range b.Limitations {
+		out.Limitations = append(out.Limitations, rcaLimitationText(l))
+	}
+	out.Summary = reportBrowserBaselineSummary(out)
+	return out
+}
+
+// reportBrowserBaselineFinding states one cohort anomaly: the cohort and
+// level, its p75, and the baseline range it left.
+func reportBrowserBaselineFinding(r rca.BrowserBaselineResult) string {
+	cohort := strings.ToUpper(r.Metric)
+	if len(r.Evidence) > 0 {
+		if locator := r.Evidence[0].Locator; strings.Contains(locator, "#") {
+			cohort = locator[strings.Index(locator, "#")+1:]
+		}
+	}
+	direction := "higher"
+	if r.Direction == rca.DirectionDecrease {
+		direction = "lower"
+	}
+	value := func(v float64) string {
+		if strings.EqualFold(r.Unit, "ms") {
+			return fmt.Sprintf("%.0f ms", v)
+		}
+		return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.3f", v), "0"), ".")
+	}
+	return fmt.Sprintf("%s at %s: p75 %s, %s than the baseline's expected %s to %s", cohort, r.Level, value(r.Current), direction, value(r.ExpectedLow), value(r.ExpectedHigh))
+}
+
+// reportBrowserBaselineSummary is the browser baseline's one-line account.
+func reportBrowserBaselineSummary(b *ReportBrowserBaseline) string {
+	against := "a baseline run"
+	if b.Baseline != "" {
+		against = "baseline run " + b.Baseline
+	}
+	return fmt.Sprintf("Browser baseline (%s, %s): %d cohorts compared with %s at the same load, %d anomalies, %d unscored.", b.Version, strings.ToLower(rcaHumanize(b.Status)), b.Compared, against, b.Anomalies, b.Unscored)
 }
 
 // ReportRootCauseHypothesis is one ranked explanation: a v2 hypothesis or a
@@ -178,6 +262,7 @@ func reportRootCauseFromV2(a *rca.Assessment, completedAt *time.Time) ReportRoot
 		}
 		view.Hypotheses = append(view.Hypotheses, out)
 	}
+	view.BrowserBaseline = reportBrowserBaselineFromV2(a.BrowserBaseline)
 	for _, l := range a.Limitations {
 		view.Limitations = append(view.Limitations, rcaLimitationText(l))
 	}
