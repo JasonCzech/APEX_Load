@@ -283,6 +283,22 @@ export interface RunLogicConfig {
   auto_transactions?: string
   block_scheduling?: string
   action_sequence?: string[]
+  // VuGen run-logic blocks imported from a .usp: the iteration order replaces
+  // action_sequence when set.
+  blocks?: RunLogicBlock[]
+}
+
+export interface RunLogicBlock {
+  name?: string
+  mode?: "sequential" | "random" | "percentage"
+  iterations?: number
+  children: RunLogicChild[]
+}
+
+export interface RunLogicChild {
+  action?: string
+  block?: RunLogicBlock
+  weight?: number
 }
 
 export interface ErrorHandlingConfig {

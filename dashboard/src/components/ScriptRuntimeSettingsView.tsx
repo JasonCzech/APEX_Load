@@ -267,7 +267,7 @@ export function ScriptRuntimeSettingsView({
     if (leftSelected !== rightSelected) return leftSelected - rightSelected
     return left.localeCompare(right)
   })
-  const hasPreservedRunOrder = script.config.run_logic?.block_scheduling !== undefined || Boolean(script.config.run_logic?.action_sequence?.length)
+  const hasPreservedRunOrder = script.config.run_logic?.block_scheduling !== undefined || Boolean(script.config.run_logic?.action_sequence?.length) || Boolean(script.config.run_logic?.blocks?.length)
   const hasImportedRuntimeFiles = importedRuntimeFileNames.length > 0
   const importedDispositionSummary = summarizeImportedRuntimeDispositions(importedRuntimeDispositions)
 
@@ -304,7 +304,7 @@ export function ScriptRuntimeSettingsView({
   }
 
   const categoryModified = (category: typeof RUNTIME_WORKSPACE_CATEGORIES[number]) => category.id === 'imported_source'
-    ? ['block_scheduling', 'action_sequence'].some(field => JSON.stringify(script.config.run_logic?.[field as keyof NonNullable<ScriptConfig['run_logic']>]) !== JSON.stringify(baselineConfig?.run_logic?.[field as keyof NonNullable<ScriptConfig['run_logic']>]))
+    ? ['block_scheduling', 'action_sequence', 'blocks'].some(field => JSON.stringify(script.config.run_logic?.[field as keyof NonNullable<ScriptConfig['run_logic']>]) !== JSON.stringify(baselineConfig?.run_logic?.[field as keyof NonNullable<ScriptConfig['run_logic']>]))
     : category.fields.some(field => JSON.stringify(script.config[field]) !== JSON.stringify(baselineConfig?.[field]))
   const visibleCategories = RUNTIME_WORKSPACE_CATEGORIES.filter(category => {
     const terms = `${category.label} ${category.group} ${category.fields.join(' ')} ${RUNTIME_SEARCH_TERMS[category.id] || ''}`.toLowerCase()

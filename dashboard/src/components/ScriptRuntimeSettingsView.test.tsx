@@ -907,6 +907,24 @@ describe('ScriptRuntimeSettingsView imported source runtime settings', () => {
     expect(web.getAttribute('aria-pressed')).toBe('true')
   })
 
+  it('shows imported run-logic blocks as driving execution', () => {
+    const script = importedScript()
+    script.config.run_logic = {
+      block_scheduling: 'sequential',
+      blocks: [{ name: 'Run', mode: 'percentage', children: [{ action: 'browse', weight: 70 }, { action: 'buy', weight: 30 }, { block: { name: 'Inner', mode: 'random', children: [{ action: 'search' }] } }] }],
+    }
+    act(() => root.render(
+      <ScriptRuntimeSettingsView activeHTTPTransportTab="timeouts" activeSection="imported_source" canEditProtocol={false}
+        onSave={vi.fn()} onSelectHTTPTransportTab={vi.fn()} onSelectSection={vi.fn()} onUpdateField={vi.fn()}
+        onUpdateProtocol={vi.fn()} saveDisabled={false} saving={false} script={script} />,
+    ))
+    const section = container.querySelector('[aria-label="Imported run logic"]')
+    expect(section?.textContent).toContain('Drives execution.')
+    expect(section?.textContent).toContain('browse — 70%')
+    expect(section?.textContent).toContain('Inner (random)')
+    expect(container.querySelector('[aria-label="Preserved run order"]')).toBeNull()
+  })
+
   it('hides the section entirely when the script was not imported', () => {
     const script = importedScript()
     delete script.metadata

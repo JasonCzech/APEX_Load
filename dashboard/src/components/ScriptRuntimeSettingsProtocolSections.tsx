@@ -1,4 +1,4 @@
-import { type ScriptDefinition } from '../types/scripts'
+import { type RunLogicBlock, type ScriptDefinition } from '../types/scripts'
 import { useState } from 'react'
 import { RuntimeSectionIcon } from './RuntimeSectionIcon'
 import SecondsFromMillisecondsInput from './SecondsFromMillisecondsInput'
@@ -654,6 +654,22 @@ export interface ImportedSourceRuntimeSectionProps {
   runLogic?: ScriptDefinition['config']['run_logic']
 }
 
+// RunLogicBlockItem renders one imported run-logic block and its children.
+function RunLogicBlockItem({ block }: { block: RunLogicBlock }) {
+  const mode = block.mode || 'sequential'
+  const percentage = mode === 'percentage'
+  return (
+    <li>
+      <strong>{block.name || 'Block'}</strong> <span>({mode}{block.iterations && block.iterations > 1 ? `, ${block.iterations} iterations` : ''})</span>
+      <ul>
+        {block.children.map((child, index) => child.block
+          ? <RunLogicBlockItem key={index} block={child.block} />
+          : <li key={index}>{child.action}{percentage && child.weight !== undefined ? ` — ${child.weight}%` : ''}</li>)}
+      </ul>
+    </li>
+  )
+}
+
 export function ImportedSourceRuntimeSection({
   sectionIsActive,
   onSelectSection,
@@ -701,12 +717,20 @@ export function ImportedSourceRuntimeSection({
             disposition APEX Load applied. Mapped settings are editable in the sections on the left; compatibility-only and
             not-applicable rows are preserved read-only so nothing from the source is silently dropped.
           </p>}
-          <section className="imported-runtime-run-order" aria-label="Preserved run order">
-            <h4>Preserved run order</h4>
-            <p><strong>Preserved only — does not affect execution.</strong> The engine runs init, the authored action list, and teardown in that order. These imported values are migration evidence.</p>
-            <dl><dt>Block Scheduling</dt><dd>{runLogic?.block_scheduling || 'Not specified'}</dd><dt>Action Sequence</dt><dd>{runLogic?.action_sequence?.join(', ') || 'Not specified'}</dd></dl>
-            <p>Implement branching or repetition in executable control-flow actions. Change action order in the Action List.</p>
-          </section>
+          {runLogic?.blocks?.length ? (
+            <section className="imported-runtime-run-order" aria-label="Imported run logic">
+              <h4>Imported run logic</h4>
+              <p><strong>Drives execution.</strong> Each iteration runs these blocks in order: a sequential block runs its children in order, a random block runs one child, and a percentage block runs one child by weight. Each child names an imported action group.</p>
+              <ul className="imported-run-logic-blocks">{runLogic.blocks.map((block, index) => <RunLogicBlockItem key={index} block={block} />)}</ul>
+            </section>
+          ) : (
+            <section className="imported-runtime-run-order" aria-label="Preserved run order">
+              <h4>Preserved run order</h4>
+              <p><strong>Preserved only — does not affect execution.</strong> The engine runs init, the authored action list, and teardown in that order. These imported values are migration evidence.</p>
+              <dl><dt>Block Scheduling</dt><dd>{runLogic?.block_scheduling || 'Not specified'}</dd><dt>Action Sequence</dt><dd>{runLogic?.action_sequence?.join(', ') || 'Not specified'}</dd></dl>
+              <p>Implement branching or repetition in executable control-flow actions. Change action order in the Action List.</p>
+            </section>
+          )}
           {groupNames.length > 0 && <div className="imported-runtime-groups" role="group" aria-label="Imported runtime setting groups">
             <div className="imported-runtime-groups-heading"><strong>Show groups</strong><span>{selectedGroupCount} of {groupNames.length} selected</span></div>
             <div className="imported-runtime-group-actions"><button type="button" className="btn btn-sm btn-ghost" onClick={() => setHiddenGroups(new Set())} disabled={selectedGroupCount === groupNames.length}>All</button><button type="button" className="btn btn-sm btn-ghost" onClick={() => setHiddenGroups(new Set(groupNames))} disabled={selectedGroupCount === 0}>None</button></div>
