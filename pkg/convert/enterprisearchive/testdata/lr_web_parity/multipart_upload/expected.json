@@ -1,0 +1,6 @@
+{
+  "description": "Multipart upload with a file part. Not reproduced yet (WP1.2 adds body_multipart), so the import must be gated, never sent with a wrong body.",
+  "source": "VuGen 26.1 Function Reference: web_submit_data (EncType=multipart/form-data, File=Yes, ContentType).",
+  "outcome": "gated",
+  "gate_reason_codes": ["web_submit_data_itemdata_encoding_unsupported"]
+}

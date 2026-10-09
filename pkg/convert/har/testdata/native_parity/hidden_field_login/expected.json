@@ -1,0 +1,13 @@
+{
+  "description": "HAR-pipeline baseline (browser recorder HTTP script): a hidden anti-CSRF field recorded on the home page is correlated into the login post, and Referer is kept.",
+  "source": "VuGen correlation behavior for hidden form fields (Correlations > Rules); HTTP form semantics.",
+  "outcome": "replay",
+  "responses": [
+    {"method": "GET", "path": "/app/home", "headers": {"Content-Type": "text/html"}, "body": "<form action=\"/app/login\" method=\"post\"><input type=\"hidden\" name=\"csrf_token\" value=\"RUNTIMEcsrf42token\"></form>"},
+    {"method": "POST", "path": "/app/login", "headers": {"Content-Type": "text/html"}, "body": "<html><title>Welcome</title></html>"}
+  ],
+  "requests": [
+    {"method": "GET", "path": "/app/home", "query": ""},
+    {"method": "POST", "path": "/app/login", "headers": {"Content-Type": "application/x-www-form-urlencoded", "Referer": "http://parity.test/app/home"}, "body": "csrf_token=RUNTIMEcsrf42token&user=jojo"}
+  ]
+}

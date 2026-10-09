@@ -1,0 +1,21 @@
+{
+  "name": "hidden_field_login",
+  "base_url": "http://parity.test",
+  "requests": [
+    {
+      "seq": 1, "method": "GET", "url": "http://parity.test/app/home", "scheme": "http", "path": "/app/home", "host": "parity.test",
+      "headers": {"Accept": "text/html"},
+      "status_code": 200,
+      "response_headers": {"Content-Type": "text/html"},
+      "response_body": "<form action=\"/app/login\" method=\"post\"><input type=\"hidden\" name=\"csrf_token\" value=\"rec0rdedT0kenValue9\"></form>"
+    },
+    {
+      "seq": 2, "method": "POST", "url": "http://parity.test/app/login", "scheme": "http", "path": "/app/login", "host": "parity.test",
+      "headers": {"Content-Type": "application/x-www-form-urlencoded", "Referer": "http://parity.test/app/home"},
+      "body": "csrf_token=rec0rdedT0kenValue9&user=jojo",
+      "status_code": 200,
+      "response_headers": {"Content-Type": "text/html"},
+      "response_body": "<html><title>Welcome</title></html>"
+    }
+  ]
+}
