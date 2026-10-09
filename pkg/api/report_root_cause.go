@@ -181,7 +181,9 @@ func reportRootCauseFromV2(a *rca.Assessment, completedAt *time.Time) ReportRoot
 	for _, l := range a.Limitations {
 		view.Limitations = append(view.Limitations, rcaLimitationText(l))
 	}
-	view.Limitations = append(view.Limitations, a.Validity.Limitations...)
+	for _, code := range a.Validity.Limitations {
+		view.Limitations = append(view.Limitations, rcaHumanize(code))
+	}
 	return view
 }
 

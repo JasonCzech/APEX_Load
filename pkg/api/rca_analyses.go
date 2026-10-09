@@ -921,8 +921,14 @@ func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *st
 		return nil, nil, readErr(err)
 	}
 	evidence, frozen := s.frozenRCAEvidence(analysis, payload)
-	// Mapping decisions are frozen inputs: without the revision that holds
-	// them, the analysis cannot judge what it was asked to.
+	// The evidence revision is a frozen input: the mapping decisions and
+	// associated datasets it holds decide what the analysis judges, so an
+	// analysis whose frozen revision cannot be read fails, and can be
+	// requested again, rather than judging less and being reused for that.
+	// An analysis that froze no revision has none to read.
+	if !frozen && payload.Inputs.EvidenceRevision != 0 {
+		return nil, nil, errors.New("the analysis's frozen evidence revision could not be read")
+	}
 	if payload.Inputs.Mapping != "" && (!frozen || evidence.MappingDigest != payload.Inputs.Mapping) {
 		return nil, nil, errors.New("the evidence revision holding the analysis's mapping decisions could not be read")
 	}
@@ -1084,7 +1090,7 @@ func (s *Server) rcaCoverage(ctx context.Context, payload rcaAnalysisPayload, ma
 	switch {
 	case len(detection.Series) == 0 || len(detection.Levels) == 0:
 		seriesStatus = rca.CoverageMissing
-	case len(detection.Limitations) > 0:
+	case rcaDetectionEvidenceLimited(detection.Limitations):
 		seriesStatus = rca.CoveragePartial
 	}
 	seriesDetail := fmt.Sprintf("%d transaction series, %d dependency timing series, %d provider series, %d load levels", transactions, timing, providers, len(detection.Levels))
@@ -1228,6 +1234,22 @@ func (s *Server) rcaBaselineEvidence(ctx context.Context, manifest *RunArchiveMa
 	}
 	coverage.Status, coverage.Detail = rca.CoveragePartial, detail+"; its series could not be read"
 	return coverage, nil
+}
+
+// rcaInformationalDetectionLimitations say how the series were read, not
+// that evidence was missing or cut, so they do not make the detection
+// coverage partial.
+var rcaInformationalDetectionLimitations = map[string]bool{limitationActionsJudged: true, limitationCumulativeSeriesRated: true}
+
+// rcaDetectionEvidenceLimited reports whether any detection limitation says
+// evidence was missing, cut or unreadable.
+func rcaDetectionEvidenceLimited(limitations []rca.Limitation) bool {
+	for _, l := range limitations {
+		if !rcaInformationalDetectionLimitations[l.Code] {
+			return true
+		}
+	}
+	return false
 }
 
 // rcaNonJointSeries counts the series that are not joint action-dimension

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/rca"
+	"github.com/jasonczech/apexload/pkg/rca/signatures"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -261,6 +262,30 @@ func TestRCABudgetCutAssessmentsAreNotReused(t *testing.T) {
 	}
 	if third := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{}).Body.Bytes()); third.AnalysisID != second.AnalysisID {
 		t.Fatalf("sound assessment not reused: %+v", third)
+	}
+}
+
+// An analysis whose frozen evidence revision cannot be read fails, so it is
+// requested again, instead of judging without the mapping decisions and
+// datasets that revision holds and being reused for it.
+func TestRCAAnalysisFailsWhenItsEvidenceRevisionIsUnreadable(t *testing.T) {
+	server, store := rcaTestServer(t)
+	digest, err := rcaArchiveDigest(server.runner.archives["rca-run"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := rca.InputDigests{Archive: digest, EvidenceRevision: 99, Engine: rcaEngineVersion, SignatureSet: signatures.Version}
+	payload, _ := json.Marshal(rcaAnalysisPayload{Inputs: inputs})
+	queued, _, err := store.CreateRCAAnalysis(storage.DefaultProjectID, "rca-run", rcaInputDigest(inputs, 0), payload, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ran, err := server.runNextRCAAnalysis(context.Background(), nil); err != nil || !ran {
+		t.Fatal(ran, err)
+	}
+	failed := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodGet, rcaRunPath+"/analyses/"+queued.ID, nil).Body.Bytes())
+	if failed.State != storage.RCAStateFailed || !strings.Contains(failed.Error, "evidence revision") || failed.Assessment != nil {
+		t.Fatalf("unreadable evidence: %+v", failed)
 	}
 }
 
