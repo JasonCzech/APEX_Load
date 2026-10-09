@@ -1675,7 +1675,8 @@ func deleteProjectGraphTx(tx *storeTx, id string) error {
 		{`DELETE FROM powerbi_publishes WHERE project_id = ? OR test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id, id}},
 		{`DELETE FROM app_settings WHERE EXISTS (
 			SELECT 1 FROM tests t WHERE t.project_id = ?
-			AND SUBSTR(app_settings.key, 1, LENGTH('report:annotations:' || t.id || ':')) = 'report:annotations:' || t.id || ':'
+			AND (SUBSTR(app_settings.key, 1, LENGTH('report:annotations:' || t.id || ':')) = 'report:annotations:' || t.id || ':'
+				OR SUBSTR(app_settings.key, 1, LENGTH('run:notifications:' || t.id || ':')) = 'run:notifications:' || t.id || ':')
 		)`, []any{id}},
 		{`DELETE FROM github_check_links WHERE test_id IN (SELECT id FROM tests WHERE project_id = ?) OR script_id IN (SELECT id FROM scripts WHERE project_id = ?)`, []any{id, id}},
 		{`DELETE FROM test_history WHERE test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id}},
@@ -1709,8 +1710,8 @@ func deleteProjectGraphTx(tx *storeTx, id string) error {
 		{`DELETE FROM correlation_rulesets WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM monitoring_collectors WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM grafana_dashboards WHERE project_id = ?`, []any{id}},
-		{`DELETE FROM dashboard_definition_revisions WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM dashboard_definitions WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM dashboard_definition_revisions WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM grafana_import_sessions WHERE project_id = ?`, []any{id}},
 
 		// Execution-plan schedules, approvals, occurrences, and run state.

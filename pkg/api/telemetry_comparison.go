@@ -50,6 +50,10 @@ type TelemetryRunProfile struct {
 	// acceptance policy (C7); each run is judged by its own policy, so two
 	// verdicts are shown side by side, never compared.
 	Acceptance *TelemetryAcceptanceVerdict `json:"acceptance,omitempty"`
+	// AcceptanceEvaluated says the verdict was looked for: a comparison saved
+	// before telemetry verdicts has neither, and never claims the run had no
+	// policy.
+	AcceptanceEvaluated bool `json:"acceptance_evaluated,omitempty"`
 	// Loss is the run's loss totals: exact, lower bound or unavailable.
 	Loss *TelemetryLossAccounting `json:"loss,omitempty"`
 }
@@ -108,7 +112,7 @@ func telemetryRunProfile(runID string, manifest *RunArchiveManifest) TelemetryRu
 	if manifest.Provenance.Workload != nil {
 		profile.WorkloadVersion = manifest.Provenance.Workload.Version
 	}
-	profile.Acceptance = telemetryAcceptanceForManifest(manifest)
+	profile.Acceptance, profile.AcceptanceEvaluated = telemetryAcceptanceForManifest(manifest), true
 	profile.Loss = manifest.TelemetryLoss.clone()
 	return profile
 }
@@ -207,6 +211,9 @@ func baselineTelemetryComparisonLine(c BaselineTelemetryComparison) string {
 // policy revision.
 func telemetryAcceptancePairLine(current, baseline TelemetryRunProfile) string {
 	verdict := func(profile TelemetryRunProfile) string {
+		if profile.Acceptance == nil && !profile.AcceptanceEvaluated {
+			return "not recorded (saved before telemetry verdicts)"
+		}
 		if profile.Acceptance == nil {
 			return "no acceptance policy"
 		}

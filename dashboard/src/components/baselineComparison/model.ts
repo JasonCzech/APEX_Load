@@ -65,6 +65,8 @@ export interface TelemetryRunProfile {
  // The run's own telemetry verdict under its pinned acceptance policy (C7)
  // and its loss totals; verdicts are shown side by side, never compared.
  acceptance?: import('../../types').TelemetryAcceptanceVerdict
+ // Set when the verdict was looked for; a comparison saved before verdicts has neither.
+ acceptance_evaluated?: boolean
  loss?: { dropped_results?: { state: string; value: number; reason?: string } }
 }
 // Whether one baseline's whole-run telemetry health compares with the

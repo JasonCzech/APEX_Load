@@ -50,15 +50,7 @@ func analysisComparisonGeometry(sides []int64) (input, staging int64, err error)
 }
 
 func analysisDatasetArtifactDigestValid(digest string) bool {
-	if len(digest) != 64 {
-		return false
-	}
-	for _, value := range digest {
-		if value < '0' || value > '9' && value < 'a' || value > 'f' {
-			return false
-		}
-	}
-	return true
+	return storage.ValidLowerSHA256Hex(digest)
 }
 
 // Snapshot only the bounded immutable analytical fields needed by this query.
@@ -218,14 +210,15 @@ func (s *Server) prepareNativeAnalysisComparison(ctx context.Context, project st
 			if err != nil || in == nil || in.ProjectID != project || in.State != "ready" {
 				return ctx, nil, "", errors.New("committed dataset not found in project")
 			}
-			if err := checkAnalysisDatasetPin(selection.DatasetArtifactSHA256, in); err != nil {
-				return ctx, nil, "", err
-			}
 			snapshot, err = snapshotAnalysisQueryDataset(in)
 			if err != nil {
 				return ctx, nil, "", err
 			}
 			snapshots[selection.DatasetID] = snapshot
+		}
+		// Each selection's own pin, also when both sides read one dataset.
+		if err := checkAnalysisDatasetPin(selection.DatasetArtifactSHA256, snapshot); err != nil {
+			return ctx, nil, "", err
 		}
 		query, err := importedNativeSeriesQuery(project, snapshot, selection, q)
 		if err != nil {

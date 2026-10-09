@@ -110,6 +110,20 @@ func newTelemetryStageRecorder() *telemetryStageRecorder {
 	return &telemetryStageRecorder{since: time.Now().UTC(), stages: map[string]*telemetryStageDigest{}, lastSeen: map[string]generatorBatchPosition{}}
 }
 
+// adopted records that this controller (re)adopted the run at: a recorder it
+// kept from an earlier ownership missed the gap and the other controller's
+// time, so its distributions count only as sampled from the adoption.
+func (r *telemetryStageRecorder) adopted(at time.Time) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.since.Before(at) {
+		r.since = at.UTC()
+	}
+}
+
 func (r *telemetryStageRecorder) stageLocked(stage string) *telemetryStageDigest {
 	current := r.stages[stage]
 	if current == nil {
@@ -259,6 +273,13 @@ func (r *telemetryStageRecorder) quantile(stage string, q float64) (float64, boo
 func stageRecorderLocked(test *ManagedTest) *telemetryStageRecorder {
 	if test.telemetryStages == nil {
 		test.telemetryStages = newTelemetryStageRecorder()
+		// The controller that started the run samples it from its start (no
+		// stage is observed before the first publication); one that adopted
+		// it after a failover samples only from then, which acceptance
+		// verdicts treat as partial evidence.
+		if test.StartedAt != nil && len(test.continuityFailovers) == 0 && test.telemetryStages.since.After(*test.StartedAt) {
+			test.telemetryStages.since = test.StartedAt.UTC()
+		}
 	}
 	return test.telemetryStages
 }

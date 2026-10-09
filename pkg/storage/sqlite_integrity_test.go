@@ -164,6 +164,7 @@ func TestDeleteProjectRemovesOwnedGraphAndGrants(t *testing.T) {
 		{`INSERT INTO direct_import_receipts (id, project_id, source_profile, operation_key_hash, request_sha256, state, owner_token, script_ids_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, []any{"receipt-delete", project.ID, "jmeter", "operation", "request", "complete", "", "[]", now, now}},
 		{`INSERT INTO powerbi_publishes (id, test_id, project_id, workspace_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, []any{"powerbi-delete", "test-delete", project.ID, "workspace", "complete", now, now}},
 		{`INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)`, []any{"report:annotations:test-delete:engineer", `{}`, now}},
+		{`INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)`, []any{RunNotificationClaimPrefix("test-delete") + "telemetry_acceptance", `claimed`, now}},
 		{`INSERT INTO usage_accounting_snapshots (id, project_id, generated_at, payload_json, created_at) VALUES (?, ?, ?, ?, ?)`, []any{"usage-delete", project.ID, now, `{}`, now}},
 		{`INSERT INTO users (id, subject, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, []any{"user-delete", "subject-delete", 1, now, now}},
 		{`INSERT INTO user_role_bindings (id, user_id, scope_type, scope_id, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, []any{"role-delete", "user-delete", "project", project.ID, "viewer", now, now}},
@@ -203,6 +204,7 @@ func TestDeleteProjectRemovesOwnedGraphAndGrants(t *testing.T) {
 		{`SELECT COUNT(*) FROM direct_import_receipts WHERE project_id = ?`, project.ID},
 		{`SELECT COUNT(*) FROM powerbi_publishes WHERE project_id = ?`, project.ID},
 		{`SELECT COUNT(*) FROM app_settings WHERE key = ?`, "report:annotations:test-delete:engineer"},
+		{`SELECT COUNT(*) FROM app_settings WHERE key = ?`, RunNotificationClaimPrefix("test-delete") + "telemetry_acceptance"},
 		{`SELECT COUNT(*) FROM user_role_bindings WHERE scope_type = 'project' AND scope_id = ?`, project.ID},
 	}
 	for _, check := range checks {

@@ -299,7 +299,7 @@ func (s *Server) prepareClassicReplayScript(
 		return nil, nil, nil, false
 	}
 	issues := append(
-		validateScriptForReplayWithImportTrust(preparedScript, trusted),
+		s.transientStaticIssues(script, preparedScript, trusted),
 		refIssues...,
 	)
 	warnings := append(validationWarnings(preparedScript), refWarnings...)

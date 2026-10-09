@@ -1,13 +1,12 @@
 package rca
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"math"
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
 )
@@ -35,18 +34,21 @@ const (
 
 // Reasons a browser baseline result is unscored, or evidence was excluded.
 const (
-	BrowserBaselineNoBaselineRun       = "no_qualified_baseline"
-	BrowserBaselineNoBaselineCohort    = "no_baseline_cohort"
-	BrowserBaselineCohortChanged       = "cohort_changed"
-	BrowserBaselineNoSameLoadWindow    = "no_same_load_window"
-	BrowserBaselineInsufficient        = "insufficient_baseline"
-	BrowserBaselineZeroVariance        = "zero_variance"
-	BrowserBaselineNoEffectFloor       = "no_effect_floor"
-	BrowserBaselineOutsideSteadyLoad   = "outside_steady_load"
-	BrowserBaselineSourceLoss          = "source_loss"
-	BrowserBaselineBaselineSourceLoss  = "baseline_source_loss"
-	BrowserBaselineResultsTruncated    = "browser_baseline_truncated"
-	BrowserBaselineLevelsUnavailable   = "load_levels_unavailable"
+	BrowserBaselineNoBaselineRun      = "no_qualified_baseline"
+	BrowserBaselineNoBaselineCohort   = "no_baseline_cohort"
+	BrowserBaselineCohortChanged      = "cohort_changed"
+	BrowserBaselineNoSameLoadWindow   = "no_same_load_window"
+	BrowserBaselineInsufficient       = "insufficient_baseline"
+	BrowserBaselineZeroVariance       = "zero_variance"
+	BrowserBaselineNoEffectFloor      = "no_effect_floor"
+	BrowserBaselineOutsideSteadyLoad  = "outside_steady_load"
+	BrowserBaselineSourceLoss         = "source_loss"
+	BrowserBaselineBaselineSourceLoss = "baseline_source_loss"
+	BrowserBaselineResultsTruncated   = "browser_baseline_truncated"
+	BrowserBaselineLevelsUnavailable  = "load_levels_unavailable"
+	// BrowserBaselineEvidenceUnavailable: the baseline's document evidence
+	// was not fully read, so a missing cohort may exist there.
+	BrowserBaselineEvidenceUnavailable = "baseline_evidence_unavailable"
 	browserBaselineUnscoredDetailLimit = 8
 )
 
@@ -81,7 +83,9 @@ var DefaultBrowserBaselineParams = BrowserBaselineParams{
 // cohort's fields, so a cohort without an exact baseline match can say what
 // changed. Incomplete marks evidence that dropped document observations.
 type DocumentCohort struct {
-	Metric     string            `json:"metric"`
+	Metric string `json:"metric"`
+	// Group is the scenario group that measured the document.
+	Group      string            `json:"group,omitempty"`
 	Family     string            `json:"family"`
 	Fields     map[string]string `json:"fields,omitempty"`
 	Incomplete bool              `json:"incomplete,omitempty"`
@@ -107,7 +111,10 @@ type BrowserBaselineResult struct {
 	Metric string `json:"metric"`
 	Unit   string `json:"unit"`
 	Level  string `json:"level"`
-	State  string `json:"state"`
+	// LevelStart tells apart two steady levels at one load (a profile that
+	// returns to a load).
+	LevelStart time.Time `json:"level_start"`
+	State      string    `json:"state"`
 	// Reason says why a result is unscored; Detail names what differed.
 	Reason    string `json:"reason,omitempty"`
 	Detail    string `json:"detail,omitempty"`
@@ -120,8 +127,10 @@ type BrowserBaselineResult struct {
 	BaselineStdDev  float64 `json:"baseline_stddev,omitempty"`
 	BaselineBuckets int     `json:"baseline_buckets"`
 	BaselineSamples int64   `json:"baseline_samples"`
-	// ExpectedLow and ExpectedHigh are the baseline mean ± Sigma standard
-	// deviations (never below zero): the range a value is expected in.
+	// ExpectedLow and ExpectedHigh are the baseline mean ± the larger of
+	// Sigma standard deviations and the effect floor (never below zero): a
+	// value inside is within range, one outside an anomaly. Unscored
+	// results have none.
 	ExpectedLow  float64 `json:"expected_low,omitempty"`
 	ExpectedHigh float64 `json:"expected_high,omitempty"`
 	Z            float64 `json:"z,omitempty"`
@@ -159,7 +168,16 @@ func DetectBrowserBaseline(input DetectionInput, params BrowserBaselineParams) *
 		out.Limitations = append(out.Limitations, Limitation{Code: BrowserBaselineNoBaselineRun, Detail: "no workload-qualified baseline run was given, so no browser document cohort was compared"})
 		return out
 	}
-	out.Baseline = BaselineRef{TestID: baseline.TestID, Qualification: baseline.Qualification}
+	out.Baseline = BaselineRef{TestID: baseline.TestID, Qualification: baseline.Qualification, Reasons: slices.Clone(baseline.QualificationReasons)}
+	// The cohort key stands in for authored identity by the scenario group,
+	// which only holds while the group ran the same script and the run the
+	// same configuration: a configuration or workload change refuses every
+	// cohort, a script change only its group's.
+	authored := browserBaselineAuthoredChanges(baseline.QualificationReasons, baseline.ScriptChangedGroups == nil)
+	if baseline.DocumentsIncomplete {
+		out.Status = DetectionPartial
+		out.Limitations = append(out.Limitations, Limitation{Code: BrowserBaselineEvidenceUnavailable, Detail: "the baseline's browser document evidence was not fully read; a cohort missing from it is unscored as unavailable, not as absent"})
+	}
 	byID, byFamily := map[string]Series{}, map[string][]Series{}
 	for _, s := range baseline.Series {
 		if s.Kind == SeriesBrowserDocument && s.Document != nil {
@@ -177,7 +195,14 @@ func DetectBrowserBaseline(input DetectionInput, params BrowserBaselineParams) *
 			if len(current) == 0 {
 				continue
 			}
-			out.Results = append(out.Results, compareBrowserCohort(s, level, current, samples, byID, byFamily, baselineLevels, out.Baseline, params))
+			result := compareBrowserCohort(s, level, current, samples, byID, byFamily, baselineLevels, out.Baseline, baseline.DocumentsIncomplete, params)
+			switch {
+			case authored != "":
+				result = browserBaselineUnscoredResult(result, BrowserBaselineCohortChanged, "the baseline's configuration or workload changed or was not recorded ("+authored+"), so its documents are not the same authored pages")
+			case baseline.ScriptChangedGroups[s.Document.Group]:
+				result = browserBaselineUnscoredResult(result, BrowserBaselineCohortChanged, fmt.Sprintf("group %q ran a different or unrecorded script in the baseline, so its documents are not the same authored pages", s.Document.Group))
+			}
+			out.Results = append(out.Results, result)
 		}
 		for _, p := range s.Points {
 			if usable(p) && !insideAny(s, p, levels) {
@@ -190,8 +215,8 @@ func DetectBrowserBaseline(input DetectionInput, params BrowserBaselineParams) *
 	}
 	sort.SliceStable(out.Results, func(i, j int) bool {
 		a, b := out.Results[i], out.Results[j]
-		if rank(a.State) != rank(b.State) {
-			return rank(a.State) < rank(b.State)
+		if browserBaselineStateRank(a.State) != browserBaselineStateRank(b.State) {
+			return browserBaselineStateRank(a.State) < browserBaselineStateRank(b.State)
 		}
 		if math.Abs(a.Z) != math.Abs(b.Z) {
 			return math.Abs(a.Z) > math.Abs(b.Z)
@@ -207,7 +232,36 @@ func DetectBrowserBaseline(input DetectionInput, params BrowserBaselineParams) *
 	return out
 }
 
-func rank(state string) int {
+// browserBaselineAuthoredChanges lists the qualification reasons that say
+// every cohort's authored pages may differ: configuration and workload ones,
+// and script ones when the changed groups are not known.
+func browserBaselineAuthoredChanges(reasons []string, scriptGroupsUnknown bool) string {
+	var changed []string
+	for _, reason := range reasons {
+		switch reason {
+		case ReasonConfigChanged, ReasonConfigUnrecorded, ReasonWorkloadUnrecorded:
+			changed = append(changed, reason)
+		case ReasonScriptChanged, ReasonScriptUnrecorded:
+			if scriptGroupsUnknown {
+				changed = append(changed, reason)
+			}
+		}
+	}
+	return strings.Join(changed, ", ")
+}
+
+// browserBaselineUnscoredResult makes a result unscored, without a range or
+// the baseline's evidence.
+func browserBaselineUnscoredResult(result BrowserBaselineResult, reason, detail string) BrowserBaselineResult {
+	result.State, result.Reason, result.Detail, result.Direction = BrowserBaselineUnscored, reason, detail, ""
+	result.ExpectedLow, result.ExpectedHigh, result.Z, result.Effect, result.EffectFloor, result.BaselineMean, result.BaselineStdDev = 0, 0, 0, 0, 0, 0, 0
+	if len(result.Evidence) > 1 {
+		result.Evidence = result.Evidence[:1]
+	}
+	return result
+}
+
+func browserBaselineStateRank(state string) int {
 	switch state {
 	case BrowserBaselineAnomaly:
 		return 0
@@ -232,27 +286,28 @@ func spanValues(points []SeriesPoint) ([]float64, int64) {
 	for _, p := range points {
 		if usable(p) {
 			values = append(values, p.Value)
-			samples += p.Count
+			samples += int64(p.Count)
 		}
 	}
 	return values, samples
 }
 
-func compareBrowserCohort(s Series, level LoadLevel, current []float64, samples int64, byID map[string]Series, byFamily map[string][]Series, baselineLevels []LoadLevel, ref BaselineRef, params BrowserBaselineParams) BrowserBaselineResult {
+func compareBrowserCohort(s Series, level LoadLevel, current []float64, samples int64, byID map[string]Series, byFamily map[string][]Series, baselineLevels []LoadLevel, ref BaselineRef, baselineIncomplete bool, params BrowserBaselineParams) BrowserBaselineResult {
 	sorted := slices.Clone(current)
 	slices.Sort(sorted)
-	result := BrowserBaselineResult{Series: s.ID, Metric: s.Document.Metric, Unit: s.Unit, Level: level.Label(), Current: medianSorted(sorted), CurrentBuckets: len(current), CurrentSamples: samples,
+	result := BrowserBaselineResult{Series: s.ID, Metric: s.Document.Metric, Unit: s.Unit, Level: level.Label(), LevelStart: level.Start.UTC(), Current: medianSorted(sorted), CurrentBuckets: len(current), CurrentSamples: samples,
 		Baseline: ref, Evidence: []EvidenceRef{s.Evidence}}
-	sum := sha256.Sum256([]byte(BrowserBaselineVersion + "\x00" + s.ID + "\x00" + result.Level + "\x00" + ref.TestID))
-	result.ID = "browser_baseline/" + hex.EncodeToString(sum[:8])
+	result.ID = stableID("browser_baseline", BrowserBaselineVersion, s.ID, result.Level, level.Start.UTC().Format(time.RFC3339Nano), ref.TestID)
 	if s.Document.Incomplete {
 		result.Caveats = append(result.Caveats, BrowserBaselineSourceLoss)
 	}
 	unscored := func(reason, detail string) BrowserBaselineResult {
-		result.State, result.Reason, result.Detail = BrowserBaselineUnscored, reason, detail
-		return result
+		return browserBaselineUnscoredResult(result, reason, detail)
 	}
 	b, ok := byID[s.ID]
+	if !ok && baselineIncomplete {
+		return unscored(BrowserBaselineEvidenceUnavailable, "the baseline's browser document evidence was not fully read, so its matching cohort may be missing")
+	}
 	if !ok {
 		if candidates := byFamily[s.Document.Family]; len(candidates) > 0 {
 			return unscored(BrowserBaselineCohortChanged, "the baseline measured this document with a different "+cohortDifference(s.Document.Fields, candidates))
@@ -290,8 +345,11 @@ func compareBrowserCohort(s Series, level LoadLevel, current []float64, samples 
 		return unscored(BrowserBaselineNoEffectFloor, "no practical effect floor is defined for "+result.Metric)
 	}
 	result.BaselineMean, result.BaselineStdDev, result.Z = score.BaselineMean, score.BaselineStdDev, score.ZScore
-	result.ExpectedLow = math.Max(0, score.BaselineMean-params.Sigma*score.BaselineStdDev)
-	result.ExpectedHigh = score.BaselineMean + params.Sigma*score.BaselineStdDev
+	// An anomaly needs both |z| >= Sigma and the effect floor, so the
+	// published range is the wider of the two: within it is within range.
+	band := math.Max(params.Sigma*score.BaselineStdDev, floor)
+	result.ExpectedLow = math.Max(0, score.BaselineMean-band)
+	result.ExpectedHigh = score.BaselineMean + band
 	result.Effect, result.EffectFloor = result.Current-score.BaselineMean, floor
 	result.Evidence = append(result.Evidence, b.Evidence)
 	result.State = BrowserBaselineWithinRange
@@ -321,26 +379,27 @@ func browserEffectFloor(metric, unit string, mean float64, params BrowserBaselin
 }
 
 // cohortDifference names the runtime cohort fields in which the run's cohort
-// differs from every baseline cohort of the same measurement.
+// differs from the closest baseline cohort of the same measurement (the one
+// differing in the fewest fields).
 func cohortDifference(fields map[string]string, candidates []Series) string {
-	differing := map[string]bool{}
-	for _, c := range candidates {
+	var names []string
+	for index, c := range candidates {
+		var differing []string
 		for name, value := range fields {
 			if c.Document.Fields[name] != value {
-				differing[name] = true
+				differing = append(differing, name)
 			}
 		}
 		for name := range c.Document.Fields {
 			if _, ok := fields[name]; !ok {
-				differing[name] = true
+				differing = append(differing, name)
 			}
 		}
+		sort.Strings(differing)
+		if index == 0 || len(differing) < len(names) {
+			names = differing
+		}
 	}
-	names := make([]string, 0, len(differing))
-	for name := range differing {
-		names = append(names, name)
-	}
-	sort.Strings(names)
 	if len(names) > browserBaselineUnscoredDetailLimit {
 		names = names[:browserBaselineUnscoredDetailLimit]
 	}

@@ -1,15 +1,22 @@
 import type { TelemetryAcceptanceCriterion, TelemetryAcceptanceVerdict as Verdict } from '../types'
+import { formatAcceptancePercent } from './telemetryAcceptanceFormat'
 
 function formatValue(value: number | undefined, unit: string): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) return 'unknown'
-  if (unit === 'ratio') return `${(value * 100).toFixed(1)}%`
+  if (unit === 'ratio') return formatAcceptancePercent(value)
   if (unit === 'ms') return `${Math.round(value).toLocaleString()} ms`
   return `${Math.round(value).toLocaleString()} ${unit}`
 }
 
 function observedLabel(criterion: TelemetryAcceptanceCriterion): string {
   const observed = formatValue(criterion.observed, criterion.unit)
-  return criterion.bound === 'lower_bound' && criterion.observed !== undefined ? `≥ ${observed}` : observed
+  if (criterion.observed === undefined) return observed
+  if (criterion.bound === 'lower_bound') return `≥ ${observed}`
+  return criterion.bound === 'upper_bound' ? `≤ ${observed}` : observed
+}
+
+function boundLabel(bound: string): string {
+  return bound === 'partial' ? 'partial evidence' : bound.replace('_', ' ')
 }
 
 function modeLabel(mode: string): string {
@@ -35,8 +42,8 @@ export default function TelemetryAcceptanceVerdict({ verdict }: { verdict?: Verd
       <thead><tr><th>Criterion</th><th>Result</th><th>Observed</th><th>Threshold</th><th>Basis</th></tr></thead>
       <tbody>{verdict.criteria.map(criterion => <tr key={criterion.criterion}>
         <td>{criterion.criterion}</td>
-        <td>{criterion.outcome}</td>
-        <td>{observedLabel(criterion)}{criterion.bound ? ` (${criterion.bound.replace('_', ' ')})` : ''}</td>
+        <td>{criterion.outcome}{criterion.advisory ? ' (advisory, never decides)' : ''}</td>
+        <td>{observedLabel(criterion)}{criterion.bound ? ` (${boundLabel(criterion.bound)})` : ''}</td>
         <td>{criterion.comparator} {formatValue(criterion.threshold, criterion.unit)}</td>
         <td>{criterion.numerator !== undefined && criterion.denominator !== undefined ? `${criterion.numerator.toLocaleString()} / ${criterion.denominator.toLocaleString()}` : criterion.denominator !== undefined ? `${criterion.denominator.toLocaleString()} samples` : '—'}</td>
       </tr>)}</tbody>

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"time"
@@ -82,7 +83,7 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 			point := rca.SeriesPoint{At: from.Add(time.Duration(i) * bucket)}
 			if d := t.buckets[i]; d != nil {
 				if point.Value, point.Valid = d.Quantile(0.75); point.Valid {
-					point.Count = d.Count
+					point.Count = int32(min(d.Count, math.MaxInt32))
 				}
 			}
 			s.Points = append(s.Points, point)
@@ -104,7 +105,7 @@ func rcaBrowserDocumentSeries(ctx context.Context, record *storage.RunArchiveRec
 func rcaDocumentCohort(tuple protocol.BrowserDocumentMetricSummary, incomplete bool) *rca.DocumentCohort {
 	family := tuple
 	family.Cohort = nil
-	return &rca.DocumentCohort{Metric: tuple.Metric, Family: browserDocumentTupleDigest(protocol.BrowserDocumentMetricKey(family)), Fields: browserCohortFields(tuple.Cohort), Incomplete: incomplete}
+	return &rca.DocumentCohort{Metric: tuple.Metric, Group: tuple.Group, Family: browserDocumentTupleDigest(protocol.BrowserDocumentMetricKey(family)), Fields: browserCohortFields(tuple.Cohort), Incomplete: incomplete}
 }
 
 // browserCohortFields are a runtime cohort's fields as text, so two cohorts'

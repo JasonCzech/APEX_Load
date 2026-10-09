@@ -81,8 +81,9 @@ type SeriesPoint struct {
 	Value float64
 	Valid bool
 	// Count is how many observations a valid value summarizes, when known
-	// (browser document buckets); 0 otherwise.
-	Count int64
+	// (browser document buckets); 0 otherwise. It is an int32 so it packs
+	// beside Valid and every point stays 40 bytes.
+	Count int32
 }
 
 // Series is one measured quantity of the run, in time order.
@@ -160,8 +161,18 @@ func sameLoad(a, b LoadLevel, tolerance float64) bool {
 type DetectionBaseline struct {
 	TestID        string
 	Qualification string
-	Levels        []LoadLevel
-	Series        []Series
+	// QualificationReasons say why a partial baseline is partial.
+	QualificationReasons []string
+	// ScriptChangedGroups are the groups whose script differs from the run's
+	// or is unrecorded; nil when unknown (every script reason then applies
+	// to the whole run).
+	ScriptChangedGroups map[string]bool
+	// DocumentsIncomplete says the baseline's browser document evidence
+	// was not fully read (unreadable, or cut by the series budget), so a
+	// cohort missing from it may exist.
+	DocumentsIncomplete bool
+	Levels              []LoadLevel
+	Series              []Series
 }
 
 // DetectionInput is the frozen evidence onset detection reads.

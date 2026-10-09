@@ -190,6 +190,8 @@ export interface RcaBrowserBaselineResult {
   metric: string
   unit: string
   level: string
+  // Tells apart two steady levels at one load.
+  level_start?: string
   state: 'anomaly' | 'within_range' | 'unscored' | string
   reason?: string
   detail?: string
@@ -215,7 +217,7 @@ export interface RcaBrowserBaseline {
   version: string
   status: string
   params: { min_baseline_buckets: number; sigma: number; timing_floor_ms: number; timing_floor_fraction: number; cls_floor: number; level_tolerance: number; max_results: number }
-  baseline: { test_id?: string; qualification?: string }
+  baseline: { test_id?: string; qualification?: string; reasons?: string[] }
   results: RcaBrowserBaselineResult[]
   excluded?: Record<string, number>
   limitations: RcaLimitation[]

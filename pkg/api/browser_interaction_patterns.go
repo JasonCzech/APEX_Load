@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 // Browser interaction patterns and heatmaps (E4, BI-3), read from a run's
@@ -59,8 +60,9 @@ const (
 type BrowserInteractionAnalysis struct {
 	RunID   string `json:"run_id"`
 	Version string `json:"version"`
-	// Status is ready, or not_captured when the run recorded no interaction
-	// evidence.
+	// Status is ready; not_captured when the run recorded no interaction
+	// evidence; or unavailable when it captured some but none reached the
+	// archive (a lost transfer, a refused or torn sidecar).
 	Status     string                       `json:"status"`
 	Thresholds BrowserInteractionThresholds `json:"thresholds"`
 	Coverage   BrowserInteractionCoverage   `json:"coverage"`
@@ -83,8 +85,11 @@ type BrowserInteractionThresholds struct {
 type BrowserInteractionCoverage struct {
 	Interactions int64 `json:"interactions"`
 	Records      int64 `json:"records"`
-	// Dropped counts interactions capture bounds left out; Incomplete says
-	// some source's evidence is missing.
+	// Dropped counts interactions left out by capture bounds, refused by the
+	// archive's budget or a write, or lost with a torn sidecar. A failed
+	// transfer, a refused receipt or an invalid artifact loses an unknown
+	// number: it only sets Incomplete, which says some source's evidence is
+	// missing.
 	Dropped      int64            `json:"dropped"`
 	Incomplete   bool             `json:"incomplete"`
 	ByProvenance map[string]int64 `json:"by_provenance"`
@@ -125,8 +130,15 @@ type BrowserInteractionHeatmap struct {
 	Orientation    string `json:"orientation"`
 	Engine         string `json:"engine"`
 	DeviceProfile  string `json:"device_profile"`
-	Columns        int    `json:"columns"`
-	Rows           int    `json:"rows"`
+	// DeviceScaleFactor is the gestures' device pixel ratio.
+	DeviceScaleFactor float64 `json:"device_scale_factor,omitempty"`
+	// CoordinateSpace is viewport_css_px: a cell is a position in the
+	// viewport at dispatch, whatever the page's scroll offset then. Scroll
+	// is the range of scroll offsets the mapped gestures were made at.
+	CoordinateSpace string                    `json:"coordinate_space"`
+	Scroll          *BrowserInteractionScroll `json:"scroll,omitempty"`
+	Columns         int                       `json:"columns"`
+	Rows            int                       `json:"rows"`
 	// Cells are the occupied cells as [row, column, count].
 	Cells   [][3]int                        `json:"cells"`
 	Points  int64                           `json:"points"`
@@ -136,6 +148,14 @@ type BrowserInteractionHeatmap struct {
 	Notes   []string                        `json:"notes,omitempty"`
 	cells   map[[2]int]int                  `json:"-"`
 	targets map[interactionTargetKey]int64  `json:"-"`
+}
+
+// BrowserInteractionScroll is the range of scroll offsets, in CSS pixels.
+type BrowserInteractionScroll struct {
+	MinX float64 `json:"min_x"`
+	MaxX float64 `json:"max_x"`
+	MinY float64 `json:"min_y"`
+	MaxY float64 `json:"max_y"`
 }
 
 // BrowserInteractionTargetCount is a keyboard or form target's gestures; a
@@ -153,16 +173,64 @@ type interactionTargetKey struct{ role, label string }
 // its document evidence.
 type browserGenerationCohort struct{ engine, profile string }
 
+// maxInteractionGenerationCohorts bounds the source generations (one per
+// browser context) whose engine and profile the analysis keeps. A variable so
+// tests can reach the bound.
+var maxInteractionGenerationCohorts = 1 << 16
+
+// browserGenerationCohorts maps source generations to the engine and device
+// profile their document evidence names. It reads every record, not the
+// bounded measurement population documents are summarized from, so a long
+// run's later contexts keep theirs; past the bound a new generation is left
+// out and the analysis says so.
+type browserGenerationCohorts struct {
+	byGeneration map[string]browserGenerationCohort
+	bound        int
+	truncated    bool
+}
+
+func (c *browserGenerationCohorts) add(evidence *protocol.BrowserDocumentEvidence) {
+	for _, o := range evidence.Observations {
+		if _, ok := c.byGeneration[o.SourceGeneration]; ok {
+			continue
+		}
+		if len(c.byGeneration) >= c.bound {
+			c.truncated = true
+			continue
+		}
+		c.byGeneration[o.SourceGeneration] = browserGenerationCohort{engine: o.Engine, profile: o.DeviceProfile}
+	}
+}
+
+func readBrowserGenerationCohorts(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, cohorts *browserGenerationCohorts) error {
+	if err := validateBrowserDocumentManifest(manifest, true); err != nil {
+		return err
+	}
+	if manifest.BrowserDocumentsFile == "" {
+		return nil
+	}
+	return forEachBrowserDocumentArtifact(ctx, record.ArchivePath, manifest.BrowserDocumentsFile, manifest.BrowserDocumentsSHA256, manifest.BrowserDocumentRecordCount, func(evidence *protocol.BrowserDocumentEvidence) error {
+		cohorts.add(evidence)
+		return ctx.Err()
+	})
+}
+
+const unknownCohortNoDocuments = "the run kept no document evidence for these gestures"
+
 // interactionAnalyzer accumulates interactions in archive order.
 type interactionAnalyzer struct {
 	analysis BrowserInteractionAnalysis
 	cohorts  map[string]browserGenerationCohort
 	maps     map[string]*BrowserInteractionHeatmap
 	retained []protocol.BrowserInteraction
+	// unknownCohort counts mapped gestures whose engine and profile are
+	// unknown; unknownReason says why.
+	unknownCohort int64
+	unknownReason string
 }
 
 func newInteractionAnalyzer(runID string, cohorts map[string]browserGenerationCohort) *interactionAnalyzer {
-	return &interactionAnalyzer{cohorts: cohorts, maps: map[string]*BrowserInteractionHeatmap{}, analysis: BrowserInteractionAnalysis{
+	return &interactionAnalyzer{cohorts: cohorts, unknownReason: unknownCohortNoDocuments, maps: map[string]*BrowserInteractionHeatmap{}, analysis: BrowserInteractionAnalysis{
 		RunID: runID, Version: browserInteractionAnalysisVersion, Status: "ready",
 		Thresholds: BrowserInteractionThresholds{RepeatMinGestures: repeatMinGestures, RepeatWindowMs: repeatWindow.Milliseconds(), RepeatRadiusPx: repeatRadiusPx, HeatmapGrid: heatmapGrid},
 		Coverage:   BrowserInteractionCoverage{ByProvenance: map[string]int64{}, Excluded: map[string]int64{}},
@@ -171,6 +239,8 @@ func newInteractionAnalyzer(runID string, cohorts map[string]browserGenerationCo
 			"Patterns describe the run's recorded gestures. Scripted or unknown gestures never carry a human-frustration label; a scripted repeat is scripted_repetition.",
 			"A dead interaction needs an authored expected outcome whose deadline was missed; an unchanged page alone is never one.",
 			"Heatmaps show where gestures were dispatched on an abstract grid of the viewport, not production user behavior. Screenshot overlays are not produced.",
+			"A cell is a viewport position (CSS pixels) at dispatch: gestures made at different scroll offsets share the map, whose scroll range is stated. A map's layout revision is the layout read after the gesture and its wait.",
+			"Gestures without dispatched points (touch gestures are dispatched synthetically) repeat when they share an action name; pointer gestures with points repeat within the radius. Steps are told apart by action name and gesture kind, so distinct steps that share a name are one step here.",
 		},
 	}}
 }
@@ -215,6 +285,13 @@ func (a *interactionAnalyzer) mapInteraction(i protocol.BrowserInteraction) {
 		exclude("no_viewport")
 		return
 	}
+	positioned := pointer && len(i.Points) > 0
+	if positioned {
+		if p := i.Points[0]; p.X < 0 || p.Y < 0 || p.X >= float64(i.ViewportWidth) || p.Y >= float64(i.ViewportHeight) {
+			exclude("outside_viewport")
+			return
+		}
+	}
 	cohort, ok := a.cohorts[i.SourceGeneration]
 	if !ok {
 		cohort = browserGenerationCohort{engine: "unknown", profile: "unknown"}
@@ -223,7 +300,7 @@ func (a *interactionAnalyzer) mapInteraction(i protocol.BrowserInteraction) {
 	if i.ViewportHeight > i.ViewportWidth {
 		orientation = "portrait"
 	}
-	key := strings.Join([]string{i.Route, i.LayoutRevision, fmt.Sprintf("%dx%d", i.ViewportWidth, i.ViewportHeight), orientation, cohort.engine, cohort.profile}, "\x00")
+	key := strings.Join([]string{i.Route, i.LayoutRevision, fmt.Sprintf("%dx%d@%g", i.ViewportWidth, i.ViewportHeight, i.DeviceScaleFactor), orientation, cohort.engine, cohort.profile}, "\x00")
 	m := a.maps[key]
 	if m == nil {
 		if len(a.maps) >= maxInteractionHeatmaps {
@@ -232,19 +309,23 @@ func (a *interactionAnalyzer) mapInteraction(i protocol.BrowserInteraction) {
 		}
 		sum := sha256.Sum256([]byte(key))
 		m = &BrowserInteractionHeatmap{Key: hex.EncodeToString(sum[:8]), Route: i.Route, LayoutRevision: i.LayoutRevision, ViewportWidth: i.ViewportWidth, ViewportHeight: i.ViewportHeight, Orientation: orientation,
-			Engine: cohort.engine, DeviceProfile: cohort.profile, Columns: heatmapGrid, Rows: heatmapGrid, Cells: [][3]int{}, ByKind: map[string]int64{}, Sources: map[string]int64{},
+			Engine: cohort.engine, DeviceProfile: cohort.profile, DeviceScaleFactor: i.DeviceScaleFactor, CoordinateSpace: "viewport_css_px", Columns: heatmapGrid, Rows: heatmapGrid, Cells: [][3]int{}, ByKind: map[string]int64{}, Sources: map[string]int64{},
 			cells: map[[2]int]int{}, targets: map[interactionTargetKey]int64{}}
 		if i.LayoutRevision == "" {
 			m.Notes = append(m.Notes, "layout revision unavailable: gestures of different layouts on this route may share the map")
 		}
+		if !ok {
+			m.Notes = append(m.Notes, fmt.Sprintf("engine and device profile unknown (%s): gestures of different engines or profiles with this layout may share the map", a.unknownReason))
+		}
 		a.maps[key] = m
 	}
-	if pointer && len(i.Points) > 0 {
+	if m.Scroll == nil {
+		m.Scroll = &BrowserInteractionScroll{MinX: i.ScrollX, MaxX: i.ScrollX, MinY: i.ScrollY, MaxY: i.ScrollY}
+	}
+	m.Scroll.MinX, m.Scroll.MaxX = min(m.Scroll.MinX, i.ScrollX), max(m.Scroll.MaxX, i.ScrollX)
+	m.Scroll.MinY, m.Scroll.MaxY = min(m.Scroll.MinY, i.ScrollY), max(m.Scroll.MaxY, i.ScrollY)
+	if positioned {
 		p := i.Points[0]
-		if p.X < 0 || p.Y < 0 || p.X >= float64(i.ViewportWidth) || p.Y >= float64(i.ViewportHeight) {
-			exclude("outside_viewport")
-			return
-		}
 		col := int(p.X * heatmapGrid / float64(i.ViewportWidth))
 		row := int(p.Y * heatmapGrid / float64(i.ViewportHeight))
 		m.cells[[2]int{row, col}]++
@@ -259,6 +340,9 @@ func (a *interactionAnalyzer) mapInteraction(i protocol.BrowserInteraction) {
 	m.ByKind[i.Kind]++
 	m.Sources[i.Provenance]++
 	a.analysis.Coverage.Mapped++
+	if !ok {
+		a.unknownCohort++
+	}
 }
 
 // finish orders and bounds the heatmaps and finds the patterns.
@@ -284,6 +368,9 @@ func (a *interactionAnalyzer) finish() BrowserInteractionAnalysis {
 		return cmp.Or(cmp.Compare(y.Points+sumCounts(y.Targets), x.Points+sumCounts(x.Targets)), cmp.Compare(x.Key, y.Key))
 	})
 	a.analysis.Patterns = findInteractionPatterns(a.retained)
+	if a.unknownCohort > 0 {
+		a.analysis.Limitations = append(a.analysis.Limitations, fmt.Sprintf("engine_profile_unknown: %d gestures map without an engine and device profile (%s)", a.unknownCohort, a.unknownReason))
+	}
 	if len(a.analysis.Patterns) > maxInteractionPatterns {
 		a.analysis.Limitations = append(a.analysis.Limitations, fmt.Sprintf("patterns_truncated: kept %d of %d", maxInteractionPatterns, len(a.analysis.Patterns)))
 		a.analysis.Patterns = a.analysis.Patterns[:maxInteractionPatterns]
@@ -314,29 +401,35 @@ func findInteractionPatterns(interactions []protocol.BrowserInteraction) []Brows
 		}
 		byDocument[key] = append(byDocument[key], i)
 	}
-	var patterns []BrowserInteractionPattern
+	patterns := []BrowserInteractionPattern{}
 	for _, key := range documents {
 		gestures := byDocument[key]
 		slices.SortStableFunc(gestures, func(x, y protocol.BrowserInteraction) int { return x.CapturedAt.Compare(y.CapturedAt) })
 		retried := map[string]bool{}
 		for index, g := range gestures {
 			switch {
-			case g.Outcome.Observed == protocol.InteractionOutcomeMissed:
+			case g.UnavailableReason == protocol.InteractionUnavailableDocumentChanged:
+				// A gesture that navigated away is never a dead interaction;
+				// it is unexpected when it declared an in-page outcome.
+				if inPageOutcome(g.Outcome.Declared) {
+					patterns = append(patterns, interactionPattern(interactionPatternUnexpectedNavigation, []protocol.BrowserInteraction{g},
+						fmt.Sprintf("the gesture declared an in-page %s outcome but navigated away", g.Outcome.Declared)))
+				}
+			case g.Outcome.Observed == protocol.InteractionOutcomeMissed && pageResponseOutcome(g.Outcome.Declared):
 				// The authored outcome's deadline passed.
 				patterns = append(patterns, interactionPattern(interactionPatternDeadInteraction, []protocol.BrowserInteraction{g},
 					fmt.Sprintf("the declared %s outcome was not observed within %d ms", g.Outcome.Declared, g.Outcome.DeadlineMS)))
 				patterns[len(patterns)-1].Declared, patterns[len(patterns)-1].DeadlineMs = g.Outcome.Declared, g.Outcome.DeadlineMS
-			case g.UnavailableReason == protocol.InteractionUnavailableDocumentChanged && inPageOutcome(g.Outcome.Declared):
-				patterns = append(patterns, interactionPattern(interactionPatternUnexpectedNavigation, []protocol.BrowserInteraction{g},
-					fmt.Sprintf("the gesture declared an in-page %s outcome but navigated away", g.Outcome.Declared)))
 			}
-			// A failed gesture repeated by the same action is a retry; the
-			// attempts never count as repeated gestures.
-			if !g.Success && g.ActionID != "" && !retried[g.InteractionID] {
+			// A failed gesture repeated at once by the same step is a retry
+			// (each engine retry is a new execution with its own action ID,
+			// so a step is its action name and gesture kind); the attempts
+			// never count as repeated gestures.
+			if !g.Success && !retried[g.InteractionID] {
 				attempts := []protocol.BrowserInteraction{g}
 				for _, next := range gestures[index+1:] {
-					if next.ActionID != g.ActionID {
-						continue
+					if !sameInteractionStep(g, next) {
+						break
 					}
 					attempts = append(attempts, next)
 					if next.Success {
@@ -359,6 +452,26 @@ func findInteractionPatterns(interactions []protocol.BrowserInteraction) []Brows
 	return patterns
 }
 
+// sameInteractionStep reports whether next is another attempt of g's step.
+func sameInteractionStep(g, next protocol.BrowserInteraction) bool {
+	if g.ActionName == "" {
+		return g.ActionID != "" && next.ActionID == g.ActionID
+	}
+	return next.ActionName == g.ActionName && next.Kind == g.Kind
+}
+
+// pageResponseOutcome reports whether a declared outcome asserts that the
+// page responded (an element appeared, a load completed), so missing it is a
+// dead interaction. A DOM that never settled, a network that never idled or
+// a pause says nothing about whether the page responded.
+func pageResponseOutcome(declared string) bool {
+	switch declared {
+	case "element_visible", "visible", "load", "domcontentloaded":
+		return true
+	}
+	return false
+}
+
 // inPageOutcome reports whether a declared outcome expects the page to stay:
 // an element, a stable DOM or a pause, rather than a load.
 func inPageOutcome(declared string) bool {
@@ -369,25 +482,58 @@ func inPageOutcome(declared string) bool {
 	return false
 }
 
-// repeatedGestures finds runs of at least repeatMinGestures pointer
-// gestures, within repeatWindow and repeatRadiusPx of the run's first, on
-// one route and layout. A double click is one declared gesture; retries are
-// excluded.
+// repeatGestureKind reports whether a gesture kind counts toward repeated
+// gestures: a click or tap (a double click is one declared gesture), not a
+// hover, drag, swipe or long press.
+func repeatGestureKind(kind string) bool {
+	switch kind {
+	case "click", "dblclick", "tap", "check":
+		return true
+	}
+	return false
+}
+
+// repeatedGestures finds runs of at least repeatMinGestures gestures within
+// repeatWindow on one route and layout: gestures with dispatched points
+// within repeatRadiusPx of the run's first; gestures without points (touch
+// gestures are dispatched synthetically) with one action name and kind, and
+// target when one is recorded.
+// Retries are excluded.
 func repeatedGestures(gestures []protocol.BrowserInteraction, retried map[string]bool) []BrowserInteractionPattern {
-	var candidates []protocol.BrowserInteraction
+	var positioned, targeted []protocol.BrowserInteraction
 	for _, g := range gestures {
-		if protocol.BrowserInteractionPointerKind(g.Kind) && g.Kind != "dblclick" && len(g.Points) > 0 && g.UnavailableReason == "" && !retried[g.InteractionID] {
-			candidates = append(candidates, g)
+		if !repeatGestureKind(g.Kind) || retried[g.InteractionID] {
+			continue
+		}
+		switch {
+		case len(g.Points) > 0 && g.UnavailableReason == "":
+			positioned = append(positioned, g)
+		case len(g.Points) == 0 && (g.UnavailableReason == "" || g.UnavailableReason == protocol.InteractionUnavailableSyntheticDispatch) && (g.ActionName != "" || g.Target != nil):
+			targeted = append(targeted, g)
 		}
 	}
+	near := func(first, next protocol.BrowserInteraction) bool {
+		return math.Hypot(next.Points[0].X-first.Points[0].X, next.Points[0].Y-first.Points[0].Y) <= repeatRadiusPx
+	}
+	patterns := repeatRuns(positioned, near, fmt.Sprintf("within %d ms and %.0f CSS px", repeatWindow.Milliseconds(), repeatRadiusPx))
+	return append(patterns, repeatRuns(targeted, sameInteractionTarget, fmt.Sprintf("within %d ms with one action name (no dispatched points)", repeatWindow.Milliseconds()))...)
+}
+
+func sameInteractionTarget(first, next protocol.BrowserInteraction) bool {
+	if next.Kind != first.Kind || next.ActionName != first.ActionName || (next.Target == nil) != (first.Target == nil) {
+		return false
+	}
+	return first.Target == nil || next.Target.Role == first.Target.Role && next.Target.LabelSHA256 == first.Target.LabelSHA256
+}
+
+func repeatRuns(candidates []protocol.BrowserInteraction, match func(first, next protocol.BrowserInteraction) bool, rule string) []BrowserInteractionPattern {
 	var patterns []BrowserInteractionPattern
 	for start := 0; start < len(candidates); {
 		first := candidates[start]
 		end := start + 1
 		for end < len(candidates) {
 			next := candidates[end]
-			if next.Route != first.Route || next.LayoutRevision != first.LayoutRevision || next.CapturedAt.Sub(first.CapturedAt) > repeatWindow ||
-				math.Hypot(next.Points[0].X-first.Points[0].X, next.Points[0].Y-first.Points[0].Y) > repeatRadiusPx {
+			if next.Route != first.Route || next.LayoutRevision != first.LayoutRevision || next.CapturedAt.Sub(first.CapturedAt) > repeatWindow || !match(first, next) {
 				break
 			}
 			end++
@@ -400,7 +546,7 @@ func repeatedGestures(gestures []protocol.BrowserInteraction, retried map[string
 					kind = interactionPatternScriptedRepetition
 				}
 			}
-			patterns = append(patterns, interactionPattern(kind, run, fmt.Sprintf("%d gestures within %d ms and %.0f CSS px", len(run), repeatWindow.Milliseconds(), repeatRadiusPx)))
+			patterns = append(patterns, interactionPattern(kind, run, fmt.Sprintf("%d gestures %s", len(run), rule)))
 			start = end
 			continue
 		}
@@ -429,6 +575,8 @@ func interactionPattern(kind string, members []protocol.BrowserInteraction, deta
 // handleGetRunArchiveBrowserInteractions returns a run's interaction
 // patterns and heatmaps from its archived interaction evidence.
 func (s *Server) handleGetRunArchiveBrowserInteractions(w http.ResponseWriter, r *http.Request) {
+	// Materializing an object-backed archive can outlast the write timeout.
+	extendArtifactWriteDeadline(w)
 	analysis, err := s.runArchiveBrowserInteractions(r.Context(), r.PathValue("id"))
 	switch {
 	case errors.Is(err, errInteractionRunNotFound):
@@ -436,7 +584,7 @@ func (s *Server) handleGetRunArchiveBrowserInteractions(w http.ResponseWriter, r
 	case errors.Is(err, errInteractionArchiveNotFinalized):
 		writeError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, errInteractionEvidenceUnreadable):
-		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		writeError(w, http.StatusInternalServerError, err.Error())
 	case err != nil:
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 	default:
@@ -456,7 +604,7 @@ func (s *Server) runArchiveBrowserInteractions(ctx context.Context, id string) (
 		return nil, errInteractionRunNotFound
 	}
 	record, ok := s.archiveDomainService().GetRunArchiveContext(ctx, test.ID)
-	if !ok || record == nil {
+	if !ok || record == nil || strings.TrimSpace(record.ManifestSHA256) == "" {
 		return nil, errInteractionArchiveNotFinalized
 	}
 	lease, err := acquireArchiveMaterialized(ctx, record)
@@ -468,22 +616,37 @@ func (s *Server) runArchiveBrowserInteractions(ctx context.Context, id string) (
 	if err != nil {
 		return nil, errors.New("the run archive manifest is unavailable")
 	}
+	if manifest.BrowserInteractionsFile == "" {
+		analysis := newInteractionAnalyzer(test.ID, nil).finish()
+		analysis.Status = "not_captured"
+		// Interactions were captured, but none reached the archive.
+		if manifest.BrowserInteractionsDropped > 0 || manifest.BrowserInteractionsIncomplete {
+			analysis.Status = "unavailable"
+			analysis.Coverage.Dropped, analysis.Coverage.Incomplete = manifest.BrowserInteractionsDropped, true
+		}
+		return &analysis, nil
+	}
 	// Each source generation's engine and profile come from its document
 	// evidence; a generation without documents maps as unknown.
-	cohorts := map[string]browserGenerationCohort{}
-	if accumulator, _, err := readArchiveBrowserDocumentMeasurements(ctx, record, manifest); err == nil && accumulator != nil {
-		for _, measurement := range accumulator.measurements {
-			o := measurement.observation
-			if _, ok := cohorts[o.SourceGeneration]; !ok {
-				cohorts[o.SourceGeneration] = browserGenerationCohort{engine: o.Engine, profile: o.DeviceProfile}
-			}
+	cohorts := browserGenerationCohorts{byGeneration: map[string]browserGenerationCohort{}, bound: maxInteractionGenerationCohorts}
+	unknownReason, documentLimitation := unknownCohortNoDocuments, ""
+	if err := readBrowserGenerationCohorts(ctx, record, manifest, &cohorts); err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
+		// An unverified partial read names nothing.
+		cohorts.byGeneration = map[string]browserGenerationCohort{}
+		unknownReason, documentLimitation = "the run's document evidence could not be read", "document_evidence_unreadable: engines and device profiles are unknown"
+	} else if cohorts.truncated {
+		// A context left out past the bound cannot be told from one that
+		// kept no document evidence, so both are named.
+		unknownReason = fmt.Sprintf("the run kept no document evidence for these gestures, or their browser context is past the first %d whose document evidence the analysis keeps", maxInteractionGenerationCohorts)
+		documentLimitation = fmt.Sprintf("document_evidence_truncated: engines and device profiles are kept for the first %d browser contexts", maxInteractionGenerationCohorts)
 	}
-	analyzer := newInteractionAnalyzer(test.ID, cohorts)
-	if manifest.BrowserInteractionsFile == "" {
-		analysis := analyzer.finish()
-		analysis.Status = "not_captured"
-		return &analysis, nil
+	analyzer := newInteractionAnalyzer(test.ID, cohorts.byGeneration)
+	analyzer.unknownReason = unknownReason
+	if documentLimitation != "" {
+		analyzer.analysis.Limitations = append(analyzer.analysis.Limitations, documentLimitation)
 	}
 	if _, err := forEachBrowserInteractionRecord(filepath.Join(record.ArchivePath, manifest.BrowserInteractionsFile), func(evidence *protocol.BrowserInteractionEvidence) error {
 		analyzer.add(evidence)
@@ -495,5 +658,9 @@ func (s *Server) runArchiveBrowserInteractions(ctx context.Context, id string) (
 		return nil, fmt.Errorf("%w: %v", errInteractionEvidenceUnreadable, err)
 	}
 	analysis := analyzer.finish()
+	// The archive's own account includes drops and missing sources that no
+	// record carries (a failed transfer, a refused sidecar).
+	analysis.Coverage.Dropped = max(analysis.Coverage.Dropped, manifest.BrowserInteractionsDropped)
+	analysis.Coverage.Incomplete = analysis.Coverage.Incomplete || manifest.BrowserInteractionsIncomplete
 	return &analysis, nil
 }

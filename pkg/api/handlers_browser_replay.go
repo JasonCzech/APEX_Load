@@ -134,6 +134,7 @@ func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, r *http.
 		return
 	}
 	script = applyBrowserReplayOverrides(script, req)
+	submitted := script
 	var prepared bool
 	script, prepared = prepareTransientExecutableScript(
 		w,
@@ -156,10 +157,7 @@ func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, r *http.
 		return
 	}
 	issues := append(
-		validateScriptForReplayWithImportTrust(
-			script,
-			req.trustedPreservedImport,
-		),
+		s.transientStaticIssues(submitted, script, req.trustedPreservedImport),
 		refIssues...,
 	)
 	warnings := append(validationWarnings(script), refWarnings...)

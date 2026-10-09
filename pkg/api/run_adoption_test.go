@@ -420,6 +420,10 @@ func TestPhaseAInstallsAdoptedAndCompletedRuns(t *testing.T) {
 			test := storedContinueRun(t, runner, store, "orphan", "continue")
 			runner.mu.Lock()
 			runner.tests[test.ID] = test
+			// A stage recorder this process kept from an earlier ownership,
+			// sampling from long before the adoption.
+			kept := stageRecorderLocked(test)
+			kept.since = time.Now().UTC().Add(-time.Hour)
 			runner.mu.Unlock()
 
 			if err := runner.adoptOrphanedRuns(); err != nil {
@@ -428,7 +432,17 @@ func TestPhaseAInstallsAdoptedAndCompletedRuns(t *testing.T) {
 			runner.mu.RLock()
 			resume, status := test.adoptedResume, test.Status
 			token := test.remoteRunSupervisionToken
+			var adoptedAt time.Time
+			if len(test.continuityFailovers) > 0 {
+				adoptedAt = test.continuityFailovers[len(test.continuityFailovers)-1].AdoptedAt
+			}
 			runner.mu.RUnlock()
+			kept.mu.Lock()
+			since := kept.since
+			kept.mu.Unlock()
+			if adoptedAt.IsZero() || !since.Equal(adoptedAt) {
+				t.Fatalf("the kept stage recorder samples from %v, want the adoption at %v", since, adoptedAt)
+			}
 			if status != "RUNNING" || resume == nil || len(resume.adopted) != tc.adopted || len(resume.completed) != tc.finished {
 				t.Fatalf("after Phase A: status=%s resume=%+v", status, resume)
 			}

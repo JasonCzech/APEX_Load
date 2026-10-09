@@ -3,6 +3,7 @@ package storage
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -199,5 +200,44 @@ func TestDashboardQueryVersionIsValidated(t *testing.T) {
 	definition.Tabs[0].Panels[0].Query.QueryVersion = AnalyticsQueryVersion + 1
 	if err := validateDashboardDefinition(definition); err == nil {
 		t.Fatal("a future query version was accepted")
+	}
+	// Running a query refuses newer semantics too, not only saving one.
+	future := *definition.Tabs[0].Panels[0].Query
+	if err := ValidateNativeArchiveQuery(future); err == nil || !strings.Contains(err.Error(), "query_version") {
+		t.Fatalf("archive query with a future version = %v", err)
+	}
+	future.EvidenceMode = "archive"
+	if err := ValidateNativeEvidenceQuery(future); err == nil || !strings.Contains(err.Error(), "query_version") {
+		t.Fatalf("evidence query with a future version = %v", err)
+	}
+}
+
+// An edit locks its project row: once the project is gone (here its row is
+// removed under the definition), the edit is refused and records no revision
+// a project deletion would leave behind.
+func TestDashboardDefinitionEditOfAGoneProjectRecordsNoRevision(t *testing.T) {
+	store, err := NewSQLiteStore(t.TempDir() + "/dashboard-gone-project.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.SaveProject(&Project{ID: "gone-project", Name: "Gone"}); err != nil {
+		t.Fatal(err)
+	}
+	definition := sampleDashboardDefinition("gone-project-dashboard")
+	definition.ProjectID = "gone-project"
+	if err := store.SaveDashboardDefinition(definition); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec(`DELETE FROM projects WHERE id = ?`, "gone-project"); err != nil {
+		t.Fatal(err)
+	}
+	definition.Name = "edited after the project went"
+	if updated, err := store.UpdateDashboardDefinitionIfRevision(definition, 1); err != nil || updated {
+		t.Fatalf("edit of a gone project = %v %v", updated, err)
+	}
+	var revisions int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM dashboard_definition_revisions WHERE definition_id = ? AND revision > 1`, definition.ID).Scan(&revisions); err != nil || revisions != 0 {
+		t.Fatalf("revisions after the refused edit = %d %v", revisions, err)
 	}
 }

@@ -121,6 +121,11 @@ func (s *Server) handleNativeEvidenceSeries(w http.ResponseWriter, r *http.Reque
 	if err == nil && q.OverlaySelection != nil {
 		err = s.attachNativeOverlay(ctx, run.ProjectID, run.ID, q, &result)
 	}
+	if errors.Is(err, errAnalysisDatasetChanged) {
+		// The overlay's pinned dataset conflicts with its current artifacts.
+		writeError(w, 409, err.Error())
+		return
+	}
 	if err != nil {
 		writeError(w, 422, err.Error())
 		return

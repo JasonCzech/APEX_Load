@@ -837,8 +837,14 @@ func ciGitHubCheckTelemetryLines(verdict *ciTelemetryVerdict) []string {
 	switch {
 	case verdict.Enforced:
 		effect = "enforced: decided the outcome"
+	case verdict.Mode == telemetryAcceptanceModeUnknown:
+		effect = "unknown mode: the policy's definition was not retained, so it never changes the outcome"
+	case verdict.Mode == "fail_ci" && verdict.Outcome == TelemetryAcceptancePass:
+		effect = "fail_ci: passed"
+	case verdict.Mode == "fail_ci" && verdict.Outcome == TelemetryAcceptanceInconclusive && verdict.InconclusivePolicy == ciTelemetryInconclusivePass:
+		effect = "fail_ci: inconclusive, which this run maps to pass"
 	case verdict.Mode == "fail_ci":
-		effect = "fail_ci: not applied (the run did not otherwise pass, or the caller mapped inconclusive to pass)"
+		effect = "fail_ci: not applied, because the run did not otherwise pass"
 	}
 	lines := []string{"", "Telemetry acceptance (separate from the application verdict):", "",
 		"- Verdict: `" + verdict.Outcome + "` under " + policy + " (" + verdict.Mode + "; " + effect + ")"}
@@ -849,11 +855,20 @@ func ciGitHubCheckTelemetryLines(verdict *ciTelemetryVerdict) []string {
 		observed := "unknown"
 		if criterion.Observed != nil {
 			observed = formatCITelemetryValue(*criterion.Observed, criterion.Unit)
-			if criterion.Bound == telemetryAcceptanceLowerBound {
+			switch criterion.Bound {
+			case telemetryAcceptanceLowerBound:
 				observed = "≥ " + observed
+			case telemetryAcceptanceUpperBound:
+				observed = "≤ " + observed
+			case telemetryAcceptancePartial:
+				observed += " (partial evidence)"
 			}
 		}
-		line := fmt.Sprintf("- %s: `%s` (observed %s, %s %s)", criterion.Criterion, criterion.Outcome, observed, criterion.Comparator, formatCITelemetryValue(criterion.Threshold, criterion.Unit))
+		outcome := "`" + criterion.Outcome + "`"
+		if criterion.Advisory {
+			outcome += " (advisory, never decides)"
+		}
+		line := fmt.Sprintf("- %s: %s (observed %s, %s %s)", criterion.Criterion, outcome, observed, criterion.Comparator, formatCITelemetryValue(criterion.Threshold, criterion.Unit))
 		if criterion.Reason != "" {
 			line += "; " + sanitizeCIExternalText(criterion.Reason, 512)
 		}

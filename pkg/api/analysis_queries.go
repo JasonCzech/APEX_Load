@@ -137,6 +137,7 @@ func (s *Server) handleAnalysisAssociation(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	s.recordAuditEvent(r, "analysis.dataset.associate", "success", "analysis_import", in.ID, in.ProjectID, map[string]any{"run_id": req.RunID})
+	reportAnalysisArtifactDigest(saved)
 	writeJSON(w, 200, saved)
 }
 
@@ -170,7 +171,12 @@ func (s *Server) handleAnalysisComparison(w http.ResponseWriter, r *http.Request
 		}
 		ctx = withAnalysisTimeWindow(ctx, window)
 	}
+	// A pinned dataset that changed conflicts with its current artifacts.
 	ctx, pipeline, dir, err := s.prepareNativeAnalysisComparison(ctx, project, q)
+	if errors.Is(err, errAnalysisDatasetChanged) {
+		writeError(w, 409, err.Error())
+		return
+	}
 	if err != nil {
 		writeError(w, 422, err.Error())
 		return
@@ -179,11 +185,19 @@ func (s *Server) handleAnalysisComparison(w http.ResponseWriter, r *http.Request
 	q.providerSeries = map[analysisSeriesSelectionKey]analysis.MetricPoint{}
 	q.sampleExclusions = map[analysisSeriesSelectionKey]map[string]int{}
 	left, leftRun, err := s.loadAnalysisSelection(ctx, project, q.Left, q)
+	if errors.Is(err, errAnalysisDatasetChanged) {
+		writeError(w, 409, err.Error())
+		return
+	}
 	if err != nil {
 		writeError(w, 422, err.Error())
 		return
 	}
 	right, rightRun, err := s.loadAnalysisSelection(ctx, project, q.Right, q)
+	if errors.Is(err, errAnalysisDatasetChanged) {
+		writeError(w, 409, err.Error())
+		return
+	}
 	if err != nil {
 		writeError(w, 422, err.Error())
 		return
@@ -266,6 +280,9 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 			for _, candidate := range shared.plans {
 				if candidate.dataset == nil || candidate.dataset.ID != selection.DatasetID || candidate.dataset.ProjectID != project {
 					continue
+				}
+				if err := checkAnalysisDatasetPin(selection.DatasetArtifactSHA256, candidate.dataset); err != nil {
+					return nil, "", err
 				}
 				query, err := importedNativeSeriesQuery(project, candidate.dataset, selection, q)
 				if err != nil {
@@ -615,6 +632,14 @@ func analysisDatasetArtifactSHA256(in *storage.AnalysisImport) string {
 		fmt.Fprintf(hash, "%s\x00%s\x00", name, in.NormalizedSHA256[name])
 	}
 	return hex.EncodeToString(hash.Sum(nil))
+}
+
+// reportAnalysisArtifactDigest sets a committed dataset's artifact digest on
+// a response, so every read of it names the artifacts a selection may pin.
+func reportAnalysisArtifactDigest(in *storage.AnalysisImport) {
+	if in != nil && in.State == "ready" {
+		in.ArtifactSHA256 = analysisDatasetArtifactSHA256(in)
+	}
 }
 
 // checkAnalysisDatasetPin refuses a dataset whose artifacts are not the ones

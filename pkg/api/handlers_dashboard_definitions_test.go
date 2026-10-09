@@ -172,3 +172,28 @@ func TestDashboardDefinitionsRaceUpdateAndDelete(t *testing.T) {
 		t.Fatalf("%d of an update and a delete at revision 1 succeeded", won)
 	}
 }
+
+// A saved revision link is readable by a viewer of its project and refused,
+// behind real authentication, to a principal of another project.
+func TestDashboardDefinitionRevisionDeniesAnotherProject(t *testing.T) {
+	server, projectID := newGrafanaDashboardAPIServer(t)
+	created := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/monitoring/dashboard-definitions", map[string]any{
+		"project_id": projectID, "name": "Shared operations", "visibility": "project",
+		"tabs": []map[string]any{{"id": "overview", "title": "Overview", "panels": []map[string]any{{"id": "latency", "title": "Latency", "kind": "line", "x": 0, "y": 0, "w": 12, "h": 8,
+			"query": map[string]any{"query_version": storage.AnalyticsQueryVersion, "metric": "response_time", "aggregation": "p95", "max_series": 20}}}}},
+	})
+	var definition storage.DashboardDefinition
+	if created.Code != http.StatusCreated || json.Unmarshal(created.Body.Bytes(), &definition) != nil {
+		t.Fatalf("create = %d %s", created.Code, created.Body.String())
+	}
+	enableTrustedHeaderAuth(t, server)
+	path := "/api/v1/monitoring/dashboard-definitions/" + definition.ID + "?revision=1"
+	if reply := harDownloadRequest(t, server, path, "own-viewer", projectID+"="+RoleViewer); reply.Code != http.StatusOK {
+		t.Fatalf("own project's viewer = %d %s", reply.Code, reply.Body.String())
+	}
+	for _, roles := range []string{"another-project=" + RoleViewer, "another-project=" + RoleEditor} {
+		if reply := harDownloadRequest(t, server, path+"&project_id=another-project", "foreign", roles); reply.Code != http.StatusForbidden {
+			t.Fatalf("%s read another project's revision: %d %s", roles, reply.Code, reply.Body.String())
+		}
+	}
+}

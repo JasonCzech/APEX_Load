@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unsafe"
 )
 
 var browserBaselineStart = time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
@@ -15,7 +16,7 @@ func documentSeries(id, metric, unit, family string, fields map[string]string, v
 	s := Series{ID: id, Kind: SeriesBrowserDocument, Unit: unit, Observation: ObservationInterval, Bucket: time.Second,
 		Evidence: EvidenceRef{Kind: "browser_document", Locator: "browser_documents.jsonl#" + id}, Document: &DocumentCohort{Metric: metric, Family: family, Fields: fields}}
 	for i, v := range values {
-		point := SeriesPoint{At: browserBaselineStart.Add(time.Duration(i) * time.Second), Value: v, Valid: !math.IsNaN(v), Count: samples}
+		point := SeriesPoint{At: browserBaselineStart.Add(time.Duration(i) * time.Second), Value: v, Valid: !math.IsNaN(v), Count: int32(samples)}
 		if !point.Valid {
 			point.Value, point.Count = 0, 0
 		}
@@ -33,7 +34,7 @@ func browserNoisy(n int, mean, spread float64) []float64 {
 	return out
 }
 
-func near(a, b float64) bool { return math.Abs(a-b) < 1e-9*math.Max(1, math.Abs(b)) }
+func browserNear(a, b float64) bool { return math.Abs(a-b) < 1e-9*math.Max(1, math.Abs(b)) }
 
 func browserBaselineInput(current, baseline []Series, qualification string) DetectionInput {
 	level := LoadLevel{Start: browserBaselineStart, End: browserBaselineStart.Add(time.Minute), VUsers: 10}
@@ -54,7 +55,7 @@ func TestBrowserBaselineFindsASeededRegression(t *testing.T) {
 	if got.State != BrowserBaselineAnomaly || got.Direction != DirectionIncrease || got.CurrentBuckets != 20 || got.CurrentSamples != 60 || got.BaselineBuckets != 40 || got.BaselineSamples != 120 {
 		t.Fatalf("seeded regression = %+v", got)
 	}
-	if got.Current != 1400 || !near(got.BaselineMean, 1000) || !near(got.EffectFloor, 100) || got.ExpectedHigh <= got.BaselineMean || got.ExpectedLow >= got.BaselineMean || len(got.Evidence) != 2 {
+	if got.Current != 1400 || !browserNear(got.BaselineMean, 1000) || !browserNear(got.EffectFloor, 100) || got.ExpectedHigh <= got.BaselineMean || got.ExpectedLow >= got.BaselineMean || len(got.Evidence) != 2 {
 		t.Fatalf("seeded regression evidence = %+v", got)
 	}
 	// The same cohort without the regression stays within range.
@@ -70,8 +71,13 @@ func TestBrowserBaselineNeedsAPracticalEffect(t *testing.T) {
 	baseline := documentSeries("lcp", "lcp", "ms", "f", chromium141, browserNoisy(40, 1000, 1), 1)
 	current := documentSeries("lcp", "lcp", "ms", "f", chromium141, browserNoisy(10, 1030, 0), 1)
 	got := DetectBrowserBaseline(browserBaselineInput([]Series{current}, []Series{baseline}, BaselineQualified), DefaultBrowserBaselineParams).Results[0]
-	if got.State != BrowserBaselineWithinRange || math.Abs(got.Z) < 3 || !near(got.EffectFloor, 100) {
+	if got.State != BrowserBaselineWithinRange || math.Abs(got.Z) < 3 || !browserNear(got.EffectFloor, 100) {
 		t.Fatalf("below the effect floor = %+v", got)
+	}
+	// Within range means inside the published range: it is as wide as the
+	// effect floor when that exceeds three sigmas.
+	if got.Current < got.ExpectedLow || got.Current > got.ExpectedHigh || !browserNear(got.ExpectedHigh, got.BaselineMean+100) {
+		t.Fatalf("within range outside the expected range = %+v", got)
 	}
 	// Layout shift's floor is 0.02.
 	baseline = documentSeries("cls", "cls", "score", "c", chromium141, browserNoisy(40, 0.05, 0.001), 1)
@@ -183,5 +189,130 @@ func TestAnalyzeAddsTheBrowserBaselineBesideDetection(t *testing.T) {
 	// A run without browser documents has no section.
 	if assessment := Analyze(AnalysisInput{Detection: browserBaselineInput(nil, nil, BaselineQualified)}, nil); assessment.BrowserBaseline != nil {
 		t.Fatalf("no documents = %+v", assessment.BrowserBaseline)
+	}
+}
+
+// A partial baseline whose script or configuration changed is not the same
+// authored page; other partial reasons still compare.
+func TestBrowserBaselineRefusesABaselineWhoseScriptChanged(t *testing.T) {
+	baseline := documentSeries("lcp", "lcp", "ms", "f", chromium141, browserNoisy(40, 1000, 20), 1)
+	current := documentSeries("lcp", "lcp", "ms", "f", chromium141, browserNoisy(10, 1400, 20), 1)
+	input := browserBaselineInput([]Series{current}, []Series{baseline}, BaselinePartial)
+	input.Baseline.QualificationReasons = []string{ReasonPacingChanged, ReasonScriptChanged}
+	result := DetectBrowserBaseline(input, DefaultBrowserBaselineParams)
+	got := result.Results[0]
+	if got.State != BrowserBaselineUnscored || got.Reason != BrowserBaselineCohortChanged || !strings.Contains(got.Detail, ReasonScriptChanged) || got.ExpectedHigh != 0 || len(got.Evidence) != 1 {
+		t.Fatalf("script changed = %+v", got)
+	}
+	if len(result.Baseline.Reasons) != 2 || result.Baseline.Qualification != BaselinePartial {
+		t.Fatalf("baseline ref = %+v", result.Baseline)
+	}
+	input.Baseline.QualificationReasons = []string{ReasonPacingChanged}
+	if got := DetectBrowserBaseline(input, DefaultBrowserBaselineParams).Results[0]; got.State != BrowserBaselineAnomaly {
+		t.Fatalf("pacing-only partial baseline = %+v", got)
+	}
+}
+
+// Baseline document evidence that was not fully read makes a missing cohort
+// unavailable, not absent.
+func TestBrowserBaselineUnreadBaselineEvidenceIsNotAbsence(t *testing.T) {
+	current := documentSeries("lcp", "lcp", "ms", "f", chromium141, browserNoisy(10, 1400, 20), 1)
+	input := browserBaselineInput([]Series{current}, nil, BaselineQualified)
+	input.Baseline.DocumentsIncomplete = true
+	result := DetectBrowserBaseline(input, DefaultBrowserBaselineParams)
+	if result.Status != DetectionPartial || result.Results[0].Reason != BrowserBaselineEvidenceUnavailable || result.Limitations[0].Code != BrowserBaselineEvidenceUnavailable {
+		t.Fatalf("unread baseline evidence = %+v", result)
+	}
+}
+
+// A profile that returns to a load gives each steady level its own result.
+func TestBrowserBaselineRepeatedLoadLevelsAreDistinct(t *testing.T) {
+	baseline := documentSeries("lcp", "lcp", "ms", "f", chromium141, browserNoisy(40, 1000, 20), 1)
+	current := documentSeries("lcp", "lcp", "ms", "f", chromium141, browserNoisy(40, 1000, 20), 1)
+	input := browserBaselineInput([]Series{current}, []Series{baseline}, BaselineQualified)
+	first := LoadLevel{Start: browserBaselineStart, End: browserBaselineStart.Add(15 * time.Second), VUsers: 10}
+	second := LoadLevel{Start: browserBaselineStart.Add(25 * time.Second), End: browserBaselineStart.Add(40 * time.Second), VUsers: 10}
+	input.Levels = []LoadLevel{first, second}
+	results := DetectBrowserBaseline(input, DefaultBrowserBaselineParams).Results
+	if len(results) != 2 || results[0].ID == results[1].ID || results[0].LevelStart.Equal(results[1].LevelStart) || !strings.HasPrefix(results[0].ID, "browser_baseline-") {
+		t.Fatalf("repeated levels = %+v", results)
+	}
+}
+
+// A changed cohort names what differs from the closest baseline cohort.
+func TestBrowserBaselineNamesTheClosestCohortsDifference(t *testing.T) {
+	current := documentSeries("lcp-current", "lcp", "ms", "f", map[string]string{"browser_version": "141.0", "shaping_applied": "true"}, browserNoisy(10, 1400, 20), 1)
+	candidates := []Series{
+		documentSeries("lcp-a", "lcp", "ms", "f", map[string]string{"browser_version": "141.0", "shaping_applied": "false"}, browserNoisy(40, 1000, 20), 1),
+		documentSeries("lcp-b", "lcp", "ms", "f", map[string]string{"browser_version": "142.0", "shaping_applied": "false"}, browserNoisy(40, 1000, 20), 1),
+	}
+	got := DetectBrowserBaseline(browserBaselineInput([]Series{current}, candidates, BaselineQualified), DefaultBrowserBaselineParams).Results[0]
+	if got.Reason != BrowserBaselineCohortChanged || !strings.HasSuffix(got.Detail, "different shaping_applied") {
+		t.Fatalf("closest cohort difference = %+v", got)
+	}
+}
+
+// Every detection point stays 40 bytes on 64-bit hosts: document counts
+// pack beside Valid instead of growing every series.
+func TestSeriesPointStaysPacked(t *testing.T) {
+	if unsafe.Sizeof(uintptr(0)) == 8 && unsafe.Sizeof(SeriesPoint{}) != 40 {
+		t.Fatalf("SeriesPoint is %d bytes", unsafe.Sizeof(SeriesPoint{}))
+	}
+}
+
+// A script change refuses only the cohorts of the group that ran it; a
+// configuration change refuses every cohort.
+func TestBrowserBaselineScriptChangeRefusesOnlyItsGroup(t *testing.T) {
+	cohort := func(id, group string, values []float64) Series {
+		s := documentSeries(id, "lcp", "ms", "f-"+group, chromium141, values, 1)
+		s.Document.Group = group
+		return s
+	}
+	current := []Series{cohort("checkout", "checkout_ui", browserNoisy(10, 1400, 20)), cohort("api", "api_load", browserNoisy(10, 1400, 20))}
+	baseline := []Series{cohort("checkout", "checkout_ui", browserNoisy(40, 1000, 20)), cohort("api", "api_load", browserNoisy(40, 1000, 20))}
+	input := browserBaselineInput(current, baseline, BaselinePartial)
+	input.Baseline.QualificationReasons = []string{ReasonScriptChanged}
+	input.Baseline.ScriptChangedGroups = map[string]bool{"api_load": true}
+	states := map[string]BrowserBaselineResult{}
+	for _, result := range DetectBrowserBaseline(input, DefaultBrowserBaselineParams).Results {
+		states[result.Series] = result
+	}
+	if states["checkout"].State != BrowserBaselineAnomaly {
+		t.Fatalf("the unchanged group was refused: %+v", states["checkout"])
+	}
+	if api := states["api"]; api.State != BrowserBaselineUnscored || !strings.Contains(api.Detail, `"api_load"`) {
+		t.Fatalf("the changed group = %+v", api)
+	}
+	input.Baseline.QualificationReasons = []string{ReasonConfigChanged}
+	input.Baseline.ScriptChangedGroups = map[string]bool{}
+	for _, result := range DetectBrowserBaseline(input, DefaultBrowserBaselineParams).Results {
+		if result.State != BrowserBaselineUnscored || !strings.Contains(result.Detail, ReasonConfigChanged) {
+			t.Fatalf("a configuration change left %+v scored", result)
+		}
+	}
+}
+
+func TestScriptChangedGroups(t *testing.T) {
+	current := WorkloadKey{Groups: map[string]WorkloadGroup{"same": {ScriptDigest: "a"}, "changed": {ScriptDigest: "b"}, "unrecorded": {}, "new": {ScriptDigest: "c"}}}
+	baseline := WorkloadKey{Groups: map[string]WorkloadGroup{"same": {ScriptDigest: "a"}, "changed": {ScriptDigest: "x"}, "unrecorded": {ScriptDigest: "d"}}}
+	got := ScriptChangedGroups(current, baseline)
+	if len(got) != 2 || !got["changed"] || !got["unrecorded"] {
+		t.Fatalf("changed groups = %v", got)
+	}
+}
+
+// Every baseline level at the run's load contributes its buckets.
+func TestBrowserBaselinePoolsBaselineLevelsAtOneLoad(t *testing.T) {
+	baseline := documentSeries("lcp", "lcp", "ms", "f", chromium141, browserNoisy(40, 1000, 20), 1)
+	current := documentSeries("lcp", "lcp", "ms", "f", chromium141, browserNoisy(10, 1400, 20), 1)
+	input := browserBaselineInput([]Series{current}, []Series{baseline}, BaselineQualified)
+	// The baseline returned to the run's load: 20 buckets at each visit.
+	input.Baseline.Levels = []LoadLevel{
+		{Start: browserBaselineStart, End: browserBaselineStart.Add(20 * time.Second), VUsers: 10},
+		{Start: browserBaselineStart.Add(20 * time.Second), End: browserBaselineStart.Add(40 * time.Second), VUsers: 10},
+	}
+	got := DetectBrowserBaseline(input, DefaultBrowserBaselineParams).Results[0]
+	if got.BaselineBuckets < DefaultBrowserBaselineParams.MinBaselineBuckets || got.State != BrowserBaselineAnomaly {
+		t.Fatalf("pooled baseline levels = %+v", got)
 	}
 }

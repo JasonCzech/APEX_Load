@@ -67,7 +67,7 @@ type BrowserBenchmarkResult struct {
 }
 
 func TestBrowserBenchmark(t *testing.T) {
-	if os.Getenv(mobileBrowserBenchmarkEnv) != "1" {
+	if !mobileBrowserBenchmarksEnabled() {
 		t.Skipf("set %s=1 to run the browser acceptance benchmark", mobileBrowserBenchmarkEnv)
 	}
 	out := os.Getenv("APEXLOAD_BROWSER_BENCHMARK_OUT")
@@ -82,86 +82,96 @@ func TestBrowserBenchmark(t *testing.T) {
 	defer server.Close()
 	const latencyMs = 200
 	var results []BrowserBenchmarkResult
+	// Each engine is its own subtest, so an engine missing from this host
+	// (a generator image with system Chromium only) skips or fails alone and
+	// the other engine's results are still written.
 	for _, engine := range []string{"chromium", "webkit"} {
-		for _, target := range benchmarkTargets(engine) {
-			result := BrowserBenchmarkResult{Engine: engine, Profile: target.label, Platform: runtime.GOOS + "-" + runtime.GOARCH, Iterations: iterations, ThrottleLatencyMs: latencyMs}
-			// Start from a closed browser, so the first session times the
-			// browser's launch.
-			baseline := benchmarkColdPool(t, engine)
-			cpu := benchmarkCPU{start: benchmarkCPUByPID()}
-			var sessionStart, action, captured, throttled, cleanup []float64
-			for i := 0; i < iterations; i++ {
-				for _, mode := range []string{"plain", "captured", "throttled"} {
-					config := map[string]any{"base_url": server.URL, "browser_engine": engine, "browser_headless": true}
-					for key, value := range target.config {
-						config[key] = value
-					}
-					switch mode {
-					case "captured":
-						config["browser_capture_document_metrics"] = true
-					case "throttled":
-						config["web_network_simulation_latency_ms"] = latencyMs
-					}
-					ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-					b := &Browser{}
-					started := time.Now()
-					if err := b.Init(ctx, config); err != nil {
-						cancel()
-						requireBrowserRuntime(t, engine, err)
-						t.Logf("%s/%s %s session failed to start: %v", engine, target.label, mode, err)
-						result.Failures++
-						continue
-					}
-					launched := time.Since(started)
-					if i == 0 && mode == "plain" {
-						result.ColdLaunchMs = benchmarkMs(launched)
-						b.mu.Lock()
-						if b.evidence.cohort != nil {
-							result.BrowserVersion = b.evidence.cohort.BrowserVersion
+		t.Run(engine, func(t *testing.T) {
+			for _, target := range benchmarkTargets(engine) {
+				result := BrowserBenchmarkResult{Engine: engine, Profile: target.label, Platform: runtime.GOOS + "-" + runtime.GOARCH, Iterations: iterations, ThrottleLatencyMs: latencyMs}
+				// Start from a closed browser, so the first session times the
+				// browser's launch.
+				baseline := benchmarkColdPool(t, engine)
+				cpu := benchmarkCPU{start: benchmarkCPUByPID()}
+				var sessionStart, action, captured, throttled, cleanup []float64
+				for i := 0; i < iterations; i++ {
+					for _, mode := range []string{"plain", "captured", "throttled"} {
+						config := map[string]any{"base_url": server.URL, "browser_engine": engine, "browser_headless": true}
+						for key, value := range target.config {
+							config[key] = value
 						}
-						b.mu.Unlock()
-					} else if mode == "plain" {
-						sessionStart = append(sessionStart, benchmarkMs(launched))
-					}
-					navigated := time.Now()
-					res, err := b.Execute(ctx, &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/"})
-					elapsed := time.Since(navigated)
-					if err != nil || res == nil || !res.Success {
-						t.Logf("%s/%s %s navigation failed: %v %+v", engine, target.label, mode, err, res)
-						result.Failures++
-					} else {
 						switch mode {
-						case "plain":
-							action = append(action, benchmarkMs(elapsed))
 						case "captured":
-							captured = append(captured, benchmarkMs(elapsed))
+							config["browser_capture_document_metrics"] = true
 						case "throttled":
-							throttled = append(throttled, benchmarkMs(elapsed))
+							config["web_network_simulation_latency_ms"] = latencyMs
 						}
+						ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+						b := &Browser{}
+						started := time.Now()
+						if err := b.Init(ctx, config); err != nil {
+							// The engine is installed (benchmarkColdPool launched it),
+							// so a session that fails to start is a counted failure.
+							cancel()
+							t.Logf("%s/%s %s session failed to start: %v", engine, target.label, mode, err)
+							result.Failures++
+							continue
+						}
+						launched := time.Since(started)
+						if i == 0 && mode == "plain" {
+							result.ColdLaunchMs = benchmarkMs(launched)
+							b.mu.Lock()
+							if b.evidence.cohort != nil {
+								result.BrowserVersion = b.evidence.cohort.BrowserVersion
+							}
+							b.mu.Unlock()
+						} else if mode == "plain" {
+							sessionStart = append(sessionStart, benchmarkMs(launched))
+						}
+						navigated := time.Now()
+						res, err := b.Execute(ctx, &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/"})
+						elapsed := time.Since(navigated)
+						if err != nil || res == nil || !res.Success {
+							t.Logf("%s/%s %s navigation failed: %v %+v", engine, target.label, mode, err, res)
+							result.Failures++
+						} else {
+							switch mode {
+							case "plain":
+								action = append(action, benchmarkMs(elapsed))
+							case "captured":
+								captured = append(captured, benchmarkMs(elapsed))
+							case "throttled":
+								throttled = append(throttled, benchmarkMs(elapsed))
+							}
+						}
+						result.PeakRSSMB = max(result.PeakRSSMB, benchmarkRSSMB())
+						cpu.sample()
+						closing := time.Now()
+						if err := b.Teardown(context.Background()); err != nil {
+							t.Logf("%s/%s %s teardown failed: %v", engine, target.label, mode, err)
+							result.Failures++
+						}
+						if mode == "plain" {
+							cleanup = append(cleanup, benchmarkMs(time.Since(closing)))
+						}
+						cancel()
 					}
-					result.PeakRSSMB = max(result.PeakRSSMB, benchmarkRSSMB())
-					cpu.sample()
-					closing := time.Now()
-					if err := b.Teardown(context.Background()); err != nil {
-						t.Logf("%s/%s %s teardown failed: %v", engine, target.label, mode, err)
-						result.Failures++
-					}
-					if mode == "plain" {
-						cleanup = append(cleanup, benchmarkMs(time.Since(closing)))
-					}
-					cancel()
 				}
+				cpu.sample()
+				result.CPUSeconds = cpu.total()
+				result.SessionStartMs, result.ActionMs, result.CapturedActionMs, result.ThrottledActionMs, result.CleanupMs = benchmarkMedian(sessionStart), benchmarkMedian(action), benchmarkMedian(captured), benchmarkMedian(throttled), benchmarkMedian(cleanup)
+				result.CaptureOverheadMs = result.CapturedActionMs - result.ActionMs
+				result.ThrottleSeparationMs = result.ThrottledActionMs - result.ActionMs
+				benchmarkClosePooledBrowser(engine)
+				result.LeftoverProcesses = benchmarkLeftover(baseline)
+				t.Logf("%s/%s: %+v", engine, target.label, result)
+				results = append(results, result)
 			}
-			cpu.sample()
-			result.CPUSeconds = cpu.total()
-			result.SessionStartMs, result.ActionMs, result.CapturedActionMs, result.ThrottledActionMs, result.CleanupMs = benchmarkMedian(sessionStart), benchmarkMedian(action), benchmarkMedian(captured), benchmarkMedian(throttled), benchmarkMedian(cleanup)
-			result.CaptureOverheadMs = result.CapturedActionMs - result.ActionMs
-			result.ThrottleSeparationMs = result.ThrottledActionMs - result.ActionMs
-			benchmarkClosePooledBrowser(engine)
-			result.LeftoverProcesses = benchmarkLeftover(baseline)
-			t.Logf("%s/%s: %+v", engine, target.label, result)
-			results = append(results, result)
-		}
+		})
+	}
+	// Every engine skipped (none installed): there is no evidence to write.
+	if len(results) == 0 {
+		t.Skip("no browser engine ran; nothing was measured")
 	}
 	writeBrowserBenchmark(t, out, results)
 	for _, result := range results {
@@ -198,15 +208,25 @@ func benchmarkTargets(engine string) []benchmarkTarget {
 	}
 }
 
-// benchmarkColdPool starts the Playwright driver if it is not running, closes
-// the engine's pooled browser and returns the processes left: the baseline a
-// closed browser must return to.
+// benchmarkColdPool starts the Playwright driver if it is not running and the
+// engine to prove it is installed, closes every pooled browser (an idle
+// browser of another engine would count toward this one's RSS and CPU) and
+// returns the processes left: the baseline a closed browser returns to.
 func benchmarkColdPool(t *testing.T, engine string) map[int32]bool {
 	t.Helper()
 	if _, err := getBrowserInstance(engine, true); err != nil {
 		requireBrowserRuntime(t, engine, err)
 	}
-	benchmarkClosePooledBrowser(engine)
+	globalMutex.Lock()
+	pooled := make([]playwright.Browser, 0, len(globalBrowsers))
+	for key, browser := range globalBrowsers {
+		pooled = append(pooled, browser)
+		delete(globalBrowsers, key)
+	}
+	globalMutex.Unlock()
+	for _, browser := range pooled {
+		_ = browser.Close()
+	}
 	return benchmarkSettledPIDs()
 }
 
@@ -364,7 +384,10 @@ func writeBrowserBenchmark(t *testing.T, dir string, results []BrowserBenchmarkR
 	}
 	var requests []map[string]any
 	for _, result := range results {
-		status := "passed"
+		// A benchmark never claims a pass on its own: the published targets
+		// (launch, action overhead, RSS per VUser) need a reviewer, so a
+		// stable run is pending review and an unstable one failed.
+		status := "pending"
 		if result.Failures > 0 || result.LeftoverProcesses > 0 || result.ThrottleSeparationMs < float64(result.ThrottleLatencyMs)/2 {
 			status = "failed"
 		}
@@ -386,5 +409,58 @@ func writeBrowserBenchmark(t *testing.T, dir string, results []BrowserBenchmarkR
 	}
 	if err := os.WriteFile(filepath.Join(dir, "browser-benchmark-acceptance-requests.json"), records, 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The acceptance requests a benchmark writes name the measured commit, are
+// pending review when the run was stable and failed when it was not (never
+// passed by themselves), and carry the F4 shape: a slug profile, the results'
+// digest and notes within 256 bytes.
+func TestBrowserBenchmarkRequestsArePendingOrFailed(t *testing.T) {
+	dir := t.TempDir()
+	stable := BrowserBenchmarkResult{Engine: "chromium", Profile: "desktop_1080p", Platform: "darwin-arm64", BrowserVersion: "149.0.7827.55", Iterations: 5, ThrottleLatencyMs: 200, ThrottleSeparationMs: 199,
+		ColdLaunchMs: 9999.9, SessionStartMs: 9999.9, ActionMs: 9999.9, CaptureOverheadMs: -9999.9, PeakRSSMB: 99999.9, CPUSeconds: 9999.9, CleanupMs: 9999.9}
+	unstable := stable
+	unstable.Engine, unstable.Profile, unstable.Failures = "webkit", "iphone_15_pro", 1
+	requests := filepath.Join(dir, "browser-benchmark-acceptance-requests.json")
+	t.Setenv("APEXLOAD_COMMIT_SHA", "")
+	writeBrowserBenchmark(t, dir, []BrowserBenchmarkResult{stable, unstable})
+	if _, err := os.Stat(requests); !os.IsNotExist(err) {
+		t.Fatalf("requests were written without a commit: %v", err)
+	}
+	t.Setenv("APEXLOAD_COMMIT_SHA", strings.Repeat("a", 40))
+	writeBrowserBenchmark(t, dir, []BrowserBenchmarkResult{stable, unstable})
+	raw, err := os.ReadFile(requests)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var written []struct {
+		RequirementID string `json:"requirement_id"`
+		Profile       string `json:"profile"`
+		Result        string `json:"result"`
+		CommitSHA     string `json:"commit_sha"`
+		Notes         string `json:"notes"`
+		Artifacts     []struct {
+			SHA256 string `json:"sha256"`
+		} `json:"artifacts"`
+	}
+	if err := json.Unmarshal(raw, &written); err != nil {
+		t.Fatal(err)
+	}
+	results, err := os.ReadFile(filepath.Join(dir, "browser-benchmark.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(results)
+	slug := regexp.MustCompile(`^[a-z0-9][a-z0-9._/-]{0,127}$`)
+	want := map[string]string{"chromium-desktop-1080p": "pending", "webkit-iphone-15-pro": "failed"}
+	if len(written) != 2 {
+		t.Fatalf("requests = %+v", written)
+	}
+	for _, request := range written {
+		if want[request.Profile] != request.Result || request.RequirementID != "BE-4" || request.CommitSHA != strings.Repeat("a", 40) || !slug.MatchString(request.Profile) ||
+			len(request.Notes) > 256 || len(request.Artifacts) != 1 || request.Artifacts[0].SHA256 != hex.EncodeToString(digest[:]) {
+			t.Fatalf("request = %+v", request)
+		}
 	}
 }

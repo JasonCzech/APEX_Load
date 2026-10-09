@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -17,12 +18,16 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
-// The authoring lifecycle parity matrix (AUTH-2, A7). Three tables, one
+// The authoring lifecycle parity matrix (AUTH-2, A7). Four parts, one
 // generated document (docs/qa/LIFECYCLE_PARITY_MATRIX.md):
 //
 //   - every validating entry point × a fixture corpus across protocols must
 //     report the same static findings (contextual runtime/install/policy
 //     differences are not static findings and are classified apart);
+//   - the four batch, archive and JMeter saves validate their persisted copy
+//     with the stored validator and report the same findings (the
+//     single-script and Bruno commits validate differently and are not
+//     covered);
 //   - every POST /api/v1/scripts/import/* route is inventoried with its
 //     lifecycle role, so a new launcher without a row fails the build;
 //   - every AUTH-2 row names the Playwright tests that prove it, and each
@@ -37,7 +42,18 @@ type lifecycleFixture struct {
 	Class   string
 	Browser bool
 	Clean   bool
-	Script  func() *dsl.Script
+	// Unstorable content cannot be stored as an ordinary script: create and
+	// update refuse it with a storage-safety message that leads with its
+	// findings. A credential-bearing Java Vuser import is stored only through
+	// the authoring-session approval of its import, which stores the copy
+	// preparePersistentImportedLibraryScript prepares, so the stored routes
+	// are covered by the import-save check: it prepares the copy the same way
+	// and runs the stored validator those routes use.
+	Unstorable bool
+	// ImportTrust names a contextual difference: when a server-owned import
+	// attests the content, its persisted copy has none of the findings.
+	ImportTrust bool
+	Script      func() *dsl.Script
 }
 
 func lifecycleFixtures() []lifecycleFixture {
@@ -64,6 +80,11 @@ func lifecycleFixtures() []lifecycleFixture {
 			{Name: "branch", Type: "control_if", Control: &dsl.ControlFlow{Steps: []dsl.Action{{Name: "orders", Type: "request", Method: "GET"}}}}}}})},
 		{Name: "templates_secrets", Class: "Templates and secrets", Clean: true, Script: script("http", base, dsl.Action{Name: "orders", Type: "request", Method: "GET", Target: "/orders/{{param.order}}",
 			Headers: map[string]string{"Authorization": "Bearer {{secret.api_token}}"}})},
+		{Name: "java_credential_vm_argument", Class: "Java VM arguments", Unstorable: true, ImportTrust: true, Script: func() *dsl.Script {
+			script := javaVMDraft([]string{"-Ddatabase.password=lifecycle-matrix"})
+			script.Actions[0].Target = "Actions"
+			return script
+		}},
 	}
 }
 
@@ -99,7 +120,20 @@ func lifecycleEntryPoints() []lifecycleEntryPoint {
 }
 
 func lifecycleApplies(entry lifecycleEntryPoint, fixture lifecycleFixture) bool {
-	return (!entry.BrowserOnly || fixture.Browser) && !(entry.Executes && fixture.Clean)
+	return (!entry.BrowserOnly || fixture.Browser) && !(entry.Executes && fixture.Clean) && !(entry.Stored && fixture.Unstorable)
+}
+
+// lifecycleImportSaves are the four batch, archive and JMeter saves (the
+// single-script and Bruno commits validate differently and are not covered).
+// Each validates the persisted copy (preparePersistentImportedLibraryScript,
+// then the stored validator) and refuses findings with 400 (the batch saves
+// prefix "script N: "; JMeter save does not); the handler file must keep both
+// calls.
+var lifecycleImportSaves = map[string]string{
+	"/api/v1/scripts/import/commit-batch":                   "generic_import_batch_commit.go",
+	"/api/v1/scripts/import/enterprise-script-archive/save": "handlers_import_enterprise_save.go",
+	"/api/v1/scripts/import/asyncapi/commit-batch":          "asyncapi_import_batch_commit.go",
+	"/api/v1/scripts/import/jmeter/save":                    "handlers_import_jmeter.go",
 }
 
 // TestLifecycleParityStaticFindingsMatchAcrossEntryPoints checks that the
@@ -134,21 +168,24 @@ func TestLifecycleParityStaticFindingsMatchAcrossEntryPoints(t *testing.T) {
 					}
 					continue
 				}
-				if err == nil {
-					t.Fatalf("%s accepted %s", name, fixture.Name)
-				}
-				for _, issue := range expected {
-					if !strings.Contains(err.Error(), issue) {
-						t.Fatalf("%s lost %q: %v", name, issue, err)
-					}
+				var invalid *dsl.ValidationError
+				if !errors.As(err, &invalid) || !reflect.DeepEqual(invalid.Issues, expected) {
+					t.Fatalf("%s: %v, want exactly %q", name, err, expected)
 				}
 			}
-			stored := server.runner.StoreScript(fixture.Script())
+			var stored *StoredScript
+			if !fixture.Unstorable {
+				stored = server.runner.StoreScript(fixture.Script())
+			}
 			for _, entry := range lifecycleEntryPoints() {
 				if !lifecycleApplies(entry, fixture) {
 					continue
 				}
-				route := strings.NewReplacer("{stored}", stored.ID, "{valid}", valid.ID).Replace(entry.Path)
+				replacer := strings.NewReplacer("{valid}", valid.ID)
+				if stored != nil {
+					replacer = strings.NewReplacer("{stored}", stored.ID, "{valid}", valid.ID)
+				}
+				route := replacer.Replace(entry.Path)
 				var reader *bytes.Reader
 				if entry.Stored {
 					reader = bytes.NewReader(nil)
@@ -169,7 +206,16 @@ func TestLifecycleParityStaticFindingsMatchAcrossEntryPoints(t *testing.T) {
 					t.Fatalf("%s: status %d, want %d: %s", entry.Name, recorder.Code, want, recorder.Body.String())
 				}
 				if !entry.Refuses || !fixture.Clean {
-					if issues := extractLifecycleIssues(t, recorder.Body.Bytes()); !reflect.DeepEqual(issues, expected) {
+					issues := extractLifecycleIssues(t, recorder.Body.Bytes())
+					// Write routes refuse unstorable content with a
+					// storage-safety message that leads with its findings.
+					if fixture.Unstorable && entry.Refuses && !entry.Executes {
+						if !strings.HasPrefix(strings.Join(issues, "; "), strings.Join(expected, "; ")) {
+							t.Fatalf("%s: issues %q, want a message leading with %q", entry.Name, issues, expected)
+						}
+						continue
+					}
+					if !reflect.DeepEqual(issues, expected) {
 						t.Fatalf("%s: issues %q, want %q", entry.Name, issues, expected)
 					}
 				}
@@ -195,56 +241,91 @@ func extractLifecycleIssues(t *testing.T, body []byte) []string {
 	return []string{}
 }
 
+// TestLifecycleParityImportSavesReportTheSameFindings checks the import
+// saves: each persists a copy that the stored validator judges, and that copy
+// has exactly the fixture's findings, except where a server-owned import
+// attests credentials the fixture carries (the import_credential_trust
+// contextual cause).
+func TestLifecycleParityImportSavesReportTheSameFindings(t *testing.T) {
+	for route, file := range lifecycleImportSaves {
+		source, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(source), "preparePersistentImportedLibraryScript(") || !regexp.MustCompile(`validate(StoredExecution)?Script\((persistent|safeScript)\)`).Match(source) {
+			t.Errorf("%s (%s) no longer validates its persisted copy with the stored validator", route, file)
+		}
+	}
+	for _, fixture := range lifecycleFixtures() {
+		t.Run(fixture.Name, func(t *testing.T) {
+			expected := append([]string{}, validateScript(fixture.Script())...)
+			if fixture.ImportTrust {
+				expected = []string{}
+			}
+			persistent, err := preparePersistentImportedLibraryScript(fixture.Script(), nil, "har")
+			if err != nil {
+				t.Fatalf("import save refused to prepare: %v", err)
+			}
+			if issues := append([]string{}, validateStoredExecutionScript(persistent)...); !reflect.DeepEqual(issues, expected) {
+				t.Fatalf("import save copy: issues %q, want %q", issues, expected)
+			}
+		})
+	}
+}
+
 // lifecycleImportRoute is one import route's role in the lifecycle.
 type lifecycleImportRoute struct {
-	Role, Row, Proof string
+	Role, Row string
+	// Proof names the test files (pkg/api Go tests or dashboard e2e specs)
+	// that exercise the route; each must mention the route.
+	Proof []string
 }
 
 // lifecycleImportRoutes inventories every POST /api/v1/scripts/import/*
 // route. Adding a route without a row here fails the build.
 var lifecycleImportRoutes = map[string]lifecycleImportRoute{
-	"/api/v1/scripts/import/asyncapi":                           {"launcher", "Every import launcher", "AsyncAPI import tests (asyncapi_*_test.go)"},
-	"/api/v1/scripts/import/broker-config":                      {"launcher", "Every import launcher", "broker configuration import tests"},
-	"/api/v1/scripts/import/bruno/inspect":                      {"launcher", "Every import launcher", "tier0-bruno-import.spec.ts"},
-	"/api/v1/scripts/import/cloudtest":                          {"launcher", "Every import launcher", "CloudTest import tests"},
-	"/api/v1/scripts/import/devweb":                             {"launcher", "Every import launcher", "DevWeb import tests"},
-	"/api/v1/scripts/import/enterprise-script-archive":          {"launcher", "Every import launcher", "workflow-loadrunner-review.spec.ts"},
-	"/api/v1/scripts/import/eventhubs-capture":                  {"launcher", "Every import launcher", "Event Hubs Capture import tests"},
-	"/api/v1/scripts/import/github":                             {"launcher", "Every import launcher", "GitHub script sync tests"},
-	"/api/v1/scripts/import/har":                                {"launcher", "Every import launcher", "workflow-import-source.spec.ts"},
-	"/api/v1/scripts/import/jmeter":                             {"launcher", "Every import launcher", "workflow-jmeter-fidelity.spec.ts"},
-	"/api/v1/scripts/import/k6":                                 {"launcher", "Every import launcher", "k6 import tests"},
-	"/api/v1/scripts/import/openapi":                            {"launcher", "Every import launcher", "workflow-authoring.spec.ts"},
-	"/api/v1/scripts/import/oracle-ebusiness/review":            {"launcher", "Every import launcher", "workflow-import-source.spec.ts"},
-	"/api/v1/scripts/import/postman":                            {"launcher", "Every import launcher", "workflow-import-source.spec.ts"},
-	"/api/v1/scripts/import/raml":                               {"launcher", "Every import launcher", "RAML import tests"},
-	"/api/v1/scripts/import/recorder":                           {"launcher", "Recording", "workflow-recording-review.spec.ts"},
-	"/api/v1/scripts/import/salesforce":                         {"launcher", "Every import launcher", "Salesforce import tests"},
-	"/api/v1/scripts/import/sample":                             {"launcher", "Every import launcher", "sample/Java HTTP import tests"},
-	"/api/v1/scripts/import/wsdl":                               {"launcher", "Every import launcher", "WSDL import tests"},
-	"/api/v1/scripts/import/asyncapi/commit":                    {"commit", "Every import launcher", "AsyncAPI commit tests"},
-	"/api/v1/scripts/import/asyncapi/commit-batch":              {"commit", "Multi-script imports", "AsyncAPI batch commit tests"},
-	"/api/v1/scripts/import/bruno/commit":                       {"commit", "Multi-script imports", "tier0-bruno-import.spec.ts"},
-	"/api/v1/scripts/import/commit-batch":                       {"commit", "Multi-script imports", "workflow-loadrunner-collection.spec.ts"},
-	"/api/v1/scripts/import/enterprise-script-archive/save":     {"commit", "Multi-script imports", "workflow-loadrunner-review.spec.ts"},
-	"/api/v1/scripts/import/jmeter/save":                        {"commit", "Every import launcher", "workflow-jmeter-fidelity.spec.ts"},
-	"/api/v1/scripts/import/openapi/commit":                     {"commit", "Every import launcher", "workflow-authoring.spec.ts"},
-	"/api/v1/scripts/import/postman/save":                       {"commit", "Every import launcher", "Postman import tests"},
-	"/api/v1/scripts/import/enterprise-script-archive/validate": {"validate", "Every import launcher", "LoadRunner import validation tests"},
-	"/api/v1/scripts/import/jmeter/validate":                    {"validate", "Every import launcher", "JMeter import validation tests"},
-	"/api/v1/scripts/import/postman/validate":                   {"validate", "Every import launcher", "Postman import validation tests"},
-	"/api/v1/scripts/import/recorder/validate":                  {"validate", "Recording", "workflow-recording-review.spec.ts"},
-	"/api/v1/scripts/import/recorder/replay":                    {"validate", "Recording", "recorder replay tests"},
-	"/api/v1/scripts/import/parameterize/apply":                 {"shared review", "Every import launcher", "import parameterization tests"},
-	"/api/v1/scripts/import/repairs/apply":                      {"shared review", "Every import launcher", "workflow-jmeter-fidelity.spec.ts"},
-	"/api/v1/scripts/import/repairs/preview":                    {"shared review", "Every import launcher", "workflow-jmeter-fidelity.spec.ts"},
-	"/api/v1/scripts/import/shared-values/apply":                {"shared review", "Multi-script imports", "shared import values tests"},
-	"/api/v1/scripts/import/secrets/migrate":                    {"shared review", "Template/component/clone", "protected credential migration tests"},
-	"/api/v1/scripts/import/secrets/discard":                    {"shared review", "Template/component/clone", "protected credential migration tests"},
-	"/api/v1/scripts/import/settings":                           {"shared review", "Every import launcher", "import runtime settings tests"},
-	"/api/v1/scripts/import/browser-recorder/attest":            {"assets", "Recording", "browser recorder attestation tests"},
-	"/api/v1/scripts/import/{id}/assets/upload":                 {"assets", "Every import launcher", "import asset upload tests"},
-	"/api/v1/scripts/import/{id}/java-classpath/upload":         {"assets", "Every import launcher", "Java classpath upload tests"},
+	"/api/v1/scripts/import/asyncapi":                           {"launcher", "Every import launcher", []string{"handlers_web_api_imports_test.go"}},
+	"/api/v1/scripts/import/broker-config":                      {"launcher", "Every import launcher", []string{"handlers_web_api_imports_test.go"}},
+	"/api/v1/scripts/import/bruno/inspect":                      {"launcher", "Every import launcher", []string{"handlers_bruno_import_test.go", "tier0-bruno-import.spec.ts"}},
+	"/api/v1/scripts/import/cloudtest":                          {"launcher", "Every import launcher", []string{"handlers_import_cloudtest_test.go"}},
+	"/api/v1/scripts/import/devweb":                             {"launcher", "Every import launcher", []string{"handlers_scripts_test.go"}},
+	"/api/v1/scripts/import/enterprise-script-archive":          {"launcher", "Every import launcher", []string{"java_vuser_import_launch_flow_test.go", "handlers_import_enterprise_decode_test.go"}},
+	"/api/v1/scripts/import/eventhubs-capture":                  {"launcher", "Every import launcher", []string{"handlers_eventhubs_capture_test.go"}},
+	"/api/v1/scripts/import/github":                             {"launcher", "Every import launcher", []string{"github_handlers_test.go"}},
+	"/api/v1/scripts/import/har":                                {"launcher", "Every import launcher", []string{"handlers_import_sample_har_protected_credentials_test.go", "workflow-import-source.spec.ts"}},
+	"/api/v1/scripts/import/jmeter":                             {"launcher", "Every import launcher", []string{"jmeter_review_evidence_test.go", "workflow-jmeter-fidelity.spec.ts"}},
+	"/api/v1/scripts/import/k6":                                 {"launcher", "Every import launcher", []string{"handlers_k6_test.go"}},
+	"/api/v1/scripts/import/openapi":                            {"launcher", "Every import launcher", []string{"handlers_web_api_imports_test.go", "tier0-script-import.spec.ts"}},
+	"/api/v1/scripts/import/oracle-ebusiness/review":            {"launcher", "Every import launcher", []string{"oracle_ebusiness_review_test.go"}},
+	"/api/v1/scripts/import/postman":                            {"launcher", "Every import launcher", []string{"handlers_web_api_imports_test.go", "workflow-import-source.spec.ts"}},
+	"/api/v1/scripts/import/raml":                               {"launcher", "Every import launcher", []string{"handlers_import_raml_fidelity_test.go"}},
+	"/api/v1/scripts/import/recorder":                           {"launcher", "Recording", []string{"handlers_recorder_import_test.go"}},
+	"/api/v1/scripts/import/salesforce":                         {"launcher", "Every import launcher", []string{"handlers_import_sample_har_protected_credentials_test.go"}},
+	"/api/v1/scripts/import/sample":                             {"launcher", "Every import launcher", []string{"handlers_import_sample_har_protected_credentials_test.go"}},
+	"/api/v1/scripts/import/wsdl":                               {"launcher", "Every import launcher", []string{"handlers_web_api_imports_test.go"}},
+	"/api/v1/scripts/import/asyncapi/commit":                    {"commit", "Every import launcher", []string{"import_commit_service_test.go"}},
+	"/api/v1/scripts/import/asyncapi/commit-batch":              {"commit", "Multi-script imports", []string{"asyncapi_import_batch_commit_test.go"}},
+	"/api/v1/scripts/import/bruno/commit":                       {"commit", "Multi-script imports", []string{"handlers_bruno_import_test.go", "tier0-bruno-import.spec.ts"}},
+	"/api/v1/scripts/import/commit-batch":                       {"commit", "Multi-script imports", []string{"generic_import_batch_commit_test.go", "workflow-aura-outcomes.spec.ts"}},
+	"/api/v1/scripts/import/enterprise-script-archive/save":     {"commit", "Multi-script imports", []string{"handlers_import_enterprise_save_test.go", "workflow-loadrunner-review.spec.ts"}},
+	"/api/v1/scripts/import/jmeter/save":                        {"commit", "Every import launcher", []string{"jmeter_review_evidence_test.go", "workflow-jmeter-fidelity.spec.ts"}},
+	"/api/v1/scripts/import/openapi/commit":                     {"commit", "Every import launcher", []string{"import_commit_service_test.go", "tier0-script-import.spec.ts"}},
+	"/api/v1/scripts/import/postman/save":                       {"commit", "Every import launcher", []string{"import_source_lifecycle_test.go"}},
+	"/api/v1/scripts/import/enterprise-script-archive/validate": {"validate", "Every import launcher", []string{"openapi_enterprise_archive_collection_test.go", "workflow-loadrunner-review.spec.ts"}},
+	"/api/v1/scripts/import/jmeter/validate":                    {"validate", "Every import launcher", []string{"handlers_scripts_test.go"}},
+	"/api/v1/scripts/import/postman/validate":                   {"validate", "Every import launcher", []string{"handlers_web_api_imports_test.go"}},
+	"/api/v1/scripts/import/recorder/validate":                  {"validate", "Recording", []string{"handlers_recorder_import_test.go"}},
+	"/api/v1/scripts/import/recorder/replay":                    {"validate", "Recording", []string{"handlers_recorder_import_test.go"}},
+	"/api/v1/scripts/import/parameterize/apply":                 {"shared review", "Every import launcher", []string{"handlers_import_paramize_test.go", "workflow-aura-outcomes.spec.ts"}},
+	"/api/v1/scripts/import/repairs/apply":                      {"shared review", "Every import launcher", []string{"workflow-jmeter-fidelity.spec.ts"}},
+	"/api/v1/scripts/import/repairs/preview":                    {"shared review", "Every import launcher", []string{"import_repairs_test.go", "workflow-jmeter-fidelity.spec.ts"}},
+	"/api/v1/scripts/import/shared-values/apply":                {"shared review", "Multi-script imports", []string{"handlers_import_shared_values_test.go"}},
+	"/api/v1/scripts/import/secrets/migrate":                    {"shared review", "Template/component/clone", []string{"import_candidate_credentials_test.go"}},
+	"/api/v1/scripts/import/secrets/discard":                    {"shared review", "Template/component/clone", []string{"handlers_project_secrets_test.go"}},
+	"/api/v1/scripts/import/settings":                           {"shared review", "Every import launcher", []string{"handlers_import_settings_test.go", "workflow-import-source.spec.ts"}},
+	"/api/v1/scripts/import/browser-recorder/attest":            {"assets", "Recording", []string{"browser_recorder_bridge_import_test.go"}},
+	"/api/v1/scripts/import/{id}/assets/upload":                 {"assets", "Every import launcher", []string{"handlers_import_assets_test.go"}},
+	"/api/v1/scripts/import/{id}/java-classpath/upload":         {"assets", "Every import launcher", []string{"workflow-loadrunner-review.spec.ts"}},
 }
 
 func TestLifecycleParityImportLaunchersAreInventoried(t *testing.T) {
@@ -270,6 +351,31 @@ func TestLifecycleParityImportLaunchersAreInventoried(t *testing.T) {
 	for path, route := range lifecycleImportRoutes {
 		if !rows[route.Row] {
 			t.Errorf("%s names AUTH-2 row %q, which is not in the spec table", path, route.Row)
+		}
+		if len(route.Proof) == 0 {
+			t.Errorf("%s names no proof", path)
+		}
+		// A proof mentions the route, so it exercises it rather than merely
+		// naming a feature; a route with a path parameter, built at run time,
+		// is mentioned by what follows the parameter.
+		tail := "import/" + strings.TrimPrefix(path, "/api/v1/scripts/import/")
+		if _, after, ok := strings.Cut(path, "{id}"); ok {
+			tail = after
+		}
+		mention := regexp.MustCompile(regexp.QuoteMeta(tail) + `(?:[^\w/-]|$)`)
+		for _, proof := range route.Proof {
+			file := proof
+			if strings.HasSuffix(proof, ".spec.ts") {
+				file = filepath.Join("../../dashboard/e2e", proof)
+			}
+			source, err := os.ReadFile(file)
+			if err != nil {
+				t.Errorf("%s names proof %s: %v", path, proof, err)
+				continue
+			}
+			if !mention.Match(source) {
+				t.Errorf("%s names proof %s, which never mentions the route", path, proof)
+			}
 		}
 	}
 }
@@ -319,8 +425,61 @@ func lifecycleAuth2Rows() []lifecycleAuth2Row {
 	}
 }
 
+// lifecycleE2EProfiles reads which specs each e2e profile runs: local-auth
+// runs only its testMatch list, and the default profile runs every spec but
+// its testIgnore patterns.
+func lifecycleE2EProfiles(t *testing.T) (map[string]bool, []string) {
+	t.Helper()
+	raw, err := os.ReadFile("../../dashboard/playwright.config.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := string(raw)
+	list := func(expression string) []string {
+		match := regexp.MustCompile(expression).FindStringSubmatch(config)
+		if match == nil {
+			t.Fatalf("playwright.config.ts has no %s", expression)
+		}
+		var out []string
+		for _, entry := range regexp.MustCompile(`'\*\*/([^']+)'`).FindAllStringSubmatch(match[1], -1) {
+			out = append(out, entry[1])
+		}
+		return out
+	}
+	localAuth := map[string]bool{}
+	for _, file := range list(`testMatch: process\.env\.APEXLOAD_E2E_PROFILE === 'local-auth'\s*\?\s*\[([^\]]*)\]`) {
+		localAuth[file] = true
+	}
+	return localAuth, list(`testIgnore: process\.env\.APEXLOAD_E2E_PROFILE === 'local-auth' \? \[\] : \[([^\]]*)\]`)
+}
+
+// lifecycleProfileSkip reports whether a spec's test (or the whole file)
+// skips by e2e profile; with no title, whether any test in the file does.
+func lifecycleProfileSkip(source, title string) bool {
+	skip := regexp.MustCompile(`test\.(skip|fixme)\([^\n]*APEXLOAD_E2E_PROFILE`)
+	if title == "" {
+		return skip.MatchString(source)
+	}
+	start := strings.Index(source, "test('"+title+"'")
+	if start < 0 {
+		return false
+	}
+	body := source[start:]
+	if end := strings.Index(body[1:], "\ntest("); end > 0 {
+		body = body[:end+1]
+	}
+	// A file-level skip precedes the first test.
+	head := source
+	if first := strings.Index(source, "\ntest("); first > 0 {
+		head = source[:first]
+	}
+	return skip.MatchString(body) || skip.MatchString(head)
+}
+
 // TestLifecycleParityRowsRunInBothProfiles checks every AUTH-2 row against
-// the spec table, the named Playwright tests and the local-auth profile.
+// the spec table, the named Go tests, and the named Playwright tests: each
+// exists, runs in the local-auth profile and is not ignored by the default
+// one, and neither skips by profile.
 func TestLifecycleParityRowsRunInBothProfiles(t *testing.T) {
 	spec, err := os.ReadFile("../../docs/FEATURE_COMPLETION_SPEC.md")
 	if err != nil {
@@ -341,26 +500,54 @@ func TestLifecycleParityRowsRunInBothProfiles(t *testing.T) {
 	if !reflect.DeepEqual(rows, specRows) {
 		t.Fatalf("AUTH-2 rows %q, spec table %q", rows, specRows)
 	}
-	config, err := os.ReadFile("../../dashboard/playwright.config.ts")
+	localAuth, defaultIgnore := lifecycleE2EProfiles(t)
+	goTests := map[string]bool{}
+	files, err := filepath.Glob("*_test.go")
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, file := range files {
+		source, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, match := range regexp.MustCompile(`(?m)^func (Test\w+)\(t \*testing\.T\)`).FindAllStringSubmatch(string(source), -1) {
+			goTests[match[1]] = true
+		}
 	}
 	for _, row := range lifecycleAuth2Rows() {
 		if len(row.E2E) == 0 {
 			t.Errorf("AUTH-2 row %q has no Playwright proof", row.Entry)
 		}
+		for _, name := range row.Go {
+			if !goTests[name] {
+				t.Errorf("AUTH-2 row %q names Go test %s, which does not exist in pkg/api", row.Entry, name)
+			}
+		}
 		for file, titles := range row.E2E {
-			source, err := os.ReadFile(filepath.Join("../../dashboard/e2e", file))
+			raw, err := os.ReadFile(filepath.Join("../../dashboard/e2e", file))
 			if err != nil {
 				t.Errorf("AUTH-2 row %q names %s: %v", row.Entry, file, err)
 				continue
 			}
-			if !strings.Contains(string(config), "'**/"+file+"'") {
+			source := string(raw)
+			if !localAuth[file] {
 				t.Errorf("%s (AUTH-2 row %q) does not run in the local-auth profile", file, row.Entry)
 			}
+			for _, pattern := range defaultIgnore {
+				if matched, _ := filepath.Match(pattern, file); matched {
+					t.Errorf("%s (AUTH-2 row %q) is ignored by the default profile (%s)", file, row.Entry, pattern)
+				}
+			}
+			if len(titles) == 0 && lifecycleProfileSkip(source, "") {
+				t.Errorf("%s (AUTH-2 row %q) skips by profile", file, row.Entry)
+			}
 			for _, title := range titles {
-				if !strings.Contains(string(source), "test('"+title+"'") {
+				if !strings.Contains(source, "test('"+title+"'") {
 					t.Errorf("%s has no test %q (AUTH-2 row %q)", file, title, row.Entry)
+				}
+				if lifecycleProfileSkip(source, title) {
+					t.Errorf("%s test %q (AUTH-2 row %q) skips by profile, so it does not run in both", file, title, row.Entry)
 				}
 			}
 		}
@@ -373,7 +560,7 @@ func renderLifecycleParityMatrix() string {
 	out.WriteString("# Authoring lifecycle parity matrix\n\n")
 	out.WriteString("Generated by `pkg/api/lifecycle_parity_matrix_test.go` (AUTH-2). Regenerate with `APEXLOAD_UPDATE_LIFECYCLE_PARITY_MATRIX=1 go test ./pkg/api -run TestLifecycleParityMatrixDocumentIsFresh`.\n\n")
 	out.WriteString("## Static findings by entry point\n\n")
-	out.WriteString("Every entry point reports exactly the fixture's static findings (`validateScript`). Routes that refuse a script answer `400` with them, and validation routes answer `200` with them. Routes that would execute a clean script are exercised with invalid fixtures only. Contextual runtime, install, policy and approval outcomes are not static findings and are classified apart.\n\n")
+	out.WriteString("Every entry point, the parser and the disk parser report exactly the fixture's static findings (`validateScript`), in order. Routes that refuse a script answer `400` with them, and validation routes answer `200` with them. Debug and replay routes judge the copy a session executes, with the submitted JVM arguments in place of the sentinels that mask them there; a finding only that copy has (a recorded resource URL whose credential it masks cannot be executed) is contextual, classified apart and covered by `TestTransientReplayRefusesAMaskedRecordedResourceURL`. Routes that would execute a clean script are exercised with invalid fixtures only. Content that cannot be stored as an ordinary script (a credential-bearing JVM argument) is refused by create and update with a storage-safety message that leads with its findings. A credential-bearing Java Vuser import is stored only through the authoring-session approval of its import, which stores the copy `preparePersistentImportedLibraryScript` prepares, so the stored routes are covered for it by the import saves' check below, which prepares the copy the same way and runs the stored validator the stored routes use. Contextual runtime, install, policy and approval outcomes are not static findings and are classified apart.\n\n")
 	entries := lifecycleEntryPoints()
 	out.WriteString("| Fixture | Class | Parser | Disk parser |")
 	for _, entry := range entries {
@@ -395,7 +582,23 @@ func renderLifecycleParityMatrix() string {
 		}
 		out.WriteString("\n")
 	}
-	out.WriteString("\n## Import routes\n\nEvery script import route that accepts a POST has a row; a route without one fails `TestLifecycleParityImportLaunchersAreInventoried`.\n\n")
+	out.WriteString("\n## Import saves\n\nThe four batch, archive and JMeter saves validate the persisted copy (`preparePersistentImportedLibraryScript`, then the stored validator) and refuse findings with `400` and the findings joined by `; ` (the three batch saves prefix `script N: `; JMeter save does not). The other import commits are not under this check: the single-script commits (`openapi/commit`, `postman/save`, `asyncapi/commit`) validate the finalized copy with the DSL validator (`400`), and `bruno/commit` validates with its native check (`422`). `TestLifecycleParityImportSavesReportTheSameFindings` checks that each handler keeps both calls and that the copy has exactly each fixture's findings, with one classified contextual cause:\n\n")
+	out.WriteString("| Route | Handler |\n| --- | --- |\n")
+	saves := make([]string, 0, len(lifecycleImportSaves))
+	for route := range lifecycleImportSaves {
+		saves = append(saves, route)
+	}
+	sort.Strings(saves)
+	for _, route := range saves {
+		out.WriteString(fmt.Sprintf("| `%s` | `%s` |\n", route, lifecycleImportSaves[route]))
+	}
+	out.WriteString("\n| Fixture | Contextual cause | Import save copy |\n| --- | --- | --- |\n")
+	for _, fixture := range lifecycleFixtures() {
+		if fixture.ImportTrust {
+			out.WriteString(fmt.Sprintf("| `%s` | `import_credential_trust`: a server-owned import attests the credential; a draft's import marker never does | no findings |\n", fixture.Name))
+		}
+	}
+	out.WriteString("\n## Import routes\n\nEvery script import route that accepts a POST has a row; a route without one fails `TestLifecycleParityImportLaunchersAreInventoried`. Each proof is a test file that mentions the route (a Go test in `pkg/api` or a spec in `dashboard/e2e`).\n\n")
 	out.WriteString("| Route | Role | AUTH-2 row | Proof |\n| --- | --- | --- | --- |\n")
 	paths := make([]string, 0, len(lifecycleImportRoutes))
 	for path := range lifecycleImportRoutes {
@@ -404,9 +607,9 @@ func renderLifecycleParityMatrix() string {
 	sort.Strings(paths)
 	for _, path := range paths {
 		route := lifecycleImportRoutes[path]
-		out.WriteString(fmt.Sprintf("| `%s` | %s | %s | %s |\n", path, route.Role, route.Row, route.Proof))
+		out.WriteString(fmt.Sprintf("| `%s` | %s | %s | `%s` |\n", path, route.Role, route.Row, strings.Join(route.Proof, "`, `")))
 	}
-	out.WriteString("\n## AUTH-2 rows\n\nEach row's Playwright tests run in both e2e profiles (default and local-auth).\n\n| AUTH-2 row | Playwright | Go |\n| --- | --- | --- |\n")
+	out.WriteString("\n## AUTH-2 rows\n\nEach row's Playwright tests exist, run in the local-auth profile, are not ignored by the default profile, and do not skip by profile; each named Go test exists. The proofs show that each entry point opens, saves and reopens what it should; they do not each prove every AUTH-2 property (see the deviations in the spec).\n\n| AUTH-2 row | Playwright | Go |\n| --- | --- | --- |\n")
 	for _, row := range lifecycleAuth2Rows() {
 		files := make([]string, 0, len(row.E2E))
 		for file := range row.E2E {
@@ -444,5 +647,62 @@ func TestLifecycleParityMatrixDocumentIsFresh(t *testing.T) {
 	}
 	if string(got) != want {
 		t.Fatalf("%s is stale; regenerate with APEXLOAD_UPDATE_LIFECYCLE_PARITY_MATRIX=1", lifecycleParityMatrixPath)
+	}
+}
+
+// Debug and replay judge what they would execute: a recorded resource URL
+// whose credential the executed copy masks cannot be executed, although the
+// submitted content alone has no finding.
+func TestTransientReplayRefusesAMaskedRecordedResourceURL(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	script := &dsl.Script{Name: "Recorded resources", Version: "1.0.0", Protocol: "browser",
+		Config:   dsl.ScriptConfig{BaseURL: "https://lifecycle.example.test", Browser: dsl.BrowserConfig{Engine: "chromium", DownloadResources: "recorded"}},
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "browser_recorder", Preserved: map[string]any{"recorded_resource_urls_available": true, "recorded_resource_urls": []any{"https://user:pass@cdn.lifecycle.example.test/app.js"}}}},
+		Actions:  []dsl.Action{{Name: "open", Type: "browser_navigate", Target: "/"}}}
+	if issues := dsl.ValidateScriptIssues(script); len(issues) != 0 {
+		t.Fatalf("fixture: the submitted content has findings %q", issues)
+	}
+	body, err := json.Marshal(map[string]any{"script": script})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/api/v1/scripts/browser-replay/sessions", "/api/v1/scripts/replay/sessions", "/api/v1/scripts/replay", "/api/v1/scripts/debug/sessions"} {
+		request := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		recorder := httptest.NewRecorder()
+		server.mux.ServeHTTP(recorder, request)
+		// The preflight refuses it, before any session is reserved: the
+		// finding is among its issues, not a later start error.
+		var refusal struct {
+			Valid  *bool    `json:"valid"`
+			Issues []string `json:"issues"`
+		}
+		if recorder.Code != http.StatusBadRequest || json.Unmarshal(recorder.Body.Bytes(), &refusal) != nil || refusal.Valid == nil || *refusal.Valid || !strings.Contains(strings.Join(refusal.Issues, "\n"), "recorded_resource_urls[0]") || !strings.Contains(strings.Join(refusal.Issues, "\n"), "cannot be executed") {
+			t.Fatalf("%s: %d %s", path, recorder.Code, recorder.Body.String())
+		}
+	}
+}
+
+// The profile detectors fire: a profile skip anywhere in a file named by
+// "(all tests)", one inside a named test, and none where there is none; the
+// default profile's ignore list is read.
+func TestLifecycleParityProfileDetectors(t *testing.T) {
+	source := "test('first', async () => {})\ntest('second', async () => {\n  test.skip(process.env.APEXLOAD_E2E_PROFILE === 'local-auth', 'default only')\n})\n"
+	if !lifecycleProfileSkip(source, "") || !lifecycleProfileSkip(source, "second") || lifecycleProfileSkip(source, "first") {
+		t.Fatal("profile skip detection")
+	}
+	raw, err := os.ReadFile("../../dashboard/e2e/workflow-browser-har.spec.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !lifecycleProfileSkip(string(raw), "viewers list HARs but cannot download them, and other projects are denied") || lifecycleProfileSkip(string(raw), "an archived run leads from its retained resources to HAR and archive downloads") {
+		t.Fatal("profile skip detection on a real spec")
+	}
+	localAuth, defaultIgnore := lifecycleE2EProfiles(t)
+	if !localAuth["workflow-browser-har.spec.ts"] || len(defaultIgnore) == 0 {
+		t.Fatalf("profiles: local-auth %d specs, default ignore %q", len(localAuth), defaultIgnore)
+	}
+	if matched, _ := filepath.Match(defaultIgnore[0], "tier0-local-auth.spec.ts"); !matched {
+		t.Fatalf("default ignore %q does not ignore a local-auth spec", defaultIgnore)
 	}
 }

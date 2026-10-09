@@ -44,6 +44,21 @@ describe('RcaBrowserBaselineSection', () => {
     act(() => root.unmount())
   })
 
+  it('names each cohort by its tuple, each level by its start and a partial baseline by its reasons', () => {
+    const labelled: RcaBrowserBaseline = {
+      ...baseline, baseline: { test_id: 'base-run', qualification: 'partial', reasons: ['pacing_changed'] },
+      results: [{ ...baseline.results[0], level_start: '2026-10-08T12:00:00Z', evidence: [{ kind: 'browser_document', locator: 'browser_documents.jsonl#lcp chromium desktop checkout' }] }],
+    }
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    act(() => root.render(<RcaBrowserBaselineSection baseline={labelled} />))
+    const row = container.querySelector('tbody tr')?.textContent || ''
+    expect(row).toContain('lcp chromium desktop checkout')
+    expect(row).toContain('vusers=10 from 2026-10-08 12:00:00 UTC')
+    expect(container.textContent).toContain('(partial: Pacing changed)')
+    act(() => root.unmount())
+  })
+
   it('normalizes a controller payload with null lists', () => {
     const payload = { ...rcaTestAssessment(), browser_baseline: { ...baseline, results: [{ ...baseline.results[0], evidence: null, caveats: null }], limitations: null } }
     const normalized = normalizeRcaAssessment(payload as never)

@@ -577,6 +577,9 @@ func (tr *TestRunner) installAdoptedRun(b *distributedExecutionBackend, candidat
 	if err == nil {
 		test.remoteArchiveClientsByTarget = archives
 		test.continuityFailovers = append(append([]RunFailover(nil), test.continuityFailovers...), failover)
+		// A stage recorder this process kept from an earlier ownership samples
+		// only from the adoption (a new one starts there anyway).
+		test.telemetryStages.adopted(adoptedAt)
 		for target := range completed {
 			test.remoteTargetStates[target] = "complete"
 		}

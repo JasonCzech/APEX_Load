@@ -117,7 +117,11 @@ func buildTelemetryAcceptanceReportView(manifest *RunArchiveManifest, verdict *T
 }
 
 func telemetryAcceptanceReportCriterionOf(criterion TelemetryAcceptanceCriterion) telemetryAcceptanceReportCriterion {
-	row := telemetryAcceptanceReportCriterion{Criterion: criterion.Criterion, Outcome: criterion.Outcome, Observed: "unknown", Bound: criterion.Bound, Reason: criterion.Reason,
+	outcome := criterion.Outcome
+	if criterion.Advisory {
+		outcome += " (advisory, never decides)"
+	}
+	row := telemetryAcceptanceReportCriterion{Criterion: criterion.Criterion, Outcome: outcome, Observed: "unknown", Bound: criterion.Bound, Reason: criterion.Reason,
 		Threshold: criterion.Comparator + " " + formatCITelemetryValue(criterion.Threshold, criterion.Unit)}
 	if criterion.Observed != nil {
 		row.Observed = formatCITelemetryValue(*criterion.Observed, criterion.Unit)

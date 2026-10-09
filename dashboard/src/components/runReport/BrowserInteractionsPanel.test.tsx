@@ -45,8 +45,8 @@ describe('BrowserInteractionsPanel', () => {
     expect(rows[0]).toContain('Scripted repetition')
     expect(rows[0]).toContain('Tap buy')
     expect(rows[1]).toContain('Dead interaction')
-    expect(container.textContent).toContain('2 gestures were dropped by capture bounds')
-    expect(container.textContent).toContain('A repeat is at least 3 gestures within 2000 ms and 32 CSS px')
+    expect(container.textContent).toContain('2 gestures were dropped by capture bounds or lost before the archive')
+    expect(container.textContent).toContain('A repeat is at least 3 click or tap gestures within 2000 ms and 32 CSS px')
     const cells = [...container.querySelectorAll('rect[data-cell]')]
     expect(cells.map(cell => cell.getAttribute('data-cell'))).toEqual(['0,0', '63,63'])
     expect(Number(cells[1].getAttribute('fill-opacity'))).toBeGreaterThan(Number(cells[0].getAttribute('fill-opacity')))
@@ -59,6 +59,57 @@ describe('BrowserInteractionsPanel', () => {
   it('says when a run recorded no interaction evidence', async () => {
     const { container, root } = await render({ ...analysis, status: 'not_captured', patterns: [], heatmaps: [] })
     expect(container.textContent).toContain('This run recorded no interaction evidence.')
+    await act(async () => root.unmount())
+  })
+
+  it('renders a ready analysis whose lists the server left out, and a lost capture', async () => {
+    const { container, root } = await render({ ...analysis, patterns: null, heatmaps: null, notes: null })
+    expect(container.textContent).toContain('No pattern was found.')
+    await act(async () => root.unmount())
+    const lost = await render({ ...analysis, status: 'unavailable', coverage: { ...analysis.coverage, dropped: 7 }, patterns: [], heatmaps: [] })
+    expect(lost.container.textContent).toContain('none reached its archive (7 gestures lost)')
+    await act(async () => lost.root.unmount())
+  })
+
+  it('states the scroll offsets on each axis a map varied in', async () => {
+    const scrolled = { ...analysis, heatmaps: [{ ...analysis.heatmaps[0], device_scale_factor: 2, scroll: { min_x: 0, max_x: 600, min_y: 0, max_y: 0 } }] }
+    const { container, root } = await render(scrolled)
+    expect(container.textContent).toContain('@2x')
+    expect(container.textContent).toContain('viewport positions at scroll offsets x 0–600 px')
+    expect(container.textContent).not.toContain('y 0–0')
+    await act(async () => root.unmount())
+  })
+
+  it('says a malformed analysis could not be read instead of failing the report', async () => {
+    const { container, root } = await render({ status: 'ready' })
+    expect(container.textContent).toContain('The interaction analysis could not be read.')
+    await act(async () => root.unmount())
+  })
+
+  it('describes an unfinalized archive plainly and retries other failures', async () => {
+    const rejectWith = (message: string, status: number) => Object.assign(new Error(message), { status })
+    mocks.request.mockRejectedValueOnce(rejectWith('the run has no finalized archive', 409)).mockResolvedValueOnce(analysis)
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    await act(async () => root.render(<BrowserInteractionsPanel testId="run-1" />))
+    await act(async () => { await Promise.resolve() })
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+    expect(container.textContent).toContain("Interaction patterns need the run's finalized archive, which is not available.")
+    expect(container.textContent).not.toContain('no finalized archive')
+    await act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === 'Check again')?.click() })
+    await act(async () => { await Promise.resolve() })
+    expect(container.textContent).toContain('Scripted repetition')
+
+    mocks.request.mockRejectedValueOnce(rejectWith("the run's interaction evidence could not be read", 500)).mockResolvedValueOnce(analysis)
+    await act(async () => root.render(<BrowserInteractionsPanel testId="run-2" />))
+    await act(async () => { await Promise.resolve() })
+    const alert = container.querySelector('[role="alert"]')
+    expect(alert?.textContent).toContain('Interaction patterns could not be loaded')
+    expect(alert?.querySelector('details')?.textContent).toContain('interaction evidence could not be read')
+    await act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === 'Retry interaction patterns')?.click() })
+    await act(async () => { await Promise.resolve() })
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+    expect(container.textContent).toContain('Scripted repetition')
     await act(async () => root.unmount())
   })
 })

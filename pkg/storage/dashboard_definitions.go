@@ -172,8 +172,8 @@ func validateDashboardDefinition(d *DashboardDefinition) error {
 				continue
 			}
 			q := panel.Query
-			if q.QueryVersion < 0 || q.QueryVersion > AnalyticsQueryVersion {
-				return fmt.Errorf("dashboard panel %q query_version must be at most %d", panel.ID, AnalyticsQueryVersion)
+			if err := validateAnalyticsQueryVersion(*q); err != nil {
+				return fmt.Errorf("dashboard panel %q %w", panel.ID, err)
 			}
 			if IsNativeObservationRate(q.Metric) && q.Population == "" {
 				return errors.New("retained rates require an explicit population")
@@ -331,12 +331,20 @@ func (s *SQLiteStore) UpdateDashboardDefinitionIfRevision(d *DashboardDefinition
 		return false, errors.New("dashboard definition exceeds its encoded size limit")
 	}
 	now := time.Now()
-	projectID := normalizeProjectID(d.ProjectID)
 	tx, err := s.db.Begin()
 	if err != nil {
 		return false, err
 	}
 	defer tx.Rollback()
+	// The project row lock orders this edit against the project's deletion,
+	// so a revision is never written for a project being deleted.
+	projectID, err := lockProjectForOwnedMutation(tx, d.ProjectID)
+	if errors.Is(err, ErrOwnedProjectNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
 	result, err := tx.Exec(`UPDATE dashboard_definitions SET name = ?, description = ?, visibility = ?, revision = revision + 1, definition_json = ?, updated_at = ? WHERE id = ? AND project_id = ? AND revision = ?`, d.Name, d.Description, d.Visibility, string(payload), now, d.ID, projectID, expected)
 	if err != nil {
 		return false, err
@@ -447,8 +455,20 @@ type DashboardDefinitionRevision struct {
 	SavedAt  time.Time `json:"saved_at"`
 }
 
+// validateAnalyticsQueryVersion refuses query semantics newer than this
+// controller's, when a query is saved and when it runs.
+func validateAnalyticsQueryVersion(q AnalyticsQuery) error {
+	if q.QueryVersion < 0 || q.QueryVersion > AnalyticsQueryVersion {
+		return fmt.Errorf("query_version must be at most %d", AnalyticsQueryVersion)
+	}
+	return nil
+}
+
 // ValidateNativeArchiveQuery is shared by saved definitions and query execution.
 func ValidateNativeArchiveQuery(q AnalyticsQuery) error {
+	if err := validateAnalyticsQueryVersion(q); err != nil {
+		return err
+	}
 	if q.EvidenceMode != "" || q.OverlaySelection != nil || q.LiveBucketMode != "" {
 		return errors.New("use the native evidence query for live/grouped overlays")
 	}
@@ -539,8 +559,8 @@ func validateNativeMessageQuery(q AnalyticsQuery) error {
 	return nil
 }
 
-// lowerSHA256Hex reports whether a value is a lowercase hex SHA-256.
-func lowerSHA256Hex(value string) bool {
+// ValidLowerSHA256Hex reports whether a value is a lowercase hex SHA-256.
+func ValidLowerSHA256Hex(value string) bool {
 	if len(value) != 64 {
 		return false
 	}

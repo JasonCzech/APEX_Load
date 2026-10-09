@@ -1809,10 +1809,11 @@ func deleteTestGraphTx(tx *storeTx, id, projectID string) error {
 	if _, err := tx.Exec(`UPDATE run_evidence_receipts SET state = ?, updated_at = ? WHERE test_id = ?`, EvidenceReceiptTombstoned, time.Now().UTC(), id); err != nil {
 		return err
 	}
-	annotationPrefix := "report:annotations:" + id + ":"
-	if _, err := tx.Exec(`DELETE FROM app_settings
-		WHERE SUBSTR(key, 1, LENGTH(?)) = ?`, annotationPrefix, annotationPrefix); err != nil {
-		return err
+	for _, prefix := range []string{"report:annotations:" + id + ":", RunNotificationClaimPrefix(id)} {
+		if _, err := tx.Exec(`DELETE FROM app_settings
+			WHERE SUBSTR(key, 1, LENGTH(?)) = ?`, prefix, prefix); err != nil {
+			return err
+		}
 	}
 	if _, err := tx.Exec(`UPDATE scenario_schedules SET last_run_test_id = NULL WHERE last_run_test_id = ?`, id); err != nil {
 		return err

@@ -4229,6 +4229,7 @@ export interface operations {
             }>;
             "telemetry_acceptance"?: ({
               "criteria"?: Array<{
+                "advisory"?: boolean;
                 "bound"?: string;
                 "comparator"?: string;
                 "criterion"?: string;
@@ -7454,6 +7455,7 @@ export interface operations {
             "status_url": string;
             "telemetry_verdict"?: ({
               "criteria": Array<{
+                "advisory"?: boolean;
                 "bound"?: string;
                 "comparator": string;
                 "criterion": string;
@@ -29485,6 +29487,7 @@ export interface operations {
               "baseline": {
                 "acceptance"?: ({
                   "criteria": Array<{
+                    "advisory"?: boolean;
                     "bound"?: string;
                     "comparator": string;
                     "criterion": string;
@@ -29511,6 +29514,7 @@ export interface operations {
                   "provisional"?: boolean;
                   "reasons"?: Array<string>;
                 }) | null;
+                "acceptance_evaluated"?: boolean;
                 "budgets"?: Array<{
                   "enabled": boolean;
                   "limit_ms": number;
@@ -29573,6 +29577,7 @@ export interface operations {
               "current": {
                 "acceptance"?: ({
                   "criteria": Array<{
+                    "advisory"?: boolean;
                     "bound"?: string;
                     "comparator": string;
                     "criterion": string;
@@ -29599,6 +29604,7 @@ export interface operations {
                   "provisional"?: boolean;
                   "reasons"?: Array<string>;
                 }) | null;
+                "acceptance_evaluated"?: boolean;
                 "budgets"?: Array<{
                   "enabled": boolean;
                   "limit_ms": number;
@@ -30043,6 +30049,7 @@ export interface operations {
             "status_url": string;
             "telemetry_verdict"?: ({
               "criteria": Array<{
+                "advisory"?: boolean;
                 "bound"?: string;
                 "comparator": string;
                 "criterion": string;
@@ -34850,6 +34857,7 @@ export interface operations {
                 "telemetry"?: ({
                   "acceptance"?: ({
                     "criteria": Array<{
+                      "advisory"?: boolean;
                       "bound"?: string;
                       "comparator": string;
                       "criterion": string;
@@ -35441,6 +35449,7 @@ export interface operations {
                 "telemetry"?: ({
                   "acceptance"?: ({
                     "criteria": Array<{
+                      "advisory"?: boolean;
                       "bound"?: string;
                       "comparator": string;
                       "criterion": string;
@@ -42704,6 +42713,7 @@ export interface operations {
               "telemetry"?: ({
                 "acceptance"?: ({
                   "criteria": Array<{
+                    "advisory"?: boolean;
                     "bound"?: string;
                     "comparator": string;
                     "criterion": string;
@@ -44367,6 +44377,7 @@ export interface operations {
               "telemetry"?: ({
                 "acceptance"?: ({
                   "criteria": Array<{
+                    "advisory"?: boolean;
                     "bound"?: string;
                     "comparator": string;
                     "criterion": string;
@@ -56460,6 +56471,7 @@ export interface operations {
               "baseline": {
                 "acceptance"?: ({
                   "criteria": Array<{
+                    "advisory"?: boolean;
                     "bound"?: string;
                     "comparator": string;
                     "criterion": string;
@@ -56486,6 +56498,7 @@ export interface operations {
                   "provisional"?: boolean;
                   "reasons"?: Array<string>;
                 }) | null;
+                "acceptance_evaluated"?: boolean;
                 "budgets"?: Array<{
                   "enabled": boolean;
                   "limit_ms": number;
@@ -56548,6 +56561,7 @@ export interface operations {
               "current": {
                 "acceptance"?: ({
                   "criteria": Array<{
+                    "advisory"?: boolean;
                     "bound"?: string;
                     "comparator": string;
                     "criterion": string;
@@ -56574,6 +56588,7 @@ export interface operations {
                   "provisional"?: boolean;
                   "reasons"?: Array<string>;
                 }) | null;
+                "acceptance_evaluated"?: boolean;
                 "budgets"?: Array<{
                   "enabled": boolean;
                   "limit_ms": number;
@@ -57732,6 +57747,7 @@ export interface operations {
             "status_url": string;
             "telemetry_verdict"?: ({
               "criteria": Array<{
+                "advisory"?: boolean;
                 "bound"?: string;
                 "comparator": string;
                 "criterion": string;
@@ -60316,6 +60332,7 @@ export interface operations {
               "telemetry"?: ({
                 "acceptance"?: ({
                   "criteria": Array<{
+                    "advisory"?: boolean;
                     "bound"?: string;
                     "comparator": string;
                     "criterion": string;
@@ -61975,6 +61992,7 @@ export interface operations {
               "telemetry"?: ({
                 "acceptance"?: ({
                   "criteria": Array<{
+                    "advisory"?: boolean;
                     "bound"?: string;
                     "comparator": string;
                     "criterion": string;
@@ -64216,6 +64234,7 @@ export interface operations {
                 "telemetry"?: ({
                   "acceptance"?: ({
                     "criteria": Array<{
+                      "advisory"?: boolean;
                       "bound"?: string;
                       "comparator": string;
                       "criterion": string;
@@ -64807,6 +64826,7 @@ export interface operations {
                 "telemetry"?: ({
                   "acceptance"?: ({
                     "criteria": Array<{
+                      "advisory"?: boolean;
                       "bound"?: string;
                       "comparator": string;
                       "criterion": string;
@@ -65864,7 +65884,9 @@ export interface operations {
               "by_provenance": Record<string, number>;
               "cells": Array<Array<number>>;
               "columns": number;
+              "coordinate_space": string;
               "device_profile": string;
+              "device_scale_factor"?: number;
               "engine": string;
               "key": string;
               "layout_revision": string;
@@ -65873,6 +65895,12 @@ export interface operations {
               "points": number;
               "route": string;
               "rows": number;
+              "scroll"?: ({
+                "max_x": number;
+                "max_y": number;
+                "min_x": number;
+                "min_y": number;
+              }) | null;
               "targets"?: Array<{
                 "count": number;
                 "label_sha256"?: string;
@@ -65931,7 +65959,7 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      "422": {
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -68622,6 +68650,7 @@ export interface operations {
                 "baseline": {
                   "acceptance"?: ({
                     "criteria": Array<{
+                      "advisory"?: boolean;
                       "bound"?: string;
                       "comparator": string;
                       "criterion": string;
@@ -68648,6 +68677,7 @@ export interface operations {
                     "provisional"?: boolean;
                     "reasons"?: Array<string>;
                   }) | null;
+                  "acceptance_evaluated"?: boolean;
                   "budgets"?: Array<{
                     "enabled": boolean;
                     "limit_ms": number;
@@ -68710,6 +68740,7 @@ export interface operations {
                 "current": {
                   "acceptance"?: ({
                     "criteria": Array<{
+                      "advisory"?: boolean;
                       "bound"?: string;
                       "comparator": string;
                       "criterion": string;
@@ -68736,6 +68767,7 @@ export interface operations {
                     "provisional"?: boolean;
                     "reasons"?: Array<string>;
                   }) | null;
+                  "acceptance_evaluated"?: boolean;
                   "budgets"?: Array<{
                     "enabled": boolean;
                     "limit_ms": number;
@@ -72337,6 +72369,7 @@ export interface operations {
             }>;
             "telemetry_acceptance"?: ({
               "criteria": Array<{
+                "advisory"?: boolean;
                 "bound"?: string;
                 "comparator": string;
                 "criterion": string;
@@ -79468,6 +79501,7 @@ export interface operations {
               "telemetry"?: ({
                 "acceptance"?: ({
                   "criteria": Array<{
+                    "advisory"?: boolean;
                     "bound"?: string;
                     "comparator": string;
                     "criterion": string;
@@ -81131,6 +81165,7 @@ export interface operations {
               "telemetry"?: ({
                 "acceptance"?: ({
                   "criteria": Array<{
+                    "advisory"?: boolean;
                     "bound"?: string;
                     "comparator": string;
                     "criterion": string;
@@ -100476,6 +100511,7 @@ export interface operations {
               "telemetry"?: ({
                 "acceptance"?: ({
                   "criteria": Array<{
+                    "advisory"?: boolean;
                     "bound"?: string;
                     "comparator": string;
                     "criterion": string;
@@ -102139,6 +102175,7 @@ export interface operations {
               "telemetry"?: ({
                 "acceptance"?: ({
                   "criteria": Array<{
+                    "advisory"?: boolean;
                     "bound"?: string;
                     "comparator": string;
                     "criterion": string;
@@ -115908,6 +115945,7 @@ export interface operations {
                 "telemetry"?: ({
                   "acceptance"?: ({
                     "criteria": Array<{
+                      "advisory"?: boolean;
                       "bound"?: string;
                       "comparator": string;
                       "criterion": string;
@@ -116499,6 +116537,7 @@ export interface operations {
                 "telemetry"?: ({
                   "acceptance"?: ({
                     "criteria": Array<{
+                      "advisory"?: boolean;
                       "bound"?: string;
                       "comparator": string;
                       "criterion": string;
@@ -117847,6 +117886,7 @@ export interface operations {
                 "telemetry"?: ({
                   "acceptance"?: ({
                     "criteria": Array<{
+                      "advisory"?: boolean;
                       "bound"?: string;
                       "comparator": string;
                       "criterion": string;
@@ -118438,6 +118478,7 @@ export interface operations {
                 "telemetry"?: ({
                   "acceptance"?: ({
                     "criteria": Array<{
+                      "advisory"?: boolean;
                       "bound"?: string;
                       "comparator": string;
                       "criterion": string;
@@ -119786,6 +119827,7 @@ export interface operations {
                 "telemetry"?: ({
                   "acceptance"?: ({
                     "criteria": Array<{
+                      "advisory"?: boolean;
                       "bound"?: string;
                       "comparator": string;
                       "criterion": string;
@@ -120377,6 +120419,7 @@ export interface operations {
                 "telemetry"?: ({
                   "acceptance"?: ({
                     "criteria": Array<{
+                      "advisory"?: boolean;
                       "bound"?: string;
                       "comparator": string;
                       "criterion": string;
@@ -121725,6 +121768,7 @@ export interface operations {
                 "telemetry"?: ({
                   "acceptance"?: ({
                     "criteria": Array<{
+                      "advisory"?: boolean;
                       "bound"?: string;
                       "comparator": string;
                       "criterion": string;
@@ -122316,6 +122360,7 @@ export interface operations {
                 "telemetry"?: ({
                   "acceptance"?: ({
                     "criteria": Array<{
+                      "advisory"?: boolean;
                       "bound"?: string;
                       "comparator": string;
                       "criterion": string;
@@ -123664,6 +123709,7 @@ export interface operations {
                 "telemetry"?: ({
                   "acceptance"?: ({
                     "criteria": Array<{
+                      "advisory"?: boolean;
                       "bound"?: string;
                       "comparator": string;
                       "criterion": string;
@@ -124255,6 +124301,7 @@ export interface operations {
                 "telemetry"?: ({
                   "acceptance"?: ({
                     "criteria": Array<{
+                      "advisory"?: boolean;
                       "bound"?: string;
                       "comparator": string;
                       "criterion": string;
@@ -148949,6 +148996,7 @@ export interface operations {
               "telemetry"?: ({
                 "acceptance"?: ({
                   "criteria": Array<{
+                    "advisory"?: boolean;
                     "bound"?: string;
                     "comparator": string;
                     "criterion": string;
@@ -150612,6 +150660,7 @@ export interface operations {
               "telemetry"?: ({
                 "acceptance"?: ({
                   "criteria": Array<{
+                    "advisory"?: boolean;
                     "bound"?: string;
                     "comparator": string;
                     "criterion": string;

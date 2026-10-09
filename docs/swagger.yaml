@@ -11756,6 +11756,8 @@ paths:
                           items:
                             type: object
                             properties:
+                              advisory:
+                                type: boolean
                               bound:
                                 type: string
                               comparator:
@@ -45597,6 +45599,8 @@ paths:
                         items:
                           type: object
                           properties:
+                            advisory:
+                              type: boolean
                             bound:
                               type: string
                             comparator:
@@ -45930,6 +45934,8 @@ paths:
                         items:
                           type: object
                           properties:
+                            advisory:
+                              type: boolean
                             bound:
                               type: string
                             comparator:
@@ -46234,6 +46240,8 @@ paths:
                         items:
                           type: object
                           properties:
+                            advisory:
+                              type: boolean
                             bound:
                               type: string
                             comparator:
@@ -86222,6 +86230,8 @@ paths:
                                       items:
                                         type: object
                                         properties:
+                                          advisory:
+                                            type: boolean
                                           bound:
                                             type: string
                                           comparator:
@@ -88158,6 +88168,8 @@ paths:
                                     items:
                                       type: object
                                       properties:
+                                        advisory:
+                                          type: boolean
                                         bound:
                                           type: string
                                         comparator:
@@ -92205,6 +92217,8 @@ paths:
                                       items:
                                         type: object
                                         properties:
+                                          advisory:
+                                            type: boolean
                                           bound:
                                             type: string
                                           comparator:
@@ -94141,6 +94155,8 @@ paths:
                                     items:
                                       type: object
                                       properties:
+                                        advisory:
+                                          type: boolean
                                         bound:
                                           type: string
                                         comparator:
@@ -98189,6 +98205,8 @@ paths:
                                       items:
                                         type: object
                                         properties:
+                                          advisory:
+                                            type: boolean
                                           bound:
                                             type: string
                                           comparator:
@@ -100125,6 +100143,8 @@ paths:
                                     items:
                                       type: object
                                       properties:
+                                        advisory:
+                                          type: boolean
                                         bound:
                                           type: string
                                         comparator:
@@ -104185,6 +104205,8 @@ paths:
                                       items:
                                         type: object
                                         properties:
+                                          advisory:
+                                            type: boolean
                                           bound:
                                             type: string
                                           comparator:
@@ -106121,6 +106143,8 @@ paths:
                                     items:
                                       type: object
                                       properties:
+                                        advisory:
+                                          type: boolean
                                         bound:
                                           type: string
                                         comparator:
@@ -110181,6 +110205,8 @@ paths:
                                       items:
                                         type: object
                                         properties:
+                                          advisory:
+                                            type: boolean
                                           bound:
                                             type: string
                                           comparator:
@@ -112117,6 +112143,8 @@ paths:
                                     items:
                                       type: object
                                       properties:
+                                        advisory:
+                                          type: boolean
                                         bound:
                                           type: string
                                         comparator:
@@ -116177,6 +116205,8 @@ paths:
                                       items:
                                         type: object
                                         properties:
+                                          advisory:
+                                            type: boolean
                                           bound:
                                             type: string
                                           comparator:
@@ -118113,6 +118143,8 @@ paths:
                                     items:
                                       type: object
                                       properties:
+                                        advisory:
+                                          type: boolean
                                         bound:
                                           type: string
                                         comparator:
@@ -122173,6 +122205,8 @@ paths:
                                       items:
                                         type: object
                                         properties:
+                                          advisory:
+                                            type: boolean
                                           bound:
                                             type: string
                                           comparator:
@@ -124109,6 +124143,8 @@ paths:
                                     items:
                                       type: object
                                       properties:
+                                        advisory:
+                                          type: boolean
                                         bound:
                                           type: string
                                         comparator:
@@ -329961,6 +329997,8 @@ paths:
                                   items:
                                     type: object
                                     properties:
+                                      advisory:
+                                        type: boolean
                                       bound:
                                         type: string
                                       comparator:
@@ -335646,6 +335684,8 @@ paths:
                                 items:
                                   type: object
                                   properties:
+                                    advisory:
+                                      type: boolean
                                     bound:
                                       type: string
                                     comparator:
@@ -343009,6 +343049,8 @@ paths:
                                   items:
                                     type: object
                                     properties:
+                                      advisory:
+                                        type: boolean
                                       bound:
                                         type: string
                                       comparator:
@@ -348694,6 +348736,8 @@ paths:
                                 items:
                                   type: object
                                   properties:
+                                    advisory:
+                                      type: boolean
                                     bound:
                                       type: string
                                     comparator:
@@ -352730,8 +352774,13 @@ paths:
                         columns:
                           type: integer
                           format: int64
+                        coordinate_space:
+                          type: string
                         device_profile:
                           type: string
+                        device_scale_factor:
+                          type: number
+                          format: double
                         engine:
                           type: string
                         key:
@@ -352752,6 +352801,27 @@ paths:
                         rows:
                           type: integer
                           format: int64
+                        scroll:
+                          type: object
+                          properties:
+                            max_x:
+                              type: number
+                              format: double
+                            max_y:
+                              type: number
+                              format: double
+                            min_x:
+                              type: number
+                              format: double
+                            min_y:
+                              type: number
+                              format: double
+                          required:
+                            - max_x
+                            - max_y
+                            - min_x
+                            - min_y
+                          nullable: true
                         targets:
                           type: array
                           items:
@@ -352778,6 +352848,7 @@ paths:
                         - by_provenance
                         - cells
                         - columns
+                        - coordinate_space
                         - device_profile
                         - engine
                         - key
@@ -352904,8 +352975,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        "422":
-          description: Unprocessable Entity
+        "500":
+          description: Internal Server Error
           content:
             application/json:
               schema:
@@ -361416,6 +361487,8 @@ paths:
                                       items:
                                         type: object
                                         properties:
+                                          advisory:
+                                            type: boolean
                                           bound:
                                             type: string
                                           comparator:
@@ -361495,6 +361568,8 @@ paths:
                                     - mode
                                     - outcome
                                   nullable: true
+                                acceptance_evaluated:
+                                  type: boolean
                                 budgets:
                                   type: array
                                   items:
@@ -361674,6 +361749,8 @@ paths:
                                       items:
                                         type: object
                                         properties:
+                                          advisory:
+                                            type: boolean
                                           bound:
                                             type: string
                                           comparator:
@@ -361753,6 +361830,8 @@ paths:
                                     - mode
                                     - outcome
                                   nullable: true
+                                acceptance_evaluated:
+                                  type: boolean
                                 budgets:
                                   type: array
                                   items:
@@ -373982,6 +374061,8 @@ paths:
                         items:
                           type: object
                           properties:
+                            advisory:
+                              type: boolean
                             bound:
                               type: string
                             comparator:
@@ -377179,6 +377260,8 @@ paths:
                                   items:
                                     type: object
                                     properties:
+                                      advisory:
+                                        type: boolean
                                       bound:
                                         type: string
                                       comparator:
@@ -377258,6 +377341,8 @@ paths:
                                 - mode
                                 - outcome
                               nullable: true
+                            acceptance_evaluated:
+                              type: boolean
                             budgets:
                               type: array
                               items:
@@ -377437,6 +377522,8 @@ paths:
                                   items:
                                     type: object
                                     properties:
+                                      advisory:
+                                        type: boolean
                                       bound:
                                         type: string
                                       comparator:
@@ -377516,6 +377603,8 @@ paths:
                                 - mode
                                 - outcome
                               nullable: true
+                            acceptance_evaluated:
+                              type: boolean
                             budgets:
                               type: array
                               items:
@@ -379703,6 +379792,8 @@ paths:
                                   items:
                                     type: object
                                     properties:
+                                      advisory:
+                                        type: boolean
                                       bound:
                                         type: string
                                       comparator:
@@ -379782,6 +379873,8 @@ paths:
                                 - mode
                                 - outcome
                               nullable: true
+                            acceptance_evaluated:
+                              type: boolean
                             budgets:
                               type: array
                               items:
@@ -379961,6 +380054,8 @@ paths:
                                   items:
                                     type: object
                                     properties:
+                                      advisory:
+                                        type: boolean
                                       bound:
                                         type: string
                                       comparator:
@@ -380040,6 +380135,8 @@ paths:
                                 - mode
                                 - outcome
                               nullable: true
+                            acceptance_evaluated:
+                              type: boolean
                             budgets:
                               type: array
                               items:
@@ -385653,6 +385750,8 @@ paths:
                                   items:
                                     type: object
                                     properties:
+                                      advisory:
+                                        type: boolean
                                       bound:
                                         type: string
                                       comparator:
@@ -391338,6 +391437,8 @@ paths:
                                 items:
                                   type: object
                                   properties:
+                                    advisory:
+                                      type: boolean
                                     bound:
                                       type: string
                                     comparator:
@@ -398645,6 +398746,8 @@ paths:
                                   items:
                                     type: object
                                     properties:
+                                      advisory:
+                                        type: boolean
                                       bound:
                                         type: string
                                       comparator:
@@ -404330,6 +404433,8 @@ paths:
                                 items:
                                   type: object
                                   properties:
+                                    advisory:
+                                      type: boolean
                                     bound:
                                       type: string
                                     comparator:
@@ -418803,6 +418908,8 @@ paths:
                                   items:
                                     type: object
                                     properties:
+                                      advisory:
+                                        type: boolean
                                       bound:
                                         type: string
                                       comparator:
@@ -424476,6 +424583,8 @@ paths:
                                 items:
                                   type: object
                                   properties:
+                                    advisory:
+                                      type: boolean
                                     bound:
                                       type: string
                                     comparator:

@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -368,6 +369,27 @@ func TestRCABaselineEvidenceCarriesBrowserDocumentSeries(t *testing.T) {
 	if !found {
 		t.Fatal("the baseline's browser document series were not read under the run's series ID")
 	}
+	// The detector receives the qualification, the groups whose script
+	// changed, and whether the baseline's documents were fully read.
+	// The fixture's runs record no script digests, so the qualification says
+	// so and every group both runs ran counts as changed.
+	if evidence.Qualification == "" || !slices.Contains(evidence.QualificationReasons, rca.ReasonScriptUnrecorded) || !evidence.ScriptChangedGroups["checkout"] || !evidence.ScriptChangedGroups["search"] || evidence.DocumentsIncomplete {
+		t.Fatalf("baseline evidence = qualification %q reasons %v changed groups %v incomplete %t", evidence.Qualification, evidence.QualificationReasons, evidence.ScriptChangedGroups, evidence.DocumentsIncomplete)
+	}
+	baselineRecord := server.runner.archives[baseline.ID]
+	baselineManifest, err := loadRunArchiveManifestFromRecord(baselineRecord)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(baselineRecord.ArchivePath, baselineManifest.BrowserDocumentsFile), []byte("not document evidence\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if digest, err = rcaArchiveDigest(baselineRecord); err != nil {
+		t.Fatal(err)
+	}
+	if _, unread := server.rcaBaselineEvidence(context.Background(), manifest, baseline.ID, digest, rca.NewBudgeter(rca.DefaultBudget, nil, nil), rca.DefaultBudget); unread == nil || !unread.DocumentsIncomplete {
+		t.Fatalf("an unreadable baseline document sidecar = %+v", unread)
+	}
 }
 
 // Document tuples pair through the comparison policy's group mappings, as
@@ -431,7 +453,7 @@ func TestRCABrowserDocumentSeriesCountDocumentsOnceAndNameTheirCohort(t *testing
 	var counts int64
 	for _, p := range series[0].Points {
 		if p.Valid {
-			counts += p.Count
+			counts += int64(p.Count)
 		} else if p.Count != 0 {
 			t.Fatalf("a gap carries a count: %+v", p)
 		}
@@ -449,5 +471,50 @@ func TestRCABrowserDocumentSeriesCountDocumentsOnceAndNameTheirCohort(t *testing
 		Unit: "ms", Engine: "chromium", DeviceProfile: "desktop", Cohort: d2Cohort("142.0"), FrameScope: "main_frame", LifecyclePhase: "navigation"}), false)
 	if other.Family != document.Family || other.Fields["browser_version"] != "142.0" {
 		t.Fatalf("cohorts of one measurement: %+v vs %+v", other, document)
+	}
+}
+
+// Two archives' document series of one cohort meet by series ID, so the
+// browser baseline judges the run against the baseline's same tuple; another
+// browser version meets only by family and is reported as changed.
+func TestRCABrowserDocumentSeriesMatchAcrossArchives(t *testing.T) {
+	server, store := baselineTestServer(t)
+	build := func(id, version string) rca.Series {
+		t.Helper()
+		run := comparisonArchiveFixture(t, server, store, id, 200, 150)
+		record := server.runner.archives[run.ID]
+		start := *run.StartedAt
+		attachD2Documents(t, record, d2Document{id: 1, metric: "lcp", cohort: d2Cohort(version), at: start.Add(31 * time.Second), value: 1200, final: true})
+		manifest, err := loadRunArchiveManifestFromRecord(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		summaries, err := readAllArchiveSummariesContext(context.Background(), record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		series, _, err := rcaBrowserDocumentSeries(context.Background(), record, manifest, summaries, -1, 0)
+		if err != nil || len(series) != 1 {
+			t.Fatalf("%s series %d %v", id, len(series), err)
+		}
+		return series[0]
+	}
+	current, same, other := build("e2-current", "141.0"), build("e2-same", "141.0"), build("e2-other", "142.0")
+	if current.ID != same.ID || current.Document.Family != same.Document.Family || current.ID == other.ID || current.Document.Family != other.Document.Family {
+		t.Fatalf("cross-run keys: %s/%s %s/%s %s/%s", current.ID, current.Document.Family, same.ID, same.Document.Family, other.ID, other.Document.Family)
+	}
+	first := current.Points[0].At
+	level := rca.LoadLevel{Start: first, End: first.Add(10 * time.Minute), VUsers: 10}
+	judge := func(baseline rca.Series) rca.BrowserBaselineResult {
+		input := rca.DetectionInput{Levels: []rca.LoadLevel{level}, Series: []rca.Series{current},
+			Baseline: &rca.DetectionBaseline{TestID: "baseline", Qualification: rca.BaselineQualified, Levels: []rca.LoadLevel{level}, Series: []rca.Series{baseline}}}
+		return rca.DetectBrowserBaseline(input, rca.DefaultBrowserBaselineParams).Results[0]
+	}
+	// The same tuple is found (one bucket is too few to score).
+	if got := judge(same); got.Reason != rca.BrowserBaselineInsufficient || got.BaselineBuckets != 1 {
+		t.Fatalf("same cohort = %+v", got)
+	}
+	if got := judge(other); got.Reason != rca.BrowserBaselineCohortChanged || !strings.Contains(got.Detail, "browser_version") {
+		t.Fatalf("other browser version = %+v", got)
 	}
 }

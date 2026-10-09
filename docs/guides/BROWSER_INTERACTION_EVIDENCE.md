@@ -131,38 +131,49 @@ click, and a touch session's taps.
 interaction evidence (`browser_interaction_patterns.v1`). Viewer access is
 enough. The run report shows the result under **Browser evidence →
 Interaction patterns**. A run without interaction evidence answers
-`not_captured`. The response states its thresholds and coverage:
-interactions, records, dropped and incomplete evidence, counts by provenance,
-gestures mapped, and gestures left out by reason. Nothing is replayed or
-injected.
+`not_captured`; a run that captured some but kept none in its archive (a
+failed transfer, a refused or torn sidecar) answers `unavailable` with what
+was lost. The response states its thresholds and coverage: interactions,
+records, dropped (by capture bounds, or lost before the archive) and
+incomplete evidence (the archive's own account, which includes sources that
+never arrived), counts by provenance, gestures mapped,
+and gestures left out by reason. An archive not yet finalized answers `409`,
+and unreadable evidence `500`. Nothing is replayed or injected.
 
 Patterns are found per document, in capture order:
 
 | Pattern | Rule |
 | --- | --- |
-| `scripted_repetition` | At least 3 pointer gestures within 2 s and 32 CSS px of the first, on one route and layout, when any of them is scripted or of unknown provenance. |
+| `scripted_repetition` | At least 3 clicks or taps (a double click is one gesture; hovers, drags, swipes and long presses do not count) within 2 s, on one route and layout, when any of them is scripted or of unknown provenance. Gestures with dispatched points repeat within 32 CSS px of the first; gestures without points (touch gestures are dispatched synthetically) repeat when they share an action name. |
 | `repeated_gesture` | The same, when every gesture was recorded with consent. It is the only pattern that can suggest human frustration. |
-| `retry` | A failed gesture followed by gestures of the same action, up to the first that succeeded. Retries never count as repetition. |
-| `dead_interaction` | A gesture with an authored outcome (its post-action `sync`) observed as `missed` within its deadline. An unchanged page alone is never one. |
-| `unexpected_navigation` | A gesture that declared an in-page outcome (`element_visible`, `dom_stable` or a pause) but navigated away. |
+| `retry` | A failed gesture followed at once by further attempts of the same step (its action name and gesture kind: each engine retry is a new execution with its own action ID), up to the first that succeeded. Retries never count as repetition. Distinct steps that share an action name and kind are one step here. |
+| `dead_interaction` | A gesture whose authored outcome (its post-action `sync`) asserts that the page responded (`element_visible`, `load` or `domcontentloaded`) observed as `missed` within its deadline. A missed `dom_stable`, `network_idle` or pause says nothing about whether the page responded, and an unchanged page alone is never one. Authored assertion, dialog and download outcomes are not used. |
+| `unexpected_navigation` | A gesture that declared an in-page outcome (`element_visible`, `dom_stable` or a pause) but navigated away. A gesture that navigated away is never a dead interaction. |
 
-A double click is one declared gesture, so it is never a repetition. Each
-pattern lists its route, layout, action, count, window and up to 16
+Each pattern lists its route, layout, action, count, window and up to 16
 interaction IDs.
 
 Heatmaps place each pointer gesture's first dispatched point on an abstract
 64×64 grid of its viewport. One map is kept per sanitized route, layout
-revision, viewport size and orientation, engine and device profile, so
-incompatible layouts never merge. Engine and profile come from the gesture's
-source generation in the run's document evidence, and are `unknown` without
-it. Keyboard and form gestures fill a per-map table of target roles and
-hashed labels, never positions.
+revision, viewport size, device pixel ratio and orientation, engine and
+device profile. A cell is a viewport position in CSS pixels at dispatch
+(`coordinate_space` `viewport_css_px`): gestures made at different scroll
+offsets share a map, which states their scroll range. The layout revision is
+the one read after the gesture and its wait. Engine and profile come from the
+gesture's source generation (its browser context) in the run's document
+evidence, read in full. Without it they are `unknown`, the map says why, and
+the analysis lists an `engine_profile_unknown` limitation, since gestures of
+different engines with one layout can then share a map. The reason is that the
+run kept no document evidence for those gestures, that the document evidence
+could not be read (`document_evidence_unreadable`), or that the context is past
+the first 65,536 the analysis keeps (`document_evidence_truncated`). Keyboard and form gestures fill a per-map
+table of target roles and hashed labels, never positions.
 
 Some gestures are counted, by reason, instead of mapped:
 - those with an unavailable reason (`child_frame_unobserved`,
   `document_changed`, `synthetic_dispatch`, `page_state_unavailable`);
 - those without points or without a viewport;
-- those outside the viewport;
+- those outside the viewport (they make no map);
 - those beyond 64 maps.
 
 At most 200 patterns are kept, and patterns are found among the first 100,000

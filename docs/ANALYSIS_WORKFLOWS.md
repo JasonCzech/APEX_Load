@@ -646,21 +646,35 @@ cohort of the workload-qualified baseline run, at the same steady load.
   - `no_same_load_window`;
   - `no_baseline_cohort`;
   - `cohort_changed`: the baseline measured the same measurement under another
-    runtime cohort, and the result's detail names the differing fields, such
-    as `shaping_applied`.
+    runtime cohort, and the result's detail names the fields that differ from
+    the closest baseline cohort, such as `shaping_applied`. A result is also
+    `cohort_changed` when its scenario group ran a different or unrecorded
+    script in the baseline (`script_changed`, `script_unrecorded`: only that
+    group's cohorts), or when the run's configuration or workload changed or
+    was not recorded (`config_changed`, `config_unrecorded`,
+    `workload_unrecorded`: every cohort), since the group then no longer
+    stands for the same authored pages;
+  - `baseline_evidence_unavailable`: the baseline's document evidence was not
+    fully read (unreadable, dropped observations or cut by the series
+    budget), so its matching cohort may be missing; the section is then
+    `partial`.
 
-  Every result carries:
-  - the expected range (baseline mean ± 3σ, never below zero);
-  - current and baseline bucket and document counts;
-  - the baseline run and its qualification;
-  - both evidence references;
-  - `source_loss` or `baseline_source_loss` when that run's document evidence
-    dropped observations.
+  Every result carries current and baseline bucket and document counts, the
+  baseline run with its qualification and reasons, its own evidence
+  reference, the level's start (two steady levels at one load stay apart),
+  and `source_loss` or `baseline_source_loss` when that run's document
+  evidence dropped observations. A scored result also carries the expected
+  range, the baseline's evidence reference, z and the effect. The expected
+  range is the baseline mean ± the larger of 3σ and the effect floor (never
+  below zero), so a value inside it is within range and one outside it is an
+  anomaly.
 
   Buckets outside every steady level (ramp, pause, settle) are counted under
-  `excluded.outside_steady_load`. Without a qualified baseline run, or without
-  steady levels, the section is `unavailable` with that limitation. At most 200
-  results are kept, anomalies first.
+  `excluded.outside_steady_load`. Without a qualified or partial baseline run,
+  or without steady levels, the section is `unavailable` with that
+  limitation. At most 200 results are kept, anomalies first; an assessment
+  trimmed to fit its size limit cuts these advisory results before its graph,
+  anomalies or hypotheses, and says so (`browser_baseline_truncated`).
 - **Advisory.** Browser baseline results never affect hypotheses, CI outcomes
   or stop decisions; application SLAs own those. The RCA panel lists them
   under **Browser baseline**.
@@ -1078,8 +1092,9 @@ or its project.
 
 - **Reopening a revision.** `GET
   /api/v1/monitoring/dashboard-definitions/{id}?revision=N` returns exactly what
-  was saved as revision N, with `current_revision` beside it. Every read lists
-  `retained_revisions`, newest first. A revision that was never saved, or that
+  was saved as revision N, with `current_revision` beside it. Reading one
+  definition lists its `retained_revisions`, newest first (the list of
+  definitions does not). A revision that was never saved, or that
   was pruned, is `404`. Access is resolved from the stored definition's project,
   never from the request. On the run page, **Saved revision** opens a past
   revision read-only; a definition saved before revisions were kept has only its
@@ -1088,17 +1103,26 @@ or its project.
   racing edit or delete is `409`, and an edit of a deleted definition is `404`.
 - **Query version.** New panels state `query_version` (2), the query semantics
   they were saved under. A missing version is read with the same rules; a
-  version newer than the controller's is refused.
+  version newer than the controller's is refused when a panel is saved and
+  when a query runs.
 - **Pinned dataset artifacts.** A committed dataset reports `artifact_sha256`,
-  a digest of its normalized artifacts. A mapping change or a new commit
+  a digest of its normalized artifacts, wherever it is read (one dataset or
+  import, the import list, a commit of a ready import, an association). A mapping change or a new commit
   replaces it; associating the dataset with a run does not. A comparison
   selection or a dataset overlay may pin it as `dataset_artifact_sha256`. A
-  pinned dataset whose artifacts changed since is refused, naming both digests,
-  rather than answered from different evidence. An unpinned selection reads
+  pinned dataset whose artifacts changed since is refused with `409`, naming
+  both digests, rather than answered from different evidence; each side's pin
+  is checked, also when both sides read one dataset. `apexctl analysis
+  compare` and `save-comparison` carry the pin. An unpinned selection reads
   the current artifacts.
 
-`apexctl analysis` covers the same workflows. Every command streams the
-controller's response to standard output instead of loading it whole:
+`apexctl analysis` covers the same workflows. A command that prints the
+controller's response as it is streams it to standard output instead of
+loading it whole. Commands that read the response first still read it within
+a response limit: `journeys`, `browser-findings`, `browser-har list`,
+`browser-documents`, `telemetry-policy`, `telemetry-reevaluate` and
+`baseline --fail-on-regression` (8 MiB), and `browser-resources` (one 2 MiB
+page at a time):
 
 | Command | Does |
 | --- | --- |

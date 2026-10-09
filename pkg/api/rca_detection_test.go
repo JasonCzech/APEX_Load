@@ -420,6 +420,28 @@ func TestRCAStoredAssessmentIsTrimmedNotFailed(t *testing.T) {
 	}
 }
 
+// Advisory browser baseline results are trimmed before anomalies and
+// hypotheses, and a bundle's trim never touches the stored assessment.
+func TestRCABrowserBaselineIsTrimmedBeforeHypotheses(t *testing.T) {
+	assessment := &rca.Assessment{SchemaVersion: rca.AssessmentSchemaVersion, BrowserBaseline: &rca.BrowserBaseline{Version: rca.BrowserBaselineVersion, Status: rca.DetectionComplete, Limitations: []rca.Limitation{}}}
+	for i := 0; i < 2000; i++ {
+		assessment.BrowserBaseline.Results = append(assessment.BrowserBaseline.Results, rca.BrowserBaselineResult{ID: fmt.Sprintf("b-%04d", i), Series: strings.Repeat("s", 600), State: rca.BrowserBaselineWithinRange})
+	}
+	assessment.Anomalies = []rca.Anomaly{{ID: "a-0000", Series: "latency"}}
+	assessment.Hypotheses = []rca.Hypothesis{{ID: "h", Rank: 1, Symptoms: []string{"a-0000"}}}
+	bundle := boundRCABundle(RCABundle{Assessment: *assessment})
+	if len(bundle.Assessment.Hypotheses) != 1 || len(bundle.Assessment.Anomalies) != 1 {
+		t.Fatalf("hypotheses cut before browser baseline results: %+v", bundle.Assessment.Hypotheses)
+	}
+	trimmed := bundle.Assessment.BrowserBaseline
+	if len(trimmed.Results) >= 2000 || trimmed.Status != rca.DetectionPartial || trimmed.Limitations[len(trimmed.Limitations)-1].Code != rca.BrowserBaselineResultsTruncated {
+		t.Fatalf("browser baseline not trimmed: %d results, %s", len(trimmed.Results), trimmed.Status)
+	}
+	if len(assessment.BrowserBaseline.Results) != 2000 || assessment.BrowserBaseline.Status != rca.DetectionComplete {
+		t.Fatal("the bundle's trim changed the stored assessment")
+	}
+}
+
 func TestRCABaselineComparesNetworkPhases(t *testing.T) {
 	server, _ := baselineTestServer(t)
 	_, store := server, server.store.(*storage.SQLiteStore)

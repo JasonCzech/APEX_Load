@@ -122,8 +122,10 @@ var dynamicDashboardCallRules = []dynamicCallRule{
 		Routes: []routeKey{
 			{Method: "GET", Path: "/api/v1/tests/{param}/archive/browser/har/{param}"},
 			{Method: "GET", Path: "/api/v1/tests/{param}/archive"},
+			{Method: "GET", Path: "/api/v1/browser-replay/sessions/{param}/har"},
+			{Method: "GET", Path: "/api/v1/browser-replay/sessions/{param}/evidence"},
 		},
-		Reason: "saveDownload serves the native HAR download and the HAR-keeping archive export",
+		Reason: "saveDownload serves a run's native HAR, its HAR-keeping archive export, and a browser replay's HAR and evidence downloads",
 	},
 	{
 		File:           "useScriptApi.ts",

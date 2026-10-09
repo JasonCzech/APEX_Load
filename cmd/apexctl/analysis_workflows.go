@@ -70,7 +70,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	file := flags.String("file", "", "JSON request or Parquet input")
 	fileID := flags.String("file-id", "", "file ID within an import")
 	preparationID := flags.String("preparation-id", "", "ready preparation ID")
-	revision := flags.String("revision", "", "expected revision when starting, renewing or deleting a source")
+	revision := flags.String("revision", "", "expected revision when starting, renewing or deleting a source; a panel's saved revision to show (panel) or its expected revision (delete-panel)")
 	selection := flags.String("capacity", "", "existing or ephemeral preparation capacity")
 	spot := flags.String("spot", "off", "off, preferred, or required")
 	floor := flags.Int("on-demand-floor", 0, "minimum on-demand ephemeral generators")

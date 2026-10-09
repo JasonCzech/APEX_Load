@@ -4,6 +4,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { ApiError } from '../../hooks/apiClient'
 import JourneyRiskPanel from './JourneyRiskPanel'
 import { formatJourneyFraction, journeyIncompleteText, journeyUnavailableText, journeyUnscoredText } from './journeyRiskModel'
 
@@ -84,10 +85,93 @@ describe('JourneyRiskPanel', () => {
     expect(container.textContent).toContain('written before runs recorded VUser iterations')
     expect(container.querySelector('table')).toBeNull()
 
-    mocks.api.getTestArchiveJourneys.mockRejectedValue(new Error('journey policy not found'))
+    mocks.api.getTestArchiveJourneys.mockRejectedValue(new ApiError('failed to read archive transactions: disk', 500))
     act(() => root.render(<JourneyRiskPanel testId="run-2" />))
     await flush()
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain('journey policy not found')
+    const alert = container.querySelector('[role="alert"]')
+    expect(alert?.textContent).toContain('Journey accounting could not be loaded')
+    expect(alert?.querySelector('details')?.textContent).toContain('failed to read archive transactions')
+    mocks.api.getTestArchiveJourneys.mockResolvedValue(report)
+    act(() => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Retry journeys')?.click() })
+    await flush()
+    expect(mocks.api.getTestArchiveJourneys).toHaveBeenCalledTimes(3)
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+    expect(container.textContent).toContain('Checkout journeys revision 2')
+  })
+
+  it('says plainly why a policy request was refused, without a retry', async () => {
+    const setValue = (input: HTMLInputElement, value: string) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    mocks.api.getTestArchiveJourneys.mockResolvedValueOnce(report).mockRejectedValueOnce(new ApiError('journey policy not found', 404))
+    act(() => root.render(<JourneyRiskPanel testId="run-1" />))
+    await flush()
+    const [policy, revision] = Array.from(container.querySelectorAll('input'))
+    act(() => { setValue(policy, 'missing'); setValue(revision, '2') })
+    act(() => { container.querySelector('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
+    await flush()
+    const alert = container.querySelector('[role="alert"]')
+    expect(alert?.textContent).toContain('No journey policy "missing" revision 2 exists in this project.')
+    expect(Array.from(container.querySelectorAll('button')).map(button => button.textContent)).not.toContain('Retry journeys')
+
+    mocks.api.getTestArchiveJourneys.mockRejectedValueOnce(new ApiError('journey policy revision is invalid: bad', 409))
+    act(() => { container.querySelector('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
+    await flush()
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Journey policy "missing" revision 2 is not a valid journey policy.')
+    mocks.api.getTestArchiveJourneys.mockRejectedValueOnce(new ApiError('policy id is too long', 400))
+    act(() => { container.querySelector('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
+    await flush()
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('The journey policy request was refused.')
+    expect(Array.from(container.querySelectorAll('button')).map(button => button.textContent)).not.toContain('Retry journeys')
+  })
+
+  it('says why the run\'s pinned policy cannot be accounted, without a retry', async () => {
+    const refusals: Array<[ApiError, string]> = [
+      [new ApiError('journey policy not found', 404), "The run's pinned journey policy no longer exists in this project."],
+      [new ApiError('the pinned journey policy revision no longer matches its pin', 409), "The run's pinned journey policy revision changed after the run pinned it"],
+      [new ApiError('journey policy revision is invalid: bad', 409), "The run's pinned journey policy revision is not a valid journey policy."],
+    ]
+    for (const [error, message] of refusals) {
+      // A fresh panel: the request names no policy, so the run's pin applies.
+      act(() => root.unmount())
+      root = createRoot(container)
+      mocks.api.getTestArchiveJourneys.mockRejectedValueOnce(error)
+      act(() => root.render(<JourneyRiskPanel testId="run-1" />))
+      await flush()
+      expect(mocks.api.getTestArchiveJourneys).toHaveBeenLastCalledWith('run-1', {}, expect.anything())
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain(message)
+      expect(container.textContent).not.toContain("once the run's archive is finalized")
+      expect(Array.from(container.querySelectorAll('button')).map(button => button.textContent)).not.toContain('Retry journeys')
+    }
+  })
+
+  it('offers a retry when policies are unavailable', async () => {
+    mocks.api.getTestArchiveJourneys.mockRejectedValueOnce(new ApiError('internal server error', 503)).mockResolvedValueOnce(report)
+    act(() => root.render(<JourneyRiskPanel testId="run-1" />))
+    await flush()
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Journey accounting could not be loaded')
+    act(() => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Retry journeys')?.click() })
+    await flush()
+    expect(container.textContent).toContain('Checkout journeys revision 2')
+  })
+
+  it('describes a missing or unfinalized archive without echoing the server', async () => {
+    mocks.api.getTestArchiveJourneys.mockRejectedValue(new ApiError('archive not found', 404))
+    act(() => root.render(<JourneyRiskPanel testId="run-1" />))
+    await flush()
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+    expect(container.textContent).toContain("This run's saved archive could not be found")
+    expect(container.textContent).not.toContain('archive not found')
+
+    mocks.api.getTestArchiveJourneys.mockRejectedValueOnce(new ApiError('the run archive is not finalized', 409)).mockResolvedValueOnce(report)
+    act(() => root.render(<JourneyRiskPanel testId="run-2" />))
+    await flush()
+    expect(container.textContent).toContain("Journeys are accounted once the run's archive is finalized.")
+    expect(container.textContent).not.toContain('the run archive is not finalized')
+    act(() => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Check again')?.click() })
+    await flush()
+    expect(container.textContent).toContain('Checkout journeys revision 2')
   })
 
   it('formats fractions and reasons', () => {

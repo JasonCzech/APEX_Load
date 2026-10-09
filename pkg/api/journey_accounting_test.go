@@ -3,8 +3,10 @@ package api
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -417,6 +419,40 @@ func TestJourneyEndpointRefusesWhatItCannotAnswer(t *testing.T) {
 	server.runner.archives["unpinned"].ManifestSHA256 = ""
 	if code, _, body := getJourneys(t, server, "unpinned", ""); code != http.StatusConflict {
 		t.Fatalf("unfinalized: %d %s", code, body)
+	}
+}
+
+// journeyPolicyLookupStore is a store whose policy lookups fail with err.
+type journeyPolicyLookupStore struct {
+	*storage.SQLiteStore
+	err error
+}
+
+func (s journeyPolicyLookupStore) GetAnalysisDefinition(string, string, int64) (*storage.AnalysisDefinition, error) {
+	return nil, s.err
+}
+
+// A policy that does not exist is not found; a store that fails is
+// unavailable, never reported as a missing policy: the endpoint answers 503,
+// whose response carries only a reference while the cause is kept for the
+// server log.
+func TestJourneyPolicyLookupFailureIsNotAMissingPolicy(t *testing.T) {
+	manifest := &RunArchiveManifest{}
+	for _, tc := range []struct {
+		err    error
+		status int
+	}{{sql.ErrNoRows, http.StatusNotFound}, {errors.New("database is locked"), http.StatusServiceUnavailable}} {
+		_, _, _, status, err := resolveJourneyPolicy(journeyPolicyLookupStore{err: tc.err}, "default", manifest, "checkout", "")
+		if status != tc.status || err == nil || (tc.status == http.StatusServiceUnavailable && !errors.Is(err, tc.err)) {
+			t.Fatalf("lookup error %v: status %d, %v", tc.err, status, err)
+		}
+	}
+	server, store := baselineTestServer(t)
+	pin := saveJourneyPolicy(t, store, "journeys", 1, journeyFixturePolicy(false))
+	journeyArchive(t, server, store, "pinned", journeyFixtureRows(), &pin)
+	server.store = journeyPolicyLookupStore{SQLiteStore: store, err: errors.New("database is locked")}
+	if code, _, body := getJourneys(t, server, "pinned", ""); code != http.StatusServiceUnavailable || strings.Contains(body, "locked") {
+		t.Fatalf("store failure: %d %s", code, body)
 	}
 }
 

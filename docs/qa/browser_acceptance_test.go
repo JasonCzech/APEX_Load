@@ -48,7 +48,7 @@ func browserAcceptanceInventory() []browserAcceptanceItem {
 		return browserAcceptanceTest{ref, scopeUnit}
 	}
 	return []browserAcceptanceItem{
-		{"Cache and service workers", []browserAcceptanceTest{both("TestBrowserAcceptanceServiceWorkersAndTheTargetPolicy"), both("TestBrowserProtocolCacheDisabledReloadsCacheableAssets"), both("TestBrowserProtocolCheckNewerVersionsRevalidatesCachedAssets"), unit("TestTargetPolicyBlocksServiceWorkerBypassPaths"), unit("TestCDPJoinAssociatesDocumentsCacheAndInitiators"), unit("TestBrowserDocumentCohortReportsEffectiveNativeCacheSetting")}},
+		{"Cache and service workers", []browserAcceptanceTest{both("TestBrowserAcceptanceServiceWorkerServedResponses"), both("TestBrowserProtocolCacheDisabledReloadsCacheableAssets"), both("TestBrowserProtocolCheckNewerVersionsRevalidatesCachedAssets"), unit("TestTargetPolicyBlocksServiceWorkerBypassPaths"), unit("TestCDPJoinAssociatesDocumentsCacheAndInitiators"), unit("TestBrowserDocumentCohortReportsEffectiveNativeCacheSetting")}},
 		{"Redirects", []browserAcceptanceTest{both("TestBrowserAcceptanceRedirectsHTTPErrorsAndTransportClose")}},
 		{"Frames", []browserAcceptanceTest{both("TestBrowserProtocolExecutesFrameScopedActions"), both("TestBrowserProtocolExecutesNestedFramePathActions"), unit("TestLoaderTokenFromAnotherFrameProvesNothing")}},
 		{"Cross-origin timing restrictions", []browserAcceptanceTest{both("TestBrowserAcceptanceCrossOriginResourcesKeepTheirTiming"), unit("TestWebKitNavigationRequestsNeverTakeAResourceTimingJoin")}},
@@ -69,20 +69,20 @@ func browserAcceptanceInventory() []browserAcceptanceItem {
 	}
 }
 
-// browserAcceptanceEndToEnd maps BE-4's end-to-end requirements to
-// Playwright tests ("<spec file>:<test title>") that run in both
-// authentication profiles.
-func browserAcceptanceEndToEnd() []struct {
-	Behavior string
-	Tests    []string
-} {
-	return []struct {
-		Behavior string
-		Tests    []string
-	}{
-		{"Archive resource to HAR and archive ZIP downloads", []string{"workflow-browser-har.spec.ts:an archived run leads from its retained resources to HAR and archive downloads"}},
-		{"Viewer/editor separation and project denial", []string{"workflow-browser-har.spec.ts:viewers list HARs but cannot download them, and other projects are denied"}},
-		{"Retained missing values", []string{"workflow-retained-resource-inspector.spec.ts:retained resource inspector paginates beyond report previews and preserves native zero, false and independent clocks", "workflow-retained-resource-inspector.spec.ts:retained resource inspector refuses a mismatched page and retries without publishing unavailable evidence as zero", "workflow-browser-resource-evidence.spec.ts:archive document evidence retains latest pending, censored and unavailable measurements independently from actions"}},
+// browserAcceptanceE2E is BE-4's end-to-end requirements and the Playwright
+// tests ("<spec file>:<test title>") that prove them. LocalAuthOnly marks a
+// row whose tests skip in the default profile, which has no second principal.
+type browserAcceptanceE2E struct {
+	Behavior      string
+	Tests         []string
+	LocalAuthOnly bool
+}
+
+func browserAcceptanceEndToEnd() []browserAcceptanceE2E {
+	return []browserAcceptanceE2E{
+		{Behavior: "Archive resource to HAR and archive ZIP downloads", Tests: []string{"workflow-browser-har.spec.ts:an archived run leads from its retained resources to HAR and archive downloads"}},
+		{Behavior: "Viewer/editor separation and project denial", LocalAuthOnly: true, Tests: []string{"workflow-browser-har.spec.ts:viewers list HARs but cannot download them, and other projects are denied"}},
+		{Behavior: "Retained missing values", Tests: []string{"workflow-retained-resource-inspector.spec.ts:retained resource inspector paginates beyond report previews and preserves native zero, false and independent clocks", "workflow-retained-resource-inspector.spec.ts:retained resource inspector refuses a mismatched page and retries without publishing unavailable evidence as zero", "workflow-browser-resource-evidence.spec.ts:archive document evidence retains latest pending, censored and unavailable measurements independently from actions"}},
 	}
 }
 
@@ -117,11 +117,30 @@ func browserAcceptanceTestBody(t *testing.T, ref string) (string, string, bool) 
 	return "", "", false
 }
 
+// browserAcceptanceProfileSkip reports whether a spec's test (or its whole
+// file) skips by e2e profile.
+func browserAcceptanceProfileSkip(source, title string) bool {
+	skip := regexp.MustCompile(`test\.(skip|fixme)\([^\n]*APEXLOAD_E2E_PROFILE`)
+	start := strings.Index(source, "test('"+title+"'")
+	if start < 0 {
+		return false
+	}
+	body := source[start:]
+	if end := strings.Index(body[1:], "\ntest("); end > 0 {
+		body = body[:end+1]
+	}
+	head := source
+	if first := strings.Index(source, "\ntest("); first > 0 {
+		head = source[:first]
+	}
+	return skip.MatchString(body) || skip.MatchString(head)
+}
+
 func renderBrowserAcceptance(t *testing.T) string {
 	var out strings.Builder
 	out.WriteString("# Browser acceptance\n\n")
 	out.WriteString("Generated by `docs/qa/browser_acceptance_test.go` (BE-4). Regenerate with `APEXLOAD_UPDATE_BROWSER_ACCEPTANCE=1 go test ./docs/qa -run TestBrowserAcceptanceInventory`.\n\n")
-	out.WriteString("Each BE-4 behavior names the tests that accept it. **Chromium and WebKit** tests drive controlled pages in both engines; **Unit** tests exercise the same code without a browser (simulated CDP or WebKit events, files and budgets). The browser package's real-browser tests skip in `-short` mode and need installed Playwright browsers. `scripts/run-optin-suites.sh` runs the browser package with both engines required (a missing runtime fails rather than skips), with the opt-in benchmarks, as the \"browser acceptance\" suite.\n\n")
+	out.WriteString("Each BE-4 behavior names the tests that accept it. **Chromium and WebKit** tests drive controlled pages in both engines; **Unit** tests exercise the same code without a browser (simulated CDP or WebKit events, files and budgets). The browser package's real-browser tests need installed Playwright browsers: without them they skip, or fail under `APEXLOAD_BROWSER_TESTS=require`. `scripts/run-optin-suites.sh --all` runs the browser package with both engines required and the acceptance benchmark, keeping the benchmark results, as the \"browser acceptance\" suite.\n\n")
 	out.WriteString("| BE-4 behavior | Test | Runs in |\n| --- | --- | --- |\n")
 	for _, item := range browserAcceptanceInventory() {
 		for index, test := range item.Tests {
@@ -146,7 +165,7 @@ func renderBrowserAcceptance(t *testing.T) string {
 			out.WriteString(fmt.Sprintf("| %s | `%s` (`%s/%s`) | %s |\n", behavior, name, dir, file, test.Scope))
 		}
 	}
-	out.WriteString("\n## End to end\n\nThese Playwright tests run in both authentication profiles (default and local-auth).\n\n| BE-4 behavior | Spec | Test |\n| --- | --- | --- |\n")
+	out.WriteString("\n## End to end\n\nThese Playwright tests run in both authentication profiles (default and local-auth), except where marked: the default profile has no second principal, so viewer and project-denial checks run in local-auth only.\n\n| BE-4 behavior | Spec | Test | Profiles |\n| --- | --- | --- | --- |\n")
 	config, err := os.ReadFile(filepath.Join("..", "..", "dashboard", "playwright.config.ts"))
 	if err != nil {
 		t.Fatal(err)
@@ -161,16 +180,23 @@ func renderBrowserAcceptance(t *testing.T) string {
 			if !strings.Contains(string(config), "'**/"+spec+"'") {
 				t.Errorf("%s: %s does not run in the local-auth profile", item.Behavior, spec)
 			}
-			behavior := ""
+			// A test that skips by profile must be marked local-auth only.
+			if skips := browserAcceptanceProfileSkip(string(source), title); skips != item.LocalAuthOnly {
+				t.Errorf("%s: %q skips by profile = %t, but the row says local-auth only = %t", item.Behavior, title, skips, item.LocalAuthOnly)
+			}
+			behavior, profiles := "", "both"
 			if index == 0 {
 				behavior = item.Behavior
 			}
-			out.WriteString(fmt.Sprintf("| %s | `dashboard/e2e/%s` | %s |\n", behavior, spec, title))
+			if item.LocalAuthOnly {
+				profiles = "local-auth only"
+			}
+			out.WriteString(fmt.Sprintf("| %s | `dashboard/e2e/%s` | %s | %s |\n", behavior, spec, title, profiles))
 		}
 	}
 	out.WriteString("\n## Benchmark\n\n`APEXLOAD_BROWSER_BENCHMARKS=1 go test ./pkg/protocol/browser -run '^TestBrowserBenchmark$' -v` measures each engine with a desktop and a mobile profile it accepts (Chromium: `desktop_1080p`, `pixel_8`; WebKit, which has no desktop profile: a 1920x1080 viewport, `iphone_15_pro`). Each runs five sessions in each of three modes: plain, document capture, and 200 ms of network latency. It records:\n\n")
 	out.WriteString("- the host (OS and kernel version, CPU model and count, memory), the Playwright driver version and each browser's version;\n- cold launch (the engine's browser started from nothing) and session start against the pooled browser a generator keeps running;\n- navigation time, the overhead of document capture, and the throttled navigation's separation from the plain one;\n- peak RSS and CPU seconds of the Playwright driver and browser process tree;\n- teardown time, and processes left once the browser closes;\n- failures.\n\n")
-	out.WriteString("It writes `browser-benchmark.json` to `APEXLOAD_BROWSER_BENCHMARK_OUT`. When `APEXLOAD_COMMIT_SHA` names the measured commit, it also writes `browser-benchmark-acceptance-requests.json`: one F4 feature acceptance request per engine and profile (`BE-4`, `browser-benchmark`), naming the results' SHA-256. An operator posts the requests to `/api/v1/system/acceptance-records`.\n\n")
+	out.WriteString("Each engine is a subtest, so an engine missing from the host skips or fails alone and the other's results are still written. It writes `browser-benchmark.json` to `APEXLOAD_BROWSER_BENCHMARK_OUT`. When `APEXLOAD_COMMIT_SHA` names the measured commit, it also writes `browser-benchmark-acceptance-requests.json`: one F4 feature acceptance request per engine and profile (`BE-4`, `browser-benchmark`), naming the results' SHA-256. A request is `pending` for a reviewer to judge against the published targets (launch, action overhead, RSS per VUser), or `failed` when sessions failed, processes were left or throttling did not separate; it never claims a pass by itself. Navigation time is absolute, not an overhead against a baseline. An operator posts the requests to `/api/v1/system/acceptance-records`. The Go benchmarks (`BenchmarkBrowser*`) the browser benchmark evidence names run with their own command.\n\n")
 	out.WriteString("The published five-browser-VUser ceiling stays until reviewed evidence authorizes more. Synthetic shaping is a calibrated approximation, not a device equivalence claim.\n")
 	return out.String()
 }

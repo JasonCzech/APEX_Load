@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client'
 import { describe, expect, it } from 'vitest'
 
 import TelemetryAcceptanceVerdict from './TelemetryAcceptanceVerdict'
+import { formatAcceptancePercent } from './telemetryAcceptanceFormat'
 import type { TelemetryAcceptanceVerdict as Verdict } from '../types'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -37,6 +38,19 @@ describe('TelemetryAcceptanceVerdict', () => {
     act(() => root.unmount())
   })
 
+  it('shows an upper bound as at most and partial evidence as bounding nothing', () => {
+    const bounded: Verdict = { ...verdict, criteria: [
+      { criterion: 'stage_lag:transport/p99', outcome: 'pass', comparator: '<=', threshold: 500, unit: 'ms', observed: 300, bound: 'upper_bound' },
+      { criterion: 'stage_lag:transport/p95', outcome: 'inconclusive', comparator: '<=', threshold: 500, unit: 'ms', observed: 450, bound: 'partial' },
+    ] }
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    act(() => root.render(<TelemetryAcceptanceVerdict verdict={bounded} />))
+    const observed = [...container.querySelectorAll('tbody tr')].map(row => row.querySelectorAll('td')[2]?.textContent)
+    expect(observed).toEqual(['≤ 300 ms (upper bound)', '450 ms (partial evidence)'])
+    act(() => root.unmount())
+  })
+
   it('labels a live verdict provisional and an advisory one as never changing CI', () => {
     const container = document.createElement('div')
     const root = createRoot(container)
@@ -46,5 +60,21 @@ describe('TelemetryAcceptanceVerdict', () => {
     act(() => root.render(<TelemetryAcceptanceVerdict />))
     expect(container.textContent).toBe('')
     act(() => root.unmount())
+  })
+
+  it('marks an advisory criterion and keeps small ratios readable', () => {
+    const advisory: Verdict = { ...verdict, outcome: 'pass', reasons: [], criteria: [
+      { criterion: 'stage_lag:browser_render/p95', outcome: 'fail', comparator: '<=', threshold: 500, unit: 'ms', observed: 900, bound: 'exact', advisory: true },
+      { criterion: 'max_loss_ratio', outcome: 'pass', comparator: '<=', threshold: 0.0003, unit: 'ratio', observed: 0.0002, bound: 'exact' },
+    ] }
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    act(() => root.render(<TelemetryAcceptanceVerdict verdict={advisory} />))
+    const rows = [...container.querySelectorAll('tbody tr')].map(row => row.textContent || '')
+    expect(rows[0]).toContain('fail (advisory, never decides)')
+    expect(rows[1]).toContain('0.020%')
+    expect(rows[1]).toContain('0.030%')
+    act(() => root.unmount())
+    expect([0, 0.7, 0.0003, 0.000004].map(formatAcceptancePercent)).toEqual(['0.0%', '70.0%', '0.030%', '0.00040%'])
   })
 })

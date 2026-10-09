@@ -141,6 +141,8 @@ type Anomaly struct {
 type BaselineRef struct {
 	TestID        string `json:"test_id,omitempty"`
 	Qualification string `json:"qualification,omitempty"`
+	// Reasons say why a partial baseline is partial, when known.
+	Reasons []string `json:"reasons,omitempty"`
 }
 
 // Hypothesis is one ranked explanation of one or more symptoms.

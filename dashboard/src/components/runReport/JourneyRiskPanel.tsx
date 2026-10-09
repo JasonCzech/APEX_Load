@@ -2,11 +2,45 @@ import { useEffect, useState, type FormEvent } from 'react'
 
 import { useApi } from '../../hooks/useApi'
 import { getErrorMessage } from '../../utils/errorUtils'
+import Notice from '../ux/Notice'
 import { formatJourneyBoundary, formatJourneyFraction, journeyIncompleteText, journeyUnavailableText, journeyUnscoredText, type JourneyRiskReport } from './journeyRiskModel'
 
 interface JourneySelection {
   policy?: string
   revision?: number
+}
+
+interface JourneyLoadFailure {
+  kind: 'archive_missing' | 'not_finalized' | 'policy' | 'error'
+  detail: string
+  // message is the plain-language refusal of a policy request.
+  message?: string
+}
+
+function policyLabel(selection: JourneySelection): string {
+  return `"${selection.policy}"${selection.revision ? ` revision ${selection.revision}` : ''}`
+}
+
+// A missing or not-yet-finalized archive is a state of the run, and a refused
+// policy request is the viewer's to correct; both are said plainly, without a
+// retry that would fail the same way. Anything else is a load failure with
+// the server's text kept behind the notice's details.
+function journeyLoadFailure(err: unknown, selection: JourneySelection): JourneyLoadFailure {
+  const detail = getErrorMessage(err, 'Unable to load journey accounting')
+  const status = (err as { status?: unknown } | null)?.status
+  if (status === 404 && /archive not found/i.test(detail)) return { kind: 'archive_missing', detail }
+  if (status === 409 && /not finalized/i.test(detail)) return { kind: 'not_finalized', detail }
+  if (status === 404 && /journey policy not found/i.test(detail)) {
+    return { kind: 'policy', detail, message: selection.policy ? `No journey policy ${policyLabel(selection)} exists in this project.` : "The run's pinned journey policy no longer exists in this project. Name another policy to account its journeys." }
+  }
+  if (status === 409 && /no longer matches its pin/i.test(detail)) {
+    return { kind: 'policy', detail, message: "The run's pinned journey policy revision changed after the run pinned it, so it cannot be accounted. Name a policy to account its journeys." }
+  }
+  if (status === 409 && /revision is invalid/i.test(detail)) {
+    return { kind: 'policy', detail, message: selection.policy ? `Journey policy ${policyLabel(selection)} is not a valid journey policy.` : "The run's pinned journey policy revision is not a valid journey policy." }
+  }
+  if (status === 400) return { kind: 'policy', detail, message: 'The journey policy request was refused. Check the policy ID and revision.' }
+  return { kind: 'error', detail }
 }
 
 // JourneyRiskPanel shows a finalized run's journey accounting under its
@@ -17,23 +51,24 @@ export default function JourneyRiskPanel({ testId }: { testId: string }) {
   const [policyDraft, setPolicyDraft] = useState('')
   const [revisionDraft, setRevisionDraft] = useState('')
   const [report, setReport] = useState<JourneyRiskReport | null>(null)
-  const [error, setError] = useState('')
+  const [failure, setFailure] = useState<JourneyLoadFailure | null>(null)
   const [loading, setLoading] = useState(true)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     const controller = new AbortController()
     setLoading(true)
-    setError('')
+    setFailure(null)
     getTestArchiveJourneys(testId, selection, { signal: controller.signal })
       .then(next => { if (!controller.signal.aborted) setReport(next) })
       .catch(err => {
         if (controller.signal.aborted) return
         setReport(null)
-        setError(getErrorMessage(err, 'Unable to load journey accounting'))
+        setFailure(journeyLoadFailure(err, selection))
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
-  }, [getTestArchiveJourneys, testId, selection])
+  }, [getTestArchiveJourneys, testId, selection, attempt])
 
   const apply = (event: FormEvent) => {
     event.preventDefault()
@@ -50,7 +85,10 @@ export default function JourneyRiskPanel({ testId }: { testId: string }) {
       <button type="submit" className="btn btn-secondary" disabled={loading}>Apply</button>
     </form>
     {loading && <p role="status">Accounting journeys...</p>}
-    {!loading && error && <p role="alert" className="run-report-error">{error}</p>}
+    {!loading && failure?.kind === 'archive_missing' && <p role="note">This run's saved archive could not be found, so its journeys cannot be accounted.</p>}
+    {!loading && failure?.kind === 'not_finalized' && <p role="note">Journeys are accounted once the run's archive is finalized. <button type="button" className="btn btn-secondary" onClick={() => setAttempt(value => value + 1)}>Check again</button></p>}
+    {!loading && failure?.kind === 'policy' && <Notice tone="error" title={failure.message} details={failure.detail} />}
+    {!loading && failure?.kind === 'error' && <Notice tone="error" title="Journey accounting could not be loaded" details={failure.detail} action={<button type="button" className="btn btn-secondary" onClick={() => setAttempt(value => value + 1)}>Retry journeys</button>} />}
     {!loading && report && report.availability !== 'available' && <p>{journeyUnavailableText(report.reason)}</p>}
     {!loading && report && report.availability === 'available' && <>
       <p>

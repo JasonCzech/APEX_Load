@@ -5,12 +5,14 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -335,6 +337,35 @@ func TestLiveTelemetryAcceptanceIsProvisional(t *testing.T) {
 	}
 }
 
+// The report labels an advisory criterion in HTML, PDF and CSV.
+func TestTelemetryAcceptanceReportLabelsAdvisoryCriteria(t *testing.T) {
+	manifest := acceptanceManifest(TelemetryAcceptancePolicyDefinition{Version: 1, Mode: "fail_ci", StageLagPercentiles: []TelemetryLagPercentileRule{{Stage: "browser_render", Percentile: "p95", MaxMs: 500}}})
+	manifest.TelemetryStageDistributions = []TelemetryStageDistribution{{Stage: telemetryStageBrowserRender, Availability: "measured", Advisory: true, Samples: 10, P95Ms: acceptanceRatio(900)}}
+	report := &RunArchiveReport{Manifest: manifest, TelemetryAcceptance: telemetryAcceptanceForManifest(manifest)}
+	data := &runArchiveHTMLReportData{Report: report}
+	section := reportSectionRegistry["telemetry_acceptance"]
+	const label = "fail (advisory, never decides)"
+	if html, err := section.HTML(data); err != nil || !strings.Contains(string(html), label) {
+		t.Fatalf("HTML = %s %v", html, err)
+	}
+	var lines []string
+	section.PDF(data, &lines)
+	if joined := strings.Join(lines, "\n"); !strings.Contains(joined, "stage_lag:browser_render/p95: "+label) {
+		t.Fatalf("PDF lines = %s", joined)
+	}
+	var buffer bytes.Buffer
+	writer := csv.NewWriter(&buffer)
+	if err := section.CSV(data, func(section, key, metric, value string) error {
+		return writer.Write([]string{section, key, metric, value})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	writer.Flush()
+	if text := buffer.String(); !strings.Contains(text, `telemetry_acceptance_criterion,stage_lag:browser_render/p95,outcome,"`+label+`"`) {
+		t.Fatalf("CSV = %s", text)
+	}
+}
+
 func TestTelemetryAcceptanceReportSectionRendersEveryFormat(t *testing.T) {
 	maxLost := int64(0)
 	manifest := acceptanceManifest(TelemetryAcceptancePolicyDefinition{Version: 1, Mode: "fail_ci", MinWallTimeCoverage: acceptanceRatio(0.9), MaxLostRecords: &maxLost})
@@ -399,6 +430,12 @@ func TestTelemetryComparisonShowsEachRunsAcceptanceVerdict(t *testing.T) {
 	if !strings.Contains(line, "telemetry acceptance fail (fail_ci, Gate r3) / no acceptance policy") || !strings.Contains(line, "dropped results at least 4 / unavailable") {
 		t.Fatalf("comparison line = %s", line)
 	}
+	// A comparison saved before verdicts never claims a run had no policy.
+	saved := baseline
+	saved.AcceptanceEvaluated = false
+	if line := baselineTelemetryComparisonLine(BaselineTelemetryComparison{BaselineRunID: "baseline", Current: current, Baseline: saved, Reasons: []string{telemetryReasonPolicyUnavailable}}); !strings.Contains(line, "/ not recorded (saved before telemetry verdicts)") {
+		t.Fatalf("pre-verdict comparison line = %s", line)
+	}
 }
 
 func TestTelemetryAcceptanceWebhookAnnouncesAFailedVerdictOnce(t *testing.T) {
@@ -433,9 +470,13 @@ func TestTelemetryAcceptanceWebhookAnnouncesAFailedVerdictOnce(t *testing.T) {
 		}
 		return delivery{}
 	}
-	manifest := acceptanceManifest(TelemetryAcceptancePolicyDefinition{Version: 1, Mode: "fail_ci", MinWallTimeCoverage: acceptanceRatio(0.9)})
+	// A failing advisory criterion (browser render) never decided the
+	// verdict, so the announcement does not list it.
+	manifest := acceptanceManifest(TelemetryAcceptancePolicyDefinition{Version: 1, Mode: "fail_ci", MinWallTimeCoverage: acceptanceRatio(0.9),
+		StageLagPercentiles: []TelemetryLagPercentileRule{{Stage: "browser_render", Percentile: "p95", MaxMs: 500}}})
 	manifest.TestName, manifest.CompletedAt = "nightly", time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
 	manifest.TelemetryCoverage = coverageRecord(70_000, 100_000)
+	manifest.TelemetryStageDistributions = []TelemetryStageDistribution{{Stage: telemetryStageBrowserRender, Availability: "measured", Advisory: true, Samples: 10, P95Ms: acceptanceRatio(900)}}
 	server.notifyTelemetryAcceptance("run-1", manifest)
 	first := next()
 	text := fmt.Sprint(first.payload)
@@ -444,10 +485,40 @@ func TestTelemetryAcceptanceWebhookAnnouncesAFailedVerdictOnce(t *testing.T) {
 			t.Fatalf("webhook lacks %q: %s", want, text)
 		}
 	}
-	// The same archive announces with the same idempotency key.
+	if strings.Contains(text, "browser_render") {
+		t.Fatalf("webhook lists an advisory criterion: %s", text)
+	}
+	if first.key == "" {
+		t.Fatal("the announcement carries no idempotency key")
+	}
+	// A later attach of the same run's archive (a refresh, a recovery, another
+	// leader) announces nothing more.
 	server.notifyTelemetryAcceptance("run-1", manifest)
-	if again := next(); again.key == "" || again.key != first.key {
-		t.Fatalf("idempotency keys %q / %q", first.key, again.key)
+	select {
+	case again := <-received:
+		t.Fatalf("the run was announced twice: %v", again.payload)
+	case <-time.After(300 * time.Millisecond):
+	}
+	// A refresh that finds the verdict changed announces the new outcome.
+	worse := *manifest
+	worse.TelemetryCoverage = nil
+	server.notifyTelemetryAcceptance("run-changes", &worse)
+	if got := next(); !strings.Contains(fmt.Sprint(got.payload), "inconclusive") {
+		t.Fatalf("inconclusive announcement = %v", got.payload)
+	}
+	server.notifyTelemetryAcceptance("run-changes", manifest)
+	if got := next(); !strings.Contains(fmt.Sprint(got.payload), "(fail)") {
+		t.Fatalf("the worsened verdict was not announced: %v", got.payload)
+	}
+	// A run pinned before definitions were retained (unknown mode) is not
+	// announced.
+	legacy := *manifest
+	legacy.Provenance.TelemetryAcceptancePolicy = nil
+	server.notifyTelemetryAcceptance("run-legacy", &legacy)
+	select {
+	case got := <-received:
+		t.Fatalf("an unknown-mode verdict was announced: %v", got.payload)
+	case <-time.After(300 * time.Millisecond):
 	}
 	// A passing verdict, or a run without a policy, sends nothing.
 	manifest.TelemetryCoverage = coverageRecord(95_000, 100_000)
@@ -457,5 +528,245 @@ func TestTelemetryAcceptanceWebhookAnnouncesAFailedVerdictOnce(t *testing.T) {
 	case got := <-received:
 		t.Fatalf("unexpected webhook %v", got.payload)
 	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+// A stage distribution sampled only from a failover onward cannot decide a
+// percentile (only a maximum already above the limit fails), and one whose
+// observations were mostly excluded has no upper bound, so it cannot pass.
+func TestTelemetryAcceptanceStageLagOnPartialEvidence(t *testing.T) {
+	started := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	adopted := started.Add(20 * time.Minute)
+	rules := []TelemetryLagPercentileRule{{Stage: "transport", Percentile: "p99", MaxMs: 500}, {Stage: "transport", Percentile: "max", MaxMs: 500}}
+	manifest := acceptanceManifest(TelemetryAcceptancePolicyDefinition{Version: 1, Mode: "fail_ci", StageLagPercentiles: rules})
+	manifest.Provenance.StartedAt = &started
+	stage := TelemetryStageDistribution{Stage: telemetryStageTransport, Availability: "measured", Samples: 100, P99Ms: acceptanceRatio(120), MaxMs: acceptanceRatio(300), SampledFrom: &adopted}
+	manifest.TelemetryStageDistributions = []TelemetryStageDistribution{stage}
+	verdict := telemetryAcceptanceForManifest(manifest)
+	// A p99 of part of the run bounds nothing; its max is a lower bound.
+	if verdict.Outcome != TelemetryAcceptanceInconclusive || verdict.Criteria[0].Outcome != TelemetryAcceptanceInconclusive || !strings.Contains(verdict.Criteria[0].Reason, "sampled only from") ||
+		verdict.Criteria[0].Bound != telemetryAcceptancePartial || verdict.Criteria[1].Bound != telemetryAcceptanceLowerBound {
+		t.Fatalf("post-failover evidence = %+v", verdict)
+	}
+	// A maximum already above the limit fails whatever was missed.
+	manifest.TelemetryStageDistributions[0].MaxMs = acceptanceRatio(900)
+	if verdict = telemetryAcceptanceForManifest(manifest); verdict.Outcome != TelemetryAcceptanceFail || verdict.Criteria[1].Outcome != TelemetryAcceptanceFail {
+		t.Fatalf("partial maximum above the limit = %+v", verdict)
+	}
+	// Sampled from the run's start: exact.
+	manifest.TelemetryStageDistributions[0].MaxMs, manifest.TelemetryStageDistributions[0].SampledFrom = acceptanceRatio(300), &started
+	if verdict = telemetryAcceptanceForManifest(manifest); verdict.Outcome != TelemetryAcceptancePass {
+		t.Fatalf("whole-run evidence = %+v", verdict)
+	}
+	// Mostly excluded observations are partial too.
+	manifest.TelemetryStageDistributions[0].Excluded = map[string]int64{"clock_unqualified": 10_000}
+	if verdict = telemetryAcceptanceForManifest(manifest); verdict.Outcome != TelemetryAcceptanceInconclusive || !strings.Contains(verdict.Criteria[0].Reason, "excluded 10000") {
+		t.Fatalf("mostly excluded evidence = %+v", verdict)
+	}
+}
+
+// The controller that started a run samples its stages from the start; one
+// that adopted it samples from the adoption.
+func TestTelemetryStageRecorderCoversTheRunFromItsStart(t *testing.T) {
+	started := time.Now().UTC().Add(-time.Minute)
+	test := &ManagedTest{StartedAt: &started}
+	if since := stageRecorderLocked(test).since; !since.Equal(started) {
+		t.Fatalf("starting controller samples from %v, want %v", since, started)
+	}
+	adopted := &ManagedTest{StartedAt: &started, continuityFailovers: []RunFailover{{AdoptedAt: time.Now().UTC()}}}
+	if since := stageRecorderLocked(adopted).since; !since.After(started) {
+		t.Fatalf("adopting controller samples from %v", since)
+	}
+}
+
+// Live loss is measured against the run's results so far, not one window.
+func TestLiveTelemetryAcceptanceLossRatioUsesRunTotals(t *testing.T) {
+	ceiling := 0.001
+	definition := TelemetryAcceptancePolicyDefinition{Version: 1, Mode: "fail_ci", MaxLossRatio: &ceiling}
+	pin := RunPolicyPin{Kind: storage.AnalysisDefinitionKindTelemetryAcceptancePolicy, ID: "gate", Revision: 1, SHA256: "abc"}
+	loss := &TelemetryLossAccounting{DroppedResults: &TelemetryCounterTotal{State: TelemetryCounterExact, Value: 10}}
+	total, errs := int64(999_000), int64(990)
+	test := &ManagedTest{initialArchiveProvenance: &RunArchiveProvenance{PolicyPins: []RunPolicyPin{pin}, TelemetryAcceptancePolicy: &TelemetryAcceptancePolicySnapshot{Pin: pin, Definition: definition}},
+		LiveMetrics: &LiveMetrics{TotalTx: 500, RunTotalTx: &total, RunTotalErrors: &errs, Telemetry: &TelemetryHealth{Loss: loss}}}
+	verdict := cloneRunLiveMetrics(test).Telemetry.Acceptance
+	criterion := verdict.Criteria[0]
+	if criterion.Outcome != TelemetryAcceptancePass || *criterion.Denominator != 1_000_000 {
+		t.Fatalf("live loss ratio = %+v", criterion)
+	}
+	test.LiveMetrics.RunTotalTx, test.LiveMetrics.RunTotalErrors = nil, nil
+	if verdict = cloneRunLiveMetrics(test).Telemetry.Acceptance; verdict.Criteria[0].Outcome != TelemetryAcceptanceInconclusive {
+		t.Fatalf("live loss ratio without run totals = %+v", verdict.Criteria[0])
+	}
+}
+
+// Browser render is viewer-supplied: its criterion is shown, never decisive.
+func TestTelemetryAcceptanceBrowserRenderIsAdvisory(t *testing.T) {
+	manifest := acceptanceManifest(TelemetryAcceptancePolicyDefinition{Version: 1, Mode: "fail_ci", StageLagPercentiles: []TelemetryLagPercentileRule{{Stage: "browser_render", Percentile: "p95", MaxMs: 500}}})
+	manifest.TelemetryStageDistributions = []TelemetryStageDistribution{{Stage: telemetryStageBrowserRender, Availability: "measured", Advisory: true, Samples: 10, P95Ms: acceptanceRatio(900)}}
+	verdict := telemetryAcceptanceForManifest(manifest)
+	if verdict.Outcome != TelemetryAcceptancePass || !verdict.Criteria[0].Advisory || verdict.Criteria[0].Outcome != TelemetryAcceptanceFail || len(verdict.Reasons) != 0 {
+		t.Fatalf("advisory browser render = %+v", verdict)
+	}
+	manifest.TelemetryStageDistributions = nil
+	if verdict = telemetryAcceptanceForManifest(manifest); verdict.Outcome != TelemetryAcceptancePass {
+		t.Fatalf("unmeasured browser render decided the run: %+v", verdict)
+	}
+}
+
+// Shared reasons are listed once, and small ratios stay readable.
+func TestTelemetryAcceptanceReasonsAndRatios(t *testing.T) {
+	lost := int64(0)
+	manifest := acceptanceManifest(TelemetryAcceptancePolicyDefinition{Version: 1, Mode: "fail_ci", MaxLostRecords: &lost, MaxLossRatio: acceptanceRatio(0.0003)})
+	if verdict := telemetryAcceptanceForManifest(manifest); len(verdict.Reasons) != 1 {
+		t.Fatalf("reasons = %q", verdict.Reasons)
+	}
+	for value, want := range map[float64]string{0.0003: "0.030%", 0.0004: "0.040%", 0.7: "70.0%", 0: "0.0%", 0.000004: "0.00040%"} {
+		if got := formatAcceptanceRatio(value); got != want {
+			t.Fatalf("formatAcceptanceRatio(%v) = %q, want %q", value, got, want)
+		}
+	}
+}
+
+// The GitHub Check says what a fail_ci verdict did.
+func TestCIGitHubCheckTelemetryEffect(t *testing.T) {
+	for _, tc := range []struct {
+		verdict ciTelemetryVerdict
+		want    string
+	}{
+		{ciTelemetryVerdict{TelemetryAcceptanceVerdict: TelemetryAcceptanceVerdict{Outcome: TelemetryAcceptancePass, Mode: "fail_ci"}}, "fail_ci: passed"},
+		{ciTelemetryVerdict{TelemetryAcceptanceVerdict: TelemetryAcceptanceVerdict{Outcome: TelemetryAcceptanceFail, Mode: "fail_ci"}, Enforced: true}, "enforced: decided the outcome"},
+		{ciTelemetryVerdict{TelemetryAcceptanceVerdict: TelemetryAcceptanceVerdict{Outcome: TelemetryAcceptanceInconclusive, Mode: "fail_ci"}, InconclusivePolicy: ciTelemetryInconclusivePass}, "maps to pass"},
+		{ciTelemetryVerdict{TelemetryAcceptanceVerdict: TelemetryAcceptanceVerdict{Outcome: TelemetryAcceptanceFail, Mode: "fail_ci"}}, "the run did not otherwise pass"},
+		{ciTelemetryVerdict{TelemetryAcceptanceVerdict: TelemetryAcceptanceVerdict{Outcome: TelemetryAcceptanceInconclusive, Mode: telemetryAcceptanceModeUnknown}}, "unknown mode"},
+		{ciTelemetryVerdict{TelemetryAcceptanceVerdict: TelemetryAcceptanceVerdict{Outcome: TelemetryAcceptanceFail, Mode: "advisory"}}, "advisory: never changes the outcome"},
+	} {
+		if text := strings.Join(ciGitHubCheckTelemetryLines(&tc.verdict), "\n"); !strings.Contains(text, tc.want) {
+			t.Fatalf("%+v: %s", tc.verdict, text)
+		}
+	}
+}
+
+// A controller that re-adopts a run it once owned keeps its recorder, which
+// then counts only from the adoption.
+func TestTelemetryStageRecorderReadoptionSamplesFromTheAdoption(t *testing.T) {
+	started := time.Now().UTC().Add(-time.Hour)
+	test := &ManagedTest{StartedAt: &started}
+	recorder := stageRecorderLocked(test)
+	adoptedAt := time.Now().UTC()
+	recorder.adopted(adoptedAt)
+	if !recorder.since.Equal(adoptedAt) {
+		t.Fatalf("re-adopted recorder samples from %v, want %v", recorder.since, adoptedAt)
+	}
+	// An older adoption never moves it back.
+	recorder.adopted(started)
+	if !recorder.since.Equal(adoptedAt) {
+		t.Fatalf("since moved back to %v", recorder.since)
+	}
+}
+
+// Excluded observations bound a percentile rather than hide it: it passes
+// only when the kept percentile it could rise to is within the limit, fails
+// when the one it could fall to exceeds it, and the maximum has no upper
+// bound at all.
+func TestTelemetryAcceptanceExclusionsHidePercentiles(t *testing.T) {
+	started := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	rules := []TelemetryLagPercentileRule{{Stage: "transport", Percentile: "max", MaxMs: 500}, {Stage: "transport", Percentile: "p99", MaxMs: 500}, {Stage: "transport", Percentile: "p50", MaxMs: 500}}
+	manifest := acceptanceManifest(TelemetryAcceptancePolicyDefinition{Version: 1, Mode: "fail_ci", StageLagPercentiles: rules})
+	manifest.Provenance.StartedAt = &started
+	stage := TelemetryStageDistribution{Stage: telemetryStageTransport, Availability: "measured", Samples: 1000, P50Ms: acceptanceRatio(100), P99Ms: acceptanceRatio(200), MaxMs: acceptanceRatio(300), SampledFrom: &started,
+		Excluded: map[string]int64{"clock_unqualified": 20}}
+	manifest.TelemetryStageDistributions = []TelemetryStageDistribution{stage}
+	verdict := telemetryAcceptanceForManifest(manifest)
+	outcomes := []string{verdict.Criteria[0].Outcome, verdict.Criteria[1].Outcome, verdict.Criteria[2].Outcome}
+	if outcomes[0] != TelemetryAcceptanceInconclusive || outcomes[1] != TelemetryAcceptanceInconclusive || outcomes[2] != TelemetryAcceptancePass {
+		t.Fatalf("2%% excluded: max/p99/p50 = %v", outcomes)
+	}
+	if verdict.Criteria[1].Bound != telemetryAcceptancePartial || verdict.Criteria[2].Bound != telemetryAcceptanceUpperBound || *verdict.Criteria[2].Observed != 200 {
+		t.Fatalf("2%% excluded bounds: p99 %+v, p50 %+v", verdict.Criteria[1], verdict.Criteria[2])
+	}
+	manifest.TelemetryStageDistributions[0].Excluded = map[string]int64{"clock_unqualified": 5}
+	verdict = telemetryAcceptanceForManifest(manifest)
+	if verdict.Criteria[0].Outcome != TelemetryAcceptanceInconclusive || verdict.Criteria[1].Outcome != TelemetryAcceptancePass || verdict.Criteria[1].Bound != telemetryAcceptanceUpperBound || *verdict.Criteria[1].Observed != 300 {
+		t.Fatalf("0.5%% excluded: max %+v, p99 %+v", verdict.Criteria[0], verdict.Criteria[1])
+	}
+	// A heavy tail: 9 of 1,009 excluded, the kept p99 within the limit and
+	// the kept max far above it. The excluded could all be slower, so the
+	// whole run's p99 could be the kept max: inconclusive, never exact.
+	heavy := TelemetryStageDistribution{Stage: telemetryStageTransport, Availability: "measured", Samples: 1000, P50Ms: acceptanceRatio(100), P95Ms: acceptanceRatio(300), P99Ms: acceptanceRatio(450), MaxMs: acceptanceRatio(2000), SampledFrom: &started,
+		Excluded: map[string]int64{"clock_unqualified": 9}}
+	manifest.TelemetryStageDistributions = []TelemetryStageDistribution{heavy}
+	verdict = telemetryAcceptanceForManifest(manifest)
+	if p99 := verdict.Criteria[1]; p99.Outcome != TelemetryAcceptanceInconclusive || p99.Bound != telemetryAcceptancePartial || !strings.Contains(p99.Reason, "excluded 9") {
+		t.Fatalf("heavy tail p99 = %+v", p99)
+	}
+	// The p99 can fall no lower than the kept p95, which here exceeds the
+	// limit: a conclusive failure at that lower bound.
+	heavy.P95Ms, heavy.P99Ms = acceptanceRatio(600), acceptanceRatio(700)
+	manifest.TelemetryStageDistributions = []TelemetryStageDistribution{heavy}
+	verdict = telemetryAcceptanceForManifest(manifest)
+	if p99 := verdict.Criteria[1]; p99.Outcome != TelemetryAcceptanceFail || p99.Bound != telemetryAcceptanceLowerBound || *p99.Observed != 600 {
+		t.Fatalf("p99 above the limit whatever was excluded = %+v", p99)
+	}
+}
+
+// An archived digest bounds an excluded-observation percentile at exactly its
+// rank positions: one excluded observation leaves a definite breach a failure
+// and a definite pass a pass, where the recorded percentiles alone could only
+// say inconclusive. Without a matching digest the recorded ones are used.
+func TestTelemetryAcceptanceExclusionBoundsUseTheStageDigest(t *testing.T) {
+	digest := engine.NewTDigest(100)
+	for i := 1; i <= 100_000; i++ {
+		digest.Add(float64(i) / 100)
+	}
+	snapshot := digest.Snapshot()
+	quantile := func(q float64) *float64 { value := math.Round(digest.Quantile(q)*1000) / 1000; return &value }
+	stage := TelemetryStageDistribution{Stage: telemetryStageTransport, Availability: "measured", Samples: snapshot.Count, P50Ms: quantile(0.50), P95Ms: quantile(0.95), P99Ms: quantile(0.99), MaxMs: acceptanceRatio(1000),
+		Excluded: map[string]int64{"clock_unqualified": 1}}
+	rules := []TelemetryLagPercentileRule{{Stage: "transport", Percentile: "p99", MaxMs: 970}, {Stage: "transport", Percentile: "p99", MaxMs: 995}, {Stage: "transport", Percentile: "p50", MaxMs: 400}}
+	manifest := acceptanceManifest(TelemetryAcceptancePolicyDefinition{Version: 1, Mode: "fail_ci", StageLagPercentiles: rules})
+	manifest.TelemetryStageDistributions = []TelemetryStageDistribution{stage}
+	manifest.TelemetryStageDigests = map[string]engine.TDigestSnapshot{telemetryStageTransport: snapshot}
+	verdict := telemetryAcceptanceForManifest(manifest)
+	if c := verdict.Criteria[0]; c.Outcome != TelemetryAcceptanceFail || c.Bound != telemetryAcceptanceLowerBound || *c.Observed <= 970 {
+		t.Fatalf("p99 ≤ 970 with one exclusion = %+v", c)
+	}
+	if c := verdict.Criteria[1]; c.Outcome != TelemetryAcceptancePass || c.Bound != telemetryAcceptanceUpperBound || *c.Observed > 995 {
+		t.Fatalf("p99 ≤ 995 with one exclusion = %+v", c)
+	}
+	if c := verdict.Criteria[2]; c.Outcome != TelemetryAcceptanceFail || *c.Observed <= 400 {
+		t.Fatalf("p50 ≤ 400 with one exclusion = %+v", c)
+	}
+	// A digest of a different population, or none, falls back to the
+	// recorded percentiles: kept p95 950 and max 1000 bracket both p99 limits.
+	for _, digests := range []map[string]engine.TDigestSnapshot{nil, {telemetryStageTransport: engine.NewTDigest(100).Snapshot()}} {
+		manifest.TelemetryStageDigests = digests
+		verdict = telemetryAcceptanceForManifest(manifest)
+		if verdict.Criteria[0].Outcome != TelemetryAcceptanceInconclusive || verdict.Criteria[1].Outcome != TelemetryAcceptanceInconclusive || verdict.Criteria[2].Outcome != TelemetryAcceptanceInconclusive {
+			t.Fatalf("recorded percentiles only (%d digests) = %+v", len(digests), verdict.Criteria)
+		}
+	}
+}
+
+// The Check shows each bound: at least, at most, or partial evidence.
+func TestCIGitHubCheckTelemetryBounds(t *testing.T) {
+	observed := func(value float64) *float64 { return &value }
+	verdict := ciTelemetryVerdict{TelemetryAcceptanceVerdict: TelemetryAcceptanceVerdict{Outcome: TelemetryAcceptanceInconclusive, Mode: "fail_ci", Criteria: []TelemetryAcceptanceCriterion{
+		{Criterion: "stage_lag:transport/p99", Outcome: TelemetryAcceptancePass, Comparator: "<=", Threshold: 500, Unit: "ms", Observed: observed(300), Bound: telemetryAcceptanceUpperBound},
+		{Criterion: "stage_lag:transport/p95", Outcome: TelemetryAcceptanceInconclusive, Comparator: "<=", Threshold: 500, Unit: "ms", Observed: observed(450), Bound: telemetryAcceptancePartial},
+		{Criterion: "stage_lag:transport/max", Outcome: TelemetryAcceptanceFail, Comparator: "<=", Threshold: 500, Unit: "ms", Observed: observed(900), Bound: telemetryAcceptanceLowerBound}}}}
+	text := strings.Join(ciGitHubCheckTelemetryLines(&verdict), "\n")
+	for _, want := range []string{"transport/p99: `pass` (observed ≤ 300", "transport/p95: `inconclusive` (observed 450", "(partial evidence)", "transport/max: `fail` (observed ≥ 900"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("check lacks %q: %s", want, text)
+		}
+	}
+}
+
+// The Check labels an advisory criterion, and the webhook never lists one.
+func TestTelemetryAcceptanceAdvisoryCriteriaAreLabelled(t *testing.T) {
+	verdict := ciTelemetryVerdict{TelemetryAcceptanceVerdict: TelemetryAcceptanceVerdict{Outcome: TelemetryAcceptancePass, Mode: "fail_ci", Criteria: []TelemetryAcceptanceCriterion{
+		{Criterion: "stage_lag:browser_render/p95", Outcome: TelemetryAcceptanceFail, Comparator: "<=", Threshold: 500, Unit: "ms", Advisory: true}}}}
+	if text := strings.Join(ciGitHubCheckTelemetryLines(&verdict), "\n"); !strings.Contains(text, "`fail` (advisory, never decides)") {
+		t.Fatalf("check lines = %s", text)
 	}
 }

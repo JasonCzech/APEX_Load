@@ -85,6 +85,26 @@ run_kafka_fixture() {
   "./scripts/${wrapper}" --report "${report_dir}/report.json"
 }
 
+# run_browser_acceptance runs the browser package with both engines required
+# and the acceptance benchmark, keeping the benchmark results at a fresh
+# private path. The acceptance requests name the commit only when the code is
+# unchanged (no modified file and no untracked Go source), so they never claim
+# a commit that was not the measured code.
+run_browser_acceptance() {
+  local out_dir commit=""
+  out_dir="$(mktemp -d "${TMPDIR:-/tmp}/apexload-browser-acceptance.XXXXXX")" || return 1
+  printf 'Browser benchmark results: %s\n' "${out_dir}"
+  if [[ -n "${APEXLOAD_COMMIT_SHA:-}" ]]; then
+    commit="${APEXLOAD_COMMIT_SHA}"
+  elif git diff --quiet HEAD 2>/dev/null && [[ -z "$(git ls-files --others --exclude-standard -- pkg cmd api third_party go.mod go.sum 2>/dev/null)" ]]; then
+    commit="$(git rev-parse HEAD 2>/dev/null)"
+  else
+    printf 'The working tree differs from HEAD (or has untracked sources): no acceptance requests are written.\n'
+  fi
+  APEXLOAD_BROWSER_TESTS=require APEXLOAD_BROWSER_BENCHMARKS=1 APEXLOAD_BROWSER_BENCHMARK_OUT="${out_dir}" APEXLOAD_COMMIT_SHA="${commit}" \
+    go test -count=1 -timeout 30m -v ./pkg/protocol/browser
+}
+
 run_suite "analytics_duckdb (embedded native analytics)" \
   "CGO-enabled Go toolchain on a supported native platform" '[[ "$(go env CGO_ENABLED)" == "1" ]]' \
   go test -tags analytics_duckdb -count=1 ./pkg/analysis/... ./pkg/api -run 'Test(Analysis|Native|Parquet|Container|Lagged|Bucket)'
@@ -151,11 +171,9 @@ run_suite "browser native HAR qualifications (real Chromium replay recording and
   env APEXLOAD_BROWSER_TESTS=require TZ=America/New_York go test -count=1 -timeout 15m \
     -run '^(TestBrowserReplayActualNativeHAR|TestBrowserResourceActualChromiumAcquisitionArchiveAndPagination)$' ./pkg/api
 
-run_suite "browser acceptance (BE-4: the browser package with Chromium and WebKit required, and its benchmarks)" \
+run_suite "browser acceptance (BE-4: the browser package with Chromium and WebKit required, and the acceptance benchmark)" \
   "--all and installed Playwright Chromium and WebKit (a missing runtime FAILS)" "[[ ${run_all} == 1 ]]" \
-  env APEXLOAD_BROWSER_TESTS=require APEXLOAD_BROWSER_BENCHMARKS=1 \
-    APEXLOAD_COMMIT_SHA="${APEXLOAD_COMMIT_SHA:-$(git rev-parse HEAD 2>/dev/null)}" \
-    go test -count=1 -timeout 30m -v ./pkg/protocol/browser
+  run_browser_acceptance
 
 run_suite "root-cause v2 end to end (real local runs, about eight minutes)" \
   "--all" "[[ ${run_all} == 1 ]]" \

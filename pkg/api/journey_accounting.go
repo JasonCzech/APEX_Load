@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -592,6 +593,12 @@ func resolveJourneyPolicy(store storage.AnalysisDefinitionStore, projectID strin
 		return JourneyPolicyDefinition{}, JourneyPolicyRef{}, false, http.StatusBadRequest, errors.New("policy id is too long")
 	}
 	definition, err := store.GetAnalysisDefinition(projectID, id, revision)
+	// A store failure is not a missing policy: it is unavailable, and the
+	// viewer can retry.
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		// The cause reaches the server log; a 5xx response carries only a ref.
+		return JourneyPolicyDefinition{}, JourneyPolicyRef{}, false, http.StatusServiceUnavailable, fmt.Errorf("analysis policies are unavailable: %w", err)
+	}
 	// A pinned or named revision stays readable after deletion; the latest of
 	// a deleted policy does not.
 	if err != nil || definition == nil || definition.Kind != storage.AnalysisDefinitionKindJourneyPolicy || (revision == 0 && definition.Deleted) {

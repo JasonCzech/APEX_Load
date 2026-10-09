@@ -207,6 +207,11 @@ func TestValidateScriptFileReportsIssues(t *testing.T) {
 	if result.Valid || len(result.Issues) == 0 {
 		t.Fatalf("validation result = %#v, want invalid issues", result)
 	}
+	// One issue per finding, as the API lists them.
+	want := dsl.ValidateScriptIssues(&dsl.Script{Name: "", Protocol: "http", Actions: []dsl.Action{}})
+	if len(want) < 2 || len(result.Issues) != len(want) || result.Issues[0] != want[0] {
+		t.Fatalf("issues = %q, want %q", result.Issues, want)
+	}
 }
 
 func TestExplainScriptFileSummarizesAuthoringSignals(t *testing.T) {

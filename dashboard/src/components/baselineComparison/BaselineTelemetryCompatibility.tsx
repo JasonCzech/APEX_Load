@@ -37,7 +37,7 @@ function profileCells(profile: TelemetryRunProfile) {
 // Each run's telemetry verdict was judged by its own pinned policy revision.
 function acceptanceCell(profile: TelemetryRunProfile): string {
   const verdict = profile.acceptance
-  if (!verdict) return 'No acceptance policy'
+  if (!verdict) return profile.acceptance_evaluated ? 'No acceptance policy' : 'Not recorded (saved before telemetry verdicts)'
   const policy = verdict.policy ? `, ${verdict.policy.name} r${verdict.policy.revision}` : ''
   return `${verdict.outcome} (${verdict.mode}${policy})`
 }

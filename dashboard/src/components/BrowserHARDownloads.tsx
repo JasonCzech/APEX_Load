@@ -1,10 +1,13 @@
 import { useState } from 'react'
+import Notice from './ux/Notice'
 import { downloadArchiveBrowserHAR, downloadArchiveWithHARs, type BrowserHARArchiveList } from '../hooks/api/useBrowserHARApi'
 
 interface Props {
   testID: string
   list: BrowserHARArchiveList | null
   listError?: string
+  archiveMissing?: boolean
+  onRetryList?: () => void
 }
 
 const bytes = (value?: number) => value === undefined ? 'Derived on download' : `${value.toLocaleString('en-US')} B`
@@ -12,19 +15,20 @@ const bytes = (value?: number) => value === undefined ? 'Derived on download' : 
 /** A run archive's HARs: native recordings and the synthetic HAR derived from
  * retained network entries. Anyone who can view the run sees the list; only
  * editors download (native HARs carry scrubbed response content). */
-export default function BrowserHARDownloads({ testID, list, listError = '' }: Props) {
-  const [downloadError, setError] = useState('')
+export default function BrowserHARDownloads({ testID, list, listError = '', archiveMissing = false, onRetryList }: Props) {
+  // downloadError names which download failed: one HAR, or the run archive.
+  const [downloadError, setError] = useState<{ key: string; message: string } | null>(null)
   const [busy, setBusy] = useState('')
-  const error = listError || downloadError
   const run = async (key: string, action: () => Promise<void>) => {
-    setBusy(key); setError('')
-    try { await action() } catch (reason) { setError(reason instanceof Error ? reason.message : 'Download failed.') } finally { setBusy('') }
+    setBusy(key); setError(null)
+    try { await action() } catch (reason) { setError({ key, message: reason instanceof Error ? reason.message : 'Download failed.' }) } finally { setBusy('') }
   }
   return <section className="tx-section archive-summary-section" aria-label="Browser HARs">
     <h3 className="chart-title">Browser HARs</h3>
     <p>Native HARs are the browser&apos;s own recordings. The synthetic HAR is built from retained network entries for contexts without one; it never invents timings or content.</p>
-    {error && <p role="alert">{error}</p>}
-    {!list ? !error && <p role="status">Loading browser HARs…</p> : <>
+    {listError && <Notice tone="error" title="Browser HARs could not be listed" details={listError} action={onRetryList && <button type="button" className="btn btn-secondary btn-sm" onClick={onRetryList}>Retry browser HARs</button>} />}
+    {downloadError && <Notice tone="error" title={downloadError.key === 'zip' ? 'The run archive could not be downloaded' : 'The HAR could not be downloaded'} details={downloadError.message} />}
+    {!list ? archiveMissing ? <p role="note">This run has no saved archive, so it has no browser HARs.</p> : !listError && <p role="status">Loading browser HARs…</p> : <>
       {!list.can_download && <p role="status">Downloading a HAR needs {list.download_role} access to this project.</p>}
       {list.incomplete && <p>Some native HARs were not retained{list.omitted ? `: ${Object.entries(list.omitted).map(([reason, count]) => `${count} ${reason.replace(/_/g, ' ')}`).join(', ')}` : ''}.</p>}
       <table className="tx-table"><thead><tr><th scope="col">HAR</th><th scope="col">Fidelity</th><th scope="col">Size</th><th scope="col">Download</th></tr></thead>

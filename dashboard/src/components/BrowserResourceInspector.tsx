@@ -6,6 +6,7 @@ import { useBrowserResourcePage, type BrowserResourcePageLoader } from './useBro
 import { browserDocumentWaterfall, browserResourceRowKey } from './browserResourceEvidenceModel'
 import BrowserNativeRequestEvidence from './BrowserNativeRequestEvidence'
 import BrowserHARDownloads from './BrowserHARDownloads'
+import Notice from './ux/Notice'
 import { useBrowserHARList } from '../hooks/useBrowserHARList'
 import { downloadArchiveBrowserHAR, harForResourceRow, listArchiveBrowserHARs } from '../hooks/api/useBrowserHARApi'
 import './BrowserResourceInspector.css'
@@ -66,8 +67,8 @@ function ResourceInspectorBody({ testID, projectID, sourceIdentity, loadPage = r
       <p className="archive-section-copy">Filter and inspect retained network-entry observations in bounded archive pages.</p></div></div>
     <p>Legacy captures can include HTTP document resources. Native browser request details appear only when explicitly retained. Retained observations are not a complete network census. Action capture timestamps and native request clocks remain distinct; clock alignment and capture coverage are unavailable.</p>
     {!ready ? <p role="status">Run and project context is unavailable.</p> : <>
-      <BrowserHARDownloads testID={testID} list={har.list} listError={har.error} />
-      {harError && <p role="alert">{harError}</p>}
+      <BrowserHARDownloads testID={testID} list={har.list} listError={har.error} archiveMissing={har.archiveMissing} onRetryList={har.reload} />
+      {harError && <Notice tone="error" title="The HAR could not be downloaded" details={harError} />}
       <form onSubmit={apply} className="browser-resource-filter-form" aria-label="Archive resource filters">
         <div className="browser-resource-filter-row">
           <label>Capturing action<input value={draft.action_name || ''} maxLength={256} onChange={event => setDraft(value => ({ ...value, action_name: event.target.value }))} /></label>

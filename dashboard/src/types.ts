@@ -2293,11 +2293,15 @@ export interface TelemetryAcceptanceCriterion {
   threshold: number
   unit: 'ratio' | 'records' | 'ms' | string
   observed?: number
-  // exact, or lower_bound when more loss or observed time may exist.
+  // exact; lower_bound when more loss, observed time or lag may exist;
+  // upper_bound when the whole run's value is at most observed; partial when
+  // observed covers only part of the run's evidence and bounds nothing.
   bound?: string
   numerator?: number
   denominator?: number
   reason?: string
+  // A criterion on an advisory stage (browser render): shown, never decisive.
+  advisory?: boolean
 }
 
 export interface TelemetryAcceptancePolicyPin {

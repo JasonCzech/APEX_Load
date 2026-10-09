@@ -8,9 +8,11 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -92,20 +94,27 @@ type TelemetryAcceptanceCriterion struct {
 	// Unit is ratio, records or ms.
 	Unit     string   `json:"unit"`
 	Observed *float64 `json:"observed,omitempty"`
-	// Bound qualifies Observed: exact, or lower_bound when more loss or
-	// observed time may exist than was counted.
+	// Bound qualifies Observed: exact; lower_bound when more loss, observed
+	// time or lag may exist than was counted; upper_bound when the whole
+	// run's value is at most Observed; partial when Observed describes only
+	// part of the run's evidence and bounds nothing.
 	Bound string `json:"bound,omitempty"`
 	// Numerator and Denominator are a ratio's terms, in its own units
 	// (milliseconds of wall time, or records).
 	Numerator   *float64 `json:"numerator,omitempty"`
 	Denominator *float64 `json:"denominator,omitempty"`
 	Reason      string   `json:"reason,omitempty"`
+	// Advisory marks a criterion on an advisory stage (browser render, which
+	// viewers' tabs report): it is shown but never decides the verdict.
+	Advisory bool `json:"advisory,omitempty"`
 }
 
 // Bounds of an observed criterion value.
 const (
 	telemetryAcceptanceExact      = "exact"
 	telemetryAcceptanceLowerBound = "lower_bound"
+	telemetryAcceptanceUpperBound = "upper_bound"
+	telemetryAcceptancePartial    = "partial"
 )
 
 // telemetryAcceptanceEvidence is the evidence a verdict reads, from an
@@ -123,6 +132,38 @@ type telemetryAcceptanceEvidence struct {
 	// denominator, with the lost records).
 	records int64
 	stages  []TelemetryStageDistribution
+	// stageQuantile reads a stage's kept quantile at any position from its
+	// archived digest; nil for a live run, whose recorder keeps sampling.
+	stageQuantile telemetryStageQuantile
+	// startedAt is when the run started; stage distributions sampled only
+	// from later are partial.
+	startedAt *time.Time
+}
+
+// telemetryStageQuantile returns a stage's kept quantile at q, or false when
+// its digest is missing or holds a different number of observations than
+// the distribution reports.
+type telemetryStageQuantile func(stage string, samples int64, q float64) (float64, bool)
+
+// manifestStageQuantile reads kept quantiles from a manifest's stage
+// digests, rounded as the distributions are.
+func manifestStageQuantile(manifest *RunArchiveManifest) telemetryStageQuantile {
+	if len(manifest.TelemetryStageDigests) == 0 {
+		return nil
+	}
+	digests := map[string]*engine.TDigest{}
+	return func(stage string, samples int64, q float64) (float64, bool) {
+		snapshot, ok := manifest.TelemetryStageDigests[stage]
+		if !ok || snapshot.Count != samples || samples <= 0 {
+			return 0, false
+		}
+		digest := digests[stage]
+		if digest == nil {
+			digest = engine.NewTDigestFromSnapshot(snapshot)
+			digests[stage] = digest
+		}
+		return math.Round(digest.Quantile(q)*1000) / 1000, true
+	}
 }
 
 // telemetryAcceptanceStageMap maps the policy's stage names to the stage
@@ -166,10 +207,13 @@ func evaluateTelemetryAcceptance(policy TelemetryAcceptancePolicyDefinition, pin
 		verdict.Criteria = append(verdict.Criteria, telemetryBreachCriterion(*policy.MaxBreachedKnownTimeFraction, evidence))
 	}
 	for _, rule := range policy.StageLagPercentiles {
-		verdict.Criteria = append(verdict.Criteria, telemetryStageLagCriterion(rule, evidence.stages))
+		verdict.Criteria = append(verdict.Criteria, telemetryStageLagCriterion(rule, evidence.stages, evidence.stageQuantile, evidence.startedAt))
 	}
 	verdict.Outcome = TelemetryAcceptancePass
 	for _, criterion := range verdict.Criteria {
+		if criterion.Advisory {
+			continue
+		}
 		switch criterion.Outcome {
 		case TelemetryAcceptanceFail:
 			verdict.Outcome = TelemetryAcceptanceFail
@@ -178,7 +222,7 @@ func evaluateTelemetryAcceptance(policy TelemetryAcceptancePolicyDefinition, pin
 				verdict.Outcome = TelemetryAcceptanceInconclusive
 			}
 		}
-		if criterion.Outcome != TelemetryAcceptancePass {
+		if criterion.Outcome != TelemetryAcceptancePass && !slices.Contains(verdict.Reasons, criterion.Reason) {
 			verdict.Reasons = append(verdict.Reasons, criterion.Reason)
 		}
 	}
@@ -268,7 +312,10 @@ func telemetryLossRatioCriterion(ceiling float64, lost int64, bound, reason stri
 	if reason != "" {
 		return inconclusiveCriterion(criterion, reason)
 	}
-	denominator := float64(lost) + float64(max(records, 0))
+	if records < 0 {
+		return inconclusiveCriterion(criterion, "the run's recorded result total is unavailable")
+	}
+	denominator := float64(lost) + float64(records)
 	if denominator <= 0 {
 		return inconclusiveCriterion(criterion, "the run recorded no results to measure loss against")
 	}
@@ -313,7 +360,7 @@ func telemetryBreachCriterion(ceiling float64, evidence telemetryAcceptanceEvide
 	return criterion
 }
 
-func telemetryStageLagCriterion(rule TelemetryLagPercentileRule, stages []TelemetryStageDistribution) TelemetryAcceptanceCriterion {
+func telemetryStageLagCriterion(rule TelemetryLagPercentileRule, stages []TelemetryStageDistribution, quantile telemetryStageQuantile, startedAt *time.Time) TelemetryAcceptanceCriterion {
 	criterion := TelemetryAcceptanceCriterion{Criterion: "stage_lag:" + rule.Stage + "/" + rule.Percentile, Comparator: "<=", Threshold: rule.MaxMs, Unit: "ms"}
 	name, measured := telemetryAcceptanceStageMap[rule.Stage]
 	if !measured {
@@ -325,6 +372,9 @@ func telemetryStageLagCriterion(rule TelemetryLagPercentileRule, stages []Teleme
 			stage = &stages[index]
 		}
 	}
+	// Browser render is reported by whichever dashboard tabs were open, so it
+	// can never decide a run.
+	criterion.Advisory = rule.Stage == "browser_render" || stage != nil && stage.Advisory
 	if stage == nil || stage.Availability != "measured" {
 		reason := fmt.Sprintf("stage %s was not measured", rule.Stage)
 		if stage != nil && stage.Reason != "" {
@@ -349,6 +399,26 @@ func telemetryStageLagCriterion(rule TelemetryLagPercentileRule, stages []Teleme
 	observed := *value
 	criterion.Observed, criterion.Bound = &observed, telemetryAcceptanceExact
 	criterion.Denominator = acceptanceFloat(float64(stage.Samples))
+	// A distribution sampled only from a failover onward is partial: only a
+	// maximum above the limit is conclusive (the whole run's maximum is at
+	// least as high); any other percentile of part of the run bounds nothing.
+	if stage.SampledFrom != nil && startedAt != nil && stage.SampledFrom.After(*startedAt) {
+		partial := fmt.Sprintf("stage %s was sampled only from %s, after the run started (a controller adopted the run)", rule.Stage, stage.SampledFrom.UTC().Format(time.RFC3339))
+		if rule.Percentile != "max" {
+			criterion.Bound = telemetryAcceptancePartial
+			return inconclusiveCriterion(criterion, partial)
+		}
+		criterion.Bound = telemetryAcceptanceLowerBound
+		if observed > rule.MaxMs {
+			criterion.Outcome = TelemetryAcceptanceFail
+			criterion.Reason = fmt.Sprintf("%s max lag at least %.0f ms exceeds %.0f ms; %s", rule.Stage, observed, rule.MaxMs, partial)
+			return criterion
+		}
+		return inconclusiveCriterion(criterion, partial)
+	}
+	if excluded := telemetryStageExcluded(stage); excluded > 0 {
+		return telemetryStageCriterionWithExclusions(criterion, rule, stage, excluded, quantile)
+	}
 	if observed > rule.MaxMs {
 		criterion.Outcome = TelemetryAcceptanceFail
 		criterion.Reason = fmt.Sprintf("%s %s lag %.0f ms exceeds %.0f ms (%d samples)", rule.Stage, rule.Percentile, observed, rule.MaxMs, stage.Samples)
@@ -358,6 +428,94 @@ func telemetryStageLagCriterion(rule TelemetryLagPercentileRule, stages []Teleme
 	return criterion
 }
 
+// telemetryStageCriterionWithExclusions judges a stage percentile some of
+// whose observations were excluded. Excluded observations could lie anywhere,
+// so the whole run's value is only bounded (telemetryStageExclusionBounds):
+// the criterion passes when the upper bound is within the limit, fails when
+// the lower bound exceeds it, and is otherwise inconclusive.
+func telemetryStageCriterionWithExclusions(criterion TelemetryAcceptanceCriterion, rule TelemetryLagPercentileRule, stage *TelemetryStageDistribution, excluded int64, quantile telemetryStageQuantile) TelemetryAcceptanceCriterion {
+	lower, upper := telemetryStageExclusionBounds(stage, rule.Percentile, excluded, quantile)
+	kept := fmt.Sprintf("stage %s excluded %d observations and kept %d", rule.Stage, excluded, stage.Samples)
+	switch {
+	case upper != nil && *upper <= rule.MaxMs:
+		criterion.Observed, criterion.Bound, criterion.Outcome = upper, telemetryAcceptanceUpperBound, TelemetryAcceptancePass
+		criterion.Reason = fmt.Sprintf("%s; its %s is at most %.0f ms even if every excluded observation was slower", kept, rule.Percentile, *upper)
+	case lower != nil && *lower > rule.MaxMs:
+		criterion.Observed, criterion.Bound, criterion.Outcome = lower, telemetryAcceptanceLowerBound, TelemetryAcceptanceFail
+		criterion.Reason = fmt.Sprintf("%s %s lag at least %.0f ms exceeds %.0f ms even if every excluded observation was faster; %s", rule.Stage, rule.Percentile, *lower, rule.MaxMs, kept)
+	case rule.Percentile == "max":
+		criterion.Bound = telemetryAcceptanceLowerBound
+		criterion = inconclusiveCriterion(criterion, kept+", so its max is unknown")
+	default:
+		criterion.Bound = telemetryAcceptancePartial
+		criterion = inconclusiveCriterion(criterion, fmt.Sprintf("%s, so its %s may exceed %.0f ms", kept, rule.Percentile, rule.MaxMs))
+	}
+	return criterion
+}
+
+// telemetryStageExclusionBounds bounds the whole run's percentile of a stage
+// with E excluded and N kept observations. Its rank among all N+E lies, among
+// the kept ones, at a quantile from (q·(N+E)−E)/N (every excluded observation
+// below it) to q·(N+E)/N (every one above it). An archived digest gives the
+// kept quantiles at exactly those positions; without one (a live verdict, or
+// an archive written before digests) the bounds are the nearest recorded
+// kept percentiles (p50, p95, p99, max) outside that range. The maximum has
+// only a lower bound, the kept maximum; a bound that falls among the
+// excluded observations is nil.
+func telemetryStageExclusionBounds(stage *TelemetryStageDistribution, percentile string, excluded int64, quantile telemetryStageQuantile) (lower, upper *float64) {
+	q := map[string]float64{"p50": 0.50, "p95": 0.95, "p99": 0.99, "max": 1}[percentile]
+	if q == 0 || stage.Samples <= 0 {
+		return nil, nil
+	}
+	if percentile == "max" {
+		return stage.MaxMs, nil
+	}
+	kept, total := float64(stage.Samples), float64(stage.Samples+excluded)
+	if highest := q * total / kept; highest <= 1 {
+		upper = telemetryStageKeptQuantile(stage, quantile, highest, true)
+	}
+	if lowest := (q*total - float64(excluded)) / kept; lowest > 0 {
+		lower = telemetryStageKeptQuantile(stage, quantile, lowest, false)
+	}
+	return lower, upper
+}
+
+// telemetryStageKeptQuantile is the kept distribution's quantile at position
+// from its digest, else the nearest recorded percentile at or above it (an
+// upper bound) or at or below it (a lower bound); nil when none is recorded.
+func telemetryStageKeptQuantile(stage *TelemetryStageDistribution, quantile telemetryStageQuantile, position float64, above bool) *float64 {
+	if quantile != nil {
+		if value, ok := quantile(stage.Stage, stage.Samples, position); ok {
+			return &value
+		}
+	}
+	levels := []struct {
+		q     float64
+		value *float64
+	}{{0.50, stage.P50Ms}, {0.95, stage.P95Ms}, {0.99, stage.P99Ms}, {1, stage.MaxMs}}
+	var nearest *float64
+	for _, l := range levels {
+		if l.value == nil {
+			continue
+		}
+		if above && l.q >= position {
+			return l.value
+		}
+		if !above && l.q <= position {
+			nearest = l.value
+		}
+	}
+	return nearest
+}
+
+func telemetryStageExcluded(stage *TelemetryStageDistribution) int64 {
+	var total int64
+	for _, count := range stage.Excluded {
+		total += count
+	}
+	return total
+}
+
 func inconclusiveCriterion(criterion TelemetryAcceptanceCriterion, reason string) TelemetryAcceptanceCriterion {
 	criterion.Outcome, criterion.Reason = TelemetryAcceptanceInconclusive, reason
 	return criterion
@@ -365,11 +523,27 @@ func inconclusiveCriterion(criterion TelemetryAcceptanceCriterion, reason string
 
 func acceptanceFloat(value float64) *float64 { return &value }
 
+// formatAcceptanceRatio prints a ratio as a percentage with at least two
+// significant digits, so a small ceiling (0.03%) stays readable.
 func formatAcceptanceRatio(value float64) string {
 	if math.IsNaN(value) || math.IsInf(value, 0) {
 		return "n/a"
 	}
-	return fmt.Sprintf("%.1f%%", value*100)
+	percent := value * 100
+	if percent == 0 || math.Abs(percent) >= 1 {
+		return fmt.Sprintf("%.1f%%", percent)
+	}
+	precision := min(8, int(math.Ceil(-math.Log10(math.Abs(percent))))+1)
+	return fmt.Sprintf("%.*f%%", precision, percent)
+}
+
+// liveRunRecords is a live run's recorded results so far (-1 when the run
+// totals are not tracked); the snapshot's own counts cover one window.
+func liveRunRecords(metrics *LiveMetrics) int64 {
+	if metrics.RunTotalTx == nil || metrics.RunTotalErrors == nil {
+		return -1
+	}
+	return *metrics.RunTotalTx + *metrics.RunTotalErrors
 }
 
 func boundedCount(value int64, bound string) string {
@@ -420,7 +594,7 @@ func telemetryAcceptanceForManifest(manifest *RunArchiveManifest) *TelemetryAcce
 	if manifest == nil {
 		return nil
 	}
-	evidence := telemetryAcceptanceEvidence{breach: manifest.TelemetryCoverage, loss: manifest.TelemetryLoss, records: manifest.TransactionCount, stages: manifest.TelemetryStageDistributions}
+	evidence := telemetryAcceptanceEvidence{breach: manifest.TelemetryCoverage, loss: manifest.TelemetryLoss, records: manifest.TransactionCount, stages: manifest.TelemetryStageDistributions, stageQuantile: manifestStageQuantile(manifest), startedAt: manifest.Provenance.StartedAt}
 	if manifest.TelemetryCoverage != nil {
 		coverage := manifest.TelemetryCoverage.Coverage
 		evidence.coverage = &coverage
@@ -435,7 +609,7 @@ func attachTelemetryAcceptance(metrics *LiveMetrics, test *ManagedTest) {
 		return
 	}
 	telemetry := metrics.Telemetry
-	evidence := telemetryAcceptanceEvidence{provisional: true, coverage: telemetry.Coverage, loss: telemetry.Loss, records: metrics.TotalTx + metrics.TotalErrors, stages: telemetry.StageDistributions}
+	evidence := telemetryAcceptanceEvidence{provisional: true, coverage: telemetry.Coverage, loss: telemetry.Loss, records: liveRunRecords(metrics), stages: telemetry.StageDistributions, startedAt: test.StartedAt}
 	evidence.coveragePending = telemetry.Coverage == nil
 	telemetry.Acceptance = telemetryAcceptanceForProvenance(test.initialArchiveProvenance, evidence)
 }
@@ -526,16 +700,32 @@ func (s *Server) notifyRunTelemetryAcceptance(testID string) {
 const maxTelemetryAcceptanceEventConditions = 20
 
 // notifyTelemetryAcceptance sends one telemetry_acceptance webhook event for
-// a finalized run whose verdict failed or was inconclusive. The event is
-// stamped with the run's completion time, so a repeated notification for the
-// same archive carries the same idempotency key.
+// a finalized run whose verdict failed or was inconclusive, once per run. The
+// event is stamped with the run's completion time.
 func (s *Server) notifyTelemetryAcceptance(testID string, manifest *RunArchiveManifest) {
 	if s == nil || s.runner == nil || s.runner.notifier == nil || manifest == nil {
 		return
 	}
 	verdict := telemetryAcceptanceForManifest(manifest)
-	if verdict == nil || verdict.Outcome == TelemetryAcceptancePass {
+	// A run pinned before acceptance definitions were retained cannot be
+	// judged, and announcing that months later helps no one.
+	if verdict == nil || verdict.Outcome == TelemetryAcceptancePass || verdict.Mode == telemetryAcceptanceModeUnknown {
 		return
+	}
+	// Each run is announced once per outcome: every later attach of its
+	// archive (an adjunct refresh such as a new note, a recovered
+	// publication, another leader) finds the claim, while a verdict that
+	// changed (an inconclusive one a refresh found failed) is announced. A
+	// lost dispatch after the claim is not retried.
+	if claims, ok := s.store.(storage.RunNotificationClaimStore); ok {
+		claimed, err := claims.ClaimRunNotification(testID, "telemetry_acceptance:"+verdict.Outcome, time.Now())
+		if err != nil {
+			slog.Warn("the run's telemetry verdict announcement could not be claimed; it is not sent", "test_id", testID, "error", err)
+			return
+		}
+		if !claimed {
+			return
+		}
 	}
 	stamp := manifest.CompletedAt
 	if stamp.IsZero() {
@@ -546,7 +736,9 @@ func (s *Server) notifyTelemetryAcceptance(testID string, manifest *RunArchiveMa
 		conditions = append(conditions, fmt.Sprintf("policy:%s@%d", verdict.Policy.ID, verdict.Policy.Revision))
 	}
 	for _, criterion := range verdict.Criteria {
-		if criterion.Outcome != TelemetryAcceptancePass {
+		// Advisory criteria never decided the verdict, so they are not why
+		// it is announced.
+		if criterion.Outcome != TelemetryAcceptancePass && !criterion.Advisory {
 			conditions = append(conditions, "criterion:"+criterion.Criterion+" "+criterion.Outcome)
 		}
 	}

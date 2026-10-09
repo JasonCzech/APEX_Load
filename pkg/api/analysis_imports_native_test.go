@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -126,6 +127,18 @@ func TestAnalysisNativeImportLifecycle(t *testing.T) {
 	if len(compared.Correlation) != 1 || compared.Correlation[0].Pairs != 10 || compared.Correlation[0].Coefficient == nil || *compared.Correlation[0].Coefficient < .999 {
 		t.Fatalf("correlation: %s", r.Body.String())
 	}
+	// Each side's pin is checked, also when both sides read one dataset: a
+	// stale pin on the second side conflicts with the current artifacts.
+	pinned := comparison
+	pinned.Right.DatasetArtifactSHA256 = strings.Repeat("0", 64)
+	if r = timeslotRequest(t, server, "POST", "/api/v1/analysis/compare?project_id=proj-a", pinned); r.Code != 409 || !strings.Contains(r.Body.String(), "dataset changed") {
+		t.Fatalf("stale pin on the second side: %d %s", r.Code, r.Body.String())
+	}
+	current := analysisDatasetArtifactSHA256(updated)
+	pinned.Left.DatasetArtifactSHA256, pinned.Right.DatasetArtifactSHA256 = current, current
+	if r = timeslotRequest(t, server, "POST", "/api/v1/analysis/compare?project_id=proj-a", pinned); r.Code != 200 {
+		t.Fatalf("current pins: %d %s", r.Code, r.Body.String())
+	}
 	// A native panel reads the real normalized dataset only after association.
 	start := time.UnixMilli(1700000000000).UTC()
 	if err := store.SaveTest(&storage.TestRecord{ID: "overlay-run", ProjectID: "proj-a", Name: "overlay", Status: "COMPLETE", StartTime: start}); err != nil {
@@ -145,12 +158,33 @@ func TestAnalysisNativeImportLifecycle(t *testing.T) {
 	if err := server.attachNativeOverlay(context.Background(), "proj-a", "overlay-run", q, &out); err == nil {
 		t.Fatal("unassociated overlay accepted")
 	}
-	if reply := timeslotRequest(t, server, "PUT", dataset+"/association", map[string]any{"revision": updated.Revision, "run_id": "overlay-run"}); reply.Code != 200 {
+	pin := analysisDatasetArtifactSHA256(updated)
+	reply := timeslotRequest(t, server, "PUT", dataset+"/association", map[string]any{"revision": updated.Revision, "run_id": "overlay-run"})
+	if reply.Code != 200 || !strings.Contains(reply.Body.String(), `"artifact_sha256":"`+pin+`"`) {
 		t.Fatalf("association: %d %s", reply.Code, reply.Body.String())
 	}
 	updated, err = store.(storage.AnalysisImportStore).GetAnalysisImport(in.ID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Every read of the committed dataset names its artifacts: the import
+	// list and a commit of the ready import, as well as the association.
+	if reply := timeslotRequest(t, server, "GET", "/api/v1/analysis/imports?project_id=proj-a", nil); reply.Code != 200 || !strings.Contains(reply.Body.String(), `"artifact_sha256":"`+pin+`"`) {
+		t.Fatalf("import list: %d %s", reply.Code, reply.Body.String())
+	}
+	if reply := timeslotRequest(t, server, "POST", path+"/commit", nil); reply.Code != 200 || !strings.Contains(reply.Body.String(), `"artifact_sha256":"`+pin+`"`) {
+		t.Fatalf("commit of a ready import: %d %s", reply.Code, reply.Body.String())
+	}
+	// A stale overlay pin is the changed-dataset conflict the evidence route
+	// answers with 409.
+	stale := q
+	staleSelection := *q.OverlaySelection
+	staleSelection.DatasetArtifactSHA256 = strings.Repeat("0", 64)
+	stale.OverlaySelection = &staleSelection
+	staleOut := nativeEvidenceEnvelope(start, stale)
+	staleOut.Series = []NativeEvidenceSeries{series}
+	if err := server.attachNativeOverlay(context.Background(), "proj-a", "overlay-run", stale, &staleOut); !errors.Is(err, errAnalysisDatasetChanged) {
+		t.Fatalf("stale overlay pin = %v", err)
 	}
 	if err := server.attachNativeOverlay(context.Background(), "proj-a", "overlay-run", q, &out); err != nil {
 		t.Fatal(err)

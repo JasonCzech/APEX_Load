@@ -244,8 +244,11 @@ func TestBrowserAcceptanceRedirectsHTTPErrorsAndTransportClose(t *testing.T) {
 			if broken.StatusCode != http.StatusInternalServerError || broken.BrowserEvidence.State != "finished" {
 				t.Fatalf("HTTP error = status %d state %q", broken.StatusCode, broken.BrowserEvidence.State)
 			}
+			if broken.FailureKind != "http" {
+				t.Fatalf("HTTP error failure kind = %q", broken.FailureKind)
+			}
 			reset := acceptanceEntry(t, b, "/reset")
-			if reset.BrowserEvidence.State != "failed" {
+			if reset.BrowserEvidence.State != "failed" || reset.FailureKind != "transport" {
 				t.Fatalf("closed transport = state %q failure %q", reset.BrowserEvidence.State, reset.FailureKind)
 			}
 		})
@@ -278,70 +281,82 @@ func TestBrowserAcceptanceCrossOriginResourcesKeepTheirTiming(t *testing.T) {
 			documentActualExecute(t, b, ctx, &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/"})
 			documentActualExecute(t, b, ctx, &protocol.Action{Name: "fetch", Type: "browser_click", Selector: "#go"})
 			documentActualExecute(t, b, ctx, &protocol.Action{Name: "wait", Type: "browser_wait", WaitFor: &protocol.WaitCondition{Type: "text", Value: "cross", TimeoutMs: 5000}})
+			// The restriction is in effect: without Timing-Allow-Origin the
+			// page's own Resource Timing hides the phases.
+			hidden, err := b.currentPage().Evaluate(`() => { const e = performance.getEntriesByType('resource').find(e => e.name.includes('/data?secret=1')); return !!e && e.requestStart === 0 && e.responseStart === 0 }`)
+			if err != nil || hidden != true {
+				t.Fatalf("page Resource Timing exposed cross-origin phases: %v %v", hidden, err)
+			}
 			entry := acceptanceEntry(t, b, "/data?secret=1")
 			evidence := entry.BrowserEvidence
 			if evidence.State != "finished" || evidence.TimingSource != "playwright" {
 				t.Fatalf("cross-origin evidence = %+v", evidence)
 			}
+			// The browser's own recorder still has the phases.
 			if wait, ok := acceptancePhase(evidence, "request_wait"); !ok || wait < 95 {
 				t.Fatalf("cross-origin request_wait = %.1f %v", wait, ok)
 			}
-			if evidence.Origin != "" && strings.Contains(evidence.Origin, "/data") {
-				t.Fatalf("origin retained a path: %q", evidence.Origin)
+			origin, err := url.Parse(other.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if evidence.Origin != origin.Scheme+"://"+origin.Host {
+				t.Fatalf("origin = %q, want only %s://%s", evidence.Origin, origin.Scheme, origin.Host)
+			}
+			// The document association is proven or explicitly unavailable.
+			if (evidence.DocumentID == "" || evidence.DocumentAssociation == "") && evidence.IdentityUnavailableReason == "" {
+				t.Fatalf("cross-origin document association = %+v", evidence)
 			}
 		})
 	}
 }
 
-// TestBrowserAcceptanceServiceWorkersAndTheTargetPolicy accepts BE-4 "cache
-// and service workers": a page registers its service worker and the worker
-// script is fetched. Under a CI target policy, whose routing a worker's
-// requests would bypass, the session refuses to start (fail closed) and
-// nothing is fetched.
-func TestBrowserAcceptanceServiceWorkersAndTheTargetPolicy(t *testing.T) {
+// TestBrowserAcceptanceServiceWorkerServedResponses accepts BE-4 "cache and
+// service workers": a page registers a service worker that answers one path
+// itself, and the response it served is recorded with service-worker
+// provenance, never as a network response. (A CI target policy refuses the session before launch:
+// TestCITargetPolicyFailsClosedBeforeBrowserLaunch.)
+func TestBrowserAcceptanceServiceWorkerServedResponses(t *testing.T) {
 	if testing.Short() {
 		t.Skip("browser acceptance requires installed browsers")
 	}
 	for _, engine := range []string{"chromium", "webkit"} {
 		t.Run(engine, func(t *testing.T) {
-			var workerFetches, pageFetches atomic.Int32
+			var workerFetches, servedFetches atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/sw.js" {
+				switch r.URL.Path {
+				case "/sw.js":
 					workerFetches.Add(1)
 					w.Header().Set("Content-Type", "application/javascript")
-					_, _ = fmt.Fprint(w, `self.addEventListener('fetch', () => {})`)
-					return
+					_, _ = fmt.Fprint(w, `self.addEventListener('install', event => event.waitUntil(self.skipWaiting()));
+self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
+self.addEventListener('fetch', event => { if (new URL(event.request.url).pathname === '/sw-served') event.respondWith(new Response('from-worker')) });`)
+				case "/sw-served":
+					// Reached only when the worker did not answer.
+					servedFetches.Add(1)
+					_, _ = fmt.Fprint(w, "from-network")
+				default:
+					w.Header().Set("Content-Type", "text/html")
+					_, _ = fmt.Fprint(w, `<!doctype html><title>workers</title><button id="go" onclick="navigator.serviceWorker.register('/sw.js').then(() => navigator.serviceWorker.ready).then(() => new Promise(resolve => navigator.serviceWorker.controller ? resolve() : navigator.serviceWorker.addEventListener('controllerchange', resolve))).then(() => fetch('/sw-served')).then(response => response.text()).then(text => document.querySelector('#out').textContent = 'settled:' + text, error => document.querySelector('#out').textContent = 'settled:error ' + error)">go</button><div id="out">pending</div>`)
 				}
-				pageFetches.Add(1)
-				w.Header().Set("Content-Type", "text/html")
-				_, _ = fmt.Fprint(w, `<!doctype html><title>workers</title><button id="go" onclick="(navigator.serviceWorker ? navigator.serviceWorker.register('/sw.js').then(() => 'registered', () => 'refused') : Promise.resolve('unavailable')).then(outcome => document.querySelector('#out').textContent = 'settled:' + outcome)">go</button><div id="out">pending</div>`)
 			}))
 			defer server.Close()
-			target, err := url.Parse(server.URL)
-			if err != nil {
-				t.Fatal(err)
-			}
 			b, ctx := documentActualBrowser(t, engine, server.URL)
 			documentActualExecute(t, b, ctx, &protocol.Action{Name: "open", Type: "browser_navigate", Target: "/"})
 			documentActualExecute(t, b, ctx, &protocol.Action{Name: "register", Type: "browser_click", Selector: "#go"})
-			documentActualExecute(t, b, ctx, &protocol.Action{Name: "wait", Type: "browser_wait", WaitFor: &protocol.WaitCondition{Type: "text", Value: "settled:", TimeoutMs: 10000}})
+			documentActualExecute(t, b, ctx, &protocol.Action{Name: "wait", Type: "browser_wait", WaitFor: &protocol.WaitCondition{Type: "text", Value: "settled:", TimeoutMs: 15000}})
 			outcome, err := b.currentPage().Locator("#out").TextContent()
 			if err != nil {
 				t.Fatal(err)
 			}
-			if outcome != "settled:registered" || workerFetches.Load() == 0 {
-				t.Fatalf("the page did not register its worker: %q, worker script fetched %d times", outcome, workerFetches.Load())
+			if outcome != "settled:from-worker" || workerFetches.Load() == 0 || servedFetches.Load() != 0 {
+				t.Fatalf("the worker did not answer: %q, worker script fetched %d times, network answered %d times", outcome, workerFetches.Load(), servedFetches.Load())
 			}
-			workerFetches.Store(0)
-			pageFetches.Store(0)
-			policed := &Browser{}
-			err = policed.Init(ctx, map[string]any{"base_url": server.URL, "browser_engine": engine, "browser_headless": true, protocol.TargetPolicyConfigKey: []string{target.Hostname()}})
-			_ = policed.Teardown(context.Background())
-			if err == nil || !strings.Contains(err.Error(), "CI target-host policy") {
-				t.Fatalf("a session under a target policy started: %v", err)
-			}
-			if workerFetches.Load() != 0 || pageFetches.Load() != 0 {
-				t.Fatalf("a refused session fetched %d pages and %d worker scripts", pageFetches.Load(), workerFetches.Load())
+			entry := acceptanceEntry(t, b, "/sw-served")
+			evidence := entry.BrowserEvidence
+			served := evidence.ServiceWorker != nil && *evidence.ServiceWorker
+			if !served {
+				t.Fatalf("a worker-served response lacks service-worker provenance: %+v", evidence)
 			}
 		})
 	}
