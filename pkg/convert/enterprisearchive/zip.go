@@ -655,6 +655,9 @@ func finalizeEnterpriseArchiveImportResult(
 	appendSplicedCommentWarnings(result, ctx.ParsedActions)
 	applySourceParamBraces(result, ctx.ProjectConfig)
 	result.Warnings = append(result.Warnings, ctx.InlineWarnings...)
+	if note := recordingSnapshotNote(ctx.Files, ctx.ParsedActions); note != "" {
+		result.Warnings = append(result.Warnings, note)
+	}
 	if len(ctx.UnscheduledActions) > 0 {
 		subject, object := "they were", "them"
 		if len(ctx.UnscheduledActions) == 1 {
