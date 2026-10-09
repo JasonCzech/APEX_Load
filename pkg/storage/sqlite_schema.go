@@ -1792,6 +1792,7 @@ func schemaCreateTableStatements() []string {
 			payload TEXT NOT NULL,
 			owner TEXT NOT NULL DEFAULT '',
 			lease_expires_at DATETIME,
+			origin TEXT NOT NULL DEFAULT 'requested',
 			UNIQUE(test_id, revision)
 		)`,
 		// Reviews of an analysis, kept apart from it.
@@ -2178,6 +2179,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "feature_evaluation_jobs.failure_code", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN failure_code TEXT NOT NULL DEFAULT ''`},
 		{name: "feature_evaluation_jobs.result_bytes", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN result_bytes INTEGER NOT NULL DEFAULT 0`},
 		{name: "feature_evaluation_jobs.subject_id", query: `ALTER TABLE feature_evaluation_jobs ADD COLUMN subject_id TEXT NOT NULL DEFAULT ''`},
+		{name: "rca_analyses.origin", query: `ALTER TABLE rca_analyses ADD COLUMN origin TEXT NOT NULL DEFAULT 'requested'`},
 		{name: "feature_acceptance_records.seq", query: `ALTER TABLE feature_acceptance_records ADD COLUMN seq BIGINT NOT NULL DEFAULT 0`},
 	}
 }

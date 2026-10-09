@@ -20,7 +20,7 @@ const limitationAssessmentTrimmed = "assessment_trimmed"
 const rcaTrimHeadroom = 1 << 10
 
 // trimRCAAssessment cuts an assessment until fits reports true, the least
-// load-bearing parts first: validity windows, spikes, capacity results,
+// load-bearing parts first: coverage's source lists, validity windows, spikes, capacity results,
 // browser baseline results, the graph's unused edges and then its weakest edges and uncited nodes,
 // anomalies no hypothesis cites, and then the lowest-ranked hypotheses,
 // whose anomalies go with them. A kept hypothesis's anomalies and nodes are
@@ -33,6 +33,9 @@ func trimRCAAssessment(a *rca.Assessment, fits func() bool) bool {
 			apply(n)
 			cut = true
 		}
+	}
+	for index := range a.Coverage {
+		halve(len(a.Coverage[index].Sources), func(n int) { a.Coverage[index].Sources = a.Coverage[index].Sources[:n] })
 	}
 	halve(len(a.Validity.Windows), func(n int) { a.Validity.Windows = a.Validity.Windows[:n] })
 	halve(len(a.Detection.Spikes), func(n int) { a.Detection.Spikes = a.Detection.Spikes[:n] })

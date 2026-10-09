@@ -55,6 +55,9 @@ var supportedNotificationEvents = map[string]struct{}{
 
 	"telemetry_acceptance": {},
 
+	notificationEventRCAAnalysisCompleted: {},
+	notificationEventRunValidity:          {},
+
 	"load_phase": {},
 
 	"fleet_alert":                {},
@@ -433,11 +436,11 @@ func buildDynatraceNotificationPayload(webhook NotificationWebhookSettings, even
 		// A load step is context for the monitored entities, not an incident.
 		eventType = "CUSTOM_ANNOTATION"
 	} else if event.Type == "test_failed" || event.Type == "telemetry_breached" ||
-		((event.Type == "fleet_alert" || event.Type == "threshold_alert" || event.Type == "telemetry_acceptance") && strings.EqualFold(event.Severity, "danger")) {
+		((event.Type == "fleet_alert" || event.Type == "threshold_alert" || event.Type == "telemetry_acceptance" || event.Type == notificationEventRunValidity) && strings.EqualFold(event.Severity, "danger")) {
 		// A failed telemetry acceptance verdict is an error; an
 		// inconclusive one is an alert.
 		eventType = "ERROR_EVENT"
-	} else if event.Type == "telemetry_degraded" || event.Type == "fleet_alert" || event.Type == "fleet_degraded" || event.Type == "threshold_alert" || event.Type == "telemetry_acceptance" {
+	} else if event.Type == "telemetry_degraded" || event.Type == "fleet_alert" || event.Type == "fleet_degraded" || event.Type == "threshold_alert" || event.Type == "telemetry_acceptance" || event.Type == notificationEventRunValidity {
 		eventType = "CUSTOM_ALERT"
 	}
 	payload := map[string]any{
@@ -481,6 +484,14 @@ func buildGrafanaNotificationPayload(event NotificationEvent) map[string]any {
 	if event.Type == notificationEventLoadPhase && strings.TrimSpace(event.Status) != "" {
 		tags = append(tags, "phase:"+event.Status)
 	}
+	// Root-cause events tag their outcome or verdict, so a dashboard can
+	// overlay only the runs whose cause was found, or only invalid runs.
+	if event.Type == notificationEventRCAAnalysisCompleted && strings.TrimSpace(event.Status) != "" {
+		tags = append(tags, "rca:"+event.Status)
+	}
+	if event.Type == notificationEventRunValidity && strings.TrimSpace(event.Status) != "" {
+		tags = append(tags, "validity:"+event.Status)
+	}
 	text := fmt.Sprintf("APEX Load %s: %s", humanizeNotificationEvent(event.Type), fallbackNotificationValue(event.TestName))
 	if strings.TrimSpace(event.Summary) != "" {
 		text += " — " + event.Summary
@@ -509,7 +520,17 @@ func notificationDedupeKey(webhook NotificationWebhookSettings, event Notificati
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(parts, "\x00"))))
 }
 
+// notificationEventTitles name the events whose words do not title well by
+// themselves.
+var notificationEventTitles = map[string]string{
+	notificationEventRCAAnalysisCompleted: "Root-Cause Analysis Completed",
+	notificationEventRunValidity:          "Run Validity",
+}
+
 func humanizeNotificationEvent(eventType string) string {
+	if title, ok := notificationEventTitles[strings.TrimSpace(eventType)]; ok {
+		return title
+	}
 	parts := strings.Split(strings.TrimSpace(eventType), "_")
 	for index, part := range parts {
 		if part == "" {

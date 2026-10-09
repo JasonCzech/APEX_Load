@@ -187,6 +187,20 @@ type Coverage struct {
 	Evidence string `json:"evidence"`
 	Status   string `json:"status"`
 	Detail   string `json:"detail,omitempty"`
+	// Sources name the monitor sources behind a monitor_sources row,
+	// incomplete ones first, so a reader can open the source that left a gap.
+	Sources []CoverageSource `json:"sources,omitempty"`
+}
+
+// CoverageSource is one monitor source's outcome for the run: its ID (the
+// project's monitor source), pack, job state, why its coverage is incomplete
+// (empty when complete) and whether the run required it.
+type CoverageSource struct {
+	ID       string `json:"id"`
+	Pack     string `json:"pack,omitempty"`
+	State    string `json:"state,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+	Required bool   `json:"required,omitempty"`
 }
 
 // Limitation is something the assessment could not do, and why.

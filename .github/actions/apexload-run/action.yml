@@ -86,6 +86,10 @@ inputs:
     description: Maximum total time for the CI run.
     required: false
     default: 30m
+  wait-analysis:
+    description: After the run ends, wait up to this long (for example 5m, at most 10m) for its root-cause analysis so the summary and the root-cause output carry it. Empty does not wait.
+    required: false
+    default: ""
   abort-on-cancel:
     description: Ask the controller to abort after timeout or workflow cancellation.
     required: false
@@ -157,6 +161,12 @@ outputs:
   telemetry-verdict:
     description: Telemetry acceptance verdict (pass, fail or inconclusive); empty when no acceptance policy applied.
     value: ${{ steps.run.outputs.telemetry-verdict }}
+  validity:
+    description: Run validity verdict (valid, suspect, invalid or unknown); empty when the controller reported none.
+    value: ${{ steps.run.outputs.validity }}
+  root-cause:
+    description: The run's root cause in one line (the leading hypothesis, "no cause supported", "insufficient evidence" or the analysis state); empty when the project does not present root cause.
+    value: ${{ steps.run.outputs.root-cause }}
   check-url:
     description: Controller-owned GitHub Check URL.
     value: ${{ steps.run.outputs.check-url }}
@@ -220,6 +230,7 @@ runs:
         APEXLOAD_INPUT_REQUIRE_SLA: ${{ inputs.require-sla }}
         APEXLOAD_INPUT_REQUIRE_RESULTS: ${{ inputs.require-results }}
         APEXLOAD_INPUT_TIMEOUT: ${{ inputs.timeout }}
+        APEXLOAD_INPUT_WAIT_ANALYSIS: ${{ inputs.wait-analysis }}
         APEXLOAD_INPUT_ABORT_ON_CANCEL: ${{ inputs.abort-on-cancel }}
         APEXLOAD_INPUT_PUBLISH_CHECK: ${{ inputs.publish-check }}
         APEXLOAD_INPUT_EVIDENCE_DIRECTORY: ${{ inputs.evidence-directory }}

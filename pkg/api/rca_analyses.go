@@ -56,7 +56,32 @@ const (
 // artifacts the analysis reads, not the adjunct sidecars, telemetry accounts
 // and test notes a finalize refresh rewrites; a request made while the
 // archive is still being finalized is refused instead of failing later.
-const rcaArchiveAdapterVersion = "archive.4"
+// archive.5: the monitor_sources coverage row names each source and its
+// outcome.
+const rcaArchiveAdapterVersion = "archive.5"
+
+// maxRCACoverageSources bounds the sources a monitor_sources coverage row
+// names.
+const maxRCACoverageSources = 64
+
+// rcaCoverageSources lists a run's frozen monitor sources for its coverage
+// row: incomplete ones first, then by ID, at most maxRCACoverageSources.
+func rcaCoverageSources(sources []rcaEvidenceSource) []rca.CoverageSource {
+	out := make([]rca.CoverageSource, 0, len(sources))
+	for _, source := range sources {
+		out = append(out, rca.CoverageSource{ID: source.SourceID, Pack: source.Pack, State: source.State, Reason: source.CoverageReason, Required: source.Required})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if (out[i].Reason != "") != (out[j].Reason != "") {
+			return out[i].Reason != ""
+		}
+		return out[i].ID < out[j].ID
+	})
+	if len(out) > maxRCACoverageSources {
+		out = out[:maxRCACoverageSources]
+	}
+	return out
+}
 
 // rcaEngineVersion changes whenever the engine's output for the same frozen
 // inputs could change, so it is part of every input digest.
@@ -71,22 +96,6 @@ func projectListed(variable, project string) bool {
 		}
 	}
 	return false
-}
-
-// rcaV2ProjectEnabled gates computing v2 analyses; saved ones stay readable.
-func rcaV2ProjectEnabled(project string) bool {
-	return projectListed("APEXLOAD_RCA_V2_PROJECTS", project)
-}
-
-// rcaV2PresentEnabled says whether Summary, Diagnostics and reports present
-// v2 for the project.
-func rcaV2PresentEnabled(project string) bool {
-	return projectListed("APEXLOAD_RCA_V2_PRESENT_PROJECTS", project)
-}
-
-// rcaAutoEnrichEnabled starts enrichment when a run's archive is finalized.
-func rcaAutoEnrichEnabled(project string) bool {
-	return projectListed("APEXLOAD_RCA_AUTO_ENRICH_PROJECTS", project)
 }
 
 // rcaAnalysisRequest is the POST body.
@@ -161,6 +170,11 @@ type RCAAnalysisResponse struct {
 	// AnalysisEnabled says whether the project computes new analyses;
 	// saved ones stay readable when it does not.
 	AnalysisEnabled bool `json:"analysis_enabled"`
+	// AutoAnalyze says whether the project analyzes every archived run.
+	AutoAnalyze bool `json:"auto_analyze,omitempty"`
+	// Origin is requested (asked for) or automatic (queued at archive
+	// finalize).
+	Origin string `json:"origin,omitempty"`
 
 	// ArchiveChanged says the run's archive changed after the analysis read
 	// it, as when late monitoring evidence arrives; it is not in the analysis.
@@ -385,7 +399,7 @@ func (tr *TestRunner) autoEnrichRCAEvidence(test *ManagedTest, record *storage.R
 		return
 	}
 	project := normalizeProjectID(test.ProjectID)
-	if !rcaAutoEnrichEnabled(project) {
+	if !projectAnalysisGates(tr.projectStore, project).RootCause.AutoEnrich {
 		return
 	}
 	// A refresh of the same archive reuses its enrichment.
@@ -403,11 +417,18 @@ func rcaAnalysisPayloadOf(analysis *storage.RCAAnalysis) rcaAnalysisPayload {
 	return payload
 }
 
-func rcaAnalysisResponse(analysis *storage.RCAAnalysis) RCAAnalysisResponse {
+// rcaGatedResponse is a response that says only how the project's gates
+// stand, for a run without an analysis to report.
+func rcaGatedResponse(state string, gates AnalysisGates) RCAAnalysisResponse {
+	return RCAAnalysisResponse{State: state, Presented: gates.RootCause.Present, AnalysisEnabled: gates.RootCause.Enabled, AutoAnalyze: gates.RootCause.AutoAnalyze}
+}
+
+func rcaAnalysisResponse(analysis *storage.RCAAnalysis, gates AnalysisGates) RCAAnalysisResponse {
 	payload := rcaAnalysisPayloadOf(analysis)
 	created := analysis.CreatedAt
-	out := RCAAnalysisResponse{AnalysisID: analysis.ID, Revision: analysis.Revision, State: analysis.State, CreatedAt: &created, CompletedAt: analysis.CompletedAt,
-		Inputs: &payload.Inputs, Error: payload.Error, Presented: rcaV2PresentEnabled(analysis.ProjectID), AnalysisEnabled: rcaV2ProjectEnabled(analysis.ProjectID)}
+	out := rcaGatedResponse(analysis.State, gates)
+	out.AnalysisID, out.Revision, out.CreatedAt, out.CompletedAt = analysis.ID, analysis.Revision, &created, analysis.CompletedAt
+	out.Inputs, out.Error, out.Origin = &payload.Inputs, payload.Error, analysis.Origin
 	if analysis.State == storage.RCAStateCompleted {
 		out.Assessment = payload.Assessment
 	}
@@ -422,58 +443,56 @@ func (s *Server) rcaStore(w http.ResponseWriter) (storage.RCAStore, bool) {
 	return store, ok
 }
 
-// handleCreateRCAAnalysis queues an analysis of the run's archive, or returns
-// the existing one for identical frozen inputs.
-func (s *Server) handleCreateRCAAnalysis(w http.ResponseWriter, r *http.Request) {
-	test, record, lease, ok := s.requireRunArchiveTest(w, r)
+// Reasons a root-cause analysis cannot be queued.
+var (
+	errRCADisabled   = errors.New("root-cause v2 is not enabled for this project")
+	errRCAFinalizing = errors.New("the run archive is still being finalized; request the analysis once it has settled")
+)
+
+// rcaRequestError is a refusal with the HTTP status that says why.
+type rcaRequestError struct {
+	Status  int
+	Message string
+}
+
+func (e *rcaRequestError) Error() string { return e.Message }
+
+// queueRCAAnalysis freezes a run's inputs and queues an analysis of them, or
+// returns the existing analysis of identical inputs with created false. The
+// caller holds the archive's materialization lease. origin is requested or
+// automatic.
+func (s *Server) queueRCAAnalysis(ctx context.Context, project, testID string, record *storage.RunArchiveRecord, request rcaAnalysisRequest, origin string) (*storage.RCAAnalysis, bool, error) {
+	if !rcaV2ProjectEnabled(s.store, project) {
+		return nil, false, errRCADisabled
+	}
+	store, ok := s.store.(storage.RCAStore)
 	if !ok {
-		return
-	}
-	defer lease.Release()
-	// Runs stored before project scoping belong to the default project.
-	project := normalizeProjectID(test.ProjectID)
-	if !rcaV2ProjectEnabled(project) {
-		writeError(w, http.StatusConflict, "root-cause v2 is not enabled for this project")
-		return
-	}
-	store, ok := s.rcaStore(w)
-	if !ok {
-		return
-	}
-	var request rcaAnalysisRequest
-	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
-	if !decodeJSONBody(w, r, &request) {
-		return
+		return nil, false, &rcaRequestError{Status: http.StatusServiceUnavailable, Message: "root-cause analysis storage unavailable"}
 	}
 	request.BaselineTestID = strings.TrimSpace(request.BaselineTestID)
 	// The archive is published before finalize writes its sidecars and the
 	// final manifest; an analysis frozen in that window would read a changed
 	// archive when it runs, so it waits for the archive to settle.
-	if s.rcaArchiveFinalizing(test.ID) {
-		writeError(w, http.StatusConflict, "the run archive is still being finalized; request the analysis once it has settled")
-		return
+	if s.rcaArchiveFinalizing(testID) {
+		return nil, false, errRCAFinalizing
 	}
 	manifest, err := loadRunArchiveManifestFromRecord(record)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to read archive manifest")
-		return
+		return nil, false, &rcaRequestError{Status: http.StatusInternalServerError, Message: "failed to read archive manifest"}
 	}
 	archiveDigest, err := rcaEvidenceDigest(manifest)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+		return nil, false, &rcaRequestError{Status: http.StatusInternalServerError, Message: err.Error()}
 	}
 	manifestDigest, err := rcaManifestDigest(record)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+		return nil, false, &rcaRequestError{Status: http.StatusInternalServerError, Message: err.Error()}
 	}
 	inputs := rca.InputDigests{Archive: archiveDigest, Engine: rcaEngineVersion, SignatureSet: signatures.Version}
 	if request.BaselineTestID != "" {
-		baseline, status, message := s.rcaBaselineArchive(r.Context(), test.ID, project, request.BaselineTestID)
+		baseline, status, message := s.rcaBaselineArchive(ctx, testID, project, request.BaselineTestID)
 		if status != 0 {
-			writeError(w, status, message)
-			return
+			return nil, false, &rcaRequestError{Status: status, Message: message}
 		}
 		inputs.Baseline = baseline
 	}
@@ -485,14 +504,12 @@ func (s *Server) handleCreateRCAAnalysis(w http.ResponseWriter, r *http.Request)
 	if !request.Enrich {
 		reuse = sameEvidence
 	}
-	evidence, err := captureRCAEvidence(s.store, project, test.ID, record, manifest, request.Enrich, time.Now(), reuse)
+	evidence, err := captureRCAEvidence(s.store, project, testID, record, manifest, request.Enrich, time.Now(), reuse)
 	if err != nil {
-		status := http.StatusServiceUnavailable
 		if errors.Is(err, storage.ErrRCALimit) {
-			status = http.StatusConflict
+			return nil, false, &rcaRequestError{Status: http.StatusConflict, Message: "failed to capture root-cause evidence: " + err.Error()}
 		}
-		writeError(w, status, "failed to capture root-cause evidence: "+err.Error())
-		return
+		return nil, false, &rcaRequestError{Status: http.StatusServiceUnavailable, Message: "failed to capture root-cause evidence: " + err.Error()}
 	}
 	inputs.EvidenceRevision = evidence.Revision
 	var frozen rcaEvidence
@@ -503,7 +520,7 @@ func (s *Server) handleCreateRCAAnalysis(w http.ResponseWriter, r *http.Request)
 	var created bool
 	for attempt := 0; ; attempt++ {
 		payload, _ := json.Marshal(rcaAnalysisPayload{Request: request, Inputs: inputs, ArchiveManifest: manifestDigest, Attempt: attempt})
-		analysis, created, err = store.CreateRCAAnalysis(project, test.ID, rcaInputDigest(inputs, attempt), payload, time.Now())
+		analysis, created, err = store.CreateRCAAnalysisWithOrigin(project, testID, rcaInputDigest(inputs, attempt), origin, payload, time.Now())
 		// An identical request answered by an assessment the budget cut
 		// short is analyzed again: that assessment describes the controller's
 		// load when it ran, not the run.
@@ -512,20 +529,61 @@ func (s *Server) handleCreateRCAAnalysis(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	if errors.Is(err, storage.ErrRCALimit) {
-		writeError(w, http.StatusConflict, err.Error())
-		return
+		return nil, false, &rcaRequestError{Status: http.StatusConflict, Message: err.Error()}
 	}
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "failed to queue root-cause analysis")
+		return nil, false, &rcaRequestError{Status: http.StatusServiceUnavailable, Message: "failed to queue root-cause analysis"}
+	}
+	return analysis, created, nil
+}
+
+// rcaQueueErrorStatus maps a queueRCAAnalysis error to its HTTP status.
+func rcaQueueErrorStatus(err error) (int, string) {
+	var refused *rcaRequestError
+	switch {
+	case errors.Is(err, errRCADisabled), errors.Is(err, errRCAFinalizing):
+		return http.StatusConflict, err.Error()
+	case errors.As(err, &refused):
+		return refused.Status, refused.Message
+	}
+	return http.StatusServiceUnavailable, "failed to queue root-cause analysis"
+}
+
+// handleCreateRCAAnalysis queues an analysis of the run's archive, or returns
+// the existing one for identical frozen inputs.
+func (s *Server) handleCreateRCAAnalysis(w http.ResponseWriter, r *http.Request) {
+	test, record, lease, ok := s.requireRunArchiveTest(w, r)
+	if !ok {
+		return
+	}
+	defer lease.Release()
+	// Runs stored before project scoping belong to the default project.
+	project := normalizeProjectID(test.ProjectID)
+	if !rcaV2ProjectEnabled(s.store, project) {
+		writeError(w, http.StatusConflict, errRCADisabled.Error())
+		return
+	}
+	if _, ok := s.rcaStore(w); !ok {
+		return
+	}
+	var request rcaAnalysisRequest
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	if !decodeJSONBody(w, r, &request) {
+		return
+	}
+	analysis, created, err := s.queueRCAAnalysis(r.Context(), project, test.ID, record, request, storage.RCAOriginRequested)
+	if err != nil {
+		status, message := rcaQueueErrorStatus(err)
+		writeError(w, status, message)
 		return
 	}
 	status := http.StatusOK
 	if created {
 		status = http.StatusAccepted
-		s.recordAuditEvent(r, "rca.analysis.create", "success", "rca_analysis", analysis.ID, project, map[string]any{"test_id": test.ID, "revision": analysis.Revision, "enrich": request.Enrich})
+		s.recordAuditEvent(r, "rca.analysis.create", "success", "rca_analysis", analysis.ID, project, map[string]any{"test_id": test.ID, "revision": analysis.Revision, "enrich": request.Enrich, "origin": analysis.Origin})
 		s.wakeRCAWorker()
 	}
-	writeJSON(w, status, rcaAnalysisResponse(analysis))
+	writeJSON(w, status, rcaAnalysisResponse(analysis, projectAnalysisGates(s.store, project)))
 }
 
 // rcaBaselineArchive returns the digest of a baseline run's archive in the
@@ -589,7 +647,7 @@ func (s *Server) handleGetRCAAnalysis(w http.ResponseWriter, r *http.Request) {
 // currentRCAAnalysisResponse is rcaAnalysisResponse that also says whether
 // a completed analysis predates the run's current archive.
 func (s *Server) currentRCAAnalysisResponse(ctx context.Context, analysis *storage.RCAAnalysis) RCAAnalysisResponse {
-	out := rcaAnalysisResponse(analysis)
+	out := rcaAnalysisResponse(analysis, projectAnalysisGates(s.store, analysis.ProjectID))
 	if out.Assessment != nil {
 		out.ArchiveChanged = s.rcaArchiveChanged(ctx, analysis.TestID, rcaAnalysisPayloadOf(analysis))
 	}
@@ -679,7 +737,7 @@ func (s *Server) handleGetRCAAssessmentV2(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if latest == nil {
-		writeJSON(w, http.StatusOK, RCAAnalysisResponse{State: "none", Presented: rcaV2PresentEnabled(project), AnalysisEnabled: rcaV2ProjectEnabled(project)})
+		writeJSON(w, http.StatusOK, rcaGatedResponse("none", projectAnalysisGates(s.store, project)))
 		return
 	}
 	writeJSON(w, http.StatusOK, s.currentRCAAnalysisResponse(r.Context(), latest))
@@ -773,7 +831,7 @@ func (s *Server) handleCancelRCAAnalysis(w http.ResponseWriter, r *http.Request)
 	if current, err := store.GetRCAAnalysis(analysis.ProjectID, analysis.TestID, analysis.ID); err == nil {
 		analysis = current
 	}
-	writeJSON(w, http.StatusOK, rcaAnalysisResponse(analysis))
+	writeJSON(w, http.StatusOK, rcaAnalysisResponse(analysis, projectAnalysisGates(s.store, analysis.ProjectID)))
 }
 
 // rcaJobRunner returns the shared leased-job runner for root-cause analyses,
@@ -861,7 +919,13 @@ func (s *Server) runRCAAnalysis(ctx context.Context, store storage.RCAStore, ana
 	}
 	leaseName, leaseOwner, generation := s.fencedLease(term)
 	// A cancelled analysis, an overtaken owner or a lost term records nothing.
-	_, err = store.CompleteRCAAnalysisFenced(analysis.ID, owner, state, body, time.Now(), leaseName, leaseOwner, generation)
+	completedAt := time.Now()
+	recorded, err := store.CompleteRCAAnalysisFenced(analysis.ID, owner, state, body, completedAt, leaseName, leaseOwner, generation)
+	if err == nil && recorded && state == storage.RCAStateCompleted && payload.Assessment != nil {
+		done := *analysis
+		done.State, done.CompletedAt = state, &completedAt
+		s.notifyRCAAnalysisCompleted(&done, payload.Assessment)
+	}
 	return err
 }
 
@@ -1149,7 +1213,8 @@ func (s *Server) rcaCoverage(ctx context.Context, baselineArchive *rcaBaselineAr
 		case incomplete > 0:
 			monitor = rca.CoveragePartial
 		}
-		coverage = append(coverage, rca.Coverage{Evidence: "monitor_sources", Status: monitor, Detail: fmt.Sprintf("%d sources, %d incomplete", len(evidence.MonitorSources), incomplete)})
+		coverage = append(coverage, rca.Coverage{Evidence: "monitor_sources", Status: monitor, Detail: fmt.Sprintf("%d sources, %d incomplete", len(evidence.MonitorSources), incomplete),
+			Sources: rcaCoverageSources(evidence.MonitorSources)})
 	}
 	var baseline *rca.DetectionBaseline
 	if baselineArchive != nil {

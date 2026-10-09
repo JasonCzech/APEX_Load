@@ -633,6 +633,11 @@ type RunArchiveReport struct {
 	// handler layer (attachRootCause); a report without it renders the v1
 	// summary computed from the report itself.
 	RootCauseView *ReportRootCause `json:"root_cause_view,omitempty"`
+	// RootCauseSummary is the run's root cause in brief: whether the
+	// project presents it, the newest analysis's state and the newest
+	// completed verdict. Attached by every archive report handler, single and
+	// batch (attachRootCauseSummary).
+	RootCauseSummary *ReportRootCauseSummary `json:"root_cause_summary,omitempty"`
 
 	// Validity says whether the run's load generators and telemetry could
 	// carry the load it reports (apexload rules validity.v1).

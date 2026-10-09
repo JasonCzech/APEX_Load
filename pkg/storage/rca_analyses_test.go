@@ -353,3 +353,99 @@ func TestRCAMappingDecisionsHaveTheirOwnDefinitionBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRCAClaimPrefersRequestsAndKeepsASlotFromAutomaticAnalyses(t *testing.T) {
+	s, now := rcaFixture(t)
+	for _, run := range []string{"rca-run-2", "rca-run-3"} {
+		if err := s.SaveTest(&TestRecord{ID: run, ProjectID: "rca-p", Name: run, Status: "COMPLETE", StartTime: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	auto1, _, err := s.CreateRCAAnalysisWithOrigin("rca-p", "rca-run", digestA, RCAOriginAutomatic, []byte(`{}`), now)
+	if err != nil || auto1.Origin != RCAOriginAutomatic {
+		t.Fatalf("automatic analysis = %+v, %v", auto1, err)
+	}
+	auto2, _, err := s.CreateRCAAnalysisWithOrigin("rca-p", "rca-run-2", digestA, RCAOriginAutomatic, []byte(`{}`), now.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	requested, _, err := s.CreateRCAAnalysis("rca-p", "rca-run-3", digestA, []byte(`{}`), now.Add(2*time.Second))
+	if err != nil || requested.Origin != RCAOriginRequested {
+		t.Fatalf("requested analysis = %+v, %v", requested, err)
+	}
+	// The newer request is claimed before the older automatic analyses.
+	first, err := s.ClaimRCAAnalysis("worker", now.Add(3*time.Second), time.Minute)
+	if err != nil || first == nil || first.ID != requested.ID {
+		t.Fatalf("first claim = %+v, %v; want the request", first, err)
+	}
+	second, err := s.ClaimRCAAnalysis("worker", now.Add(3*time.Second), time.Minute)
+	if err != nil || second == nil || second.ID != auto1.ID {
+		t.Fatalf("second claim = %+v, %v; want the oldest automatic analysis", second, err)
+	}
+	// One automatic analysis holds a live lease, so the next waits.
+	if third, err := s.ClaimRCAAnalysis("worker", now.Add(4*time.Second), time.Minute); err != nil || third != nil {
+		t.Fatalf("third claim = %+v, %v; want none while an automatic analysis runs", third, err)
+	}
+	if ok, err := s.CompleteRCAAnalysisFenced(requested.ID, "worker", RCAStateCompleted, []byte(`{}`), now.Add(5*time.Second), "", "", 0); err != nil || !ok {
+		t.Fatalf("complete request = %v, %v", ok, err)
+	}
+	// Once that lease expires the expired job is taken over first.
+	takeover, err := s.ClaimRCAAnalysis("other", now.Add(2*time.Minute), time.Minute)
+	if err != nil || takeover == nil || takeover.ID != auto1.ID {
+		t.Fatalf("takeover = %+v, %v; want the expired automatic analysis", takeover, err)
+	}
+	if done, err := s.CompleteRCAAnalysisFenced(auto1.ID, "other", RCAStateCompleted, []byte(`{}`), now.Add(2*time.Minute), "", "", 0); err != nil || !done {
+		t.Fatalf("complete = %v, %v", done, err)
+	}
+	next, err := s.ClaimRCAAnalysis("worker", now.Add(2*time.Minute), time.Minute)
+	if err != nil || next == nil || next.ID != auto2.ID {
+		t.Fatalf("after completion claim = %+v, %v; want the second automatic analysis", next, err)
+	}
+	// An identical automatic request keeps the existing analysis and its origin.
+	again, created, err := s.CreateRCAAnalysisWithOrigin("rca-p", "rca-run-3", digestA, RCAOriginAutomatic, []byte(`{}`), now.Add(3*time.Minute))
+	if err != nil || created || again.ID != requested.ID || again.Origin != RCAOriginRequested {
+		t.Fatalf("identical automatic request = %+v created=%v, %v", again, created, err)
+	}
+	if _, _, err := s.CreateRCAAnalysisWithOrigin("rca-p", "rca-run", digestB, "manual", []byte(`{}`), now); err == nil {
+		t.Fatal("an unknown origin was accepted")
+	}
+}
+
+func TestLatestRCAAnalysesReturnsEachRunsNewestAndNewestCompleted(t *testing.T) {
+	s, now := rcaFixture(t)
+	if err := s.SaveTest(&TestRecord{ID: "rca-run-2", ProjectID: "rca-p", Name: "two", Status: "COMPLETE", StartTime: now}); err != nil {
+		t.Fatal(err)
+	}
+	done, _, _ := s.CreateRCAAnalysis("rca-p", "rca-run", digestA, []byte(`{"assessment":{"outcome":"supported"}}`), now)
+	if _, err := s.ClaimRCAAnalysis("w", now, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := s.CompleteRCAAnalysisFenced(done.ID, "w", RCAStateCompleted, []byte(`{"assessment":{"outcome":"supported"}}`), now, "", "", 0); err != nil || !ok {
+		t.Fatalf("complete = %v, %v", ok, err)
+	}
+	queued, _, _ := s.CreateRCAAnalysisWithOrigin("rca-p", "rca-run", digestB, RCAOriginAutomatic, []byte(`{"request":{}}`), now.Add(time.Minute))
+	got, err := s.LatestRCAAnalyses("rca-p", []string{"rca-run", "rca-run-2", "rca-run", "rca-other-run"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, ok := got["rca-run"]
+	if !ok || entry.Latest == nil || entry.Latest.ID != queued.ID || entry.Latest.Origin != RCAOriginAutomatic || entry.Completed == nil || entry.Completed.ID != done.ID {
+		t.Fatalf("rca-run = %+v", entry)
+	}
+	if string(entry.Latest.Payload) != "{}" || string(entry.Completed.Payload) != "{}" {
+		t.Fatalf("payloads latest=%s completed=%s; neither is read", entry.Latest.Payload, entry.Completed.Payload)
+	}
+	if _, ok := got["rca-run-2"]; ok {
+		t.Fatal("a run without analyses has an entry")
+	}
+	if _, ok := got["rca-other-run"]; ok {
+		t.Fatal("another project's run was returned")
+	}
+	ids := make([]string, maxRCABatchRuns+1)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("run-%d", i)
+	}
+	if _, err := s.LatestRCAAnalyses("rca-p", ids); err == nil {
+		t.Fatal("an oversized batch was accepted")
+	}
+}

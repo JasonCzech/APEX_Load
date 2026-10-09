@@ -28,9 +28,9 @@ func (s *Server) handleAnalysisDefinitions(w http.ResponseWriter, r *http.Reques
 	var enabled bool
 	switch kind {
 	case storage.AnalysisDefinitionKindRCAMapping:
-		enabled = rcaV2ProjectEnabled(project)
+		enabled = rcaV2ProjectEnabled(s.store, project)
 	case storage.AnalysisDefinitionKindBusinessKeyMapping:
-		enabled = businessKeyProjectEnabled(project)
+		enabled = businessKeyProjectEnabled(s.store, project)
 	default:
 		enabled = analysisProjectEnabled(project)
 	}

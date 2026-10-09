@@ -130,6 +130,7 @@ type CIRunResponse struct {
 	Error   string    `json:"error,omitempty"`
 
 	// Validity is the run's validity verdict and the project's CI validity
+	RootCause *CIRunRootCause `json:"root_cause,omitempty"`
 	// gate; controllers before the gate omit it.
 	Validity *CIRunValidity `json:"validity,omitempty"`
 
@@ -177,6 +178,58 @@ func (v *CITelemetryVerdict) clone() *CITelemetryVerdict {
 	out.Reasons = append([]string(nil), v.Reasons...)
 	out.Exclusions = append([]string(nil), v.Exclusions...)
 	return &out
+}
+
+// CIRunRootCause is a run's root-cause analysis in brief: the state of its
+// newest analysis and, once one completed, its outcome and leading
+// hypothesis. It never changes the outcome.
+type CIRunRootCause struct {
+	State         string `json:"state"`
+	Outcome       string `json:"outcome,omitempty"`
+	TopHypothesis string `json:"top_hypothesis,omitempty"`
+	Confidence    string `json:"confidence,omitempty"`
+	AnalysisID    string `json:"analysis_id,omitempty"`
+	ReportURL     string `json:"report_url,omitempty"`
+	// AutoAnalyze says the project analyzes every archived run, so an
+	// analysis not yet queued is still expected.
+	AutoAnalyze bool `json:"auto_analyze,omitempty"`
+}
+
+func (r *CIRunRootCause) clone() *CIRunRootCause {
+	if r == nil {
+		return nil
+	}
+	out := *r
+	return &out
+}
+
+// pending reports whether an analysis is still expected to complete.
+func (r *CIRunRootCause) pending() bool {
+	if r == nil {
+		return false
+	}
+	return r.State == "queued" || r.State == "running" || (r.State == "none" && r.AutoAnalyze)
+}
+
+// text is the root cause in one line for the job summary and outputs.
+func (r *CIRunRootCause) text() string {
+	if r == nil {
+		return ""
+	}
+	switch {
+	case r.Outcome == "supported" && r.TopHypothesis != "":
+		if r.Confidence != "" {
+			return r.TopHypothesis + " (" + r.Confidence + " confidence)"
+		}
+		return r.TopHypothesis
+	case r.Outcome == "no_supported_hypothesis":
+		return "no cause supported"
+	case r.Outcome == "insufficient_evidence":
+		return "insufficient evidence"
+	case r.State == "none":
+		return "not analyzed"
+	}
+	return "analysis " + strings.ReplaceAll(r.State, "_", " ")
 }
 
 // CIRunValidity is a run's validity verdict ("valid", "suspect", "invalid"

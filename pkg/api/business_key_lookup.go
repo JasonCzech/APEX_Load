@@ -109,7 +109,7 @@ func (s *Server) handleBusinessKeyLookup(w http.ResponseWriter, r *http.Request)
 	}
 	defer lease.Release()
 	project := normalizeProjectID(test.ProjectID)
-	if !businessKeyProjectEnabled(project) {
+	if !businessKeyProjectEnabled(s.store, project) {
 		writeError(w, http.StatusConflict, "business keys are not enabled for this project")
 		return
 	}
