@@ -216,14 +216,34 @@ export function formatTimeCompact(seconds: number): string {
   return `${s}s`;
 }
 
+/**
+ * Remaining or elapsed run time for display. Once a larger unit is shown the
+ * smaller ones stay, padded, so 2h 00m 41s never reads as "2h41s".
+ * formatTimeCompact stays the Go-duration writer for stage durations.
+ */
+export function formatRunClock(totalSeconds: number): string {
+  const seconds = Number.isFinite(totalSeconds) ? Math.max(0, Math.floor(totalSeconds)) : 0
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  const pad = (value: number) => String(value).padStart(2, '0')
+  if (h > 0) return `${h}h ${pad(m)}m ${pad(s)}s`
+  if (m > 0) return `${m}m ${pad(s)}s`
+  return `${s}s`
+}
+
+/**
+ * The display form for a duration summary: "41s", "6m 3s", "2h 0m 41s", "2h".
+ * Trailing zero units are dropped, but an inner zero unit is kept whenever a
+ * smaller unit follows it, so the reading is never ambiguous. Authoring inputs
+ * keep Go duration notation (formatTimeCompact) instead.
+ */
 export function formatTimeLong(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`;
-  const m = Math.floor(seconds / 60);
-  if (m < 60) {
-    const s = seconds % 60;
-    return s > 0 ? `${m}m ${s}s` : `${m}m`;
-  }
-  const h = Math.floor(m / 60);
-  const remM = m % 60;
-  return remM > 0 ? `${h}h ${remM}m` : `${h}h`;
+  const total = Number.isFinite(seconds) ? Math.max(0, Math.round(seconds)) : 0
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
+  if (h > 0) return [`${h}h`, ...(m || s ? [`${m}m`] : []), ...(s ? [`${s}s`] : [])].join(' ')
+  if (m > 0) return s ? `${m}m ${s}s` : `${m}m`
+  return `${s}s`
 }

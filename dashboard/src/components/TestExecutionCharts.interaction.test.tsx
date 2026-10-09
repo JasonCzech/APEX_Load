@@ -985,7 +985,7 @@ describe('TestExecutionCharts context menu', () => {
 
     expect(chartTitles()).toContain('ART Under Load')
     expect(chartTitles()).toContain('TPS Under Load')
-    expect(chartTitles()).toContain('Error % Under Load')
+    expect(chartTitles()).toContain('Error rate Under Load')
     expect(chartTitles()).toContain('Load Impact Heatmap')
     expect(chartTitles()).not.toContain('P Values Under Load')
     expect(chartTitles()).not.toContain('P99 Under Load')

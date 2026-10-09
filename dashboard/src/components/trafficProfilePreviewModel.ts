@@ -9,18 +9,19 @@ export interface TrafficProfileTpsStatistics {
   average: number
 }
 
+/**
+ * Axis ticks in the same notation as the phases table beneath the chart
+ * ("1m3s", "26s", "1h30m"), never fractional minutes (0.43m).
+ */
 export function formatTrafficProfileAxisTime(elapsedSeconds: number): string {
   const parsedSeconds = Number(elapsedSeconds)
-  const safeSeconds = Number.isFinite(parsedSeconds) ? Math.max(0, parsedSeconds) : 0
-  if (safeSeconds >= 3600) {
-    const totalMinutes = Math.round(safeSeconds / 60)
-    const hours = Math.floor(totalMinutes / 60)
-    const minutes = totalMinutes % 60
-    return minutes ? `${hours}h ${minutes}m` : `${hours}h`
-  }
-  const minutes = safeSeconds / 60
-  const digits = minutes < 1 ? 2 : minutes < 10 ? 1 : 0
-  return `${minutes.toLocaleString(undefined, { maximumFractionDigits: digits })}m`
+  const whole = Number.isFinite(parsedSeconds) ? Math.max(0, Math.round(parsedSeconds)) : 0
+  const hours = Math.floor(whole / 3600)
+  const minutes = Math.floor((whole % 3600) / 60)
+  const seconds = whole % 60
+  if (hours > 0) return `${hours}h${minutes ? `${minutes}m` : ''}`
+  if (minutes > 0) return `${minutes}m${seconds ? `${seconds}s` : ''}`
+  return `${seconds}s`
 }
 
 function normalizedGroupName(value?: string): string {

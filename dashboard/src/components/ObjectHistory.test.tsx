@@ -42,21 +42,21 @@ describe('object history', () => {
     vi.mocked(request).mockResolvedValue({ events: [event], has_more: true })
     await act(async () => root.render(<ObjectHistory projectId="p" resourceType="script" resourceId="s" />))
     await act(async () => { const details = container.querySelector('details')!; details.open = true; details.dispatchEvent(new Event('toggle')) })
-    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Next history')!.click())
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Older history')!.click())
     expect(vi.mocked(request).mock.calls.slice(-1)[0]?.[0]).toContain('offset=25')
     await act(async () => root.render(<ObjectHistory projectId="p" resourceType="scenario" resourceId="other" />))
     expect(vi.mocked(request).mock.calls.slice(-1)[0]?.[0]).toBe('/projects/p/activity?resource_type=scenario&resource_id=other&limit=25&offset=0')
-    expect(container.textContent).toContain('Page 1')
+    expect(container.textContent).toContain('Showing 1–1 · more available')
   })
 
   it('starts at the first activity page when the project changes', async () => {
     vi.mocked(request).mockResolvedValue({ events: [event], has_more: true })
     await act(async () => root.render(<ActivityPage projectId="p" />))
-    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Next events')!.click())
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Older events')!.click())
     expect(vi.mocked(request).mock.calls.slice(-1)[0]?.[0]).toContain('offset=50')
     await act(async () => root.render(<ActivityPage projectId="other" />))
     expect(vi.mocked(request).mock.calls.slice(-1)[0]?.[0]).toBe('/projects/other/activity?limit=50&offset=0')
-    expect(container.textContent).toContain('Page 1')
+    expect(container.textContent).toContain('Showing 1–1 · more available')
   })
 
   it('archives with the source version and refreshes after success', async () => {
@@ -76,5 +76,21 @@ describe('object history', () => {
     await act(async () => window.dispatchEvent(new Event('apexload:activity-warning')))
     expect(container.textContent).toContain('Change saved; activity history could not be recorded.')
     await act(async () => container.querySelector('button')!.click()); expect(container.textContent).toBe('')
+  })
+})
+
+describe('activity location', () => {
+  it('restores filters and page from its query and reports changes back', async () => {
+    vi.mocked(request).mockResolvedValue({ events: [event], has_more: false })
+    const onQueryChange = vi.fn()
+    await act(async () => root.render(<ActivityPage projectId="p" query="action=stop&q=checkout&page=3" onQueryChange={onQueryChange} />))
+    const url = vi.mocked(request).mock.calls.slice(-1)[0]?.[0] as string
+    expect(url).toContain('offset=100')
+    expect(url).toContain('action=stop')
+    expect(url).toContain('q=checkout')
+    expect(container.textContent).toContain('Showing 101–101')
+    expect(Array.from(container.querySelectorAll('option')).map(option => option.textContent)).toContain('Stopped')
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Newer events')!.click())
+    expect(onQueryChange).toHaveBeenLastCalledWith('q=checkout&action=stop&page=2')
   })
 })

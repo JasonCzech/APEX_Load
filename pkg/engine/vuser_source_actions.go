@@ -433,15 +433,19 @@ func (vu *VUser) finalizeSourceTransaction(key, reason string) *protocol.Result 
 	// later orphan end marker can reuse the stale start and synthesize a second
 	// long-running transaction.
 	delete(vu.Variables, sourceTransactionStartKey(name))
+	vu.Variables[sourceTransactionStatusKey(name)] = strconv.FormatBool(false)
+	if vu.interruptedByStop() {
+		// The run stopped before the end marker could run: the transaction is
+		// incomplete, not failed, so it is left out of the results.
+		return nil
+	}
 	source := &protocol.Result{
 		ActionName:   name,
 		StartTime:    state.startedAt,
 		Success:      false,
 		ErrorMessage: reason,
 	}
-	result := vu.recordTransaction(name, duration, false, source)
-	vu.Variables[sourceTransactionStatusKey(name)] = strconv.FormatBool(false)
-	return result
+	return vu.recordTransaction(name, duration, false, source)
 }
 
 func (vu *VUser) finalizeOpenSourceTransactions(reason string) []*protocol.Result {

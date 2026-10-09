@@ -312,7 +312,12 @@ func csvSLARows(write reportCSVWriteFunc, section string, rows []SLAComplianceRo
 		}
 		entries := [][2]string{
 			{"volume", formatCSVInt(row.Volume)},
+			{"min_ms", formatCSVFloat(row.MinMs)},
+			{"p50_ms", formatCSVFloat(row.P50Ms)},
+			{"p90_ms", formatCSVFloat(row.P90Ms)},
 			{"p95_ms", formatCSVFloat(row.P95Ms)},
+			{"p99_ms", formatCSVFloat(row.P99Ms)},
+			{"max_ms", formatCSVFloat(row.MaxMs)},
 			{"sla_ms", sla},
 			{"error_pct", formatCSVFloat(row.ErrorPct)},
 			{"result", row.Result},
@@ -526,7 +531,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			}
 			for _, key := range []string{"action", "transaction", "unknown"} {
 				if population, ok := report.MetricPopulations[key]; ok {
-					for _, item := range [][2]string{{"count", formatCSVInt(population.Transactions)}, {"errors", formatCSVInt(population.Errors)}, {"error_pct", formatCSVFloat(population.ErrorPct)}, {"p95_ms", formatCSVFloat(population.P95Ms)}, {"average_rate_per_second", reportPopulationRate(population.AverageRate)}} {
+					for _, item := range [][2]string{{"count", formatCSVInt(population.Transactions)}, {"errors", formatCSVInt(population.Errors)}, {"error_pct", formatCSVFloat(population.ErrorPct)}, {"p95_ms", formatCSVFloat(population.P95Ms)}, {"peak_tps", reportPopulationPeakTPS(population)}, {"average_rate_per_second", reportPopulationRate(population.AverageRate)}} {
 						if err := write("metric_populations", key, item[0], item[1]); err != nil {
 							return err
 						}

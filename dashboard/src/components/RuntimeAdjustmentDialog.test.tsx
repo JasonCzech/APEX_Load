@@ -52,7 +52,7 @@ describe('RuntimeAdjustmentDialog', () => {
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
 
     await act(async () => root.render(<RuntimeAdjustmentDialog test={testRun} onClose={() => {}} onApplied={() => {}} />))
-    await click('Apply to selected')
+    await click('Stage duration')
     expect((document.querySelector('[aria-label="Buyers target duration"]') as HTMLInputElement).value).toBe('15m')
     expect((document.querySelector('[aria-label="Observer target duration"]') as HTMLInputElement).value).toBe('15m')
 
@@ -66,7 +66,7 @@ describe('RuntimeAdjustmentDialog', () => {
 
   it('does not bulk-scale observer groups', async () => {
     await act(async () => root.render(<RuntimeAdjustmentDialog test={testRun} onClose={() => {}} onApplied={() => {}} />))
-    await click('Apply to load groups')
+    await click('Stage load')
     expect((document.querySelector('[aria-label="Buyers target VUsers"]') as HTMLInputElement).value).toBe('11')
     expect((document.querySelector('[aria-label="Observer target VUsers"]') as HTMLInputElement).value).toBe('2')
   })
@@ -92,11 +92,34 @@ describe('RuntimeAdjustmentDialog', () => {
     })
     expect(review.disabled).toBe(true)
 
+    expect(document.body.textContent).toContain('Fix the highlighted group values before reviewing.')
+
     await act(async () => {
       setNativeValue?.call(target, '10')
       target.dispatchEvent(new Event('input', { bubbles: true }))
     })
+    // 10 is the running target: nothing would change, and the dialog says so.
+    expect(review.disabled).toBe(true)
+    expect(document.body.textContent).toContain('Nothing to change yet')
+
+    await act(async () => {
+      setNativeValue?.call(target, '12')
+      target.dispatchEvent(new Event('input', { bubbles: true }))
+    })
     expect(review.disabled).toBe(false)
+  })
+
+  it('explains an invalid staged change next to its field', async () => {
+    await act(async () => root.render(<RuntimeAdjustmentDialog test={testRun} onClose={() => {}} onApplied={() => {}} />))
+    const amount = document.querySelector('[aria-label="Duration change amount"]') as HTMLInputElement
+    const setNativeValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    await act(async () => {
+      setNativeValue?.call(amount, 'soon')
+      amount.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(amount.getAttribute('aria-invalid')).toBe('true')
+    expect(document.getElementById(amount.getAttribute('aria-describedby') || '')?.textContent).toContain('Enter a duration')
+    expect(Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Stage duration')?.disabled).toBe(true)
   })
 
   it('refreshes control targets from applied VUser and TPS results', () => {

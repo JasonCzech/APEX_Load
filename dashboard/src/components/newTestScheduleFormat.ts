@@ -24,7 +24,11 @@ export function formatScheduleInstant(value: string | undefined, timeZone?: stri
 }
 
 export function formatLaunchTimestamp(value?: string) {
-  return value ? new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Pending'
+  if (!value) return 'Pending'
+  const date = new Date(value)
+  // The year is shown whenever it is not this year, so a window can't be misread.
+  const year = date.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' as const } : {}
+  return date.toLocaleString(undefined, { month: 'short', day: 'numeric', ...year, hour: 'numeric', minute: '2-digit' })
 }
 
 export function formatLaunchWindow(preflight?: LaunchPreflightResponse | null) {

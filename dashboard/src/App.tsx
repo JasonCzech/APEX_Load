@@ -1676,6 +1676,8 @@ function AppShell({
     releasesRefreshRequested?: boolean;
     message?: string;
   } | null>(null);
+  // Bumped by "Retry" after a failed run lookup (an outage must not dead-end).
+  const [routeTestScopeAttempt, setRouteTestScopeAttempt] = useState(0);
 
   useEffect(() => {
     if (!routeTestID || !requestedRouteProjectID || unscopedRouteAsset) {
@@ -1749,6 +1751,7 @@ function AppShell({
     requestedRouteProjectID,
     requestedRouteReleaseID,
     routeTestID,
+    routeTestScopeAttempt,
     testApi,
     unscopedRouteAsset,
   ]);
@@ -2103,6 +2106,14 @@ function AppShell({
     },
     [],
   );
+  // Activity filters and page follow the URL without adding history entries.
+  const handleActivityQueryChange = useCallback((activityQuery: string) => {
+    setView((current) => {
+      if (current.page !== "activity" || (current.activityQuery || "") === activityQuery) return current;
+      replaceRouteOnNextViewSync.current = true;
+      return { ...current, activityQuery: activityQuery || undefined };
+    });
+  }, []);
   const navigateToTestArchive = useCallback(
     (id: string) => navigateToTest(id, "archive"),
     [navigateToTest],
@@ -2381,6 +2392,25 @@ function AppShell({
   const handleScriptsAuthoringStateChange = useCallback(
     (state: { subView: ScriptsAuthoringSubView; editingId: string | null }) => {
       setScriptsTopbarState(state);
+      // Keep the URL naming what is open (library, editor, import) so a
+      // refresh or a shared link returns to it. replaceState, not setView:
+      // the page is keyed by its route and a view change would remount it.
+      const current = parseAppViewFromHash(window.location.hash);
+      if (current.page !== "scripts") return;
+      const mode = state.subView === "list"
+        ? "list"
+        : state.subView === "edit" && state.editingId
+          ? "edit"
+          : state.subView === "create" || state.subView === "create-options"
+            ? "create"
+            : "import";
+      const next = viewToLocationHash({
+        page: "scripts",
+        mode,
+        ...(mode === "edit" && state.editingId ? { scriptId: state.editingId } : {}),
+        ...workspaceScopeForAppView(current),
+      });
+      if (next !== window.location.hash) window.history.replaceState(window.history.state, "", next);
     },
     [],
   );
@@ -3033,13 +3063,20 @@ function AppShell({
     Boolean(activeTopbarContribution?.controls);
   const showTopbarRunChips =
     visibleTopbarRuns.length > 0 && !hasContextualTopbarActions;
+  // Pages with their own top-bar controls still show that a run is live (the
+  // engineer editing a script or scenario must not lose sight of it), as one
+  // compact chip instead of the full list.
+  const compactTopbarRun =
+    hasContextualTopbarActions && orderedTopbarRuns.length > 0
+      ? orderedTopbarRuns[0]
+      : undefined;
   // The route is the authoritative page identity. A lazily suspended previous
   // page can keep its contribution mounted briefly. Only an active script
   // editor may refine its route (or an explicitly active scenario detour) title.
   const effectiveTopbarTitle = ((view.page === "scripts" && scriptsTopbarState?.editingId) || (view.page === "tests" && scenarioScriptWorkflow)) && activeTopbarContribution?.id === "script-editor"
     ? activeTopbarContribution?.title || topbarPageTitle
     : view.page === "tests" && scenarioScriptWorkflow ? "Script Builder" : topbarPageTitle;
-  const taskHelpHash = view.page === "tests" && scenarioScriptWorkflow ? "#/docs?guide=user-guide&article=authoring" : contextualHelpHash(view);
+  const taskHelpHash = view.page === "tests" && scenarioScriptWorkflow ? "#/docs?guide=user-guide&article=authoring" : contextualHelpHash(view, view.page === "scripts" ? scriptsTopbarState?.subView : undefined);
   const showTopbarClientDownloads = shouldShowTopbarClientDownloads(view);
   const mainContentClassName = `main-content topbar-title-mode page-${view.page}`;
   // Application/release ids are appended to the route by canonicalization
@@ -3060,6 +3097,10 @@ function AppShell({
     // Report sections/lenses belong to the same run. Keep focus and population
     // selection while their controlled route props update inside that page.
     ...(view.page === "report" ? { section: undefined, lens: undefined, compare: undefined } : {}),
+    // Workspace tabs of a run switch in place; re-keying remounted the run page
+    // behind a loading fallback and moved keyboard focus off the tab list.
+    ...(view.page === "test" ? { tab: undefined } : {}),
+    ...(view.page === "activity" ? { activityQuery: undefined } : {}),
     applicationId: undefined,
     releaseId: undefined,
   });
@@ -3193,6 +3234,49 @@ function AppShell({
               <div className="topbar-contribution-controls">
                 {activeTopbarContribution.controls}
               </div>
+            )}
+            {compactTopbarRun && (
+              <nav className="topbar-active-runs compact" aria-label="Active test runs">
+                {orderedTopbarRuns.length === 1 ? (
+                  <a
+                    className={`topbar-run-chip compact ${topbarRunTone(compactTopbarRun.status)}`}
+                    aria-current={currentRouteTestId === compactTopbarRun.id ? "page" : undefined}
+                    href={viewToLocationHash(
+                      mergeAppViewWithWorkspace(
+                        { page: "command-center", testId: compactTopbarRun.id },
+                        currentWorkspaceScope,
+                      ),
+                    )}
+                    title={`Open ${compactTopbarRun.name} (${topbarRunStatusLabel(compactTopbarRun.status)})`}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      navigateToCommandCenter(compactTopbarRun.id);
+                    }}
+                  >
+                    <span className="topbar-run-dot" aria-hidden="true" />
+                    <span className="topbar-run-name">{compactTopbarRun.name}</span>
+                    <span className="sr-only">{topbarRunStatusLabel(compactTopbarRun.status)}</span>
+                  </a>
+                ) : (
+                  <a
+                    className="topbar-run-chip compact"
+                    href={viewToLocationHash(
+                      mergeAppViewWithWorkspace(
+                        { page: "command-center" },
+                        currentWorkspaceScope,
+                      ),
+                    )}
+                    title="Open Command Center"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      navigateToCommandCenter();
+                    }}
+                  >
+                    <span className="topbar-run-dot" aria-hidden="true" />
+                    <span className="topbar-run-name">{orderedTopbarRuns.length} active runs</span>
+                  </a>
+                )}
+              </nav>
             )}
             {showTopbarRunChips && (
               <nav className="topbar-active-runs" aria-label="Active test runs">
@@ -3361,6 +3445,31 @@ function AppShell({
                       : routeTestScopePending
                         ? "Loading the run's application and release workspace…"
                         : "Loading project workspace…")}
+                  {routeTestScopeError && routeAssetScopeError === routeTestScopeError && (
+                    <div className="route-scope-recovery">
+                      <button
+                        className="btn btn-sm btn-secondary"
+                        type="button"
+                        onClick={() => setRouteTestScopeAttempt((attempt) => attempt + 1)}
+                      >
+                        Retry
+                      </button>
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        type="button"
+                        onClick={() => setGuardedView(mergeAppViewWithWorkspace({ page: "command-center" }, currentWorkspaceScope))}
+                      >
+                        Open Command Center
+                      </button>
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        type="button"
+                        onClick={() => setGuardedView(mergeAppViewWithWorkspace({ page: "results" }, currentWorkspaceScope))}
+                      >
+                        Open Results
+                      </button>
+                    </div>
+                  )}
                   {routeAssetOwnerScopeError && recoverableRouteAsset && (
                     <div>
                       <button
@@ -3419,6 +3528,9 @@ function AppShell({
                 <div hidden={view.page !== "command-center"}>
                 <CommandCenterPrototype
                   canManageTests={effectiveAccessLoaded && !effectiveAccessError && isEffectiveOperationAllowed(effectiveAccessResources, "manage_tests", false)}
+                  // Only when access is known: the server still enforces every control.
+                  liveStreamState={connectionState}
+                  runControlsReadOnlyReason={effectiveAccessLoaded && !effectiveAccessError && !isEffectiveOperationAllowed(effectiveAccessResources, "manage_tests", false) ? "Your role in this project can watch this run but not control it. A project editor or admin can pause, stop or adjust it." : undefined}
                   runViewMemory={commandRunViewMemory.current}
                   testId={commandCenterTestId}
                   active={view.page === "command-center"}
@@ -3547,7 +3659,7 @@ function AppShell({
                   onAuthoringStateChange={handleScriptsAuthoringStateChange}
                 />
               )}
-              {view.page === "activity" && !routeAssetScopeBlocked && <ActivityPage key={activeProject?.id} projectId={activeProject?.id} projectName={activeProject?.name} />}
+              {view.page === "activity" && !routeAssetScopeBlocked && <ActivityPage key={activeProject?.id} projectId={activeProject?.id} projectName={activeProject?.name} query={view.activityQuery} onQueryChange={handleActivityQueryChange} />}
               {view.page === "results" && !routeAssetScopeBlocked && (
                 <ResultsPage
                   testStatuses={testStatuses}

@@ -309,8 +309,9 @@ func TestSystemRouteCatalogPreservesAccessContracts(t *testing.T) {
 func TestCapacityAndFleetAPIRoutesUseModularCatalogs(t *testing.T) {
 	prefixCounts := map[string]int{
 		"/api/v1/capacity/": 9,
-		// 22 fleet routes plus the pool allocation PUT and preflight GET.
-		"/api/v1/fleet/": 24,
+		// 22 fleet routes plus the pool allocation PUT, preflight GET and the
+		// generator metadata DELETE.
+		"/api/v1/fleet/": 25,
 	}
 
 	modular := make(map[string]apiRouteSpec)

@@ -109,7 +109,7 @@
 
 .drop-ingest-overlay.drop-ingest-accepted .drop-ingest-label {
   font-size: 11px;
-  color: var(--success);
+  color: var(--success-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

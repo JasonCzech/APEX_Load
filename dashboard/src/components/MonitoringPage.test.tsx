@@ -68,6 +68,11 @@ vi.mock('../hooks/api/useFleetApi', () => ({
   useFleetApi: () => fleetApiMock,
 }))
 
+const clustersApiMock = vi.hoisted(() => ({ listClusters: vi.fn() }))
+vi.mock('../hooks/api/useClustersApi', () => ({
+  useClustersApi: () => clustersApiMock,
+}))
+
 vi.mock('../hooks/useProject', () => ({
   useProject: () => ({
     activeProject: { id: projectMockState.activeProjectId, name: 'Checkout', created_at: '', updated_at: '' },
@@ -976,6 +981,53 @@ describe('MonitoringPage', () => {
 
     expect(apiMock.getFleetCapacity).toHaveBeenCalledWith({ project_id: 'project-2' })
     expect(container.textContent).not.toContain('17 available')
+  })
+
+  it('shows saved clusters and pools on Fleet until they report generators', async () => {
+    apiMock.getSystemInventory.mockResolvedValue({ execution_mode: 'local', generators: [], controller: { status: 'ok' } } as never)
+    apiMock.getFleetAlerts.mockResolvedValue({ alerts: [], count: 0, unacknowledged_count: 0 })
+    apiMock.listAuthAuditEvents.mockResolvedValue({ events: [], count: 0 })
+    capacityApiMock.listTimeslots.mockResolvedValue({ timeslots: [], count: 0 })
+    fleetApiMock.listGeneratorMetadata.mockResolvedValue({ generators: [], count: 0 })
+    fleetApiMock.getProvisioner.mockResolvedValue(null)
+    fleetApiMock.listProvisionRequests.mockResolvedValue({ provisioning_requests: [], count: 0 })
+    apiMock.getFleetCapacity.mockResolvedValue({ project_id: 'project-1', total_generators: 0, eligible_generators: 0, available_slots: 0, max_slots: 0, compatible_features: [], rejection_reasons: [] })
+    clustersApiMock.listClusters.mockResolvedValue({ clusters: [{ id: 'c1', name: 'uxr cluster', kind: 'kubeconfig', last_check_status: '' }], total: 1 })
+    fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [{ id: 'p1', name: 'uxr pool', cloud_provider: 'kubernetes', status: 'active' }], count: 1 })
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" activeCategoryId="fleet" canManageSystem />)
+    })
+    await flushAsyncWork()
+    const configured = container.querySelector('[aria-label="Configured clusters and pools"]')
+    expect(configured?.textContent).toContain('uxr cluster')
+    expect(configured?.textContent).toContain('not tested yet')
+    expect(configured?.textContent).toContain('uxr pool')
+    expect(Array.from(container.querySelectorAll('a')).some(link => link.textContent === 'Configure distributed generator targets')).toBe(true)
+  })
+
+  it('filters and pages a large fleet alert feed, with a distinct name for every acknowledge button', async () => {
+    const alerts = Array.from({ length: 30 }, (_, index) => ({ id: `a${index}`, type: 'generator_offline', target: `gen-${index}`, severity: index < 5 ? 'danger' : 'warning', summary: `Generator gen-${index} offline`, acknowledged: false }))
+    apiMock.getSystemInventory.mockResolvedValue({ execution_mode: 'local', generators: [], controller: { status: 'ok' } } as never)
+    apiMock.getFleetAlerts.mockResolvedValue({ alerts, count: alerts.length, unacknowledged_count: alerts.length } as never)
+    apiMock.listAuthAuditEvents.mockResolvedValue({ events: [], count: 0 })
+    capacityApiMock.listTimeslots.mockResolvedValue({ timeslots: [], count: 0 })
+    fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [], count: 0 })
+    fleetApiMock.listGeneratorMetadata.mockResolvedValue({ generators: [], count: 0 })
+    fleetApiMock.getProvisioner.mockResolvedValue(null)
+    fleetApiMock.listProvisionRequests.mockResolvedValue({ provisioning_requests: [], count: 0 })
+    clustersApiMock.listClusters.mockResolvedValue({ clusters: [], total: 0 })
+    apiMock.getFleetCapacity.mockResolvedValue({ project_id: 'project-1', total_generators: 0, eligible_generators: 0, available_slots: 0, max_slots: 0, compatible_features: [], rejection_reasons: [] })
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" activeCategoryId="fleet" canManageSystem />)
+    })
+    await flushAsyncWork()
+    const ackButtons = () => Array.from(container.querySelectorAll('button')).filter(button => button.textContent === 'Ack')
+    expect(ackButtons()).toHaveLength(25)
+    expect(new Set(ackButtons().map(button => button.getAttribute('aria-label'))).size).toBe(25)
+    expect(container.textContent).toContain('Showing 25 of 30 matching')
+    const severity = container.querySelector('[aria-label="Filter fleet alerts"] select') as HTMLSelectElement
+    await act(async () => { severity.value = 'danger'; severity.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(ackButtons()).toHaveLength(5)
   })
 
   it('does not report a refresh timestamp when every requested endpoint fails', async () => {

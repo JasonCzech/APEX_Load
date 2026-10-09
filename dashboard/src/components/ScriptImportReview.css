@@ -541,7 +541,7 @@
 }
 
 .script-import-review-unsupported h4 {
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .script-import-review-section-list {
@@ -590,7 +590,7 @@
 
 .script-import-review-section.severity-warning summary,
 .script-import-review-section.severity-blocker summary {
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .script-import-review-preview,

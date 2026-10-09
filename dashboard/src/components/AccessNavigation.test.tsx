@@ -53,11 +53,15 @@ describe('AccessNavigation', () => {
     expect(users?.getAttribute('href')).toContain('accessView=users')
 
     const onSelectView = vi.fn()
-    await act(async () => root.render(<AccessNavigation currentView="users" onSelectView={onSelectView} counts={{ users: 2, accounts: 1, activity: 5, reviewAttention: 3 }} />))
+    await act(async () => root.render(<AccessNavigation currentView="users" onSelectView={onSelectView} counts={{ users: 2, accounts: 1, reviewAttention: 3 }} />))
     // Access review lives under Activity; its attention count shows on the Activity entry.
     const activity = entries().find(entry => entry.textContent?.startsWith('Activity'))
     expect(activity?.tagName).toBe('BUTTON')
-    expect(activity?.querySelector('.access-attention-badge')?.textContent).toBe('3')
+    const badge = activity?.querySelector('.access-attention-badge')
+    expect(badge?.querySelector('[aria-hidden="true"]')?.textContent).toBe('3')
+    expect(badge?.querySelector('.sr-only')?.textContent).toBe('3 access review items need attention')
+    // Activity shows no row count: loaded pages are not a total.
+    expect(activity?.querySelector('strong')).toBeNull()
     await act(async () => activity?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     expect(onSelectView).toHaveBeenCalledWith('events')
     expect(entries().find(entry => entry.textContent?.startsWith('Authentication'))?.tagName).toBe('A')

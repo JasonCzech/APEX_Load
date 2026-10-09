@@ -1,4 +1,5 @@
 import type { RunArchiveReport, RunArchiveOverview, RunArchiveActionStats } from '../../types'
+import { formatPercentValue } from '../../utils/numberFormat'
 
 export type MetricPopulation = 'action' | 'transaction' | 'unknown'
 export const populationLabels: Record<MetricPopulation, string> = {
@@ -25,12 +26,18 @@ export function reportPopulationOverview(report: RunArchiveReport | null, popula
 export function reportAcceptance(report: RunArchiveReport | null) {
   return report?.verdict || { status: 'Not available', failed: false, conditional: true, explanation: 'No acceptance assessment is available.' }
 }
+/**
+ * The one placeholder for a metric with no value. Use it instead of "n/a",
+ * "--" or "Not available" so an empty cell reads the same on every surface;
+ * while a run is live, say "Awaiting data" instead.
+ */
+export const MISSING_VALUE = '—'
+
 export function formatReportNumber(value: number | undefined, digits = 1): string {
-  if (value === undefined || !Number.isFinite(value)) return 'Not available'
+  if (value === undefined || !Number.isFinite(value)) return MISSING_VALUE
   return value.toLocaleString(undefined, { maximumFractionDigits: digits })
 }
 export function formatReportPercent(value: number | undefined, digits = 2): string {
-  if (value === undefined || !Number.isFinite(value)) return 'Not available'
-  if (value > 0 && value < 10 ** -digits) return `<${(10 ** -digits).toFixed(digits)}%`
-  return `${value.toFixed(digits)}%`
+  if (value === undefined || !Number.isFinite(value)) return MISSING_VALUE
+  return formatPercentValue(value, digits)
 }

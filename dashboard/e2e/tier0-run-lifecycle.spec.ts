@@ -87,8 +87,8 @@ test('[U13 U14] a run dismisses confirmation, pauses, resumes, scales, extends, 
     await expect.poll(async () => (await (await request.get(`/api/v1/tests/${testId}`)).json()).groups[0].vusers).toBe(3)
 
     // The current command-center dialog previews and applies the runtime change.
-    await page.getByRole('button', { name: 'Change duration', exact: true }).click()
-    const durationDialog = page.getByRole('dialog', { name: 'Change duration', exact: true })
+    await page.getByRole('button', { name: 'Adjust run', exact: true }).click()
+    const durationDialog = page.getByRole('dialog', { name: 'Adjust run', exact: true })
     await durationDialog.getByLabel('smoke target duration', { exact: true }).fill('6m')
     await durationDialog.getByRole('button', { name: 'Review changes', exact: true }).click()
     await expect(durationDialog).toContainText('Ready to apply')

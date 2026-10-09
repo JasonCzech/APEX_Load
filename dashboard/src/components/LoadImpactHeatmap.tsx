@@ -72,7 +72,7 @@ const DETAIL_COLUMNS: Array<{ key: keyof MetricsHistoryPoint; label: string; uni
   { key: 'avgMs', label: 'ART', unit: 'ms' },
   { key: 'tps', label: 'TPS' },
   { key: 'p95', label: 'P95', unit: 'ms' },
-  { key: 'errorPct', label: 'Error %', unit: '%' },
+  { key: 'errorPct', label: 'Error rate', unit: '%' },
   { key: 'cpuProcess', label: 'CPU', unit: '%' },
   { key: 'memProcess', label: 'Memory', unit: 'MB' },
 ]

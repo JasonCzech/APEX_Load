@@ -1678,6 +1678,11 @@ export interface RunArchiveSLARow {
   name: string
   volume: number
   p95_ms: number
+  min_ms?: number
+  p50_ms?: number
+  p90_ms?: number
+  p99_ms?: number
+  max_ms?: number
   sla_ms?: number
   has_sla: boolean
   error_pct: number

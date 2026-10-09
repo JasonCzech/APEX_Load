@@ -9,7 +9,8 @@ describe('Solarized Light theme tokens', () => {
 
     expect(block).toContain('--accent: #5f6f00;')
     expect(block).toContain('--info: #657b83;')
-    expect(block).toContain('--chart-1: #b58900;')
+    // Solarized yellow, darkened to clear 3:1 on the card surface (#b58900 was 2.7:1).
+    expect(block).toContain('--chart-1: #a47c04;')
     expect(block).not.toContain('#268bd2')
   })
 })

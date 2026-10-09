@@ -161,7 +161,7 @@ describe('loadImpactModel', () => {
   })
 
   it('formats values with compact metric units', () => {
-    expect(formatLoadImpactValue(123.45, 'ms')).toBe('123ms')
+    expect(formatLoadImpactValue(123.45, 'ms')).toBe('123 ms')
     expect(formatLoadImpactValue(1.2345, '%')).toBe('1.23%')
     expect(formatLoadImpactValue(45.67, 'KB/s')).toBe('45.7 KB/s')
   })
@@ -174,7 +174,7 @@ describe('loadImpactModel', () => {
     const cell = model.rows[0].cells[0]
 
     expect(loadImpactCellKey(cell)).toBe('avgMs:vusers-5')
-    expect(formatLoadImpactCellTitle(cell)).toBe('5 VUsers | ART avg 120ms | min 100ms | max 140ms | 2 telemetry intervals')
+    expect(formatLoadImpactCellTitle(cell)).toBe('5 VUsers | ART avg 120 ms | min 100 ms | max 140 ms | 2 telemetry intervals')
   })
 })
 

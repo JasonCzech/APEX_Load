@@ -177,7 +177,7 @@ export default function ReportCharts({ report }: Props) {
                 <XAxis dataKey="label" tick={{ fontSize: 11, fill: INK }} stroke={GRID} minTickGap={32} />
                 <YAxis tick={{ fontSize: 11, fill: INK }} stroke={GRID} width={48} />
                 <Tooltip contentStyle={tooltipStyle} />
-                <Line type="monotone" dataKey="errorPct" name="Error %" stroke={ACCENT_2} strokeWidth={2} dot={false} isAnimationActive={false} />
+                <Line type="monotone" dataKey="errorPct" name="Error rate (%)" stroke={ACCENT_2} strokeWidth={2} dot={false} isAnimationActive={false} />
               </LineChart>
             </ResponsiveContainer>
           </ExportableChart>

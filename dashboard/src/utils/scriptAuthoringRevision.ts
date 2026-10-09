@@ -2,6 +2,7 @@ import type { JsonSuccessResponseBody } from '../types/generated/openapi'
 import type { ScriptDefinition } from '../types/scripts'
 import type { ScriptAuthoringBaseline, ScriptAuthoringProjection, StoredScript } from '../types/storedContent'
 import { AuthoringSaveOutcomeUnknown, authoringChangedPaths as changedPaths, authoringSaveNeedsReconciliation, authoringTagFor, isAuthoringRecord as record, isAuthoringRevision, reapplyAuthoringDraft } from './authoringRevision'
+import { ApiError } from '../hooks/apiClient'
 
 type AuthoringTransport = Extract<JsonSuccessResponseBody<'handleGetScript', '200'>, { projection_version: 'apexload.script_authoring.v1' }>
 const version: AuthoringTransport['projection_version'] = 'apexload.script_authoring.v1'
@@ -47,7 +48,17 @@ export class ScriptSaveOutcomeUnknown extends AuthoringSaveOutcomeUnknown {
 }
 
 export function scriptSaveNeedsReconciliation(error: unknown): boolean {
+  // A plain server error (5xx without an outcome code) is retryable: saves are
+  // revision-protected, so if it did commit, the retry is refused with 412 and
+  // reconciliation starts then. Lost responses and explicit outcome-unknown
+  // codes still require reconciliation before anything else is sent.
+  if (scriptSaveFailedOnServer(error)) return false
   return authoringSaveNeedsReconciliation(error, ['script_save_outcome_unknown', 'script_save_outcome_audit_unavailable'])
+}
+
+/** A definite server-side failure the user can simply retry. */
+export function scriptSaveFailedOnServer(error: unknown): boolean {
+  return error instanceof ApiError && error.status >= 500 && !(typeof error.code === 'string' && error.code.startsWith('script_save_outcome_'))
 }
 
 // Read-only server clocks are not authored content. Some older pure helpers

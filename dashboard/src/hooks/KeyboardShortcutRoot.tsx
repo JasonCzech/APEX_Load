@@ -91,7 +91,7 @@ function ShortcutHelpDialog({ shortcuts, onClose }: { shortcuts: RegisteredKeybo
   useModalDialog({ dialogRef, onClose })
   const grouped = groupShortcuts(shortcuts.filter(shortcut => !shortcut.hidden))
   return (
-    <div className="keyboard-shortcut-backdrop" {...dialogBackdropProps(onClose, 'Close keyboard shortcuts')}>
+    <div className="keyboard-shortcut-backdrop" {...dialogBackdropProps(onClose)}>
       <div ref={dialogRef} className="keyboard-shortcut-dialog" role="dialog" aria-modal="true" aria-labelledby="keyboard-shortcut-title">
         <div className="keyboard-shortcut-header"><div><h2 id="keyboard-shortcut-title">Keyboard Shortcuts</h2><p>Power controls for navigating APEX Load without leaving the keyboard.</p></div><button type="button" className="keyboard-shortcut-close" onClick={onClose} aria-label="Close keyboard shortcuts">Close</button></div>
         <div className="keyboard-shortcut-groups">{grouped.map(([group, entries]) => <section key={group} className="keyboard-shortcut-group" aria-label={`${group} shortcuts`}><h3>{group}</h3><dl>{entries.map(shortcut => <div key={`${shortcut.id}-${formatShortcutDisplay(shortcut.keys)}`} className={shortcut.disabled ? 'disabled' : ''}><dt>{shortcut.label}</dt><dd><kbd>{formatShortcutDisplay(shortcut.keys)}</kbd></dd></div>)}</dl></section>)}</div>

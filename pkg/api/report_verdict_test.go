@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 	"testing"
@@ -309,5 +310,44 @@ func TestReportVerdictTreatsUnscoredTelemetryAsAConcern(t *testing.T) {
 	got := deriveReportVerdict(r)
 	if got.Status != reportVerdictConditional || !strings.Contains(strings.Join(reportConditionalConcerns(r), ";"), "could not be scored for 3 interval(s)") {
 		t.Fatalf("unscored telemetry verdict %#v concerns %v", got, reportConditionalConcerns(r))
+	}
+}
+
+func TestSLAComplianceRowsCarryPercentilesIntoCSV(t *testing.T) {
+	stats := RunArchiveActionStats{Transactions: 40, MinResponseMs: 120, P50Ms: 310, P90Ms: 640, P95Ms: 750, P99Ms: 980, MaxResponseMs: 1450, PeakTPS: 61}
+	report := &RunArchiveReport{
+		Manifest:      &RunArchiveManifest{},
+		ByTransaction: map[string]RunArchiveActionStats{"Checkout": stats},
+		MetricPopulations: map[string]ArchiveMetricPopulation{
+			"transaction": {RunArchiveActionStats: stats},
+			"action":      {RunArchiveActionStats: RunArchiveActionStats{Transactions: 5}},
+		},
+	}
+	rows := buildSLAComplianceRows(report)
+	if len(rows) != 1 || rows[0].MinMs != 120 || rows[0].P50Ms != 310 || rows[0].P90Ms != 640 || rows[0].P99Ms != 980 || rows[0].MaxMs != 1450 {
+		t.Fatalf("rows = %#v, want the transaction's full distribution", rows)
+	}
+
+	var body strings.Builder
+	write := func(section, key, metric, value string) error {
+		body.WriteString(strings.Join([]string{section, key, metric, value}, ",") + "\n")
+		return nil
+	}
+	if err := csvSLARows(write, "sla", rows); err != nil {
+		t.Fatalf("csvSLARows: %v", err)
+	}
+	for _, expected := range []string{"sla,Checkout,min_ms,120", "sla,Checkout,p50_ms,310", "sla,Checkout,p90_ms,640", "sla,Checkout,p99_ms,980", "sla,Checkout,max_ms,1450"} {
+		if !strings.Contains(body.String(), expected) {
+			t.Fatalf("sla csv missing %q:\n%s", expected, body.String())
+		}
+	}
+
+	var csvBuf bytes.Buffer
+	if err := writeRunArchiveReportCSVWithProfile(report, &csvBuf, "engineer"); err != nil {
+		t.Fatalf("write engineer csv: %v", err)
+	}
+	// The report screen's population peak must be reproducible from the CSV.
+	if !strings.Contains(csvBuf.String(), "metric_populations,transaction,peak_tps,61") || !strings.Contains(csvBuf.String(), "metric_populations,action,peak_tps,Unknown") {
+		t.Fatalf("engineer csv missing population peak_tps rows:\n%s", csvBuf.String())
 	}
 }

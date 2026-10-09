@@ -128,6 +128,17 @@ describe('ReleaseTrendPanel', () => {
     expect(detail.textContent).not.toContain('Run B')
   })
 
+  it('judges the latest run against its recorded baseline until the user picks a policy', async () => {
+    const trend = trendFixture()
+    const latest = { ...runFixture('b', 'checkout'), comparison_baseline: { source_test_id: 'a' } } as TestSummary
+    await act(async () => root.render(<ReleaseTrendPanel releaseId="rel-1" getReleaseTrend={vi.fn().mockResolvedValue(trend)} runsById={{ a: runFixture('a', 'checkout'), b: latest }} />))
+    await flush()
+    const policy = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.startsWith('Baseline policy'))?.querySelector('select') as HTMLSelectElement
+    expect(policy.value).toBe('recorded')
+    await act(async () => { policy.value = 'previous'; policy.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(policy.value).toBe('previous')
+  })
+
   it('does not silently replace a fixed baseline excluded by a scenario filter', async () => {
     const trend = trendFixture()
     trend.points.push({ ...trend.points[1], run_id: 'c', run_name: 'Run C', completed_at: '2026-06-01T12:00:00Z', avg_response_ms: 150 })

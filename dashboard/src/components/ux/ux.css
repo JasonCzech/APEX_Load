@@ -149,3 +149,60 @@
 .library-filter:has(select) { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
 
 .library-filter > span { color: var(--text-muted); font-size: 11px; font-weight: 700; letter-spacing: var(--label-tracking, .05em); text-transform: var(--label-case, uppercase); }
+
+/* IntegerField messages: the error replaces silent clamping. */
+.field-error { display: block; flex-basis: 100%; margin-top: 4px; color: var(--danger-text, var(--danger)); font-size: 12px; }
+.field-advisory { display: block; flex-basis: 100%; margin-top: 4px; color: var(--text-secondary); font-size: 12px; }
+
+.ux-undo-notice {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 1200;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 10px 12px 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  /* It floats over page content, and --bg-elevated is translucent in the
+     default theme: layer it over the opaque page colour. */
+  background: linear-gradient(var(--bg-elevated), var(--bg-elevated)), var(--bg-primary);
+  color: var(--text-primary);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+  font-size: 13px;
+}
+
+.ux-undo-notice-error {
+  flex-basis: 100%;
+  color: var(--danger-text, var(--danger));
+}
+
+/* Shared feedback block (ux/Notice.tsx). Tone sets the rail and tint only, so
+   text keeps the theme's readable colours in every theme. */
+.ux-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin: 8px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--info-border, var(--border));
+  border-left-width: 4px;
+  border-radius: var(--radius, 8px);
+  background: var(--info-bg, var(--bg-secondary));
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.ux-notice-success { border-color: var(--success-border, var(--border)); background: var(--success-bg, var(--bg-secondary)); }
+.ux-notice-warning { border-color: var(--warning-border, var(--border)); background: var(--warning-bg, var(--bg-secondary)); }
+.ux-notice-error { border-color: var(--danger-border, var(--border)); background: var(--danger-bg, var(--bg-secondary)); }
+.ux-notice-body { display: grid; gap: 4px; min-width: 0; flex: 1 1 240px; }
+.ux-notice-title { font-weight: 700; }
+.ux-notice-details summary { cursor: pointer; color: var(--text-secondary); }
+.ux-notice-details pre { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; color: var(--text-secondary); }
+.ux-notice-action { display: flex; gap: 8px; align-items: center; }

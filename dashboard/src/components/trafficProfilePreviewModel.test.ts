@@ -75,9 +75,10 @@ describe('trafficProfilePreviewModel', () => {
   })
 
   it('formats profile axes in minutes and hours', () => {
-    expect(formatTrafficProfileAxisTime(0)).toBe('0m')
-    expect(formatTrafficProfileAxisTime(30)).toBe('0.5m')
+    expect(formatTrafficProfileAxisTime(0)).toBe('0s')
+    expect(formatTrafficProfileAxisTime(26)).toBe('26s')
+    expect(formatTrafficProfileAxisTime(63)).toBe('1m3s')
     expect(formatTrafficProfileAxisTime(900)).toBe('15m')
-    expect(formatTrafficProfileAxisTime(5400)).toBe('1h 30m')
+    expect(formatTrafficProfileAxisTime(5400)).toBe('1h30m')
   })
 })

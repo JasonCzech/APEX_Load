@@ -22,7 +22,7 @@ import PageViewToggle from './PageViewToggle'
 import StatusBadge from './StatusBadge'
 import CommandCenterOverview, { type CommandCenterOverviewProps } from './CommandCenterOverview'
 import { useTestApi } from '../hooks/api/useTestApi'
-import { isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
+import { formatRunClock, isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
 import { isCompletedTestStatus, isLiveTestStatus, isPendingTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
 import { useRunActionConfirmation } from './useRunActionConfirmation'
 import type { BrowserReplaySnapshot, GroupLiveMetrics, ImportedDashboardResult, IntervalSummaryRecord, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, PrometheusGraph, TestGroup, TestGroupParametersUpdateResult, TestGroupRuntimeSettingsUpdateResult, TestStatus, TestSummary, TransactionEvent, TxMetrics, VUserRampStatus } from '../types'
@@ -65,8 +65,10 @@ import {
   formatSnapshotResponseStatusAndHeaders,
 } from '../utils/snapshotFormatUtils'
 import { attemptErrorPercent, errorRateBasisLabel, groupRunCounts, groupRunErrorPercent, liveRunCounts, type ErrorRateBasis } from '../utils/liveErrorRate'
+import { formatPercentValue } from '../utils/numberFormat'
 import './TestExecution.css'
 import './CommandCenterPrototype.css'
+import { MISSING_VALUE } from './runReport/reportPresentation'
 
 const TestExecutionScenarioEditor = lazy(() => import('./TestExecutionScenarioEditor'))
 
@@ -94,6 +96,10 @@ interface CommandCenterPrototypeProps {
   scopeLabel?: string
   onSelectRun?: (id: string) => void
   canManageTests?: boolean
+  /** Set once access is known and this role cannot control runs: controls are shown read-only with this reason. */
+  runControlsReadOnlyReason?: string
+  /** The live update stream; when it is down, live values may be stale. */
+  liveStreamState?: 'connected' | 'connecting' | 'disconnected'
   onOpenOverview?: () => void
   runViewMemory?: Map<string, Map<string, unknown>>
   overviewActions?: Pick<CommandCenterOverviewProps, 'onNewTest' | 'newTestDisabledReason' | 'onBrowseScenarios' | 'releases' | 'onSelectRelease' | 'onOpenRepository'>
@@ -197,17 +203,9 @@ function formatNumber(value: number, digits = 0) {
 }
 
 function formatPercent(value: number) {
-  return `${value.toFixed(2)}%`
+  return formatPercentValue(value)
 }
 
-function formatRemaining(seconds: number) {
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  const remSeconds = seconds % 60
-  return hours > 0
-    ? `${hours}h ${minutes.toString().padStart(2, '0')}m`
-    : `${minutes}m ${remSeconds.toString().padStart(2, '0')}s`
-}
 
 function clampTarget(value: number, role?: TestGroup['role']) {
   return clampVUsersForRole(value, role)
@@ -247,7 +245,7 @@ function coerceTestStatus(status: string | undefined, fallback: TestStatus = 'RU
 }
 
 function formatTimeValue(value?: string) {
-  if (!value) return 'n/a'
+  if (!value) return MISSING_VALUE
   const parsed = Date.parse(value)
   return Number.isNaN(parsed) ? value : new Date(parsed).toLocaleTimeString()
 }
@@ -475,6 +473,8 @@ export default function CommandCenterPrototype({
   scopeLabel = 'Current workspace',
   onSelectRun,
   canManageTests = false,
+  runControlsReadOnlyReason,
+  liveStreamState = 'connected',
   onOpenOverview,
   runViewMemory,
   overviewActions,
@@ -1453,6 +1453,7 @@ export default function CommandCenterPrototype({
         {discoveryError && <span role="alert">Run list is stale. <button type="button" className="btn btn-secondary" onClick={() => setDiscoveryRetry(value => value + 1)}>Retry active runs</button></span>}
       </nav>}
       {liveMode && <CommandLoadObservation test={displayTest} />}
+      {liveMode && liveStreamState !== 'connected' && <p className="command-stream-note" role="status">Live stream: {liveStreamState}. Run status is polled separately; live values may be stale until the stream reconnects.</p>}
       <RunControlShelf
         test={displayTest}
         status={runStatus}
@@ -1477,6 +1478,7 @@ export default function CommandCenterPrototype({
         onOpenTestNotes={testId ? () => setShowNotes(true) : undefined}
         onChangeDuration={liveMode && displayTest.termination_mode !== 'iterations' && runStatus === 'RUNNING' ? () => setShowRuntimeAdjustment(true) : undefined}
         changeDurationDisabled={showRuntimeAdjustment || pendingAction !== null}
+        readOnlyReason={runControlsReadOnlyReason}
         onCreateQueuedCopy={queuedRevisionScope ? () => { void queuedRevision.open() } : undefined}
         queuedCopyLoading={queuedRevision.loading}
       />
@@ -1613,7 +1615,7 @@ export default function CommandCenterPrototype({
           runStatus={runStatus}
           totalDurationSeconds={totalDurationSeconds}
           remainingSeconds={remainingSeconds}
-          readOnly={historicalRun || displayTest.termination_mode === 'iterations'}
+          readOnly={historicalRun || displayTest.termination_mode === 'iterations' || Boolean(runControlsReadOnlyReason)}
           targetTransitionMode={state.targetTransitionMode}
           targetRampDuration={state.targetRampDuration}
           onTargetTransitionModeChange={changeTargetTransitionMode}
@@ -1708,6 +1710,8 @@ interface RunControlShelfProps {
   onOpenTestNotes?: () => void
   onChangeDuration?: () => void
   changeDurationDisabled?: boolean
+  /** Why this role cannot control the run; the controls stay visible but disabled. */
+  readOnlyReason?: string
   onCreateQueuedCopy?: () => void
   queuedCopyLoading?: boolean
 }
@@ -1734,10 +1738,13 @@ function RunControlShelf({
   onOpenTestNotes,
   onChangeDuration,
   changeDurationDisabled = false,
+  readOnlyReason,
   onCreateQueuedCopy,
   queuedCopyLoading = false,
   noRequestSamples = false,
 }: RunControlShelfProps) {
+  const readOnly = Boolean(readOnlyReason)
+  const readOnlyNoteId = readOnly ? `command-controls-readonly-${test.id}` : undefined
   const terminal = status === 'ABORTED' || status === 'STOPPING' || status === 'COMPLETE' || status === 'FAILED'
   // Abort must stay available during STOPPING so a wedged graceful stop can still be escalated.
   const fullyTerminal = status === 'ABORTED' || status === 'COMPLETE' || status === 'FAILED'
@@ -1762,13 +1769,13 @@ function RunControlShelf({
             : `${formatNumber(totalCurrent)} / ${formatNumber(totalTarget)} VU`}
           tone="info"
         />
-        {test.termination_mode === 'iterations' ? <><MetricPill label="Completed / expected iterations" value={`${test.live_metrics?.completed_iterations ?? 0} / ${test.groups.reduce((n,g) => n + g.vusers * (g.iterations || 0), 0)}`} /><MetricPill label="Elapsed" value={formatRemaining(test.started_at ? Math.max(0, ((test.ended_at ? Date.parse(test.ended_at) : Date.now()) - Date.parse(test.started_at)) / 1000) : 0)} /></> : <MetricPill label="Remaining" value={formatRemaining(remainingSeconds)} tone={remainingSeconds <= 60 ? 'warning' : 'default'} />}
+        {test.termination_mode === 'iterations' ? <><MetricPill label="Completed / expected iterations" value={`${test.live_metrics?.completed_iterations ?? 0} / ${test.groups.reduce((n,g) => n + g.vusers * (g.iterations || 0), 0)}`} /><MetricPill label="Elapsed" value={formatRunClock(test.started_at ? Math.max(0, ((test.ended_at ? Date.parse(test.ended_at) : Date.now()) - Date.parse(test.started_at)) / 1000) : 0)} /></> : <MetricPill label="Remaining" value={formatRunClock(remainingSeconds)} tone={remainingSeconds <= 60 ? 'warning' : 'default'} />}
         {tps !== undefined && <MetricPill label={tpsHint ? `TPS (${tpsHint})` : 'TPS'} value={canStart ? "Not started" : noRequestSamples ? "No samples" : formatNumber(tps, 1)} tone="accent" />}
         <MetricPill label={`Error Rate (${errorRateBasisLabel(errorRateBasis)})`} value={canStart || noRequestSamples ? "No samples" : formatOptionalPercent(errorPct)} tone={errorPct && errorPct > 0 ? "danger" : "default"} />
         {test.groups.length > 1 && (
           <MetricPill
             label={`Highest Error Rate (${errorRateBasisLabel(errorRateBasis)})`}
-            value={canStart || noRequestSamples ? "No samples" : highestErrorGroup ? `${highestErrorGroup.errorPct < 0.005 ? "<0.01%" : formatOptionalPercent(highestErrorGroup.errorPct)} · ${highestErrorGroup.name}` : errorPct && errorPct > 0 ? "No group data" : "No errors"}
+            value={canStart || noRequestSamples ? "No samples" : highestErrorGroup ? `${formatOptionalPercent(highestErrorGroup.errorPct)} · ${highestErrorGroup.name}` : errorPct && errorPct > 0 ? "No group data" : "No errors"}
             tone={highestErrorGroup ? "danger" : "default"}
           />
         )}
@@ -1792,29 +1799,29 @@ function RunControlShelf({
           </button>
         )}
         {onChangeDuration && (
-          <button type="button" className="btn btn-sm btn-accent" data-command-action="change-duration" onClick={onChangeDuration} disabled={changeDurationDisabled}>
-            Change duration
+          <button type="button" className="btn btn-sm btn-accent" data-command-action="change-duration" onClick={onChangeDuration} disabled={changeDurationDisabled || readOnly} aria-describedby={readOnlyNoteId}>
+            Adjust run
           </button>
         )}
         {!historicalRun && (
           <>
             {canStart && (
-              <button type="button" className="btn btn-sm btn-success" onClick={onStart}>
+              <button type="button" className="btn btn-sm btn-success" onClick={onStart} disabled={readOnly} aria-describedby={readOnlyNoteId}>
                 Start Test
               </button>
             )}
             {canPauseResume && (
-              <button type="button" className={`btn btn-sm ${status === 'PAUSED' ? 'btn-success' : 'btn-secondary'}`} onClick={onPauseResume} disabled={terminal}>
+              <button type="button" className={`btn btn-sm ${status === 'PAUSED' ? 'btn-success' : 'btn-secondary'}`} onClick={onPauseResume} disabled={terminal || readOnly} aria-describedby={readOnlyNoteId}>
                 {status === 'PAUSED' ? 'Resume' : 'Pause'}
               </button>
             )}
             {canStop && (
-              <button type="button" className="btn btn-sm btn-secondary" onClick={onStop} disabled={terminal}>
+              <button type="button" className="btn btn-sm btn-secondary" onClick={onStop} disabled={terminal || readOnly} aria-describedby={readOnlyNoteId}>
                 Stop
               </button>
             )}
             {!fullyTerminal && (
-              <button type="button" className="btn btn-sm btn-danger" onClick={onAbort} disabled={fullyTerminal}>
+              <button type="button" className="btn btn-sm btn-danger" onClick={onAbort} disabled={fullyTerminal || readOnly} aria-describedby={readOnlyNoteId}>
                 Abort
               </button>
             )}
@@ -1822,6 +1829,7 @@ function RunControlShelf({
         )}
       </div>
 
+      {readOnlyReason && !historicalRun && <p className="command-control-readonly" id={readOnlyNoteId}>{readOnlyReason}</p>}
       <p className="command-control-feedback" role="status">{feedback}</p>
     </section>
   )
@@ -2262,15 +2270,15 @@ function OpsCockpitV2View({
           />
         </div>
 
-        <aside className="command-v2-inspector" aria-label="Change duration and target transition">
+        <aside className="command-v2-inspector" aria-label="Adjust run: duration and target transition">
           <section>
-            <div className="command-v2-inspector-title"><h3>Change Duration</h3><span>{formatRemaining(remainingSeconds)} left</span></div>
+            <div className="command-v2-inspector-title"><h3>Change Duration</h3><span>{formatRunClock(remainingSeconds)} left</span></div>
             <dl>
-              <div><dt>Current duration</dt><dd>{formatRemaining(totalDurationSeconds)}</dd></div>
+              <div><dt>Current duration</dt><dd>{formatRunClock(totalDurationSeconds)}</dd></div>
               <div><dt>Elapsed</dt><dd>{formatNumber(progressPct, 0)}%</dd></div>
             </dl>
             <div className="command-v2-inspector-actions">
-              <button type="button" className="primary" disabled={readOnly || !onChangeDuration} onClick={onChangeDuration}>Change Duration</button>
+              <button type="button" className="primary" disabled={readOnly || !onChangeDuration} onClick={onChangeDuration}>Adjust run</button>
             </div>
           </section>
 
@@ -2460,7 +2468,7 @@ function GroupSelectionPanel({
 }
 
 const COMMAND_TABLE_TABS: Array<{ id: CommandTableTab; label: string }> = [
-  { id: 'scenario', label: 'Scenario Run' },
+  { id: 'scenario', label: 'Run metrics' },
   { id: 'errors', label: 'Error Details' },
   { id: 'infrastructure', label: 'Infrastructure' },
 ]
@@ -2653,11 +2661,11 @@ function ScenarioRunTable({
   onSort: (key: string) => void
 }) {
   const essentialColumns = [0, 1, 4, 5, 6, 11, 15]
-  const labels = ['Name', 'Group', 'Type', 'Protocol', 'Current VU', 'Target VU', 'TPS', 'Target TPS', 'Gap', 'Attempts', 'Errors', 'Error %', 'ART', 'p50', 'p90', 'p95', 'p99']
+  const labels = ['Name', 'Group', 'Type', 'Protocol', 'Current VU', 'Target VU', 'TPS', 'Target TPS', 'Gap', 'Attempts', 'Errors', 'Error rate', 'ART', 'P50', 'P90', 'P95', 'P99']
   const [columns, setColumns] = useCommandViewState('scenarioColumns', essentialColumns)
   const fullMetrics = columns.length === labels.length
   return (
-    <div className="command-data-table-wrap" role="tabpanel" aria-label="Scenario run metrics" tabIndex={0}>
+    <div className="command-data-table-wrap" role="tabpanel" aria-label="Run metrics" tabIndex={0}>
       <p className="command-table-caption">Rates and counts cover the last sample window; Group Load shows run-to-date error rates.</p>
       <label className="command-column-preset"><input type="checkbox" checked={fullMetrics} onChange={event => setColumns(event.target.checked ? labels.map((_, index) => index) : essentialColumns)} /> Show all 17 metrics</label>
       <details className="command-column-picker"><summary>Choose columns</summary>
@@ -2677,12 +2685,12 @@ function ScenarioRunTable({
             <SortableHeader hidden={!columns.includes(8)} label="Gap" sortKey="throughputGap" sort={sort} onSort={onSort} align="right" />
             <SortableHeader hidden={!columns.includes(9)} label="Attempts" sortKey="transactions" sort={sort} onSort={onSort} align="right" />
             <SortableHeader hidden={!columns.includes(10)} label="Errors" sortKey="errors" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(11)} label="Error %" sortKey="errorPct" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(11)} label="Error rate" sortKey="errorPct" sort={sort} onSort={onSort} align="right" />
             <SortableHeader hidden={!columns.includes(12)} label="ART" sortKey="art" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(13)} label="p50" sortKey="p50" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(14)} label="p90" sortKey="p90" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(15)} label="p95" sortKey="p95" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(16)} label="p99" sortKey="p99" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(13)} label="P50" sortKey="p50" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(14)} label="P90" sortKey="p90" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(15)} label="P95" sortKey="p95" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(16)} label="P99" sortKey="p99" sort={sort} onSort={onSort} align="right" />
           </tr>
         </thead>
         <tbody>
@@ -2771,7 +2779,7 @@ function ErrorDetailsTable({
                 <td><strong>{row.title}</strong><span className="command-table-subtext">{row.sample}</span></td>
                 <td className="numeric">{formatNumber(row.count)}</td>
                 <td className="numeric">{formatPercent(row.rate)}</td>
-                <td className="numeric">{row.statusCode || '--'}</td>
+                <td className="numeric">{row.statusCode || MISSING_VALUE}</td>
                 <td>{row.affectedGroups.join(', ') || row.group}</td>
                 <td>{row.actions.join(', ') || row.transaction}</td>
                 <td>{row.firstSeen}</td>
@@ -2860,7 +2868,7 @@ function ErrorEvidencePanel({
                   >
                     <td>{formatTimeValue(item.timestamp)}</td>
                     <td>{item.action}</td>
-                    <td>{item.group || '--'}</td>
+                    <td>{item.group || MISSING_VALUE}</td>
                     <td className="numeric">{formatOptionalMs(item.duration_ms)}</td>
                     <td className="numeric">{item.status_code || item.status}</td>
                     <td>{item.error_message || item.signature}</td>
@@ -2951,9 +2959,9 @@ function InfrastructureTable({
             <SortableHeader label="Region" sortKey="region" sort={sort} onSort={onSort} />
             <SortableHeader label="Active VU" sortKey="activeVusers" sort={sort} onSort={onSort} align="right" />
             <SortableHeader label="TPS" sortKey="tps" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader label="Error %" sortKey="errorPct" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader label="p95" sortKey="p95" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader label="p99" sortKey="p99" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader label="Error rate" sortKey="errorPct" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader label="P95" sortKey="p95" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader label="P99" sortKey="p99" sort={sort} onSort={onSort} align="right" />
             <SortableHeader label="Saturation" sortKey="saturation" sort={sort} onSort={onSort} />
             <SortableHeader label="CPU" sortKey="cpu" sort={sort} onSort={onSort} align="right" />
             <SortableHeader label="Memory" sortKey="memory" sort={sort} onSort={onSort} align="right" />
@@ -3156,23 +3164,23 @@ function compareSortValues(left: unknown, right: unknown, direction: SortDirecti
 }
 
 function formatOptionalNumber(value?: number, digits = 0) {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return '--'
+  if (typeof value !== 'number' || !Number.isFinite(value)) return MISSING_VALUE
   return formatNumber(value, digits)
 }
 
 function formatOptionalMs(value?: number) {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return '--'
+  if (typeof value !== 'number' || !Number.isFinite(value)) return MISSING_VALUE
   return `${formatNumber(value)} ms`
 }
 
 function formatOptionalPercent(value?: number) {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return '--'
+  if (typeof value !== 'number' || !Number.isFinite(value)) return MISSING_VALUE
   return formatPercent(value)
 }
 
 function snapshotSection(snapshot: BrowserReplaySnapshot) {
   return {
-    request_method: snapshot.request_method || 'n/a',
+    request_method: snapshot.request_method || MISSING_VALUE,
     request_url: snapshot.request_url || '',
     request_headers: snapshot.request_headers,
     request_body: snapshot.request_body,
@@ -3681,7 +3689,7 @@ function LoadModelPanel({
       <div className="command-panel-header command-load-model-header">
         <div>
           <h3>Load Model</h3>
-          <p>{phase} / {formatRemaining(remainingSeconds)} remaining</p>
+          <p>{phase} / {formatRunClock(remainingSeconds)} remaining</p>
           {runStatus === 'PAUSED' && <p>Allocated users are retained while active load pauses. Rolling throughput decays as its averaging window clears.</p>}
         </div>
         <span className="command-load-model-badge">{formatNumber(progressPct, 0)}% elapsed</span>
@@ -4022,7 +4030,7 @@ function GroupLoadTable({
                 </span>
               </span>
               <span role="cell" data-label="ART">{formatNumber(group.art)} ms</span>
-              <span role="cell" data-label="Error %" className={metricTone(group.errorPct, 0.75, 1.5)}>{formatPercent(group.errorPct)}</span>
+              <span role="cell" data-label="Error rate" className={metricTone(group.errorPct, 0.75, 1.5)}>{formatPercent(group.errorPct)}</span>
             </div>
           )
         })}

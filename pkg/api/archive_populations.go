@@ -81,6 +81,16 @@ func archivePopulationWindow(manifest *RunArchiveManifest) time.Duration {
 	}
 	return 0
 }
+
+// reportPopulationPeakTPS matches the report screen, which shows the peak as
+// unavailable when the archive recorded none.
+func reportPopulationPeakTPS(population ArchiveMetricPopulation) string {
+	if population.PeakTPS <= 0 {
+		return "Unknown"
+	}
+	return formatCSVFloat(population.PeakTPS)
+}
+
 func reportPopulationRate(rate *float64) string {
 	if rate == nil {
 		return "Unknown"

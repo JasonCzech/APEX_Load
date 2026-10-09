@@ -44,7 +44,7 @@ export default function IssueDetailsDialog({ title, issues, onClose }: Props) {
   const visibleIssues = issues.slice(pageStart, pageStart + ISSUE_PAGE_SIZE)
 
   return createPortal((
-    <DialogLayer><div className="modal-overlay issue-details-overlay" {...dialogBackdropProps(onClose, `Close ${title}`)}>
+    <DialogLayer><div className="modal-overlay issue-details-overlay" {...dialogBackdropProps(onClose)}>
       <div
         ref={dialogRef}
         className="modal issue-details-dialog"

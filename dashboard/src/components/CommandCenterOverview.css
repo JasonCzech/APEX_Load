@@ -13,7 +13,7 @@
 .command-overview small { display: block; margin-top: 6px; color: var(--text-secondary); line-height: 1.5; }
 .command-overview-run { padding: 0; background: transparent; border: 0; color: var(--accent-text); text-align: left; cursor: pointer; overflow-wrap: anywhere; }
 .command-overview-run strong { display: block; font-size: 14px; }
-.command-overview .command-overview-warning { color: var(--warning); }
+.command-overview .command-overview-warning { color: var(--warning-text); }
 .command-overview-results { margin-top: 20px; }
 .command-run-switcher { padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); }
 .command-run-switcher label { flex: 1; min-width: 180px; }

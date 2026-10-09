@@ -308,9 +308,16 @@ func completenessSeverityToFinding(severity string) string {
 // (report Section 3). SLAMs is the configured global p95 SLA; HasSLA is false
 // when no latency SLA was configured for the run.
 type SLAComplianceRow struct {
-	Name       string  `json:"name"`
-	Volume     int64   `json:"volume"`
-	P95Ms      float64 `json:"p95_ms"`
+	Name   string  `json:"name"`
+	Volume int64   `json:"volume"`
+	P95Ms  float64 `json:"p95_ms"`
+	// The rest of the distribution, so the scoreboard and its CSV can show the
+	// same percentiles without a second lookup into by_transaction.
+	MinMs      float64 `json:"min_ms,omitempty"`
+	P50Ms      float64 `json:"p50_ms,omitempty"`
+	P90Ms      float64 `json:"p90_ms,omitempty"`
+	P99Ms      float64 `json:"p99_ms,omitempty"`
+	MaxMs      float64 `json:"max_ms,omitempty"`
 	SLAMs      float64 `json:"sla_ms,omitempty"`
 	HasSLA     bool    `json:"has_sla"`
 	ErrorPct   float64 `json:"error_pct"`
@@ -349,6 +356,11 @@ func buildSLAComplianceRows(report *RunArchiveReport) []SLAComplianceRow {
 			Name:     name,
 			Volume:   stats.Transactions,
 			P95Ms:    stats.P95Ms,
+			MinMs:    stats.MinResponseMs,
+			P50Ms:    stats.P50Ms,
+			P90Ms:    stats.P90Ms,
+			P99Ms:    stats.P99Ms,
+			MaxMs:    stats.MaxResponseMs,
 			ErrorPct: stats.ErrorPct,
 			SLAMs:    slaMs,
 			HasSLA:   hasSLA,

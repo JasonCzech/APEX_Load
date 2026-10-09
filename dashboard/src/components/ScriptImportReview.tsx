@@ -31,7 +31,7 @@ import SecretBindingReview, {
 import { requirementsPreserveDestinationValues } from './secretBindingUtils'
 import type { IssueDetail } from './IssueDetailsDialog'
 import ImportIssueWorkspace from './ImportIssueWorkspace'
-import { groupImportWorkspaceIssues, type GroupedImportWorkspaceIssue } from './importIssueWorkspaceModel'
+import { groupImportWorkspaceIssues, importDiagnosticTitle, type GroupedImportWorkspaceIssue } from './importIssueWorkspaceModel'
 import { ImportSourceIssueFocusContext, type ImportSourceIssueFocus } from './ImportSourceIssueFocus'
 import LinkedCodePane from './LinkedCodePane'
 import './ScriptImportReview.css'
@@ -500,6 +500,9 @@ interface Props {
   showPreviewAside?: boolean
   onSave?: () => void
   onEdit?: () => void
+  // Replaces the save button once the reviewed draft is already saved, so the
+  // review offers the next step instead of explaining why saving is disabled.
+  savedAction?: { label: string; onClick: () => void }
   children?: ReactNode
 }
 
@@ -565,6 +568,7 @@ export default function ScriptImportReview({
   showPreviewAside: requestedSource = true,
   onSave,
   onEdit,
+  savedAction,
   children,
 }: Props) {
   const [settingsBusy, setSettingsBusy] = useState(false)
@@ -624,7 +628,7 @@ export default function ScriptImportReview({
   currentHasUnresolvedSecretBindingsRef.current = hasUnresolvedSecretBindings
   const currentRemainingRequirementsPreserveValuesRef = useRef(allRemainingRequirementsPreserveValues)
   currentRemainingRequirementsPreserveValuesRef.current = allRemainingRequirementsPreserveValues
-  const visibleSaveDisabledReason = saveDisabled
+  const visibleSaveDisabledReason = saveDisabled && !savedAction
     ? saveDisabledReason?.trim() || 'Saving is unavailable for this reviewed import. Correct the required choices shown on this page and try again.'
     : ''
   const defaultConfigureLaterCount = useMemo(
@@ -968,7 +972,7 @@ export default function ScriptImportReview({
         identity: `jmeter-${item.source_ref || item.location || index}-${item.code || index}`,
         onSelect: () => setActiveReviewTab('source'),
         severity: item.severity,
-        title: item.element,
+        title: importDiagnosticTitle(item),
         description: redactPreviewText(item.detail),
         source: redactPreviewText([item.source_ref, item.location].filter(Boolean).join(' · ') || 'Import conversion'),
       }))
@@ -1020,7 +1024,9 @@ export default function ScriptImportReview({
               {credentialAction === 'edit' ? 'Preparing editor...' : compactReview ? editLabel : resolvedEditLabel}
             </button>
           )}
-          {onSave && (
+          {savedAction ? (
+            <button type="button" className="btn btn-primary" onClick={savedAction.onClick}>{savedAction.label}</button>
+          ) : onSave && (
             <button
               className={compactReview ? "btn btn-secondary" : "btn btn-primary"}
               onClick={() => { void runAction('save') }}

@@ -6,6 +6,7 @@ import { useBrowserResourcePage, type BrowserResourcePageLoader } from './useBro
 import { browserDocumentWaterfall, browserResourceRowKey } from './browserResourceEvidenceModel'
 import BrowserNativeRequestEvidence from './BrowserNativeRequestEvidence'
 import './BrowserResourceInspector.css'
+import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
 
 interface Props { testID: string; projectID: string; sourceIdentity: string; loadPage?: BrowserResourcePageLoader }
 const textFilters = [
@@ -99,7 +100,7 @@ function ResourceInspectorBody({ testID, projectID, sourceIdentity, loadPage = r
           <td>{number(row.duration_ms, ' ms')} / {number(row.bytes_received, ' B')}</td><td>{row.action_name || 'Unavailable'}<br />{[row.group, row.region, row.device_profile, row.device_platform, row.browser_engine].filter(Boolean).join(' / ') || 'Unavailable'}</td>
           <td><details><summary>Inspect retained resource {index + 1}</summary>
             <dl className="browser-resource-details"><dt>Capture locator</dt><dd>Transaction {row.locator.transaction_ordinal}, resource {row.locator.resource_ordinal}, {row.locator.branch}</dd>
-              <dt>Captured by action at (UTC)</dt><dd>{row.timestamp || 'Unavailable'} · {row.timestamp_precision}</dd><dt>Page URL</dt><dd>{row.page_url || 'Unavailable'}</dd><dt>Method</dt><dd>{row.method || 'Unavailable'}</dd></dl>
+              <dt>Captured by action at</dt><dd>{formatDisplayDateTime(row.timestamp, { timeZone: 'UTC', milliseconds: true, fallback: 'Unavailable' })} · {row.timestamp_precision}</dd><dt>Page URL</dt><dd>{row.page_url || 'Unavailable'}</dd><dt>Method</dt><dd>{row.method || 'Unavailable'}</dd></dl>
             {row.browser_evidence ? <BrowserNativeRequestEvidence evidence={row.browser_evidence} onSelectDocument={selectDocument} /> : <p>Native request evidence: {row.evidence_state}. Request identity and phases remain unavailable.</p>}
           </details></td>
         </tr>)}</tbody></table></div> : <p>{page.population.availability === 'unavailable' ? 'No resource projection was retained.' : 'No retained observations match these filters.'}</p>}

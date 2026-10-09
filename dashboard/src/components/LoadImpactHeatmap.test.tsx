@@ -248,9 +248,9 @@ describe('LoadImpactHeatmap', () => {
     expect(container.querySelector('.load-impact-detail')?.textContent).toContain('ART at 5 VUsers')
     expect(container.querySelector('.load-impact-detail')?.textContent).toContain('2 telemetry intervals')
     expect(container.querySelector('.load-impact-detail')?.textContent).toContain('Mean interval ART')
-    expect(container.querySelector('.load-impact-detail')?.textContent).toContain('120ms')
-    expect(container.querySelector('.load-impact-detail-table')?.textContent).toContain('100ms')
-    expect(container.querySelector('.load-impact-detail-table')?.textContent).toContain('140ms')
+    expect(container.querySelector('.load-impact-detail')?.textContent).toContain('120 ms')
+    expect(container.querySelector('.load-impact-detail-table')?.textContent).toContain('100 ms')
+    expect(container.querySelector('.load-impact-detail-table')?.textContent).toContain('140 ms')
 
     const detailTable = container.querySelector<HTMLTableElement>('.load-impact-detail-table')
     expect(detailTable?.tHead?.rows[0].cells.length).toBe(detailTable?.tBodies[0].rows[0].cells.length)
@@ -263,7 +263,7 @@ describe('LoadImpactHeatmap', () => {
     })
 
     expect(timestampSortButton?.closest('th')?.getAttribute('aria-sort')).toBe('descending')
-    expect(detailTable?.tBodies[0].rows[0].cells[2].textContent).toBe('140ms')
+    expect(detailTable?.tBodies[0].rows[0].cells[2].textContent).toBe('140 ms')
   })
 
   it('shows loading and empty states without claiming data exists', async () => {

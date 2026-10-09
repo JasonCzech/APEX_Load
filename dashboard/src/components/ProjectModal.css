@@ -75,7 +75,7 @@
 .project-modal-error {
   margin: 0;
   padding: 0 20px 12px;
-  color: var(--danger);
+  color: var(--danger-text);
   font-size: 13px;
 }
 

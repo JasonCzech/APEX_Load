@@ -1,31 +1,43 @@
 import type { AppView } from './appRouting'
 
-type HelpTarget = { guide: 'user-guide' | 'admin-guide'; article: string }
+type HelpTarget = { guide: 'user-guide' | 'admin-guide'; article: string; section?: string }
 
-const userGuide = (article: string): HelpTarget => ({ guide: 'user-guide', article })
+const userGuide = (article: string, section?: string): HelpTarget => ({ guide: 'user-guide', article, section })
+const adminGuide = (article: string, section?: string): HelpTarget => ({ guide: 'admin-guide', article, section })
 
-// Every sidebar destination links to its help article. The Help pages themselves
-// have none.
+// Every sidebar destination links to the help section that covers it, not just
+// a loosely related article. The Help pages themselves have none.
 const PAGE_HELP: Partial<Record<AppView['page'], HelpTarget>> = {
-  dashboard: userGuide('orientation'),
-  activity: userGuide('orientation'),
-  'new-test': userGuide('scenarios'),
+  dashboard: userGuide('orientation', 'the-dashboard'),
+  activity: userGuide('orientation', 'the-dashboard'),
+  'new-test': userGuide('execution', 'launching-a-test'),
   tests: userGuide('scenarios'),
-  'command-center': userGuide('execution'),
-  test: userGuide('execution'),
-  monitoring: userGuide('execution'),
-  fleet: userGuide('execution'),
-  schedules: userGuide('execution'),
+  'command-center': userGuide('execution', 'monitoring-a-live-run'),
+  test: userGuide('execution', 'monitoring-a-live-run'),
+  monitoring: userGuide('execution', 'monitoring-a-live-run'),
+  fleet: userGuide('execution', 'monitoring-a-live-run'),
+  schedules: userGuide('execution', 'scheduling-recurring-runs'),
   results: userGuide('results'),
   report: userGuide('results'),
-  repository: userGuide('shared-assets'),
-  settings: userGuide('shared-assets'),
-  access: { guide: 'admin-guide', article: 'identity' },
+  repository: userGuide('shared-assets', 'repository-and-shared-assets'),
+  settings: userGuide('shared-assets', 'settings-reference'),
+  access: adminGuide('administration', 'the-access-console'),
 }
 
-export function contextualHelpHash(view: AppView): string | undefined {
-  const help = view.page === 'scripts'
-    ? userGuide(view.mode === 'import' ? 'imports' : 'authoring')
-    : PAGE_HELP[view.page]
-  return help ? `#/docs?guide=${help.guide}&article=${help.article}` : undefined
+function helpTarget(view: AppView, scriptsSubView?: string): HelpTarget | undefined {
+  if (view.page === 'scripts') {
+    // Importers opened from Script Builder keep mode=create in the URL; the
+    // open sub-view says which help applies.
+    return userGuide(view.mode === 'import' || scriptsSubView?.endsWith('import') ? 'imports' : 'authoring')
+  }
+  if (view.page === 'settings' && view.setting === 'clusters') return adminGuide('clusters')
+  return PAGE_HELP[view.page]
+}
+
+export function contextualHelpHash(view: AppView, scriptsSubView?: string): string | undefined {
+  const help = helpTarget(view, scriptsSubView)
+  if (!help) return undefined
+  const params = new URLSearchParams({ guide: help.guide, article: help.article })
+  if (help.section) params.set('section', help.section)
+  return `#/docs?${params}`
 }

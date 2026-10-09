@@ -33,7 +33,7 @@ const legacyA11yWarningRules = Object.fromEntries(
 legacyA11yWarningRules['jsx-a11y/label-has-associated-control'] = ['warn', {
   labelComponents: [],
   labelAttributes: [],
-  controlComponents: ['SecondsFromMillisecondsInput', 'ActionBodyTextarea', 'TimezoneSelect'],
+  controlComponents: ['SecondsFromMillisecondsInput', 'ActionBodyTextarea', 'TimezoneSelect', 'IntegerField'],
   assert: 'either',
   depth: 25,
 }]

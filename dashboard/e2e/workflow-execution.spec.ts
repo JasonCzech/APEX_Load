@@ -72,13 +72,13 @@ test('[U12] disconnect is visible and reconnect resumes the same run', async ({ 
     ws.connectToServer()
   })
   await page.goto(`/#/test/${id}?tab=overview&${scopeQuery(workspace)}`)
-  await expect(page.locator('.sidebar-status')).toHaveText('Live')
+  await expect(page.locator('.sidebar-status')).toHaveText('Live connection: Live')
   interrupted = true
   expect(connection).toBeDefined()
   await connection!.close({ code: 1012, reason: 'Workflow reconnect test' })
-  await expect(page.locator('.sidebar-status')).not.toHaveText('Live', { timeout: 20_000 })
+  await expect(page.locator('.sidebar-status')).not.toHaveText('Live connection: Live', { timeout: 20_000 })
   interrupted = false
-  await expect(page.locator('.sidebar-status')).toHaveText('Live', { timeout: 30_000 })
+  await expect(page.locator('.sidebar-status')).toHaveText('Live connection: Live', { timeout: 30_000 })
   await expect(page).toHaveURL(new RegExp(`#/test/${id}`))
   const count = target.count()
   await expect.poll(() => target.count()).toBeGreaterThan(count)

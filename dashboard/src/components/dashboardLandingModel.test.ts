@@ -33,6 +33,12 @@ describe('dashboard retrieval', () => {
     expect(filterDashboardRuns(runs, { ...emptyRunFilters, status: 'FAILED', evidence: 'unavailable' }, {}, now).map(test => test.id)).toEqual(['older'])
     expect(filterDashboardRuns(runs, { ...emptyRunFilters, search: 'does not exist' }, {}, now)).toEqual([])
   })
+  it('separates operator-stopped runs from completed ones, as Results does', () => {
+    const stopped = run('stopped', { stopped_by_subject: 'local:dev' })
+    const all = [archived, stopped]
+    expect(filterDashboardRuns(all, { ...emptyRunFilters, status: 'STOPPED' }, {}, now).map(test => test.id)).toEqual(['stopped'])
+    expect(filterDashboardRuns(all, { ...emptyRunFilters, status: 'COMPLETE' }, {}, now).map(test => test.id)).toEqual([archived.id])
+  })
   it('includes the date boundary and excludes invalid and future timestamps from bounded periods', () => {
     expect(filterDashboardRuns(runs, { ...emptyRunFilters, days: '1' }, {}, now)).toEqual([archived])
     expect(filterDashboardRuns(runs, emptyRunFilters, {}, now)).toHaveLength(4)

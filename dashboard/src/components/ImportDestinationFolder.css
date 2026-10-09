@@ -93,7 +93,7 @@
 }
 
 .import-destination-folder-notice {
-  color: var(--success);
+  color: var(--success-text);
 }
 
 @container import-destination-folder (max-width: 620px) {

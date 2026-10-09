@@ -201,6 +201,8 @@ describe('DashboardWorkspace', () => {
 
     expect(tabLabels()).toEqual(['Overview', 'Details'])
     expect(selectedTabLabel()).toBe('Overview')
+    // Focus follows the selection so Shift+Arrow acts on the selected tab.
+    expect(document.activeElement).toBe(tabButton('Overview'))
 
     await keyDown(tabButton('Overview'), 'ArrowRight', { shiftKey: true })
 

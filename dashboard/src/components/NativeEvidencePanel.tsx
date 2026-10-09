@@ -11,7 +11,7 @@ interface Series { name: string; unit: string; points: Point[] }
 interface OverlayPoint { timestamp_utc: string; value: number | null; unit: string; quality: string; metric_name: string }
 interface Correlation { lag_seconds: number; pairs: number; coverage: number; coefficient?: number }
 interface Result { annotations?: { id: string; timestamp: string; label: string }[]; live_bucket_mode?: string; mode: string; start: string; from: string; to: string; series: Series[]; warnings: string[]; overlay?: OverlayPoint[]; correlation?: Record<string, Correlation[]> }
-const colors = ['#38bdf8', '#a78bfa', '#34d399', '#fb7185', '#fbbf24']
+const colors = ['var(--chart-5)', 'var(--chart-1)', 'var(--chart-2)', 'var(--chart-4)', 'var(--chart-3)']
 
 export default function NativeEvidencePanel({ panel, testId }: { panel: DashboardDefinitionPanel; testId: string }) {
   const [selection, setSelection] = useState<InspectorSelection | null>(null)

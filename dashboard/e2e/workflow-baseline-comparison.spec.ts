@@ -65,7 +65,7 @@ test('baseline workspace selects pins, investigates resources, shares and preser
   await expect(telemetry).toContainText('0.0%'); await expect(telemetry).toContainText('Unavailable'); await expect(telemetry).toContainText('0 ms')
 
   await page.getByText('Load alignment, thresholds and mappings', { exact: false }).click()
-  await expect(page.getByRole('region', { name: 'Regression verdict', exact: true })).toContainText('not_evaluated')
+  await expect(page.getByRole('region', { name: 'Regression verdict', exact: true })).toContainText('Not evaluated')
   await page.getByLabel('Acceptance metrics', { exact: true }).selectOption(['consumer_lag_ms', 'error_rate_pct'])
   await page.getByLabel('Acceptance identities (one per line)', { exact: true }).fill('Purchase')
   await page.getByLabel('Acceptance protocols (comma separated)', { exact: true }).fill('kafka')

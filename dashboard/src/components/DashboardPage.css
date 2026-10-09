@@ -674,7 +674,7 @@
 }
 
 .release-panel-stat.tone-danger .release-panel-stat-value {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .release-panel-status-strip {
@@ -1608,11 +1608,11 @@
 }
 
 .release-trend-detail-stat.tone-danger .release-trend-detail-stat-value {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .release-trend-detail-stat.tone-success .release-trend-detail-stat-value {
-  color: var(--success);
+  color: var(--success-text);
 }
 
 .release-trend-detail-stat-label {

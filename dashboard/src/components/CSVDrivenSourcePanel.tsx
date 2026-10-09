@@ -26,7 +26,7 @@ type LayoutMode = 'wide' | 'long'
 type ARTUnit = 'milliseconds' | 'seconds'
 type ARTSelection = { basis: 'source_series' | 'operator_peak'; seriesKey?: string; value?: number; unit: ARTUnit }
 
-const colors = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2']
+const colors = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)']
 
 function durationMilliseconds(value?: string): number {
   if (!value) return 0

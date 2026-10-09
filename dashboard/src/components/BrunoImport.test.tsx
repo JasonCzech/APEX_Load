@@ -1195,7 +1195,7 @@ describe('BrunoImport', () => {
 
     await act(async () => sensitiveHeaderAcknowledgement?.click())
     expect(sensitiveHeaderAcknowledgement?.checked).toBe(true)
-    expect(container.querySelector('#bruno-save-blockers')?.textContent)
+    expect(container.querySelector('#bruno-save-blockers')?.textContent ?? '')
       .not.toContain('Review CTA/first.yml: Sensitive header "X-CDF-AUTH-TOKEN"')
   })
 
@@ -1430,6 +1430,66 @@ describe('BrunoImport', () => {
     expect(apiMock.createFolder).toHaveBeenCalledWith('project-1', { name: 'Editor Imports', category: 'scripts' })
     expect(saveButton?.disabled).toBe(false)
     expect(container.querySelector('#bruno-save-blockers')).toBeNull()
+  })
+
+  it('creates the suggested script folder on save instead of blocking when none exists yet', async () => {
+    const inspection = nativeInspectionFixture()
+    inspection.result.scripts = [inspection.result.scripts[0]]
+    inspection.result.fidelity.executable_items = 1
+    apiMock.listFolders.mockResolvedValueOnce({ folders: [], count: 0 })
+    apiMock.inspectBrunoImport.mockResolvedValueOnce(inspection)
+    const file = new File(['version: 1'], 'Activate_Subscriber.yml', { type: 'application/yaml' })
+
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
+      await Promise.resolve()
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+    expect(container.querySelector<HTMLSelectElement>('#bruno-destination-folder')?.selectedOptions[0]?.textContent)
+      .toBe('New folder “Activate Subscriber” (created on save)')
+    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect & review'))
+    await act(async () => {
+      inspectButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Saving creates the script folder “Activate Subscriber”')
+    expect(container.querySelector('#bruno-save-blockers')).toBeNull()
+    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
+    expect(saveButton?.disabled).toBe(false)
+    expect(apiMock.createFolder).not.toHaveBeenCalled()
+    await act(async () => {
+      saveButton?.click()
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+
+    expect(apiMock.createFolder).toHaveBeenCalledWith('project-1', { name: 'Activate Subscriber', category: 'scripts' })
+    expect(apiMock.commitBrunoImport).toHaveBeenCalledWith(expect.objectContaining({ folder_id: 'folder-created' }))
+  })
+
+  it('reuses a folder already named after the collection instead of creating a duplicate', async () => {
+    const inspection = nativeInspectionFixture()
+    inspection.result.scripts = [inspection.result.scripts[0]]
+    inspection.result.fidelity.executable_items = 1
+    apiMock.listFolders.mockResolvedValueOnce({ folders: [{ id: 'folder-existing', project_id: 'project-1', parent_id: null, name: 'Activate Subscriber', category: 'scripts', created_at: '2026-07-16T19:00:00Z', updated_at: '2026-07-16T19:00:00Z' }], count: 1 })
+    apiMock.inspectBrunoImport.mockResolvedValueOnce(inspection)
+    const file = new File(['version: 1'], 'Activate_Subscriber.yml', { type: 'application/yaml' })
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
+      await Promise.resolve()
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+    expect(container.querySelector<HTMLSelectElement>('#bruno-destination-folder')?.value).toBe('folder-existing')
+    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Inspect & review'))
+    await act(async () => { inspectButton?.click(); await Promise.resolve(); await Promise.resolve() })
+    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
+    await act(async () => { saveButton?.click(); await new Promise(resolve => setTimeout(resolve, 0)) })
+    expect(apiMock.createFolder).not.toHaveBeenCalled()
+    expect(apiMock.commitBrunoImport).toHaveBeenCalledWith(expect.objectContaining({ folder_id: 'folder-existing' }))
   })
 
   it('blocks inspect, save, and destination changes while a replacement folder is being created', async () => {

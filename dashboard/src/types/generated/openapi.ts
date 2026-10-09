@@ -3981,8 +3981,13 @@ export interface operations {
             "sla_rows"?: Record<string, {
               "error_pct"?: number;
               "has_sla"?: boolean;
+              "max_ms"?: number;
+              "min_ms"?: number;
               "name"?: string;
+              "p50_ms"?: number;
+              "p90_ms"?: number;
               "p95_ms"?: number;
+              "p99_ms"?: number;
               "result"?: string;
               "result_kind"?: string;
               "sla_ms"?: number;
@@ -45841,6 +45846,54 @@ export interface operations {
       };
     };
   };
+  "handleDeleteGeneratorMetadata": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, string>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleDeleteGrafanaDashboard": {
     parameters: {
       "path": {
@@ -70168,8 +70221,13 @@ export interface operations {
             "sla_rows"?: Record<string, {
               "error_pct": number;
               "has_sla": boolean;
+              "max_ms"?: number;
+              "min_ms"?: number;
               "name": string;
+              "p50_ms"?: number;
+              "p90_ms"?: number;
               "p95_ms": number;
+              "p99_ms"?: number;
               "result": string;
               "result_kind": string;
               "sla_ms"?: number;
@@ -131133,6 +131191,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -165028,6 +165091,7 @@ export interface paths {
     "get": operations["handleListGeneratorMetadata"];
   };
   "/api/v1/fleet/generators/{id}": {
+    "delete": operations["handleDeleteGeneratorMetadata"];
     "patch": operations["handlePatchGeneratorMetadata"];
   };
   "/api/v1/fleet/generators/{id}/cordon": {

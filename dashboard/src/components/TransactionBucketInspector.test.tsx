@@ -22,6 +22,6 @@ it('shows measured phases, missing timings and retained snapshots after bucket s
  try {
  await act(async()=>root.render(<TransactionBucketInspector query={{metric:'response_time',aggregation:'p95',population:'action'}} selection={{run:'run',from:event.timestamp,to:'2026-10-01T00:00:10Z'}} onClose={()=>{}} />))
  await act(async()=>container.querySelector('details')!.setAttribute('open',''))
- expect(container.textContent).toContain('DNS: 2 ms');expect(container.textContent).toContain('Connect: Unavailable');expect(container.textContent).toContain('Time to first byte (milestone): 20 ms');expect(container.textContent).toContain('No retained request body')
+ expect(container.textContent).toContain('DNS: 2.0 ms');expect(container.textContent).toContain('Connect: —');expect(container.textContent).toContain('Time to first byte (milestone): 20.0 ms');expect(container.textContent).toContain('No retained request body')
  } finally {act(()=>root.unmount());container.remove()}
 })

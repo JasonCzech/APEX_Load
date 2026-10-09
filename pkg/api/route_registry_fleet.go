@@ -44,6 +44,9 @@ var fleetAdministrationAPIRouteCatalog = apiRouteCatalog{
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/fleet/generators", "handleListGeneratorMetadata", systemAdminAccess(), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleListGeneratorMetadata)
 		}),
+		newAuthenticatedAPIRoute(http.MethodDelete, "/api/v1/fleet/generators/{id}", "handleDeleteGeneratorMetadata", systemAdminAccess(), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleDeleteGeneratorMetadata)
+		}),
 		newAuthenticatedAPIRoute(http.MethodPatch, "/api/v1/fleet/generators/{id}", "handlePatchGeneratorMetadata", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, MaxBodyBytes: 262144}, func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handlePatchGeneratorMetadata)
 		}),

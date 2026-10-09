@@ -521,7 +521,7 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
                       <th>Action</th>
                       <th>Transactions</th>
                       <th>Errors</th>
-                      <th>Error %</th>
+                      <th>Error rate</th>
                       <th>Avg (ms)</th>
                       <th>Max (ms)</th>
                     </tr>

@@ -4158,7 +4158,8 @@ describe('NewTestPage', () => {
 
   it('sends scheduled_start_at when one-time scheduled preflight is allowed', async () => {
     const selectTest = vi.fn()
-    const scheduledLocal = '2026-06-02T13:30'
+    // Always a future start: a past one is rejected before preflight.
+    const scheduledLocal = `${new Date().getFullYear() + 1}-06-02T13:30`
     const scheduledISO = new Date(scheduledLocal).toISOString()
     apiMock.preflightTest.mockImplementation((payload: { intent?: string }) => Promise.resolve(payload.intent === 'scheduled'
       ? {
@@ -4168,7 +4169,7 @@ describe('NewTestPage', () => {
           queue_allowed: false,
           candidate_window: {
             start_at: scheduledISO,
-            end_at: '2026-06-02T14:00:00Z',
+            end_at: new Date(Date.parse(scheduledISO) + 30 * 60_000).toISOString(),
             duration_seconds: 1800,
           },
           blocking_conflicts: [],
@@ -4229,6 +4230,31 @@ describe('NewTestPage', () => {
     }))
     expect(apiMock.startTest).not.toHaveBeenCalled()
     expect(selectTest).toHaveBeenCalledWith('test-1')
+  })
+
+  it('reports a scheduled start in the past instead of checking it', async () => {
+    apiMock.preflightTest.mockResolvedValue({ decision: 'start_now', start_now_allowed: true, schedule_allowed: true, queue_allowed: false, candidate_window: { start_at: '2026-01-01T10:00:00Z', end_at: '2026-01-01T10:06:00Z', duration_seconds: 360 }, blocking_conflicts: [], warnings: [] })
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+    await flushDebouncedPreflight()
+    apiMock.preflightTest.mockClear()
+    const scheduledInput = container.querySelector('input[type="datetime-local"]') as HTMLInputElement
+    await act(async () => setInputValue(scheduledInput, '2020-01-01T10:00'))
+    await flushDebouncedPreflight()
+    expect(container.querySelector('#new-test-scheduled-start-error')?.textContent).toContain('already passed')
+    expect(scheduledInput.getAttribute('aria-invalid')).toBe('true')
+    expect(container.textContent).not.toContain('Scheduled window clear')
+    expect(apiMock.preflightTest).not.toHaveBeenCalledWith(expect.objectContaining({ intent: 'scheduled' }))
   })
 
   it('disables run and schedule mutations when effective RBAC denies test management', async () => {

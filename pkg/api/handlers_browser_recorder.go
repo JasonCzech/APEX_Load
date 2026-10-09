@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"sort"
@@ -302,6 +303,10 @@ func (s *Server) handleStartBrowserRecording(w http.ResponseWriter, r *http.Requ
 				"availability": availability,
 				"ref":          ref,
 			})
+			return
+		}
+		if reason, ok := browserRecordingNavigationFailure(err, req.StartURL); ok {
+			writeError(w, http.StatusUnprocessableEntity, reason)
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "failed to start browser recording: "+err.Error())
@@ -3193,4 +3198,33 @@ func (s *Server) handleExportBrowserRecording(w http.ResponseWriter, r *http.Req
 	w.Header().Set("X-APEXLoad-Sensitivity", sensitivity)
 	w.WriteHeader(http.StatusOK)
 	w.Write(data)
+}
+
+var browserNavigationErrorCode = regexp.MustCompile(`net::(ERR_[A-Z_]+)`)
+
+// browserRecordingNavigationFailure turns a start page that would not load
+// (net::ERR_* from the browser) into a reason the operator can act on,
+// instead of a 500 carrying the browser engine's call log.
+func browserRecordingNavigationFailure(err error, startURL string) (string, bool) {
+	match := browserNavigationErrorCode.FindStringSubmatch(err.Error())
+	if match == nil {
+		return "", false
+	}
+	code := match[1]
+	var why string
+	switch {
+	case code == "ERR_NAME_NOT_RESOLVED":
+		why = "its host name could not be resolved"
+	case code == "ERR_CONNECTION_REFUSED":
+		why = "the connection was refused"
+	case code == "ERR_SSL_PROTOCOL_ERROR" || strings.HasPrefix(code, "ERR_CERT_") || strings.HasPrefix(code, "ERR_SSL_"):
+		why = "the secure (TLS) connection failed"
+	case code == "ERR_CONNECTION_TIMED_OUT" || code == "ERR_TIMED_OUT":
+		why = "the connection timed out"
+	case code == "ERR_ADDRESS_UNREACHABLE" || code == "ERR_INTERNET_DISCONNECTED" || code == "ERR_NETWORK_CHANGED":
+		why = "the address is unreachable from the recording machine"
+	default:
+		why = "the page did not load"
+	}
+	return fmt.Sprintf("The recording browser could not open %s: %s (%s). Check the address and that the recording machine can reach it, then start again.", scrub.ValueURL(startURL, scrub.Policy{}), why, code), true
 }

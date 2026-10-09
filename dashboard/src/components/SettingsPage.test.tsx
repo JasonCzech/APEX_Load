@@ -2952,7 +2952,13 @@ describe('SettingsPage', () => {
     expect(redirectURLInput).toBeTruthy()
     if (!issuerInput || !clientIDInput || !redirectURLInput) return
 
+    // An invalid issuer is reported on the field itself, not only in a detached list.
+    await setFieldValue(issuerInput, 'ftp://login.example.test')
+    expect(issuerInput.getAttribute('aria-invalid')).toBe('true')
+    expect(document.getElementById(issuerInput.getAttribute('aria-describedby') || '')?.textContent).toMatch(/Issuer URL/)
+
     await setFieldValue(issuerInput, 'https://login.example.test/tenant/v2.0')
+    expect(issuerInput.getAttribute('aria-invalid')).toBeNull()
     await setFieldValue(clientIDInput, 'apexload-dashboard')
     await setFieldValue(redirectURLInput, 'https://apexload.example.test/api/v1/auth/callback')
 
@@ -3821,7 +3827,10 @@ describe('SettingsPage', () => {
     // With a badge showing, the chip's aria-label folds in the issue count so
     // assistive tech announces it.
     expect(topbar).toBeTruthy()
-    expect(container.querySelector('nav[aria-label="Settings sections"] [aria-label="Validation issues"]')).toBeTruthy()
+    // Only the destination that owns the bad field is marked, with a count.
+    const marked = Array.from(container.querySelectorAll('nav[aria-label="Settings sections"] .settings-nav-issue-count'))
+    expect(marked.map(badge => badge.parentElement?.textContent?.replace(badge.textContent || '', ''))).toEqual(['Alert & stop policies'])
+    expect(marked[0]?.getAttribute('aria-label')).toBe('1 validation issue')
   })
 
   it('summarizes validation errors from other sections with a jump control', async () => {
@@ -6044,6 +6053,34 @@ describe('SettingsPage', () => {
     expect(section?.textContent).toContain('C-10001')
     expect(section?.textContent).not.toContain('stale initial row read failed')
     expect(section?.textContent).not.toContain('Unable to load data pool rows')
+  })
+
+  it('explains invalid row JSON beside the row editor, not at the top of the page', async () => {
+    apiMock.listDataPools.mockResolvedValue({
+      data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' }],
+      count: 1,
+    })
+    apiMock.getDataPool.mockReset().mockResolvedValue({ data_pool: { id: 'pool-1', name: 'Customers' }, rows: [], total: 0, has_more: false, next_cursor: '' })
+    apiMock.createDataPoolRow.mockReset()
+    window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    const section = container.querySelector('#settings-section-data-pools')!
+    const editor = section.querySelector('textarea[aria-labelledby="data-pool-row-label"]') as HTMLTextAreaElement
+    expect(editor).toBeTruthy()
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(editor, '{"customer_id": ')
+      editor.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const addButton = Array.from(section.querySelectorAll('button')).find(button => button.textContent === 'Add Row')!
+    await act(async () => addButton.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const error = section.querySelector('#data-pool-row-error')
+    expect(error?.getAttribute('role')).toBe('alert')
+    expect(error?.textContent).toContain('Row data is not valid JSON')
+    expect(error?.textContent).not.toContain('Unexpected')
+    expect(apiMock.createDataPoolRow).not.toHaveBeenCalled()
   })
 
   it('reports a created data-pool row as saved when only the reconciliation read fails', async () => {

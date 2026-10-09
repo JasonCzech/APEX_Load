@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { isValidDurationInput, isValidNonNegativeDurationInput, parseDurationToNanoseconds, parseDurationToSeconds, serializeDurationFieldValue, splitDurationInput } from './timeUtils'
+import { formatRunClock, formatTimeLong, isValidDurationInput, isValidNonNegativeDurationInput, parseDurationToNanoseconds, parseDurationToSeconds, serializeDurationFieldValue, splitDurationInput } from './timeUtils'
 
 describe('timeUtils', () => {
   it.each([
@@ -124,5 +124,34 @@ describe('timeUtils', () => {
     ['2.0000001s', 2_000_000_100n],
   ])('truncates ordinary fractional duration %s exactly at nanoseconds', (input, nanoseconds) => {
     expect(parseDurationToNanoseconds(input)).toBe(nanoseconds)
+  })
+})
+
+describe('formatRunClock', () => {
+  it.each([
+    [0, '0s'],
+    [41, '41s'],
+    [61.9, '1m 01s'],
+    [2 * 3600 + 41, '2h 00m 41s'],
+    [3 * 3600 + 5 * 60, '3h 05m 00s'],
+    [-5, '0s'],
+    [Number.NaN, '0s'],
+  ])('formats %s seconds as %s', (seconds, expected) => {
+    expect(formatRunClock(seconds)).toBe(expected)
+  })
+})
+
+describe('formatTimeLong', () => {
+  it.each([
+    [41, '41s'],
+    [360, '6m'],
+    [363, '6m 3s'],
+    [7200, '2h'],
+    [7241, '2h 0m 41s'],
+    [4612, '1h 16m 52s'],
+    [5400, '1h 30m'],
+    [41.6, '42s'],
+  ])('formats %s seconds as %s', (seconds, expected) => {
+    expect(formatTimeLong(seconds)).toBe(expected)
   })
 })

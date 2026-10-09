@@ -996,7 +996,7 @@ export function LoadComparisonPanel({
                   <th>Δ latency vs baseline</th>
                   <th>Successful / s</th>
                   <th>Δ successful / s</th>
-                  <th>Error %</th>
+                  <th>Error rate</th>
                   <th>Δ error (pp)</th>
                   <th>Samples / runs</th>
                   <th>Evidence</th>

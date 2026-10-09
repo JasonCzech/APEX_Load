@@ -11,6 +11,7 @@ import { useLibraryPagination } from './useLibraryPagination'
 import RowActions from './ux/RowActions'
 import BulkActions from './ux/BulkActions'
 import FormField from './ux/FormField'
+import IntegerField from './ux/IntegerField'
 import FormErrorSummary from './ux/FormErrorSummary'
 import TabList from './ux/TabList'
 import { confirmAction } from './ux/confirmAction'
@@ -93,6 +94,7 @@ import { ScenarioMonitorBindings } from './RunMonitoring'
 import { dataBindingErrors } from './scenarioDataBindingModel'
 import NewTestReadiness from './NewTestReadiness'
 import { formatTrafficProfileAxisTime } from './trafficProfilePreviewModel'
+import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
 
 interface Props {
   applicationRepository?: ApplicationRepository | null
@@ -707,7 +709,7 @@ function formatDate(value?: string) {
 }
 
 function formatDateTime(value?: string) {
-  return value ? new Date(value).toLocaleString() : '—'
+  return formatDisplayDateTime(value)
 }
 
 function releaseList(scenario: StoredScenario) {
@@ -1897,7 +1899,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   }, [])
 
   const startBlankScenario = useCallback(async () => {
-    if (!(await confirmAction('Discard this in-progress scenario draft and start over with a blank builder?'))) return
+    if (!(await confirmAction('Discard this in-progress scenario draft and start over with a blank builder?', { title: 'Discard scenario draft', confirmLabel: 'Discard draft', destructive: true }))) return
     clearScenarioBuilderDraft()
     discardAutosavedCheckpoint()
     resetBuilderToBlank()
@@ -2246,6 +2248,13 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     setRunSettingsTab(preset?.recommendedRunTab ?? 'scenario')
     markWizardStepVisited('source')
     setWizardStep('run')
+    // Land on the model's settings, not past them: focus the first field so the
+    // defaults this variant filled in are seen before Next.
+    window.setTimeout(() => {
+      const first = document.querySelector<HTMLElement>('.scenario-run-settings-tab-panel :is(input, select):not([disabled])')
+      first?.scrollIntoView?.({ block: 'center' })
+      first?.focus()
+    }, 0)
   }
 
   const applyLoadModelTemplate = (templateId: string) => {
@@ -3380,7 +3389,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 
   const deleteSelectedScenarios = async () => {
     const ids = selectedVisibleScenarioIds.filter(id => !deletingScenarioIds.has(id))
-    if (!canManageTests || ids.length === 0 || !(await confirmAction(`Delete ${ids.length} selected scenario${ids.length === 1 ? '' : 's'}? Scenarios with linked results cannot be deleted.`))) return
+    if (!canManageTests || ids.length === 0 || !(await confirmAction(`Delete ${ids.length} selected scenario${ids.length === 1 ? '' : 's'}? Scenarios with linked results cannot be deleted.`, { title: 'Delete scenarios', confirmLabel: 'Delete', destructive: true }))) return
     const scopeProjectId = activeProjectId
     setDeletingScenarioIds(current => new Set([...current, ...ids]))
     setError('')
@@ -3516,6 +3525,10 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     : scenarioSourceMode === 'existing'
       ? Boolean(selectedCloneScenarioId)
       : Boolean(selectedShapeId || selectedLoadModelTemplateId))
+  // Why Next is unavailable, said next to it instead of a silently disabled button.
+  const nextStepBlockedReason = wizardStep === 'source' && !sourceStepComplete && !sourcePending
+    ? scenarioSourceMode === 'existing' ? 'Choose a scenario to copy to continue.' : modelFamilyChoice ? 'Choose a variant below (Use …) to continue.' : 'Choose a load model to continue.'
+    : ''
   const wizardStepCompletion: Record<ScenarioWizardStep, boolean> = {
     source: sourceStepComplete,
     scripts: Boolean(form.name.trim() && formGroups.length > 0 && formGroups.every(group => group.script_id) && !scenarioGroupNameError),
@@ -3574,9 +3587,9 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                     <td className="cell-muted">{run.duration}</td>
                     <td style={{ textAlign: 'right' }}>
                       <div className="scenario-linked-run-actions">
-                      <button className="btn btn-sm btn-secondary" onClick={(event) => { event.stopPropagation(); onSelectTest(run.id) }}>Open</button>
+                      <button className="btn btn-sm btn-secondary" aria-label={`Open ${run.name}`} onClick={(event) => { event.stopPropagation(); onSelectTest(run.id) }}>Open</button>
                       {onOpenCommandCenter && (
-                        <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); onOpenCommandCenter(run.id) }}>Run Dashboard</button>
+                        <button className="btn btn-sm btn-ghost" aria-label={`Open ${run.name} in Command Center`} onClick={(event) => { event.stopPropagation(); onOpenCommandCenter(run.id) }}>Command Center</button>
                       )}
                       </div>
                     </td>
@@ -3690,7 +3703,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     const targetLabel = targetGroup?.name || `Group ${scriptSelectionTargetIndex + 1}`
     return (
       <DialogLayer>
-        <div className="modal-overlay" {...dialogBackdropProps(closeScriptLibraryDialog, 'Close script library dialog')}>
+        <div className="modal-overlay" {...dialogBackdropProps(closeScriptLibraryDialog)}>
           <div
             ref={scriptLibraryDialogRef}
             className="modal-content modal-wide scenario-existing-script-library scenario-script-library-dialog"
@@ -4378,7 +4391,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 									<p>Choose the peak load and whether the same profile applies to every group.</p>
 									<label className="scenario-field stepped-ramp-primary-input">
 										<span>Peak VUsers</span>
-											<div className="stepped-ramp-unit-input"><input className="settings-input" type="number" aria-label="Peak VUsers" min={1} max={closedVUserPeakMax} value={activeClosedVUserDefinition.peak_vusers} onChange={event => updateClosedVUser({ peak_vusers: Math.min(closedVUserPeakMax, clampVUsersForRole(Number(event.target.value), activeStageGroup.role, 1)) })} /><span>VUsers</span></div>
+											<div className="stepped-ramp-unit-input"><IntegerField label="Peak VUsers" unit="VUsers" min={1} max={closedVUserPeakMax} value={activeClosedVUserDefinition.peak_vusers} onCommit={peak => updateClosedVUser({ peak_vusers: peak })} /></div>
 									</label>
 									<div className="stepped-ramp-scope" role="radiogroup" aria-label="Apply Closed VUser profile to">
 										<button type="button" role="radio" aria-checked={closedVUserConfig.scope === 'scenario'} className={closedVUserConfig.scope === 'scenario' ? 'active' : ''} onClick={() => updateClosedVUser(undefined, 'scenario')}><strong>Each group (same profile)</strong><span>Repeat this profile for every group</span></button>
@@ -4960,7 +4973,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 
       {authoringDraft && canManageTests && <section className="scenario-draft-recovery" aria-label="Saved browser draft">
         <strong>{authoringDraft.form.name || 'Untitled draft'}</strong>
-        <p>Saved {new Date(authoringDraft.savedAt).toLocaleString()} on this browser, in this project. This checkpoint cannot run.</p>
+        <p>Saved {formatDisplayDateTime(authoringDraft.savedAt)} on this browser, in this project. This checkpoint cannot run.</p>
         <button type="button" className="btn btn-secondary" onClick={() => { if (scenarioBuilderDirty) runGuarded(resumeAuthoringDraft); else resumeAuthoringDraft() }}>Resume draft</button>
         <button type="button" className="btn btn-ghost" onClick={() => { try { clearScenarioAuthoringDraft(activeProjectId || ''); setAuthoringDraft(null); checkpointBaselineRef.current = '' } catch (cause) { setError(getErrorMessage(cause, 'Unable to clear browser draft.')) } }}>Clear saved draft</button>
       </section>}
@@ -5091,7 +5104,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
               <button
                 type="button"
                 className="btn btn-ghost"
-                style={{ color: 'var(--danger)' }}
+                style={{ color: 'var(--danger-text)' }}
                 onClick={startBlankScenario}
                 title="Discard this in-progress draft and start a new blank scenario"
               >
@@ -5109,8 +5122,10 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                 Back
               </button>
             )}
+            {wizardStep !== 'review' && nextStepBlockedReason && <span id="scenario-next-reason" className="ux-draft-help" role="status">{nextStepBlockedReason}</span>}
             {wizardStep !== 'review' && <button
               className="btn btn-primary"
+              aria-describedby={nextStepBlockedReason ? 'scenario-next-reason' : undefined}
               onClick={() => {
                 const nextIndex = Math.min(scenarioWizardSteps.length - 1, currentWizardIndex + 1)
                 setWizardStep(scenarioWizardSteps[nextIndex].id)
@@ -5282,16 +5297,16 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                         event.stopPropagation()
                         void toggleScenarioRuns(scenario)
                       }}>{expandedScenarioId === scenario.id ? 'Hide Runs' : 'View Runs'}</button>
-                      <ObjectArchiveControls resourceType="scenario" resourceId={scenario.id} archivedAt={scenario.archived_at} updatedAt={scenario.updated_at} canManage={canManageTests} onChanged={refresh} />
+                      <ObjectArchiveControls resourceType="scenario" resourceId={scenario.id} resourceName={scenario.name} archivedAt={scenario.archived_at} updatedAt={scenario.updated_at} canManage={canManageTests} onChanged={refresh} />
                       {canManageTests ? (
                         <>
                           {onCreateTestFromScenario && (
                             <button className="btn btn-sm btn-secondary" disabled={!!scenario.archived_at} aria-label={`New test from ${scenario.name}`} onClick={(event) => { event.stopPropagation(); onCreateTestFromScenario(scenario.id) }}>New test</button>
                           )}
-                          <button className="btn btn-sm btn-ghost" disabled={!!scenario.archived_at || openingScenarioId === scenario.id} onClick={(event) => { event.stopPropagation(); if (!assigningScenarioIds.has(scenario.id)) void openEdit(scenario) }}>{openingScenarioId === scenario.id ? 'Opening…' : 'Edit'}</button>
-                          <RowActions className="scenario-more-actions"><button className="btn btn-sm btn-ghost" disabled={!!scenario.archived_at || deletingScenarioIds.has(scenario.id) || assigningScenarioIds.has(scenario.id)} onClick={() => setAssignmentScenarios([scenario])}>Change application/releases…</button><button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); duplicateScenario(scenario) }}>Duplicate</button>
+                          <button className="btn btn-sm btn-ghost" disabled={!!scenario.archived_at || openingScenarioId === scenario.id} aria-label={`Edit ${scenario.name}`} onClick={(event) => { event.stopPropagation(); if (!assigningScenarioIds.has(scenario.id)) void openEdit(scenario) }}>{openingScenarioId === scenario.id ? 'Opening…' : 'Edit'}</button>
+                          <RowActions className="scenario-more-actions" label={scenario.name}><button className="btn btn-sm btn-ghost" disabled={!!scenario.archived_at || deletingScenarioIds.has(scenario.id) || assigningScenarioIds.has(scenario.id)} onClick={() => setAssignmentScenarios([scenario])}>Change application/releases…</button><button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); duplicateScenario(scenario) }}>Duplicate</button>
                           <button className="btn btn-sm btn-ghost" disabled={!!scenario.archived_at} onClick={(event) => { event.stopPropagation(); addScenarioToPlan(scenario.id) }} title="Seed a new execution plan with this scenario">Add to plan</button>
-                          <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} disabled={deletingScenarioIds.has(scenario.id) || assigningScenarioIds.has(scenario.id)} onClick={(event) => { event.stopPropagation(); setConfirmDeleteScenarioId(scenario.id) }}>{deletingScenarioIds.has(scenario.id) ? 'Deleting…' : 'Delete'}</button>
+                          <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger-text)' }} disabled={deletingScenarioIds.has(scenario.id) || assigningScenarioIds.has(scenario.id)} onClick={(event) => { event.stopPropagation(); setConfirmDeleteScenarioId(scenario.id) }}>{deletingScenarioIds.has(scenario.id) ? 'Deleting…' : 'Delete'}</button>
                           <button
                             className="btn btn-sm btn-secondary"
                             onClick={(event) => { event.stopPropagation(); void scenarioFederation.pushLocalItem({ kind: 'scenario', id: scenario.id, name: scenario.name }) }}
@@ -5375,7 +5390,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       )}
 
       {confirmDeleteScenarioId && (
-        <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(closeDeleteScenarioDialog, 'Close scenario deletion dialog')}>
+        <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(closeDeleteScenarioDialog)}>
           <div
             ref={deleteScenarioDialogRef}
             className="modal"
@@ -5390,7 +5405,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
             </div>
             <div className="monitor-body">
               <p id="delete-scenario-dialog-description">Permanently delete <strong>{scenarios.find(s => s.id === confirmDeleteScenarioId)?.name || 'this scenario'}</strong>? Scenarios with linked results cannot be deleted.</p>
-              <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
+              <p style={{ color: 'var(--danger-text)', fontWeight: 600 }}>This action cannot be undone.</p>
               <div className="settings-inline-actions">
                 <button className="btn btn-secondary" type="button" onClick={closeDeleteScenarioDialog}>Cancel</button>
                 <button className="btn btn-danger" type="button" disabled={deletingScenarioIds.has(confirmDeleteScenarioId)} onClick={() => deleteScenario(confirmDeleteScenarioId)}>Delete Scenario</button>

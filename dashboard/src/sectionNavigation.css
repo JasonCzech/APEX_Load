@@ -237,11 +237,71 @@ body .help-columns > .help-sidebar {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  body .help-columns > .help-sidebar,
-  body .section-layout > .section-nav {
+  /* Narrow screens: the section list becomes one scrolling row above the
+     content (Settings, Access and Help alike), so the content starts near the
+     top instead of below a 340 px list. The current item keeps its indicator. */
+  body :is(.help-columns > .help-sidebar, .section-layout > .section-nav, .settings-tabbed-layout > .settings-task-navigation) {
     position: static;
-    max-height: 340px;
-    overflow-y: auto;
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    width: auto;
+    max-height: none;
+    padding: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+  }
+
+  body :is(.help-columns > .help-sidebar, .section-layout > .section-nav, .settings-tabbed-layout > .settings-task-navigation) :is(div, nav, ul, li) {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: row;
+    align-items: center;
+    margin: 0;
+    padding: 0;
+    gap: 0;
+  }
+
+  body :is(.help-columns > .help-sidebar, .section-layout > .section-nav, .settings-tabbed-layout > .settings-task-navigation) > :is(div, nav) {
+    padding: 4px 4px 4px 0;
+  }
+
+  body :is(.help-columns > .help-sidebar, .section-layout > .section-nav, .settings-tabbed-layout > .settings-task-navigation) > :is(div, nav) + :is(div, nav),
+  body .section-nav .help-article-group + .help-article-group {
+    margin: 0;
+    padding-top: 4px;
+    border-top: 0;
+    border-left: 1px solid var(--border-subtle);
+  }
+
+  body :is(.help-columns > .help-sidebar, .section-layout > .section-nav, .settings-tabbed-layout > .settings-task-navigation) :is(h2, h3, h4) {
+    margin: 0 4px 0 12px;
+    white-space: nowrap;
+  }
+
+  body :is(.help-columns > .help-sidebar, .section-layout > .section-nav, .settings-tabbed-layout > .settings-task-navigation) :is(button, a) {
+    width: auto;
+    min-height: 40px;
+    padding: 8px 12px;
+    white-space: nowrap;
+    box-shadow: inset 0 -3px 0 transparent;
+  }
+
+  body :is(.help-columns > .help-sidebar, .section-layout > .section-nav, .settings-tabbed-layout > .settings-task-navigation) :is(button, a)[aria-current='page'] {
+    box-shadow: inset 0 -3px 0 var(--brand-highlight, var(--accent));
+  }
+
+  /* Outranks the older grid rule for the opened Settings list. */
+  body .settings-tabbed-layout > .settings-task-navigation.is-open {
+    display: flex;
+  }
+
+  body .settings-tabbed-layout > .settings-task-navigation .settings-navigation-search {
+    flex: 0 0 220px;
+    padding: 8px 12px;
+    border-bottom: 0;
+    border-right: 1px solid var(--border);
   }
 }
 
@@ -404,4 +464,21 @@ body .main-topbar .settings-scope-status {
  * the layout flow and the first card starts level with the section list. */
 body .settings-task-heading:not(:has(> p[role='status'])) {
   position: absolute;
+}
+
+/* Validation issues for one Settings destination, as a count (not a bare dot). */
+.settings-nav-issue-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  color: var(--danger-text);
+  font-size: 11px;
+  font-weight: 600;
 }

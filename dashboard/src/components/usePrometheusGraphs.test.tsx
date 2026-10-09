@@ -17,7 +17,8 @@ vi.mock('../hooks/api/useSystemApi', () => ({
 }))
 
 // Imported after the mock is registered.
-import { usePrometheusGraphs } from './usePrometheusGraphs'
+import { ApiError } from '../hooks/apiClient'
+import { resetPrometheusGraphsAccessForTests, usePrometheusGraphs } from './usePrometheusGraphs'
 
 function okResponse(): PrometheusGraphsResponse {
   return {
@@ -28,8 +29,9 @@ function okResponse(): PrometheusGraphsResponse {
   }
 }
 
+let lastResult: ReturnType<typeof usePrometheusGraphs> | null = null
 function Harness({ test, filteredData }: { test: TestSummary | null; filteredData: MetricsHistoryPoint[] }) {
-  usePrometheusGraphs(test, filteredData)
+  lastResult = usePrometheusGraphs(test, filteredData)
   return null
 }
 
@@ -67,6 +69,7 @@ describe('usePrometheusGraphs', () => {
 
   beforeEach(() => {
     vi.useFakeTimers()
+    resetPrometheusGraphsAccessForTests()
     getPrometheusGraphs.mockReset()
     getPrometheusGraphs.mockResolvedValue(okResponse())
     container = document.createElement('div')
@@ -88,6 +91,30 @@ describe('usePrometheusGraphs', () => {
       await Promise.resolve()
     })
   }
+
+  it('hides graphs after a 403 and stops asking for the rest of the session', async () => {
+    getPrometheusGraphs.mockRejectedValue(new ApiError('forbidden: requires global viewer access', 403))
+    const base = Date.parse('2026-06-12T12:00:00Z')
+    await render(runningTest(), [point(base), point(base + 2000)])
+    expect(getPrometheusGraphs).toHaveBeenCalledTimes(1)
+    expect(lastResult?.prometheusError).toBe('')
+    expect(lastResult?.prometheusGraphs).toEqual([])
+
+    await act(async () => {
+      vi.advanceTimersByTime(30_000)
+      await Promise.resolve()
+    })
+    // A new window (another run or a later bucket) does not retry either.
+    await render(runningTest(), [point(base), point(base + 60_000)])
+    expect(getPrometheusGraphs).toHaveBeenCalledTimes(1)
+  })
+
+  it('still reports other failures', async () => {
+    getPrometheusGraphs.mockRejectedValue(new ApiError('prometheus unreachable', 502))
+    const base = Date.parse('2026-06-12T12:00:00Z')
+    await render(runningTest(), [point(base), point(base + 2000)])
+    expect(lastResult?.prometheusError).toBe('prometheus unreachable')
+  })
 
   it('does not refetch when data ticks within the same step bucket', async () => {
     const base = Date.parse('2026-06-12T12:00:00Z')

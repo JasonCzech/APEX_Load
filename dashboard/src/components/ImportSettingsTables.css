@@ -15,7 +15,7 @@
 .import-setting-input > .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .import-setting-input input, .import-setting-input select, .import-setting-input textarea { box-sizing: border-box; width: 100%; min-width: 0; padding: .4rem; color: var(--text-primary); background: var(--bg-secondary, #191c25); border: 1px solid var(--border-color, #454959); border-radius: 4px; }
 .import-setting-input [aria-invalid="true"] { border-color: var(--danger, #e06b6b); }
-.import-setting-input [role="alert"], .import-category-actions [role="alert"] { color: var(--danger, #e06b6b); }
+.import-setting-input [role="alert"], .import-category-actions [role="alert"] { color: var(--danger-text); }
 .import-settings-pending { padding: .75rem; display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; border: 1px solid var(--border-color, #454959); border-radius: 6px; margin: .75rem 0; }
 .import-setting-value { white-space: pre-wrap; }
 .import-source-inventory dl { display: grid; grid-template-columns: minmax(8rem, 1fr) 3fr; gap: .6rem; }

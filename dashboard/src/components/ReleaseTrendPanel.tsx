@@ -1,3 +1,4 @@
+import { compareRunsChronologically } from '../utils/runChronology'
 import SeriesChartExport from "./SeriesChartExport"
 import { AnalysisSavedViews } from './AnalysisSavedViews'
 import { useEffect, useMemo, useState } from 'react'
@@ -83,6 +84,9 @@ export function ReleaseTrendPanel({
   const [population, setPopulation] = useState<TrendPopulation>('transaction')
   const [metric, setMetric] = useState<AnalysisMetric>('p95_ms')
   const [baselineMode, setBaselineMode] = useState('previous')
+  // Until the user picks a policy, a run that recorded its own comparison
+  // baseline is judged against that baseline, not the previous visible run.
+  const [baselineModeChosen, setBaselineModeChosen] = useState(false)
   const [pinnedId, setPinnedId] = useState('')
   const [selectedRunId, setSelectedRunId] = useState('')
   const [latencyRule, setLatencyRule] = useState(10)
@@ -132,12 +136,14 @@ export function ReleaseTrendPanel({
             .flatMap((trend) => trend.points)
             .map((point) => [point.run_id, point]),
         ).values(),
-      ].sort(
-        (a, b) =>
-          Date.parse(a.completed_at) - Date.parse(b.completed_at) ||
-          a.run_id.localeCompare(b.run_id),
+      ].sort((a, b) =>
+        // Same order as the landing page: ties broken by start, creation and reference.
+        compareRunsChronologically(
+          { ...runsById[a.run_id], id: a.run_id, completed_at: a.completed_at },
+          { ...runsById[b.run_id], id: b.run_id, completed_at: b.completed_at },
+        ),
       ),
-    [trends],
+    [runsById, trends],
   )
   const scenarios = [
     ...new Set(
@@ -147,6 +153,13 @@ export function ReleaseTrendPanel({
     ),
   ]
   const effectiveScenario = scenarios.includes(scenario) ? scenario : ALL
+  const latestRecordsBaseline = Boolean(
+    points.length &&
+      runsById[points[points.length - 1].run_id]?.comparison_baseline
+        ?.source_test_id,
+  )
+  const effectiveBaselineMode =
+    !baselineModeChosen && latestRecordsBaseline ? 'recorded' : baselineMode
   const sourcePoints = points.filter(
     (point) =>
       effectiveScenario === ALL ||
@@ -191,9 +204,9 @@ export function ReleaseTrendPanel({
     const recordedId =
       runsById[row.point.run_id]?.comparison_baseline?.source_test_id
     const baseline =
-      baselineMode === 'pinned'
+      effectiveBaselineMode === 'pinned'
         ? eligiblePinned
-        : baselineMode === 'recorded'
+        : effectiveBaselineMode === 'recorded'
           ? measurements.find((item) => item.point.run_id === recordedId)
           : [...measurements.slice(0, index)].reverse().find((previous) => {
               if (!validTrendStats(previous.stats)) return false
@@ -296,6 +309,7 @@ export function ReleaseTrendPanel({
     setPopulation('transaction')
     setMetric('p95_ms')
     setBaselineMode('previous')
+    setBaselineModeChosen(false)
     setPinnedId('')
     setSort('time')
     setSelectedRunId('')
@@ -314,7 +328,7 @@ export function ReleaseTrendPanel({
       ['Transaction', effectiveTransaction || 'All'],
       ['Statistic', metric],
       ['Window', 'Entire recorded run'],
-      ['Baseline policy', baselineMode],
+      ['Baseline policy', effectiveBaselineMode],
       ['Latency regression %', latencyRule],
       ['Error regression percentage points', errorRule],
       [
@@ -543,7 +557,7 @@ export function ReleaseTrendPanel({
           transaction: effectiveTransaction,
           population,
           metric,
-          baselineMode,
+          baselineMode: effectiveBaselineMode,
           pinnedId: eligiblePinned?.point.run_id || '',
           latencyRule: String(latencyRule),
           errorRule: String(errorRule),
@@ -569,6 +583,7 @@ export function ReleaseTrendPanel({
               ? (values.metric as AnalysisMetric)
               : 'p95_ms',
           )
+          setBaselineModeChosen(true)
           setBaselineMode(
             values.baselineMode === 'pinned' ||
               values.baselineMode === 'recorded'
@@ -593,15 +608,18 @@ export function ReleaseTrendPanel({
         <label>
           Baseline policy
           <select
-            value={baselineMode}
-            onChange={(event) => setBaselineMode(event.target.value)}
+            value={effectiveBaselineMode}
+            onChange={(event) => {
+              setBaselineModeChosen(true)
+              setBaselineMode(event.target.value)
+            }}
           >
             <option value="previous">Previous eligible visible run</option>
             <option value="pinned">Choose a fixed baseline</option>
             <option value="recorded">Recorded run baseline</option>
           </select>
         </label>
-        {baselineMode === 'pinned' && (
+        {effectiveBaselineMode === 'pinned' && (
           <label>
             Fixed baseline
             <select
@@ -634,7 +652,7 @@ export function ReleaseTrendPanel({
           </select>
         </label>
       </div>
-      {baselineMode === 'pinned' && pinnedId && !eligiblePinned && (
+      {effectiveBaselineMode === 'pinned' && pinnedId && !eligiblePinned && (
         <p role="status">The fixed baseline has no matching evidence for these filters. Change the filters or explicitly choose another baseline to compare.</p>
       )}
       <details className="analysis-settings">
@@ -1079,7 +1097,7 @@ export function ReleaseTrendPanel({
                           <th>Samples</th>
                           <th>{metricLabels[metric]} (ms)</th>
                           <th>Δ vs baseline</th>
-                          <th>Error %</th>
+                          <th>Error rate</th>
                           <th>Acceptance</th>
                         </tr>
                       </thead>

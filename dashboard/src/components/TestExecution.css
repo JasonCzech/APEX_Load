@@ -116,7 +116,7 @@
 }
 
 .execution-archive-retry .execution-archive-retry-error {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 @media (max-width: 700px) {
@@ -672,7 +672,7 @@
 }
 
 .scenario-script-status.error {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .scenario-script-rows {
@@ -1115,7 +1115,7 @@
 }
 
 .error-value {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .charts-grid {
@@ -1591,7 +1591,7 @@
 }
 .stat-tile-error {
   font-size: 13px;
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .stat-tile-warning { border-color: var(--warning); background: color-mix(in srgb, var(--warning) 8%, var(--surface)); }
@@ -1607,7 +1607,7 @@
 .imported-panel-heatmap-row { display: flex; min-height: 10px; gap: 2px; }
 .imported-panel-heatmap-row span { flex: 1 1 0; min-width: 2px; border-radius: 1px; background: var(--chart-1); }
 .chart-error-state {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .chart-card .recharts-legend-wrapper {
@@ -1935,13 +1935,13 @@
 }
 
 .route-latency-chip.ok {
-  color: var(--success);
+  color: var(--success-text);
   border-color: color-mix(in srgb, var(--success) 42%, var(--border));
   background: color-mix(in srgb, var(--success) 12%, var(--bg-card));
 }
 
 .route-latency-chip.alert {
-  color: var(--danger);
+  color: var(--danger-text);
   border-color: color-mix(in srgb, var(--danger) 42%, var(--border));
   background: color-mix(in srgb, var(--danger) 12%, var(--bg-card));
 }
@@ -2014,21 +2014,21 @@
 
 .generator-impact-chip.clear,
 .generator-impact-dot.clear {
-  color: var(--success);
+  color: var(--success-text);
   border-color: color-mix(in srgb, var(--success) 42%, var(--border));
   background: color-mix(in srgb, var(--success) 12%, var(--bg-card));
 }
 
 .generator-impact-chip.warning,
 .generator-impact-dot.warning {
-  color: var(--warning);
+  color: var(--warning-text);
   border-color: color-mix(in srgb, var(--warning) 42%, var(--border));
   background: color-mix(in srgb, var(--warning) 12%, var(--bg-card));
 }
 
 .generator-impact-chip.danger,
 .generator-impact-dot.danger {
-  color: var(--danger);
+  color: var(--danger-text);
   border-color: color-mix(in srgb, var(--danger) 42%, var(--border));
   background: color-mix(in srgb, var(--danger) 12%, var(--bg-card));
 }
@@ -2236,7 +2236,7 @@
 
 .btn-warning {
   background: var(--warning);
-  color: #1a1206;
+  color: var(--warning-fill-text);
   border: none;
 }
 
@@ -2943,7 +2943,7 @@
 }
 
 .error-cell {
-  color: var(--danger);
+  color: var(--danger-text);
   font-weight: 600;
 }
 
@@ -3219,12 +3219,12 @@
 }
 
 .archive-finding-severity.warning {
-  color: var(--warning, var(--warning));
+  color: var(--warning-text);
 }
 
 .archive-finding-severity.error,
 .archive-finding-severity.critical {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .archive-finding-severity.info {
@@ -3432,7 +3432,7 @@
 }
 
 .archive-drilldown-stat.danger {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .archive-drilldown-stat-sep {
@@ -3713,11 +3713,11 @@
 }
 
 .gm-throughput-status.healthy {
-  color: var(--success);
+  color: var(--success-text);
 }
 
 .gm-throughput-status.danger {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 }
 
@@ -3741,7 +3741,7 @@
 }
 
 .error-msg {
-  color: var(--danger);
+  color: var(--danger-text);
   padding: 20px;
 }
 
@@ -4245,9 +4245,9 @@
   padding: 5px 9px;
 }
 
-.advanced-state-badge.running { border-color: var(--success); color: var(--success); }
-.advanced-state-badge.paused { border-color: var(--warning); color: var(--warning); }
-.advanced-state-badge.stopping { border-color: var(--danger); color: var(--danger); }
+.advanced-state-badge.running { border-color: var(--success); color: var(--success-text); }
+.advanced-state-badge.paused { border-color: var(--warning); color: var(--warning-text); }
+.advanced-state-badge.stopping { border-color: var(--danger); color: var(--danger-text); }
 
 .advanced-fact-grid {
   display: grid;
@@ -4280,7 +4280,7 @@
 .advanced-group-table th,
 .advanced-group-table td { border-bottom: 1px solid var(--border); padding: 10px; text-align: left; white-space: nowrap; }
 .advanced-group-table thead th { color: var(--text-muted); font-size: 11px; text-transform: var(--label-case, uppercase); }
-.advanced-inline-warning { color: var(--warning); margin: 0; }
+.advanced-inline-warning { color: var(--warning-text); margin: 0; }
 
 @media (max-width: 900px) {
   .advanced-fact-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

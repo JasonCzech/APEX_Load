@@ -12,14 +12,10 @@ describe('dialogBackdropProps', () => {
     expect(dismiss).toHaveBeenCalledTimes(1)
   })
 
-  it('supports Enter and Space keyboard dismissal', () => {
-    const dismiss = vi.fn()
-    const preventDefault = vi.fn()
-    const props = dialogBackdropProps(dismiss)
-    const backdrop = {}
-    props.onKeyDown({ key: 'Enter', target: backdrop, currentTarget: backdrop, preventDefault } as never)
-    props.onKeyDown({ key: 'Escape', target: backdrop, currentTarget: backdrop, preventDefault } as never)
-    expect(dismiss).toHaveBeenCalledTimes(1)
-    expect(preventDefault).toHaveBeenCalledTimes(1)
+  it('is presentation only: not focusable and not announced as a button', () => {
+    const props = dialogBackdropProps(vi.fn()) as Record<string, unknown>
+    expect(props.role).toBe('presentation')
+    expect(props.tabIndex).toBeUndefined()
+    expect(props['aria-label']).toBeUndefined()
   })
 })

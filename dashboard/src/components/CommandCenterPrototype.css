@@ -137,7 +137,7 @@
 }
 
 .command-history-banner .command-history-retry-error {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .command-history-actions {
@@ -203,6 +203,16 @@
 
 .command-run-stats.with-tps.with-highest-error {
   grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+/* At phone widths five pills would shrink to ~42px and clip their values. */
+@media (max-width: 720px) {
+  .command-run-stats,
+  .command-run-stats.with-tps,
+  .command-run-stats.with-highest-error,
+  .command-run-stats.with-tps.with-highest-error {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .command-metric-pill {
@@ -1983,7 +1993,7 @@ button.command-group-name:focus-visible {
 }
 
 .command-v2-capacity strong {
-  color: var(--success);
+  color: var(--success-text);
   font-size: 10px;
 }
 
@@ -2063,11 +2073,11 @@ button.command-group-name:focus-visible {
 }
 
 .command-v2-group-row .healthy {
-  color: var(--success);
+  color: var(--success-text);
 }
 
 .command-v2-group-row .danger {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .command-v2-target-stepper {
@@ -2220,7 +2230,7 @@ button.command-group-name:focus-visible {
 
 .command-v2-saved {
   margin: 10px 0 0;
-  color: var(--success);
+  color: var(--success-text);
   font-size: 10px;
 }
 
@@ -2494,4 +2504,17 @@ button.command-group-name:focus-visible {
   margin: 0 0 6px;
   color: var(--text-secondary);
   font-size: 11px;
+}
+
+.command-control-readonly {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.command-stream-note {
+  margin: 0 0 10px;
+  color: var(--warning-text);
+  font-size: 13px;
+  font-weight: 600;
 }

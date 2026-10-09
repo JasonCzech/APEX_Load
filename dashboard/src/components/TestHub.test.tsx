@@ -2813,7 +2813,7 @@ describe('TestHub', () => {
     expect(runPanelText).toContain('Checkout Load 001')
     const runPanelButtons = Array.from(runPanel?.querySelectorAll('button') ?? []) as HTMLButtonElement[]
     const openRunButton = runPanelButtons.find(button => button.textContent?.trim() === 'Open')
-    const runDashboardButton = runPanelButtons.find(button => button.textContent?.trim() === 'Run Dashboard')
+    const runDashboardButton = runPanelButtons.find(button => button.textContent?.trim() === 'Command Center')
     expect(openRunButton).toBeDefined()
     expect(runDashboardButton).toBeDefined()
 

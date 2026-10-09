@@ -10,6 +10,8 @@ import { InfrastructureSetupGuide } from './InfrastructureSetupGuide'
 import { CapacityCommitments } from './CapacityCommitments'
 import { changedSettingsFields } from './settingsChangeSummary'
 import { AuditEventTable, LoadOlderEvents } from './AuditEventTable'
+import { activityDateError } from './accessReporting'
+import { accessHref } from './accessDestinations'
 import { appendNewEvents } from './accessUtils'
 import ConnectionDiagnostics from './ConnectionDiagnostics'
 import RedactionPreview from './RedactionPreview'
@@ -107,6 +109,7 @@ import {
   reservationPoolIssues,
   reservationUsageSummary,
   settingsIssuesBySection,
+  settingsIssuesForDestination,
   settingsIssuesForField,
   splitListDraft,
   TELEMETRY_BUDGET_DEFAULTS,
@@ -403,6 +406,7 @@ export default function SettingsPage({
   const [auditProjectFilter, setAuditProjectFilter] = useState('')
   const [auditAfter, setAuditAfter] = useState('')
   const [auditBefore, setAuditBefore] = useState('')
+  const auditDateError = activityDateError(auditAfter, auditBefore)
   const [auditLoadError, setAuditLoadError] = useState('')
   const [auditLoading, setAuditLoading] = useState(false)
   const [auditEvents, setAuditEvents] = useState<DashboardAuditEvent[]>([])
@@ -844,6 +848,8 @@ export default function SettingsPage({
   useEffect(() => {
     let cancelled = false
     auditLoadGenerationRef.current += 1
+    // An inverted date range is reported beside the fields, not queried.
+    if (auditDateError) return () => { cancelled = true }
     const loadAuditEvents = async () => {
       setAuditLoading(true)
       setAuditLoadError('')
@@ -869,7 +875,7 @@ export default function SettingsPage({
     return () => {
       cancelled = true
     }
-  }, [fetchAuditBatch])
+  }, [auditDateError, fetchAuditBatch])
 
   // Older events append to the loaded rows. The next offset is the number of
   // rows already loaded (duplicates from newly recorded events are dropped),
@@ -2753,7 +2759,10 @@ export default function SettingsPage({
         throw new Error('Row data must be a JSON object.')
       }
     } catch (error: unknown) {
-      setDataPoolActionError(getErrorMessage(error, 'Invalid row JSON'))
+      // The browser's parser text ("Unexpected end of JSON input") means nothing to an operator.
+      setDataPoolActionError(error instanceof SyntaxError
+        ? 'Row data is not valid JSON. Enter an object such as {"customer_id": "C-10001"}.'
+        : getErrorMessage(error, 'Row data must be a JSON object.'))
       return
     }
     setDataPoolRowSaveBusy(true)
@@ -3191,9 +3200,10 @@ export default function SettingsPage({
     if (applicationActionError) msgs.applications.errors.push(applicationActionError)
     if (projectActionMessage) msgs.projects.notices.push(projectActionMessage)
     if (projectActionError) msgs.projects.errors.push(projectActionError)
-    if (dataPoolActionError) msgs['data-pools'].errors.push(dataPoolActionError)
+    // With a pool open, its row and import errors show beside those controls instead.
+    if (dataPoolActionError && !selectedDataPoolId) msgs['data-pools'].errors.push(dataPoolActionError)
     return msgs
-  }, [saveMessage, requestError, domainActionMessage, domainActionError, applicationActionError, projectActionMessage, projectActionError, dataPoolActionError, activeSection])
+  }, [saveMessage, requestError, domainActionMessage, domainActionError, applicationActionError, projectActionMessage, projectActionError, dataPoolActionError, selectedDataPoolId, activeSection])
 
   const currentDestination = destination || SETTINGS_DESTINATIONS.find(item => item.section === activeSection && !item.resource && (!item.subsection || item.subsection === ({ general: activeGeneralSubsection, capacity: activeCapacitySubsection, projects: activeProjectSubsection, integrations: activeIntegrationSubsection } as Record<string, string>)[activeSection]) && (!item.governance || item.governance === activeGovernanceSubsection)) || SETTINGS_DESTINATIONS[0]
   // Shown in the top bar; pages start with their cards rather than a heading block.
@@ -3246,7 +3256,11 @@ export default function SettingsPage({
         onClick: () => { void saveAllSettingsChangesRef.current() },
         disabled: !canSaveAllSettingsChanges,
         tone: hasAnyUnsavedChanges ? 'primary' as const : 'secondary' as const,
-        title: canSaveAllSettingsChanges ? 'Save settings changes' : 'Settings are already saved or cannot be saved',
+        title: canSaveAllSettingsChanges
+          ? 'Save settings changes'
+          : validationErrors.length
+            ? `Fix ${validationErrors.length} validation issue${validationErrors.length === 1 ? '' : 's'} before saving`
+            : 'Settings are already saved or cannot be saved',
       },
     ],
     secondaryActions: [
@@ -3261,7 +3275,7 @@ export default function SettingsPage({
       },
     ],
     priority: 20,
-  }), [currentDestination.id, canSaveAllSettingsChanges, destinationScopeLabel, hasAnyUnsavedChanges, repositorySettings, settingsMutationBusy])
+  }), [currentDestination.id, canSaveAllSettingsChanges, destinationScopeLabel, hasAnyUnsavedChanges, repositorySettings, settingsMutationBusy, validationErrors.length])
 
   useTopbarContribution(settingsTopbarContribution)
 
@@ -3295,7 +3309,10 @@ export default function SettingsPage({
           <label className="settings-navigation-search">Find settings<input className="settings-input" type="search" value={navigationSearch} onChange={event => setNavigationSearch(event.target.value)} placeholder="Search connections, policies…" /></label>
           {Array.from(new Set(SETTINGS_DESTINATIONS.map(item => item.group))).map(group => {
             const entries = SETTINGS_DESTINATIONS.filter(item => item.group === group && (item.id !== 'features' || canManageSystem) && matchesSettingsSearch(item, navigationSearch))
-            return entries.length ? <div key={group}><h3>{group}</h3>{entries.map(item => <button type="button" key={item.id} aria-current={currentDestination.id === item.id ? 'page' : undefined} onClick={() => selectDestination(item.id)}>{item.title}{issuesBySection[item.section]?.length ? <span aria-label="Validation issues"> •</span> : null}</button>)}</div> : null
+            return entries.length ? <div key={group}><h3>{group}</h3>{entries.map(item => <button type="button" key={item.id} aria-current={currentDestination.id === item.id ? 'page' : undefined} onClick={() => selectDestination(item.id)}>{item.title}{(() => {
+              const count = settingsIssuesForDestination(validationIssues, item).length
+              return count ? <span className="settings-nav-issue-count" aria-label={`${count} validation issue${count === 1 ? '' : 's'}`}>{count}</span> : null
+            })()}</button>)}</div> : null
           })}
           {navigationSearch && !SETTINGS_DESTINATIONS.some(item => matchesSettingsSearch(item, navigationSearch)) && <p role="status">No settings match.</p>}
           <button type="button" onClick={() => onNavigate?.('access')}>Manage users & service accounts</button>
@@ -3399,12 +3416,13 @@ export default function SettingsPage({
                 <span className="setting-label">API Endpoint <span className="settings-restart-badge">Restart required</span></span>
                 <span className="setting-desc">Controller API server address. Changes take effect after restarting the controller.</span>
               </div>
-              <input aria-label="API Endpoint"
+              <input {...fieldAccessibility('general.api_endpoint')} aria-label="API Endpoint"
                 className="settings-input cell-mono"
                 value={settings.general.api_endpoint}
                 onChange={(e) => updateGeneral('api_endpoint', e.target.value)}
                 placeholder=":8080"
               />
+              {renderFieldIssues('general.api_endpoint')}
             </div>
             <div className="setting-row">
               <div className="setting-info">
@@ -3724,14 +3742,14 @@ export default function SettingsPage({
                       <span className="setting-label">Trusted Proxy CIDRs</span>
                       <span className="setting-desc">Comma-separated proxy IP addresses or CIDRs allowed to supply identity headers.</span>
                     </div>
-                    <input aria-label="Trusted Proxy CIDRs"
+                    <input {...fieldAccessibility('auth.trusted_proxy_cidrs')} aria-label="Trusted Proxy CIDRs"
                       className="settings-input cell-mono"
                       value={(settings.auth.trusted_proxy_cidrs || []).join(', ')}
                       onChange={(e) => updateAuth('trusted_proxy_cidrs', e.target.value.split(',').map(value => value.trim()).filter(Boolean))}
                       placeholder="10.0.0.0/8, 192.0.2.10/32"
                     />
+                    {renderFieldIssues('auth.trusted_proxy_cidrs')}
                   </div>
-                  {renderFieldIssues('auth.trusted_proxy_cidrs')}
                   <div className="setting-row">
                     <div className="setting-info">
                       <span className="setting-label">Trusted Proxy Secret Environment Variable</span>
@@ -3761,12 +3779,13 @@ export default function SettingsPage({
                       <span className="setting-label">User Header</span>
                       <span className="setting-desc">Required identity header. Missing values return 401 before the request reaches protected handlers.</span>
                     </div>
-                    <input aria-label="User Header"
+                    <input {...fieldAccessibility('auth.user_header')} aria-label="User Header"
                       className="settings-input cell-mono"
                       value={settings.auth.user_header}
                       onChange={(e) => updateAuth('user_header', e.target.value)}
                       placeholder="X-Auth-Request-User"
                     />
+                    {renderFieldIssues('auth.user_header')}
                   </div>
                   <div className="setting-row">
                     <div className="setting-info">
@@ -3797,12 +3816,13 @@ export default function SettingsPage({
                       <span className="setting-label">Global Roles Header</span>
                       <span className="setting-desc">Comma or pipe-delimited roles such as viewer, editor, project_admin, or system_admin.</span>
                     </div>
-                    <input aria-label="Global Roles Header"
+                    <input {...fieldAccessibility('auth.roles_header')} aria-label="Global Roles Header"
                       className="settings-input cell-mono"
                       value={settings.auth.roles_header}
                       onChange={(e) => updateAuth('roles_header', e.target.value)}
                       placeholder="X-APEXLoad-Roles"
                     />
+                    {renderFieldIssues('auth.roles_header')}
                   </div>
                   <div className="setting-row">
                     <div className="setting-info">
@@ -3981,48 +4001,52 @@ export default function SettingsPage({
                       <span className="setting-label">Issuer URL</span>
                       <span className="setting-desc">Absolute OIDC issuer URL used for discovery and ID-token verification.</span>
                     </div>
-                    <input aria-label="Issuer URL"
+                    <input {...fieldAccessibility('auth.issuer_url')} aria-label="Issuer URL"
                       className="settings-input cell-mono"
                       value={settings.auth.issuer_url || ''}
                       onChange={(e) => updateAuth('issuer_url', e.target.value)}
                       placeholder="https://login.example.com/tenant/v2.0"
                     />
+                    {renderFieldIssues('auth.issuer_url')}
                   </div>
                   <div className="setting-row">
                     <div className="setting-info">
                       <span className="setting-label">Client ID</span>
                       <span className="setting-desc">OIDC client/application identifier registered for the dashboard.</span>
                     </div>
-                    <input aria-label="Client ID"
+                    <input {...fieldAccessibility('auth.client_id')} aria-label="Client ID"
                       className="settings-input cell-mono"
                       value={settings.auth.client_id || ''}
                       onChange={(e) => updateAuth('client_id', e.target.value)}
                       placeholder="apexload-dashboard"
                     />
+                    {renderFieldIssues('auth.client_id')}
                   </div>
                   <div className="setting-row">
                     <div className="setting-info">
                       <span className="setting-label">Client Secret Env Var</span>
                       <span className="setting-desc">Environment variable name read by the controller at runtime for the OIDC client secret.</span>
                     </div>
-                    <input aria-label="Client Secret Env Var"
+                    <input {...fieldAccessibility('auth.client_secret_env_var')} aria-label="Client Secret Env Var"
                       className="settings-input cell-mono"
                       value={settings.auth.client_secret_env_var || ''}
                       onChange={(e) => updateAuth('client_secret_env_var', e.target.value)}
                       placeholder="APEXLOAD_OIDC_CLIENT_SECRET"
                     />
+                    {renderFieldIssues('auth.client_secret_env_var')}
                   </div>
                   <div className="setting-row">
                     <div className="setting-info">
                       <span className="setting-label">Redirect URL</span>
                       <span className="setting-desc">Absolute callback URL registered with the identity provider and served by the controller.</span>
                     </div>
-                    <input aria-label="Redirect URL"
+                    <input {...fieldAccessibility('auth.redirect_url')} aria-label="Redirect URL"
                       className="settings-input cell-mono"
                       value={settings.auth.redirect_url || ''}
                       onChange={(e) => updateAuth('redirect_url', e.target.value)}
                       placeholder="https://apexload.example.com/api/v1/auth/callback"
                     />
+                    {renderFieldIssues('auth.redirect_url')}
                   </div>
                   <div className="setting-row">
                     <div className="setting-info">
@@ -4065,24 +4089,26 @@ export default function SettingsPage({
                       <span className="setting-label">Session Secret Env Var</span>
                       <span className="setting-desc">Environment variable name read by the controller to sign the APEX Load auth session cookie.</span>
                     </div>
-                    <input aria-label="Session Secret Env Var"
+                    <input {...fieldAccessibility('auth.session_secret_env_var')} aria-label="Session Secret Env Var"
                       className="settings-input cell-mono"
                       value={settings.auth.session_secret_env_var || ''}
                       onChange={(e) => updateAuth('session_secret_env_var', e.target.value)}
                       placeholder="APEXLOAD_AUTH_SESSION_SECRET"
                     />
+                    {renderFieldIssues('auth.session_secret_env_var')}
                   </div>
                   <div className="setting-row">
                     <div className="setting-info">
                       <span className="setting-label">Post-Logout Redirect URL</span>
                       <span className="setting-desc">Optional absolute URL or absolute path used after APEX Load clears its local OIDC session.</span>
                     </div>
-                    <input aria-label="Post-Logout Redirect URL"
+                    <input {...fieldAccessibility('auth.logout_url')} aria-label="Post-Logout Redirect URL"
                       className="settings-input cell-mono"
                       value={settings.auth.logout_url || ''}
                       onChange={(e) => updateAuth('logout_url', e.target.value)}
                       placeholder="/"
                     />
+                    {renderFieldIssues('auth.logout_url')}
                   </div>
                   <div className="settings-subsection">
                     <div className="settings-manager-summary">
@@ -4477,16 +4503,18 @@ export default function SettingsPage({
                           <label className="settings-filter-field">Audit action<input aria-label="Audit action" className="settings-input cell-mono" value={auditActionFilter} onChange={(e) => { setAuditActionFilter(e.target.value) }} placeholder="action" /></label>
                           <label className="settings-filter-field">Audit actor type<input aria-label="Audit actor type" className="settings-input cell-mono" value={auditActorTypeFilter} onChange={(e) => { setAuditActorTypeFilter(e.target.value) }} placeholder="actor_type" /></label>
                           <label className="settings-filter-field">Audit status<input aria-label="Audit status" className="settings-input cell-mono" value={auditStatusFilter} onChange={(e) => { setAuditStatusFilter(e.target.value) }} placeholder="status" /></label>
-                          <button className="btn btn-secondary" type="button" onClick={exportAuditEvents} disabled={!canViewAudit}>
+                          <button className="btn btn-secondary" type="button" onClick={exportAuditEvents} disabled={!canViewAudit || Boolean(auditDateError)}>
                             Export CSV
                           </button>
                         </div>
                       </div>
                       <div className="settings-inline-actions">
                         <label className="settings-filter-field">Project scope<select className="settings-input" value={auditProjectFilter} onChange={e => { setAuditProjectFilter(e.target.value) }}><option value="">All authorized projects</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
-                        <label className="settings-filter-field">From (local time)<input className="settings-input" type="datetime-local" value={auditAfter} onChange={e => { setAuditAfter(e.target.value) }} /></label>
-                        <label className="settings-filter-field">Until (local time)<input className="settings-input" type="datetime-local" value={auditBefore} onChange={e => { setAuditBefore(e.target.value) }} /></label>
+                        <label className="settings-filter-field">From (local time)<input className="settings-input" type="datetime-local" value={auditAfter} onChange={e => { setAuditAfter(e.target.value) }} aria-invalid={Boolean(auditDateError) || undefined} aria-describedby={auditDateError ? 'audit-date-error' : undefined} /></label>
+                        <label className="settings-filter-field">Until (local time)<input className="settings-input" type="datetime-local" value={auditBefore} onChange={e => { setAuditBefore(e.target.value) }} aria-invalid={Boolean(auditDateError) || undefined} aria-describedby={auditDateError ? 'audit-date-error' : undefined} /></label>
                       </div>
+                      {auditDateError && <p id="audit-date-error" className="settings-error-inline settings-field-error" role="alert">{auditDateError}</p>}
+                      <p className="setting-desc">This is the deployment-wide trail of every actor. To review one person's sign-ins, changes, usage and access, use <a href={accessHref('events')}>Access › Activity</a>.</p>
                       {auditLoading && <p role="status">Loading audit history…</p>}
                       {auditLoadError && <p role="alert">{auditLoadError}</p>}
                       <p>Exports include up to 1,000 matching events.</p>
@@ -5034,7 +5062,7 @@ export default function SettingsPage({
                 <button className="btn btn-secondary" type="button" onClick={planArchiveRetention} disabled={!canManageSystem}>
                   Plan Retention
                 </button>
-                <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={() => setConfirmApplyRetention(true)} disabled={!canManageSystem || !archiveRetentionPlan?.summary.candidate_count}>
+                <button className="btn btn-ghost" style={{ color: 'var(--danger-text)' }} type="button" onClick={() => setConfirmApplyRetention(true)} disabled={!canManageSystem || !archiveRetentionPlan?.summary.candidate_count}>
                   Apply Retention
                 </button>
               </div>
@@ -5149,6 +5177,7 @@ export default function SettingsPage({
                     setDomainActionMessage('')
                   }}
                   placeholder="Optional description"
+                  aria-label="Domain description"
                   disabled={!canManageDomains}
                 />
                 <button
@@ -5201,6 +5230,7 @@ export default function SettingsPage({
                       setDomainActionMessage('')
                     }}
                     placeholder="Optional description"
+                    aria-label="Domain description"
                     rows={3}
                     disabled={!canManageDomains}
                   />
@@ -5394,7 +5424,7 @@ export default function SettingsPage({
                     <button className="btn btn-secondary" type="button" onClick={startRenamingApplication} disabled={!activeApplication || !canManageProjects}>
                       Edit
                     </button>
-                    <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={() => setConfirmDeleteApp(true)} disabled={!activeApplication || !canManageProjects}>
+                    <button className="btn btn-ghost" style={{ color: 'var(--danger-text)' }} type="button" onClick={() => setConfirmDeleteApp(true)} disabled={!activeApplication || !canManageProjects}>
                       Delete
                     </button>
                   </>
@@ -5453,7 +5483,7 @@ export default function SettingsPage({
                                 Archive
                               </button>
                             )}
-                            <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" disabled={!canManageProjects} onClick={() => setConfirmDeleteRelease({ id: release.id, name: release.name })}>
+                            <button className="btn btn-ghost" style={{ color: 'var(--danger-text)' }} type="button" disabled={!canManageProjects} onClick={() => setConfirmDeleteRelease({ id: release.id, name: release.name })}>
                               Delete
                             </button>
                           </>
@@ -6016,6 +6046,7 @@ export default function SettingsPage({
                     setDataPoolDescription(next)
                   }}
                   placeholder="Optional description"
+                  aria-label="Pool description"
                 />
                 <button className="btn btn-secondary btn-sm" type="button" onClick={createDataPool} disabled={!dataPoolName.trim() || dataPoolCatalogMutationBusy || !dataPoolCreateProjectId}>
                   Add Pool
@@ -6080,7 +6111,7 @@ export default function SettingsPage({
                         <small>{pool.description || `Updated ${new Date(pool.updated_at).toLocaleDateString()}`}</small>
                       </button>
                       <div className="settings-inline-actions">
-                        <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" disabled={dataPoolCatalogMutationBusy} onClick={() => setConfirmDeletePool(pool)}>
+                        <button className="btn btn-ghost" style={{ color: 'var(--danger-text)' }} type="button" disabled={dataPoolCatalogMutationBusy} onClick={() => setConfirmDeletePool(pool)}>
                           Delete
                         </button>
                       </div>
@@ -6098,7 +6129,7 @@ export default function SettingsPage({
               <div className="settings-subsection">
                 <div className="settings-manager-summary">
                   <div>
-                    <span className="setting-label">{editingDataPoolRowId ? 'Edit Row' : 'Add Row'}</span>
+                    <span className="setting-label" id="data-pool-row-label">{editingDataPoolRowId ? 'Edit Row' : 'Add Row'}</span>
                     <span className="setting-desc">Use JSON object keys as parameter names, for example customer_id, account_id, or zip.</span>
                   </div>
                   <strong>{editingDataPoolRowId ? 'Editing' : 'New'}</strong>
@@ -6106,6 +6137,8 @@ export default function SettingsPage({
                 <textarea
                   className="settings-input cell-mono"
                   style={{ minHeight: 120, resize: 'vertical' }}
+                  aria-labelledby="data-pool-row-label"
+                  aria-describedby={dataPoolActionError ? 'data-pool-row-error' : undefined}
                   value={dataPoolRowJson}
                   onChange={event => setDataPoolRowJson(event.target.value)}
                 />
@@ -6137,6 +6170,7 @@ export default function SettingsPage({
                     {dataPoolExportBusy ? 'Exporting…' : 'Export CSV'}
                   </button>
                 </div>
+                {dataPoolActionError && <p id="data-pool-row-error" className="settings-error-inline" role="alert">{dataPoolActionError.charAt(0).toUpperCase() + dataPoolActionError.slice(1)}</p>}
                 {dataPoolImportDraft && dataPoolImportDraft.poolId === selectedDataPoolId && (
                   <div className="settings-subsection" style={{ marginTop: 12 }}>
                     <div className="settings-manager-summary">
@@ -6228,7 +6262,7 @@ export default function SettingsPage({
                                 <button className="btn btn-sm btn-secondary" type="button" disabled={dataPoolRowSaveBusy || dataPoolRowDeleteBusy} onClick={() => editDataPoolRow(row)}>
                                   Edit
                                 </button>
-                                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} type="button" disabled={dataPoolRowSaveBusy || dataPoolRowDeleteBusy} onClick={() => setConfirmDeleteRow(row)}>
+                                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger-text)' }} type="button" disabled={dataPoolRowSaveBusy || dataPoolRowDeleteBusy} onClick={() => setConfirmDeleteRow(row)}>
                                   Delete
                                 </button>
                               </div>
@@ -6357,19 +6391,20 @@ export default function SettingsPage({
                       <span className="setting-label">Server URL</span>
                       <span className="setting-desc">Backend-only Prometheus HTTP API base URL.</span>
                     </div>
-                    <input aria-label="Prometheus server URL"
+                    <input {...fieldAccessibility('prometheus.base_url')} aria-label="Prometheus server URL"
                       className="settings-input cell-mono"
                       value={settings.prometheus.base_url}
                       onChange={event => updatePrometheus({ base_url: event.target.value })}
                       placeholder="http://prometheus:9090"
                     />
+                    {renderFieldIssues('prometheus.base_url')}
                   </div>
                   <div className="setting-row">
                     <div className="setting-info">
                       <span className="setting-label">Timeout (seconds)</span>
                       <span className="setting-desc">Maximum backend wait for each Prometheus query.</span>
                     </div>
-                    <input aria-label="Prometheus timeout (seconds)"
+                    <input {...fieldAccessibility('prometheus.timeout_seconds')} aria-label="Prometheus timeout (seconds)"
                       className="settings-input settings-input-number"
                       type="number"
                       min={1}
@@ -6378,6 +6413,7 @@ export default function SettingsPage({
                       value={settings.prometheus.timeout_seconds}
                       onChange={event => updatePrometheus({ timeout_seconds: Number(event.target.value) })}
                     />
+                    {renderFieldIssues('prometheus.timeout_seconds')}
                   </div>
                   <div className="setting-row">
                     <div className="setting-info">
@@ -6425,9 +6461,9 @@ export default function SettingsPage({
                     <strong>{settings.grafana?.enabled ? 'Enabled' : 'Disabled'}</strong>
                   </div>
                   <div className="setting-row"><div className="setting-info"><span className="setting-label">Enable Grafana proxy</span></div><label className="settings-checkbox-label"><input aria-label="Enable Grafana proxy" type="checkbox" checked={Boolean(settings.grafana?.enabled)} onChange={event => updateGrafana({ enabled: event.target.checked })} /><span>Enabled</span></label></div>
-                  <div className="setting-row"><div className="setting-info"><span className="setting-label">Grafana server URL</span></div><input className="settings-input cell-mono" aria-label="Grafana server URL" value={settings.grafana?.base_url || ''} onChange={event => updateGrafana({ base_url: event.target.value })} placeholder="https://grafana.example.com" /></div>
+                  <div className="setting-row"><div className="setting-info"><span className="setting-label">Grafana server URL</span></div><input {...fieldAccessibility('grafana.base_url')} className="settings-input cell-mono" aria-label="Grafana server URL" value={settings.grafana?.base_url || ''} onChange={event => updateGrafana({ base_url: event.target.value })} placeholder="https://grafana.example.com" />{renderFieldIssues('grafana.base_url')}</div>
                   <div className="setting-row"><div className="setting-info"><span className="setting-label">Service-account token environment variable</span></div><input className="settings-input cell-mono" aria-label="Grafana service-account token environment variable" value={settings.grafana?.service_account_token_env_var || ''} onChange={event => updateGrafana({ service_account_token_env_var: event.target.value })} placeholder="APEXLOAD_GRAFANA_TOKEN" /></div>
-                  <div className="setting-row"><div className="setting-info"><span className="setting-label">Grafana timeout (seconds)</span></div><input className="settings-input settings-input-number" aria-label="Grafana timeout seconds" type="number" min={1} max={60} step={1} value={settings.grafana?.timeout_seconds || 10} onChange={event => updateGrafana({ timeout_seconds: Number(event.target.value) })} /></div>
+                  <div className="setting-row"><div className="setting-info"><span className="setting-label">Grafana timeout (seconds)</span></div><input {...fieldAccessibility('grafana.timeout_seconds')} className="settings-input settings-input-number" aria-label="Grafana timeout seconds" type="number" min={1} max={60} step={1} value={settings.grafana?.timeout_seconds || 10} onChange={event => updateGrafana({ timeout_seconds: Number(event.target.value) })} />{renderFieldIssues('grafana.timeout_seconds')}</div>
 </div></div><ConnectionDiagnostics provider="grafana" revision={savedSettings.revision} saved={!hasAnyUnsavedChanges && canManageSystem} />
             </section>
             <section
@@ -6457,6 +6493,7 @@ export default function SettingsPage({
             >
               <div className="settings-group">
                 <PowerBIIntegrationPanel
+                  fieldIssues={field => settingsIssuesForField(validationIssues, field)}
                   value={settings.powerbi || { enabled: false }}
                   onChange={(next) => {
                     setSettings((prev) => ({ ...prev, powerbi: next }))
@@ -6695,7 +6732,7 @@ export default function SettingsPage({
         onConfirm={deleteApplication}
       >
         <p>Permanently delete <strong>{activeApplication?.name}</strong>? All associated releases and test results will also be removed.</p>
-        <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
+        <p style={{ color: 'var(--danger-text)', fontWeight: 600 }}>This action cannot be undone.</p>
       </SettingsConfirmDialog>
 
       <SettingsConfirmDialog
@@ -6708,7 +6745,7 @@ export default function SettingsPage({
         }}
       >
         <p>Permanently delete release <strong>{confirmDeleteRelease?.name}</strong>?</p>
-        <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
+        <p style={{ color: 'var(--danger-text)', fontWeight: 600 }}>This action cannot be undone.</p>
       </SettingsConfirmDialog>
 
       <SettingsConfirmDialog
@@ -6732,7 +6769,7 @@ export default function SettingsPage({
         onConfirm={applyArchiveRetention}
       >
         <p>Apply archive retention pruning for the current plan? This will permanently remove {archiveRetentionPlan?.summary.candidate_count || 0} archive{(archiveRetentionPlan?.summary.candidate_count || 0) === 1 ? '' : 's'}.</p>
-        <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
+        <p style={{ color: 'var(--danger-text)', fontWeight: 600 }}>This action cannot be undone.</p>
       </SettingsConfirmDialog>
 
       <SettingsConfirmDialog
@@ -6746,7 +6783,7 @@ export default function SettingsPage({
         }}
       >
         <p>Delete data pool <strong>{confirmDeletePool?.name}</strong>? Data pools bound to scenarios must be unbound first.</p>
-        <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
+        <p style={{ color: 'var(--danger-text)', fontWeight: 600 }}>This action cannot be undone.</p>
       </SettingsConfirmDialog>
 
       <SettingsConfirmDialog
@@ -6771,7 +6808,7 @@ export default function SettingsPage({
         onConfirm={resetSettings}
       >
         <p>This will reset every system setting to its factory default, including thresholds, capacity planning, notifications, and auth configuration.</p>
-        <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
+        <p style={{ color: 'var(--danger-text)', fontWeight: 600 }}>This action cannot be undone.</p>
       </SettingsConfirmDialog>
     </div>
   )

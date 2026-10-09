@@ -78,6 +78,7 @@ import type {
   ScriptEditorStateSetter,
 } from './scriptEditorState'
 import type { useScriptReplayDebuggerController } from './useScriptReplayDebuggerController'
+import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
 
 const DEBUG_LOG_LEVELS: ScriptDebugLogLevel[] = ['error', 'warn', 'info', 'debug', 'trace']
 const DEBUG_LOG_VIRTUALIZE_THRESHOLD = 100
@@ -1439,7 +1440,7 @@ export function ScriptReplayDebuggerView({
                   ) : debuggerBottomTab === 'timeline' ? (
                     <div className="debugger-timeline">
                       <DebugTimeline events={debugEvents} onSelect={jumpToEvent} />
-                      <details><summary>Session lifecycle ({replayActivity.length})</summary>{replayActivity.map(item => <p key={item.id}>{item.timestamp} · {item.title} · {item.detail}</p>)}</details>
+                      <details><summary>Session lifecycle ({replayActivity.length})</summary>{replayActivity.map(item => <p key={item.id}>{formatDisplayDateTime(item.timestamp, { milliseconds: true })} · {item.title} · {item.detail}</p>)}</details>
                     </div>
                   ) : debuggerBottomTab === 'problems' ? (
                     <div className="debugger-problems" role="tabpanel" aria-label="Problems">

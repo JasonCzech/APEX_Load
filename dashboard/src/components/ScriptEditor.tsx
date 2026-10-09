@@ -1,6 +1,6 @@
 import { scriptSecretReferenceSummaries } from './scriptSecretReferenceModel'
 import type { ScriptAuthoringBaseline, ScriptSaveOptions } from '../types/storedContent'
-import { admitScriptAuthoringBaseline, baselineFromSavedScript, reapplyScriptDraft, scriptSaveNeedsReconciliation } from '../utils/scriptAuthoringRevision'
+import { admitScriptAuthoringBaseline, baselineFromSavedScript, reapplyScriptDraft, scriptSaveFailedOnServer, scriptSaveNeedsReconciliation } from '../utils/scriptAuthoringRevision'
 import ScriptRevisionConflict from './ScriptRevisionConflict'
 import TooltipButton from './ux/TooltipButton'
 import { AuthorInsertDialog } from './AuthorInsertDialog'
@@ -2984,9 +2984,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         setReviewedAuthoringBaseline(null)
         setAuthoringRevisionReason(e instanceof ApiError && e.status === 412
           ? 'The authored script or its placement changed since this editor loaded. Your draft was not saved. Load the current baseline, inspect the diff, and explicitly reapply or reload.'
-          : 'The save outcome or revision protection could not be verified. Your draft is retained. Load the current baseline before reviewing and reapplying it; do not retry automatically.')
+          : 'We could not confirm whether this save reached the server. Your draft is kept here. Load the current version to compare it with your draft, then reapply your changes.')
       }
-      const baseMessage = getErrorMessage(e, 'Failed to save script')
+      const baseMessage = scriptSaveFailedOnServer(e)
+        ? `Saving failed on the server; your draft is kept here. Choose Save to try again. Server detail: ${getErrorMessage(e, 'none given')}`
+        : getErrorMessage(e, 'Failed to save script')
       const createdNames = pendingCreatedSecretNamesRef.current
       setError(createdNames.length > 0
         ? `${baseMessage} ${createdNames.join(', ')} ${createdNames.length === 1 ? 'was' : 'were'} already created and remain in the project vault as unused entries until this draft is saved or the entries are removed administratively.`
@@ -3645,20 +3647,21 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     )
   }
 
+  // Method labels are text: every colour here is a text-safe token.
   const methodColor = (m: string) => {
     switch (m) {
-      case 'GET': return 'var(--success)'
-      case 'POST': return 'var(--info)'
-      case 'PUT': return 'var(--warning)'
-      case 'DELETE': return 'var(--danger)'
-      case 'PATCH': return 'var(--chart-6)'
-      case 'http_sequence': return 'var(--accent)'
-      case 'jms_publish': return 'var(--info)'
-      case 'jms_consume': return 'var(--success)'
-      case 'jms_request_reply': return 'var(--chart-6)'
+      case 'GET': return 'var(--success-text)'
+      case 'POST': return 'var(--info-text)'
+      case 'PUT': return 'var(--warning-text)'
+      case 'DELETE': return 'var(--danger-text)'
+      case 'PATCH': return 'var(--accent-text)'
+      case 'http_sequence': return 'var(--accent-text)'
+      case 'jms_publish': return 'var(--info-text)'
+      case 'jms_consume': return 'var(--success-text)'
+      case 'jms_request_reply': return 'var(--accent-text)'
       case 'jms_ack':
       case 'jms_commit':
-      case 'jms_rollback': return 'var(--warning)'
+      case 'jms_rollback': return 'var(--warning-text)'
       default: return 'var(--text-secondary)'
     }
   }
@@ -4143,7 +4146,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       } catch (e: unknown) {
         if (cancelled || !runtimeRequestIsCurrent(runtimeAdmissionRef.current, request)) return
         invalidateRuntimeAuthority('Current state unavailable: the controller could not confirm this session.')
-        if (e instanceof ApiError && e.status === 404) {
+        const unconfirmedStart = replayStartAttemptRef.current?.sessionId === activeReplaySessionId && Boolean(replayStartAttemptRef.current?.awaitingReconciliation)
+        // While a start is unconfirmed every failed check counts toward the
+        // bounded window, not just 404s: otherwise a controller that keeps
+        // failing leaves the debugger "Starting" with live controls forever.
+        if ((e instanceof ApiError && e.status === 404) || unconfirmedStart) {
           const pendingAttempt = replayStartAttemptRef.current
           if (
             pendingAttempt?.sessionId === activeReplaySessionId &&
@@ -4161,12 +4168,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           setActiveReplaySessionId(null)
           setBrowserReplaySession(prev => prev ? { ...prev, status: 'stopped' } : null)
           setReplaying(false)
-          setError('Debugger session expired. Start a new debug run to continue.')
+          const notStarted = unconfirmedStart && !(e instanceof ApiError && e.status === 404)
+          setError(notStarted
+            ? `The debugger could not be started: ${getErrorMessage(e, 'the controller did not respond')}. Start a new debug run to try again.`
+            : 'Debugger session expired. Start a new debug run to continue.')
+          if (notStarted) setDebuggerBottomTab('problems')
           setReplayActivity(prev => upsertReplayActivity(prev, {
             id: 'expired',
             kind: 'error',
-            title: 'Debugger session expired',
-            detail: 'The backend no longer has this debug session. Start a new run to continue.',
+            title: notStarted ? 'Debugger did not start' : 'Debugger session expired',
+            detail: notStarted ? 'The controller could not confirm the debug session.' : 'The backend no longer has this debug session. Start a new run to continue.',
             timestamp: new Date().toISOString(),
             success: false,
           }))
@@ -4178,7 +4189,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     void reconcile()
     const timer = window.setInterval(reconcile, 1200)
     return () => { cancelled = true; window.clearInterval(timer) }
-  }, [activeReplaySessionId, replaying, replayStartPending, api, admitRuntimeSession, invalidateRuntimeAuthority, runtimeRequest, setActiveReplaySessionId, setBrowserReplaySession, setError, setExpandedReplayEvent, setReplayActivity, setReplayReport, setReplaying])
+  }, [activeReplaySessionId, replaying, replayStartPending, api, admitRuntimeSession, invalidateRuntimeAuthority, runtimeRequest, setActiveReplaySessionId, setBrowserReplaySession, setDebuggerBottomTab, setError, setExpandedReplayEvent, setReplayActivity, setReplayReport, setReplaying])
 
   const addParameter = (type = 'list') => {
     const parameters = script.parameters || []

@@ -9,7 +9,8 @@ export type AppWorkspaceScope = {
 }
 
 export type AppView = AppWorkspaceScope & (
-  | { page: Exclude<NavPage, 'command-center' | 'new-test' | 'scripts' | 'tests' | 'docs' | 'monitoring' | 'settings' | 'access' | 'repository'> }
+  | { page: Exclude<NavPage, 'command-center' | 'new-test' | 'scripts' | 'tests' | 'docs' | 'monitoring' | 'settings' | 'access' | 'repository' | 'activity'> }
+  | { page: 'activity'; activityQuery?: string }
   | { page: 'settings' | 'access' | 'repository'; setting?: string; returnTo?: string; resourceId?: string; accessView?: AccessView }
   | { page: 'monitoring'; category?: MonitoringCategoryID }
   | { page: 'docs'; guidePage?: ApiGuideContentPageID; guideArticle?: string; guideSection?: string }
@@ -45,6 +46,17 @@ const SCRIPT_MODES = ['list', 'create', 'edit', 'import'] as const
 const SCENARIO_VIEWS = ['library', 'builder', 'plans'] as const
 const TEST_WORKSPACE_TABS = ['overview', 'diagnostics', 'configuration', 'infrastructure', 'control', 'graphs', 'archive', 'action-summary', 'load-impact', 'transaction-drilldown'] as const
 const MONITORING_CATEGORIES = ['overview', 'telemetry', 'alerts'] as const
+// Activity filters and page travel in the URL so a reload or link keeps them.
+export const ACTIVITY_QUERY_KEYS = ['q', 'actor', 'type', 'action', 'after', 'before', 'page'] as const
+
+function activityQueryFromParams(params: URLSearchParams): string {
+  const query = new URLSearchParams()
+  for (const key of ACTIVITY_QUERY_KEYS) {
+    const value = params.get(key)
+    if (value) query.set(key, value.slice(0, 240))
+  }
+  return query.toString()
+}
 // RootCauseRouteState is a root-cause investigation's shareable state: the
 // analysis and its revision, the hypothesis being investigated and the time
 // window in focus (two RFC 3339 times joined by "~").
@@ -266,6 +278,11 @@ export function parseAppViewFromHash(hash: string): AppView {
     }
   }
 
+  if (page === 'activity') {
+    const activityQuery = activityQueryFromParams(params)
+    return { page: 'activity', ...(activityQuery ? { activityQuery } : {}), ...workspaceScope }
+  }
+
   if (page === 'swagger') {
     return { page: 'swagger', ...(params.get('search') ? { search: params.get('search')!.slice(0, 240) } : {}), ...workspaceScope }
   }
@@ -431,6 +448,13 @@ export function viewToLocationHash(view: AppView): string {
     return query ? `#/monitoring?${query}` : '#/monitoring'
   }
 
+  if (view.page === 'activity') {
+    const params = new URLSearchParams(activityQueryFromParams(new URLSearchParams(view.activityQuery || '')))
+    appendWorkspaceScope(params, view)
+    const query = params.toString()
+    return query ? `#/activity?${query}` : '#/activity'
+  }
+
   if (view.page === 'swagger') {
     const params = new URLSearchParams()
     if (view.search) params.set('search', view.search)
@@ -573,6 +597,8 @@ export function resetProjectScopedAssetView(view: AppView, projectId?: string): 
     return { page: 'command-center', ...(projectId ? { projectId } : {}) }
   }
   if (view.page === 'report') return { page: 'results' }
+  // Activity filters and paging belong to the project they were set in.
+  if (view.page === 'activity') return { page: 'activity', ...(projectId ? { projectId } : {}) }
   return view
 }
 

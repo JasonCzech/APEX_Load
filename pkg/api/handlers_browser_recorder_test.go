@@ -2918,3 +2918,19 @@ func TestRecordingStudioUsesSalesforceNativeHTTPDraft(t *testing.T) {
 		t.Fatal("Aura request missing")
 	}
 }
+
+func TestBrowserRecordingNavigationFailureIsActionable(t *testing.T) {
+	err := errors.New(`navigate to https://shop.example/: Frame.Goto failed: playwright: net::ERR_SSL_PROTOCOL_ERROR at https://shop.example/
+Call log:
+  - navigating to "https://shop.example/", waiting until "load"`)
+	reason, ok := browserRecordingNavigationFailure(err, "https://shop.example/")
+	if !ok {
+		t.Fatal("a net::ERR_* navigation failure was not recognised")
+	}
+	if !strings.Contains(reason, "secure (TLS) connection failed") || strings.Contains(reason, "Call log") || strings.Contains(reason, "playwright") {
+		t.Fatalf("reason = %q, want a plain cause without the engine call log", reason)
+	}
+	if _, ok := browserRecordingNavigationFailure(errors.New("browser launch failed: executable missing"), "https://shop.example/"); ok {
+		t.Fatal("a non-navigation failure must stay a server error")
+	}
+}
