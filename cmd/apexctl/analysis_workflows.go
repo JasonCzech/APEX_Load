@@ -405,12 +405,57 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 				return errors.New("--file JSON baseline request is required")
 			}
 			method, path = http.MethodPost, "/api/v1/tests/"+url.PathEscape(*id)+"/baseline-comparisons"
-		case "list", "create", "capabilities", "compare", "mappings", "save-mapping", "comparisons", "save-comparison":
+		case "panels":
+			// Saved panel definitions (dashboards) of a project.
+			if *project == "" {
+				return errors.New("--project is required")
+			}
+			path = "/api/v1/monitoring/dashboard-definitions?project_id=" + url.QueryEscape(*project)
+		case "panel", "update-panel", "delete-panel":
+			if err := requireID(); err != nil {
+				return err
+			}
+			path = "/api/v1/monitoring/dashboard-definitions/" + url.PathEscape(*id)
+			switch action {
+			case "panel":
+				// --revision reopens exactly that saved revision.
+				if *revision != "" {
+					if n, err := strconv.ParseInt(*revision, 10, 64); err != nil || n <= 0 {
+						return errors.New("--revision must be a positive integer")
+					}
+					path += "?revision=" + url.QueryEscape(*revision)
+				}
+			case "update-panel":
+				method = http.MethodPatch
+				if len(body) == 0 {
+					return errors.New("--file JSON patch with the expected revision is required")
+				}
+			case "delete-panel":
+				if n, err := strconv.ParseInt(*revision, 10, 64); err != nil || n <= 0 {
+					return errors.New("--revision (the revision being deleted) is required")
+				}
+				method, path = http.MethodDelete, path+"?revision="+url.QueryEscape(*revision)
+			}
+		case "save-panel":
+			if len(body) == 0 {
+				return errors.New("--file JSON panel definition with project_id is required")
+			}
+			method, path = http.MethodPost, "/api/v1/monitoring/dashboard-definitions"
+		case "run-query":
+			// A native query of one run's archive (and a comparison run).
+			if err := requireID(); err != nil {
+				return err
+			}
+			if len(body) == 0 {
+				return errors.New("--file JSON query is required")
+			}
+			method, path = http.MethodPost, "/api/v1/tests/"+url.PathEscape(*id)+"/archive/native-series"
+		case "list", "create", "capabilities", "catalog", "compare", "mappings", "save-mapping", "comparisons", "save-comparison":
 			if *project == "" {
 				return errors.New("--project is required")
 			}
 			path = "/api/v1/analysis/imports?project_id=" + url.QueryEscape(*project)
-			if action == "capabilities" {
+			if action == "capabilities" || action == "catalog" {
 				path = "/api/v1/analysis/capabilities?project_id=" + url.QueryEscape(*project)
 			}
 			if action == "compare" {
@@ -466,7 +511,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 					return errors.New("--file JSON query is required")
 				}
 			default:
-				return errors.New("analysis actions: telemetry-policy, telemetry-reevaluate, browser-documents, browser-resources, browser-har, progress, baseline, capabilities, list, create, show, upload, preview, map, commit, cancel, query, associate, compare, mappings, save-mapping, comparisons, save-comparison")
+				return errors.New("analysis actions: telemetry-policy, telemetry-reevaluate, browser-documents, browser-resources, browser-har, progress, baseline, catalog, capabilities, list, create, show, upload, preview, map, commit, cancel, query, associate, compare, mappings, save-mapping, comparisons, save-comparison, panels, panel, save-panel, update-panel, delete-panel, run-query")
 			}
 		}
 	default:
@@ -476,6 +521,11 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 		if err := client.preflightAnalysisIdentity(ctx, action, *project, *id, body); err != nil {
 			return err
 		}
+	}
+	if !*failOnRegression {
+		// Results stream to the output as they arrive; nothing holds a
+		// whole response in memory.
+		return client.workflowStream(ctx, method, path, bytes.NewReader(body), "application/json", out)
 	}
 	response, err := client.workflowRequest(ctx, method, path, bytes.NewReader(body), "application/json")
 	if err != nil {
@@ -545,6 +595,35 @@ func (c *ApiClient) workflowRequest(ctx context.Context, method, path string, bo
 		return nil, fmt.Errorf("controller returned %s: %s", res.Status, data)
 	}
 	return data, nil
+}
+
+// workflowStream sends a workflow request and copies a successful response
+// to out as it arrives, followed by a newline; a failure's bounded body is
+// the error.
+func (c *ApiClient) workflowStream(ctx context.Context, method, path string, body io.Reader, contentType string, out io.Writer) error {
+	req, err := c.newRequest(method, path, body, contentType)
+	if err != nil {
+		return err
+	}
+	client := *c.Client
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	res, err := client.Do(req.WithContext(ctx))
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
+		return fmt.Errorf("controller returned %s: %s", res.Status, data)
+	}
+	written, err := io.Copy(out, res.Body)
+	if err != nil {
+		return err
+	}
+	if written > 0 {
+		_, err = fmt.Fprintln(out)
+	}
+	return err
 }
 
 func (c *ApiClient) uploadAnalysisFile(ctx context.Context, id, fileID, path string, out io.Writer) error {

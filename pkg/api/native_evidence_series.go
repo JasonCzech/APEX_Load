@@ -466,7 +466,7 @@ func (s *Server) attachNativeOverlay(ctx context.Context, project, runID string,
 			return errors.New("explicitly associate the dataset with this run before overlaying")
 		}
 	}
-	selection := AnalysisSeriesSelection{DatasetID: o.DatasetID, SourceID: o.SourceID, Metric: o.Metric, Aggregation: o.Aggregation, Host: o.Host, Dimensions: o.Dimensions}
+	selection := AnalysisSeriesSelection{DatasetID: o.DatasetID, SourceID: o.SourceID, Metric: o.Metric, Aggregation: o.Aggregation, Host: o.Host, Dimensions: o.Dimensions, DatasetArtifactSHA256: o.DatasetArtifactSHA256}
 	if o.DatasetID == "" {
 		selection.RunID = runID
 	}

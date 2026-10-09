@@ -8033,6 +8033,7 @@ export interface operations {
           "application/json": ({
             "accepted": number;
             "allow_rejected": boolean;
+            "artifact_sha256"?: string;
             "created_at": string;
             "error"?: string;
             "files": Array<{
@@ -8143,6 +8144,7 @@ export interface operations {
           "application/json": ({
             "accepted": number;
             "allow_rejected": boolean;
+            "artifact_sha256"?: string;
             "created_at": string;
             "error"?: string;
             "files": Array<{
@@ -8291,6 +8293,7 @@ export interface operations {
           "from"?: string;
           "left"?: {
             "aggregation"?: string;
+            "dataset_artifact_sha256"?: string;
             "dataset_id"?: string;
             "dimensions"?: Record<string, string>;
             "group"?: string;
@@ -8306,6 +8309,7 @@ export interface operations {
           "mode"?: string;
           "right"?: {
             "aggregation"?: string;
+            "dataset_artifact_sha256"?: string;
             "dataset_id"?: string;
             "dimensions"?: Record<string, string>;
             "group"?: string;
@@ -8461,6 +8465,7 @@ export interface operations {
               "from": string;
               "left": {
                 "aggregation": string;
+                "dataset_artifact_sha256"?: string;
                 "dataset_id"?: string;
                 "dimensions"?: Record<string, string>;
                 "group"?: string;
@@ -8476,6 +8481,7 @@ export interface operations {
               "mode": string;
               "right": {
                 "aggregation": string;
+                "dataset_artifact_sha256"?: string;
                 "dataset_id"?: string;
                 "dimensions"?: Record<string, string>;
                 "group"?: string;
@@ -8878,6 +8884,7 @@ export interface operations {
             "from"?: string;
             "left"?: {
               "aggregation"?: string;
+              "dataset_artifact_sha256"?: string;
               "dataset_id"?: string;
               "dimensions"?: Record<string, string>;
               "group"?: string;
@@ -8893,6 +8900,7 @@ export interface operations {
             "mode"?: string;
             "right"?: {
               "aggregation"?: string;
+              "dataset_artifact_sha256"?: string;
               "dataset_id"?: string;
               "dimensions"?: Record<string, string>;
               "group"?: string;
@@ -10253,6 +10261,7 @@ export interface operations {
             "from"?: string;
             "left"?: {
               "aggregation"?: string;
+              "dataset_artifact_sha256"?: string;
               "dataset_id"?: string;
               "dimensions"?: Record<string, string>;
               "group"?: string;
@@ -10268,6 +10277,7 @@ export interface operations {
             "mode"?: string;
             "right"?: {
               "aggregation"?: string;
+              "dataset_artifact_sha256"?: string;
               "dataset_id"?: string;
               "dimensions"?: Record<string, string>;
               "group"?: string;
@@ -10522,6 +10532,7 @@ export interface operations {
           "application/json": ({
             "accepted": number;
             "allow_rejected": boolean;
+            "artifact_sha256"?: string;
             "created_at": string;
             "error"?: string;
             "files": Array<{
@@ -10673,6 +10684,7 @@ export interface operations {
           "application/json": ({
             "accepted": number;
             "allow_rejected": boolean;
+            "artifact_sha256"?: string;
             "created_at": string;
             "error"?: string;
             "files": Array<{
@@ -10824,6 +10836,7 @@ export interface operations {
           "application/json": ({
             "accepted": number;
             "allow_rejected": boolean;
+            "artifact_sha256"?: string;
             "created_at": string;
             "error"?: string;
             "files": Array<{
@@ -30534,11 +30547,17 @@ export interface operations {
       content: {
         "application/json": {
           "created_at"?: string;
+          "current_revision"?: number;
           "description"?: string;
           "id"?: string;
           "name"?: string;
           "owner"?: string;
           "project_id"?: string;
+          "retained_revisions"?: Array<{
+            "name"?: string;
+            "revision"?: number;
+            "saved_at"?: string;
+          }>;
           "revision"?: number;
           "slideshow_interval_seconds"?: number;
           "tabs"?: Array<{
@@ -30566,11 +30585,17 @@ export interface operations {
         content: {
           "application/json": {
             "created_at": string;
+            "current_revision"?: number;
             "description"?: string;
             "id": string;
             "name": string;
             "owner"?: string;
             "project_id": string;
+            "retained_revisions"?: Array<{
+              "name": string;
+              "revision": number;
+              "saved_at": string;
+            }>;
             "revision": number;
             "slideshow_interval_seconds"?: number;
             "tabs": Array<{
@@ -58072,6 +58097,9 @@ export interface operations {
       "path": {
         "id": string;
       };
+      "query"?: {
+        "revision"?: string;
+      };
     };
     requestBody?: never;
     responses: {
@@ -58079,11 +58107,17 @@ export interface operations {
         content: {
           "application/json": ({
             "created_at": string;
+            "current_revision"?: number;
             "description"?: string;
             "id": string;
             "name": string;
             "owner"?: string;
             "project_id": string;
+            "retained_revisions"?: Array<{
+              "name": string;
+              "revision": number;
+              "saved_at": string;
+            }>;
             "revision": number;
             "slideshow_interval_seconds"?: number;
             "tabs": Array<{
@@ -58106,12 +58140,27 @@ export interface operations {
           }) | null;
         };
       };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "401": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -95531,6 +95580,7 @@ export interface operations {
           "overlay"?: boolean;
           "overlay_selection"?: ({
             "aggregation"?: string;
+            "dataset_artifact_sha256"?: string;
             "dataset_id"?: string;
             "dimensions"?: Record<string, string>;
             "host"?: string;
@@ -95541,6 +95591,7 @@ export interface operations {
           "population"?: string;
           "property_name"?: string;
           "property_value"?: string;
+          "query_version"?: number;
           "start_seconds"?: number;
         };
       };
@@ -95654,6 +95705,7 @@ export interface operations {
           "overlay"?: boolean;
           "overlay_selection"?: ({
             "aggregation"?: string;
+            "dataset_artifact_sha256"?: string;
             "dataset_id"?: string;
             "dimensions"?: Record<string, string>;
             "host"?: string;
@@ -95664,6 +95716,7 @@ export interface operations {
           "population"?: string;
           "property_name"?: string;
           "property_value"?: string;
+          "query_version"?: number;
           "start_seconds"?: number;
         };
       };
@@ -96423,6 +96476,7 @@ export interface operations {
                 "population"?: string;
                 "property_name"?: string;
                 "property_value"?: string;
+                "query_version"?: number;
                 "start_seconds"?: number;
               }) | null;
               "title"?: string;
@@ -96441,11 +96495,17 @@ export interface operations {
         content: {
           "application/json": ({
             "created_at": string;
+            "current_revision"?: number;
             "description"?: string;
             "id": string;
             "name": string;
             "owner"?: string;
             "project_id": string;
+            "retained_revisions"?: Array<{
+              "name": string;
+              "revision": number;
+              "saved_at": string;
+            }>;
             "revision": number;
             "slideshow_interval_seconds"?: number;
             "tabs": Array<{

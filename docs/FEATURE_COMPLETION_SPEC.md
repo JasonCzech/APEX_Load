@@ -371,6 +371,16 @@ Extend existing versioned panel/comparison/mapping stores; avoid a parallel dash
 
 Complete equivalent `apexctl analysis` catalog/query/compare/import/mapping operations without whole-file memory loading. Permit reusable definitions and cross-scenario selections only within authorized project ownership. Cancellation/deletion revokes worker publication, releases cache leases and reclaims originals/normalized data according to retention, including late outputs and project deletion. Hash-bound cache identity includes project, artifact revision, query semantics and capability/catalog version.
 
+Delivery progress, 2026-10-08 (Wave 4, B7): project dashboard (panel) definitions keep every saved revision (schema v54 `dashboard_definition_revisions`, newest 100, deleted with the definition or project). `GET /api/v1/monitoring/dashboard-definitions/{id}?revision=N` reopens exactly revision N, with `current_revision` beside it, and every read lists `retained_revisions`. The run page offers a read-only **Saved revision** choice. Edits and deletes keep their optimistic revisions: a stale or racing edit or delete is refused, and an edit of a deleted definition is not found. Panels state `query_version` (2), and a newer version is refused. Committed datasets report `artifact_sha256` (their normalized artifacts). Comparison selections and dataset overlays may pin it as `dataset_artifact_sha256`, and a pinned dataset that changed since is refused, naming both digests. `apexctl analysis` adds `catalog`, `panels`, `panel [--revision N]`, `save-panel`, `update-panel`, `delete-panel` and `run-query`, and every analysis command now streams the response instead of loading it whole.
+
+Deviations:
+- No analytical result cache exists, so there is no cache identity to key. Every query recomputes from the archive and its artifacts.
+- Archive queries align by elapsed time from each run's start; there is no UTC alignment option.
+- Coverage thresholds are not a saved query setting.
+- Pins are opt-in, and the dashboard does not set them yet.
+- Cancellation and retention of imports are unchanged.
+- No CSV/SVG changes beyond the existing chart exports.
+
 ### NA-5: Resource isolation and native packaging
 
 Retain the embedded pinned DuckDB driver in controller/desktop builds, with CGO-free unavailable profiles and no generator/collector dependency. Execute native import/query/export pipelines through a contained child mode of the same versioned binary, so cancellation/resource exhaustion can terminate analytics without terminating the controller or Wails UI. This is a new isolation requirement, not existing behavior. Child IPC accepts typed operations and approved artifact handles, never SQL or arbitrary file paths; credentials/unrelated environment are removed. Durable leases/publication remain controller-owned.

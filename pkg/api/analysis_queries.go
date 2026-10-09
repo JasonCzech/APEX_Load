@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
@@ -32,6 +35,10 @@ type AnalysisSeriesSelection struct {
 	Service     string            `json:"service,omitempty"`
 	Metric      string            `json:"metric"`
 	Aggregation string            `json:"aggregation"`
+	// DatasetArtifactSHA256 pins a dataset selection to the committed
+	// artifacts it was saved against (the dataset's artifact_sha256); a
+	// dataset that changed since is refused rather than read.
+	DatasetArtifactSHA256 string `json:"dataset_artifact_sha256,omitempty"`
 }
 
 type AnalysisComparisonRequest struct {
@@ -70,6 +77,9 @@ func (q AnalysisComparisonRequest) validate() error {
 		}
 		if len(s.Protocol) > 64 || len(s.Group) > 256 || len(s.Host) > 256 || len(s.Service) > 256 || len(s.Dimensions) > 16 {
 			return errors.New("protocol or group identity exceeds limit")
+		}
+		if s.DatasetArtifactSHA256 != "" && (s.DatasetID == "" || !analysisDatasetArtifactDigestValid(s.DatasetArtifactSHA256)) {
+			return errors.New("dataset_artifact_sha256 pins a dataset selection and is a lowercase SHA-256")
 		}
 		for k, v := range s.Dimensions {
 			if k == "" || len(k) > 128 || len(v) > 128 {
@@ -283,6 +293,9 @@ func (s *Server) loadAnalysisSelection(ctx context.Context, project string, sele
 		in, err := store.GetAnalysisImport(selection.DatasetID)
 		if err != nil || in == nil || in.ProjectID != project || in.State != "ready" {
 			return nil, "", errors.New("committed dataset not found in project")
+		}
+		if err := checkAnalysisDatasetPin(selection.DatasetArtifactSHA256, in); err != nil {
+			return nil, "", err
 		}
 		if !analysisProjectEnabled(project) {
 			return nil, "", errors.New("native analysis disabled for project")
@@ -585,4 +598,37 @@ func queryAnalysisDataset(ctx context.Context, in *storage.AnalysisImport, query
 		return nil, err
 	}
 	return points, nil
+}
+
+// errAnalysisDatasetChanged refuses a pinned dataset selection whose dataset
+// no longer holds the artifacts it was saved against.
+var errAnalysisDatasetChanged = errors.New("dataset changed since the selection was saved")
+
+// analysisDatasetArtifactSHA256 identifies a committed dataset's normalized
+// artifacts (name and digest of each), which a mapping change or a new
+// commit replaces; association with a run does not change it.
+func analysisDatasetArtifactSHA256(in *storage.AnalysisImport) string {
+	names := append([]string(nil), in.Normalized...)
+	sort.Strings(names)
+	hash := sha256.New()
+	for _, name := range names {
+		fmt.Fprintf(hash, "%s\x00%s\x00", name, in.NormalizedSHA256[name])
+	}
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
+// checkAnalysisDatasetPin refuses a dataset whose artifacts are not the ones
+// a saved selection pinned; an unpinned selection reads the current ones.
+func checkAnalysisDatasetPin(pinned string, in *storage.AnalysisImport) error {
+	if pinned == "" {
+		return nil
+	}
+	if current := analysisDatasetArtifactSHA256(in); current != pinned {
+		return fmt.Errorf("%w: it was saved against artifacts %s, and the dataset now holds %s; save the selection again to read the current artifacts", errAnalysisDatasetChanged, shortDigest(pinned), shortDigest(current))
+	}
+	return nil
+}
+
+func shortDigest(digest string) string {
+	return digest[:min(12, len(digest))]
 }

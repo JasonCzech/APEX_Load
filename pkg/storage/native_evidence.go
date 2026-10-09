@@ -229,6 +229,9 @@ func ValidateNativeEvidenceQuery(q AnalyticsQuery) error {
 		if o.MaxLagSeconds < 0 || o.MaxLagSeconds > 3600 || o.MaxLagSeconds%q.BucketSeconds != 0 || 2*o.MaxLagSeconds/q.BucketSeconds+1 > 121 {
 			return errors.New("invalid bounded lag window")
 		}
+		if o.DatasetArtifactSHA256 != "" && (o.DatasetID == "" || !lowerSHA256Hex(o.DatasetArtifactSHA256)) {
+			return errors.New("dataset_artifact_sha256 pins a dataset overlay and is a lowercase SHA-256")
+		}
 	}
 	return nil
 }

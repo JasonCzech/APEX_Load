@@ -14,10 +14,14 @@ export interface DashboardDefinitionPanel {
 	query?: DashboardAnalyticsQuery
 }
 
+// The query semantics a panel is saved under (query_version).
+export const ANALYTICS_QUERY_VERSION = 2
+
 export interface DashboardAnalyticsQuery {
+  query_version?: number
   live_bucket_mode?: 'source' | 'merged'
   evidence_mode?: 'live' | 'archive'
-  overlay_selection?: { dataset_id?: string; source_id?: string; metric: string; aggregation: string; host?: string; dimensions?: Record<string, string>; max_lag_seconds?: number }
+  overlay_selection?: { dataset_id?: string; source_id?: string; metric: string; aggregation: string; host?: string; dimensions?: Record<string, string>; max_lag_seconds?: number; dataset_artifact_sha256?: string }
 
   population?: 'action' | 'transaction' | 'browser_document' | 'message'
   property_name?: string
@@ -52,6 +56,16 @@ export interface DashboardDefinition {
   tabs: DashboardDefinitionTab[]
   created_at: string
   updated_at: string
+  // Set when a past saved revision is returned: the revision now.
+  current_revision?: number
+  // The saved revisions a viewer can reopen, newest first.
+  retained_revisions?: { revision: number; name: string; saved_at: string }[]
+}
+
+/** One definition, or exactly its saved revision. */
+export function fetchDashboardDefinition(id: string, revision?: number, signal?: AbortSignal) {
+  const query = revision ? `?revision=${encodeURIComponent(String(revision))}` : ''
+  return request<DashboardDefinition>(`/monitoring/dashboard-definitions/${encodeURIComponent(id)}${query}`, { signal })
 }
 
 export function useDashboardDefinitionsApi() {

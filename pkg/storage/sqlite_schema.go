@@ -1752,6 +1752,18 @@ func schemaCreateTableStatements() []string {
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS dashboard_definition_revisions (
+			definition_id TEXT NOT NULL,
+			project_id TEXT NOT NULL,
+			revision BIGINT NOT NULL,
+			name TEXT NOT NULL,
+			description TEXT,
+			owner TEXT,
+			visibility TEXT NOT NULL,
+			definition_json TEXT NOT NULL,
+			saved_at DATETIME NOT NULL,
+			PRIMARY KEY (definition_id, revision)
+		)`,
 		`CREATE TABLE IF NOT EXISTS grafana_dashboard_snapshots (
 			test_id TEXT PRIMARY KEY,
 			project_id TEXT NOT NULL,
@@ -2275,6 +2287,7 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_monitoring_collectors_project ON monitoring_collectors(project_id)`, "idx_monitoring_collectors_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_grafana_dashboards_project ON grafana_dashboards(project_id)`, "idx_grafana_dashboards_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_dashboard_definitions_project ON dashboard_definitions(project_id)`, "idx_dashboard_definitions_project"},
+	{`CREATE INDEX IF NOT EXISTS idx_dashboard_definition_revisions_project ON dashboard_definition_revisions(project_id)`, "idx_dashboard_definition_revisions_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_grafana_import_sessions_project_expiry ON grafana_import_sessions(project_id, expires_at)`, "idx_grafana_import_sessions_project_expiry"},
 	{`CREATE INDEX IF NOT EXISTS idx_grafana_dashboard_snapshots_project ON grafana_dashboard_snapshots(project_id)`, "idx_grafana_dashboard_snapshots_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_reusable_blocks_project ON reusable_blocks(project_id)`, "idx_reusable_blocks_project"},

@@ -17,6 +17,8 @@ type dashboardDefinitionStore interface {
 	ListDashboardDefinitions(string, int, int) ([]*storage.DashboardDefinition, error)
 	UpdateDashboardDefinitionIfRevision(*storage.DashboardDefinition, int64) (bool, error)
 	DeleteDashboardDefinitionIfRevision(string, string, int64) (bool, error)
+	GetDashboardDefinitionRevision(string, int64) (*storage.DashboardDefinition, error)
+	ListDashboardDefinitionRevisions(string) ([]storage.DashboardDefinitionRevision, error)
 }
 
 func (s *Server) dashboardDefinitions() (dashboardDefinitionStore, bool) {
@@ -66,11 +68,43 @@ func (s *Server) handleListDashboardDefinitions(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, map[string]any{"dashboards": definitions, "count": len(definitions), "limit": limit, "offset": offset})
 }
 
+// handleGetDashboardDefinition returns a definition, or with ?revision=N
+// exactly the revision saved as N (with the current revision beside it), and
+// the saved revisions a viewer can reopen.
 func (s *Server) handleGetDashboardDefinition(w http.ResponseWriter, r *http.Request) {
 	definition, ok := s.loadDashboardDefinition(w, r)
 	if !ok {
 		return
 	}
+	store, _ := s.dashboardDefinitions()
+	retained, err := store.ListDashboardDefinitionRevisions(definition.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list dashboard definition revisions")
+		return
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("revision")); raw != "" {
+		revision, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || revision <= 0 {
+			writeError(w, http.StatusBadRequest, "revision must be a positive integer")
+			return
+		}
+		// A definition saved before revisions were kept has no saved row
+		// for its current revision; the current row is that revision.
+		if revision != definition.Revision {
+			saved, err := store.GetDashboardDefinitionRevision(definition.ID, revision)
+			if errors.Is(err, storage.ErrDashboardRevisionNotRetained) {
+				writeError(w, http.StatusNotFound, "dashboard definition revision is not retained")
+				return
+			}
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to load dashboard definition revision")
+				return
+			}
+			saved.CurrentRevision = definition.Revision
+			definition = saved
+		}
+	}
+	definition.RetainedRevisions = retained
 	writeJSON(w, http.StatusOK, definition)
 }
 

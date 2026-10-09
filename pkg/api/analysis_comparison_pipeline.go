@@ -218,6 +218,9 @@ func (s *Server) prepareNativeAnalysisComparison(ctx context.Context, project st
 			if err != nil || in == nil || in.ProjectID != project || in.State != "ready" {
 				return ctx, nil, "", errors.New("committed dataset not found in project")
 			}
+			if err := checkAnalysisDatasetPin(selection.DatasetArtifactSHA256, in); err != nil {
+				return ctx, nil, "", err
+			}
 			snapshot, err = snapshotAnalysisQueryDataset(in)
 			if err != nil {
 				return ctx, nil, "", err

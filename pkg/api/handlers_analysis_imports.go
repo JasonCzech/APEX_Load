@@ -249,6 +249,9 @@ func (s *Server) handleAnalysisImport(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 404, "committed dataset not found")
 			return
 		}
+		if in.State == "ready" {
+			in.ArtifactSHA256 = analysisDatasetArtifactSHA256(in)
+		}
 		writeJSON(w, 200, in)
 		return
 	}

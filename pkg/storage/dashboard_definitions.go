@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -31,6 +32,11 @@ type DashboardDefinition struct {
 	Tabs              []DashboardTab `json:"tabs"`
 	CreatedAt         time.Time      `json:"created_at"`
 	UpdatedAt         time.Time      `json:"updated_at"`
+	// CurrentRevision is set when an older saved revision is returned: the
+	// definition's revision now. RetainedRevisions lists the saved revisions
+	// a viewer can reopen, newest first. Neither is stored.
+	CurrentRevision   int64                         `json:"current_revision,omitempty"`
+	RetainedRevisions []DashboardDefinitionRevision `json:"retained_revisions,omitempty"`
 }
 
 type DashboardTab struct {
@@ -59,9 +65,18 @@ type NativeOverlaySelection struct {
 	Host          string            `json:"host,omitempty"`
 	Dimensions    map[string]string `json:"dimensions,omitempty"`
 	MaxLagSeconds int               `json:"max_lag_seconds,omitempty"`
+	// DatasetArtifactSHA256 pins the dataset's committed artifacts the
+	// overlay was saved against; a dataset that changed since is refused.
+	DatasetArtifactSHA256 string `json:"dataset_artifact_sha256,omitempty"`
 }
 
+// AnalyticsQueryVersion is the query semantics a saved query states; 0 is a
+// query saved before the version was recorded, read with the same rules.
+const AnalyticsQueryVersion = 2
+
 type AnalyticsQuery struct {
+	// QueryVersion names the query semantics the panel was saved under.
+	QueryVersion     int                     `json:"query_version,omitempty"`
 	LiveBucketMode   string                  `json:"live_bucket_mode,omitempty"`
 	EvidenceMode     string                  `json:"evidence_mode,omitempty"`
 	OverlaySelection *NativeOverlaySelection `json:"overlay_selection,omitempty"`
@@ -157,6 +172,9 @@ func validateDashboardDefinition(d *DashboardDefinition) error {
 				continue
 			}
 			q := panel.Query
+			if q.QueryVersion < 0 || q.QueryVersion > AnalyticsQueryVersion {
+				return fmt.Errorf("dashboard panel %q query_version must be at most %d", panel.ID, AnalyticsQueryVersion)
+			}
 			if IsNativeObservationRate(q.Metric) && q.Population == "" {
 				return errors.New("retained rates require an explicit population")
 			}
@@ -244,6 +262,9 @@ func (s *SQLiteStore) SaveDashboardDefinition(d *DashboardDefinition) error {
 	if err != nil {
 		return err
 	}
+	if err := recordDashboardDefinitionRevisionTx(tx, d, payload, d.UpdatedAt); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -302,31 +323,128 @@ func (s *SQLiteStore) UpdateDashboardDefinitionIfRevision(d *DashboardDefinition
 	if err := validateDashboardDefinition(d); err != nil {
 		return false, err
 	}
-	payload, _ := json.Marshal(struct {
+	payload, err := json.Marshal(struct {
 		SlideshowInterval int            `json:"slideshow_interval_seconds,omitempty"`
 		Tabs              []DashboardTab `json:"tabs"`
 	}{d.SlideshowInterval, d.Tabs})
+	if err != nil || len(payload) > MaxDashboardDefinitionBytes {
+		return false, errors.New("dashboard definition exceeds its encoded size limit")
+	}
 	now := time.Now()
-	result, err := s.db.Exec(`UPDATE dashboard_definitions SET name = ?, description = ?, visibility = ?, revision = revision + 1, definition_json = ?, updated_at = ? WHERE id = ? AND project_id = ? AND revision = ?`, d.Name, d.Description, d.Visibility, string(payload), now, d.ID, normalizeProjectID(d.ProjectID), expected)
+	projectID := normalizeProjectID(d.ProjectID)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(`UPDATE dashboard_definitions SET name = ?, description = ?, visibility = ?, revision = revision + 1, definition_json = ?, updated_at = ? WHERE id = ? AND project_id = ? AND revision = ?`, d.Name, d.Description, d.Visibility, string(payload), now, d.ID, projectID, expected)
 	if err != nil {
 		return false, err
 	}
 	affected, err := result.RowsAffected()
-	if err != nil {
+	if err != nil || affected != 1 {
 		return false, err
 	}
-	if affected == 1 {
-		d.Revision, d.UpdatedAt = expected+1, now
+	saved := *d
+	saved.ProjectID, saved.Revision = projectID, expected+1
+	if err := recordDashboardDefinitionRevisionTx(tx, &saved, payload, now); err != nil {
+		return false, err
 	}
-	return affected == 1, nil
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	d.Revision, d.UpdatedAt = expected+1, now
+	return true, nil
 }
 func (s *SQLiteStore) DeleteDashboardDefinitionIfRevision(id, projectID string, expected int64) (bool, error) {
-	result, err := s.db.Exec(`DELETE FROM dashboard_definitions WHERE id = ? AND project_id = ? AND revision = ?`, id, normalizeProjectID(projectID), expected)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(`DELETE FROM dashboard_definitions WHERE id = ? AND project_id = ? AND revision = ?`, id, normalizeProjectID(projectID), expected)
 	if err != nil {
 		return false, err
 	}
 	affected, err := result.RowsAffected()
-	return affected == 1, err
+	if err != nil || affected != 1 {
+		return false, err
+	}
+	// Its saved revisions go with it.
+	if _, err := tx.Exec(`DELETE FROM dashboard_definition_revisions WHERE definition_id = ?`, id); err != nil {
+		return false, err
+	}
+	return true, tx.Commit()
+}
+
+// maxDashboardDefinitionRevisions is how many saved revisions of one
+// definition are kept; the oldest beyond it are pruned when a revision is
+// saved.
+const maxDashboardDefinitionRevisions = 100
+
+// ErrDashboardRevisionNotRetained says a definition revision was never saved
+// or has been pruned.
+var ErrDashboardRevisionNotRetained = errors.New("dashboard definition revision is not retained")
+
+// recordDashboardDefinitionRevisionTx keeps the saved revision so a viewer
+// can reopen exactly what was saved, and prunes the oldest beyond the bound.
+func recordDashboardDefinitionRevisionTx(tx *storeTx, d *DashboardDefinition, payload []byte, savedAt time.Time) error {
+	if _, err := tx.Exec(`INSERT INTO dashboard_definition_revisions (definition_id, project_id, revision, name, description, owner, visibility, definition_json, saved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		d.ID, d.ProjectID, d.Revision, d.Name, d.Description, d.Owner, d.Visibility, string(payload), savedAt); err != nil {
+		return err
+	}
+	_, err := tx.Exec(`DELETE FROM dashboard_definition_revisions WHERE definition_id = ? AND revision <= ?`, d.ID, d.Revision-maxDashboardDefinitionRevisions)
+	return err
+}
+
+// GetDashboardDefinitionRevision returns one saved revision of a definition.
+func (s *SQLiteStore) GetDashboardDefinitionRevision(id string, revision int64) (*DashboardDefinition, error) {
+	var d DashboardDefinition
+	var payload string
+	err := s.db.QueryRow(`SELECT r.definition_id, r.project_id, r.name, COALESCE(r.description, ''), COALESCE(r.owner, ''), r.visibility, r.revision, r.definition_json, d.created_at, r.saved_at
+		FROM dashboard_definition_revisions r JOIN dashboard_definitions d ON d.id = r.definition_id AND d.project_id = r.project_id WHERE r.definition_id = ? AND r.revision = ?`, id, revision).
+		Scan(&d.ID, &d.ProjectID, &d.Name, &d.Description, &d.Owner, &d.Visibility, &d.Revision, &payload, &d.CreatedAt, &d.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrDashboardRevisionNotRetained
+	}
+	if err != nil {
+		return nil, err
+	}
+	var definition struct {
+		SlideshowInterval int            `json:"slideshow_interval_seconds,omitempty"`
+		Tabs              []DashboardTab `json:"tabs"`
+	}
+	if err := json.Unmarshal([]byte(payload), &definition); err != nil {
+		return nil, err
+	}
+	d.SlideshowInterval, d.Tabs = definition.SlideshowInterval, definition.Tabs
+	return &d, nil
+}
+
+// ListDashboardDefinitionRevisions lists a definition's retained revisions,
+// newest first, without their panels.
+func (s *SQLiteStore) ListDashboardDefinitionRevisions(id string) ([]DashboardDefinitionRevision, error) {
+	rows, err := s.db.Query(`SELECT revision, name, saved_at FROM dashboard_definition_revisions WHERE definition_id = ? ORDER BY revision DESC`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []DashboardDefinitionRevision{}
+	for rows.Next() {
+		var item DashboardDefinitionRevision
+		if err := rows.Scan(&item.Revision, &item.Name, &item.SavedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+// DashboardDefinitionRevision names one retained revision.
+type DashboardDefinitionRevision struct {
+	Revision int64     `json:"revision"`
+	Name     string    `json:"name"`
+	SavedAt  time.Time `json:"saved_at"`
 }
 
 // ValidateNativeArchiveQuery is shared by saved definitions and query execution.
@@ -419,4 +537,17 @@ func validateNativeMessageQuery(q AnalyticsQuery) error {
 		return analysis.ValidateQueryDerivation(q.Metric, q.Population, analysis.KindObservation, *q.Derivation, false)
 	}
 	return nil
+}
+
+// lowerSHA256Hex reports whether a value is a lowercase hex SHA-256.
+func lowerSHA256Hex(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for _, r := range value {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
 }

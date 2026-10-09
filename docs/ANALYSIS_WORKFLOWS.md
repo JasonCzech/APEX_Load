@@ -1069,6 +1069,50 @@ Live summaries expose `properties`; archive reports recompute `by_property` from
 Run pages now offer native project panel creation with line, latest-value and table views, using the retained run time window. Supported run measurements include TPS, response-time means/interval percentiles, errors, VUsers and process resources. Project viewers can reopen saved panels. Missing intervals remain gaps, interval percentiles are never averaged, and unsupported stored query dimensions/filters/aggregations are explicitly unavailable. Archived action/transaction and property filtering is described below. General dimensions and monitor/imported-dataset overlay authoring remain follow-on work.
 
 
+### Saved panel revisions and pinned inputs
+
+Every save of a project dashboard (panel) definition is kept as a revision.
+That covers create, and each edit that wins the definition's revision check.
+The newest 100 revisions are kept, and they are deleted with the definition
+or its project.
+
+- **Reopening a revision.** `GET
+  /api/v1/monitoring/dashboard-definitions/{id}?revision=N` returns exactly what
+  was saved as revision N, with `current_revision` beside it. Every read lists
+  `retained_revisions`, newest first. A revision that was never saved, or that
+  was pruned, is `404`. Access is resolved from the stored definition's project,
+  never from the request. On the run page, **Saved revision** opens a past
+  revision read-only; a definition saved before revisions were kept has only its
+  current revision.
+- **Edits and deletes.** Both still need the revision they replace: a stale or
+  racing edit or delete is `409`, and an edit of a deleted definition is `404`.
+- **Query version.** New panels state `query_version` (2), the query semantics
+  they were saved under. A missing version is read with the same rules; a
+  version newer than the controller's is refused.
+- **Pinned dataset artifacts.** A committed dataset reports `artifact_sha256`,
+  a digest of its normalized artifacts. A mapping change or a new commit
+  replaces it; associating the dataset with a run does not. A comparison
+  selection or a dataset overlay may pin it as `dataset_artifact_sha256`. A
+  pinned dataset whose artifacts changed since is refused, naming both digests,
+  rather than answered from different evidence. An unpinned selection reads
+  the current artifacts.
+
+`apexctl analysis` covers the same workflows. Every command streams the
+controller's response to standard output instead of loading it whole:
+
+| Command | Does |
+| --- | --- |
+| `catalog --project P` | The analysis capabilities and catalog (same as `capabilities`). |
+| `panels --project P` | Lists the project's saved panel definitions. |
+| `panel --id ID [--revision N]` | Shows a definition, or exactly its saved revision N. |
+| `save-panel --file def.json` | Creates a definition (the file names `project_id`). |
+| `update-panel --id ID --file patch.json` | Edits a definition; the patch carries the expected `revision`. |
+| `delete-panel --id ID --revision N` | Deletes a definition at revision N. |
+| `run-query --id RUN --file query.json` | Runs a native archive query of one run (and its `comparison_run_id`). |
+
+The `list`, `create`, `upload`, `map`, `commit`, `query`, `compare`,
+`mappings` and `comparisons` commands keep covering imports and comparisons.
+
 ## Filtered archive panels and comparisons
 
 In a run's **Create project analytics panel** form, choose **Archived actions** or **Archived business transactions**. Select a case-sensitive exact action/transaction name, an optional retained approved property category (actions only), elapsed start/end seconds and bucket width. An optional comparison run ID saves a two-run query with the same selection and elapsed wall-time window for both runs. Editors save project definitions; viewers can reopen and query them. Existing run-total definitions keep their previous semantics.

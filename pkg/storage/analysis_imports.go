@@ -55,6 +55,10 @@ type AnalysisImport struct {
 	LeaseExpiresAt           time.Time                             `json:"-"`
 	CreatedAt                time.Time                             `json:"created_at"`
 	UpdatedAt                time.Time                             `json:"updated_at"`
+	// ArtifactSHA256 identifies a committed dataset's normalized artifacts,
+	// so a saved selection can pin the evidence it was saved against. It is
+	// computed for API responses, never stored.
+	ArtifactSHA256 string `json:"artifact_sha256,omitempty"`
 }
 
 type AnalysisImportStore interface {
