@@ -230,6 +230,40 @@ func TestRCAAnalysisFailsWhenTheArchiveChanged(t *testing.T) {
 	})
 }
 
+// An assessment the budget cut short describes the controller's load when
+// it ran, not the run: an identical request is analyzed again instead of
+// being answered with it, and a sound assessment is reused as before.
+func TestRCABudgetCutAssessmentsAreNotReused(t *testing.T) {
+	server, _ := rcaTestServer(t)
+	store := server.store.(storage.RCAStore)
+	first := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{}).Body.Bytes())
+	claimed, err := store.ClaimRCAAnalysis("owner", time.Now(), time.Minute)
+	if err != nil || claimed == nil || claimed.ID != first.AnalysisID {
+		t.Fatal(claimed, err)
+	}
+	cut := rcaAnalysisPayloadOf(claimed)
+	cut.Assessment = &rca.Assessment{SchemaVersion: rca.AssessmentSchemaVersion, AnalysisID: claimed.ID, Revision: claimed.Revision, Inputs: cut.Inputs, Outcome: rca.OutcomeInsufficientEvidence,
+		Limitations: []rca.Limitation{{Code: rca.LimitationBudgetTruncated, Detail: rca.BudgetTruncation{Limit: rca.BudgetWallTime, Allowed: 120000, Offered: 130000}.Detail()}}}
+	body, _ := json.Marshal(cut)
+	if ok, err := store.CompleteRCAAnalysisFenced(claimed.ID, "owner", storage.RCAStateCompleted, body, time.Now(), "", "", 0); err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	again := timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{})
+	second := decodeRCAResponse(t, again.Body.Bytes())
+	if again.Code != http.StatusAccepted || second.AnalysisID == first.AnalysisID || second.Revision != 2 || *second.Inputs != *first.Inputs {
+		t.Fatalf("cut assessment reused: %d %s", again.Code, again.Body.String())
+	}
+	if ran, err := server.runNextRCAAnalysis(context.Background(), nil); err != nil || !ran {
+		t.Fatal(ran, err)
+	}
+	if done := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodGet, rcaRunPath+"/analyses/"+second.AnalysisID, nil).Body.Bytes()); done.State != storage.RCAStateCompleted || done.Assessment == nil || rca.CutByBudget(done.Assessment.Limitations) {
+		t.Fatalf("second attempt: %+v", done)
+	}
+	if third := decodeRCAResponse(t, timeslotRequest(t, server, http.MethodPost, rcaRunPath+"/analyses", map[string]any{}).Body.Bytes()); third.AnalysisID != second.AnalysisID {
+		t.Fatalf("sound assessment not reused: %+v", third)
+	}
+}
+
 // While finalize is still writing the archive's sidecars and manifest, an
 // analysis request waits rather than freezing evidence that is about to change.
 func TestRCAAnalysisWaitsForArchiveFinalization(t *testing.T) {

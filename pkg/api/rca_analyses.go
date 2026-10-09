@@ -32,6 +32,11 @@ const (
 	rcaAnalysisLease = 5 * time.Minute
 	// At most two analyses run at once on one controller.
 	rcaMaxConcurrentAnalyses = 2
+	// rcaMaxEvidenceReadTime bounds reading the archive before the engine's
+	// budget starts: materializing it, its manifest, summaries and resources
+	// and one pass over its rows. It is the archive's size that sets this,
+	// not the analysis, so it is kept apart from the engine's wall time.
+	rcaMaxEvidenceReadTime = 10 * time.Minute
 )
 
 // rcaArchiveAdapterVersion names how this package reads an archive into the
@@ -134,6 +139,9 @@ type rcaAnalysisPayload struct {
 	// so an unchanged manifest digest says the archive is unchanged without
 	// reading it again.
 	ArchiveManifest string `json:"archive_manifest,omitempty"`
+	// Attempt counts the analyses of these inputs that a budget cut short
+	// before this one; it tells identical requests apart from the cut ones.
+	Attempt int `json:"attempt,omitempty"`
 }
 
 // RCAAnalysisResponse reports an analysis and, once completed, its
@@ -173,10 +181,27 @@ type RCABundle struct {
 	Truncated bool `json:"truncated"`
 }
 
-func rcaInputDigest(inputs rca.InputDigests) string {
-	body, _ := json.Marshal(inputs)
+// rcaInputDigest identifies a request's frozen inputs and which attempt at
+// them it is: the first, or one after an assessment the budget cut short.
+func rcaInputDigest(inputs rca.InputDigests, attempt int) string {
+	body, _ := json.Marshal(struct {
+		Inputs  rca.InputDigests `json:"inputs"`
+		Attempt int              `json:"attempt,omitempty"`
+	}{inputs, attempt})
 	sum := sha256.Sum256(body)
 	return hex.EncodeToString(sum[:])
+}
+
+// rcaAnalysisCutByBudget reports whether a completed analysis's assessment
+// was cut short by the engine's wall-time or heap budget. Such an assessment
+// describes the controller's load when it ran, not the run, so it does not
+// answer an identical request.
+func rcaAnalysisCutByBudget(analysis *storage.RCAAnalysis) bool {
+	if analysis == nil || analysis.State != storage.RCAStateCompleted {
+		return false
+	}
+	payload := rcaAnalysisPayloadOf(analysis)
+	return payload.Assessment != nil && rca.CutByBudget(payload.Assessment.Limitations)
 }
 
 // rcaManifestDigest identifies an archive publication by its whole manifest.
@@ -467,8 +492,18 @@ func (s *Server) handleCreateRCAAnalysis(w http.ResponseWriter, r *http.Request)
 	if json.Unmarshal(evidence.Payload, &frozen) == nil {
 		inputs.Mapping = frozen.MappingDigest
 	}
-	payload, _ := json.Marshal(rcaAnalysisPayload{Request: request, Inputs: inputs, ArchiveManifest: manifestDigest})
-	analysis, created, err := store.CreateRCAAnalysis(project, test.ID, rcaInputDigest(inputs), payload, time.Now())
+	var analysis *storage.RCAAnalysis
+	var created bool
+	for attempt := 0; ; attempt++ {
+		payload, _ := json.Marshal(rcaAnalysisPayload{Request: request, Inputs: inputs, ArchiveManifest: manifestDigest, Attempt: attempt})
+		analysis, created, err = store.CreateRCAAnalysis(project, test.ID, rcaInputDigest(inputs, attempt), payload, time.Now())
+		// An identical request answered by an assessment the budget cut
+		// short is analyzed again: that assessment describes the controller's
+		// load when it ran, not the run.
+		if err != nil || created || !rcaAnalysisCutByBudget(analysis) || attempt >= storage.MaxRCARevisionsPerRun {
+			break
+		}
+	}
 	if errors.Is(err, storage.ErrRCALimit) {
 		writeError(w, http.StatusConflict, err.Error())
 		return
@@ -844,15 +879,26 @@ func (s *Server) assessRCAAnalysis(ctx context.Context, analysis *storage.RCAAna
 // assessRCAAnalysisWithExcerpts also takes the evidence excerpts the
 // assessment's references name, from the series it judged.
 func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *storage.RCAAnalysis, payload rcaAnalysisPayload) (*rca.Assessment, []RCAEvidenceExcerpt, error) {
-	budget := rca.DefaultBudget
-	budgeter := rca.NewBudgeter(budget, nil, rca.LiveHeapBytes)
-	record, ok := s.archiveDomainService().GetRunArchiveContext(ctx, analysis.TestID)
+	// Reading the archive is bounded by its size, not by the engine's
+	// budget, which starts once the evidence is in hand: a slow download or
+	// a long pass over the rows must not spend the time the engine's stages
+	// need and turn a sound archive into an insufficient-evidence verdict
+	// that identical requests would then be answered with.
+	readCtx, cancelRead := context.WithTimeout(ctx, rcaMaxEvidenceReadTime)
+	defer cancelRead()
+	readErr := func(err error) error {
+		if readCtx.Err() != nil && ctx.Err() == nil {
+			return fmt.Errorf("reading the run's archive evidence took longer than %s; retry the analysis when the controller is less busy", rcaMaxEvidenceReadTime)
+		}
+		return err
+	}
+	record, ok := s.archiveDomainService().GetRunArchiveContext(readCtx, analysis.TestID)
 	if !ok {
 		return nil, nil, errors.New("run archive not found")
 	}
-	lease, err := acquireArchiveMaterialized(ctx, record)
+	lease, err := acquireArchiveMaterialized(readCtx, record)
 	if err != nil {
-		return nil, nil, fmt.Errorf("materialize archive: %w", err)
+		return nil, nil, readErr(fmt.Errorf("materialize archive: %w", err))
 	}
 	defer lease.Release()
 	manifest, err := loadRunArchiveManifestFromRecord(record)
@@ -866,13 +912,13 @@ func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *st
 	if digest != payload.Inputs.Archive {
 		return nil, nil, errRCAArchiveChanged
 	}
-	summaries, err := readAllArchiveSummaries(record)
+	summaries, err := readAllArchiveSummariesContext(readCtx, record)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, readErr(err)
 	}
-	resources, err := readAllArchiveResources(record)
+	resources, err := readAllArchiveRecordsContext[ResourceSample](readCtx, record, func(m *RunArchiveManifest) string { return m.ResourceSamplesFile })
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, readErr(err)
 	}
 	evidence, frozen := s.frozenRCAEvidence(analysis, payload)
 	// Mapping decisions are frozen inputs: without the revision that holds
@@ -885,14 +931,18 @@ func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *st
 	counter := newValidityResultCounter(archiveValidityIntervals(manifest, summaries))
 	calls := newGraphCallCollector()
 	phases := newNetworkPhaseCollector(summaries, manifest.TransactionsFile)
-	if err := forEachArchiveTransaction(record, func(tx *TransactionEvent) error {
+	if err := forEachArchiveTransactionContext(readCtx, record, func(tx *TransactionEvent) error {
 		counter.add(tx.Timestamp)
 		calls.add(tx)
 		phases.add(tx)
-		return ctx.Err()
+		return readCtx.Err()
 	}); err != nil {
-		return nil, nil, err
+		return nil, nil, readErr(err)
 	}
+	// The engine's budget starts here, with the evidence in hand; the
+	// detection reads below check it, as the stages do.
+	budget := rca.DefaultBudget
+	budgeter := rca.NewBudgeter(budget, nil, rca.LiveHeapBytes)
 	input := rca.AnalysisInput{
 		Acceptance: archiveAcceptance(manifest),
 		Validity:   archiveValidityInput(manifest, counter.counted(), summaries, resources),
