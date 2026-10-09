@@ -51,4 +51,14 @@ describe('DesktopStartupFailure', () => {
     expect(openLogs).toHaveBeenCalledTimes(1)
     expect(openData).toHaveBeenCalledTimes(1)
   })
+
+  it('exports a diagnostics bundle and says where it went', async () => {
+    const exportDiagnostics = vi.fn().mockResolvedValue('~/Downloads/apexload-diagnostics.zip')
+    ;(window as BridgeWindow).go = { main: { App: { ExportDiagnostics: exportDiagnostics } } }
+    await act(async () => root.render(<DesktopStartupFailure message="bind: address already in use" />))
+    const button = Array.from(container.querySelectorAll('button')).find(candidate => candidate.textContent === 'Export diagnostics')
+    await act(async () => button?.click())
+    expect(exportDiagnostics).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('Diagnostics saved to ~/Downloads/apexload-diagnostics.zip.')
+  })
 })

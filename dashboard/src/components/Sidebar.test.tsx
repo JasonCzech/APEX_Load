@@ -1203,10 +1203,18 @@ describe('Sidebar', () => {
     })
 
     await expandSidebar()
+    const underneath = document.createElement('button')
+    const activated = vi.fn()
+    underneath.addEventListener('click', activated)
+    document.body.appendChild(underneath)
     await act(async () => {
-      document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+      underneath.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+      underneath.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(container.querySelector('.sidebar.collapsed')).not.toBeNull()
+    // Dismissing the overlay does not also activate what was underneath.
+    expect(activated).not.toHaveBeenCalled()
+    underneath.remove()
 
     await expandSidebar()
     await act(async () => {

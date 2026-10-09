@@ -496,7 +496,7 @@ describe('ApplicationRepositoryPage', () => {
     expect(container.querySelectorAll('.repository-asset-table tbody tr:not([aria-hidden="true"])').length).toBeLessThan(101)
   })
 
-  it('keeps repository test Open on archive navigation and adds Run Dashboard', async () => {
+  it('keeps repository test Open on archive navigation and adds Command Center', async () => {
     const onOpenTest = vi.fn()
     const onOpenCommandCenter = vi.fn()
 
@@ -527,7 +527,7 @@ describe('ApplicationRepositoryPage', () => {
     expect(row).toBeDefined()
     const buttons = Array.from(row?.querySelectorAll('button') ?? []) as HTMLButtonElement[]
     const openButton = buttons.find(button => button.textContent?.trim() === 'Open')
-    const runDashboardButton = buttons.find(button => button.textContent?.trim() === 'Run Dashboard')
+    const runDashboardButton = buttons.find(button => button.textContent?.trim() === 'Command Center')
     expect(openButton).toBeDefined()
     expect(runDashboardButton).toBeDefined()
 
@@ -740,7 +740,7 @@ describe('ApplicationRepositoryPage', () => {
     })
     await flushPromises()
 
-    expect(confirmSpy).toHaveBeenCalledWith('Archive 2 selected items?')
+    expect(confirmSpy).toHaveBeenCalledWith("Archive 2 selected items? Archived scripts and scenarios can be restored from their library's archived view.")
     expect(repositoryApiMock.archiveRelease).toHaveBeenCalledWith('release-1')
     expect(scriptApiMock.getDataPool).toHaveBeenCalledWith('pool-1')
     expect(scriptApiMock.updateDataPool).toHaveBeenCalledWith('pool-1', {

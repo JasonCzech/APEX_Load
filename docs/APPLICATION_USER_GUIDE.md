@@ -54,8 +54,8 @@ ready-to-load script. In outline:
 
 1. Set your **Domain**, **Project**, and **Application/Release** in the left sidebar;
    scripts, scenarios, and results are all filtered by it.
-2. Create or import a script, add at least one assertion, then **Validate** and
-   **Replay** it once (see [Validating And Replaying](#validating-and-replaying)).
+2. Create or import a script, add at least one assertion, then **Validate Script(s)**
+   and **Debug one iteration** (see [Validating And Replaying](#validating-and-replaying)).
 3. Build a one-group scenario, launch it from **New Test**, and watch it in
    **Command Center**.
 4. When the run reaches `COMPLETE`, read the report from **Results** and pin it as the
@@ -445,11 +445,11 @@ into application or project secrets when you want them genuinely protected.
 
 Before you run a script at scale, prove it works for a single user.
 
-1. **Validate** checks the script's structure, action fields, assertions, and settings
+1. **Validate Script(s)** checks the script's structure, action fields, assertions, and settings
    without executing anything. It runs the same validation the runtime applies at
    admission. Launch separately checks current permissions, capacity, secrets, runner capabilities and governance; validation does not guarantee admission.
-2. **Replay** runs the script once, interactively, through the controller's replay
-   engine.
+2. **Debug one iteration** replays the script once, interactively, through the
+   controller's replay engine.
 
 The replay debugger gives you:
 
@@ -565,8 +565,8 @@ A scenario brings together:
 - **Groups** — each group runs one script with its own VUser count, ramp-up, ramp-down,
   and optional iteration cap. Use multiple groups to model a realistic mix, for example
   80% browse and 20% checkout. A group's `role` distinguishes a normal **load** group
-  from an **observer** group — a browser experience canary that measures what a real
-  user sees while the load groups generate the pressure.
+  from an **observer** group (shown as **Observer Canary**) — a browser experience
+  canary that measures what a real user sees while the load groups generate the pressure.
 - **Load model** — total VUsers, ramp pattern, and duration. Multi-stage groups let you
   express step loads (ramp to 100, hold, ramp to 300, hold) rather than a single slope.
 - **Runtime settings** — per-group options such as think time, pacing, network
@@ -574,9 +574,11 @@ A scenario brings together:
   addresses).
 - **Placement** — which generators, regions, or load zones run each group, including
   weighted distribution across zones.
-- **Release context** — the application and release the scenario targets.
-- **Shakeout and resource baseline flags** — whether the run first proves the scripts
-  with a canary, and whether it captures an idle resource baseline before load starts.
+- **Application and release** — the scenario is assigned to the workspace's application
+  and release; change it with **Change application/releases…** in the Scenario Library.
+- **Shakeout** and **Resource baseline windows** — whether the run first proves the
+  scripts with a canary, and whether it captures an idle resource baseline before load
+  starts.
 
 ### Sizing From A Goal
 

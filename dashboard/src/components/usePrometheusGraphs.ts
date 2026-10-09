@@ -1,9 +1,19 @@
 import { useEffect, useState } from 'react'
 
 import { MetricsHistoryPoint, PrometheusGraph, TestSummary } from '../types'
+import { ApiError } from '../hooks/apiClient'
 import { useSystemApi } from '../hooks/api/useSystemApi'
 import { getErrorMessage } from '../utils/errorUtils'
 import { LIVE_PROMETHEUS_REFRESH_STATUSES, usePrometheusQueryWindow } from './prometheusQueryWindow'
+
+// Platform graphs need global viewer access, which does not change within a
+// session. After one 403 the graphs stay hidden instead of re-asking on every
+// poll and showing the server's permission sentence.
+let forbiddenForSession = false
+
+export function resetPrometheusGraphsAccessForTests() {
+  forbiddenForSession = false
+}
 
 export function usePrometheusGraphs(test: TestSummary | null, filteredData: MetricsHistoryPoint[]) {
   const { getPrometheusGraphs } = useSystemApi()
@@ -15,7 +25,7 @@ export function usePrometheusGraphs(test: TestSummary | null, filteredData: Metr
   const testStatus = test?.status
 
   useEffect(() => {
-    if (windowStartMs === null || windowEndMs === null || windowStepSeconds === null) {
+    if (windowStartMs === null || windowEndMs === null || windowStepSeconds === null || forbiddenForSession) {
       setGraphs([])
       setLoading(false)
       setError('')
@@ -43,6 +53,13 @@ export function usePrometheusGraphs(test: TestSummary | null, filteredData: Metr
       } catch (err) {
         if (cancelled) return
         setGraphs([])
+        if (err instanceof ApiError && err.status === 403) {
+          forbiddenForSession = true
+          setError('')
+          if (timer !== undefined) window.clearInterval(timer)
+          timer = undefined
+          return
+        }
         setError(getErrorMessage(err, 'Prometheus metrics unavailable.'))
 			} finally {
 				inFlight = false

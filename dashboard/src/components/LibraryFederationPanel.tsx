@@ -370,7 +370,7 @@ export default function LibraryFederationPanel({ projects = EMPTY_PROJECTS, appl
   }
 
   async function deleteRemote(remote: LibraryRemote) {
-    if (!(await confirmAction(`Delete Remote Workspace "${remote.name}"? Sync links for this host will also be removed.`))) return
+    if (!(await confirmAction(`Delete remote workspace "${remote.name}"? Sync links for this host will also be removed.`, { title: 'Delete remote workspace', confirmLabel: 'Delete', destructive: true }))) return
     setActionMessage('')
     setActionError('')
     setActionLoading(true)
@@ -467,7 +467,7 @@ export default function LibraryFederationPanel({ projects = EMPTY_PROJECTS, appl
                 if (currentRemote) void deleteRemote(currentRemote)
               })}
               disabled={loading}
-              style={{ color: 'var(--danger)' }}
+              style={{ color: 'var(--danger-text)' }}
             >
               Delete
             </button>

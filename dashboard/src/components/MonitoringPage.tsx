@@ -17,6 +17,10 @@ import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, typ
 import { formatDatetimeLocalValue } from './newTestScheduleFormat'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
+import { useClustersApi } from '../hooks/api/useClustersApi'
+import { useFleetApi } from '../hooks/api/useFleetApi'
+import type { ClusterConnection } from '../types/cluster'
+import type { FleetPool } from '../types/fleet'
 import { useProject } from '../hooks/useProject'
 import { useNavigationGuardRunner } from '../hooks/NavigationGuardProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
@@ -434,8 +438,15 @@ function restartErrorMessage(error: unknown): string {
   return 'Restart request failed.'
 }
 
+const FLEET_ALERT_PAGE = 25
+
 export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], onSelectTest, canManageSystem = false, canManageProjects = false, canManageTests = false, initialCategoryId = 'overview', activeCategoryId: controlledCategoryId, onCategoryChange, onScheduleForDate, fleetEventSignal = 0 }: Props) {
   const api = useApi()
+  const { listClusters } = useClustersApi()
+  const { listFleetPools } = useFleetApi()
+  // Saved clusters and pools, shown on Fleet until they report generators, so
+  // a configuration made in Settings is visible where the fleet is watched.
+  const [fleetConfiguration, setFleetConfiguration] = useState<{ clusters: ClusterConnection[]; pools: FleetPool[] } | null>(null)
   const { runGuarded } = useNavigationGuardRunner()
   const { activeProject } = useProject()
   const activeProjectId = activeProject?.id
@@ -606,6 +617,14 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     ? `${generatorConnectedCount}/${generators.length} online`
     : 'no inventory'
   const fleetAlertList = fleetAlerts ?? EMPTY_FLEET_ALERTS
+  // Large fleets raise hundreds of alerts: filter them and show a page at a time.
+  const [fleetAlertFilter, setFleetAlertFilter] = useState<{ query: string; severity: string; status: string; limit: number }>({ query: '', severity: 'all', status: 'open', limit: FLEET_ALERT_PAGE })
+  const filteredFleetAlerts = useMemo(() => fleetAlertList.filter(alert => (
+    (fleetAlertFilter.severity === 'all' || alert.severity === fleetAlertFilter.severity)
+    && (fleetAlertFilter.status === 'all' || (fleetAlertFilter.status === 'open' ? !alert.acknowledged : alert.acknowledged))
+    && (!fleetAlertFilter.query.trim() || `${alert.summary} ${alert.target || ''} ${alert.type || ''}`.toLowerCase().includes(fleetAlertFilter.query.trim().toLowerCase()))
+  )), [fleetAlertFilter.query, fleetAlertFilter.severity, fleetAlertFilter.status, fleetAlertList])
+  const visibleFleetAlerts = useMemo(() => filteredFleetAlerts.slice(0, fleetAlertFilter.limit), [filteredFleetAlerts, fleetAlertFilter.limit])
   // Not fetched yet, or the latest fetch failed: the feed cannot be summarised as clear.
   const fleetAlertsUnknown = fleetAlerts === null || staleCardIds.includes('fleet-alerts')
   const fleetAlertDangerCount = fleetAlertList.filter(alert => alert.severity === 'danger').length
@@ -926,6 +945,19 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     renderedCategoryRef.current = activeCategoryId
     if (activeCategoryId === 'overview') void refresh('overview')
   }, [activeCategoryId, refresh])
+
+  useEffect(() => {
+    if (activeCategoryId !== 'fleet' || !canManageSystem) return undefined
+    let cancelled = false
+    void Promise.allSettled([listClusters(), listFleetPools({ limit: 50 })]).then(([clusters, pools]) => {
+      if (cancelled) return
+      setFleetConfiguration({
+        clusters: clusters.status === 'fulfilled' ? clusters.value?.clusters || [] : [],
+        pools: pools.status === 'fulfilled' ? pools.value?.fleet_pools || [] : [],
+      })
+    })
+    return () => { cancelled = true }
+  }, [activeCategoryId, canManageSystem, listClusters, listFleetPools])
 
   useEffect(() => {
     if (activeCategoryId === 'overview') return
@@ -1547,11 +1579,29 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
               </div>
             </button>
           ) : (
-            <p className="monitor-hint">
-              {inventory?.execution_mode === 'distributed'
-                ? 'No generator inventory was returned by the controller.'
-                : 'Local mode is active. Configure distributed generator targets to list generator pods here.'}
-            </p>
+            <div className="monitor-hint">
+              <p>
+                {inventory?.execution_mode === 'distributed'
+                  ? 'No generator inventory was returned by the controller.'
+                  : 'Local mode is active: runs use the controller’s in-process engine. '}
+                {inventory?.execution_mode !== 'distributed' && (canManageSystem
+                  ? <a href={settingsHref('cloud')}>Configure distributed generator targets</a>
+                  : 'An administrator can configure distributed generator targets.')}
+              </p>
+              {Boolean(fleetConfiguration && (fleetConfiguration.clusters.length || fleetConfiguration.pools.length)) && (
+                <div className="fleet-configured-sources" aria-label="Configured clusters and pools">
+                  <strong>Configured, not reporting generators yet</strong>
+                  <ul>
+                    {fleetConfiguration!.clusters.map(cluster => (
+                      <li key={`cluster-${cluster.id}`}>Cluster <strong>{cluster.name}</strong> · {cluster.kind} · {cluster.last_check_status ? `last test: ${cluster.last_check_status}` : 'not tested yet'} · <a href={settingsHref('clusters')}>Open</a></li>
+                    ))}
+                    {fleetConfiguration!.pools.map(pool => (
+                      <li key={`pool-${pool.id}`}>Pool <strong>{pool.name}</strong> · {pool.cloud_provider}{pool.region ? ` · ${pool.region}` : ''} · {pool.status} · <a href={settingsHref('pools')}>Open</a></li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           )}
         </div>
       ),
@@ -1582,8 +1632,17 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           ) : (
             <div className="monitor-scroll-area">
               {fleetAlertActionError && <p className="monitor-action-message text-danger">{fleetAlertActionError}</p>}
+              {fleetAlertList.length > FLEET_ALERT_PAGE && (
+                <div className="fleet-alert-filters" role="search" aria-label="Filter fleet alerts">
+                  <label>Find<input type="search" value={fleetAlertFilter.query} placeholder="Generator or summary" onChange={event => setFleetAlertFilter(current => ({ ...current, query: event.target.value, limit: FLEET_ALERT_PAGE }))} /></label>
+                  <label>Severity<select value={fleetAlertFilter.severity} onChange={event => setFleetAlertFilter(current => ({ ...current, severity: event.target.value, limit: FLEET_ALERT_PAGE }))}><option value="all">All</option><option value="danger">Critical</option><option value="warning">Warning</option></select></label>
+                  <label>Status<select value={fleetAlertFilter.status} onChange={event => setFleetAlertFilter(current => ({ ...current, status: event.target.value, limit: FLEET_ALERT_PAGE }))}><option value="open">Not acknowledged</option><option value="acknowledged">Acknowledged</option><option value="all">All</option></select></label>
+                  <span role="status">Showing {visibleFleetAlerts.length} of {filteredFleetAlerts.length} matching ({fleetAlertList.length} total)</span>
+                </div>
+              )}
+              {fleetAlertList.length > FLEET_ALERT_PAGE && filteredFleetAlerts.length === 0 && <p className="monitor-hint">No alerts match these filters.</p>}
               <div className="monitor-warning-list">
-                {fleetAlertList.map(alert => (
+                {(fleetAlertList.length > FLEET_ALERT_PAGE ? visibleFleetAlerts : fleetAlertList).map(alert => (
                   <div key={alert.id || `${alert.type}:${alert.target}`} className="monitor-warning-row">
                     <p className={alert.severity === 'danger' ? 'text-danger' : ''}>
                       {alert.summary}
@@ -1595,6 +1654,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
                         className="btn btn-secondary btn-sm"
                         disabled={fleetAlertActionBusy === alert.id}
                         onClick={() => void toggleFleetAlertAck(alert)}
+                        aria-label={`${alert.acknowledged ? 'Clear acknowledgement of' : 'Acknowledge'} ${alert.target || alert.summary}`}
                       >
                         {fleetAlertActionBusy === alert.id ? 'Saving...' : alert.acknowledged ? 'Clear' : 'Ack'}
                       </button>
@@ -1602,6 +1662,9 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
                   </div>
                 ))}
               </div>
+              {fleetAlertList.length > FLEET_ALERT_PAGE && visibleFleetAlerts.length < filteredFleetAlerts.length && (
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setFleetAlertFilter(current => ({ ...current, limit: current.limit + FLEET_ALERT_PAGE }))}>Show {Math.min(FLEET_ALERT_PAGE, filteredFleetAlerts.length - visibleFleetAlerts.length)} more</button>
+              )}
             </div>
           )}
         </div>
@@ -1706,7 +1769,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     },
     { id: 'prometheus-test-connections', title: 'Prometheus Test Monitoring', icon: <span aria-hidden="true">P</span>, content: <PrometheusConnectionsCard summaryOnly projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} /> },
 
-  ], [capacitySummary, activeProjectId, activeProject?.id, allConfiguredReadinessChecksPassing, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, showQueuedRuns, canManageTests, canManageProjects, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertActionBusy, fleetAlertActionError, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlertList, fleetAlertsUnknown, fleetAuditEvents, fleetAuditHeaderLabel, fleetAuditHeaderSeverity, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, hasAllRequiredInfrastructureChecks, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onScheduleForDate, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessDisplayedCheckCount, readinessFailureChecks, readinessFetchState, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, thresholdAlertHeaderLabel, thresholdAlertHeaderSeverity, toggleFleetAlertAck, websocketLabel, websocketValueClass])
+  ], [capacitySummary, activeProjectId, activeProject?.id, allConfiguredReadinessChecksPassing, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, showQueuedRuns, canManageTests, canManageProjects, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertActionBusy, fleetAlertActionError, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlertList, fleetAlertsUnknown, fleetAlertFilter.query, fleetAlertFilter.severity, fleetAlertFilter.status, filteredFleetAlerts, visibleFleetAlerts, fleetConfiguration, fleetAuditEvents, fleetAuditHeaderLabel, fleetAuditHeaderSeverity, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, hasAllRequiredInfrastructureChecks, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onScheduleForDate, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessDisplayedCheckCount, readinessFailureChecks, readinessFetchState, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, thresholdAlertHeaderLabel, thresholdAlertHeaderSeverity, toggleFleetAlertAck, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => {
@@ -1952,7 +2015,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       )}
 
       {isTelemetryModalOpen && telemetryDiagnostics.length > 0 && (
-        <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(() => setIsTelemetryModalOpen(false), 'Close telemetry diagnostics')}>
+        <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(() => setIsTelemetryModalOpen(false))}>
           <div ref={telemetryDialogRef} className="modal modal-wide telemetry-modal" role="dialog" aria-modal="true" aria-labelledby="telemetry-diagnostics-title">
             <div className="modal-header telemetry-modal-header">
               <div>
@@ -1983,7 +2046,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       )}
 
       {isGeneratorsModalOpen && generators.length > 0 && (
-        <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(() => setIsGeneratorsModalOpen(false), 'Close generator inventory')}>
+        <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(() => setIsGeneratorsModalOpen(false))}>
           <div ref={generatorsDialogRef} className="modal modal-wide telemetry-modal" role="dialog" aria-modal="true" aria-labelledby="generator-inventory-title">
             <div className="modal-header telemetry-modal-header">
               <div>

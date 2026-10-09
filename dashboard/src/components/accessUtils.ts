@@ -1,5 +1,6 @@
 // Shared constants, pure helpers, and SortHeader for the Access page workspaces
 // (extracted from AccessPage.tsx, A16).
+import { formatTimeLong } from '../utils/timeUtils'
 import {
   ApplicationRepository, Domain, Project,
   DashboardAuditEvent, DashboardAuditEventFilter, DashboardServiceAccount,
@@ -201,7 +202,8 @@ export function formFromServiceAccount(account: DashboardServiceAccount): Servic
     applicationRepositoryRoles: firstRole(account.application_repository_roles),
     scopes: account.scopes || [],
     expiresAt: toLocalDateTime(account.expires_at),
-    rotationDays: account.rotation_interval_days ? String(account.rotation_interval_days) : '90',
+    // The API omits 0 (rotation reminders off); showing 90 would turn them back on when saved.
+    rotationDays: String(account.rotation_interval_days || 0),
   }
 }
 
@@ -263,6 +265,29 @@ export function parseRotationDays(value: string): number {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 90
 }
 
+/**
+ * Why a rotation interval cannot be saved, or '' when it can. A new account
+ * may leave it blank (90 days); an existing one may use 0 to turn rotation
+ * reminders off. Invalid input is reported, never silently replaced.
+ */
+export function rotationDaysError(value: string, { allowZero = false }: { allowZero?: boolean } = {}): string {
+  const text = value.trim()
+  if (!text) return allowZero ? 'Enter a number of days (0 turns rotation reminders off).' : ''
+  const parsed = Number(text)
+  if (!Number.isInteger(parsed) || parsed < (allowZero ? 0 : 1)) {
+    return allowZero ? 'Enter a whole number of days, 0 or more (0 turns rotation reminders off).' : 'Enter a whole number of days, 1 or more (leave blank for 90).'
+  }
+  return ''
+}
+
+/** The rotation interval to send for a value that passed rotationDaysError. */
+export function rotationDaysValue(value: string, { allowZero = false }: { allowZero?: boolean } = {}): number {
+  const text = value.trim()
+  if (!text) return 90
+  const parsed = Number(text)
+  return allowZero && parsed === 0 ? 0 : parseRotationDays(text)
+}
+
 export function timestampValue(value?: string): number {
   if (!value) return 0
   const parsed = Date.parse(value)
@@ -276,13 +301,7 @@ export function formatTimestamp(value?: string): string {
 }
 
 export function formatDurationSeconds(value?: number): string {
-  const total = Math.max(0, Math.round(value || 0))
-  const hours = Math.floor(total / 3600)
-  const minutes = Math.floor((total % 3600) / 60)
-  const seconds = total % 60
-  if (hours > 0) return `${hours}h ${minutes}m`
-  if (minutes > 0) return `${minutes}m ${seconds}s`
-  return `${seconds}s`
+  return formatTimeLong(value || 0)
 }
 
 export function formatRoleList(roles?: string[]): string {

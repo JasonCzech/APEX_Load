@@ -38,7 +38,7 @@ import {
   PURPOSE_PRESETS, GLOBAL_ROLE_OPTIONS, SCOPED_ROLE_OPTIONS, SCOPE_OPTIONS, ROLE_LABELS, SCOPE_LABELS,
   userSortDefaults, accountSortDefaults, activitySortDefaults, preferredTab, presetByID,
   buildPresetForm, formFromServiceAccount, buildActivityFilter, toggleValue, toProjectRolesPayload,
-  mergeScopedRolesPayload, parseOptionalDateTime, parseRotationDays, timestampValue, formatTimestamp,
+  mergeScopedRolesPayload, parseOptionalDateTime, rotationDaysError, rotationDaysValue, timestampValue, formatTimestamp,
   formatRoleList, roleOptionsForScope, uniqueValues, includesQuery, comparePrimitive,
   stableSort, nextSort, defaultScopeID, createUserBindingDraft, initialUserBindingDrafts,
   userBindingDraftFromBinding, bindingSignature, draftSignature, normalizedUserBindingDrafts, userStatusBadge,
@@ -170,7 +170,7 @@ function isValidOptionalEmail(value: string): boolean {
 async function confirmBroadAutomationScope(scopes: string[], subject: string): Promise<boolean> {
   if (!scopes.includes('automation:*')) return true
   if (typeof window === 'undefined') return true
-  return (await confirmAction(`${subject} includes automation:*, which allows any service-account token scope after RBAC also permits the route. Continue?`))
+  return (await confirmAction(`${subject} includes automation:*, which allows any service-account token scope after RBAC also permits the route. Continue?`, { title: 'Grant broad automation scope', confirmLabel: 'Grant scope' }))
 }
 
 function additionalScopedRoleEntries(
@@ -217,6 +217,9 @@ export default function AccessPage({
   const [accounts, setAccounts] = useState<DashboardServiceAccount[]>([])
   const [users, setUsers] = useState<DashboardUser[]>([])
   const [usersTotal, setUsersTotal] = useState(0)
+  // The section list shows how many users exist, not how many match the
+  // current filters, so it keeps the last unfiltered total.
+  const [allUsersTotal, setAllUsersTotal] = useState<number | undefined>(undefined)
   const [userPage, setUserPage] = useState(0)
   const [userPageSize, setUserPageSize] = useState(50)
   const [selectedUserID, setSelectedUserID] = useState('')
@@ -335,6 +338,8 @@ export default function AccessPage({
   const editUserEmailInvalid = !isValidOptionalEmail(editUserForm.email)
   const accountContactInvalid = !isValidOptionalEmail(form.contact)
   const editAccountContactInvalid = !isValidOptionalEmail(editAccountForm.contact)
+  const accountRotationError = rotationDaysError(form.rotationDays)
+  const editAccountRotationError = rotationDaysError(editAccountForm.rotationDays, { allowZero: true })
   const simulatorScopeKey = [
     simulatorPrincipal.type,
     simulatorPrincipal.id,
@@ -609,6 +614,7 @@ export default function AccessPage({
         visibleRangeFloor,
       )
       setUsersTotal(total)
+      if (!requestFilter.q && !requestFilter.active && !requestFilter.role && !requestFilter.domain_id && !requestFilter.project_id) setAllUsersTotal(total)
       if (offset >= total && total > 0) {
         setUserPage(Math.max(0, Math.ceil(total / userPageSize) - 1))
       }
@@ -1094,8 +1100,7 @@ export default function AccessPage({
 
   const setUserActive = async (user: DashboardUser, active: boolean) => {
     if (!canManageUserLifecycle || accessMutationInFlightRef.current) return
-    const action = active ? 'restore access for' : 'remove access from'
-    if (typeof window !== 'undefined' && !(await confirmAction(`Really ${action} ${user.display_name || user.subject}?`))) {
+    if (typeof window !== 'undefined' && !(await confirmAction(`${active ? 'Restore' : 'Remove'} access for ${user.display_name || user.subject}?`, { title: active ? 'Restore user access' : 'Remove user access', confirmLabel: active ? 'Restore access' : 'Remove access', destructive: !active }))) {
       return
     }
     await runAccessMutation(async () => {
@@ -1114,7 +1119,7 @@ export default function AccessPage({
 
   const revokeSessions = async (user: DashboardUser) => {
     if (!canManageUserLifecycle || accessMutationInFlightRef.current) return
-    if (typeof window !== 'undefined' && !(await confirmAction(`Sign out all active sessions for ${user.display_name || user.subject}? Their account stays active but they must sign in again.`))) {
+    if (typeof window !== 'undefined' && !(await confirmAction(`Sign out all active sessions for ${user.display_name || user.subject}? Their account stays active but they must sign in again.`, { title: 'Sign out all sessions', confirmLabel: 'Sign out sessions', destructive: true }))) {
       return
     }
     await runAccessMutation(async () => {
@@ -1133,7 +1138,7 @@ export default function AccessPage({
 
   const deleteUser = async (user: DashboardUser) => {
     if (!canManageUserLifecycle || accessMutationInFlightRef.current) return
-    if (typeof window !== 'undefined' && !(await confirmAction(`Permanently delete ${user.display_name || user.subject} and all of their role bindings? This cannot be undone. To preserve the audit trail, use Remove Access instead.`))) {
+    if (typeof window !== 'undefined' && !(await confirmAction(`Permanently delete ${user.display_name || user.subject} and all of their role bindings? This cannot be undone. To preserve the audit trail, use Remove Access instead.`, { title: 'Delete user', confirmLabel: 'Delete user', destructive: true }))) {
       return
     }
     await runAccessMutation(async () => {
@@ -1179,6 +1184,11 @@ export default function AccessPage({
       setActionMessage('')
       return false
     }
+    if (accountRotationError) {
+      setActionError(accountRotationError)
+      setActionMessage('')
+      return false
+    }
     if (!(await confirmBroadAutomationScope(form.scopes, 'This service account'))) {
       return false
     }
@@ -1197,7 +1207,7 @@ export default function AccessPage({
           application_repository_roles: toProjectRolesPayload(form.applicationRepositoryRoles),
           scopes: form.scopes,
           expires_at: parseOptionalDateTime(form.expiresAt),
-          rotation_interval_days: parseRotationDays(form.rotationDays),
+          rotation_interval_days: rotationDaysValue(form.rotationDays),
         })
         publishAuthoritativeAccount(response.service_account)
         setIssuedKey({ key: response.api_key, accountName: response.service_account.name, mode: 'created' })
@@ -1223,7 +1233,7 @@ export default function AccessPage({
 
   const rotateAccount = async (account: DashboardServiceAccount) => {
     if (!canManageServiceAccounts || accessMutationInFlightRef.current) return
-    if (typeof window !== 'undefined' && !(await confirmAction(`Rotate API key for ${account.name}? Existing automation must be updated with the new key.`))) {
+    if (typeof window !== 'undefined' && !(await confirmAction(`Rotate API key for ${account.name}? Existing automation must be updated with the new key.`, { title: 'Rotate API key', confirmLabel: 'Rotate key', destructive: true }))) {
       return
     }
     await runAccessMutation(async () => {
@@ -1245,8 +1255,7 @@ export default function AccessPage({
 
   const setAccountActive = async (account: DashboardServiceAccount, active: boolean) => {
     if (!canManageServiceAccounts || accessMutationInFlightRef.current) return
-    const action = active ? 'enable' : 'disable'
-    if (typeof window !== 'undefined' && !(await confirmAction(`Really ${action} ${account.name}?`))) {
+    if (typeof window !== 'undefined' && !(await confirmAction(`${active ? 'Enable' : 'Disable'} ${account.name}?${active ? '' : ' Its key stops working until the account is enabled again.'}`, { title: active ? 'Enable service account' : 'Disable service account', confirmLabel: active ? 'Enable' : 'Disable', destructive: !active }))) {
       return
     }
     await runAccessMutation(async () => {
@@ -1257,7 +1266,7 @@ export default function AccessPage({
         setActionError('')
         await loadAccounts()
       } catch (error: unknown) {
-        setActionError(getErrorMessage(error, `Unable to ${action} service account`))
+        setActionError(getErrorMessage(error, `Unable to ${active ? 'enable' : 'disable'} service account`))
         setActionMessage('')
       }
     })
@@ -1265,7 +1274,7 @@ export default function AccessPage({
 
   const deleteAccount = async (account: DashboardServiceAccount) => {
     if (!canManageServiceAccounts || accessMutationInFlightRef.current) return
-    if (typeof window !== 'undefined' && !(await confirmAction(`Delete ${account.name}? This cannot be undone.`))) {
+    if (typeof window !== 'undefined' && !(await confirmAction(`Delete ${account.name}? This cannot be undone.`, { title: 'Delete service account', confirmLabel: 'Delete', destructive: true }))) {
       return
     }
     await runAccessMutation(async () => {
@@ -1314,6 +1323,10 @@ export default function AccessPage({
       setActionError('Enter a valid contact email before saving the service account.')
       return false
     }
+    if (editAccountRotationError) {
+      setActionError(editAccountRotationError)
+      return false
+    }
     if (!(await confirmBroadAutomationScope(editAccountForm.scopes, account.name))) {
       return false
     }
@@ -1331,7 +1344,7 @@ export default function AccessPage({
           application_repository_roles: mergeScopedRolesPayload(editAccountForm.applicationRepositoryRoles, account.application_repository_roles),
           scopes: editAccountForm.scopes,
           expires_at: parseOptionalDateTime(editAccountForm.expiresAt) ?? '',
-          rotation_interval_days: parseRotationDays(editAccountForm.rotationDays),
+          rotation_interval_days: rotationDaysValue(editAccountForm.rotationDays, { allowZero: true }),
         }) as DashboardServiceAccount
         publishAuthoritativeAccount(updated)
         setAccountEditMode(false)
@@ -1919,7 +1932,8 @@ export default function AccessPage({
         </label>
         <label>
           <span>Rotation interval (days)</span>
-          <input type="number" min={0} step={1} value={editAccountForm.rotationDays} onChange={event => setEditAccountForm(prev => ({ ...prev, rotationDays: event.target.value }))} />
+          <input type="number" min={0} step={1} value={editAccountForm.rotationDays} onChange={event => setEditAccountForm(prev => ({ ...prev, rotationDays: event.target.value }))} aria-invalid={Boolean(editAccountRotationError) || undefined} />
+          {editAccountRotationError && <span className="access-field-error">{editAccountRotationError}</span>}
         </label>
       </div>
       {renderServiceAccountRoleControls(editAccountForm, setEditAccountForm)}
@@ -1950,7 +1964,7 @@ export default function AccessPage({
         </div>
       )}
       <div className="access-account-actions">
-        <button className="btn btn-primary btn-sm" type="button" onClick={() => updateAccount(account)} disabled={accessMutationBusy || !canManageServiceAccounts || editAccountContactInvalid}>Save Changes</button>
+        <button className="btn btn-primary btn-sm" type="button" onClick={() => updateAccount(account)} disabled={accessMutationBusy || !canManageServiceAccounts || editAccountContactInvalid || Boolean(editAccountRotationError)}>Save Changes</button>
         <button className="btn btn-ghost btn-sm" type="button" onClick={cancelEditAccount} disabled={accessMutationBusy}>Cancel</button>
       </div>
     </aside>
@@ -2194,9 +2208,9 @@ export default function AccessPage({
         currentView={currentAccessView}
         onSelectView={view => runGuarded(() => setAccessView(view))}
         counts={{
-          users: canUseUsers ? (usersTotal > users.length ? `${users.length} of ${usersTotal}` : users.length) : undefined,
+          // Totals only: counts that follow filters or loaded pages mislead.
+          users: canUseUsers ? allUsersTotal : undefined,
           accounts: canManageServiceAccounts ? accounts.length : undefined,
-          activity: canViewUserActivity ? activityEvents.length : undefined,
           reviewAttention: accessReviewAttention?.total,
         }}
       />
@@ -2331,8 +2345,8 @@ export default function AccessPage({
                             <td className="num">{canViewUserActivity ? usageSummary(usage) : 'Unavailable'}</td>
                         <td aria-label="User actions">
                               <div className="access-table-actions">
-                                <button className="btn btn-secondary btn-sm" type="button" onClick={event => { event.stopPropagation(); selectUser(user) }}>Inspect</button>
-                                <button className="btn btn-secondary btn-sm" type="button" onClick={event => { event.stopPropagation(); editUser(user) }} disabled={accessMutationBusy || !canManageUserBindings}>Edit</button>
+                                <button className="btn btn-secondary btn-sm" type="button" aria-label={`Inspect ${user.display_name || user.email || user.subject}`} onClick={event => { event.stopPropagation(); selectUser(user) }}>Inspect</button>
+                                <button className="btn btn-secondary btn-sm" type="button" aria-label={`Edit ${user.display_name || user.email || user.subject}`} onClick={event => { event.stopPropagation(); editUser(user) }} disabled={accessMutationBusy || !canManageUserBindings}>Edit</button>
                                 <button className="btn btn-ghost btn-sm" type="button" onClick={event => { event.stopPropagation(); setUserActive(user, !user.active) }} disabled={accessMutationBusy || !canManageUserLifecycle}>
                                   {user.active ? 'Remove Access' : 'Restore Access'}
                                 </button>
@@ -2542,7 +2556,7 @@ export default function AccessPage({
                             <td>{formatTimestamp(account.updated_at)}</td>
                             <td aria-label="Service account actions">
                               <div className="access-table-actions">
-                                <button className="btn btn-secondary btn-sm" type="button" onClick={event => { event.stopPropagation(); selectAccount(account) }}>Inspect</button>
+                                <button className="btn btn-secondary btn-sm" type="button" aria-label={`Inspect ${account.name}`} onClick={event => { event.stopPropagation(); selectAccount(account) }}>Inspect</button>
                                 <button className="btn btn-secondary btn-sm" type="button" onClick={event => { event.stopPropagation(); rotateAccount(account) }} disabled={accessMutationBusy}>Rotate Key</button>
                                 <button className="btn btn-ghost btn-sm" type="button" onClick={event => { event.stopPropagation(); setAccountActive(account, !account.active) }} disabled={accessMutationBusy}>
                                   {account.active ? 'Disable' : 'Enable'}
@@ -2605,7 +2619,8 @@ export default function AccessPage({
                   </label>
                   <label>
                     <span>Rotation interval (days)</span>
-                    <input type="number" min={1} step={1} value={form.rotationDays} onChange={event => setForm(prev => ({ ...prev, rotationDays: event.target.value }))} />
+                    <input type="number" min={1} step={1} value={form.rotationDays} onChange={event => setForm(prev => ({ ...prev, rotationDays: event.target.value }))} placeholder="90" aria-invalid={Boolean(accountRotationError) || undefined} />
+                    {accountRotationError && <span className="access-field-error">{accountRotationError}</span>}
                   </label>
                 </div>
 
@@ -2623,7 +2638,7 @@ export default function AccessPage({
                 )}
 
                 <div className="access-form-actions">
-                  <button className="btn btn-primary" type="button" onClick={createAccount} disabled={accessMutationBusy || !canManageServiceAccounts || !form.name.trim() || accountContactInvalid}>
+                  <button className="btn btn-primary" type="button" onClick={createAccount} disabled={accessMutationBusy || !canManageServiceAccounts || !form.name.trim() || accountContactInvalid || Boolean(accountRotationError)}>
                     Create Service Account
                   </button>
                 </div>
@@ -2700,11 +2715,11 @@ export default function AccessPage({
                     </select>
                   </label>
                   <label>
-                    <span>Created After</span>
+                    <span>From (local time)</span>
                     <input type="datetime-local" value={activityFilter.createdAfter} onChange={event => setActivityFilter(prev => ({ ...prev, createdAfter: event.target.value }))} />
                   </label>
                   <label>
-                    <span>Created Before</span>
+                    <span>Until (local time)</span>
                     <input type="datetime-local" value={activityFilter.createdBefore} onChange={event => setActivityFilter(prev => ({ ...prev, createdBefore: event.target.value }))} />
                   </label>
                   <button className="btn btn-primary btn-sm" type="button" onClick={() => { setAppliedActivityFilter(activityFilter); setActivitySnapshot(new Date().toISOString()) }} disabled={!canViewUserActivity || activityLoading || !!activityValidation}>
@@ -2731,7 +2746,7 @@ export default function AccessPage({
                 )}
 
                 {activityValidation && <p role="alert">{activityValidation}</p>}
-                <p className="access-query-summary">History snapshot: {formatTimestamp(activitySnapshot)}. Filters apply when you choose Apply Filters. Table search and sorting cover the loaded events; export includes all events matching the applied filters.</p>
+                <p className="access-query-summary">History snapshot: {formatTimestamp(activitySnapshot)}. Filters apply when you choose Apply Filters. Table search and sorting cover the loaded events; export includes all events matching the applied filters.{canManageUserLifecycle ? <> The deployment-wide trail of every actor, including automation and system changes, is in <a href={settingsHref('audit')}>Governance audit</a>.</> : null}</p>
                 <AuditEventTable paginated events={filteredActivityEvents} footer={<LoadOlderEvents loaded={activityEvents.length} hasMore={activityHasMore && !activityLoadFailed} loading={activityLoading || activityOlderLoading} error={activityOlderError} onLoad={() => { void loadOlderActivity() }} />} selectedId={activityInspectorCollapsed ? undefined : selectedActivityID} onSelect={selectActivity} scopeLabel={event => eventScopeLabel(event, projects, domains)} header={<>
                         <SortHeader label="Time" field="time" sort={activitySort} onSort={field => setActivitySort(prev => nextSort(prev, field, activitySortDefaults))} />
                         <SortHeader label="Actor" field="actor" sort={activitySort} onSort={field => setActivitySort(prev => nextSort(prev, field, activitySortDefaults))} />

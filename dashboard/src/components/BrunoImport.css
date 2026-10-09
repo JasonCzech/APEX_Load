@@ -549,19 +549,19 @@
 
 .bruno-native-status.ready {
   background: color-mix(in srgb, var(--success) 14%, transparent);
-  color: var(--success);
+  color: var(--success-text);
 }
 
 .bruno-native-status.warning,
 .bruno-native-status.configure,
 .bruno-native-status.review {
   background: color-mix(in srgb, var(--warning) 14%, transparent);
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .bruno-native-status.blocked {
   background: color-mix(in srgb, var(--danger) 14%, transparent);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .bruno-native-acknowledgements {
@@ -702,7 +702,7 @@
 .bruno-preflight.warning {
   border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
   background: color-mix(in srgb, var(--warning) 8%, transparent);
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .bruno-summary-grid {

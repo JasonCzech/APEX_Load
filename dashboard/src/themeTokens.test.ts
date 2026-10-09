@@ -153,6 +153,35 @@ describe('dashboard theme tokens', () => {
     }
   })
 
+  // The status fills are tuned for dots, bars and badges; as text the
+  // Solarized accents fall to ~2.6–3:1. Text uses the per-theme *-text tokens.
+  it('never colours text with a bare status fill token', () => {
+    const offenders = Object.entries(cssFiles).flatMap(([file, css]) =>
+      [...css.matchAll(/(?:^|[;{\s])color:\s*var\(--(warning|danger|success|info)[,)]/gm)].map(match => `${file}: --${match[1]}`),
+    )
+    expect(offenders).toEqual([])
+  })
+
+  // Toasts, popovers and dialogs sit on --bg-elevated; every text tone must stay AA there.
+  it.each([':root', ":root[data-theme='light']", ":root[data-theme='solarized-dark']", ":root[data-theme='solarized-light']", ":root[data-theme='monokai-dimmed']"])('%s keeps text readable on the elevated surface', selector => {
+    const block = themeBlock(selector)
+    // The default theme's elevated surface is translucent: composite it over the page.
+    const translucent = /--bg-elevated:\s*rgba\(/.test(block)
+    const elevated = translucent
+      ? (({ color, alpha }) => composite(color, rgb(token(block, 'bg-primary')), alpha))(rgbaToken(block, 'bg-elevated'))
+      : rgb(token(block, 'bg-elevated'))
+    // --accent-text is an alias of --accent in most themes.
+    const textToken = (name: string) => block.match(new RegExp(`--${name}:\\s*var\\(--([\\w-]+)\\)`))?.[1] || name
+    for (const name of ['text-primary', 'text-muted', 'accent-text', 'warning-text', 'danger-text', 'success-text', 'info-text']) {
+      expect(rgbContrast(rgb(token(block, textToken(name))), elevated), name).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
+  it.each([':root', ":root[data-theme='light']", ":root[data-theme='solarized-dark']", ":root[data-theme='solarized-light']", ":root[data-theme='monokai-dimmed']"])('%s keeps text on a solid warning fill readable', selector => {
+    const block = themeBlock(selector)
+    expect(contrast(token(block, 'warning-fill-text'), token(block, 'warning'))).toBeGreaterThanOrEqual(4.5)
+  })
+
   it('uses the accessible secondary text token for infrastructure readiness summaries', () => {
     const rule = pagesCss.match(/\.monitor-infrastructure-summary\s*\{([\s\S]*?)\}/)?.[1] || ''
     expect(rule).toContain('color: var(--text-secondary)')

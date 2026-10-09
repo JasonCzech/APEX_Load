@@ -124,7 +124,7 @@ export function difference(current?: number, baseline?: number): string {
   const delta = current - baseline
   return `${delta > 0 ? '+' : ''}${number(delta)}${baseline === 0 ? ' · baseline zero' : ` (${delta > 0 ? '+' : ''}${number(delta / Math.abs(baseline) * 100)}%)`}`
 }
-export const metricOptions = [ ['p95', 'Successful P95'], ['mean', 'Successful mean'], ['p50', 'Successful P50'], ['p90', 'Successful P90'], ['p99', 'Successful P99'], ['min', 'Successful minimum'], ['max', 'Successful maximum'], ['throughput', 'Throughput / s'], ['successful_throughput', 'Successful throughput / s'], ['error_pct', 'Error %'], ['samples', 'Sample count'] ] as const
+export const metricOptions = [ ['p95', 'Successful P95'], ['mean', 'Successful mean'], ['p50', 'Successful P50'], ['p90', 'Successful P90'], ['p99', 'Successful P99'], ['min', 'Successful minimum'], ['max', 'Successful maximum'], ['throughput', 'Attempts/s'], ['successful_throughput', 'Successful TPS'], ['error_pct', 'Error rate'], ['samples', 'Sample count'] ] as const
 export type Metric = typeof metricOptions[number][0]
 
 export const comparisonColors = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5, #ab69c6)', 'var(--chart-6, #bc7731)']

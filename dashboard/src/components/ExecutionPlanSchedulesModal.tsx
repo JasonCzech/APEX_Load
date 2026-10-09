@@ -499,10 +499,11 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
                     value={draft.missed_run_policy}
                     onChange={e => setDraft(d => (d ? { ...d, missed_run_policy: e.target.value } : d))}
                   >
-                    <option value="skip">skip</option>
-                    <option value="catch_up_once">catch_up_once</option>
-                    <option value="catch_up_all">catch_up_all</option>
-					<option value="require_operator_decision">require_operator_decision</option>
+                    {/* Same wording as Settings › Schedule defaults. */}
+                    <option value="skip">Skip missed runs</option>
+                    <option value="catch_up_once">Catch up once</option>
+                    <option value="catch_up_all">Catch up all</option>
+                    <option value="require_operator_decision">Require operator decision</option>
                   </select>
                 </label>
               </div>

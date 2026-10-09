@@ -948,6 +948,26 @@ func TestExecutionPlanEntryDataPoolValidation(t *testing.T) {
 	}
 }
 
+func TestExecutionPlanRejectsUnknownTimeslots(t *testing.T) {
+	server, _ := newTimeslotServer(t)
+	for _, tc := range []struct {
+		name string
+		body map[string]any
+	}{
+		{"plan timeslot", map[string]any{"project_id": "proj-a", "name": "ts", "run_mode": "parallel", "timeslot_id": "not-a-uuid",
+			"entries": []map[string]any{{"order": 0, "scenario_id": "scn-1"}}}},
+		{"entry timeslot", map[string]any{"project_id": "proj-a", "name": "ts", "run_mode": "parallel",
+			"entries": []map[string]any{{"order": 0, "scenario_id": "scn-1", "timeslot_id": "not-a-uuid"}}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/execution-plans", tc.body)
+			if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `timeslot \"not-a-uuid\" not found`) {
+				t.Fatalf("status = %d body=%s, want 400 naming the unknown timeslot", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestExecutionPlanRouteAccessRequirements(t *testing.T) {
 	for _, tc := range []struct {
 		method    string

@@ -2,6 +2,10 @@ import DialogLayer from './ux/DialogLayer'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { useExecutionPlansApi } from '../hooks/api/useExecutionPlansApi'
+import { useCapacityApi } from '../hooks/api/useCapacityApi'
+import { useScriptApi } from '../hooks/api/useScriptApi'
+import type { CapacityTimeslot } from '../types/capacity'
+import { formatDateTime } from '../utils/dateTime'
 import { ApiError } from '../hooks/apiClient'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
@@ -140,6 +144,24 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState<PlanDraft | null>(null)
+  // Timeslots and data pools are chosen by name, not typed as IDs. When they
+  // cannot be listed, the editor falls back to ID fields.
+  const { listTimeslots } = useCapacityApi()
+  const { listDataPools } = useScriptApi()
+  const [planReferences, setPlanReferences] = useState<{ timeslots: CapacityTimeslot[] | null; pools: { id: string; name: string }[] | null }>({ timeslots: null, pools: null })
+  const draftOpen = draft !== null
+  useEffect(() => {
+    if (!draftOpen || !projectId) return undefined
+    let cancelled = false
+    void Promise.allSettled([listTimeslots({ project_id: projectId, limit: 200 }), listDataPools(projectId)]).then(([timeslots, pools]) => {
+      if (cancelled) return
+      setPlanReferences({
+        timeslots: timeslots.status === 'fulfilled' && timeslots.value ? timeslots.value.timeslots || [] : null,
+        pools: pools.status === 'fulfilled' && pools.value ? (pools.value.data_pools || []).filter(pool => !pool.archived_at).map(pool => ({ id: pool.id, name: pool.name })) : null,
+      })
+    })
+    return () => { cancelled = true }
+  }, [draftOpen, listDataPools, listTimeslots, projectId])
   const [deleteTarget, setDeleteTarget] = useState<ExecutionPlan | null>(null)
   const [runResult, setRunResult] = useState<{ plan: string; res: ExecutionPlanRunResponse; names: Record<number, string> } | null>(null)
   const [planRun, setPlanRun] = useState<{ planId: string; planName: string; run: ExecutionPlanRun } | null>(null)
@@ -513,7 +535,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
 
       {/* Create / edit modal */}
       {draft && (
-        <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closeDraft, 'Close execution plan editor')}>
+        <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closeDraft)}>
           <div ref={draftDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="execution-plan-editor-title">
             <div className="pp-modal-header">
               <h3 id="execution-plan-editor-title">{draft.id ? 'Edit Execution Plan' : 'New Execution Plan'}</h3>
@@ -562,18 +584,18 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
                       ) : (
                         <input aria-label={`Entry ${index + 1} scenario ID`} value={entry.scenario_id} placeholder="scenario id" onChange={e => updateEntry(index, { scenario_id: e.target.value })} />
                       )}
-                      <select aria-label={`Entry ${index + 1} failure policy`} value={entry.failure_policy} onChange={e => updateEntry(index, { failure_policy: e.target.value })} title="On failure">
-                        <option value="halt">halt</option>
-                        <option value="skip">skip</option>
+                      <select aria-label={`Entry ${index + 1}: if this run fails`} value={entry.failure_policy} onChange={e => updateEntry(index, { failure_policy: e.target.value })} title="If this run fails">
+                        <option value="halt">If it fails: stop the plan</option>
+                        <option value="skip">If it fails: continue with the next</option>
                       </select>
-                      <label className="pp-entry-enabled" title="Enabled">
+                      <label className="pp-entry-enabled">
                         <input type="checkbox" checked={entry.enabled} onChange={e => updateEntry(index, { enabled: e.target.checked })} />
-                        on
+                        Enabled
                       </label>
-                      <button type="button" className="btn btn-ghost btn-sm" disabled={index === 0} onClick={() => moveEntry(index, -1)} title="Move up">
+                      <button type="button" className="btn btn-ghost btn-sm" disabled={index === 0} onClick={() => moveEntry(index, -1)} title="Move up" aria-label={`Move entry ${index + 1} up`}>
                         ↑
                       </button>
-                      <button type="button" className="btn btn-ghost btn-sm" disabled={index === draft.entries.length - 1} onClick={() => moveEntry(index, 1)} title="Move down">
+                      <button type="button" className="btn btn-ghost btn-sm" disabled={index === draft.entries.length - 1} onClick={() => moveEntry(index, 1)} title="Move down" aria-label={`Move entry ${index + 1} down`}>
                         ↓
                       </button>
                       <button
@@ -581,6 +603,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
                         className="btn btn-ghost btn-sm"
                         onClick={() => setDraft(d => (d ? { ...d, entries: d.entries.filter((_, i) => i !== index) } : d))}
                         title="Remove entry"
+                        aria-label={`Remove entry ${index + 1}`}
                       >
                         ✕
                       </button>
@@ -588,20 +611,36 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
                       <div className="pp-entry-advanced">
                         <label className="pp-entry-advanced-field">
                           <span>Timeslot</span>
-                          <input
-                            aria-label={`Entry ${index + 1} timeslot ID`}
-                            value={entry.timeslot_id}
-                            placeholder="optional timeslot id"
-                            onChange={e => updateEntry(index, { timeslot_id: e.target.value })}
-                          />
+                          {planReferences.timeslots ? (
+                            <select aria-label={`Entry ${index + 1} timeslot`} value={entry.timeslot_id} onChange={e => updateEntry(index, { timeslot_id: e.target.value })}>
+                              <option value="">None (use the plan’s timeslot)</option>
+                              {entry.timeslot_id && !planReferences.timeslots.some(slot => slot.id === entry.timeslot_id) && <option value={entry.timeslot_id}>Timeslot {entry.timeslot_id} (not in the loaded list)</option>}
+                              {planReferences.timeslots.map(slot => <option key={slot.id} value={slot.id}>{formatDateTime(slot.start_at, { timeZone: slot.timezone })} – {formatDateTime(slot.end_at, { timeZone: slot.timezone })} · {slot.approval_state.replace(/_/g, ' ')}</option>)}
+                            </select>
+                          ) : (
+                            <input
+                              aria-label={`Entry ${index + 1} timeslot ID`}
+                              value={entry.timeslot_id}
+                              placeholder="optional timeslot id"
+                              onChange={e => updateEntry(index, { timeslot_id: e.target.value })}
+                            />
+                          )}
                         </label>
                         <div className="pp-entry-pools">
                           <span className="pp-entry-advanced-label">Data Pools</span>
                           {entry.data_pools.map((dp, di) => (
                             <div className="pp-entry-pool" key={di}>
-                              <input aria-label={`Entry ${index + 1} data pool ${di + 1} ID`} value={dp.pool_id} placeholder="pool id" onChange={e => updatePool(index, di, { pool_id: e.target.value })} />
+                              {planReferences.pools ? (
+                                <select aria-label={`Entry ${index + 1} data pool ${di + 1}`} value={dp.pool_id} onChange={e => updatePool(index, di, { pool_id: e.target.value })}>
+                                  <option value="">Choose a data pool</option>
+                                  {dp.pool_id && !planReferences.pools.some(pool => pool.id === dp.pool_id) && <option value={dp.pool_id}>Unknown pool ({dp.pool_id})</option>}
+                                  {planReferences.pools.map(pool => <option key={pool.id} value={pool.id}>{pool.name}</option>)}
+                                </select>
+                              ) : (
+                                <input aria-label={`Entry ${index + 1} data pool ${di + 1} ID`} value={dp.pool_id} placeholder="pool id" onChange={e => updatePool(index, di, { pool_id: e.target.value })} />
+                              )}
                               <input aria-label={`Entry ${index + 1} data pool ${di + 1} alias`} value={dp.alias} placeholder="alias" onChange={e => updatePool(index, di, { alias: e.target.value })} />
-                              <button type="button" className="btn btn-ghost btn-sm" onClick={() => removePool(index, di)} title="Remove data pool">
+                              <button type="button" className="btn btn-ghost btn-sm" onClick={() => removePool(index, di)} title="Remove data pool" aria-label={`Remove data pool ${di + 1} from entry ${index + 1}`}>
                                 ✕
                               </button>
                             </div>
@@ -633,7 +672,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
 
       {/* Run result modal */}
       {runResult && (
-        <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closeRunResult, 'Close execution plan result')}>
+        <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closeRunResult)}>
           <div ref={resultDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="execution-plan-result-title">
             <div className="pp-modal-header">
               <h3 id="execution-plan-result-title">{runResultCounts.created === 0 ? 'Plan run did not start' : runResultCounts.failed > 0 ? 'Plan run partly started' : 'Plan run started'}: “{runResult.plan}”</h3>
@@ -679,7 +718,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
 
       {/* Sequential plan-run progress modal (dependency-gated, polled live) */}
       {planRun && (
-        <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closePlanRun, 'Close execution plan progress')}>
+        <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closePlanRun)}>
           <div ref={progressDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="execution-plan-progress-title">
             <div className="pp-modal-header">
               <h3 id="execution-plan-progress-title">

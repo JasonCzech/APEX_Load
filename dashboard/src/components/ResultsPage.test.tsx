@@ -1174,15 +1174,15 @@ describe('ResultsPage', () => {
     const cohort = (panel: Element, key: string) => cards(panel).find(card => card.dataset.cohortKey === key)!
     expect(cards(panels[0])).toHaveLength(6)
     expect(cohort(panels[0], '["device","broken"]').textContent).toContain('Malformed summary: expected an object')
-    expect(cohort(panels[0], '["device","primitive"]').textContent).toContain('LCP n/a')
+    expect(cohort(panels[0], '["device","primitive"]').textContent).toContain('LCP —')
     expect(cohort(panels[0], '["device","nested"]').textContent).toContain('unknown · browser · unknown tier')
     expect(cohort(panels[0], '["device","nested"]').textContent).toContain('LCP 0.0 ms')
-    expect(cohort(panels[1], '["device","nested"]').textContent).toContain('LCP n/a')
-    expect(cohort(panels[1], '["device","nested"]').textContent).toContain('INP n/a')
+    expect(cohort(panels[1], '["device","nested"]').textContent).toContain('LCP —')
+    expect(cohort(panels[1], '["device","nested"]').textContent).toContain('INP —')
     // Overall cards apply the same sample population admission as the chart.
     const overallLCP = Array.from(panels[0].querySelectorAll('.results-compare-metric')).find(metric => metric.querySelector('.results-compare-label')?.textContent === 'Avg LCP')
     expect(overallLCP).toBeDefined()
-    expect(overallLCP!.querySelector('.results-compare-value')!.textContent).toBe('n/a')
+    expect(overallLCP!.querySelector('.results-compare-value')!.textContent).toBe('—')
     for (const [mode, named, alias] of [['Engine', 'chromium', 'Chromium'], ['Platform', 'ios', 'iOS']] as const) {
       await act(async () => {
         buttonByText(container, mode)!.click()
@@ -1190,18 +1190,18 @@ describe('ResultsPage', () => {
       })
       const kind = mode.toLowerCase()
       const mixed = cohort(panels[0], JSON.stringify([kind, named]))
-      expect(mixed.textContent).toContain('LCP n/a')
+      expect(mixed.textContent).toContain('LCP —')
       expect(mixed.textContent).toContain('INP 0.0 ms')
       expect(mixed.textContent).toContain('CLS 0.000')
       expect(mixed.textContent).toContain('Unavailable members are retained')
       expect(mixed.textContent).not.toContain('400.0 ms')
-      expect(cohort(panels[0], JSON.stringify([kind, alias])).textContent).toContain('LCP 8000.0 ms')
+      expect(cohort(panels[0], JSON.stringify([kind, alias])).textContent).toContain('LCP 8,000.0 ms')
       expect(cards(panels[0])).toHaveLength(5)
       for (const profile of ['broken', 'primitive', 'nested']) {
-        expect(cohort(panels[0], JSON.stringify([kind, 'unavailable', profile])).textContent).toContain('LCP n/a')
+        expect(cohort(panels[0], JSON.stringify([kind, 'unavailable', profile])).textContent).toContain('LCP —')
       }
       expect(cohort(panels[1], JSON.stringify([kind, 'broken'])).textContent).toContain('Malformed summary: expected an object')
-      expect(cohort(panels[1], JSON.stringify([kind, 'nested'])).textContent).toContain('LCP n/a')
+      expect(cohort(panels[1], JSON.stringify([kind, 'nested'])).textContent).toContain('LCP —')
       expect(cohort(panels[1], JSON.stringify([kind, 'nested'])).textContent).toContain('INP 0.0 ms')
     }
   })
@@ -1357,7 +1357,7 @@ describe('ResultsPage', () => {
     expect(Array.from(container.querySelectorAll('h3.section-title')).map(header => header.textContent)).toEqual(['Result runs'])
     const headerLabels = Array.from(container.querySelectorAll('.library-source-table thead th'))
       .map(header => (header.textContent || '').replace(/[↕↑↓]/g, '').trim())
-    expect(headerLabels).toEqual(['', 'Source', 'Scenario', 'Status', 'VUsers', 'Groups', 'Started', 'Lifecycle elapsed', 'Archive', 'Actions'])
+    expect(headerLabels).toEqual(['', 'Source', 'Run', 'Status', 'VUsers', 'Groups', 'Started', 'Elapsed', 'Archive', 'Actions'])
     const sourceSortButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.library-source-table thead th.sortable > button'))
       .find(button => button.textContent?.includes('Source'))
     const startedSortButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.library-source-table thead th.sortable > button'))

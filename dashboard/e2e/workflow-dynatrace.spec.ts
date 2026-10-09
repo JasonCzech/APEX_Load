@@ -85,7 +85,7 @@ test('Dynatrace source editing preserves Classic, Grail and Smartscape selection
   await page.reload()
   const form = page.getByRole('region', { name: 'Run monitor sources', exact: true })
   await form.getByRole('combobox', { name: 'Pack', exact: true }).selectOption('dynatrace')
-  await form.getByLabel('Name', { exact: true }).fill('Checkout SaaS')
+  await form.getByLabel('Name (required)', { exact: true }).fill('Checkout SaaS')
   await form.getByRole('combobox', { name: 'Dynatrace connection', exact: true }).selectOption('direct')
   await form.getByLabel('Problems/events/topology entity selector', { exact: true }).fill('type(SERVICE)')
   await form.getByLabel('Source problem selector').fill('status("OPEN")')

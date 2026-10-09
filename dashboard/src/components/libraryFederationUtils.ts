@@ -1,10 +1,8 @@
 import { LibraryCatalogItem, LibraryRemote, LibraryTransferResponse } from '../types/library'
+import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
 
 export function formatLibraryDateTime(value?: string) {
-  if (!value) return 'Never'
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return value
-  return parsed.toLocaleString()
+  return formatDisplayDateTime(value, { fallback: 'Never' })
 }
 
 export function shortLibraryHash(value?: string) {

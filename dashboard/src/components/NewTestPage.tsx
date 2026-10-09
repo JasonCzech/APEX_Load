@@ -213,7 +213,7 @@ type GroupEditChanges = {
   assignment: boolean
 }
 
-const LOAD_PROFILE_COLORS = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2']
+const LOAD_PROFILE_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)']
 const formatProfileTps = (value: number | undefined) => (value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })
 
 function formatDate(value?: string) {
@@ -1408,7 +1408,11 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     () => buildCurrentRunCreatePayload(runDefaultOverrides, groupRunOverrides),
     [buildCurrentRunCreatePayload, groupRunOverrides, runDefaultOverrides],
   )
-  const scheduledStartISO = useMemo(() => datetimeLocalToISO(scheduledStartLocal), [scheduledStartLocal])
+  const enteredScheduledStartISO = useMemo(() => datetimeLocalToISO(scheduledStartLocal), [scheduledStartLocal])
+  // A start in the past is reported beside the field; it is never sent to
+  // preflight, which would otherwise call the (already elapsed) window clear.
+  const scheduledStartInPast = Boolean(enteredScheduledStartISO && Date.parse(enteredScheduledStartISO) <= Date.now())
+  const scheduledStartISO = scheduledStartInPast ? '' : enteredScheduledStartISO
   const runNameScenarioIdentity = scenario ? `${activeProjectID}:${scenario.id}` : ''
   const runNameScenarioDefault = scenario?.name || ''
 
@@ -3179,7 +3183,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
         <div className="new-test-main">
           {scenario && <section className="new-test-selected" aria-label="Selected scenario">
             <span>Selected scenario</span><strong>{scenarioIdentity(scenario)}</strong>
-            <ObjectArchiveControls resourceType="scenario" resourceId={scenario.id} archivedAt={scenario.archived_at} updatedAt={scenario.updated_at} canManage={canManageTests} onChanged={refresh} />
+            <ObjectArchiveControls resourceType="scenario" resourceId={scenario.id} resourceName={scenario.name} archivedAt={scenario.archived_at} updatedAt={scenario.updated_at} canManage={canManageTests} onChanged={refresh} />
             <ObjectHistory key={scenario.id} projectId={scenario.project_id} resourceType="scenario" resourceId={scenario.id} activity={scenario.activity} />
             {scenario.archived_at && <p role="alert">This scenario is archived. Restore it to create a run.</p>}
             {archivedDependencies.map(script => <p role="alert" key={script.id}>Archived script <a href={`#/scripts?mode=edit&scriptId=${encodeURIComponent(script.id)}&projectId=${encodeURIComponent(activeProjectID)}`}>{script.name}</a> blocks execution. Restore it before launching.</p>)}
@@ -3741,9 +3745,14 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                     min={scheduleMin}
                     value={scheduledStartLocal}
                     onChange={event => setScheduledStartLocal(event.target.value)}
+                    aria-invalid={scheduledStartInPast || undefined}
+                    aria-describedby={scheduledStartInPast ? 'new-test-scheduled-start-error' : undefined}
                   />
                 </label>
-                <button className="btn btn-secondary" onClick={() => createRun('schedule')} disabled={!canLaunch || scheduledPreflightLoading || !scheduleAllowed}>Schedule Run</button>
+                <button className="btn btn-secondary" onClick={() => createRun('schedule')} disabled={!canLaunch || scheduledPreflightLoading || !scheduleAllowed} aria-describedby={launchBlockers.length && !creating ? 'new-test-launch-blockers' : undefined}>Schedule Run</button>
+                {scheduledStartInPast && (
+                  <div id="new-test-scheduled-start-error" className="new-test-launch-feedback warning" role="alert">That time has already passed. Choose a start time in the future.</div>
+                )}
                 {scheduledStartLocal && scheduledPreflightLoading && (
                   <div className="new-test-launch-feedback" role="status">Checking scheduled window</div>
                 )}
@@ -3778,7 +3787,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       </div>
 
       {editingDefaultKey && editingDefaultCard && (
-        <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(() => setEditingDefaultKey(null), 'Close run default editor')}>
+        <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(() => setEditingDefaultKey(null))}>
           <div
             ref={runDefaultDialogRef}
             className="modal run-default-modal"
@@ -3808,7 +3817,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       )}
 
       {editingGroupKey && editingGroup && scenario && createPortal(
-        <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(() => setEditingGroupKey(null), 'Close run group editor')}>
+        <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(() => setEditingGroupKey(null))}>
           <div
             ref={runGroupDialogRef}
             className="modal run-default-modal run-group-modal"
@@ -4155,7 +4164,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       )}
 
       {confirmDeleteScheduleId && (
-        <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(() => setConfirmDeleteScheduleId(null), 'Close schedule deletion dialog')}>
+        <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(() => setConfirmDeleteScheduleId(null))}>
           <div
             ref={deleteScheduleDialogRef}
             className="modal"
@@ -4169,7 +4178,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
             </div>
             <div className="monitor-body">
               <p>Permanently delete schedule <strong>{schedules.find(s => s.id === confirmDeleteScheduleId)?.name || 'this schedule'}</strong>? Future runs managed by this schedule will no longer fire.</p>
-              <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
+              <p style={{ color: 'var(--danger-text)', fontWeight: 600 }}>This action cannot be undone.</p>
               <div className="settings-inline-actions">
                 <button className="btn btn-secondary" type="button" onClick={() => setConfirmDeleteScheduleId(null)}>Cancel</button>
                 <button className="btn btn-danger" type="button" onClick={() => deleteSchedule(confirmDeleteScheduleId)}>Delete Schedule</button>

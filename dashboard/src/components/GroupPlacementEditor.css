@@ -74,7 +74,7 @@
 }
 
 .group-placement-editor .new-test-generator-option em.warning {
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .group-placement-editor .new-test-placement-summary {

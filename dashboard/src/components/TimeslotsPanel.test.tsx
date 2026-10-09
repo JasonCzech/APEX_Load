@@ -10,6 +10,9 @@ import { CapacityTimeslot } from '../types'
 import { ApiError } from '../hooks/apiClient'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 
+// The panel renders instants with the shared formatDateTime (zone-labelled, no seconds).
+const displayFormat: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }
+
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const capacityApiMock = {
@@ -97,7 +100,7 @@ describe('TimeslotsPanel', () => {
     const startAt = '2026-07-01T13:00:00Z'
     const endAt = '2026-07-01T17:00:00Z'
     const zone = foreignZone(startAt)
-    const inZone = (value: string) => new Date(value).toLocaleString(undefined, { timeZone: zone })
+    const inZone = (value: string) => new Date(value).toLocaleString(undefined, { ...displayFormat, timeZone: zone })
     capacityApiMock.listTimeslots.mockResolvedValue({
       timeslots: [slot({ timezone: zone, start_at: startAt, end_at: endAt })],
       count: 1,
@@ -109,7 +112,7 @@ describe('TimeslotsPanel', () => {
     const title = container.querySelector('.pp-row-title')?.textContent || ''
     expect(title).toContain(inZone(startAt))
     expect(title).toContain(inZone(endAt))
-    expect(title).not.toContain(new Date(startAt).toLocaleString())
+    expect(title).not.toContain(new Date(startAt).toLocaleString(undefined, displayFormat))
     expect(container.querySelector('.pp-row-meta')?.textContent).toContain(zone)
   })
 
@@ -117,7 +120,7 @@ describe('TimeslotsPanel', () => {
     const startAt = '2026-07-01T13:00:00Z'
     const endAt = '2026-07-01T17:00:00Z'
     const zone = foreignZone(startAt)
-    const inZone = (value: string) => new Date(value).toLocaleString(undefined, { timeZone: zone })
+    const inZone = (value: string) => new Date(value).toLocaleString(undefined, { ...displayFormat, timeZone: zone })
     capacityApiMock.listTimeslots.mockResolvedValue({
       timeslots: [slot({ approval_state: 'approved', timezone: zone, start_at: startAt, end_at: endAt })],
       count: 1,
@@ -126,14 +129,17 @@ describe('TimeslotsPanel', () => {
       root.render(<TimeslotsPanel projectId="proj-a" canManage />)
     })
     await flush()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Delete')?.click()
     })
-    const description = container.querySelector('[role="dialog"]')?.textContent || ''
+    const description = String(confirm.mock.calls[0]?.[0] || '')
+    confirm.mockRestore()
+    expect(capacityApiMock.deleteTimeslot).not.toHaveBeenCalled()
     expect(description).toContain(inZone(startAt))
     expect(description).toContain(inZone(endAt))
     expect(description).toContain(zone)
-    expect(description).not.toContain(new Date(startAt).toLocaleString())
+    expect(description).not.toContain(new Date(startAt).toLocaleString(undefined, displayFormat))
   })
 
   it('prompts to select a project when none is active and does not fetch', async () => {
@@ -256,6 +262,36 @@ describe('TimeslotsPanel', () => {
     expect(capacityApiMock.createTimeslot).toHaveBeenCalledTimes(1)
     const payload = capacityApiMock.createTimeslot.mock.calls[0][0] as { requested_capacity?: { pool_id?: string } }
     expect(payload.requested_capacity?.pool_id).toBe('pool-1')
+  })
+
+  it('explains an inverted window and an invalid generator count instead of only disabling Reserve', async () => {
+    capacityApiMock.listTimeslots.mockResolvedValue({ timeslots: [], count: 0 })
+    await act(async () => {
+      root.render(<TimeslotsPanel projectId="proj-a" canManage />)
+    })
+    await flush()
+    const newButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'New booking')
+    await act(async () => newButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flush()
+    const setInput = (el: Element | null, value: string) => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set?.call(el, value)
+      el?.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    const dt = container.querySelectorAll<HTMLInputElement>('input[type="datetime-local"]')
+    await act(async () => {
+      setInput(dt[0], '2026-07-01T12:00')
+      setInput(dt[1], '2026-07-01T10:00')
+    })
+    expect(container.querySelector('#timeslot-range-error')?.textContent).toBe('End must be after Start.')
+    expect(dt[1].getAttribute('aria-invalid')).toBe('true')
+    await act(async () => setInput(dt[1], '2026-07-01T14:00'))
+    expect(container.querySelector('#timeslot-range-error')).toBeNull()
+    const generators = container.querySelector<HTMLInputElement>('[aria-describedby="timeslot-generators-note"]')!
+    await act(async () => setInput(generators, '0'))
+    expect(container.querySelector('#timeslot-generators-note')?.textContent).toContain('1 or more')
+    expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'Reserve')?.disabled).toBe(true)
+    // The time zone is chosen from a list, not typed.
+    expect(container.querySelector('select[aria-label="Time zone"]')).toBeTruthy()
   })
 
   it('opens a labelled reservation dialog, focuses the start field, and restores focus on Escape', async () => {
@@ -405,25 +441,22 @@ describe('TimeslotsPanel', () => {
     expect(container.textContent).toContain('bind failed')
   })
 
-  it('keeps the delete confirmation open when deletion fails', async () => {
+  it('confirms a reservation delete by its window and reports a failed delete', async () => {
     capacityApiMock.listTimeslots.mockResolvedValue({ timeslots: [slot({ approval_state: 'approved' })], count: 1 })
     capacityApiMock.deleteTimeslot.mockRejectedValue(new ApiError('delete failed', 503))
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     await act(async () => { root.render(<TimeslotsPanel projectId="proj-a" canManage />) })
     await flush()
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Delete')?.click()
     })
-    const modalInputs = container.querySelectorAll<HTMLInputElement>('[role="dialog"] input')
-    await act(async () => {
-      setNativeInput(modalInputs[0], 'cleanup')
-      setNativeInput(modalInputs[1], 'slot-1')
-    })
-    await act(async () => {
-      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Delete reservation')?.click()
-    })
     await flush()
-    expect(container.textContent).toContain('Delete capacity reservation')
+    // The window identifies the reservation; no internal id has to be retyped.
+    expect(confirm.mock.calls[0]?.[0]).toMatch(/^Permanently delete the capacity reservation for .+ → .+\?$/)
+    expect(container.querySelector('[role="dialog"] input')).toBeNull()
+    expect(capacityApiMock.deleteTimeslot).toHaveBeenCalledWith('slot-1')
     expect(container.textContent).toContain('delete failed')
+    confirm.mockRestore()
   })
 
 	it('guards a dirty reservation draft before closing the editor', async () => {

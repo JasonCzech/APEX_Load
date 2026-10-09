@@ -54,6 +54,14 @@
     inset 0 -1px 0 color-mix(in srgb, var(--accent-border) 30%, transparent);
 }
 
+/* On narrow or short viewports (phones, 200% zoom) the wrapped bar would
+   permanently cover close to half the screen, so it scrolls away with the page. */
+@media (max-width: 720px), (max-height: 560px) {
+  .main-topbar {
+    position: static;
+  }
+}
+
 .main-content.page-dashboard > .main-topbar,
 .main-content.page-new-test > .main-topbar,
 .main-content.page-command-center > .main-topbar,
@@ -438,6 +446,14 @@
   white-space: nowrap;
 }
 
+.topbar-active-runs.compact {
+  flex: 0 1 auto;
+}
+
+.topbar-run-chip.compact {
+  max-width: 150px;
+}
+
 .topbar-run-more {
   flex: 0 0 auto;
   border-color: var(--accent-border);
@@ -666,3 +682,10 @@
 
 /* Dashboard analysis must stay legible when charts scroll beneath the toolbar. */
 .main-content.page-dashboard > .main-topbar { background: var(--bg-primary); }
+
+.route-scope-recovery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}

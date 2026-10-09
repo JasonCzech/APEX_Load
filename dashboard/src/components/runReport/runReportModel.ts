@@ -1,4 +1,4 @@
-import { reportAcceptance, reportPopulationOverview, defaultReportPopulation, formatReportPercent, type MetricPopulation } from './reportPresentation'
+import { MISSING_VALUE, reportAcceptance, reportPopulationOverview, defaultReportPopulation, formatReportPercent, type MetricPopulation } from './reportPresentation'
 import type {
   MetricsHistoryPoint,
   ReportAnnotations,
@@ -43,17 +43,17 @@ function finite(value: unknown): value is number {
 }
 
 export function formatNumber(value: number | undefined, digits = 0): string {
-  if (!finite(value)) return 'n/a'
+  if (!finite(value)) return MISSING_VALUE
   return value.toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits })
 }
 
 export function formatMs(value: number | undefined): string {
-  if (!finite(value)) return 'n/a'
+  if (!finite(value)) return MISSING_VALUE
   return `${formatNumber(value, value >= 100 ? 0 : 1)} ms`
 }
 
 export function formatPct(value: number | undefined, digits = 2): string {
-  if (!finite(value)) return 'n/a'
+  if (!finite(value)) return MISSING_VALUE
   return formatReportPercent(value, digits)
 }
 

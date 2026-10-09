@@ -714,7 +714,7 @@ describe('AccessPage', () => {
 
     const badge = container.querySelector('.access-attention-badge')
     expect(badge).not.toBeNull()
-    expect(badge?.textContent).toBe('3')
+    expect(badge?.querySelector('[aria-hidden="true"]')?.textContent).toBe('3')
 
     // The banner lives in the service-accounts workspace.
     await clickButton(container, 'Service accounts', true)
@@ -961,7 +961,7 @@ describe('AccessPage', () => {
       await oldReview.promise
     })
     await flushPromises()
-    expect(container.querySelector('.access-attention-badge')?.textContent).toBe('2')
+    expect(container.querySelector('.access-attention-badge [aria-hidden="true"]')?.textContent).toBe('2')
   })
 
   it('does not let stale list refreshes revert or resurrect account mutations', async () => {

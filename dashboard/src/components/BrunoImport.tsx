@@ -733,6 +733,23 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
             ? 'This Bruno import session has expired. Re-inspect the source before saving.'
             : `Bruno import session available until ${new Date(protectedSessionExpiry).toLocaleString()}.`
         : '';
+    // Native batches need a script folder. When none is chosen and this session
+    // may create one, save creates the suggested folder instead of blocking.
+    // A stale restored folder still asks for an explicit choice.
+    // A folder that already carries the suggested name is reused, never duplicated.
+    const suggestedFolderMatch = newFolderName.trim()
+        ? destinationFolderOptions.find(({ folder }) => folder.name.trim().toLowerCase() === newFolderName.trim().toLowerCase())?.folder
+        : undefined;
+    const autoCreateFolderName = !destinationFolderManagedExternally && !destinationFolderId && !folderLoading && !folderLoadError && !folderSelectionWarning && folderCreationAccess === 'allowed' && !suggestedFolderMatch
+        ? newFolderName.trim()
+        : '';
+    const suggestedFolderMatchId = suggestedFolderMatch?.id || '';
+    useEffect(() => {
+        // Preselect the folder named after this collection instead of leaving the choice blank.
+        if (!destinationFolderManagedExternally && !destinationFolderIdRef.current && suggestedFolderMatchId && !folderSelectionWarning) {
+            selectDestinationFolderRef.current(suggestedFolderMatchId);
+        }
+    }, [destinationFolderManagedExternally, folderSelectionWarning, suggestedFolderMatchId]);
     const saveBlockers: string[] = [];
     if (protectedSessionExpired) {
         saveBlockers.push('This import session expired. Re-inspect the source to create a fresh review session.');
@@ -754,7 +771,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     }
 
     {
-        if (!destinationFolderId) {
+        if (!destinationFolderId && !autoCreateFolderName) {
             if (destinationFolderManagedExternally) {
                 saveBlockers.push('Select an existing script folder in Save destination; native batches cannot be saved to Project root.');
             }
@@ -762,7 +779,9 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                 saveBlockers.push('Select an existing destination folder in Native HTTP conversion.');
             }
             else if (!folderLoading && !folderLoadError && folderCreationAccess === 'allowed') {
-                saveBlockers.push('Create and select a destination folder in Native HTTP conversion.');
+                saveBlockers.push(newFolderName.trim()
+                    ? 'Create and select a destination folder in Native HTTP conversion.'
+                    : 'Enter a name for the new script folder in Native HTTP conversion.');
             }
             else if (!folderLoading && !folderLoadError && folderCreationAccess === 'denied') {
                 saveBlockers.push('No destination folder is available, and your current role cannot create project folders. Ask a Project Administrator to create a script folder, then reload this page and select it.');
@@ -827,11 +846,11 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         setNativeNameOverrides({});
         setAcknowledgedFindingIds([]);
     };
-    const createDestinationFolder = async () => {
+    const createDestinationFolder = async (): Promise<string | undefined> => {
         const folderName = newFolderName.trim();
         const sourceProjectId = sourceProjectIdRef.current;
         if (!sourceProjectId || !folderName || creatingFolder || folderCreationAccess !== 'allowed')
-            return;
+            return undefined;
         const requestID = folderCreateRequestRef.current + 1;
         folderCreateRequestRef.current = requestID;
         setCreatingFolder(true);
@@ -842,12 +861,13 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                 category: 'scripts',
             });
             if (!mountedRef.current || sourceProjectIdRef.current !== sourceProjectId || folderCreateRequestRef.current !== requestID)
-                return;
+                return undefined;
             setFolders(previous => previous.some(folder => folder.id === created.id)
                 ? previous
                 : [...previous, created]);
             selectDestinationFolder(created.id);
             setNotice(`Created and selected script folder “${created.name}”.`);
+            return created.id;
         }
         catch (cause) {
             if (mountedRef.current && sourceProjectIdRef.current === sourceProjectId && folderCreateRequestRef.current === requestID) {
@@ -865,6 +885,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                 setCreatingFolder(false);
             }
         }
+        return undefined;
     };
     const inspect = async () => {
         if (!projectId || files.length === 0)
@@ -944,11 +965,18 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
             }
             if (!requestIsCurrent())
                 return;
+            const folderId = destinationFolderId || (autoCreateFolderName ? await createDestinationFolder() : undefined);
+            if (!requestIsCurrent())
+                return;
+            if (!folderId) {
+                setError(`The script folder “${autoCreateFolderName}” could not be created, so nothing was saved. See Native HTTP conversion for details.`);
+                return;
+            }
             const response = await api.commitBrunoImport({
                 project_id: projectId,
                 import_session_id: inspection.import_session_id,
                 mode: 'create_native_batch',
-                folder_id: destinationFolderId,
+                folder_id: folderId,
                 candidate_ids: selectedNativeCandidates.map(candidate => candidate.candidate_id),
                 name_overrides: Object.fromEntries(selectedNativeCandidates.map(candidate => [
                     candidate.candidate_id,
@@ -979,7 +1007,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
             secretBindingsRef.current = {};
             setCommitted(response);
             {
-                setNotice(`${importedScripts!.length} native APEX script${importedScripts!.length === 1 ? '' : 's'} saved atomically.`);
+                setNotice(`${importedScripts!.length} native APEX script${importedScripts!.length === 1 ? '' : 's'} saved atomically${destinationFolderId ? '' : ` to the new folder “${autoCreateFolderName}”`}.`);
                 onImported?.({ scripts: importedScripts!, stayInImportReview: true });
             }
         }
@@ -1101,7 +1129,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                 <span>Destination folder</span>
                 <select id="bruno-destination-folder" aria-describedby={destinationFolderOptions.length === 0 ? 'bruno-folder-empty-guidance' : undefined} aria-busy={folderLoading || undefined} disabled={loading || folderLoading || Boolean(folderLoadError) || creatingFolder || (destinationFolderOptions.length === 0)} value={destinationFolderId} onChange={event => selectDestinationFolder(event.target.value)}>
                   <option value="" disabled={true}>
-                    {'Select a script folder…'}
+                    {autoCreateFolderName ? `New folder “${autoCreateFolderName}” (created on save)` : 'Select a script folder…'}
                   </option>
                   {destinationFolderOptions.map(({ folder, label }) => (<option key={folder.id} value={folder.id}>{label}</option>))}
                 </select>
@@ -1110,7 +1138,9 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
             {folderLoading && (<div className="bruno-preflight" role="status">Loading destination folders…</div>)}
             {folderSelectionWarning && (<div className="bruno-preflight warning" role="alert">{folderSelectionWarning}</div>)}
             {destinationFolderOptions.length === 0 && !folderLoading && !folderLoadError && (<div id="bruno-folder-empty-guidance" className="bruno-preflight warning" role="status">
-                No script folders exist in this project. Native import creates one script per API and requires an existing destination folder before saving.
+                {folderCreationAccess === 'allowed'
+                    ? 'No script folders exist in this project yet. Saving creates the folder named below, or create it now.'
+                    : 'No script folders exist in this project. Native import creates one script per API and requires an existing destination folder before saving.'}
               </div>)}
             {folderCreationAccess === 'allowed' ? (<div className="bruno-folder-create">
                 <label>
@@ -1451,7 +1481,9 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                         <p role="status">Before replay: {deferredSecretCount} missing secrets · {selectedNativeMissingVariables.length} unresolved inputs · {nativeReviewFindingIds.length} conversion repairs.</p><p>Saving keeps this review open. Open a saved script in the Visual Editor to resolve remaining conversion requirements, then debug one iteration against a controlled target. Import More Files starts a new review.</p><strong>{`Save ${selectedNativeCandidates.length} native script${selectedNativeCandidates.length === 1 ? '' : 's'}`}</strong>
                         <span>{destinationFolderId
                         ? 'All selected scripts will be saved atomically to the selected folder.'
-                        : 'Select a destination folder before saving.'}</span>
+                        : autoCreateFolderName
+                            ? `Saving creates the script folder “${autoCreateFolderName}” and saves all selected scripts to it atomically.`
+                            : 'Select a destination folder before saving.'}</span>
                         {saveBlockers.length > 0 && (<div id="bruno-save-blockers" className="bruno-save-blockers" role="status">
                             <strong>Save is unavailable for these reasons:</strong>
                             <ul>{saveBlockers.map(blocker => <li key={blocker}>{blocker}</li>)}</ul>

@@ -343,11 +343,22 @@ export default function Sidebar({
       setCollapsed(true)
     }
 
+    const swallowClick = (event: MouseEvent) => {
+      if (event.target instanceof Node && asideRef.current?.contains(event.target)) return
+      event.preventDefault()
+      event.stopPropagation()
+    }
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target
       if (target instanceof Node && asideRef.current?.contains(target)) {
         return
       }
+      // The outside press only dismisses the overlay: the click that follows
+      // must not also activate whatever was underneath it.
+      // The listener outlives this effect (collapsing re-runs it), so its own
+      // timer removes it if no click follows (a drag or scroll).
+      document.addEventListener('click', swallowClick, { capture: true, once: true })
+      window.setTimeout(() => document.removeEventListener('click', swallowClick, true), 700)
       collapse()
     }
 
@@ -769,7 +780,7 @@ export default function Sidebar({
               tooltipPlacement="right"
             >
               <span aria-hidden="true">{identityInitials}</span>
-              {sessionExpiryNotice && <span className="sidebar-rail-avatar-alert" aria-hidden="true" />}
+              {sessionExpiryNotice && <span className="sidebar-rail-avatar-alert" aria-hidden="true">!</span>}
             </TooltipButton>
           )}
           {!collapsed && authStatus?.authenticated && authStatus.user && identityName && (
@@ -849,9 +860,10 @@ export default function Sidebar({
             </div>
           )}
           <div className="sidebar-footer-row">
-            <div className={`sidebar-status ${connectionClass}`} title={collapsed ? connectionLabel : undefined}>
-              <span className="status-dot" />
-              <span className="status-text">{connectionLabel}</span>
+            <div className={`sidebar-status ${connectionClass}`} title={collapsed ? `Live connection: ${connectionLabel}` : undefined} role="status" aria-live="polite">
+              <span className="status-dot" aria-hidden="true" />
+              {/* Visually hidden in the collapsed rail, but still announced. */}
+              <span className="status-text"><span className="sr-only">Live connection: </span>{connectionLabel}</span>
             </div>
             <BuildBadge placement="up" />
           </div>

@@ -435,3 +435,17 @@ it('round-trips an immutable baseline comparison without losing the run scope', 
   const view = { page: 'report' as const, testId: 'run/123', section: 'comparison' as const, comparisonId: 'comparison-1', projectId: 'project-1' }
   expect(parseAppViewFromHash(viewToLocationHash(view))).toEqual(view)
 })
+
+describe('activity route query', () => {
+  it('keeps activity filters and page through parse and serialize', () => {
+    const view = parseAppViewFromHash('#/activity?action=stop&q=checkout&page=2&projectId=p1&junk=1')
+    expect(view).toEqual({ page: 'activity', activityQuery: 'q=checkout&action=stop&page=2', projectId: 'p1' })
+    expect(viewToLocationHash(view)).toBe('#/activity?q=checkout&action=stop&page=2&projectId=p1')
+    expect(viewToLocationHash({ page: 'activity' })).toBe('#/activity')
+  })
+
+  it('starts activity on the newest events of a newly selected project', () => {
+    const view: AppView = { page: 'activity', activityQuery: 'action=stop&page=3', projectId: 'p1' }
+    expect(scopeAppViewToWorkspace(resetProjectScopedAssetView(view, 'p2'), { projectId: 'p2' })).toEqual({ page: 'activity', projectId: 'p2' })
+  })
+})

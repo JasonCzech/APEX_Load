@@ -8,6 +8,7 @@ import { useApi } from '../hooks/useApi'
 import { useHasTopbarContributionProvider } from '../hooks/TopbarContributionProvider'
 import PageViewToggle from './PageViewToggle'
 import ReferenceKeyBadge from './ReferenceKeyBadge'
+import { SortIndicator } from './SortIndicator'
 import './ImportWorkflowGuide.css'
 
 interface Props {
@@ -466,10 +467,11 @@ export default function ScriptCreateOptions({
     })
   }
 
-  const renderExistingSortLabel = (key: ExistingScriptSortKey, label: string) => {
-    if (existingScriptSort.key !== key) return `${label} ↕`
-    return `${label} ${existingScriptSort.direction === 'asc' ? '↑' : '↓'}`
-  }
+  const existingAriaSort = (key: ExistingScriptSortKey): 'ascending' | 'descending' | 'none' => existingScriptSort.key !== key ? 'none' : existingScriptSort.direction === 'asc' ? 'ascending' : 'descending'
+
+  const renderExistingSortLabel = (key: ExistingScriptSortKey, label: string) => (
+    <>{label} <SortIndicator active={existingScriptSort.key === key} direction={existingScriptSort.direction} /></>
+  )
 
   const resetExistingScriptFilters = () => {
     setExistingScriptQuery('')
@@ -811,12 +813,12 @@ export default function ScriptCreateOptions({
                   <thead>
                     <tr>
                       <th>Source</th>
-                      <th><button type="button" onClick={() => requestExistingScriptSort('name')}>{renderExistingSortLabel('name', 'Script')}</button></th>
-                      <th><button type="button" onClick={() => requestExistingScriptSort('health')}>{renderExistingSortLabel('health', 'Health')}</button></th>
-                      <th><button type="button" onClick={() => requestExistingScriptSort('usage')}>{renderExistingSortLabel('usage', 'Usage')}</button></th>
-                      <th><button type="button" onClick={() => requestExistingScriptSort('associated_releases')}>{renderExistingSortLabel('associated_releases', 'Run releases')}</button></th>
-                      <th><button type="button" onClick={() => requestExistingScriptSort('created_at')}>{renderExistingSortLabel('created_at', 'Create Date')}</button></th>
-                      <th><button type="button" onClick={() => requestExistingScriptSort('last_run')}>{renderExistingSortLabel('last_run', 'Last Run')}</button></th>
+                      <th aria-sort={existingAriaSort('name')}><button type="button" onClick={() => requestExistingScriptSort('name')}>{renderExistingSortLabel('name', 'Script')}</button></th>
+                      <th aria-sort={existingAriaSort('health')}><button type="button" onClick={() => requestExistingScriptSort('health')}>{renderExistingSortLabel('health', 'Health')}</button></th>
+                      <th aria-sort={existingAriaSort('usage')}><button type="button" onClick={() => requestExistingScriptSort('usage')}>{renderExistingSortLabel('usage', 'Usage')}</button></th>
+                      <th aria-sort={existingAriaSort('associated_releases')}><button type="button" onClick={() => requestExistingScriptSort('associated_releases')}>{renderExistingSortLabel('associated_releases', 'Run releases')}</button></th>
+                      <th aria-sort={existingAriaSort('created_at')}><button type="button" onClick={() => requestExistingScriptSort('created_at')}>{renderExistingSortLabel('created_at', 'Create Date')}</button></th>
+                      <th aria-sort={existingAriaSort('last_run')}><button type="button" onClick={() => requestExistingScriptSort('last_run')}>{renderExistingSortLabel('last_run', 'Last Run')}</button></th>
                       <th>Actions</th>
                     </tr>
                   </thead>

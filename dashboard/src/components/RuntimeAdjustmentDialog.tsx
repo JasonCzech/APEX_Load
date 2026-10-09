@@ -66,6 +66,7 @@ export default function RuntimeAdjustmentDialog({ test, onClose, onApplied, retu
   const [error, setError] = useState('')
 
   useModalDialog({ dialogRef, initialFocusRef: closeRef, onClose: loading ? undefined : onClose, returnFocusSelector })
+  const [initialGroups] = useState(() => initialDrafts(test))
 
   const request = useMemo<RuntimeAdjustmentRequest>(() => ({
     groups: groups.filter(group => group.selected).map(group => ({
@@ -89,8 +90,43 @@ export default function RuntimeAdjustmentDialog({ test, onClose, onApplied, retu
         && group.target_vusers <= maxVUsersForRole(groups.find(candidate => candidate.name === group.name)?.role))
     && (transition === 'immediate' || isValidDurationInput(rampDuration))
 
+  // Field problems are stated next to the field instead of only disabling a button.
+  const durationDeltaError = !isValidDurationInput(durationDelta)
+    ? 'Enter a duration such as 5m or 1h30m.'
+    : parseDurationToSeconds(durationDelta) > 24 * 3600
+      ? 'Change the duration by at most 24h at a time.'
+      : durationDirection === 'shorten' && groups.some(group => group.selected && parseDurationToSeconds(group.duration) - parseDurationToSeconds(durationDelta) < 1)
+        ? 'That would shorten a selected group to nothing; use Stop to end the run instead.'
+        : ''
+  const loadPercentNumber = Number(loadPercent)
+  const loadPercentError = loadPercent.trim() === '' || !Number.isFinite(loadPercentNumber)
+    ? 'Enter a percentage, for example 10 or -25.'
+    : loadPercentNumber < -100
+      ? 'Load cannot drop by more than 100%.'
+      : ''
+  const groupFieldInvalid = (group: GroupDraft) => group.selected && (
+    !isValidDurationInput(group.duration)
+    || (goalMode
+      ? !(typeof group.targetTps === 'number' && Number.isFinite(group.targetTps) && group.targetTps > 0)
+      : !(Number.isInteger(group.vusers) && group.vusers >= 0 && group.vusers <= maxVUsersForRole(group.role)))
+  )
+  // Nothing to apply until a selected group differs from the running plan.
+  const planUnchanged = groups.every(group => {
+    const original = initialGroups.find(candidate => candidate.name === group.name)
+    return !group.selected || !original || (group.duration === original.duration && (goalMode ? group.targetTps === original.targetTps : group.vusers === original.vusers))
+  })
+  const reviewBlockedReason = request.groups.length === 0
+    ? 'Select at least one group.'
+    : groups.some(groupFieldInvalid)
+      ? 'Fix the highlighted group values before reviewing.'
+      : planUnchanged
+        ? 'Nothing to change yet: stage a duration or load change, or edit a group.'
+        : transition === 'gradual' && !isValidDurationInput(rampDuration)
+          ? 'Enter a ramp duration such as 1m.'
+          : ''
+
   const applyDurationDelta = () => {
-    if (!isValidDurationInput(durationDelta)) return
+    if (durationDeltaError) return
     const delta = parseDurationToSeconds(durationDelta) * (durationDirection === 'extend' ? 1 : -1)
     setGroups(current => current.map(group => group.selected
       ? { ...group, duration: formatDurationSeconds(parseDurationToSeconds(group.duration) + delta) }
@@ -99,8 +135,8 @@ export default function RuntimeAdjustmentDialog({ test, onClose, onApplied, retu
   }
 
   const applyLoadPercent = () => {
-    const percent = Number(loadPercent)
-    if (!Number.isFinite(percent)) return
+    const percent = loadPercentNumber
+    if (loadPercentError) return
     const factor = Math.max(0, 1 + percent / 100)
     const vuserTargets = goalMode ? null : proportionalVUserTargets(groups, factor)
     setGroups(current => current.map(group => {
@@ -170,7 +206,7 @@ export default function RuntimeAdjustmentDialog({ test, onClose, onApplied, retu
     <DialogLayer><div className="runtime-adjustment-backdrop" role="presentation">
       <div ref={dialogRef} className="runtime-adjustment-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <header>
-          <div><h2 id={titleId}>Change duration</h2><p>Adjust this running scenario without changing its saved definition.</p></div>
+          <div><h2 id={titleId}>Adjust run</h2><p>Change the duration and load of this running scenario without changing its saved definition. Stage changes, review their impact, then apply.</p></div>
           <button ref={closeRef} type="button" className="btn btn-sm btn-ghost" onClick={onClose} disabled={loading} aria-label="Close runtime adjustment">×</button>
         </header>
 
@@ -180,14 +216,16 @@ export default function RuntimeAdjustmentDialog({ test, onClose, onApplied, retu
             <select aria-label="Duration change direction" value={durationDirection} onChange={event => setDurationDirection(event.target.value as 'extend' | 'shorten')}>
               <option value="extend">Extend by</option><option value="shorten">Shorten by</option>
             </select>
-            <input aria-label="Duration change amount" value={durationDelta} onChange={event => setDurationDelta(event.target.value)} />
-            <button type="button" className="btn btn-sm btn-secondary" onClick={applyDurationDelta} disabled={!isValidDurationInput(durationDelta)}>Apply to selected</button>
+            <input aria-label="Duration change amount" value={durationDelta} onChange={event => setDurationDelta(event.target.value)} aria-invalid={Boolean(durationDeltaError) || undefined} aria-describedby={durationDeltaError ? `${titleId}-duration-error` : undefined} />
+            <button type="button" className="btn btn-sm btn-secondary" onClick={applyDurationDelta} disabled={Boolean(durationDeltaError)}>Stage duration</button>
+            {durationDeltaError && <p id={`${titleId}-duration-error`} className="runtime-adjustment-error" role="alert">{durationDeltaError}</p>}
           </div>
           <div className="runtime-adjustment-tool">
             <strong>{goalMode ? 'TPS goals' : 'Scenario load'}</strong>
-            <input type="number" aria-label="Scenario load percentage" value={loadPercent} onChange={event => setLoadPercent(event.target.value)} />
+            <input type="number" aria-label="Scenario load percentage" value={loadPercent} onChange={event => setLoadPercent(event.target.value)} aria-invalid={Boolean(loadPercentError) || undefined} aria-describedby={loadPercentError ? `${titleId}-load-error` : undefined} />
             <span>%</span>
-            <button type="button" className="btn btn-sm btn-secondary" onClick={applyLoadPercent}>Apply to load groups</button>
+            <button type="button" className="btn btn-sm btn-secondary" onClick={applyLoadPercent} disabled={Boolean(loadPercentError)}>Stage load</button>
+            {loadPercentError && <p id={`${titleId}-load-error`} className="runtime-adjustment-error" role="alert">{loadPercentError}</p>}
           </div>
         </section>
 
@@ -199,8 +237,8 @@ export default function RuntimeAdjustmentDialog({ test, onClose, onApplied, retu
               return <tr key={group.name}>
                 <td><input type="checkbox" aria-label={`Select ${group.name}`} checked={group.selected} onChange={event => { setGroups(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, selected: event.target.checked } : item)); setPreview(null) }} /></td>
                 <td><strong>{group.name}</strong>{group.role === 'observer' && <small>Observer · max {maxVUsersForRole(group.role)} VUs</small>}{group.stageDriven && <small>Future stages may replace a manual load target.</small>}</td>
-                <td><input aria-label={`${group.name} target duration`} value={group.duration} disabled={!group.selected} onChange={event => { setGroups(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, duration: event.target.value } : item)); setPreview(null) }} /></td>
-                <td><input type="number" min={goalMode ? 0.1 : 0} max={goalMode ? 100000 : maxVUsersForRole(group.role)} step={goalMode ? 0.1 : 1} aria-label={`${group.name} ${goalMode ? 'target TPS' : 'target VUsers'}`} value={goalMode ? group.targetTps ?? '' : group.vusers} disabled={!group.selected} onChange={event => { const value = Number(event.target.value); setGroups(current => current.map((item, itemIndex) => itemIndex === index ? goalMode ? { ...item, targetTps: value } : { ...item, vusers: value } : item)); setPreview(null) }} /></td>
+                <td><input aria-label={`${group.name} target duration`} value={group.duration} disabled={!group.selected} aria-invalid={(group.selected && !isValidDurationInput(group.duration)) || undefined} onChange={event => { setGroups(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, duration: event.target.value } : item)); setPreview(null) }} /></td>
+                <td><input type="number" min={goalMode ? 0.1 : 0} max={goalMode ? 100000 : maxVUsersForRole(group.role)} step={goalMode ? 0.1 : 1} aria-label={`${group.name} ${goalMode ? 'target TPS' : 'target VUsers'}`} value={goalMode ? group.targetTps ?? '' : group.vusers} disabled={!group.selected} aria-invalid={groupFieldInvalid(group) || undefined} onChange={event => { const value = Number(event.target.value); setGroups(current => current.map((item, itemIndex) => itemIndex === index ? goalMode ? { ...item, targetTps: value } : { ...item, vusers: value } : item)); setPreview(null) }} /></td>
                 <td>{result?.effective_end_at ? new Date(result.effective_end_at).toLocaleString() : 'Preview required'}</td>
               </tr>
             })}</tbody>
@@ -222,9 +260,10 @@ export default function RuntimeAdjustmentDialog({ test, onClose, onApplied, retu
           {preview.decision === 'blocked' && preview.safe_proposal && <button type="button" className="btn btn-sm btn-secondary" onClick={useSafeMaximum}>Use safe maximum</button>}
         </section>}
 
+        {reviewBlockedReason && !loading && <p className="runtime-adjustment-hint" id={`${titleId}-review-hint`} role="status">{reviewBlockedReason}</p>}
         <footer>
           <button type="button" className="btn btn-sm btn-secondary" onClick={onClose} disabled={loading}>Cancel</button>
-          <button type="button" className="btn btn-sm btn-secondary" onClick={() => void runPreview()} disabled={loading || !requestValid}>{loading ? 'Checking…' : 'Review changes'}</button>
+          <button type="button" className="btn btn-sm btn-secondary" onClick={() => void runPreview()} disabled={loading || !requestValid || Boolean(reviewBlockedReason)} aria-describedby={reviewBlockedReason ? `${titleId}-review-hint` : undefined}>{loading ? 'Checking…' : 'Review changes'}</button>
           <button type="button" className="btn btn-sm btn-primary" onClick={() => void apply()} disabled={loading || preview?.decision !== 'allowed'}>Apply changes</button>
         </footer>
       </div>

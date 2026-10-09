@@ -8,13 +8,25 @@ type PowerBIIntegrationPanelProps = {
   value: DashboardPowerBISettings
   onChange: (next: DashboardPowerBISettings) => void
   canEdit?: boolean
+  /** Validation messages for a field key (powerbi.workspace_id …), shown under it. */
+  fieldIssues?: (field: string) => string[]
 }
 
 const DEFAULT_AUTH_BASE_URL = 'https://login.microsoftonline.com'
 const DEFAULT_API_BASE_URL = 'https://api.powerbi.com/v1.0/myorg'
 const DEFAULT_DATASET_NAME = 'APEX Load Performance Runs'
 
-export default function PowerBIIntegrationPanel({ value, onChange, canEdit = true }: PowerBIIntegrationPanelProps) {
+export default function PowerBIIntegrationPanel({ value, onChange, canEdit = true, fieldIssues }: PowerBIIntegrationPanelProps) {
+  // Same field wiring as the rest of Settings: aria-invalid plus a described-by message.
+  const field = (key: string) => {
+    const messages = fieldIssues?.(key) || []
+    return {
+      props: { 'aria-invalid': messages.length > 0 || undefined, 'aria-describedby': messages.length ? `settings-issue-${key}` : undefined } as const,
+      issues: messages.length ? <div id={`settings-issue-${key}`} role="alert">{messages.map(message => <p key={message} className="settings-error-inline settings-field-error">{message}</p>)}</div> : null,
+    }
+  }
+  const workspaceField = field('powerbi.workspace_id')
+  const timeoutField = field('powerbi.timeout_seconds')
   const systemApi = useSystemApi()
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<PowerBITestConnectionResponse | null>(null)
@@ -138,6 +150,7 @@ export default function PowerBIIntegrationPanel({ value, onChange, canEdit = tru
           <span className="setting-desc">GUID of the Power BI workspace (group) that receives the dataset.</span>
         </div>
         <input
+          {...workspaceField.props}
           className="settings-input cell-mono"
           aria-label="Power BI workspace ID"
           value={value.workspace_id || ''}
@@ -145,6 +158,7 @@ export default function PowerBIIntegrationPanel({ value, onChange, canEdit = tru
           onChange={event => update({ workspace_id: event.target.value })}
           placeholder="00000000-0000-0000-0000-000000000000"
         />
+        {workspaceField.issues}
       </div>
 
       <div className="setting-row">
@@ -228,7 +242,9 @@ export default function PowerBIIntegrationPanel({ value, onChange, canEdit = tru
             const raw = event.target.value
             update({ timeout_seconds: raw === '' ? undefined : Number(raw) })
           }}
+          {...timeoutField.props}
         />
+        {timeoutField.issues}
       </div>
 
       <div className="setting-row">

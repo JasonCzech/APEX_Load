@@ -30,6 +30,18 @@ describe('TransactionSlaScoreboard', () => {
     container.remove()
   })
 
+  it('shows the percentile distribution beside P95 and marks archives without it', async () => {
+    await act(async () => {
+      root.render(<TransactionSlaScoreboard rows={[{ ...rows[0], min_ms: 120, p50_ms: 310, p90_ms: 640, p99_ms: 980, max_ms: 1450 }, rows[1]]} />)
+    })
+    const headers = Array.from(container.querySelectorAll('.run-report-table thead th')).map(th => th.textContent?.replace(/[↑↓]/g, '').trim())
+    expect(headers).toEqual(['Transaction', 'Volume', 'Min', 'P50', 'P90', 'P95', 'P99', 'Max', 'SLA', 'Errors', 'Result'])
+    const checkout = Array.from(container.querySelectorAll('.run-report-table tbody tr')).find(row => row.textContent?.startsWith('Checkout'))!
+    expect(Array.from(checkout.querySelectorAll('td')).slice(2, 8).map(cell => cell.textContent)).toEqual(['120 ms', '310 ms', '640 ms', '750 ms', '980 ms', '1,450 ms'])
+    const search = Array.from(container.querySelectorAll('.run-report-table tbody tr')).find(row => row.textContent?.startsWith('Search'))!
+    expect(search.querySelectorAll('td')[3].textContent).toBe('—')
+  })
+
   it('filters by SLA result and emits selected transaction changes', async () => {
     const onSelect = vi.fn()
     await act(async () => {

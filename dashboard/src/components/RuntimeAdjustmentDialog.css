@@ -13,3 +13,6 @@
 .runtime-adjustment-impact { padding: 14px; border: 1px solid var(--border); border-radius: 10px; }.runtime-adjustment-impact.allowed { border-color: var(--success); }.runtime-adjustment-impact.blocked, .runtime-adjustment-error { border-color: var(--danger); }
 .runtime-adjustment-impact p { margin: 6px 0; }.runtime-adjustment-error { padding: 10px 14px; border-style: solid; border-width: 1px; border-radius: 8px; }
 @media (max-width: 760px) { .runtime-adjustment-backdrop { padding: 12px; }.runtime-adjustment-tools { grid-template-columns: 1fr; padding-inline: 14px; }.runtime-adjustment-dialog { width: 100%; }.runtime-adjustment-dialog > header, .runtime-adjustment-dialog > footer { padding-inline: 14px; }.runtime-adjustment-dialog > footer { flex-wrap: wrap; }.runtime-adjustment-tool { min-width: 0; flex-wrap: wrap; }.runtime-adjustment-table-wrap { box-sizing: border-box; max-width: 100%; padding-inline: 14px; }.runtime-adjustment-transition, .runtime-adjustment-impact, .runtime-adjustment-error { margin-inline: 14px; } }
+.runtime-adjustment-tool { flex-wrap: wrap; }
+.runtime-adjustment-tool .runtime-adjustment-error { flex-basis: 100%; margin: 4px 0 0; padding: 6px 10px; font-size: 12px; }
+.runtime-adjustment-hint { margin: 0 22px 12px; color: var(--text-secondary); font-size: 13px; }

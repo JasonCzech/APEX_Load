@@ -292,7 +292,7 @@ test('uncertain successful writes retain drafts and revoke retry authority until
     await name.fill('Potentially committed draft')
     await page.getByRole('button', { name: 'Save script', exact: true }).click()
     const conflict = page.getByRole('region', { name: 'Script save reconciliation' })
-    await expect(conflict).toContainText('outcome or revision protection could not be verified')
+    await expect(conflict).toContainText('We could not confirm whether this save reached the server')
     await expect(name).toHaveValue('Potentially committed draft')
     await expect(page.getByRole('button', { name: 'Save script', exact: true })).toBeDisabled()
     expect(writes).toBe(1)

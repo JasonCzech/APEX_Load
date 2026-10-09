@@ -510,16 +510,16 @@
 }
 
 .sample-import-asset-status.ready {
-  color: var(--success);
+  color: var(--success-text);
 }
 
 .sample-import-asset-status.missing {
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .source-import-coverage-details h4 {
   margin: 0;
-  color: var(--success);
+  color: var(--success-text);
   font-size: 13px;
   text-transform: var(--label-case, uppercase);
   letter-spacing: var(--label-tracking, 0.04em);
@@ -590,7 +590,7 @@
 }
 
 .source-import-coverage-details details[data-coverage="review_only"] > summary {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .source-import-coverage-hint {

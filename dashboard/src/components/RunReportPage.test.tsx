@@ -261,6 +261,20 @@ describe('RunReportPage', () => {
     expect(mocks.archiveModel.onSelectedArchiveGroupChange).toHaveBeenCalledWith('')
   })
 
+  it('offers empty populations with their count, disabled, and keeps a chosen population in the URL', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, metric_populations: { action: { transactions: 10 }, transaction: { transactions: 5 }, unknown: { transactions: 0 } } } as unknown as RunArchiveReport
+    await act(async () => root.render(<RunReportPage testId="run-1" initialSection="performance" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    const population = Array.from(container.querySelectorAll('select')).find(select => select.parentElement?.textContent?.startsWith('Metric population'))!
+    const unknown = Array.from(population.options).find(option => option.value === 'unknown')!
+    expect(unknown.disabled).toBe(true)
+    expect(unknown.textContent).toContain('(0 records)')
+    await act(async () => { population.value = 'transaction'; population.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(onNavigateReport).toHaveBeenLastCalledWith(expect.objectContaining({ section: 'performance', population: 'transaction' }))
+    // Choosing a population keeps the reader on the section they were reading.
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Performance')
+  })
+
   it('links the root-cause finding in Summary to its investigation in Diagnostics', async () => {
     mocks.polling.test = buildTest('COMPLETE')
     mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, root_cause_view: rcaTestReportView() } as unknown as RunArchiveReport

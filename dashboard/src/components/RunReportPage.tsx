@@ -43,7 +43,8 @@ import { REPORT_LENS_LABELS } from './runReport/reportLensLabels'
 import RunArchiveCoverageNotice from './runReport/RunArchiveCoverageNotice'
 import RunArchiveAvailabilitySummary from './runReport/RunArchiveAvailabilitySummary'
 import RunReportVerdictBanner from './runReport/RunReportVerdictBanner'
-import SynchronizedTimeline from './runReport/SynchronizedTimeline'
+import SynchronizedTimeline, { type TimelineAnnotation } from './runReport/SynchronizedTimeline'
+import ReleaseReadinessSummary from './runReport/ReleaseReadinessSummary'
 import ImportedDashboardPanels from './runReport/ImportedDashboardPanels'
 import TransactionSlaScoreboard from './runReport/TransactionSlaScoreboard'
 import JourneyRiskPanel from './runReport/JourneyRiskPanel'
@@ -73,7 +74,7 @@ interface Props {
   initialRootCause?: RootCauseRouteState
   statusOverride?: string
   onOpenCommandCenter: (id?: string) => void
-  onNavigateReport: (next: { lens?: ReportLens; compare?: string; comparisonId?: string; section?: ReportSection } & RootCauseRouteState) => void
+  onNavigateReport: (next: { lens?: ReportLens; compare?: string; comparisonId?: string; section?: ReportSection; population?: MetricPopulation } & RootCauseRouteState) => void
 }
 
 function archiveReadyTest(test: TestSummary | null, status: string): TestSummary | null {
@@ -205,7 +206,9 @@ export default function RunReportPage({
     setCompareId(initialCompare || '')
     if (initialCompare) setShowCompare(true)
   }, [initialCompare, testId])
-  useEffect(() => { setAreaState('Summary'); setPopulationChoice(initialPopulation || null); setShowComposer(false) }, [testId, initialPopulation])
+  useEffect(() => { setAreaState('Summary'); setShowComposer(false) }, [testId])
+  // The population lives in the URL, so a shared link reopens the same view.
+  useEffect(() => { setPopulationChoice(initialPopulation || null) }, [testId, initialPopulation])
   const appliedAnalysisSelection = useRef('')
   useEffect(() => {
     const stamp = JSON.stringify([testId, initialTransaction, initialPopulation])
@@ -305,6 +308,21 @@ export default function RunReportPage({
   const slaPopulation: MetricPopulation = archiveModel.archiveReport?.metric_populations ? 'transaction' : 'unknown'
   const slaRows = useMemo(() => slaRowsForReport(archiveModel.archiveReport), [archiveModel.archiveReport])
   const goalConfig = archiveModel.archiveReport?.manifest?.provenance?.goal_config
+
+  const choosePopulation = (next: MetricPopulation) => {
+    setPopulationChoice(next)
+    onNavigateReport({ section: area.toLowerCase() as ReportSection, lens: activeLens, compare: compareId || undefined, comparisonId: initialComparisonId, population: next })
+  }
+  const [linkCopied, setLinkCopied] = useState('')
+  const [timelineAnnotations, setTimelineAnnotations] = useState<TimelineAnnotation[]>([])
+  const copyReportLink = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href)
+      setLinkCopied('Link copied. It opens this report, section and audience for anyone with access to the project.')
+    } catch {
+      setLinkCopied(`Copy this link: ${window.location.href}`)
+    }
+  }
 
   const setLens = (lens: ReportLens) => {
     if (lens === activeLens) return
@@ -497,9 +515,12 @@ export default function RunReportPage({
           <button className="btn btn-secondary" type="button" disabled={!hasArchive} aria-expanded={area === 'Comparison'} onClick={() => { setShowCompare(false); setArea('Comparison') }}>Compare</button>
           {hasArchive && <RunReportLensSwitcher activeLens={activeLens} onLensChange={setLens} />}
           <button className="btn btn-primary" type="button" disabled={!hasArchive} aria-expanded={showExport} onClick={() => setShowExport(v => !v)}>Export report</button>
+          {/* The desktop window's own address is not a link anyone else can open. */}
+          {/^https?:$/.test(window.location.protocol) && <button className="btn btn-ghost" type="button" onClick={() => void copyReportLink()}>Copy link</button>}
           <button className="btn btn-ghost" type="button" onClick={() => setShowNotes(true)}>Test notes</button>
         </div>
       </div>
+      {linkCopied && <p className="run-report-muted" role="status">{linkCopied}</p>}
       {(failed || resolvedStatus === 'ABORTED' || facts.reason) && <section className={`run-report-panel run-execution-outcome${failed ? ' run-execution-outcome-failed' : ''}`} aria-label="Execution outcome">
         <h2>{failed ? 'Execution failed' : resolvedStatus === 'ABORTED' ? 'Execution aborted' : 'Recorded execution outcome'}</h2>
         <p>{facts.reason || 'No termination detail was recorded.'}</p>
@@ -519,7 +540,12 @@ export default function RunReportPage({
         <details><summary>Publish to Confluence</summary><RunReportConfluencePublish testId={testId} canPublish={canPublishConfluence} /></details>
       </section>}
       {hasArchive && area !== 'Execution' && area !== 'Comparison' && <section className="run-report-context" aria-label="Analysis context">
-        <label>Metric population <select value={population} onChange={e => setPopulationChoice(e.target.value as MetricPopulation)}>{Object.entries(populationLabels).map(([key,label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+        <label>Metric population <select value={population} onChange={e => choosePopulation(e.target.value as MetricPopulation)}>{Object.entries(populationLabels).map(([key,label]) => {
+          // Empty populations would turn every KPI into "n/a": offer them with their count, disabled.
+          const records = report?.metric_populations?.[key as MetricPopulation]?.transactions
+          return <option key={key} value={key} disabled={records === 0 && key !== population}>{label}{records !== undefined ? ` (${records.toLocaleString()} records)` : ''}</option>
+        })}</select></label>
+        {report?.metric_populations?.[population]?.transactions === 0 && <p role="status"><strong>No records in this population.</strong> Choose another population to see results.</p>}
         <p>{populationLabels[population]} · {report?.metric_populations?.[population]?.transactions ?? 'Unknown'} samples · Whole captured run. {(report?.metric_populations?.transaction?.transactions || 0) > 0 ? 'Interval graphs show named transaction metrics.' : 'Legacy interval graphs have no identified named transaction population; their values are separate from these KPIs.'} Resource curves show the load generators.</p>
       </section>}
       {showCompare && hasArchive && <RunReportCompareBar compareId={effectiveCompareId} suggestedCompareId={suggestedCompareId} baselineName={baselineTest?.name} options={baselineOptions} optionsLoading={baselineOptionsLoading}
@@ -536,7 +562,7 @@ export default function RunReportPage({
       <OrchestrationReturn testId={testId} />
       <MessagingProgressDiagnostics snapshot={report?.messaging_progress} />
       <MessagingDiagnostics series={Object.entries(report?.by_action || {}).map(([name, stats]) => ({ name, messaging: stats.messaging }))} />
-      <RunAnnotations key={`annotations-${testId}`} testId={testId} startedAt={test.started_at} canEdit={canPublishConfluence} />
+      <RunAnnotations key={`annotations-${testId}`} testId={testId} startedAt={test.started_at} canEdit={canPublishConfluence} onAnnotationsChange={setTimelineAnnotations} />
       <TabList className="run-report-areas" role="tablist" aria-label="Result sections">{areas.map((name,index) => <button key={name} type="button" role="tab" id={`result-tab-${name}`} aria-controls={`result-panel-${name}`} aria-selected={area === name} tabIndex={area === name ? 0 : -1}
         onClick={() => setArea(name)} onKeyDown={e => { const next = e.key === 'ArrowRight' ? (index+1)%areas.length : e.key === 'ArrowLeft' ? (index+areas.length-1)%areas.length : e.key === 'Home' ? 0 : e.key === 'End' ? areas.length-1 : -1; if(next >= 0){e.preventDefault();setArea(areas[next]);document.getElementById(`result-tab-${areas[next]}`)?.focus()} }}>{name === 'Comparison' ? 'Baseline Comparison' : name}</button>)}</TabList>
       <section role="tabpanel" id={`result-panel-${area}`} aria-labelledby={`result-tab-${area}`} className="run-report-area-content">
@@ -551,6 +577,7 @@ export default function RunReportPage({
         {hasArchive && <div hidden={area !== 'Comparison'}>{(area === 'Comparison' || initialComparisonId) && <BaselineComparisonWorkspace key={`${test.id}/${initialCompare || ''}`} test={test} initialBaseline={initialCompare} comparisonId={initialComparisonId} canEditPolicy={canPublishConfluence} onSnapshot={id => onNavigateReport({ section: 'comparison', comparisonId: id, lens: activeLens })} />}</div>}
         {area === 'Summary' && hasArchive && !archiveModel.archiveError && <>
           {report && <RunOutcomeSummary report={report} showPopulations={false} />}
+          <ReleaseReadinessSummary report={report} findings={annotations?.findings} />
           <RunReportKpiScorecard kpis={kpis} />
           <section className="run-report-panel"><h2>Findings and next steps</h2>
             {rootCauseView && <p className="rca-summary-line"><span><strong>Root cause:</strong> {rootCauseView.summary}</span><button type="button" className="btn btn-secondary" onClick={investigateRootCause}>Investigate root cause</button></p>}
@@ -562,7 +589,7 @@ export default function RunReportPage({
         </>}
         {area === 'Performance' && hasArchive && <>
           <RunReportKpiScorecard kpis={kpis} />
-          <SynchronizedTimeline key={testId} runId={testId} baselineId={effectiveCompareId} data={timelineHistory} goalConfig={goalConfig} loading={archiveSummariesLoading || archiveResourcesLoading || baselineSummaryLoading} error={archiveSummaryError || archiveResourceError} showBaseline={Boolean(effectiveCompareId && timelineHistory.some(point => point.baselineTps !== undefined))} />
+          <SynchronizedTimeline key={testId} runId={testId} baselineId={effectiveCompareId} data={timelineHistory} annotations={timelineAnnotations} goalConfig={goalConfig} loading={archiveSummariesLoading || archiveResourcesLoading || baselineSummaryLoading} error={archiveSummaryError || archiveResourceError} showBaseline={Boolean(effectiveCompareId && timelineHistory.some(point => point.baselineTps !== undefined))} />
           <ImportedDashboardPanels test={test} baselineTest={baselineReadyTest} />
           {(report?.transaction_response_time_sla_results?.length ?? 0) > 0 ? (
             <TransactionResponseTimeSLATable

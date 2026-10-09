@@ -22,7 +22,7 @@ test('signs in as the seeded local administrator and lands in the live workspace
   await page.getByRole('button', { name: 'Sign in' }).click()
 
   await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
-  await expect(page.locator('.sidebar-status')).toHaveText('Live')
+  await expect(page.locator('.sidebar-status')).toHaveText('Live connection: Live')
   const navigation = page.locator('nav.sidebar-nav')
   await expect(navigation.getByRole('button', { name: 'Access', exact: true })).toBeVisible()
   await expect(navigation.getByRole('button', { name: 'Settings', exact: true })).toBeVisible()

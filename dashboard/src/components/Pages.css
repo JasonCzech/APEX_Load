@@ -3055,7 +3055,6 @@
 .reference-key-copy:focus-visible:not(:disabled) {
   color: var(--accent-text);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
-  outline: none;
 }
 
 .reference-key-copy:disabled {
@@ -3916,6 +3915,14 @@
   border: 1px solid var(--warning-border);
   border-radius: 8px;
   background: var(--warning-bg);
+}
+
+/* Disclosure summaries in these lists are click targets: 24px minimum (WCAG 2.5.8). */
+.monitor-warning-list details > summary {
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
 }
 
 .monitor-warning-list p {
@@ -5324,7 +5331,7 @@
 
 .new-test-scenario-card-mode.goal {
   background: rgba(var(--warning-rgb), 0.12);
-  color: var(--warning, var(--warning));
+  color: var(--warning-text);
 }
 
 .new-test-scenario-card-meta {
@@ -7463,7 +7470,7 @@ col.results-actions-col {
 }
 
 .setting-desc.cron-preview-error {
-  color: var(--danger, var(--danger-text));
+  color: var(--danger-text);
 }
 
 .setting-desc.schedule-current-utc {
@@ -8579,4 +8586,11 @@ col.results-actions-col {
 :is(.access-users-table, .access-accounts-table) th:is(:first-child, :last-child) { z-index: 3; }
 @media (max-width: 760px) {
   :is(.access-users-table, .access-accounts-table) :is(th, td):first-child { max-width: 130px; }
+}
+
+.script-row-chevron {
+  display: inline-block;
+  width: 1em;
+  margin-right: 4px;
+  color: var(--text-muted);
 }

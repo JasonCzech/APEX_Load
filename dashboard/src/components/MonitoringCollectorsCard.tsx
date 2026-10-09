@@ -380,7 +380,11 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
               <div className="pp-row-main">
                 <div className="pp-row-title">
                   {collector.name}
-                  <span className={healthPillClass(collector.health)}>{collector.health}</span>
+                  {/* A collector that has never sent a heartbeat is new, not unreachable;
+                      say so the same way its metrics dialog does. */}
+                  {collector.last_seen_at
+                    ? <span className={healthPillClass(collector.health)}>{collector.health}</span>
+                    : <span className="pp-pill pp-pill-muted">awaiting first heartbeat</span>}
                 </div>
                 <div className="pp-row-meta">
                   <span>collector ID: {collector.id}</span>
@@ -427,7 +431,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
 
       {/* Register modal */}
       {showCreate && (
-        <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closeCreate, 'Close collector editor')}>
+        <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closeCreate)}>
           <div ref={createDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="collector-create-dialog-title">
             <div className="pp-modal-header">
               <h3 id="collector-create-dialog-title">Register Monitoring Collector</h3>
@@ -468,7 +472,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
 
       {/* Edit modal */}
       {edit && (
-        <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closeEdit, 'Close collector editor')}>
+        <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closeEdit)}>
           <div ref={editDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="collector-edit-dialog-title">
             <div className="pp-modal-header">
               <h3 id="collector-edit-dialog-title">Edit Collector</h3>
@@ -487,7 +491,8 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
               </label>
               <div className="pp-field-row">
                 <label className="pp-field">
-                  <span>Health</span>
+                  <span>Manual status override</span>
+                  <small>Normally set by the collector’s heartbeat. Override only to record a known outage.</small>
                   <select value={edit.health} onChange={e => setEdit(s => (s ? { ...s, health: e.target.value } : s))}>
                     <option value="healthy">healthy</option>
                     <option value="degraded">degraded</option>
@@ -511,7 +516,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
 
       {/* One-time token reveal */}
       {oneTimeToken && (
-        <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closeToken, 'Close collector token dialog')}>
+        <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closeToken)}>
           <div ref={tokenDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="collector-token-dialog-title">
             <div className="pp-modal-header">
               <h3 id="collector-token-dialog-title">Collector token for “{oneTimeToken.name}”</h3>
@@ -541,7 +546,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
 
       {/* Latest ingested metrics snapshot */}
       {metrics && (
-        <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closeMetrics, 'Close collector metrics dialog')}>
+        <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closeMetrics)}>
           <div ref={metricsDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="collector-metrics-dialog-title">
             <div className="pp-modal-header">
               <h3 id="collector-metrics-dialog-title">

@@ -1,4 +1,5 @@
 import type { IntervalSummaryRecord } from '../types'
+import { formatFixed } from '../utils/numberFormat'
 
 export type ComparisonChartMetric = 'tps' | 'art' | 'p50' | 'p90' | 'p95' | 'p99' | 'errors'
 
@@ -50,7 +51,7 @@ export function formatComparisonChartValue(value: unknown, format: ComparisonCha
     return 'n/a'
   }
   if (format === 'ms') return `${value.toFixed(1)} ms`
-  if (format === 'percent') return `${value.toFixed(2)}%`
+  if (format === 'percent') return `${formatFixed(value, 2)}%`
   return value.toFixed(1)
 }
 

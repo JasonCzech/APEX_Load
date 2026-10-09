@@ -521,7 +521,7 @@ function ParameterDataSourceRows({
               <button className="btn btn-sm btn-ghost" onClick={() => onToggleOpenDataEditor(index)}>
                 {isEditorOpen ? 'Hide Data' : 'Edit Data'}
               </button>
-              <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => onRemoveDataSource(index)}>Remove</button>
+              <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger-text)' }} onClick={() => onRemoveDataSource(index)}>Remove</button>
             </div>
           </td>
         )}

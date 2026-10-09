@@ -1,5 +1,6 @@
 import { BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserLiveMetrics, BrowserPlatformLiveMetrics } from '../types'
 import { comparisonRunColor } from './resultsComparisonChartModel'
+import { MISSING_VALUE } from './runReport/reportPresentation'
 
 export type BrowserBreakdown = 'overall' | 'platform' | 'engine' | 'device'
 
@@ -72,7 +73,7 @@ type BrowserUXMetricSource = Pick<
 
 export function formatBrowserBreakdownTooltipValue(value: unknown, format: 'ms' | 'score' = 'ms'): string {
   const observed = finiteBrowserMetric(value)
-  if (observed === undefined) return 'n/a'
+  if (observed === undefined) return MISSING_VALUE
   if (format === 'score') return observed.toFixed(3)
   return `${observed.toFixed(1)} ms`
 }
@@ -156,7 +157,7 @@ function assessBrowserUX(summary: BrowserUXMetricSource): BrowserUXInsight {
         : sampleReason
     return {
       label: component.label,
-      value: value === undefined ? 'n/a' : `${value.toFixed(component.digits)}${component.suffix}`,
+      value: value === undefined ? MISSING_VALUE : `${value.toFixed(component.digits)}${component.suffix}`,
       severity: score === null ? 'unscored' : severityFromScore(score),
       detail: `Legacy threshold: ${component.good}${component.suffix} to ${component.poor}${component.suffix}; weight 1/7.`,
       status,

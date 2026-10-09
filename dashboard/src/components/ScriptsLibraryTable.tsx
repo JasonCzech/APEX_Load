@@ -18,6 +18,7 @@ import { isAddressableScriptId } from './scriptIdentity'
 import type { IssueDetail } from './IssueDetailsDialog'
 import { scriptContainsSecretReferences } from './scriptSecretReferenceModel'
 import SelectAllCheckbox from './SelectAllCheckbox'
+import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
 
 const IssueDetailsDialog = lazy(() => import('./IssueDetailsDialog'))
 
@@ -84,7 +85,7 @@ function formatDate(value?: string) {
 }
 
 function formatDateTime(value?: string) {
-  return value ? new Date(value).toLocaleString() : '—'
+  return formatDisplayDateTime(value)
 }
 
 function releaseList(script: StoredScript) {
@@ -432,6 +433,8 @@ export default function ScriptsLibraryTable({
                         if (scriptAddressable) onToggleScriptRuns(script)
                       }}
                     >
+                      {/* The name expands this script's runs; Edit opens it. Say so visually. */}
+                      {scriptAddressable && <span className="script-row-chevron" aria-hidden="true">{expandedScriptId === scriptId ? '▾' : '▸'}</span>}
                       {script.name}
                     </button>
                     <ActivityAttribution activity={script.activity} />
@@ -569,9 +572,9 @@ export default function ScriptsLibraryTable({
                       </span>
                     ) : canManageScripts ? (
                       <>
-                        <button className="btn btn-sm btn-ghost" disabled={movingScriptIds.has(scriptId)} onClick={(event) => { event.stopPropagation(); onEdit(scriptId) }}>{script.archived_at ? "View" : "Edit"}</button>
-                        <ObjectArchiveControls resourceType="script" resourceId={scriptId} archivedAt={script.archived_at} updatedAt={script.script?.updated_at} canManage={!!canManageScripts} onChanged={onArchiveChanged || (() => undefined)} />
-                        <RowActions className="library-more-actions">
+                        <button className="btn btn-sm btn-ghost" disabled={movingScriptIds.has(scriptId)} aria-label={`${script.archived_at ? 'View' : 'Edit'} ${script.name}`} onClick={(event) => { event.stopPropagation(); onEdit(scriptId) }}>{script.archived_at ? "View" : "Edit"}</button>
+                        <ObjectArchiveControls resourceType="script" resourceId={scriptId} resourceName={script.name} archivedAt={script.archived_at} updatedAt={script.script?.updated_at} canManage={!!canManageScripts} onChanged={onArchiveChanged || (() => undefined)} />
+                        <RowActions className="library-more-actions" label={script.name}>
                         {!script.archived_at && onChangeAssignment && <button className="btn btn-sm btn-ghost" disabled={deletingScriptIds.has(scriptId) || movingScriptIds.has(scriptId)} onClick={() => onChangeAssignment(script)}>Change application/releases…</button>}
                         {!script.archived_at && onMove && <button className="btn btn-sm btn-ghost" disabled={deletingScriptIds.has(scriptId) || movingScriptIds.has(scriptId)} onClick={() => onMove(script)}>Move to folder…</button>}
                         {!script.archived_at && configureSecretsAvailable && (
@@ -580,7 +583,7 @@ export default function ScriptsLibraryTable({
                         {secretStatusUnknown && secretStatusState === 'error' && onRetrySecretStatus && (
                           <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); onRetrySecretStatus(script) }}>Retry secret check</button>
                         )}
-                        <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} disabled={deletingScriptIds.has(scriptId) || movingScriptIds.has(scriptId)} onClick={(event) => { event.stopPropagation(); onDelete(scriptId) }}>{deletingScriptIds.has(scriptId) ? 'Deleting…' : 'Delete'}</button>
+                        <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger-text)' }} disabled={deletingScriptIds.has(scriptId) || movingScriptIds.has(scriptId)} onClick={(event) => { event.stopPropagation(); onDelete(scriptId) }}>{deletingScriptIds.has(scriptId) ? 'Deleting…' : 'Delete'}</button>
                         {github?.enabled && (
                           <button
                             className="btn btn-sm btn-ghost"

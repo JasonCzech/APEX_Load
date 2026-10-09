@@ -243,8 +243,9 @@ test('current paused values and parameter receipts survive inspection without co
     await expect(frames.locator('ol > li')).toHaveCount(snapshot.frames.length)
     await narrowReceipts(page, frames, testInfo, 'active-frames')
   } finally {
+    // The rail stays collapsed: an open overlay would take the next click
+    // (Continue) to close itself rather than pass it through.
     await page.setViewportSize({ width: 1800, height: 1100 })
-    await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
   }
   await stableInspections(request, afterRequest)
   await page.getByRole('button', { name: 'Continue', exact: true }).click()

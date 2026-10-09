@@ -448,7 +448,7 @@ describe('TestExecutionStatusPanels', () => {
     expect(container.textContent).toContain('Malformed summary: expected an object')
     expect(container.textContent).toContain('1 device summary unranked')
     expect(container.textContent).not.toContain('Weakest complete summary:')
-    expect(container.querySelector('.browser-device-stats')?.textContent).toContain('LCP n/a')
+    expect(container.querySelector('.browser-device-stats')?.textContent).toContain('LCP —')
     expect(container.querySelector('.browser-metrics-card .goal-status-badge')?.classList.contains('healthy')).toBe(false)
   })
 

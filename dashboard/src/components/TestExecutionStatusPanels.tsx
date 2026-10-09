@@ -7,6 +7,7 @@ import { browserMetricRecord, finiteBrowserMetric, formatBrowserSampleCount, for
 import BrowserUXAssessment from './BrowserUXAssessment'
 import BrowserDocumentEvidencePanel from './BrowserDocumentEvidencePanel'
 import type { BrowserDocumentSummary } from '../types/browserDocumentEvidence'
+import { MISSING_VALUE } from './runReport/reportPresentation'
 
 interface LiveMetricsSummary {
   browser_documents?: BrowserDocumentSummary | null
@@ -59,12 +60,12 @@ function formatTelemetryTime(value?: string): string {
 
 function formatBrowserMetric(value: number | undefined, suffix = '', digits = 1): string {
   const observed = finiteBrowserMetric(value)
-  return observed === undefined ? 'n/a' : `${observed.toFixed(digits)}${suffix}`
+  return observed === undefined ? MISSING_VALUE : `${observed.toFixed(digits)}${suffix}`
 }
 
 function formatBrowserScore(value: number | undefined): string {
   const observed = finiteBrowserMetric(value)
-  return observed === undefined ? 'n/a' : observed.toFixed(3)
+  return observed === undefined ? MISSING_VALUE : observed.toFixed(3)
 }
 
 function formatThroughputGap(value?: number): string {

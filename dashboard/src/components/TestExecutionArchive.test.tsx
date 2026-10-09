@@ -827,7 +827,7 @@ describe('TestExecutionArchive', () => {
 
     expect(container.textContent).toContain('Run Provenance')
     expect(container.textContent).toContain('Metrics Interval')
-    expect(container.textContent).toContain('n/a')
+    expect(container.textContent).toContain('—')
   })
 
   it('renders transaction drill-down column sort and filter controls', async () => {
@@ -1595,7 +1595,7 @@ describe('TestExecutionArchive', () => {
       expect(container.textContent).toContain('Sample count unavailable')
       expect(container.textContent).toContain('1 device summary unranked')
       expect(container.textContent).not.toContain('Weakest complete summary:')
-      expect(Array.from(container.querySelectorAll('.browser-device-stats')).every(node => node.textContent?.includes('LCP n/a'))).toBe(true)
+      expect(Array.from(container.querySelectorAll('.browser-device-stats')).every(node => node.textContent?.includes('LCP —'))).toBe(true)
     })
   })
 
@@ -1623,10 +1623,10 @@ describe('TestExecutionArchive', () => {
     expect(container.querySelectorAll('.browser-device-card')).toHaveLength(3)
     expect(container.textContent).toContain('unknown · browser · unknown tier')
     expect(container.textContent).not.toContain('[object Object]')
-    expect(Array.from(container.querySelectorAll('.browser-device-stats')).every(node => node.textContent?.includes('LCP n/a'))).toBe(true)
+    expect(Array.from(container.querySelectorAll('.browser-device-stats')).every(node => node.textContent?.includes('LCP —'))).toBe(true)
   })
 
-  it.each([['absent', undefined, 'n/a'], ['observed zero', { ...archiveReport.overview.telemetry, samples: 0 }, '0']] as const)('preserves %s legacy telemetry samples without inventing zero', async (_, telemetry, samples) => {
+  it.each([['absent', undefined, '—'], ['observed zero', { ...archiveReport.overview.telemetry, samples: 0 }, '0']] as const)('preserves %s legacy telemetry samples without inventing zero', async (_, telemetry, samples) => {
     await renderArchiveView('report-metadata', { ...archiveReport, overview: { ...archiveReport.overview, telemetry } } as RunArchiveReport)
     const panel = Array.from(container.querySelectorAll('.archive-metadata-box')).find(node => node.querySelector('h3')?.textContent === 'Legacy telemetry classification')
     const row = Array.from(panel?.querySelectorAll('.archive-compact-row') ?? []).find(node => node.querySelector('dt')?.textContent === 'Samples')
@@ -1637,7 +1637,7 @@ describe('TestExecutionArchive', () => {
     const telemetry = { status: 'degraded', samples: 1 } as NonNullable<RunArchiveReport['overview']['telemetry']>
     await renderArchiveView('report-metadata', { ...archiveReport, overview: { ...archiveReport.overview, telemetry } })
     const panel = Array.from(container.querySelectorAll('.archive-metadata-box')).find(node => node.querySelector('h3')?.textContent === 'Legacy telemetry classification')
-    expect(panel?.textContent).toContain('n/a healthy · n/a degraded · n/a breached')
+    expect(panel?.textContent).toContain('— healthy · — degraded · — breached')
   })
 
   it('uses the report immutable policy receipt instead of refreshed final provenance', async () => {
@@ -1682,10 +1682,27 @@ describe('TestExecutionArchive', () => {
     expect(container.querySelector('[aria-label="Retained archive resource inspector"]')).toBeNull()
   })
 
+  it('narrows a long transaction picker while typing and opens the first match only on Enter', async () => {
+    const stats = Object.values(archiveReport.by_action)[0]
+    const manyActions = Object.fromEntries(Array.from({ length: 25 }, (_, index) => [`Txn_${String(index).padStart(2, '0')}${index === 17 ? '_Checkout' : ''}`, stats]))
+    const onSelectAction = vi.fn()
+    await renderArchiveView('transactions', { ...archiveReport, by_action: manyActions }, test, onSelectAction)
+    const search = container.querySelector<HTMLInputElement>('input[type="search"].archive-column-filter-input')!
+    expect(search).not.toBeNull()
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'check')
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(onSelectAction).not.toHaveBeenCalled()
+    await act(async () => { search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+    expect(onSelectAction).toHaveBeenCalledWith('Txn_17_Checkout')
+  })
+
   async function renderArchiveView(
     view: Parameters<typeof TestExecutionArchive>[0]['view'],
     report: RunArchiveReport = archiveReport,
     testRecord: TestSummary = test,
+    onSelectAction: (action: string) => void = vi.fn(),
   ) {
     await act(async () => {
       root.render(
@@ -1704,7 +1721,7 @@ describe('TestExecutionArchive', () => {
           archiveActionEntries={Object.entries(report.by_action)}
           archiveSOAPOperationEntries={Object.entries(report.by_soap_operation || {})}
           selectedArchiveAction=""
-          onSelectedArchiveActionChange={vi.fn()}
+          onSelectedArchiveActionChange={onSelectAction}
           selectedArchiveSOAPOperation=""
           onSelectedArchiveSOAPOperationChange={vi.fn()}
           archiveGroups={[]}

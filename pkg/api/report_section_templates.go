@@ -216,7 +216,7 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
   <div class="review-summary-grid">
     <div><b>Run</b><span>{{reportRunName .Data.Report}}</span></div>
     <div><b>Environment</b><span>{{reportEnvironment .Data.Report}}</span></div>
-    <div><b>Evidence completeness</b><span>{{f0 .Data.Report.Completeness.ScorePct}}% · {{.Data.Report.Completeness.Status}}</span></div>
+    <div><b>Evidence completeness</b><span>{{f0 .Data.Report.Completeness.ScorePct}}% · {{tokenLabel .Data.Report.Completeness.Status}}</span></div>
     {{if eq .Data.Profile.ID "audit"}}<div><b>Artifact integrity</b><span>{{if .Data.Report.Integrity}}{{.Data.Report.Integrity.Status}}{{else}}Not verified{{end}}</span></div>{{end}}
     {{if ne .Data.Profile.ID "audit"}}
     {{with headline .Data.Report}}<div><b>Error rate</b><span>{{formatPercent .ErrorPct}} · {{hint .Errors}} of {{hint .Transactions}} ({{.Label}})</span></div>{{end}}

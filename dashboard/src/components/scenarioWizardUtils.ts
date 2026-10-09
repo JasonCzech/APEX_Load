@@ -135,7 +135,8 @@ export interface ScenarioModelPreview {
   durationSeconds: number
 }
 
-const GROUP_COLORS = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2']
+// Theme chart tokens, so series adapt to every theme's validated palette.
+const GROUP_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)']
 
 export function buildScenarioShapeCatalog(
   supportMatrix: LoadModelSupportEntry[],

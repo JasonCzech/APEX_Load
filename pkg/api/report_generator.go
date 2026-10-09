@@ -77,7 +77,18 @@ type runArchiveHTMLReportData struct {
 	BrowserDeviceRows                 []*BrowserDeviceLiveMetrics
 }
 
+// reportTokenLabel turns a stored status token ("needs_review") into reader
+// text ("Needs review"), so exports never show snake_case enums.
+func reportTokenLabel(value string) string {
+	value = strings.TrimSpace(strings.ReplaceAll(value, "_", " "))
+	if value == "" {
+		return "Not available"
+	}
+	return strings.ToUpper(value[:1]) + value[1:]
+}
+
 var profileHTMLFuncMap = template.FuncMap{
+	"tokenLabel":               reportTokenLabel,
 	"legacyBrowserSummaryNote": func() string { return legacyBrowserSummaryNote },
 	"reportRunName":            reportRunName,
 	"identityName":             identityName,

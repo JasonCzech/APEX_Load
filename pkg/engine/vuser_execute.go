@@ -22,8 +22,53 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// interruptedByStop reports whether the run is stopping under this VUser: a
+// graceful or hard stop, an abort, the end of the run, or ramp-down shedding
+// the VUser. Replay keeps its own record of a stop.
+func (vu *VUser) interruptedByStop() bool {
+	if vu == nil || vu.replayRuntime != nil {
+		return false
+	}
+	return (vu.HardStopCtx != nil && vu.HardStopCtx.Err() != nil) ||
+		(vu.ActionBoundaryCtx != nil && vu.ActionBoundaryCtx.Err() != nil)
+}
+
+// hardStopped reports whether the run's hard-stop context has ended: an
+// abort, a hard stop or the end of the run, which cut in-flight work off.
+// A graceful stop or scale-down only ends the action boundary; the current
+// action keeps running under HardStopCtx and its outcome is real.
+func (vu *VUser) hardStopped() bool {
+	return vu != nil && vu.HardStopCtx != nil && vu.HardStopCtx.Err() != nil
+}
+
+// cutOffByStop reports whether a failure is only the stop ending the request
+// in flight. Timeouts are failures of the system under test, and a deadline
+// counts as the stop only when the run's own hard-stop context ran out.
+func (vu *VUser) cutOffByStop(message string) bool {
+	if !vu.interruptedByStop() {
+		return false
+	}
+	message = strings.ToLower(message)
+	if strings.Contains(message, "timeout") {
+		return false
+	}
+	if strings.Contains(message, "context canceled") ||
+		strings.Contains(message, "request canceled") ||
+		strings.Contains(message, "operation was canceled") {
+		return true
+	}
+	return strings.Contains(message, "context deadline exceeded") && vu.hardStopped()
+}
+
 func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingConfig, logCfg dsl.LogConfig) {
 	if result == nil {
+		return
+	}
+	// A request cut off by the run stopping is not an error of the system
+	// under test; counting it put a burst of errors (often 100% of a final,
+	// otherwise empty sample) at the end of every stopped run. LoadRunner
+	// likewise leaves work caught in progress at stop out of the results.
+	if !result.Success && vu.cutOffByStop(result.ErrorMessage) {
 		return
 	}
 	if vu.Script != nil && len(vu.Script.Config.Results.CSVExports) > 0 {
@@ -180,6 +225,19 @@ func (vu *VUser) recordTransactionSpan(name string, duration time.Duration, succ
 }
 
 func (vu *VUser) recordTransaction(name string, duration time.Duration, success bool, source *protocol.Result) *protocol.Result {
+	// A transaction the stop cut off is incomplete, not failed (its requests up
+	// to the stop are still recorded). Without a failure message, only a hard
+	// stop explains it: during a graceful stop the action runs to completion,
+	// so its failure is real and still counts.
+	if !success && vu.interruptedByStop() {
+		if source != nil && source.ErrorMessage != "" {
+			if vu.cutOffByStop(source.ErrorMessage) {
+				return nil
+			}
+		} else if vu.hardStopped() {
+			return nil
+		}
+	}
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = "transaction"

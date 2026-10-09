@@ -43,7 +43,7 @@ export default function TestNotesDialog({ testId, testName, onClose }: Props) {
 
   const confirmDiscard = useCallback(async () => {
     if (!isDirty) return true
-    return (await confirmAction('Discard unsaved note?'))
+    return (await confirmAction('Discard unsaved note?', { title: 'Discard note', confirmLabel: 'Discard', destructive: true }))
   }, [isDirty])
 
   const requestClose = useCallback(async () => {

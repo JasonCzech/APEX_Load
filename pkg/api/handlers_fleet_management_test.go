@@ -548,6 +548,47 @@ func TestGeneratorMetadataPatchLifecycle(t *testing.T) {
 	}
 }
 
+func TestGeneratorMetadataRejectsMalformedRuntimeTargets(t *testing.T) {
+	server, _ := newTimeslotServer(t)
+	for _, target := range []string{"http://gen-1:9090", "gen 1:9090", "gen-1:99999", "gen-1:9090/path", "-gen:9090"} {
+		rec := timeslotRequest(t, server, http.MethodPatch, "/api/v1/fleet/generators/gen-1", map[string]any{"target": target})
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("target %q: status = %d body=%s, want 400", target, rec.Code, rec.Body.String())
+		}
+	}
+	for _, target := range []string{"gen-a:9090", "10.0.0.1:9000", "[::1]:9090", "gen-pod-1"} {
+		rec := timeslotRequest(t, server, http.MethodPatch, "/api/v1/fleet/generators/gen-ok", map[string]any{"target": target})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("target %q: status = %d body=%s, want 200", target, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestGeneratorMetadataDeleteOnlyRemovesUnusedRecords(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	if rec := timeslotRequest(t, server, http.MethodDelete, "/api/v1/fleet/generators/missing", nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("missing delete = %d, want 404", rec.Code)
+	}
+	if err := store.SaveFleetPool(&storage.FleetPool{ID: "pool-1", Name: "pool", CloudProvider: "kubernetes", Status: "active"}); err != nil {
+		t.Fatal(err)
+	}
+	if rec := timeslotRequest(t, server, http.MethodPatch, "/api/v1/fleet/generators/pooled", map[string]any{"target": "pooled:9090", "fleet_pool_id": "pool-1"}); rec.Code != http.StatusOK {
+		t.Fatalf("seed pooled = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if rec := timeslotRequest(t, server, http.MethodDelete, "/api/v1/fleet/generators/pooled", nil); rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "pool") {
+		t.Fatalf("pooled delete = %d body=%s, want 409 naming the pool", rec.Code, rec.Body.String())
+	}
+	if rec := timeslotRequest(t, server, http.MethodPatch, "/api/v1/fleet/generators/typo", map[string]any{"target": "typo-host:19999"}); rec.Code != http.StatusOK {
+		t.Fatalf("seed typo = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if rec := timeslotRequest(t, server, http.MethodDelete, "/api/v1/fleet/generators/typo", nil); rec.Code != http.StatusOK {
+		t.Fatalf("unused delete = %d body=%s, want 200", rec.Code, rec.Body.String())
+	}
+	if _, err := store.GetGeneratorMetadata("typo"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("metadata still present after delete: %v", err)
+	}
+}
+
 func TestGeneratorMetadataPatchRejectsDanglingPool(t *testing.T) {
 	server, _ := newTimeslotServer(t)
 	rec := timeslotRequest(t, server, http.MethodPatch, "/api/v1/fleet/generators/gen-1", map[string]any{"fleet_pool_id": "missing"})

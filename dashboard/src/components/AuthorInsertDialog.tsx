@@ -6,6 +6,18 @@ import { dslActionTypesForProtocol } from './dslActionCatalog'
 import { humanActionType, type InsertPosition } from './authorExperience'
 import type { ScriptActionDefinition as Action } from '../types/scripts'
 
+// What an LRE engineer scans for first. Imported source markers record what a
+// converted script contained; they come last, as advanced. "Review required"
+// is produced by importers and is never authored by hand.
+const NOT_AUTHORABLE = new Set(['review_required'])
+function actionGroup(type: string): string {
+  if (/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$/i.test(type) || type === 'request' || type.startsWith('http_')) return 'Requests'
+  if (type.startsWith('control_') || type === 'break' || type === 'continue' || type === 'rendezvous') return 'Flow control'
+  if (type.startsWith('source_')) return 'Imported source markers (advanced)'
+  return 'Session, state and other'
+}
+const GROUP_ORDER = ['Requests', 'Flow control', 'Session, state and other', 'Imported source markers (advanced)']
+
 export function AuthorInsertDialog({ protocol, seed, phase, position, anchorLabel, canInsertInside, onPlan, onInsert, onClose, library }: {
   protocol: string; seed: Action; phase: 'init' | 'action' | 'teardown'; position: InsertPosition
   anchorLabel?: string; canInsertInside: boolean
@@ -18,7 +30,9 @@ export function AuthorInsertDialog({ protocol, seed, phase, position, anchorLabe
   const [filter, setFilter] = useState('')
   const [error, setError] = useState('')
   const catalog = dslActionTypesForProtocol(protocol)
-  const specs = catalog.length ? catalog : Array.from(new Set([seed.type, 'control_loop', 'control_if', 'control_switch', 'control_parallel'])).map(type => ({ type, summary: humanActionType(type), fields: [] }))
+  const specs = (catalog.length ? catalog : Array.from(new Set([seed.type, 'control_loop', 'control_if', 'control_switch', 'control_parallel'])).map(type => ({ type, summary: humanActionType(type), fields: [] })))
+    .filter(spec => !NOT_AUTHORABLE.has(spec.type) || spec.type === seed.type)
+  const visibleSpecs = specs.filter(spec => spec.type === draft.type || `${spec.type} ${spec.summary}`.toLowerCase().includes(filter.toLowerCase()))
   const selectedSpec = specs.find(spec => spec.type === draft.type)
   const isControl = draft.type.startsWith('control_')
   const needsTarget = !isControl && (selectedSpec?.fields?.some(field => field.name === 'target' && field.required) || draft.type === seed.type || draft.type === 'request')
@@ -40,7 +54,11 @@ export function AuthorInsertDialog({ protocol, seed, phase, position, anchorLabe
     <p role="status">Insert {position === 'end' ? `at the end of ${phase === 'action' ? 'Actions' : humanActionType(phase)}` : `${position} ${anchorLabel}`}.</p>
     <label>Action name<input ref={firstRef} value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} /></label>
     <label>Find action type<input type="search" value={filter} onChange={e => setFilter(e.target.value)} /></label>
-    <label>Action type<select aria-label="Action type" value={draft.type} onChange={e => changeType(e.target.value)}>{specs.filter(spec => spec.type === draft.type || `${spec.type} ${spec.summary}`.toLowerCase().includes(filter.toLowerCase())).map(spec => <option key={spec.type} value={spec.type}>{humanActionType(spec.type)}</option>)}</select></label>
+    <label>Action type<select aria-label="Action type" value={draft.type} onChange={e => changeType(e.target.value)}>{GROUP_ORDER.map(group => {
+      const members = visibleSpecs.filter(spec => actionGroup(spec.type) === group)
+      return members.length ? <optgroup key={group} label={group}>{members.map(spec => <option key={spec.type} value={spec.type}>{humanActionType(spec.type)}</option>)}</optgroup> : null
+    })}</select></label>
+    <p className="author-insert-hint">Requests are measured under their action names. Think time and pacing are set in Runtime Settings, not inserted as actions.</p>
     <p>{selectedSpec?.summary}</p>
     {!isControl && <label>Target{needsTarget ? ' (required)' : ' (optional)'}<input name="target" value={draft.target || ''} onChange={e => setDraft({ ...draft, target: e.target.value })} /></label>}
     {error && <p role="alert">{error}</p>}

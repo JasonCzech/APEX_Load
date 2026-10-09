@@ -318,13 +318,13 @@ export default function AuthGate({
   if (state.status === "loading") {
     return (
       <div className="auth-gate-shell">
-        <section className="auth-gate-card auth-gate-card--loading">
+        <section className="auth-gate-card auth-gate-card--loading" aria-busy="true">
           <div className="auth-gate-brand">
             <Logo size={32} title="APEX Load" />
             <p className="auth-gate-kicker">APEX Load Access</p>
           </div>
           <h1>Checking access</h1>
-          <p>
+          <p role="status">
             Confirming your upstream authentication context before loading the
             dashboard.
           </p>

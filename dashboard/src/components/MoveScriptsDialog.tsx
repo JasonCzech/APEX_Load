@@ -91,7 +91,7 @@ export default function MoveScriptsDialog({ projectId, scripts, onClose, onBusy,
   }
 
   return <DialogLayer>
-    <div className="modal-overlay" {...dialogBackdropProps(close, 'Close move scripts')}>
+    <div className="modal-overlay" {...dialogBackdropProps(close)}>
       <div className="modal move-scripts-dialog" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-busy={busy}>
         <div className="modal-header"><h3 id={titleId}>Move to folder</h3></div>
         <div className="modal-form">

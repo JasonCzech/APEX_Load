@@ -87,7 +87,7 @@ export default function ProjectModal({ returnFocusSelector, title = 'New Project
   }
 
   return (
-    <DialogLayer><div className="project-modal-backdrop" {...dialogBackdropProps(requestClose, `Close ${title}`)}>
+    <DialogLayer><div className="project-modal-backdrop" {...dialogBackdropProps(requestClose)}>
       <form ref={dialogRef} className="project-modal" role="dialog" aria-modal="true" aria-label={title} onSubmit={submit}>
         <div className="project-modal-header">
           <h3>{title}</h3>

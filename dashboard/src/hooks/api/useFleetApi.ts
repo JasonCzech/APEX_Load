@@ -87,6 +87,12 @@ export function useFleetApi() {
     [],
   )
 
+  const deleteGeneratorMetadata = useCallback(
+    (generatorId: string, options?: ApiCallOptions) =>
+      request<{ deleted: string }>(`/fleet/generators/${encodeURIComponent(generatorId)}`, withCallOptions({ method: 'DELETE' }, options)),
+    [],
+  )
+
   const cordonGenerator = useCallback(
     (generatorId: string, options?: ApiCallOptions) =>
       request<GeneratorLifecycleResponse>(`/fleet/generators/${generatorId}/cordon`, withCallOptions({ method: 'POST' }, options)),
@@ -164,6 +170,7 @@ export function useFleetApi() {
       deleteFleetPool,
       listGeneratorMetadata,
       patchGeneratorMetadata,
+      deleteGeneratorMetadata,
       cordonGenerator,
       uncordonGenerator,
       drainGenerator,
@@ -177,6 +184,6 @@ export function useFleetApi() {
       retryProvisionRequest,
       getProvisioner,
     }),
-    [listFleetPools, getFleetPool, createFleetPool, updateFleetPool, deleteFleetPool, listGeneratorMetadata, patchGeneratorMetadata, cordonGenerator, uncordonGenerator, drainGenerator, evacuateGenerator, listLoadZones, createProvisionRequest, listProvisionRequests, getProvisionRequest, listProvisionRequestInstances, cancelProvisionRequest, retryProvisionRequest, getProvisioner],
+    [listFleetPools, getFleetPool, createFleetPool, updateFleetPool, deleteFleetPool, listGeneratorMetadata, patchGeneratorMetadata, deleteGeneratorMetadata, cordonGenerator, uncordonGenerator, drainGenerator, evacuateGenerator, listLoadZones, createProvisionRequest, listProvisionRequests, getProvisionRequest, listProvisionRequestInstances, cancelProvisionRequest, retryProvisionRequest, getProvisioner],
   )
 }

@@ -441,6 +441,12 @@ func (vu *VUser) finalizeSourceTransaction(key, reason string) *protocol.Result 
 	// later orphan end marker can reuse the stale start and synthesize a second
 	// long-running transaction.
 	delete(vu.Variables, sourceTransactionStartKey(name))
+	vu.Variables[sourceTransactionStatusKey(name)] = strconv.FormatBool(false)
+	if vu.interruptedByStop() {
+		// The run stopped before the end marker could run: the transaction is
+		// incomplete, not failed, so it is left out of the results.
+		return nil
+	}
 	source := &protocol.Result{
 		ActionName:   name,
 		StartTime:    state.startedAt,
@@ -449,9 +455,7 @@ func (vu *VUser) finalizeSourceTransaction(key, reason string) *protocol.Result 
 	}
 	// The wall-clock span keeps think time inside the transaction in its
 	// interval (journey accounting reads it).
-	result := vu.recordTransactionSpan(name, duration, false, source, state.startedAt)
-	vu.Variables[sourceTransactionStatusKey(name)] = strconv.FormatBool(false)
-	return result
+	return vu.recordTransactionSpan(name, duration, false, source, state.startedAt)
 }
 
 // carryOpenSourceTransactions moves the transactions still open when a new

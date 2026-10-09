@@ -11467,9 +11467,24 @@ paths:
                             format: double
                           has_sla:
                             type: boolean
+                          max_ms:
+                            type: number
+                            format: double
+                          min_ms:
+                            type: number
+                            format: double
                           name:
                             type: string
+                          p50_ms:
+                            type: number
+                            format: double
+                          p90_ms:
+                            type: number
+                            format: double
                           p95_ms:
+                            type: number
+                            format: double
+                          p99_ms:
                             type: number
                             format: double
                           result:
@@ -33992,6 +34007,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -53506,6 +53527,67 @@ paths:
         - Fleet
       x-handler: handleListGeneratorMetadata
   /api/v1/fleet/generators/{id}:
+    delete:
+      summary: Delete Generator Metadata
+      description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: write'
+      operationId: handleDeleteGeneratorMetadata
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: SystemAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Fleet
+      x-handler: handleDeleteGeneratorMetadata
     patch:
       summary: Patch Generator Metadata
       description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: write'
@@ -373537,9 +373619,24 @@ paths:
                           format: double
                         has_sla:
                           type: boolean
+                        max_ms:
+                          type: number
+                          format: double
+                        min_ms:
+                          type: number
+                          format: double
                         name:
                           type: string
+                        p50_ms:
+                          type: number
+                          format: double
+                        p90_ms:
+                          type: number
+                          format: double
                         p95_ms:
+                          type: number
+                          format: double
+                        p99_ms:
                           type: number
                           format: double
                         result:

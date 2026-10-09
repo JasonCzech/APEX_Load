@@ -261,7 +261,7 @@ export default function ScriptSecretBindingsDialog({
   }
 
   return createPortal((
-    <DialogLayer><div className="modal-overlay script-secret-bindings-overlay" {...dialogBackdropProps(onClose, 'Close secret bindings')}>
+    <DialogLayer><div className="modal-overlay script-secret-bindings-overlay" {...dialogBackdropProps(onClose)}>
       <div
         ref={dialogRef}
         className="modal modal-wide script-secret-bindings-dialog"

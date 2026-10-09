@@ -59,7 +59,7 @@ export function CommandPalette({ shortcuts, onClose }: CommandPaletteProps) {
   }
 
   return (
-    <DialogLayer><div className="command-palette-backdrop" {...dialogBackdropProps(onClose, 'Close command palette')}>
+    <DialogLayer><div className="command-palette-backdrop" {...dialogBackdropProps(onClose)}>
       <div
         ref={dialogRef}
         className="command-palette"
@@ -105,6 +105,10 @@ export function CommandPalette({ shortcuts, onClose }: CommandPaletteProps) {
             ))
           )}
         </ul>
+        <div className="command-palette-footer">
+          <span>Enter runs · Esc closes</span>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Close</button>
+        </div>
       </div>
     </div></DialogLayer>
   )

@@ -80,6 +80,26 @@
   --muted: #5b6875;
   --line: #d8cfc2;
   --surface: #fffdf8;
+  /* The paper is light in every theme. Remap the app tokens its controls and
+     charts read, so dark themes do not put light text, borders and series on
+     the white page; the series are the light palette validated at 3:1 here. */
+  color-scheme: light;
+  --text-primary: var(--ink);
+  --text-secondary: var(--muted);
+  --text-muted: var(--muted);
+  --border: var(--line);
+  --border-subtle: var(--line);
+  --bg-primary: var(--surface);
+  --bg-secondary: #f4efe6;
+  --bg-card: var(--surface);
+  --bg-hover: #efe8dc;
+  --accent-text: var(--accent);
+  --chart-1: #1b50a9;
+  --chart-2: #36772f;
+  --chart-3: #da772f;
+  --chart-4: #c90633;
+  --chart-5: #0d9bd4;
+  --chart-6: #ae28ba;
 
   max-width: 900px;
   margin: 0 auto;

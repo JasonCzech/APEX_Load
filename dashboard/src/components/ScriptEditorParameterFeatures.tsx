@@ -1809,7 +1809,7 @@ function ParameterDefinitionRow({
               <td aria-label="Parameter actions" style={{ textAlign: 'right' }}>
         <button
           className="btn btn-sm btn-ghost"
-          style={{ color: 'var(--danger)' }}
+          style={{ color: 'var(--danger-text)' }}
           onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
             event.stopPropagation()
             onRemoveParameter(idx)

@@ -1059,7 +1059,7 @@ describe('CommandCenterPrototype', () => {
     expect(opsLoadModelPanel).not.toBeNull()
     expect(opsPrimaryColumn?.querySelector('[aria-label="Command center run tables"]')).not.toBeNull()
     expect(opsPrimaryColumn?.querySelector('.command-runtime-graphs')).toBeNull()
-    expect(opsPrimaryColumn?.textContent).toContain('Scenario Run')
+    expect(opsPrimaryColumn?.textContent).toContain('Run metrics')
     expect(opsPrimaryColumn?.textContent).toContain('Error Details')
     expect(opsPrimaryColumn?.textContent).toContain('Infrastructure')
     expect(opsLoadModelRow?.querySelector('.command-group-panel')).toBe(opsCentralGroupPanel)
@@ -1240,6 +1240,27 @@ describe('CommandCenterPrototype', () => {
     expect(checkoutTarget.value).toBe('1330')
     expect(container.textContent).toContain('Checkout API target staged at 1,330 VUsers.')
     expect(container.textContent).toContain('2,270 VU')
+  })
+
+  it('shows run controls read-only, with the reason, to a role that cannot control runs', async () => {
+    const run = buildLiveVuserTest()
+    await act(async () => root.render(<CommandCenterPrototype testId={run.id} initialTest={run} runControlsReadOnlyReason="Your role in this project can watch this run but not control it." />))
+    const actions = container.querySelector('.command-run-actions') as HTMLElement
+    const shelfButton = (name: string) => Array.from(actions.querySelectorAll('button')).find(candidate => candidate.textContent?.trim() === name) as HTMLButtonElement | undefined
+    for (const name of ['Pause', 'Stop', 'Abort']) {
+      expect(shelfButton(name)?.disabled).toBe(true)
+    }
+    const note = container.querySelector('.command-control-readonly')
+    expect(note?.textContent).toContain('can watch this run but not control it')
+    expect(shelfButton('Stop')?.getAttribute('aria-describedby')).toBe(note?.id)
+  })
+
+  it('says when the live stream is down, since live values may then be stale', async () => {
+    const run = buildLiveVuserTest()
+    await act(async () => root.render(<CommandCenterPrototype testId={run.id} initialTest={run} liveStreamState="disconnected" />))
+    expect(container.querySelector('.command-stream-note')?.textContent).toContain('Live stream: disconnected')
+    await act(async () => root.render(<CommandCenterPrototype testId={run.id} initialTest={run} liveStreamState="connected" />))
+    expect(container.querySelector('.command-stream-note')).toBeNull()
   })
 
   it('keeps Abort available and enabled while a graceful stop is in progress', async () => {
@@ -1582,7 +1603,7 @@ describe('CommandCenterPrototype', () => {
     const tableWorkspace = container.querySelector('[aria-label="Command center run tables"]')
     expect(tableWorkspace).not.toBeNull()
     expect(container.querySelector('.command-layout-ops .command-runtime-graphs')).toBeNull()
-    expect(tableWorkspace?.textContent).toContain('Scenario Run')
+    expect(tableWorkspace?.textContent).toContain('Run metrics')
     expect(tableWorkspace?.textContent).toContain('POST /orders')
     expect(tableWorkspace?.textContent).toContain('Target TPS')
 
@@ -2034,9 +2055,9 @@ describe('CommandCenterPrototype', () => {
     await renderPrototype()
     const preset = container.querySelector<HTMLInputElement>('.command-column-preset input')!
     expect(container.querySelector('.command-scenario-table.essential-metrics')).not.toBeNull()
-    const p99 = Array.from(container.querySelectorAll<HTMLInputElement>('.command-column-picker input')).find(input => input.parentElement?.textContent === 'p99')!
+    const p99 = Array.from(container.querySelectorAll<HTMLInputElement>('.command-column-picker input')).find(input => input.parentElement?.textContent === 'P99')!
     await click(p99)
-    expect(container.querySelector<HTMLTableCellElement>('th[aria-label="p99 sort"]')?.hidden).toBe(false)
+    expect(container.querySelector<HTMLTableCellElement>('th[aria-label="P99 sort"]')?.hidden).toBe(false)
     expect(container.querySelectorAll('thead th:not([hidden])').length).toBe(8)
     await click(preset)
     await changeTextInput(inputByLabel('Filter command center table rows'), 'Checkout')
@@ -2049,7 +2070,7 @@ describe('CommandCenterPrototype', () => {
     await changeTextInput(inputByLabel('Filter command center table rows'), 'not-an-error')
     expect(container.textContent).toContain('No matching errors')
     expect(container.querySelector('.command-evidence-panel')).toBeNull()
-    await click(tabNamed('Scenario Run'))
+    await click(tabNamed('Run metrics'))
     expect(inputByLabel('Filter command center table rows').value).toBe('Checkout')
   })
 
@@ -2066,7 +2087,7 @@ describe('CommandCenterPrototype', () => {
     await act(async () => root.render(<CommandCenterPrototype testId={pending.id} initialTest={pending} />))
     expect(container.textContent).toContain('Errors recorded; signatures are not available yet.')
     await click(buttonNamed('Graph Wall'))
-    expect(buttonNamed('Change duration')).toBeDefined()
+    expect(buttonNamed('Adjust run')).toBeDefined()
     expect(container.querySelector('[aria-label="Run summary"]')?.textContent).toContain('TPS')
   })
 

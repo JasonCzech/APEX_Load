@@ -14,7 +14,7 @@ import {
 import { isTestWorkspaceTab, type TestWorkspaceTabID } from '../appRouting'
 import { topbarRunStatusLabel } from '../appTopbar'
 import { useTopbarContribution, type TopbarContribution, type TopbarMetaTone } from '../hooks/TopbarContributionProvider'
-import { formatTimeCompact, isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
+import { formatRunClock, isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
 import TestExecutionArchive from './TestExecutionArchive'
 import { useExecutionActionBridge } from './useExecutionActionBridge'
 import { useExecutionArchiveResourceHistory } from './useExecutionArchiveResourceHistory'
@@ -438,7 +438,7 @@ export default function TestExecution({
       { id: 'duration', label: test.termination_mode === 'iterations' ? 'Iteration completion' : test.duration || 'No duration', tone: 'default' },
       { id: 'groups', label: `${groupCount} ${groupCount === 1 ? 'group' : 'groups'}`, tone: isMultiGroup ? 'accent' : 'default' },
       { id: 'started', label: `Started ${formatRunStartTime(test.started_at || test.start_time)}`, tone: 'default', hidden: !showLiveControls },
-      { id: 'remaining', label: test.termination_mode === 'iterations' ? `Iterations ${test.live_metrics?.completed_iterations ?? 0} / ${(test.groups || []).reduce((n,g) => n + g.vusers * (g.iterations || 0), 0)}` : `Remaining ${formatTimeCompact(remainingSeconds)}`, tone: remainingSeconds <= 60 ? 'warning' : 'default', hidden: !showLiveControls },
+      { id: 'remaining', label: test.termination_mode === 'iterations' ? `Iterations ${test.live_metrics?.completed_iterations ?? 0} / ${(test.groups || []).reduce((n,g) => n + g.vusers * (g.iterations || 0), 0)}` : `Remaining ${formatRunClock(remainingSeconds)}`, tone: remainingSeconds <= 60 ? 'warning' : 'default', hidden: !showLiveControls },
       { id: 'stopping', label: 'Stopping...', tone: 'danger', hidden: !isStopping },
     ],
     secondaryActions: [

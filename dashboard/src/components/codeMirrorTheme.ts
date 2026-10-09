@@ -86,7 +86,7 @@ const editorTheme = EditorView.theme({
     fontStyle: 'italic',
   },
   '.apex-yaml-atom': {
-    color: 'var(--warning)',
+    color: 'var(--warning-text)',
   },
   '.apex-embedded-xml-tag': {
     color: 'var(--accent-text)',
@@ -145,8 +145,8 @@ const editorTheme = EditorView.theme({
 
 const highlightStyle = HighlightStyle.define([
   { tag: [t.keyword, t.modifier, t.controlKeyword, t.operatorKeyword], color: 'var(--accent-text)' },
-  { tag: [t.string, t.special(t.string)], color: 'var(--success)' },
-  { tag: [t.number, t.bool, t.null, t.atom], color: 'var(--warning)' },
+  { tag: [t.string, t.special(t.string)], color: 'var(--success-text)' },
+  { tag: [t.number, t.bool, t.null, t.atom], color: 'var(--warning-text)' },
   { tag: [t.propertyName, t.definition(t.propertyName)], color: 'var(--text-primary)' },
   { tag: [t.comment, t.lineComment, t.blockComment], color: 'var(--text-muted)', fontStyle: 'italic' },
   { tag: [t.function(t.variableName), t.function(t.propertyName)], color: 'var(--accent-text)' },

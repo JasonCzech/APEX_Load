@@ -1,4 +1,5 @@
 import { MetricsHistoryPoint } from '../types'
+import { MISSING_VALUE } from './runReport/reportPresentation'
 
 export type LoadImpactMetricCategory = 'performance' | 'resource'
 
@@ -67,7 +68,7 @@ export const LOAD_IMPACT_METRICS: LoadImpactMetric[] = [
   { id: 'p95', key: 'p95', label: 'P95', unit: 'ms', category: 'performance' },
   { id: 'p99', key: 'p99', label: 'P99', unit: 'ms', category: 'performance' },
   { id: 'tps', key: 'tps', label: 'TPS', category: 'performance' },
-  { id: 'errorPct', key: 'errorPct', label: 'Error %', unit: '%', category: 'performance' },
+  { id: 'errorPct', key: 'errorPct', label: 'Error rate', unit: '%', category: 'performance' },
   { id: 'cpuProcess', key: 'cpuProcess', label: 'CPU VUsers', unit: '%', category: 'resource' },
   { id: 'cpuFree', key: 'cpuFree', label: 'CPU Free', unit: '%', category: 'resource' },
   { id: 'memProcess', key: 'memProcess', label: 'Memory VUsers', unit: 'MB', category: 'resource' },
@@ -355,7 +356,7 @@ export function filterLoadImpactModel(
 
 export function formatLoadImpactValue(value: number | undefined, unit?: string): string {
   if (value === undefined || !Number.isFinite(value)) {
-    return 'n/a'
+    return MISSING_VALUE
   }
 
   const absolute = Math.abs(value)
@@ -369,6 +370,6 @@ export function formatLoadImpactValue(value: number | undefined, unit?: string):
   const formatted = value.toLocaleString(undefined, { maximumFractionDigits })
 
   if (!unit) return formatted
-  if (unit === '%' || unit === 'ms') return `${formatted}${unit}`
+  if (unit === '%') return `${formatted}${unit}`
   return `${formatted} ${unit}`
 }

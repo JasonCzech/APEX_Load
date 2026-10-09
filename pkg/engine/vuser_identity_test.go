@@ -158,7 +158,8 @@ func TestGenuineIterationFailureIsNotInterrupted(t *testing.T) {
 }
 
 // A hard stop cancels the action in flight: its failure is interrupted; a
-// success, or a failure recorded before any stop, is not.
+// success, or a failure recorded before any stop, is not. A transaction the
+// hard stop cut off is incomplete and left out of the results.
 func TestHardStopMarksTheInFlightFailureInterrupted(t *testing.T) {
 	sink := &identitySink{}
 	vu := &VUser{ID: 5, Group: "web", ResultSink: sink, Metrics: NewMetricsCollector(16), Script: &dsl.Script{Protocol: "http"}}
@@ -169,10 +170,13 @@ func TestHardStopMarksTheInFlightFailureInterrupted(t *testing.T) {
 	vu.recordResult(&protocol.Result{ActionName: "cut", Success: false}, dsl.ErrorHandlingConfig{}, dsl.LogConfig{})
 	vu.recordResult(&protocol.Result{ActionName: "done", Success: true}, dsl.ErrorHandlingConfig{}, dsl.LogConfig{})
 	vu.recordTransaction("tx", time.Millisecond, false, nil)
-	for name, want := range map[string]bool{"before": false, "cut": true, "done": false, "tx": true} {
+	for name, want := range map[string]bool{"before": false, "cut": true, "done": false} {
 		if got := resultsNamed(sink, name); len(got) != 1 || got[0].Interrupted != want {
 			t.Fatalf("%s: %+v, want interrupted=%v", name, got, want)
 		}
+	}
+	if got := resultsNamed(sink, "tx"); len(got) != 0 {
+		t.Fatalf("a transaction the hard stop cut off was recorded: %+v", got)
 	}
 	// Without a hard-stop context, Run's own context is the in-flight one.
 	run, cancelRun := context.WithCancel(context.Background())
@@ -277,9 +281,9 @@ func sourceTx(name, function string) dsl.Action {
 	return dsl.Action{Name: name, Type: "source_transaction", Params: map[string]any{"function": function}}
 }
 
-// A transaction left open when a stop ends the VUser is the stop's: its
-// failure is interrupted and does not end the iteration. One left open when
-// the VUser ends on its own (a genuine failure, fail-fast) ends its
+// A transaction left open when a stop ends the VUser is the stop's: it is
+// incomplete, not failed, so it is left out and ends no iteration. One left
+// open when the VUser ends on its own (a genuine failure, fail-fast) ends its
 // iteration, in the iteration that opened it, over its wall-clock span.
 func TestOpenTransactionsAtExitSayWhetherTheIterationEndedOnItsOwn(t *testing.T) {
 	run, stop := context.WithCancel(context.Background())
@@ -289,8 +293,8 @@ func TestOpenTransactionsAtExitSayWhetherTheIterationEndedOnItsOwn(t *testing.T)
 	sink := &identitySink{}
 	stopped.ResultSink = sink
 	stopped.Run(run)
-	if got := resultsNamed(sink, "Checkout"); len(got) != 1 || got[0].Success || !got[0].Interrupted || got[0].EndsIteration || got[0].Iteration != 1 {
-		t.Fatalf("stopped VUser's open transaction %+v", got)
+	if got := resultsNamed(sink, "Checkout"); len(got) != 0 {
+		t.Fatalf("stopped VUser's open transaction was recorded: %+v", got)
 	}
 
 	failing := newControlFlowVUser(&stoppingProtocol{stop: func() {}, failOn: "login"}, nil, []dsl.Action{sourceTx("Checkout", "lr_start_transaction"), click("login"), click("pay"), sourceTx("Checkout", "lr_end_transaction")})

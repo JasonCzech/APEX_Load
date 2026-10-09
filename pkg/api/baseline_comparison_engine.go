@@ -546,7 +546,7 @@ func buildBaselineFindings(out *BaselineComparisonSnapshot) {
 					if metric == "error percentage points" {
 						unit = "percentage points"
 					}
-					change := fmt.Sprintf("%+.3g %s", *delta, unit)
+					change := fmt.Sprintf("%+v %s", comparisonNumber(*delta), unit)
 					if pct != nil {
 						change += fmt.Sprintf(" (%+.1f%%)", *pct)
 					} else {

@@ -50,7 +50,7 @@ export default function AboutDialog({ open, onClose }: AboutDialogProps) {
   }
 
   return (
-    <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(onClose, 'Close About dialog')}>
+    <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(onClose)}>
       <div
         ref={dialogRef}
         className="modal-content about-dialog"

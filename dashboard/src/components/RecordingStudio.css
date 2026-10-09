@@ -12,13 +12,13 @@
 
 .rec-feedback.success {
   background: rgba(var(--success-rgb), 0.1);
-  color: var(--success);
+  color: var(--success-text);
   border: 1px solid rgba(var(--success-rgb), 0.2);
 }
 
 .rec-feedback.error {
   background: rgba(var(--danger-rgb), 0.1);
-  color: var(--danger);
+  color: var(--danger-text);
   border: 1px solid rgba(var(--danger-rgb), 0.2);
 }
 
@@ -557,7 +557,7 @@
 .rec-method.get { color: var(--chart-2); background: rgba(var(--success-rgb), 0.1); }
 .rec-method.post { color: var(--chart-5); background: rgba(var(--info-rgb), 0.1); }
 .rec-method.put { color: var(--chart-3); background: rgba(var(--warning-rgb), 0.1); }
-.rec-method.delete { color: var(--danger); background: rgba(var(--danger-rgb), 0.1); }
+.rec-method.delete { color: var(--danger-text); background: rgba(var(--danger-rgb), 0.1); }
 .rec-method.patch { color: var(--chart-6); background: rgba(168, 85, 247, 0.1); }
 
 .rec-path {
@@ -578,7 +578,7 @@
 }
 
 .rec-status.error {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .rec-timing {
@@ -927,13 +927,13 @@
 }
 
 .rec-corr-confidence.tone-high {
-  color: var(--success);
+  color: var(--success-text);
   background: rgba(var(--success-rgb), 0.12);
   border-color: rgba(var(--success-rgb), 0.32);
 }
 
 .rec-corr-confidence.tone-medium {
-  color: var(--warning);
+  color: var(--warning-text);
   background: rgba(var(--warning-rgb), 0.12);
   border-color: rgba(var(--warning-rgb), 0.32);
 }
@@ -1034,7 +1034,7 @@
 
 .brp-status-recording {
   background: rgba(var(--danger-rgb), 0.12);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .brp-status-stopped {
@@ -1044,7 +1044,7 @@
 
 .brp-status-failed {
   background: rgba(var(--danger-rgb), 0.12);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .brp-url {
@@ -1577,7 +1577,7 @@
 }
 .brp-quality-high { background: rgba(var(--success-rgb), 0.15); color: var(--chart-2); }
 .brp-quality-medium { background: rgba(var(--warning-rgb), 0.15); color: var(--chart-3); }
-.brp-quality-low { background: rgba(var(--danger-rgb), 0.15); color: var(--danger); }
+.brp-quality-low { background: rgba(var(--danger-rgb), 0.15); color: var(--danger-text); }
 .brp-step-actions { display: inline-flex; gap: 2px; flex-shrink: 0; }
 .brp-step-action {
   border: 1px solid var(--border);
@@ -1590,7 +1590,7 @@
   cursor: pointer;
   padding: 0;
 }
-.brp-delete-last { margin-top: 6px; color: var(--danger); }
+.brp-delete-last { margin-top: 6px; color: var(--danger-text); }
 
 .brp-replay-progress {
   border: 1px solid var(--border);
@@ -1605,18 +1605,18 @@
 .brp-replay-counts { font-size: 12px; color: var(--text-muted); margin-left: auto; }
 .brp-replay-running { background: rgba(var(--accent-rgb), 0.15); color: var(--accent-text); }
 .brp-replay-completed { background: rgba(var(--success-rgb), 0.15); color: var(--chart-2); }
-.brp-replay-failed { background: rgba(var(--danger-rgb), 0.15); color: var(--danger); }
+.brp-replay-failed { background: rgba(var(--danger-rgb), 0.15); color: var(--danger-text); }
 .brp-replay-stopped { background: var(--bg-hover); color: var(--text-muted); }
 .brp-replay-empty { font-size: 12px; color: var(--text-muted); }
 .brp-replay-events { display: flex; flex-direction: column; gap: 3px; max-height: 240px; overflow-y: auto; }
 .brp-replay-event { display: flex; align-items: center; gap: 8px; font-size: 12px; flex-wrap: wrap; }
 .brp-replay-icon { width: 14px; flex-shrink: 0; }
 .brp-replay-event.ok .brp-replay-icon { color: var(--chart-2); }
-.brp-replay-event.fail .brp-replay-icon { color: var(--danger); }
+.brp-replay-event.fail .brp-replay-icon { color: var(--danger-text); }
 .brp-replay-action { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .brp-replay-dur { color: var(--text-muted); }
-.brp-replay-error { color: var(--danger); font-size: 11px; }
-.brp-replay-error-full { color: var(--danger); font-size: 11px; margin-bottom: 4px; }
+.brp-replay-error { color: var(--danger-text); font-size: 11px; }
+.brp-replay-error-full { color: var(--danger-text); font-size: 11px; margin-bottom: 4px; }
 .brp-replay-suggestions { width: 100%; display: flex; flex-direction: column; gap: 6px; }
 .brp-repair-suggestion { font-size: 12px; padding: 6px 8px; background: var(--bg-hover); border-radius: 6px; }
 .brp-repair-confidence { color: var(--text-muted); font-size: 11px; }

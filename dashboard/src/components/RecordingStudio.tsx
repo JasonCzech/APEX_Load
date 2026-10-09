@@ -1519,8 +1519,9 @@ export default function RecordingStudio({
         );
       }
     } catch (e: any) {
+      // Older controllers return the browser engine's call log; keep only the cause.
       if (refreshScopeRef.current === sourceRecorderScope)
-        showFeedback(e.message, "error");
+        showFeedback(String(e?.message || "Recording could not start").split(/\n\s*Call log:/)[0].trim(), "error");
     } finally {
       if (browserStartScopeRef.current === sourceRecorderScope) {
         browserStartScopeRef.current = null;
@@ -1545,6 +1546,7 @@ export default function RecordingStudio({
       typeof window !== "undefined" &&
       !(await confirmAction(
         "Delete this stopped browser recording? This cannot be undone.",
+        { title: "Delete recording", confirmLabel: "Delete", destructive: true },
       ))
     ) {
       return;
@@ -2316,6 +2318,7 @@ export default function RecordingStudio({
       typeof window !== "undefined" &&
       !(await confirmAction(
         "Delete this stopped recording session? This cannot be undone.",
+        { title: "Delete recording session", confirmLabel: "Delete", destructive: true },
       ))
     ) {
       return;

@@ -5,7 +5,11 @@ import DialogLayer from './DialogLayer'
 
 let pending = false
 
-/** Explicit wording for a confirmation; without it the verb is inferred from the message. */
+/**
+ * Wording for a confirmation. Destructive actions must pass all three, so the
+ * dialog names the action and styles its button as dangerous; without options
+ * the dialog is a neutral "Continue".
+ */
 export interface ConfirmActionOptions {
   title?: string
   confirmLabel?: string
@@ -17,11 +21,11 @@ function Confirmation({ message, options, finish }: { message: string; options?:
   const ref = useRef<HTMLDivElement>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
   useModalDialog({ dialogRef: ref, initialFocusRef: cancelRef, onClose: () => finish(false) })
-  // Inferring from the message misfires when it quotes user-chosen names
-  // ("Start 'Delete account flow'?"), so callers that know the verb pass it.
-  const destructive = options?.destructive ?? /delete|discard|remove|revoke/i.test(message)
-  const label = options?.confirmLabel ?? (/delete/i.test(message) ? 'Delete' : /discard/i.test(message) ? 'Discard' : /rotate/i.test(message) ? 'Rotate key' : 'Continue')
-  const title = options?.title ?? (destructive ? 'Confirm destructive action' : 'Confirm action')
+  // No wording is inferred from the message: it quotes user-chosen names
+  // ("Start 'Delete account flow'?") that would misfire a keyword match.
+  const destructive = options?.destructive ?? false
+  const label = options?.confirmLabel ?? 'Continue'
+  const title = options?.title ?? 'Confirm action'
   return <DialogLayer><div className="modal-overlay"><div ref={ref} className="modal ux-confirmation" role="alertdialog" aria-modal="true" aria-labelledby="ux-confirmation-title" aria-describedby="ux-confirmation-message">
     <header className="modal-header"><h3 id="ux-confirmation-title">{title}</h3></header>
     <p id="ux-confirmation-message">{message}</p>

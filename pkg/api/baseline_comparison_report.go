@@ -5,45 +5,79 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"math"
+	"strconv"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
+// comparisonNumber prints a comparison value in plain decimal notation: whole
+// numbers from 100, one decimal from 10, up to three below that, and three
+// significant digits under 1 so a small change never reads as zero; trailing
+// zeros trimmed. %.3g printed 1406 as "1.41e+03" next to tables of "1,406 ms".
+// The "+" flag (%+v) keeps the sign on non-negative changes.
+type comparisonNumber float64
+
+func (n comparisonNumber) Format(state fmt.State, _ rune) {
+	value := float64(n)
+	digits := 3
+	switch abs := math.Abs(value); {
+	case abs >= 100:
+		digits = 0
+	case abs >= 10:
+		digits = 1
+	case abs > 0 && abs < 1:
+		digits = min(int(math.Ceil(-math.Log10(abs)))+2, 12)
+	}
+	text := strconv.FormatFloat(value, 'f', digits, 64)
+	if strings.Contains(text, ".") {
+		text = strings.TrimRight(strings.TrimRight(text, "0"), ".")
+	}
+	if text == "-0" {
+		text = "0"
+	}
+	if state.Flag('+') && !strings.HasPrefix(text, "-") {
+		text = "+" + text
+	}
+	_, _ = state.Write([]byte(text))
+}
+
 var baselineComparisonTemplate = template.Must(template.New("baseline-comparison").Funcs(template.FuncMap{
 	"telemetryComparisonLine": baselineTelemetryComparisonLine,
+	"tokenLabel":              reportTokenLabel,
 	"observed": func(v *float64) string {
 		if v == nil {
 			return "Unavailable"
 		}
-		return fmt.Sprintf("%.3g", *v)
+		return fmt.Sprintf("%v", comparisonNumber(*v))
 	},
 	"measurement": func(m *BaselineMeasurement) string {
 		if m == nil {
 			return "Unavailable"
 		}
 		if m.MeanStatistic == "evaluation_grid_mean" {
-			return fmt.Sprintf("evaluation-grid mean %.3g · range %.3g–%.3g · n=%d · grid coverage %.1f%% · %d instances", m.Mean, m.Min, m.Max, m.Samples, m.CoveragePct, m.Instances)
+			return fmt.Sprintf("evaluation-grid mean %v · range %v–%v · n=%d · grid coverage %.1f%% · %d instances", comparisonNumber(m.Mean), comparisonNumber(m.Min), comparisonNumber(m.Max), m.Samples, m.CoveragePct, m.Instances)
 		}
-		return fmt.Sprintf("mean %.3g · P95 %.3g · range %.3g–%.3g · n=%d · coverage %.1f%% · %d instances", m.Mean, m.P95, m.Min, m.Max, m.Samples, m.CoveragePct, m.Instances)
+		return fmt.Sprintf("mean %v · P95 %v · range %v–%v · n=%d · coverage %.1f%% · %d instances", comparisonNumber(m.Mean), comparisonNumber(m.P95), comparisonNumber(m.Min), comparisonNumber(m.Max), m.Samples, m.CoveragePct, m.Instances)
 	},
 	"delta": func(c BaselineComparisonCell) string {
 		if c.Delta == nil {
 			return "Change unavailable"
 		}
 		if c.DeltaPct == nil {
-			return fmt.Sprintf("Change %+.3g; percentage unavailable", *c.Delta)
+			return fmt.Sprintf("Change %+v; percentage unavailable", comparisonNumber(*c.Delta))
 		}
-		return fmt.Sprintf("Change %+.3g (%+.1f%%)", *c.Delta, *c.DeltaPct)
+		return fmt.Sprintf("Change %+v (%+.1f%%)", comparisonNumber(*c.Delta), *c.DeltaPct)
 	},
 	"transaction": func(m *BaselineMeasurement) string {
 		if m == nil {
 			return "Unavailable"
 		}
 		if m.Successes == 0 {
-			return fmt.Sprintf("n=%d; no successful latency samples; errors %.2f%%; %.3g/s", m.Samples, m.ErrorPct, m.Throughput)
+			return fmt.Sprintf("n=%d; no successful latency samples; errors %.2f%%; %v/s", m.Samples, m.ErrorPct, comparisonNumber(m.Throughput))
 		}
-		return fmt.Sprintf("mean %.3g · P50 %.3g · P90 %.3g · P95 %.3g · P99 %.3g · min/max %.3g/%.3g · n=%d (%d successful) · %.3g/s (%.3g successful/s) · errors %.2f%%", m.Mean, m.P50, m.P90, m.P95, m.P99, m.Min, m.Max, m.Samples, m.Successes, m.Throughput, m.SuccessfulThroughput, m.ErrorPct)
+		return fmt.Sprintf("mean %v · P50 %v · P90 %v · P95 %v · P99 %v · min/max %v/%v · n=%d (%d successful) · %v/s (%v successful/s) · errors %.2f%%", comparisonNumber(m.Mean), comparisonNumber(m.P50), comparisonNumber(m.P90), comparisonNumber(m.P95), comparisonNumber(m.P99), comparisonNumber(m.Min), comparisonNumber(m.Max), m.Samples, m.Successes, comparisonNumber(m.Throughput), comparisonNumber(m.SuccessfulThroughput), m.ErrorPct)
 	},
 	"join":      strings.Join,
 	"cell":      func(row BaselineComparisonRow, id string) BaselineComparisonCell { return row.Baselines[id] },
@@ -53,15 +87,15 @@ var baselineComparisonTemplate = template.Must(template.New("baseline-comparison
 		if !row.Comparable || row.DeltaP75 == nil {
 			return "Not compared: " + row.Reason
 		}
-		return fmt.Sprintf("p75 change %+.3g %s", *row.DeltaP75, row.Unit)
+		return fmt.Sprintf("p75 change %+v %s", comparisonNumber(*row.DeltaP75), row.Unit)
 	},
 }).Parse(`<h2>Baseline comparison</h2>
 {{if .Report.BaselineComparison}}{{$c := .Report.BaselineComparison}}<p>Advisory comparison {{$c.ID}} · rule {{$c.RuleVersion}} · {{$c.CreatedAt}}</p>
-{{with $c.Verdict}}<p><strong>Regression verdict: {{.Status}}</strong> · {{.Evaluated}} evaluated · {{.Unavailable}} unavailable</p>{{range .Evidence}}<p>{{.Metric}}: {{.Status}} · row {{.RowID}} · baseline {{.BaselineID}} · current {{observed .Current}} / baseline {{observed .Baseline}} · {{.Reason}}</p>{{end}}{{end}}
+{{with $c.Verdict}}<p><strong>Regression verdict: {{tokenLabel .Status}}</strong> · {{.Evaluated}} evaluated · {{.Unavailable}} unavailable</p>{{range .Evidence}}<p>{{.Metric}}: {{tokenLabel .Status}} · row {{.RowID}} · baseline {{.BaselineID}} · current {{observed .Current}} / baseline {{observed .Baseline}} · {{.Reason}}</p>{{end}}{{end}}
 <p>Current run: {{$c.Current.Name}} · {{$c.Current.ReleaseName}}</p>
 {{range $c.Warnings}}<p>{{.}}</p>{{end}}
 <h3>Whole-run telemetry health</h3>{{range $c.Telemetry}}<p>Run {{.RunID}} · retained intervals {{.RetainedIntervals}} · classified {{.HealthIntervals}} · coverage {{observed .HealthCoveragePct}}% · breached classified intervals {{observed .BreachedIntervalPct}}% · peak observed drop counter {{with .DroppedResults}}{{.}}{{else}}Unavailable{{end}} · maximum sample age {{observed .MaxSampleAgeMs}} ms</p>{{range .Warnings}}<p>{{.}}</p>{{end}}{{end}}{{range $c.TelemetryComparisons}}<p>{{telemetryComparisonLine .}}</p>{{end}}
-{{range $c.Findings}}<p><strong>{{.Status}} · {{.Category}}</strong> · baseline {{.BaselineID}}: {{.Message}}</p>{{else}}<p>No configured change threshold exceeded.</p>{{end}}
+{{range $c.Findings}}<p><strong>{{tokenLabel .Status}} · {{.Category}}</strong> · baseline {{.BaselineID}}: {{.Message}}</p>{{else}}<p>No configured change threshold exceeded.</p>{{end}}
 {{if ne .Profile.ID "executive"}}
 <h3>Effective comparison policy</h3>
 <p>Policy revision {{$c.Policy.Revision}} · load tolerance ±{{$c.Policy.LoadTolerancePct}}%.</p>
@@ -74,7 +108,7 @@ var baselineComparisonTemplate = template.Must(template.New("baseline-comparison
 {{range $c.Transactions}}{{$b := cell . $id}}<tr><td>{{.Name}} / {{.Group}}{{with .Window}} / {{printf "%.0f" .Load}} VUsers, {{printf "%.0f–%.0f s" .StartSeconds .EndSeconds}}{{end}}</td><td>{{transaction .Current}}</td><td>{{transaction $b.Measurement}} · {{delta $b}}</td><td>{{join $b.Qualification "; "}}</td></tr>{{end}}</tbody></table>
 <h4>Resources — recorded means</h4><p>Prometheus means describe settled evaluations on the saved grid. Missing cells reduce coverage; evaluation levels do not reconstruct rates, totals or request percentiles.</p><table><thead><tr><th>Resource</th><th>Current</th><th>Baseline</th><th>Evidence</th></tr></thead><tbody>{{range $c.Resources}}{{$b := cell . $id}}<tr><td>{{.Name}} ({{.Source}}), {{.Unit}}{{with .Provider}} · query {{.QueryID}} · {{.BackendProfile}} · {{.Statistic}} · {{.EvaluationStepSeconds}}s grid · {{.Dimensions}}{{end}}</td><td>{{measurement .Current}}</td><td>{{measurement $b.Measurement}} · {{delta $b}}</td><td>{{join $b.Qualification "; "}}</td></tr>{{end}}</tbody></table>
 {{with documents $c $id}}<h4>Browser documents — p75 of qualified final document measurements</h4><p>Compared only when algorithm, unit, lifecycle phase, frame scope, engine, device profile and runtime cohort all match; otherwise the first difference is named. Soft navigations: {{$c.BrowserSoftNavigation}} (not measured as navigations). Legacy action summaries are not compared here.</p><table><thead><tr><th>Metric tuple</th><th>Current p75</th><th>Baseline p75</th><th>Comparison</th></tr></thead><tbody>{{range .}}<tr><td>{{tuple .}}</td><td>{{observed .CurrentP75}} · n={{.CurrentFinal}}</td><td>{{observed .BaselineP75}} · n={{.BaselineFinal}}</td><td>{{documentChange .}}</td></tr>{{end}}</tbody></table>{{end}}
-<h4>Setup differences</h4>{{range $c.Setup}}{{if eq .BaselineID $id}}<p><strong>{{.Field}}: {{.Status}}</strong> · current {{.Current}} · baseline {{.Baseline}}</p>{{end}}{{end}}</div>{{end}}
+<h4>Setup differences</h4>{{range $c.Setup}}{{if eq .BaselineID $id}}<p><strong>{{.Field}}: {{tokenLabel .Status}}</strong> · current {{.Current}} · baseline {{.Baseline}}</p>{{end}}{{end}}</div>{{end}}
 {{end}}{{else}}<p>No saved baseline comparison selected.</p>{{end}}`))
 
 func baselineComparisonReportRenderer() reportSectionRenderer {
@@ -110,7 +144,7 @@ func baselineComparisonReportRenderer() reportSectionRenderer {
 				for _, row := range c.BrowserDocuments {
 					change := "not compared: " + row.Reason
 					if row.Comparable && row.DeltaP75 != nil {
-						change = fmt.Sprintf("p75 change %+.3g %s", *row.DeltaP75, row.Unit)
+						change = fmt.Sprintf("p75 change %+v %s", comparisonNumber(*row.DeltaP75), row.Unit)
 					}
 					*lines = append(*lines, "Baseline "+row.BaselineID+" · "+baselineBrowserDocumentTuple(row)+" · "+change)
 				}

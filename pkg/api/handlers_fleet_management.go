@@ -13,7 +13,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -553,6 +556,47 @@ func (s *Server) handlePatchGeneratorMetadata(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, metadata)
 }
 
+// handleDeleteGeneratorMetadata removes metadata for a generator that is not
+// in the live inventory: a mistyped entry or a decommissioned host. A live or
+// pooled generator's metadata carries its cordon and pool state, so it must
+// leave the fleet (and its pool) before its record can go.
+func (s *Server) handleDeleteGeneratorMetadata(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
+		return
+	}
+	generatorID := strings.TrimSpace(r.PathValue("id"))
+	metadata, err := s.store.GetGeneratorMetadata(generatorID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "generator metadata not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to load generator metadata")
+		return
+	}
+	if metadata.FleetPoolID != nil && strings.TrimSpace(*metadata.FleetPoolID) != "" {
+		writeError(w, http.StatusConflict, "this generator is assigned to a fleet pool; remove it from the pool before deleting its metadata")
+		return
+	}
+	_, live := s.baseGeneratorInventory(r.Context())
+	for _, entry := range live {
+		if entry.GeneratorID == generatorID || (strings.TrimSpace(metadata.Target) != "" && entry.Target == strings.TrimSpace(metadata.Target)) {
+			writeError(w, http.StatusConflict, "this generator is in the live inventory; its metadata holds its cordon state and cannot be deleted while it is connected")
+			return
+		}
+	}
+	if err := s.store.DeleteGeneratorMetadata(generatorID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete generator metadata")
+		return
+	}
+	s.recordAuditEvent(r, "fleet.generator_metadata.delete", "success", "generator", generatorID, "", map[string]any{"target": metadata.Target})
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": generatorID})
+}
+
 func validateGeneratorMetadataRuntimeTarget(store storage.Store, generatorID string, patch storage.GeneratorMetadataPatch) error {
 	if store == nil {
 		return nil
@@ -579,6 +623,45 @@ func validateGeneratorMetadataRuntimeTarget(store storage.Store, generatorID str
 	}
 	if effectivePoolID != nil && strings.TrimSpace(*effectivePoolID) != "" && effectiveTarget == "" {
 		return errors.New("a generator assigned to a fleet pool requires a non-empty runtime target")
+	}
+	if patch.Target != nil && effectiveTarget != "" {
+		if err := validateGeneratorRuntimeTargetFormat(effectiveTarget); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var generatorRuntimeHostPattern = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$`)
+
+// validateGeneratorRuntimeTargetFormat accepts the address the controller
+// dials: host or host:port (IPv6 in brackets), never a URL, so a typo is
+// rejected when it is saved instead of failing when a run is placed on it.
+func validateGeneratorRuntimeTargetFormat(target string) error {
+	if strings.Contains(target, "://") {
+		return fmt.Errorf("runtime target %q must be host or host:port, without a scheme", target)
+	}
+	if strings.ContainsAny(target, " \t/?#") {
+		return fmt.Errorf("runtime target %q must be host or host:port, without spaces or a path", target)
+	}
+	host := target
+	if strings.Contains(target, ":") {
+		var port string
+		var err error
+		host, port, err = net.SplitHostPort(target)
+		if err != nil {
+			return fmt.Errorf("runtime target %q must be host or host:port", target)
+		}
+		number, convErr := strconv.Atoi(port)
+		if convErr != nil || number < 1 || number > 65535 {
+			return fmt.Errorf("runtime target %q has an invalid port; use 1-65535", target)
+		}
+		if net.ParseIP(host) != nil {
+			return nil
+		}
+	}
+	if !generatorRuntimeHostPattern.MatchString(host) {
+		return fmt.Errorf("runtime target %q has an invalid host name", target)
 	}
 	return nil
 }

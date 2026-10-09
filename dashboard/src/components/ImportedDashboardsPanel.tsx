@@ -274,7 +274,7 @@ export default function ImportedDashboardsPanel({ projects, defaultProjectId, pr
 
   const handleDelete = useCallback(async (dashboard: ImportedDashboard) => {
 		if (operationInFlight.current) return
-		if (!(await confirmAction(`Delete imported dashboard "${dashboard.name}"? This cannot be undone.`))) return
+		if (!(await confirmAction(`Delete imported dashboard "${dashboard.name}"? This cannot be undone.`, { title: 'Delete imported dashboard', confirmLabel: 'Delete', destructive: true }))) return
 		operationInFlight.current = true
 		setMutatingDashboardId(dashboard.id)
     setError('')

@@ -934,7 +934,7 @@ export default function ApplicationRepositoryPage({
   const handleBulkDelete = async () => {
     if (bulkBusy || deletableSelectedRows.length === 0) return
     const count = deletableSelectedRows.length
-    if (!(await confirmAction(`Delete ${plural(count, 'selected item')}? This cannot be undone.`))) return
+    if (!(await confirmAction(`Delete ${plural(count, 'selected item')}? This cannot be undone.`, { title: 'Delete items', confirmLabel: 'Delete', destructive: true }))) return
     setBulkBusy(true)
     setError('')
     setStatus('')
@@ -1028,7 +1028,7 @@ export default function ApplicationRepositoryPage({
   const handleBulkArchive = async () => {
     if (bulkBusy || archiveableSelectedRows.length === 0) return
     const count = archiveableSelectedRows.length
-    if (!(await confirmAction(`Archive ${plural(count, 'selected item')}?`))) return
+    if (!(await confirmAction(`Archive ${plural(count, 'selected item')}? Archived scripts and scenarios can be restored from their library's archived view.`, { title: 'Archive items', confirmLabel: 'Archive' }))) return
     setBulkBusy(true)
     setError('')
     setStatus('')
@@ -1114,25 +1114,25 @@ export default function ApplicationRepositoryPage({
   const repositoryOrigin = `#/repository${repositoryOriginParams.size ? `?${repositoryOriginParams}` : ''}`
   const renderRowAction = (row: RepositoryAssetRow) => {
     if (row.kind === 'script' && onOpenScript) {
-      return <button type="button" className="repository-row-action" onClick={() => onOpenScript(row.id, row.projectId)}>Edit</button>
+      return <button type="button" className="repository-row-action" aria-label={`Edit ${row.name}`} onClick={() => onOpenScript(row.id, row.projectId)}>Edit</button>
     }
     if (row.kind === 'scenario' && onCreateTestFromScenario) {
-      return <button type="button" className="repository-row-action" onClick={() => onCreateTestFromScenario(row.id, row.projectId)}>New Test</button>
+      return <button type="button" className="repository-row-action" aria-label={`New test from ${row.name}`} onClick={() => onCreateTestFromScenario(row.id, row.projectId)}>New Test</button>
     }
     if (row.kind === 'test' && onOpenTest) {
       return (
         <div className="repository-row-actions">
-          <button type="button" className="repository-row-action" onClick={() => onOpenTest(row.id, row.projectId)}>Open</button>
+          <button type="button" className="repository-row-action" aria-label={`Open ${row.name}`} onClick={() => onOpenTest(row.id, row.projectId)}>Open</button>
           {onOpenCommandCenter && (
-            <button type="button" className="repository-row-action" onClick={() => onOpenCommandCenter(row.id, row.projectId)}>Run Dashboard</button>
+            <button type="button" className="repository-row-action" aria-label={`Open ${row.name} in Command Center`} onClick={() => onOpenCommandCenter(row.id, row.projectId)}>Command Center</button>
           )}
         </div>
       )
     }
     if (row.kind === 'project' || row.kind === 'release') {
-      return <button type="button" className="repository-row-action" onClick={() => { setStructureFocus(row.projectId); setActiveTab('structure') }}>Open structure</button>
+      return <button type="button" className="repository-row-action" aria-label={`Open structure for ${row.name}`} onClick={() => { setStructureFocus(row.projectId); setActiveTab('structure') }}>Open structure</button>
     }
-    if (row.kind === 'data_pool') return <a className="repository-row-action" href={repositoryDataPoolHref(row.id, row.projectId, repositoryOrigin)}>Open data pool</a>
+    if (row.kind === 'data_pool') return <a className="repository-row-action" aria-label={`Open data pool ${row.name}`} href={repositoryDataPoolHref(row.id, row.projectId, repositoryOrigin)}>Open data pool</a>
     return null
   }
 
@@ -1573,7 +1573,7 @@ export default function ApplicationRepositoryPage({
                         {row.detail && <span>{row.detail}</span>}
                       </div>
                     </td>
-                    <td><div className="repository-row-actions"><button type="button" className="repository-row-action" onClick={() => setInspectedKey(repositoryRowKey(row))}>Inspect</button>{renderRowAction(row)}</div></td>
+                    <td><div className="repository-row-actions"><button type="button" className="repository-row-action" aria-label={`Inspect ${row.name}`} onClick={() => setInspectedKey(repositoryRowKey(row))}>Inspect</button>{renderRowAction(row)}</div></td>
                   </tr>
                 ))}
                 {virtualizeCatalogRows && catalogPaddingBottom > 0 && (

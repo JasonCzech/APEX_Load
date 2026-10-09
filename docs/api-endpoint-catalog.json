@@ -2136,6 +2136,16 @@
       "access": "Requires authentication; global roles: SystemAdmin; service-account scope: read"
     },
     {
+      "method": "DELETE",
+      "path": "/api/v1/fleet/generators/{id}",
+      "operationId": "handleDeleteGeneratorMetadata",
+      "summary": "Delete Generator Metadata",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: write"
+    },
+    {
       "method": "PATCH",
       "path": "/api/v1/fleet/generators/{id}",
       "operationId": "handlePatchGeneratorMetadata",

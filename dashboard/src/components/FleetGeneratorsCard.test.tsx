@@ -19,6 +19,7 @@ const fleetApiMock = {
   deleteFleetPool: vi.fn(),
   listGeneratorMetadata: vi.fn(),
   patchGeneratorMetadata: vi.fn(),
+  deleteGeneratorMetadata: vi.fn(),
   cordonGenerator: vi.fn(),
   uncordonGenerator: vi.fn(),
   drainGenerator: vi.fn(),
@@ -29,6 +30,12 @@ const fleetApiMock = {
 vi.mock('../hooks/api/useFleetApi', () => ({
   useFleetApi: () => fleetApiMock,
 }))
+
+// The live inventory read; unreadable by default (state unknown).
+const requestMock = vi.hoisted(() => vi.fn(() => Promise.reject(new Error('inventory unavailable'))))
+vi.mock('../hooks/apiClient', async importOriginal => ({ ...await importOriginal<typeof import('../hooks/apiClient')>(), request: requestMock }))
+const confirmActionMock = vi.hoisted(() => vi.fn(async () => true))
+vi.mock('./ux/confirmAction', () => ({ confirmAction: confirmActionMock }))
 
 let container: HTMLElement
 let root: Root
@@ -110,6 +117,48 @@ describe('FleetGeneratorsCard', () => {
     expect(container.textContent).toContain('capabilities: jvm=17')
     expect(container.querySelector('.pp-pill-success')).toBeTruthy()
     expect(container.querySelector('.pp-pill-warning')).toBeTruthy()
+  })
+
+  it('says a generator nobody has enrolled is awaiting enrollment, and removes its metadata', async () => {
+    requestMock.mockImplementation(() => Promise.resolve({ execution_mode: 'distributed', generators: [{ generator_id: 'gen-2', target: 'gen-2:9090' }] }) as never)
+    fleetApiMock.listGeneratorMetadata.mockResolvedValue({ generators: [meta({ generator_id: 'typo', target: 'typo:19999', fleet_pool_id: '' }), meta({ generator_id: 'gen-2', target: 'gen-2:9090' })], count: 2 })
+    fleetApiMock.deleteGeneratorMetadata.mockResolvedValue({ deleted: 'typo' })
+    await act(async () => root.render(<FleetGeneratorsCard canManage />))
+    await flush()
+    const row = (id: string) => Array.from(container.querySelectorAll('.pp-row')).find(candidate => candidate.querySelector('.pp-row-title')?.textContent?.startsWith(id))!
+    expect(row('typo').textContent).toContain('awaiting enrollment')
+    expect(row('gen-2').textContent).toContain('schedulable')
+    const remove = Array.from(row('typo').querySelectorAll('button')).find(button => button.textContent?.trim() === 'Remove')!
+    await act(async () => remove.click())
+    await flush()
+    expect(fleetApiMock.deleteGeneratorMetadata).toHaveBeenCalledWith('typo')
+    expect(container.textContent).not.toContain('typo:19999')
+    requestMock.mockImplementation(() => Promise.reject(new Error('inventory unavailable')))
+  })
+
+  it('does not judge enrollment on a controller without a generator inventory', async () => {
+    requestMock.mockImplementation(() => Promise.resolve({ execution_mode: 'local', generators: [] }) as never)
+    fleetApiMock.listGeneratorMetadata.mockResolvedValue({ generators: [meta({ generator_id: 'gen-2', target: 'gen-2:9090' })], count: 1 })
+    await act(async () => root.render(<FleetGeneratorsCard canManage />))
+    await flush()
+    expect(container.textContent).not.toContain('awaiting enrollment')
+    expect(container.textContent).toContain('schedulable')
+    requestMock.mockImplementation(() => Promise.reject(new Error('inventory unavailable')))
+  })
+
+  it('rejects a runtime target that is a URL before saving', async () => {
+    fleetApiMock.listGeneratorMetadata.mockResolvedValue({ generators: [], count: 0 })
+    await act(async () => root.render(<FleetGeneratorsCard canManage />))
+    await flush()
+    const add = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Add Metadata')
+    await act(async () => add?.click())
+    const target = Array.from(container.querySelectorAll<HTMLInputElement>('input')).find(input => input.placeholder === 'host:port or pod DNS name')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(target, 'http://gen-1:9090')
+      target.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(container.querySelector('#generator-target-error')?.textContent).toContain('without http://')
+    expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Save')?.disabled).toBe(true)
   })
 
   it('defaults a new runtime target to the generator id and sends it for pool placement', async () => {

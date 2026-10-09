@@ -64,6 +64,9 @@ import { loadResultTestTail } from './resultTestPagination'
 import { parseDurationToSeconds } from '../utils/timeUtils'
 import { ARCHIVE_CHART_MAX_SAMPLES } from './archiveHistorySampling'
 import { boundedAllSettled } from '../utils/boundedAllSettled'
+import { formatFixed } from '../utils/numberFormat'
+import { MISSING_VALUE } from './runReport/reportPresentation'
+import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
 
 interface Props {
   testStatuses: Record<string, string>
@@ -107,7 +110,7 @@ type ResultSourceRow = {
 }
 
 function formatDate(value?: string) {
-  return value ? new Date(value).toLocaleString() : 'Never'
+  return formatDisplayDateTime(value, { fallback: 'Never' })
 }
 
 function runStartedAt(test: TestSummary) {
@@ -223,7 +226,7 @@ function externalResultNumber(result: ExternalResultImport, key: string) {
 
 function formatBrowserMetric(value: unknown, suffix = '', digits = 1) {
   const observed = finiteBrowserMetric(value)
-  return observed === undefined ? 'n/a' : `${observed.toFixed(digits)}${suffix}`
+  return observed === undefined ? MISSING_VALUE : `${formatFixed(observed, digits)}${suffix}`
 }
 
 function hasBrowserOverview(report?: RunArchiveReport) {
@@ -1186,14 +1189,14 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
     setComparisonTestIds(sortedSelection.map(test => test.id))
   }, [canCompareSelected, selectedArchivedTests])
 
-  const handleDelete = async (id: string, event: React.MouseEvent) => {
+  const handleDelete = async (id: string, event: React.MouseEvent, name?: string) => {
     event.stopPropagation()
-    await deleteResult(id)
+    await deleteResult(id, name)
   }
 
-  const deleteResult = async (id: string) => {
+  const deleteResult = async (id: string, name?: string) => {
     if (deletingResultIdsRef.current.has(id)) return
-    if (!(await confirmAction('Delete this scenario result?'))) return
+    if (!(await confirmAction(name ? `Delete the result “${name}”? This cannot be undone.` : 'Delete this result? This cannot be undone.', { title: 'Delete result', confirmLabel: 'Delete', destructive: true }))) return
     if (deletingResultIdsRef.current.has(id)) return
     const requestScopeKey = resultCatalogScopeKey
     deletingResultIdsRef.current.add(id)
@@ -1228,7 +1231,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
 
   const deleteSelected = async () => {
     const ids = visibleSelectedIds.filter(id => !deletingResultIdsRef.current.has(id))
-    if (ids.length === 0 || !(await confirmAction(`Delete ${ids.length} selected results?`))) return
+    if (ids.length === 0 || !(await confirmAction(`Delete ${ids.length} selected result${ids.length === 1 ? '' : 's'}? This cannot be undone.`, { title: 'Delete results', confirmLabel: 'Delete', destructive: true }))) return
     const requestScopeKey = resultCatalogScopeKey
     ids.forEach(id => deletingResultIdsRef.current.add(id))
     setDeletingResultIds(new Set(deletingResultIdsRef.current))
@@ -1345,7 +1348,6 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
         </td>
         <td className="cell-name">
           <div>{row.name}</div>
-          {(test || externalImport) && <div onClick={event => event.stopPropagation()}><ObjectHistory projectId={test?.project_id || externalImport?.project_id} resourceType={test ? 'test' : 'external_result_import'} resourceId={(test || externalImport)!.id} activity={test?.activity || externalImport?.activity} /></div>}
           <div className="results-compact-status" aria-hidden="true">{test ? <StatusBadge status={row.status} stoppedByOperator={Boolean(test.stopped_by_subject)} /> : <span className={`script-health-token ${resultSourceStatusTone(row.status)}`}>{row.status}</span>}</div>
           {test?.archive && <ResultHeadline testId={test.id} />}
           <div className="script-table-meta">
@@ -1360,6 +1362,8 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
                 {item?.content_hash && <span className="script-health-token">hash {shortLibraryHash(item.content_hash)}</span>}
               </>
             )}
+            {/* One compact line: reference, then History (attribution is inside it). */}
+            {(test || externalImport) && <span onClick={event => event.stopPropagation()}><ObjectHistory compact projectId={test?.project_id || externalImport?.project_id} resourceType={test ? 'test' : 'external_result_import'} resourceId={(test || externalImport)!.id} activity={test?.activity || externalImport?.activity} /></span>}
           </div>
         </td>
         <td>
@@ -1388,14 +1392,14 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
           <div className="results-row-actions">
             {test ? (
               <>
-                <button className="btn btn-sm btn-primary" onClick={event => { event.stopPropagation(); (onOpenReport ?? onOpenTestArchive ?? onSelectTest)(test.id) }}>
+                <button className="btn btn-sm btn-primary" aria-label={`View results for ${test.name}`} onClick={event => { event.stopPropagation(); (onOpenReport ?? onOpenTestArchive ?? onSelectTest)(test.id) }}>
                   View results
                 </button>
-                <RowActions className="results-management">
+                <RowActions className="results-management" label={test.name}>
                 <button className="btn btn-sm btn-ghost" onClick={event => toggleBaselinePin(test, event)}>
                   {test.baseline_pinned ? 'Unpin Baseline' : 'Pin Baseline'}
                 </button>
-                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={event => handleDelete(test.id, event)} disabled={deletingResultIds.has(test.id)}>
+                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger-text)' }} onClick={event => handleDelete(test.id, event, test.name)} disabled={deletingResultIds.has(test.id)}>
                   {deletingResultIds.has(test.id) ? 'Deleting…' : 'Delete'}
                 </button>
                 <button
@@ -1603,7 +1607,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
                               </div>
                               <div className="results-compare-metric">
                                 <span className="results-compare-label">Error Rate</span>
-                                <span className="results-compare-value">{cardErrorPct === undefined ? 'Unknown' : `${cardErrorPct.toFixed(2)}%`}</span>
+                                <span className="results-compare-value">{cardErrorPct === undefined ? 'Unknown' : `${formatFixed(cardErrorPct, 2)}%`}</span>
                               </div>
                               <div className="results-compare-metric">
                                 <span className="results-compare-label">Peak {comparisonActionFiltered ? 'request' : 'transaction'} attempts/s</span>
@@ -1617,7 +1621,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
                                   </div>
                                   <div className="results-compare-metric">
                                     <span className="results-compare-label">CPU Peak</span>
-                                    <span className="results-compare-value">{report!.resource_peaks.cpu_process_pct.toFixed(1)}%</span>
+                                    <span className="results-compare-value">{formatFixed(report!.resource_peaks.cpu_process_pct, 1)}%</span>
                                   </div>
                                 </>
                               )}
@@ -1836,7 +1840,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
             <span>{[search && `Search: ${search}`, fromDate && `From ${fromDate}`, toDate && `Through ${toDate}`, releaseFilter !== (activeRelease?.id || 'all') && `Release: ${releaseFilter === 'all' ? 'All releases' : releaseFilter}`, statusFilter !== 'all' && `Status: ${statusFilter}`, archiveFilter !== 'all' && `Archive: ${archiveFilter === 'ready' ? 'ready' : 'unavailable'}`].filter(Boolean).join(' · ')}</span>
             <button className="btn btn-secondary btn-sm" type="button" onClick={() => { setSearch(''); setFromDate(''); setToDate(''); setStatusFilter('all'); setArchiveFilter('all'); setReleaseFilter(activeRelease?.id || 'all') }}>Reset result filters</button>
           </div>}
-          <p className="setting-desc">Lifecycle elapsed uses recorded start and end times; configured duration is never substituted. Report evidence windows may differ.</p>
+          <p className="setting-desc">Elapsed is the run's lifecycle time from its recorded start and end; configured duration is never substituted. Report evidence windows may differ.</p>
           {resultsTruncated && (
             <p className="results-truncation-status" role="status" aria-live="polite">
               Loaded {tests.length.toLocaleString()} of {resultListTotal.toLocaleString()} local results. Older results continue loading in the background.
@@ -1904,12 +1908,12 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
                       />
                     </th>
                     <SortHeader label="Source" field="source" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
-                    <SortHeader label="Scenario" field="name" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
+                    <SortHeader label="Run" field="name" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
                     <SortHeader label="Status" field="status" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
                     <SortHeader label="VUsers" field="total_vusers" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} numeric />
                     <SortHeader label="Groups" field="groups" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} numeric />
                     <SortHeader label="Started" field="started" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
-                    <SortHeader label="Lifecycle elapsed" field="duration" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} numeric />
+                    <SortHeader label="Elapsed" field="duration" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} numeric />
                     <SortHeader label="Archive" field="archive" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
                     <th className="results-actions-column">Actions</th>
                   </tr>

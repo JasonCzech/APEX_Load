@@ -57,11 +57,16 @@ four cases:
   when there is no hard-stop context).
 - A stop or goal boundary abandoned the iteration and left a failed
   transaction behind.
-- A transaction the VUser still had open when a stop ended it (the run's
-  stop or end, a ramp-down or scale-down, a goal boundary).
+- A transaction the VUser still had open when a goal boundary ended it.
 - A resource-limit failure (the error class `resource_limit`, for example a
   browser context closed at its HAR or memory limit): the generator, not the
   system under test, ended the action.
+
+Work a stop cut off is left out of the results altogether, as LoadRunner
+does: a request the stop cancelled, a transaction a hard stop cut off, and a
+transaction still open when the run's stop or end, a ramp-down or a
+scale-down ended the VUser. The attempt it was part of has no settling row,
+so it is censored.
 
 Neither cancellation nor a generator limit can establish a failure of the
 system under test. An interrupted failure therefore censors every attempt it
