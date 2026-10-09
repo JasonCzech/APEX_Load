@@ -1251,6 +1251,30 @@ type Extractor struct {
 	// it for safe reuse in URLs/bodies; "url_decode" decodes form/query
 	// escaping; "html_decode" decodes HTML entities.
 	Convert string `json:"convert,omitempty"`
+	// Scope widens or filters the HTTP responses searched. Without it only
+	// the final response of the request is searched.
+	Scope *ExtractorScope `json:"scope,omitempty"`
+}
+
+// ExtractorScope is the set of a request's responses an HTTP extractor
+// searches, as LoadRunner registrations search every response of a step.
+// Responses are tried in order (redirect hops, the final response, then
+// resources in arrival order) and the first match wins.
+type ExtractorScope struct {
+	// Redirects "include" also searches each redirect hop's status and
+	// headers (Go does not keep a hop's body). "" or "exclude" does not.
+	Redirects string `json:"redirects,omitempty"`
+	// Resources "include" also searches the responses of the resources the
+	// request fetches (explicit resources or Browser Emulation downloads).
+	Resources string `json:"resources,omitempty"`
+	// RequestURL keeps only responses whose request URL matches this glob
+	// ("*" spans any text, matched case-insensitively against the whole URL;
+	// a pattern without wildcards matches as a substring).
+	RequestURL string `json:"request_url,omitempty"`
+	// ContentType keeps only responses whose Content-Type matches this glob.
+	ContentType string `json:"content_type,omitempty"`
+	// HeaderNames limits header, all and cookies searches to these headers.
+	HeaderNames []string `json:"header_names,omitempty"`
 }
 
 type Assertion struct {

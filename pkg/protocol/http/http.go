@@ -351,6 +351,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	requestBytes := int64(len(requestBody))
 	connectionReused := false
 	redirectCount := 0
+	responseSet := newResponseSetCollector(action.Extractors)
 	redirectDuration := time.Duration(0)
 	redirectLegStart := result.StartTime
 
@@ -546,6 +547,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	baseCheckRedirect := client.CheckRedirect
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		observeVerificationRedirect(ctx, req.Response, false)
+		responseSet.addHop(req.Response)
 		traceMu.Lock()
 		redirectCount = len(via)
 		if !redirectLegStart.IsZero() {
@@ -852,7 +854,10 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	if resp.Request != nil && resp.Request.URL != nil {
 		surfaces.url = resp.Request.URL.String()
 	}
-extractors:
+	// Extractors scoped to resources wait until the page's resources are
+	// fetched; every other extractor runs now, before assertions.
+	resourcesPlanned := responseSet != nil && responseSet.wantResources && h.pageResourcesPlanned(action, resp, respBody, contentComplete)
+	var deferredExtractors []protocol.Extractor
 	for _, ext := range action.Extractors {
 		if err := extractorWork.charge(ext); err != nil {
 			result.Success = false
@@ -861,98 +866,20 @@ extractors:
 			result.ErrorMessage = fmt.Sprintf("extractor %q input rejected: %v", ext.Name, err)
 			break
 		}
-		if ext.Mode == "all" {
-			values, err := extractAllResponse(ext, surfaces)
-			if errors.Is(err, errExtractorResourceLimit) {
-				result.Success = false
-				result.Extractions = nil
-				result.ExtractionsIncomplete = true
-				result.ErrorMessage = fmt.Sprintf("extractor %q output rejected: %v", ext.Name, err)
-				break
-			}
-			if ext.OnMiss == "default" && (ext.DefaultValue == nil || (err != nil && !errors.Is(err, protocol.ErrExtractionMiss))) {
-				result.Success = false
-				result.ErrorMessage = fmt.Sprintf("extractor %q default rejected: %v", ext.Name, err)
-				continue
-			}
-			if err == nil && len(values) > 0 {
-				for i, value := range values {
-					if !storeHTTPExtraction(result, ext, fmt.Sprintf("%s_%d", ext.Name, i+1), value) {
-						break extractors
-					}
-				}
-				if !storeHTTPExtraction(result, ext, ext.Name+"_count", fmt.Sprintf("%d", len(values))) {
-					break
-				}
-				continue
-			}
-			if ext.OnMiss == "fail" {
-				if result.Success {
-					result.Success = false
-					if err == nil {
-						err = fmt.Errorf("no matches")
-					}
-					result.ErrorMessage = fmt.Sprintf("extractor %q found no match: %v", ext.Name, err)
-				}
-				continue
-			}
-			// A lenient miss still publishes the count so loops over
-			// {{var.name_count}} behave.
-			if !storeHTTPExtraction(result, ext, ext.Name+"_count", "0") {
-				break
-			}
-			if ext.OnMiss == "default" && ext.DefaultValue != nil {
-				if !storeHTTPExtraction(result, ext, ext.Name, *ext.DefaultValue) {
-					break extractors
-				}
-			}
-			if ext.OnMiss == "empty" {
-				// Mirror single-value "empty" semantics: assign the base
-				// variable an empty string so {{var.name}} expands to "" rather
-				// than leaking the literal template into later requests.
-				if !storeHTTPExtraction(result, ext, ext.Name, "") {
-					break
-				}
-			}
+		if resourcesPlanned && ext.Scope != nil && scopeIncludes(ext.Scope.Resources) {
+			deferredExtractors = append(deferredExtractors, ext)
 			continue
 		}
-		val, err := extractResponse(ext, surfaces)
-		if errors.Is(err, errExtractorResourceLimit) {
+		candidates := scopedCandidates(ext, surfaces, responseSet)
+		if err := chargeCandidates(extractorWork, ext, candidates); err != nil {
 			result.Success = false
 			result.Extractions = nil
 			result.ExtractionsIncomplete = true
-			result.ErrorMessage = fmt.Sprintf("extractor %q output rejected: %v", ext.Name, err)
+			result.ErrorMessage = fmt.Sprintf("extractor %q input rejected: %v", ext.Name, err)
 			break
 		}
-		if err == nil {
-			if !storeHTTPExtraction(result, ext, ext.Name, val) {
-				break
-			}
-			continue
-		}
-		switch ext.OnMiss {
-		case "default":
-			if ext.DefaultValue == nil || !errors.Is(err, protocol.ErrExtractionMiss) {
-				result.Success = false
-				result.ErrorMessage = fmt.Sprintf("extractor %q failed: %v", ext.Name, err)
-				continue
-			}
-			if ext.DefaultValue != nil {
-				if !storeHTTPExtraction(result, ext, ext.Name, *ext.DefaultValue) {
-					break extractors
-				}
-			}
-		case "fail":
-			if result.Success {
-				result.Success = false
-				result.ErrorMessage = fmt.Sprintf("extractor %q found no match: %v", ext.Name, err)
-			}
-		case "empty":
-			// Source-tool NotFound=warning/empty semantics: the variable is
-			// assigned an empty string so later templates expand to "".
-			if !storeHTTPExtraction(result, ext, ext.Name, "") {
-				break extractors
-			}
+		if applyHTTPExtractor(result, ext, candidates) {
+			break
 		}
 	}
 
@@ -1021,6 +948,9 @@ extractors:
 		defer resourceEvidence.lease.release()
 		resourceCtx = context.WithValue(ctx, resourceCaptureKey{}, resourceEvidence)
 	}
+	if resourcesPlanned {
+		resourceCtx = context.WithValue(resourceCtx, responseSetKey{}, responseSet)
+	}
 	explicit, _ := ParseExplicitResources(action.Params)
 	fetcher := h.resources
 	if fetcher == nil && len(explicit) > 0 {
@@ -1045,6 +975,20 @@ extractors:
 				result.ErrorMessage = callerCtx.Err().Error()
 			}
 			result.Duration = time.Since(result.StartTime)
+		}
+	}
+
+	for _, ext := range deferredExtractors {
+		candidates := scopedCandidates(ext, surfaces, responseSet)
+		if err := chargeCandidates(extractorWork, ext, candidates); err != nil {
+			result.Success = false
+			result.Extractions = nil
+			result.ExtractionsIncomplete = true
+			result.ErrorMessage = fmt.Sprintf("extractor %q input rejected: %v", ext.Name, err)
+			break
+		}
+		if applyHTTPExtractor(result, ext, candidates) {
+			break
 		}
 	}
 

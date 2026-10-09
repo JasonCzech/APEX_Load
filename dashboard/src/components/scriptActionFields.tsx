@@ -17,6 +17,7 @@ import SourceCodeViewer from './SourceCodeViewer'
 import { useCodeLineWrapPreference } from './codeLineWrapPreference'
 import { formatXMLForDisplay } from './xmlDisplayFormat'
 import { BODY_ENCODING_OPTIONS, bodyEncodingLabel, knownBodyEncoding } from './bodyEncodings'
+import { describeExtractorScope } from './extractorScope'
 
 type Action = ScriptActionDefinition
 type Assertion = ScriptAssertionDefinition
@@ -1128,6 +1129,7 @@ export function ProtocolExtractorsSection({ action, index, protocol, onAddExtrac
           </select>
           <input aria-label={`Extractor ${extractorIndex + 1} expression`} value={extractor.expression} onChange={e => onUpdateExtractor(index, extractorIndex, 'expression', e.target.value)} placeholder={extractorExpressionPlaceholder(protocol, extractor.source)} className="ext-expr" />
           <button aria-label={`Remove extractor ${extractorIndex + 1}`} className="btn-icon danger" onClick={() => onRemoveExtractor(index, extractorIndex)}>✕</button>
+          {extractor.scope && <p className="sequence-summary-note" aria-label={`Extractor ${extractorIndex + 1} scope`}>{describeExtractorScope(extractor.scope)}</p>}
         </div>
       ))}
     </div>

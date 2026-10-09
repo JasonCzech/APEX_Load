@@ -16,6 +16,8 @@ type responseSurfaces struct {
 	url string
 	// status is the final response status code; zero when unknown.
 	status int
+	// isFinal marks the request's final response among scoped candidates.
+	isFinal bool
 }
 
 // textSurface returns the text a cookies, url or status extractor searches:

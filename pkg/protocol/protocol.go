@@ -633,6 +633,18 @@ type Extractor struct {
 	SaveOffset   int     `json:"save_offset,omitempty"` // skip leading bytes of each matched value
 	SaveLength   int     `json:"save_length,omitempty"` // truncate each value to at most N bytes (0 = entire)
 	Convert      string  `json:"convert,omitempty"`     // "url_encode" | "url_decode" | "html_decode"
+	// Scope widens or filters the HTTP responses searched (see
+	// dsl.ExtractorScope); nil searches the final response only.
+	Scope *ExtractorScope `json:"scope,omitempty"`
+}
+
+// ExtractorScope mirrors dsl.ExtractorScope for the protocol layer.
+type ExtractorScope struct {
+	Redirects   string   `json:"redirects,omitempty"`
+	Resources   string   `json:"resources,omitempty"`
+	RequestURL  string   `json:"request_url,omitempty"`
+	ContentType string   `json:"content_type,omitempty"`
+	HeaderNames []string `json:"header_names,omitempty"`
 }
 
 // Assertion validates a response matches expected conditions.

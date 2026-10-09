@@ -35,6 +35,16 @@ export interface ScriptExtractorDefinition {
   save_length?: number
   /** Post-process each value: "url_encode" | "url_decode" | "html_decode" | "html_url_encode". */
   convert?: string
+  /** HTTP response set to search: redirect hops, resources, URL/Content-Type filters. Absent = final response only. */
+  scope?: ScriptExtractorScope
+}
+
+export interface ScriptExtractorScope {
+  redirects?: string
+  resources?: string
+  request_url?: string
+  content_type?: string
+  header_names?: string[]
 }
 
 export interface ScriptAssertionDefinition {

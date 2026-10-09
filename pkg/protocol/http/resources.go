@@ -464,6 +464,9 @@ func (h *HTTP) fetchResource(
 	captureComplete := false
 	defer func() {
 		recordResourceCapture(ctx, entry, captureRequest, captureResponse, captureBody, cacheHit, captureComplete)
+		if captureComplete {
+			recordResourceResponse(ctx, entry.URL, entry.StatusCode, captureResponse, captureBody)
+		}
 	}()
 
 	defer func() {

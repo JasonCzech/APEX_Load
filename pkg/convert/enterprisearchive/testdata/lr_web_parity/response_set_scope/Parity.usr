@@ -1,0 +1,6 @@
+[General]
+Type=Web
+RuntimeSettings=default.cfg
+
+[Actions]
+Action1=Action.c

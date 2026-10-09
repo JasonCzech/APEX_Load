@@ -7523,10 +7523,37 @@
         "save_offset": {
           "type": "integer"
         },
+        "scope": {
+          "$ref": "#/$defs/ExtractorScope"
+        },
         "source": {
           "type": "string"
         },
         "type": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ExtractorScope": {
+      "additionalProperties": false,
+      "properties": {
+        "content_type": {
+          "type": "string"
+        },
+        "header_names": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "redirects": {
+          "type": "string"
+        },
+        "request_url": {
+          "type": "string"
+        },
+        "resources": {
           "type": "string"
         }
       },

@@ -1285,9 +1285,23 @@ func toProtocolExtractors(exts []dsl.Extractor, vu *VUser) []protocol.Extractor 
 			SaveOffset:   e.SaveOffset,
 			SaveLength:   e.SaveLength,
 			Convert:      e.Convert,
+			Scope:        toProtocolExtractorScope(e.Scope),
 		}
 	}
 	return out
+}
+
+func toProtocolExtractorScope(scope *dsl.ExtractorScope) *protocol.ExtractorScope {
+	if scope == nil {
+		return nil
+	}
+	return &protocol.ExtractorScope{
+		Redirects:   scope.Redirects,
+		Resources:   scope.Resources,
+		RequestURL:  scope.RequestURL,
+		ContentType: scope.ContentType,
+		HeaderNames: append([]string(nil), scope.HeaderNames...),
+	}
 }
 
 func toProtocolAssertions(asserts []dsl.Assertion, vu *VUser) []protocol.Assertion {

@@ -74,6 +74,7 @@ var credentialSurfaceDispositions = map[string]credentialSurfaceDisposition{
 	"config.kafka.oauth.client_secret_ref":      covered("config.kafka.oauth", "OAuth Basic credential pair"),
 	"config.eventhubs.checkpoint_container_url": excluded("processor validation and identitypolicy reject URL userinfo and query credentials before constructing the Blob HTTP client; no Basic composite is synthesized"),
 	"config.kafka.oauth.token_url":              excluded("runtime rejects endpoint userinfo; token endpoint never synthesizes Basic from a URL"),
+	"action.extractors.scope.request_url":       excluded("a wildcard filter matched against response URLs; it is never sent on the wire or used to build a request, so no credential composite can be synthesized from it"),
 	"config.kafka.schema_registry_url": covered("config.kafka.schema_registry_url",
 		"dialed by a net/http client in pkg/protocol/kafka"),
 	"action.target": covered("action.target",

@@ -12420,6 +12420,13 @@ export interface operations {
               "on_miss"?: string;
               "save_length"?: number;
               "save_offset"?: number;
+              "scope"?: ({
+                "content_type"?: string;
+                "header_names"?: Array<string>;
+                "redirects"?: string;
+                "request_url"?: string;
+                "resources"?: string;
+              }) | null;
               "source"?: string;
               "type"?: string;
             }) | null;
@@ -38051,6 +38058,7 @@ export interface operations {
                 "on_miss"?: string;
                 "save_length"?: number;
                 "save_offset"?: number;
+                "scope"?: (Record<string, unknown>) | null;
                 "source"?: string;
                 "type"?: string;
               }>;
@@ -38657,6 +38665,7 @@ export interface operations {
                 "on_miss"?: string;
                 "save_length"?: number;
                 "save_offset"?: number;
+                "scope"?: (Record<string, unknown>) | null;
                 "source"?: string;
                 "type"?: string;
               }>;
@@ -38805,6 +38814,7 @@ export interface operations {
                 "on_miss"?: string;
                 "save_length"?: number;
                 "save_offset"?: number;
+                "scope"?: (Record<string, unknown>) | null;
                 "source"?: string;
                 "type"?: string;
               }>;
@@ -103890,6 +103900,13 @@ export interface operations {
               "on_miss"?: string;
               "save_length"?: number;
               "save_offset"?: number;
+              "scope"?: ({
+                "content_type"?: string;
+                "header_names"?: Array<string>;
+                "redirects"?: string;
+                "request_url"?: string;
+                "resources"?: string;
+              }) | null;
               "source": string;
               "type": string;
             };
@@ -103912,6 +103929,13 @@ export interface operations {
                 "on_miss"?: string;
                 "save_length"?: number;
                 "save_offset"?: number;
+                "scope"?: ({
+                  "content_type"?: string;
+                  "header_names"?: Array<string>;
+                  "redirects"?: string;
+                  "request_url"?: string;
+                  "resources"?: string;
+                }) | null;
                 "source": string;
                 "type": string;
               };
@@ -106432,6 +106456,13 @@ export interface operations {
               "on_miss"?: string;
               "save_length"?: number;
               "save_offset"?: number;
+              "scope"?: ({
+                "content_type"?: string;
+                "header_names"?: Array<string>;
+                "redirects"?: string;
+                "request_url"?: string;
+                "resources"?: string;
+              }) | null;
               "source"?: string;
               "type"?: string;
             }) | null;
@@ -155475,6 +155506,7 @@ export interface operations {
                 "on_miss"?: string;
                 "save_length"?: number;
                 "save_offset"?: number;
+                "scope"?: (Record<string, unknown>) | null;
                 "source"?: string;
                 "type"?: string;
               }>;
@@ -156081,6 +156113,7 @@ export interface operations {
                 "on_miss"?: string;
                 "save_length"?: number;
                 "save_offset"?: number;
+                "scope"?: (Record<string, unknown>) | null;
                 "source"?: string;
                 "type"?: string;
               }>;
@@ -156229,6 +156262,7 @@ export interface operations {
                 "on_miss"?: string;
                 "save_length"?: number;
                 "save_offset"?: number;
+                "scope"?: (Record<string, unknown>) | null;
                 "source"?: string;
                 "type"?: string;
               }>;
@@ -161838,6 +161872,7 @@ export interface operations {
                 "on_miss"?: string;
                 "save_length"?: number;
                 "save_offset"?: number;
+                "scope"?: (Record<string, unknown>) | null;
                 "source"?: string;
                 "type"?: string;
               }>;
@@ -162444,6 +162479,7 @@ export interface operations {
                 "on_miss"?: string;
                 "save_length"?: number;
                 "save_offset"?: number;
+                "scope"?: (Record<string, unknown>) | null;
                 "source"?: string;
                 "type"?: string;
               }>;
@@ -162592,6 +162628,7 @@ export interface operations {
                 "on_miss"?: string;
                 "save_length"?: number;
                 "save_offset"?: number;
+                "scope"?: (Record<string, unknown>) | null;
                 "source"?: string;
                 "type"?: string;
               }>;

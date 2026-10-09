@@ -1,6 +1,7 @@
 package enterprisearchive
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -45,8 +46,9 @@ func TestRegistrationScopeMapping(t *testing.T) {
 		{"json reads the body", `web_reg_save_param_json("ParamName=p", "QueryString=$.id", LAST);`, "body", ""},
 		{"dfes gate", `web_reg_save_param_ex("ParamName=p", "LB=a", "RB=b", "DFEs=Base64Decode", LAST);`, "all", registrationDFEReasonCode},
 		{"ignore redirections yes is exact", `web_reg_save_param_ex("ParamName=p", "LB=a", "RB=b", SEARCH_FILTERS, "IgnoreRedirections=Yes", LAST);`, "all", ""},
-		{"ignore redirections no is not reproduced", `web_reg_save_param_ex("ParamName=p", "LB=a", "RB=b", SEARCH_FILTERS, "IgnoreRedirections=No", LAST);`, "all", registrationFilterReasonCode},
-		{"header names", `web_reg_save_param_ex("ParamName=p", "LB=a", "RB=b", SEARCH_FILTERS, "Scope=Headers", "HeaderNames=Location", LAST);`, "header", registrationFilterReasonCode},
+		{"ignore redirections no searches redirect hops", `web_reg_save_param_ex("ParamName=p", "LB=a", "RB=b", SEARCH_FILTERS, "IgnoreRedirections=No", LAST);`, "all", ""},
+		{"header names narrow the header search", `web_reg_save_param_ex("ParamName=p", "LB=a", "RB=b", SEARCH_FILTERS, "Scope=Headers", "HeaderNames=Location", LAST);`, "header", ""},
+		{"header names on a body search have no effect", `web_reg_save_param_ex("ParamName=p", "LB=a", "RB=b", SEARCH_FILTERS, "Scope=Body", "HeaderNames=Location", LAST);`, "body", registrationFilterReasonCode},
 		{"frames", `web_reg_save_param_ex("ParamName=p", "LB=a", "RB=b", "RelFrameId=1.2", LAST);`, "all", registrationFilterReasonCode},
 	}
 	for _, tt := range tests {
@@ -81,7 +83,7 @@ func TestBoundaryWhitespaceIsPreserved(t *testing.T) {
 }
 
 func TestRegistrationFiltersAreJudgedAgainstTheAttachedRequest(t *testing.T) {
-	_, filter := sourceRegistrationFilters(parseSingleCall(t, `web_reg_save_param_ex("ParamName=p", "LB=a", "RB=b", SEARCH_FILTERS, "RequestUrl=*orders*", "ContentType=text/html", LAST);`), "p")
+	_, filter := sourceRegistrationFilters(parseSingleCall(t, `web_reg_save_param_ex("ParamName=p", "LB=a", "RB=b", SEARCH_FILTERS, "RequestUrl=*orders*", "ContentType=text/html", LAST);`), "p", "all")
 	if filter == nil {
 		t.Fatal("RequestUrl/ContentType must produce a pending filter")
 	}
@@ -128,5 +130,36 @@ func TestTextCheckOnHeadersIsNotRunAgainstTheBody(t *testing.T) {
 	reasons, _ := action.Metadata["review_reasons"].([]string)
 	if len(reasons) != 1 || reasons[0] != textCheckScopeReasonCode {
 		t.Fatalf("review_reasons = %v, want %s", action.Metadata["review_reasons"], textCheckScopeReasonCode)
+	}
+}
+
+func TestRegistrationExtractorScope(t *testing.T) {
+	tests := []struct {
+		call string
+		want dsl.ExtractorScope
+	}{
+		{`web_reg_save_param("p", "LB=a", "RB=b", LAST);`, dsl.ExtractorScope{Redirects: "include", Resources: "include"}},
+		{`web_reg_save_param_ex("ParamName=p", "LB=a", "RB=b", SEARCH_FILTERS, "IgnoreRedirections=Yes", "RequestUrl=*token*", "ContentType=text/*", LAST);`,
+			dsl.ExtractorScope{Redirects: "exclude", Resources: "include", RequestURL: "*token*", ContentType: "text/*"}},
+		{`web_reg_save_param_ex("ParamName=p", "LB=a", "RB=b", SEARCH_FILTERS, "Scope=Headers", "HeaderNames=Location, Set-Cookie", LAST);`,
+			dsl.ExtractorScope{Redirects: "include", Resources: "include", HeaderNames: []string{"Location", "Set-Cookie"}}},
+	}
+	for _, tt := range tests {
+		conversion := convertRegistration(parseSingleCall(t, tt.call))
+		if conversion.extractor == nil || conversion.extractor.Scope == nil || !reflect.DeepEqual(*conversion.extractor.Scope, tt.want) {
+			t.Errorf("%s: scope = %+v, want %+v", tt.call, conversion.extractor.Scope, tt.want)
+		}
+	}
+}
+
+func TestResourceFilterIsExactWhenAnExplicitResourceMatches(t *testing.T) {
+	_, filter := sourceRegistrationFilters(parseSingleCall(t, `web_reg_save_param_ex("ParamName=p", "LB=a", "RB=b", SEARCH_FILTERS, "RequestUrl=*token*", LAST);`), "p", "all")
+	page := &dsl.Action{Target: "/app/home", Metadata: map[string]any{"original_url": "https://shop.test/app/home"}}
+	if findings := filter.findingsForAttachedRequest(page, "text/html"); len(findings) != 1 {
+		t.Fatalf("a filter only an unlisted resource matches must keep its finding, got %v", findings)
+	}
+	page.Params = map[string]any{"resources": []any{map[string]any{"url": "https://shop.test/static/token.js"}}}
+	if findings := filter.findingsForAttachedRequest(page, "text/html"); len(findings) != 0 {
+		t.Fatalf("an explicit resource matching the filter makes it exact, got %v", findings)
 	}
 }

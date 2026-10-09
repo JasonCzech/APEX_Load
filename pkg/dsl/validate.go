@@ -15,6 +15,8 @@ import (
 	"time"
 	"unicode"
 
+	"golang.org/x/net/http/httpguts"
+
 	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/internal/bodyencoding"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -1261,11 +1263,54 @@ func validateExtractorIssues(protocol string, path string, action Action) []stri
 				issues = append(issues, fmt.Sprintf("%s: extractors[%d] source must be \"\", \"body\", \"header\", \"all\", \"cookies\", \"url\", or \"status\" (got %q)", label, i, ext.Source))
 			}
 		}
+		issues = append(issues, validateExtractorScopeIssues(label, i, ext, enforceSourceType)...)
 		if ext.SaveOffset < 0 {
 			issues = append(issues, fmt.Sprintf("%s: extractors[%d] save_offset must be zero or greater", label, i))
 		}
 		if ext.SaveLength < 0 {
 			issues = append(issues, fmt.Sprintf("%s: extractors[%d] save_length must be zero or greater", label, i))
+		}
+	}
+	return issues
+}
+
+// validateExtractorScopeIssues checks an HTTP extractor's response scope.
+func validateExtractorScopeIssues(label string, index int, ext Extractor, httpFamily bool) []string {
+	scope := ext.Scope
+	if scope == nil {
+		return nil
+	}
+	if !httpFamily {
+		return []string{fmt.Sprintf("%s: extractors[%d] scope is supported only by HTTP-family protocols", label, index)}
+	}
+	var issues []string
+	for _, field := range [][2]string{{"redirects", scope.Redirects}, {"resources", scope.Resources}} {
+		field, value := field[0], field[1]
+		if !isAllowedValue(strings.TrimSpace(value), "", "include", "exclude") {
+			issues = append(issues, fmt.Sprintf("%s: extractors[%d] scope.%s must be \"include\" or \"exclude\" (got %q)", label, index, field, value))
+		}
+	}
+	for _, field := range [][2]string{{"request_url", scope.RequestURL}, {"content_type", scope.ContentType}} {
+		field, pattern := field[0], field[1]
+		if len(pattern) > httpprotocol.MaxExtractorExpressionBytes {
+			issues = append(issues, fmt.Sprintf("%s: extractors[%d] scope.%s exceeds %d bytes", label, index, field, httpprotocol.MaxExtractorExpressionBytes))
+		} else if !httpprotocol.ValidScopeGlob(pattern) {
+			issues = append(issues, fmt.Sprintf("%s: extractors[%d] scope.%s is not a valid wildcard pattern", label, index, field))
+		}
+	}
+	if len(scope.HeaderNames) > 0 {
+		switch strings.TrimSpace(ext.Source) {
+		case "header", "all", "cookies":
+		default:
+			issues = append(issues, fmt.Sprintf("%s: extractors[%d] scope.header_names applies only to the header, all or cookies sources", label, index))
+		}
+		if len(scope.HeaderNames) > 64 {
+			issues = append(issues, fmt.Sprintf("%s: extractors[%d] scope.header_names lists more than 64 headers", label, index))
+		}
+		for _, name := range scope.HeaderNames {
+			if !httpguts.ValidHeaderFieldName(strings.TrimSpace(name)) {
+				issues = append(issues, fmt.Sprintf("%s: extractors[%d] scope.header_names has an invalid header name %q", label, index, name))
+			}
 		}
 	}
 	return issues

@@ -2,12 +2,12 @@ package enterprisearchive
 
 import (
 	"fmt"
-	"path"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 // LoadRunner registrations (web_reg_save_param*, web_reg_find) search a
@@ -20,8 +20,9 @@ const (
 	// APEX approximates (an unrecognized scope, or Cookies with a structured
 	// JSON/XPath query).
 	registrationScopeNarrowedReasonCode = "registration_scope_narrowed"
-	// registrationFilterReasonCode: a search filter (RequestUrl, ContentType,
-	// HeaderNames, RelFrameId, IgnoreRedirections=No) APEX cannot honour.
+	// registrationFilterReasonCode: a search filter APEX cannot honour
+	// (RelFrameId, HeaderNames on a body search, or a RequestUrl/ContentType
+	// filter that only a resource APEX may not fetch can match).
 	registrationFilterReasonCode = "registration_filter_unreproduced"
 	// registrationDFEReasonCode: data-format extensions transform the
 	// response before searching, so the saved value would differ.
@@ -102,22 +103,48 @@ type pendingRegistrationFilter struct {
 	contentType string
 }
 
+// sourceRegistrationExtractorScope is the response set a registration
+// searches. LoadRunner searches every response of the step, redirect hops and
+// resources included, unless IgnoreRedirections=Yes; RequestUrl=,
+// ContentType= and HeaderNames= narrow it, exactly as APEX's scope does.
+func sourceRegistrationExtractorScope(fn ParsedFunction, source string) *dsl.ExtractorScope {
+	scope := &dsl.ExtractorScope{Redirects: "include", Resources: "include"}
+	if strings.EqualFold(strings.TrimSpace(cleanConfigValue(firstNonEmptyArg(fn, "IgnoreRedirections"))), "yes") {
+		scope.Redirects = "exclude"
+	}
+	scope.RequestURL = strings.TrimSpace(cleanConfigValue(firstNonEmptyArg(fn, "RequestUrl")))
+	scope.ContentType = strings.TrimSpace(cleanConfigValue(firstNonEmptyArg(fn, "ContentType")))
+	if registrationSourceSearchesHeaders(source) {
+		for _, name := range strings.FieldsFunc(cleanConfigValue(firstNonEmptyArg(fn, "HeaderNames")), func(r rune) bool { return r == ',' || r == ';' }) {
+			if name = strings.TrimSpace(name); name != "" {
+				scope.HeaderNames = append(scope.HeaderNames, name)
+			}
+		}
+	}
+	return scope
+}
+
+func registrationSourceSearchesHeaders(source string) bool {
+	switch source {
+	case "header", "all", "cookies":
+		return true
+	}
+	return false
+}
+
 // sourceRegistrationFilters returns the immediate findings for a
 // registration's search filters and DFEs, plus the filters that can only be
-// judged once the next request is known.
-func sourceRegistrationFilters(fn ParsedFunction, paramName string) ([]importreview.Finding, *pendingRegistrationFilter) {
+// judged once the next request is known. source is the extractor source the
+// registration maps to.
+func sourceRegistrationFilters(fn ParsedFunction, paramName, source string) ([]importreview.Finding, *pendingRegistrationFilter) {
 	var findings []importreview.Finding
 	if dfes := strings.TrimSpace(cleanConfigValue(firstNonEmptyArg(fn, "DFEs"))); dfes != "" {
 		findings = append(findings, registrationFinding(fn, registrationDFEReasonCode, diag.Blocker, importreview.GateExecution,
 			fmt.Sprintf("Parameter %q applies data-format extensions (%s) to the response before searching; APEX searches the raw response, so the saved value would differ.", paramName, dfes)))
 	}
-	if value := strings.TrimSpace(cleanConfigValue(firstNonEmptyArg(fn, "IgnoreRedirections"))); strings.EqualFold(value, "no") {
+	if value := strings.TrimSpace(cleanConfigValue(firstNonEmptyArg(fn, "HeaderNames"))); value != "" && !registrationSourceSearchesHeaders(source) {
 		findings = append(findings, promotionFinding(fn, registrationFilterReasonCode,
-			fmt.Sprintf("Parameter %q also searches redirect responses (IgnoreRedirections=No); APEX reads only the final response after redirects.", paramName)))
-	}
-	if value := strings.TrimSpace(cleanConfigValue(firstNonEmptyArg(fn, "HeaderNames"))); value != "" {
-		findings = append(findings, promotionFinding(fn, registrationFilterReasonCode,
-			fmt.Sprintf("Parameter %q searches only the headers %s; APEX searches all response headers, so an earlier header can match first.", paramName, value)))
+			fmt.Sprintf("Parameter %q limits its search to the headers %s but searches the response body, so the limit has no effect.", paramName, value)))
 	}
 	if value := strings.TrimSpace(cleanConfigValue(firstNonEmptyArg(fn, "RelFrameId"))); value != "" {
 		findings = append(findings, promotionFinding(fn, registrationFilterReasonCode,
@@ -136,14 +163,16 @@ func sourceRegistrationFilters(fn ParsedFunction, paramName string) ([]importrev
 }
 
 // findingsForAttachedRequest judges RequestUrl= and ContentType= against the
-// request the registration attached to: LoadRunner applies the registration
-// to whichever response of the step matches, while APEX only reads the main
-// response, so a filter that does not match the main request means the value
-// would come from a resource or redirect APEX never searches.
+// request the registration attached to. The extractor scope applies the same
+// filters to every response APEX sees, but APEX sees resource responses only
+// when the step fetches them: explicit EXTRARES resources, or Browser
+// Emulation downloads. A filter that matches neither the main request nor an
+// explicit resource may therefore find nothing.
 func (p *pendingRegistrationFilter) findingsForAttachedRequest(action *dsl.Action, recContentType string) []importreview.Finding {
 	if p == nil {
 		return nil
 	}
+	explicit := explicitResourceURLs(action)
 	var findings []importreview.Finding
 	if p.requestURL != "" {
 		url := ""
@@ -153,31 +182,40 @@ func (p *pendingRegistrationFilter) findingsForAttachedRequest(action *dsl.Actio
 				url = action.Target
 			}
 		}
-		if !loadRunnerGlobMatch(p.requestURL, url) {
+		matched := loadRunnerGlobMatch(p.requestURL, url)
+		for _, resource := range explicit {
+			matched = matched || loadRunnerGlobMatch(p.requestURL, resource)
+		}
+		if !matched {
 			findings = append(findings, promotionFinding(p.fn, registrationFilterReasonCode,
-				fmt.Sprintf("Parameter %q applies to responses whose URL matches %q, which the step's main request (%s) does not; the value comes from a resource or redirect APEX does not search.", p.paramName, p.requestURL, url)))
+				fmt.Sprintf("Parameter %q applies to responses whose URL matches %q, which neither the step's main request (%s) nor its explicit resources match; APEX finds the value only if Browser Emulation downloads that resource.", p.paramName, p.requestURL, url)))
 		}
 	}
-	if p.contentType != "" && !loadRunnerGlobMatch(p.contentType, recContentType) {
+	if p.contentType != "" && !loadRunnerGlobMatch(p.contentType, recContentType) && len(explicit) == 0 {
 		findings = append(findings, promotionFinding(p.fn, registrationFilterReasonCode,
-			fmt.Sprintf("Parameter %q applies to responses of content type %q, which does not match the step's recorded content type %q; the value comes from a response APEX does not search.", p.paramName, p.contentType, recContentType)))
+			fmt.Sprintf("Parameter %q applies to responses of content type %q, which does not match the step's recorded content type %q and the step lists no explicit resources; APEX finds the value only if Browser Emulation downloads a matching resource.", p.paramName, p.contentType, recContentType)))
 	}
 	return findings
+}
+
+// explicitResourceURLs lists the EXTRARES resource URLs of a converted step.
+func explicitResourceURLs(action *dsl.Action) []string {
+	if action == nil {
+		return nil
+	}
+	resources, _ := action.Params["resources"].([]any)
+	urls := make([]string, 0, len(resources))
+	for _, resource := range resources {
+		entry, _ := resource.(map[string]any)
+		if url, _ := entry["url"].(string); url != "" {
+			urls = append(urls, url)
+		}
+	}
+	return urls
 }
 
 // loadRunnerGlobMatch matches LoadRunner's "*" wildcard filters
 // case-insensitively against the whole value.
 func loadRunnerGlobMatch(pattern, value string) bool {
-	pattern = strings.ToLower(strings.TrimSpace(pattern))
-	value = strings.ToLower(strings.TrimSpace(value))
-	if pattern == "" {
-		return true
-	}
-	if !strings.ContainsAny(pattern, "*?[") {
-		return strings.Contains(value, pattern)
-	}
-	// path.Match treats "/" as a separator for "*"; LoadRunner's "*" spans it.
-	escaped := strings.ReplaceAll(pattern, "/", "\x00")
-	matched, err := path.Match(escaped, strings.ReplaceAll(value, "/", "\x00"))
-	return err == nil && matched
+	return httpprotocol.MatchScopeGlob(pattern, value)
 }

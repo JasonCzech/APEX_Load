@@ -9,6 +9,7 @@ import { collectAuthoringIssues } from './scriptAuthoringAssist'
 import AuthHostsField from './AuthHostsField'
 import { parseAuthHosts } from './authHosts'
 import { ProtocolExtractorsSection } from './scriptActionFields'
+import { describeExtractorScope } from './extractorScope'
 import { bodyEncodingLabel, knownBodyEncoding } from './bodyEncodings'
 import type { ScriptDefinition } from '../types/scripts'
 
@@ -140,5 +141,14 @@ describe('HTTP extractor rows', () => {
     expect(selectedLabel('Extractor 2 source')).toBe('Set-Cookie lines')
     expect([...selectFor('Extractor 2 type').options].map(option => option.value)).toEqual(['regex', 'boundary', 'regex_count', 'regex_ordinal'])
     expect(selectedLabel('Extractor 3 source')).toBe('Unsupported: cookie')
+  })
+})
+
+describe('extractor scope summary', () => {
+  it('names the extra responses and filters', () => {
+    expect(describeExtractorScope(undefined)).toBe('')
+    expect(describeExtractorScope({ redirects: 'include', resources: 'include' })).toBe('Also searches redirect hops and resources')
+    expect(describeExtractorScope({ redirects: 'exclude', resources: 'include', request_url: '*token*' })).toBe('Also searches resources; only URL *token*')
+    expect(describeExtractorScope({ header_names: ['Location'] })).toBe('Final response only; only headers Location')
   })
 })
