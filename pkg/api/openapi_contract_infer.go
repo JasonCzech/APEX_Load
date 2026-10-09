@@ -598,6 +598,18 @@ func applyRouteRequestSchemaProjection(route discoveredRoute, analysis *handlerC
 			Description: "Archive timestamp, or null to restore the data pool. Omit to preserve the current archive state.",
 		}
 		delete(analysis.requestSchema.Properties, "project_id")
+	case route.Method == http.MethodPost && route.Path == "/api/v1/tests/{id}/interrupted-stop/resolve":
+		// The override is accepted only with this exact attestation; advertise
+		// it so a caller can learn the contract from the API description.
+		analysis.requestSchema.Properties["attestation"] = oasSchema{
+			Type:        "string",
+			Enum:        []string{interruptedRunResolutionAttestation},
+			Description: "Required. Confirms that every generator process that could run this test is stopped or fenced.",
+		}
+		if note, ok := analysis.requestSchema.Properties["note"]; ok {
+			note.Description = fmt.Sprintf("Optional context recorded on the run (at most %d bytes are kept).", maxInterruptedRunResolutionNote)
+			analysis.requestSchema.Properties["note"] = note
+		}
 	case route.Method == http.MethodPost && route.Path == "/api/v1/data-pools/{id}/rows":
 		// The create handler owns row identity, parent scope, optimistic
 		// version, and timestamps. Reusing the storage/response type for JSON

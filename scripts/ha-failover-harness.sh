@@ -28,6 +28,9 @@
 #            continue-policy runs to the successor and releases its lease.
 #          TOLERATE_LOSS=1 (also set assignment.tolerate_generator_loss)
 #          KILL_GENERATOR_AT (seconds after start to kill -9 generator g2; 0 = never)
+#          ARCHIVE_WAIT (seconds to keep polling for the run archive after the
+#            terminal status; 0 = don't. An interrupted run's archive is collected
+#            afterwards by the once-a-minute archive collection retry worker)
 #          GENERATOR_BIN (generator binary to run instead of this checkout's, e.g. an
 #            older release to exercise a mixed fleet)
 # Output:  $HARNESS_DIR/run-*/{timeline,status,c1,c2,g1,g2}.log, rps.txt, final_test.json
@@ -56,6 +59,7 @@ SECOND_KILL_AT=${SECOND_KILL_AT:-0}
 STOP_AT=${STOP_AT:-0}
 SUSPEND_LEADER=${SUSPEND_LEADER:-0}
 KILL_SIGNAL=${KILL_SIGNAL:-KILL}
+ARCHIVE_WAIT=${ARCHIVE_WAIT:-0}
 TOLERATE_LOSS=${TOLERATE_LOSS:-0}
 KILL_GENERATOR_AT=${KILL_GENERATOR_AT:-0}
 RESUME_AFTER=${RESUME_AFTER:-0}
@@ -206,7 +210,17 @@ while :; do
   [ "$el" -ge "$MAX_WAIT" ] && { log "max wait reached: $s"; break; }
   sleep 1
 done
+terminal_at=$(date +%s)
 sleep 8
+if [ "$ARCHIVE_WAIT" -gt 0 ]; then
+  while :; do
+    archive_code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' "$ACTIVE/api/v1/tests/$TID/archive/report?profile=engineer&format=csv")
+    aw=$(( $(date +%s) - terminal_at ))
+    [ "$archive_code" = "200" ] && { log "archive: available ${aw}s after the terminal status"; break; }
+    [ "$aw" -ge "$ARCHIVE_WAIT" ] && { log "archive: still unavailable (HTTP $archive_code) ${aw}s after the terminal status"; break; }
+    sleep 5
+  done
+fi
 curl -s "$ACTIVE/api/v1/tests/$TID" > "$RUN/final_test.json"
 curl -s "$ACTIVE/api/v1/tests/$TID/archive/report?profile=engineer&format=csv" > "$RUN/report_engineer.csv"
 curl -s "$ACTIVE/api/v1/tests/$TID/report?profile=engineer" > "$RUN/report_engineer.html"

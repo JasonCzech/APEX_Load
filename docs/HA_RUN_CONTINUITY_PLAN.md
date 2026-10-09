@@ -717,7 +717,10 @@ The remaining review items are covered in §17.
   stopped the load about 19 seconds after the kill, the successor acquired
   about 24 seconds after it, and after the 30-second settle it finalized the
   run FAILED from generator proof at +100s (55 seconds after the kill).
-  Before this phase the run stayed STOPPING indefinitely. SIGTERM with the
+  Before this phase the run stayed STOPPING indefinitely. With
+  `ARCHIVE_WAIT=240` a repeat run showed the archive collection retry worker
+  publishing the archive (2,677 transactions from both generators) 103
+  seconds after the run was finalized. SIGTERM with the
   `continue` policy: COMPLETE, the old leader handed the run off and exited
   within a second, and the target saw load in every one of the 151 seconds
   (about 40 requests per second throughout). The successor's observation gap

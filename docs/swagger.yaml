@@ -416773,8 +416773,12 @@ paths:
               properties:
                 attestation:
                   type: string
+                  description: Required. Confirms that every generator process that could run this test is stopped or fenced.
+                  enum:
+                    - all-generator-processes-stopped
                 note:
                   type: string
+                  description: Optional context recorded on the run (at most 512 bytes are kept).
       responses:
         "200":
           description: OK

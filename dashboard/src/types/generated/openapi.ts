@@ -127626,7 +127626,7 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
-          "attestation"?: string;
+          "attestation"?: "all-generator-processes-stopped";
           "note"?: string;
         };
       };
