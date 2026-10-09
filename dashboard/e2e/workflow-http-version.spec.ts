@@ -12,6 +12,13 @@ import type { ScriptActionDefinition, ScriptDefinition } from '../src/types/scri
 import { test, expect, idOf, json, login } from './support/workflow'
 import { createWorkspace, scopeQuery, type Workspace } from './support/workspace'
 
+// Protocol provenance sits in a closed "Protocol evidence" disclosure under the response.
+async function openProtocolEvidence(page: Page) {
+  const disclosure = page.locator('details.replay-protocol-evidence')
+  await expect(disclosure).toBeVisible()
+  if (!await disclosure.evaluate(element => (element as HTMLDetailsElement).open)) await disclosure.locator('summary').click()
+}
+
 // Two real TLS targets distinguish exact selection from automatic negotiation.
 // The certificate and key exist only inside this fixture's disposable directory.
 async function versionTarget() {
@@ -205,10 +212,12 @@ test('mixed HTTP versions retain request policy, share sessions and expose measu
     const auto = exported.report.events.find(event => event.action_name === 'Auto on H1 only')
     expect(auto?.protocol_evidence).toMatchObject({ http_version_policy: 'auto', http_version_negotiated: '1.1', http_version_source: 'wire' })
     await page.locator('.debugger-action-row-main').filter({ hasText: 'Consume joined versions' }).click()
+    await openProtocolEvidence(page)
     const evidence = page.getByRole('region', { name: 'HTTP version evidence', exact: true })
     const actual = evidence.locator('dt').filter({ hasText: 'Actual negotiated HTTP version' }).locator('xpath=following-sibling::dd[1]')
     await expect(actual).toHaveText('HTTP/2')
     await page.locator('.debugger-action-row-main').filter({ hasText: 'Auto on H1 only' }).click()
+    await openProtocolEvidence(page)
     await expect(actual).toHaveText('HTTP/1.1')
     await expect(evidence.locator('dt').filter({ hasText: 'Replay policy' }).locator('xpath=following-sibling::dd[1]')).toContainText('Auto')
     await expect(evidence.locator('dt').filter({ hasText: 'Version evidence source' }).locator('xpath=following-sibling::dd[1]')).toHaveText('Wire response')

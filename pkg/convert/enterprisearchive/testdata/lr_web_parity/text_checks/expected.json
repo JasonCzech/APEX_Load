@@ -1,0 +1,166 @@
+{
+  "description": "web_reg_find checks: Search=Headers reads only the header block, TextPfx/TextSfx, /DIG, /ALNUMIC, /BIN, /REGEXP, /IC and Fail=Found. Each passes on a correct page and fails on a broken one.",
+  "source": "VuGen 26.1 Function Reference: web_reg_find (Search, TextPfx/TextSfx, Text flags DIG, ALNUM*, BIN, REGEXP, IC; Fail).",
+  "outcome": "replay",
+  "responses": [
+    {
+      "method": "GET",
+      "path": "/check/headers_ok",
+      "headers": {
+        "X-Status": "ok"
+      },
+      "body": "fine"
+    },
+    {
+      "method": "GET",
+      "path": "/check/headers_broken",
+      "body": "X-Status: ok"
+    },
+    {
+      "method": "GET",
+      "path": "/check/prefix_suffix_ok",
+      "body": "<html><title>Status</title></html>"
+    },
+    {
+      "method": "GET",
+      "path": "/check/prefix_suffix_broken",
+      "body": "<html><title>Status</html>"
+    },
+    {
+      "method": "GET",
+      "path": "/check/digits_ok",
+      "body": "Order 42 shipped"
+    },
+    {
+      "method": "GET",
+      "path": "/check/digits_broken",
+      "body": "Order 4x shipped"
+    },
+    {
+      "method": "GET",
+      "path": "/check/alphanumerics_ok",
+      "body": "id=a1B;"
+    },
+    {
+      "method": "GET",
+      "path": "/check/alphanumerics_broken",
+      "body": "id=a-B;"
+    },
+    {
+      "method": "GET",
+      "path": "/check/binary_ok",
+      "body": "ok\u0001"
+    },
+    {
+      "method": "GET",
+      "path": "/check/binary_broken",
+      "body": "ok1"
+    },
+    {
+      "method": "GET",
+      "path": "/check/regexp_ok",
+      "body": "status=done"
+    },
+    {
+      "method": "GET",
+      "path": "/check/regexp_broken",
+      "body": "status=fail"
+    },
+    {
+      "method": "GET",
+      "path": "/check/ignore_case_ok",
+      "body": "welcome back"
+    },
+    {
+      "method": "GET",
+      "path": "/check/ignore_case_broken",
+      "body": "farewell"
+    },
+    {
+      "method": "GET",
+      "path": "/check/fail_when_found_ok",
+      "body": "all good"
+    },
+    {
+      "method": "GET",
+      "path": "/check/fail_when_found_broken",
+      "body": "Error 500"
+    }
+  ],
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/check/headers_ok"
+    },
+    {
+      "method": "GET",
+      "path": "/check/headers_broken"
+    },
+    {
+      "method": "GET",
+      "path": "/check/prefix_suffix_ok"
+    },
+    {
+      "method": "GET",
+      "path": "/check/prefix_suffix_broken"
+    },
+    {
+      "method": "GET",
+      "path": "/check/digits_ok"
+    },
+    {
+      "method": "GET",
+      "path": "/check/digits_broken"
+    },
+    {
+      "method": "GET",
+      "path": "/check/alphanumerics_ok"
+    },
+    {
+      "method": "GET",
+      "path": "/check/alphanumerics_broken"
+    },
+    {
+      "method": "GET",
+      "path": "/check/binary_ok"
+    },
+    {
+      "method": "GET",
+      "path": "/check/binary_broken"
+    },
+    {
+      "method": "GET",
+      "path": "/check/regexp_ok"
+    },
+    {
+      "method": "GET",
+      "path": "/check/regexp_broken"
+    },
+    {
+      "method": "GET",
+      "path": "/check/ignore_case_ok"
+    },
+    {
+      "method": "GET",
+      "path": "/check/ignore_case_broken"
+    },
+    {
+      "method": "GET",
+      "path": "/check/fail_when_found_ok"
+    },
+    {
+      "method": "GET",
+      "path": "/check/fail_when_found_broken"
+    }
+  ],
+  "expect_failures": {
+    "headers_broken": "response headers does not contain",
+    "prefix_suffix_broken": "does not match",
+    "digits_broken": "does not match",
+    "alphanumerics_broken": "does not match",
+    "binary_broken": "does not match",
+    "regexp_broken": "does not match",
+    "ignore_case_broken": "does not contain",
+    "fail_when_found_broken": "unexpected"
+  }
+}

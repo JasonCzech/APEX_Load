@@ -28,7 +28,7 @@
 }
 
 .dash-card-button:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -468,7 +468,7 @@
 }
 
 .release-panel-eyebrow {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: var(--label-tracking, 0.06em);
@@ -480,7 +480,7 @@
   appearance: none;
   border: 1px solid var(--accent-border);
   background: color-mix(in srgb, var(--accent) 10%, var(--bg-card));
-  color: var(--accent);
+  color: var(--accent-text);
   cursor: pointer;
   font: inherit;
   font-size: 11px;
@@ -504,7 +504,7 @@
 
 .release-panel-toggle:focus-visible,
 .release-panel-rail:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -580,7 +580,7 @@
 }
 
 .dash-release-option:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -638,7 +638,7 @@
 }
 
 .release-panel-stat.is-actionable:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -662,7 +662,7 @@
 }
 
 .release-panel-stat.tone-accent .release-panel-stat-value {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .release-panel-stat.tone-success .release-panel-stat-value {
@@ -674,7 +674,7 @@
 }
 
 .release-panel-stat.tone-danger .release-panel-stat-value {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .release-panel-status-strip {
@@ -793,7 +793,7 @@
 
 .release-panel-feed-item:focus-visible,
 .release-panel-quality-callout:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -947,7 +947,7 @@
 }
 
 .dash-tab:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -1332,7 +1332,7 @@
 }
 
 .trend-table th.sortable button:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
 
@@ -1343,7 +1343,7 @@
 }
 
 .sort-icon.active {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .trend-table tbody tr {
@@ -1406,11 +1406,11 @@
 
 .dash-source-link:hover,
 .dash-source-link:focus-visible {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .dash-source-link:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
   border-radius: 3px;
 }
@@ -1608,11 +1608,11 @@
 }
 
 .release-trend-detail-stat.tone-danger .release-trend-detail-stat-value {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .release-trend-detail-stat.tone-success .release-trend-detail-stat-value {
-  color: var(--success);
+  color: var(--success-text);
 }
 
 .release-trend-detail-stat-label {
@@ -1762,7 +1762,7 @@
 .dashboard-attention-item.tone-danger { border-left-color: var(--danger); }
 .dashboard-priority summary, .dashboard-run-details summary { cursor: pointer; color: var(--text-primary); font-size: 12px; padding: 8px 0; }
 .dashboard-priority details .dashboard-attention-item { margin-top: 8px; }
-.dashboard-attention-link:focus-visible, .dashboard-attention-dismiss:focus-visible, .dashboard-priority summary:focus-visible, .dashboard-run-details summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dashboard-attention-link:focus-visible, .dashboard-attention-dismiss:focus-visible, .dashboard-priority summary:focus-visible, .dashboard-run-details summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .dashboard-queue { display: grid; gap: 12px; }
 .dashboard-queue-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
 .dashboard-queue-row > div { min-width: 0; display: grid; gap: 4px; overflow-wrap: anywhere; }
@@ -1798,7 +1798,7 @@
 .analysis-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
 .analysis-controls label { display: flex; flex-direction: column; gap: 6px; flex: 1 1 180px; min-width: 0; color: var(--text-secondary); font-size: 12px; }
 .analysis-controls input, .analysis-controls select { box-sizing: border-box; min-height: 36px; width: 100%; min-width: 0; max-width: 100%; padding: 7px 10px; color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; font: inherit; }
-.analysis-controls input:focus-visible, .analysis-controls select:focus-visible, .analysis-run-button:focus-visible, .analysis-table-wrap:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.analysis-controls input:focus-visible, .analysis-controls select:focus-visible, .analysis-run-button:focus-visible, .analysis-table-wrap:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
 .analysis-settings, .analysis-qualification, .analysis-readiness { padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); }
 .analysis-settings summary, .analysis-qualification summary, .analysis-readiness summary { cursor: pointer; color: var(--text-primary); font-weight: 600; }
 .analysis-settings[open] summary, .analysis-qualification[open] summary { margin-bottom: 14px; }
@@ -1815,7 +1815,7 @@
 .analysis-table-wrap th { white-space: normal; }
 .analysis-table-wrap th:first-child, .analysis-table-wrap td:first-child { position: sticky; left: 0; z-index: 1; background: var(--bg-secondary); min-width: 170px; }
 .analysis-id { display: block; color: var(--text-secondary); font-size: 11px; line-height: 1.6; margin-top: 4px; overflow-wrap: anywhere; }
-.analysis-run-button { padding: 3px 0; color: var(--accent); background: transparent; border: 0; text-align: left; font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.analysis-run-button { padding: 3px 0; color: var(--accent-text); background: transparent; border: 0; text-align: left; font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .analysis-trend-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .load-comparison-chart h4 { margin: 0 0 10px; color: var(--text-primary); font-size: 13px; }
 .load-comparison-chart-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); }

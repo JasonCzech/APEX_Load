@@ -220,7 +220,7 @@ const SMOOTHED_GRAPH_METRIC_SUFFIX = '__smoothed'
 export const LOAD_IMPACT_VISIBLE_CHARTS_STORAGE_KEY = 'apexload.execution.visibleLoadImpactCharts'
 export const DEFAULT_LOAD_IMPACT_GRAPH_METRIC_IDS = ['avgMs', 'p95', 'tps', 'errorPct', 'cpuProcess', 'memProcess']
 const LOAD_IMPACT_GRAPH_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)']
-const PROMETHEUS_GRAPH_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)', 'var(--accent)', 'var(--warning)']
+const PROMETHEUS_GRAPH_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)', 'var(--chart-7)', 'var(--chart-8)']
 const MIN_GRAPH_SMOOTHING_RADIUS = 2
 const MAX_GRAPH_SMOOTHING_RADIUS = 6
 const DEFAULT_DOWNSAMPLED_GRAPH_POINTS = 420
@@ -272,7 +272,7 @@ export function isResponsePercentileChart(chart: ChartConfig): chart is ChartCon
 }
 
 export const chartConfigs: ChartConfig[] = [
-  { id: 'vusers', title: 'Virtual Users', type: 'area', dataKey: 'vusers', color: 'var(--chart-1)' },
+  { id: 'vusers', title: 'VUsers', type: 'area', dataKey: 'vusers', color: 'var(--chart-1)' },
   { id: 'tps', title: 'Transactions Per Second', type: 'line-multi', totalKey: 'tps' },
   { id: 'latency', title: 'Response Time (ms)', type: 'line-latency' },
   ...responsePercentileCharts,
@@ -284,7 +284,7 @@ export const chartConfigs: ChartConfig[] = [
     keys: [
       { k: 'cpuProcess', n: 'VUser avg %', c: 'var(--chart-1)' },
       { k: 'cpuFree', n: 'System avg %', c: 'var(--chart-2)' },
-      { k: 'cpuProcessMax', n: 'Worst pod %', c: 'var(--warning)' },
+      { k: 'cpuProcessMax', n: 'Worst pod %', c: 'var(--chart-3)' },
     ],
     domain: [0, 100],
   },
@@ -318,13 +318,15 @@ export const chartConfigs: ChartConfig[] = [
     type: 'area-stacked',
     stackId: 'errors',
     keys: [
-      { k: 'errTimeout', n: 'Timeout', c: 'var(--warning)' },
-      { k: 'errConnection', n: 'Connection', c: 'var(--chart-3)' },
-      { k: 'errHttp4xx', n: 'HTTP 4xx', c: 'var(--chart-2)' },
-      { k: 'errHttp5xx', n: 'HTTP 5xx', c: 'var(--danger)' },
-      { k: 'errAssertion', n: 'Assertion', c: 'var(--chart-4)' },
-      { k: 'errResourceLimit', n: 'Generator resource limit', c: 'var(--chart-5)' },
-      { k: 'errOther', n: 'Other', c: 'var(--text-muted)' },
+      // One chart slot per category: status tokens alias chart slots in most
+      // themes (--danger == --chart-4), which made two categories identical.
+      { k: 'errTimeout', n: 'Timeout', c: 'var(--chart-3)' },
+      { k: 'errConnection', n: 'Connection', c: 'var(--chart-5)' },
+      { k: 'errHttp4xx', n: 'HTTP 4xx', c: 'var(--chart-1)' },
+      { k: 'errHttp5xx', n: 'HTTP 5xx', c: 'var(--chart-4)' },
+      { k: 'errAssertion', n: 'Assertion', c: 'var(--chart-6)' },
+      { k: 'errResourceLimit', n: 'Generator resource limit', c: 'var(--chart-7)' },
+      { k: 'errOther', n: 'Other', c: 'var(--chart-8)' },
     ],
     domain: [0, 'auto'],
   },
@@ -535,8 +537,8 @@ const generatorImpactMetricRows: ChartMetricRow[] = [
   { key: 'containerMemoryUsagePct', label: 'Memory Limit', color: 'var(--chart-5)', unit: '%' },
   { key: 'gcPauseMs', label: 'GC Pause', color: 'var(--chart-2)', unit: 'ms' },
   { key: 'netDropsPerSec', label: 'Net Drops', color: 'var(--chart-3)', unit: 'drops/s' },
-  { key: 'netErrorsPerSec', label: 'Net Errors', color: 'var(--danger)', unit: 'errors/s' },
-  { key: 'tcpRetransmitsPerSec', label: 'TCP Retransmits', color: 'var(--warning)', unit: 'retrans/s' },
+  { key: 'netErrorsPerSec', label: 'Net Errors', color: 'var(--chart-7)', unit: 'errors/s' },
+  { key: 'tcpRetransmitsPerSec', label: 'TCP Retransmits', color: 'var(--chart-8)', unit: 'retrans/s' },
   { key: 'diskIOTimePct', label: 'Disk Busy', color: 'var(--chart-6)', unit: '%' },
 ]
 

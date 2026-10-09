@@ -168,11 +168,15 @@ export function useModalDialog({
       updateModalIsolation()
       if (!dialogStack.length) document.body.style.overflow = bodyOverflow
       if (shouldRestoreFocusRef.current?.() === false) return
-      if (previouslyFocused?.isConnected && previouslyFocused !== document.body && isVisible(previouslyFocused)) {
-        previouslyFocused.focus()
-      } else if (returnFocusSelector) {
-        document.querySelector<HTMLElement>(returnFocusSelector)?.focus()
+      // focus() fails silently on a disabled or re-rendered opener, so check
+      // where focus actually landed before falling back to the selector.
+      const focusIfPossible = (element: HTMLElement | null | undefined) => {
+        if (!element?.isConnected || element === document.body || element.matches(':disabled') || !isVisible(element)) return false
+        element.focus()
+        return document.activeElement === element
       }
+      if (focusIfPossible(previouslyFocused)) return
+      if (returnFocusSelector) focusIfPossible(document.querySelector<HTMLElement>(returnFocusSelector))
     }
   }, [dialogRef, enabled, initialFocusRef, returnFocusSelector])
 }

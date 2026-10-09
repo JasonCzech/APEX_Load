@@ -4,7 +4,7 @@
 .lr-import-header { display: flex; justify-content: space-between; align-items: flex-start; }
 .lr-import-header h2 { font-size: 20px; margin-bottom: 6px; }
 .lr-subtitle { color: var(--text-muted); font-size: 13px; line-height: 1.6; max-width: 640px; }
-.lr-subtitle code { background: var(--bg-hover); padding: 1px 5px; border-radius: 3px; font-size: 12px; color: var(--accent); }
+.lr-subtitle code { background: var(--bg-hover); padding: 1px 5px; border-radius: 3px; font-size: 12px; color: var(--accent-text); }
 
 /* Drop zone */
 .lr-dropzone {
@@ -105,10 +105,10 @@
 }
 .lr-file-status-pill.validating,
 .lr-file-status-pill.converting {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .lr-file-status-pill.failed {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 .lr-status-dot {
   width: 7px;
@@ -119,7 +119,7 @@
   animation: lr-status-pulse 1.2s ease-in-out infinite;
 }
 .lr-file-row-message {
-  color: var(--danger);
+  color: var(--danger-text);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.35;
@@ -342,7 +342,7 @@
 /* Error */
 .lr-error {
   padding: 10px 16px; border-radius: 6px; font-size: 13px; font-weight: 500;
-  background: rgba(var(--danger-rgb), 0.12); color: var(--danger); border: 1px solid rgba(var(--danger-rgb), 0.2);
+  background: rgba(var(--danger-rgb), 0.12); color: var(--danger-text); border: 1px solid rgba(var(--danger-rgb), 0.2);
 }
 
 /* Result */
@@ -354,7 +354,7 @@
   display: flex; justify-content: space-between; align-items: center;
   padding: 14px 20px; border-bottom: 1px solid var(--border);
 }
-.lr-result-header h3 { font-size: 15px; margin: 0; color: var(--success); }
+.lr-result-header h3 { font-size: 15px; margin: 0; color: var(--success-text); }
 .lr-validation-review-tabs {
   display: flex;
   gap: 4px;
@@ -380,11 +380,11 @@
 }
 .lr-validation-review-tabs button.active {
   border-bottom-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .lr-validation-review-tabs button:focus-visible {
   border-radius: 5px 5px 0 0;
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
 .lr-validation-review-panel {
@@ -463,7 +463,7 @@
   font-size: 12px;
 }
 .lr-warnings { padding: 14px 20px; border-bottom: 1px solid var(--border); }
-.lr-warnings h4 { font-size: 13px; color: var(--warning); margin: 0 0 8px 0; }
+.lr-warnings h4 { font-size: 13px; color: var(--warning-text); margin: 0 0 8px 0; }
 .lr-warnings ul { margin: 0; padding-left: 18px; font-size: 12px; color: var(--text-secondary); line-height: 1.8; max-height: 160px; overflow-y: auto; }
 
 .lr-pagination {
@@ -550,7 +550,7 @@
 .lr-salesforce-blockers {
   margin: 10px 0 0;
   padding-left: 18px;
-  color: var(--warning);
+  color: var(--warning-text);
   font-size: 12px;
   line-height: 1.6;
 }
@@ -602,7 +602,7 @@
 }
 .lr-preserved-header h4 {
   font-size: 13px;
-  color: var(--success);
+  color: var(--success-text);
   margin: 0;
   text-transform: var(--label-case, uppercase);
   letter-spacing: var(--label-tracking, 0.04em);
@@ -767,8 +767,8 @@
 .lr-preserved-card.coverage-review_only { border-left: 3px solid color-mix(in srgb, var(--danger) 45%, var(--accent)); }
 .lr-preserved-card.coverage-external_runner_required { border-left: 3px solid var(--danger); }
 .coverage-hint { color: var(--text-muted); font-size: 12px; margin: 4px 0 8px 0; }
-.lr-warnings details[data-coverage="adapter_required"] > summary { color: var(--danger); }
-.lr-warnings details[data-coverage="external_runner_required"] > summary { color: var(--danger); }
+.lr-warnings details[data-coverage="adapter_required"] > summary { color: var(--danger-text); }
+.lr-warnings details[data-coverage="external_runner_required"] > summary { color: var(--danger-text); }
 
 /* Resolve Java Dependencies — user-uploaded classpath JAR attachment */
 .lr-java-classpath-resolver-section .java-classpath-resolver-list {
@@ -823,7 +823,7 @@
   padding: 2px 4px;
 }
 .java-classpath-resolver-row .chip-remove:hover,
-.java-env-classpath-asset-chip .chip-remove:hover { color: var(--danger); }
+.java-env-classpath-asset-chip .chip-remove:hover { color: var(--danger-text); }
 
 .lr-import-steps { display: flex; flex-wrap: wrap; gap: 12px; padding: 12px 0; list-style: none; color: var(--text-secondary); }
 .lr-import-steps [aria-current="step"] { color: var(--text-primary); font-weight: 600; }
@@ -868,7 +868,7 @@
 .lr-issue-workspace label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-primary); min-width: 0; }
 .lr-issue-workspace input, .lr-issue-workspace select, .lr-issue-workspace textarea { width: 100%; min-height: 40px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-input, var(--bg-primary)); color: var(--text-primary); font: inherit; box-sizing: border-box; }
 .lr-issue-workspace textarea { resize: vertical; font-weight: 400; }
-.lr-issue-workspace :is(button, input, select, textarea, summary):focus-visible, .lr-completed-setup summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.lr-issue-workspace :is(button, input, select, textarea, summary):focus-visible, .lr-completed-setup summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
 .lr-issue-layout { display: grid; grid-template-columns: minmax(260px, 0.85fr) minmax(0, 1.4fr); gap: 20px; align-items: start; }
 .lr-issue-queue { min-width: 0; }
 .lr-issue-queue > details { margin-bottom: 12px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
@@ -899,7 +899,7 @@
 .lr-repair-preview-outcome span, .lr-repair-preview-outcome small { color: var(--text-muted); font-size: 11px; line-height: 1.35; }
 .lr-repair-preview-outcome strong { color: var(--text-primary); font-size: 17px; line-height: 1.2; }
 .lr-repair-preview-outcome strong.healthy { color: var(--success-text); }
-.lr-repair-preview-outcome strong.danger { color: var(--danger); }
+.lr-repair-preview-outcome strong.danger { color: var(--danger-text); }
 .lr-repair-preview-fields { margin-top: 18px; }
 .lr-repair-preview-section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .lr-issue-detail .lr-repair-preview-section-heading h5 { margin: 0; }

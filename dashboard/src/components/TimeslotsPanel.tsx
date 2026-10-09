@@ -9,11 +9,15 @@ import { ApiError } from '../hooks/apiClient'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { CapacityTimeslot, FleetPool } from '../types'
-import ConfirmDestructiveModal from './ConfirmDestructiveModal'
+import { confirmAction } from './ux/confirmAction'
 import { listAllFleetPools } from './fleetCatalogModel'
 import { listAllCapacityTimeslots } from './schedulingCatalogModel'
 import { zonedLocalToISO } from './timeslotTimezoneModel'
 import './parityPanels.css'
+import TimezoneSelect from './ux/TimezoneSelect'
+import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
+import LoadingState from './ux/LoadingState'
+import EmptyState from './ux/EmptyState'
 
 interface Props {
   projectId?: string
@@ -34,14 +38,7 @@ function approvalPill(state: string): string {
 // Reservation windows are rendered in the slot's own IANA zone so the printed
 // wall-clock agrees with the zone name shown next to it.
 function fmt(value?: string, timezone?: string): string {
-  if (!value) return '—'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  try {
-    return date.toLocaleString(undefined, timezone ? { timeZone: timezone } : undefined)
-  } catch {
-    return date.toLocaleString()
-  }
+  return formatDisplayDateTime(value, { timeZone: timezone })
 }
 
 type Draft = {
@@ -98,7 +95,6 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
   const [availability, setAvailability] = useState<string | null>(null)
   const [availabilityError, setAvailabilityError] = useState(false)
   const [bindFor, setBindFor] = useState<{ slot: CapacityTimeslot; testId: string } | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<CapacityTimeslot | null>(null)
   const [busy, setBusy] = useState(false)
   const scopeRef = useRef({ projectId, generation: 0 })
   const loadGenerationRef = useRef(0)
@@ -149,7 +145,6 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
     setAvailability(null)
     setAvailabilityError(false)
     setBindFor(null)
-    setDeleteTarget(null)
     setBusy(false)
   }, [projectId])
 
@@ -210,6 +205,9 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
     })()),
     [draft],
   )
+  // Say why booking is unavailable next to the fields, not just by disabling buttons.
+  const draftRangeError = draft && draft.start_local && draft.end_local && !draftValid ? 'End must be after Start.' : ''
+  const draftGeneratorsError = draft && draft.generators !== '' && !(Number.isInteger(Number(draft.generators)) && Number(draft.generators) >= 1) ? 'Enter a whole number of generators, 1 or more.' : ''
   const reservationActionDisabled = !canManage || !projectId
   const reservationActionTitle = !canManage
     ? 'Admin access required to create reservations'
@@ -292,6 +290,18 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
     },
     [isCurrentScope, load],
   )
+
+  // Reservations are named by their window: retyping an internal id added
+  // friction without protecting anything a named confirmation does not.
+  const deleteReservation = async (slot: CapacityTimeslot) => {
+    const window = `${fmt(slot.start_at, slot.timezone)} → ${fmt(slot.end_at, slot.timezone)}${slot.timezone ? ` (${slot.timezone})` : ''}`
+    if (!(await confirmAction(`Permanently delete the capacity reservation for ${window}?`, { title: 'Delete capacity reservation', confirmLabel: 'Delete reservation', destructive: true }))) return
+    await act(
+      () => api.deleteTimeslot(slot.id),
+      'Failed to delete.',
+      () => setTimeslots(current => current.filter(timeslot => timeslot.id !== slot.id)),
+    )
+  }
 
   const approveSlot = useCallback(async (slot: CapacityTimeslot) => {
     const scope = { ...scopeRef.current }
@@ -383,11 +393,11 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
       {error && <div className="pp-error" role="alert">{error}</div>}
 
       {!projectId ? (
-        <div className="pp-empty">Select a project to view its capacity reservations.</div>
+        <EmptyState title="No project selected." hint="Select a project to view its capacity reservations." />
       ) : loading ? (
-        <div className="pp-empty">Loading reservations…</div>
+        <LoadingState what="reservations" className="pp-loading" />
       ) : timeslots.length === 0 ? (
-        <div className="pp-empty">No capacity reservations. Reserve a future window of generator capacity for a planned run.</div>
+        <EmptyState title="No capacity reservations yet." hint="Reserve a future window of generator capacity for a planned run." />
       ) : (
         <div className="pp-list">
           {timeslots.map(slot => (
@@ -427,7 +437,7 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
                       Bind test
                     </button>
                   )}
-                  <button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => setDeleteTarget(slot)}>
+                  <button type="button" className="btn btn-danger btn-sm" disabled={busy} aria-label={`Delete reservation ${fmt(slot.start_at, slot.timezone)} → ${fmt(slot.end_at, slot.timezone)}`} onClick={() => void deleteReservation(slot)}>
                     Delete
                   </button>
                 </div>
@@ -458,13 +468,14 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
                 </label>
                 <label className="pp-field">
                   <span>End</span>
-                  <input type="datetime-local" value={draft.end_local} onChange={e => { setDraft(d => (d ? { ...d, end_local: e.target.value } : d)); setAvailability(null); setAvailabilityError(false) }} />
+                  <input type="datetime-local" value={draft.end_local} aria-invalid={Boolean(draftRangeError) || undefined} aria-describedby={draftRangeError ? 'timeslot-range-error' : undefined} onChange={e => { setDraft(d => (d ? { ...d, end_local: e.target.value } : d)); setAvailability(null); setAvailabilityError(false) }} />
                 </label>
               </div>
+              {draftRangeError && <p id="timeslot-range-error" className="field-error" role="alert">{draftRangeError}</p>}
               <div className="pp-field-row">
                 <label className="pp-field">
-                  <span>Timezone (IANA)</span>
-                  <input value={draft.timezone} onChange={e => setDraft(d => (d ? { ...d, timezone: e.target.value } : d))} placeholder="e.g. UTC" />
+                  <span>Time zone</span>
+                  <TimezoneSelect ariaLabel="Time zone" value={draft.timezone} onChange={timezone => setDraft(d => (d ? { ...d, timezone } : d))} />
                 </label>
                 <label className="pp-field">
                   <span>Scenario (optional)</span>
@@ -474,7 +485,8 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
               <div className="pp-field-row">
                 <label className="pp-field">
                   <span>Generators (optional)</span>
-                  <input type="number" min={0} value={draft.generators} onChange={e => setDraft(d => (d ? { ...d, generators: e.target.value } : d))} />
+                  <input type="number" min={1} step={1} value={draft.generators} aria-invalid={Boolean(draftGeneratorsError) || undefined} aria-describedby="timeslot-generators-note" onChange={e => setDraft(d => (d ? { ...d, generators: e.target.value } : d))} />
+                  <small id="timeslot-generators-note" className={draftGeneratorsError ? 'field-error' : 'field-advisory'} role={draftGeneratorsError ? 'alert' : undefined}>{draftGeneratorsError || 'Requests above the configured fleet go to an approver; Check availability shows conflicts.'}</small>
                 </label>
                 <label className="pp-field">
                   <span>VUsers (optional)</span>
@@ -493,7 +505,7 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
                 </select>
               </label>
               <div className="pp-toolbar">
-                <button type="button" className="btn btn-ghost btn-sm" disabled={!draftValid || busy} onClick={() => void checkAvailability()}>
+                <button type="button" className="btn btn-ghost btn-sm" disabled={!draftValid || Boolean(draftGeneratorsError) || busy} onClick={() => void checkAvailability()}>
                   Check availability
                 </button>
                 {availability && (
@@ -509,7 +521,7 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
             </div>
             <div className="pp-modal-actions">
 								<button type="button" className="btn btn-secondary" onClick={closeDraft} disabled={busy}>Cancel</button>
-              <button type="button" className="btn btn-primary" disabled={!draftValid || busy} onClick={() => void submitDraft()}>
+              <button type="button" className="btn btn-primary" disabled={!draftValid || Boolean(draftGeneratorsError) || busy} onClick={() => void submitDraft()}>
                 {busy ? 'Reserving…' : 'Reserve'}
               </button>
             </div>
@@ -546,24 +558,6 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
         </div></DialogLayer>
       )}
 
-      {deleteTarget && (
-        <ConfirmDestructiveModal
-          title="Delete capacity reservation"
-          description={`This permanently deletes the reservation for ${fmt(deleteTarget.start_at, deleteTarget.timezone)} → ${fmt(deleteTarget.end_at, deleteTarget.timezone)}${deleteTarget.timezone ? ` (${deleteTarget.timezone})` : ''}.`}
-          target={deleteTarget.id}
-          targetLabel="Reservation id"
-          confirmLabel="Delete reservation"
-          loading={busy}
-          onCancel={() => setDeleteTarget(null)}
-			onConfirm={() => void act(
-				() => api.deleteTimeslot(deleteTarget.id),
-				'Failed to delete.',
-				() => setTimeslots(current => current.filter(timeslot => timeslot.id !== deleteTarget.id)),
-			).then(succeeded => {
-            if (succeeded) setDeleteTarget(null)
-          })}
-        />
-      )}
     </div>
   )
 }

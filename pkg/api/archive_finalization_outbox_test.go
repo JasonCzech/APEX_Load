@@ -423,6 +423,11 @@ func TestFilesystemArchiveRefreshStagesBeforeCatalogCAS(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := NewTestRunner(1, NewHub(), store)
+	// A run that started, refreshed by a controller holding no stage
+	// recorder: the archive predates stage sampling, so the refresh must not
+	// record recorder_lost into it.
+	started := time.Now().Add(-time.Hour)
+	test.StartedAt, test.telemetryStages = &started, nil
 	runner.mu.Lock()
 	runner.tests[test.ID] = test
 	runner.mu.Unlock()
@@ -441,6 +446,9 @@ func TestFilesystemArchiveRefreshStagesBeforeCatalogCAS(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(committed.ArchivePath, testRunManifestFileName)); err != nil {
 		t.Fatalf("staged adjunct missing after CAS: %v", err)
+	}
+	if refreshed, err := loadRunArchiveManifestFromRecord(committed); err != nil || refreshed.TelemetryStageDistributions != nil {
+		t.Fatalf("a refresh recorded stage distributions into a pre-sampling archive: %+v %v", refreshed.TelemetryStageDistributions, err)
 	}
 	if committed.TrendPointJSON == record.TrendPointJSON || strings.TrimSpace(committed.TrendPointJSON) == "" {
 		t.Fatalf("refresh retained stale trend projection: before=%q after=%q", record.TrendPointJSON, committed.TrendPointJSON)

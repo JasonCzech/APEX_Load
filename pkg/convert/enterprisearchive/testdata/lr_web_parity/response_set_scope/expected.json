@@ -1,0 +1,51 @@
+{
+  "description": "A registration finds code= in an intermediate 302's Location header (redirect hops are searched), and a RequestUrl=*token* registration finds a value that only a resource response carries.",
+  "source": "VuGen 26.1 Function Reference: web_reg_save_param_ex SEARCH_FILTERS (Scope=Headers, RequestUrl, IgnoreRedirections default); web_url EXTRARES.",
+  "outcome": "replay",
+  "responses": [
+    {
+      "method": "GET",
+      "path": "/sso/start",
+      "status": 302,
+      "headers": {
+        "Location": "http://parity.test/sso/callback?code=AC-42&state=s1"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/sso/callback",
+      "headers": {
+        "Content-Type": "text/html"
+      },
+      "body": "<html>signed in</html>"
+    },
+    {
+      "method": "GET",
+      "path": "/static/token.js",
+      "headers": {
+        "Content-Type": "application/javascript"
+      },
+      "body": "var rt=RT-7;"
+    }
+  ],
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/sso/start"
+    },
+    {
+      "method": "GET",
+      "path": "/sso/callback",
+      "query": "code=AC-42&state=s1"
+    },
+    {
+      "method": "GET",
+      "path": "/static/token.js"
+    },
+    {
+      "method": "GET",
+      "path": "/app/use",
+      "query": "code=AC-42&rt=RT-7"
+    }
+  ]
+}

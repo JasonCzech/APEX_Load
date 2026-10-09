@@ -143,4 +143,18 @@ func TestAnalysisSummaryImportPreviewCommitQueryReconcile(t *testing.T) {
 	if r = timeslotRequest(t, server, "POST", "/api/v1/analysis/compare?project_id=proj-a", comparison); r.Code != 200 {
 		t.Fatalf("summary correlation: %d %s", r.Code, r.Body.String())
 	}
+	// Each side is its declared summary statistic, never the summary's
+	// percentiles treated as raw observations.
+	var correlated AnalysisComparisonResponse
+	if err := json.Unmarshal(r.Body.Bytes(), &correlated); err != nil || correlated.CorrelationSemantics == nil {
+		t.Fatalf("correlation semantics: %v %s", err, r.Body.String())
+	}
+	for side, want := range map[*analysis.CorrelationSide]string{&correlated.CorrelationSemantics.Left: "p50", &correlated.CorrelationSemantics.Right: "p95"} {
+		if side.InputKind != analysis.KindSummary || side.Statistic != want || side.Conversion != analysis.ConversionDeclaredSummaryStatistic || side.Unit != "ms" {
+			t.Fatalf("summary side %+v, want statistic %s", *side, want)
+		}
+	}
+	if !correlated.CorrelationSemantics.SameUnits || correlated.CorrelationSemantics.LagConvention == "" {
+		t.Fatalf("semantics %+v", correlated.CorrelationSemantics)
+	}
 }

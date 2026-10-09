@@ -8,6 +8,13 @@ import { useDevView } from './useDevView'
 const AUTH_SESSION_RECHECK_INTERVAL_MS = 60_000
 const AUTH_SESSION_EXPIRY_SLOP_MS = 250
 
+const AUTH_STATUS_REFRESH_EVENT = 'apexload:auth-status-refresh'
+
+/** Re-check authentication in place (no page reload), e.g. after signing in again. */
+export function requestAuthStatusRefresh() {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(AUTH_STATUS_REFRESH_EVENT))
+}
+
 export type AuthStatusState =
   | { status: 'loading' }
   | { status: 'ready'; auth: DashboardAuthStatus }
@@ -21,6 +28,9 @@ export function useAuthStatus(): AuthStatusState {
   useEffect(() => {
     let active = true
     let recheckTimer: number | undefined
+    // Checks can overlap (a scheduled recheck and a refresh after signing in
+    // again); only the latest may apply, or a stale "signed out" answer wins.
+    let latestLoad = 0
 
     const scheduleRecheck = (auth: DashboardAuthStatus) => {
       if (
@@ -65,15 +75,16 @@ export function useAuthStatus(): AuthStatusState {
         recheckTimer = undefined
       }
 
+      const load = ++latestLoad
       try {
         const auth = await getAuthStatus()
-        if (!active) {
+        if (!active || load !== latestLoad) {
           return
         }
         setState({ status: 'ready', auth })
         scheduleRecheck(auth)
       } catch (error: unknown) {
-        if (!active) {
+        if (!active || load !== latestLoad) {
           return
         }
         const diagnostic = diagnoseError(error, 'Unable to determine authentication status.')
@@ -83,9 +94,12 @@ export function useAuthStatus(): AuthStatusState {
     }
 
     void loadAuthStatus()
+    const refresh = () => { void loadAuthStatus() }
+    window.addEventListener(AUTH_STATUS_REFRESH_EVENT, refresh)
 
     return () => {
       active = false
+      window.removeEventListener(AUTH_STATUS_REFRESH_EVENT, refresh)
       if (recheckTimer !== undefined) {
         window.clearTimeout(recheckTimer)
       }

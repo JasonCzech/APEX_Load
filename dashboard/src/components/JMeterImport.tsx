@@ -1,3 +1,5 @@
+import { useUnsavedWorkGuard } from '../hooks/NavigationGuardProvider'
+import { importSourceName } from '../appTopbar'
 import JMeterBatchRepairs from './JMeterBatchRepairs'
 import { importActionEntries } from './importReviewIssues'
 import JMeterMessagingPreview from './JMeterMessagingPreview'
@@ -101,6 +103,8 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
   } = useImportReviewGeneration()
   const reviewScope = `${reviewGeneration}:${projectId || ''}`
   const { savedResult, publish: publishSaved, openSaved } = useImportSaveOutcome(reviewScope, onImported)
+  // The converted draft lives only in this review until it is saved.
+  useUnsavedWorkGuard('JMeterImport', 'JMeter import review', Boolean(result) && !savedResult, () => undefined)
   const reviewProjectIdRef = useRef(projectId)
   reviewProjectIdRef.current = projectId
   const [parameterizationApplyingByScript, setParameterizationApplyingByScript] = useState<Record<string, boolean>>({})
@@ -564,7 +568,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
       <ImportSaveConfirmation result={savedResult} onImportMore={handleBrowse} onOpen={openSaved} disabled={sourceMutationLocked} />
       <div className="lr-import-header">
         <div>
-          <h2>Import JMeter Test Plan</h2>
+          <h2>{importSourceName('jmeter')}</h2>
           <p className="lr-subtitle">
             Upload a <code>.jmx</code> plan, a ZIP containing multiple JMX plans, or a LoadRunner Enterprise JMeter <code>.usz</code> and convert their thread groups into APEX Load reusable scripts. The importer preserves variables, CSV data sources, headers, timers, and review notes where possible.
           </p>
@@ -656,7 +660,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
       </div>}
       <div className="import-workflow-actions">
         <details><summary>Advanced validation only</summary>        <button className="btn btn-secondary btn-lg" onClick={handleValidate} disabled={!file || workingMode !== null || saving}>
-          {workingMode === 'validate' ? <><span className="spinner" /> Validating...</> : 'Validate Only'}
+          {workingMode === 'validate' ? <><span className="spinner" /> Validating…</> : 'Validate Only'}
         </button></details>
         <button className="btn btn-primary btn-lg" onClick={handleImport} disabled={!file || workingMode !== null || saving}>
           {workingMode === 'convert' ? <><span className="spinner" /> Converting...</> : 'Inspect & review'}
@@ -849,7 +853,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
             saveLabel={savedResult ? 'Saved to Script Library' : `Save ${result.scripts.length} draft${result.scripts.length === 1 ? '' : 's'}`}
             onSave={handleSaveConverted}
             onEdit={onEdit && primaryScript && result.scripts.length === 1 && !savedResult ? handleEditConverted : undefined}
-            editLabel={editRequiresCredentialPreservingSave ? 'Save and Open in Visual Editor' : 'Open Draft in Visual Editor'}
+            editLabel={editRequiresCredentialPreservingSave ? 'Save and open in Visual Editor' : 'Open draft in Visual Editor'}
             previewTitle="Import Preview"
             previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={primaryScript} title="Source Comparison" /> : undefined}
           >

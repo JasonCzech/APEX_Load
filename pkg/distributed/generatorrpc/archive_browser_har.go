@@ -43,6 +43,9 @@ type archiveEvidenceArtifact struct {
 	Sequence         int64  `json:"sequence"`
 	SHA256           string `json:"sha256"`
 	Bytes            int64  `json:"bytes"`
+	// EvidenceGeneration is the browser evidence generation of the context
+	// the HAR recorded; absent when unknown.
+	EvidenceGeneration string `json:"evidence_generation,omitempty"`
 }
 
 // archiveHARName is the run archive name of a working generation's HAR.
@@ -175,7 +178,11 @@ func (w *archiveRecorder) RecordBrowserHARArtifact(artifact protocol.BrowserHARA
 	}
 	w.harBytes += size
 	w.harSources = append(w.harSources, archivedHARSource{path: artifact.Path, identity: identity})
-	w.manifest.BrowserHARArtifacts = append(w.manifest.BrowserHARArtifacts, archiveEvidenceArtifact{Name: name, Kind: archiveHARKindNative, Fidelity: archiveHARFidelity, SourceGeneration: artifact.Generation, Sequence: int64(len(w.manifest.BrowserHARArtifacts) + 1), SHA256: sum, Bytes: size})
+	evidenceGeneration := artifact.EvidenceGeneration
+	if !protocol.BrowserEvidenceGeneration(evidenceGeneration) {
+		evidenceGeneration = ""
+	}
+	w.manifest.BrowserHARArtifacts = append(w.manifest.BrowserHARArtifacts, archiveEvidenceArtifact{Name: name, Kind: archiveHARKindNative, Fidelity: archiveHARFidelity, SourceGeneration: artifact.Generation, Sequence: int64(len(w.manifest.BrowserHARArtifacts) + 1), SHA256: sum, Bytes: size, EvidenceGeneration: evidenceGeneration})
 	return nil
 }
 

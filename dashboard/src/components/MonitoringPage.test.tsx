@@ -68,6 +68,11 @@ vi.mock('../hooks/api/useFleetApi', () => ({
   useFleetApi: () => fleetApiMock,
 }))
 
+const clustersApiMock = vi.hoisted(() => ({ listClusters: vi.fn() }))
+vi.mock('../hooks/api/useClustersApi', () => ({
+  useClustersApi: () => clustersApiMock,
+}))
+
 vi.mock('../hooks/useProject', () => ({
   useProject: () => ({
     activeProject: { id: projectMockState.activeProjectId, name: 'Checkout', created_at: '', updated_at: '' },
@@ -330,6 +335,22 @@ describe('MonitoringPage', () => {
       </div>
     )
   }
+
+  it('shows configured capacity on a directly opened Fleet tab without live generator inventory', async () => {
+    apiMock.getHealth.mockResolvedValue({
+      status: 'ok', version: '1.2.3', ws_clients: 2, test_count: 1,
+      capacity_availability: { configured_available_generators: 12, effective_available_generators: 12, reserved_generators: 0, shared_available_generators: 0, source: 'configured' },
+    } as Awaited<ReturnType<typeof apiMock.getHealth>>)
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} initialCategoryId="fleet" />)
+    })
+    await flushAsyncWork()
+
+    expect(apiMock.getHealth).toHaveBeenCalled()
+    expect(container.textContent).toContain('12 configured')
+    expect(container.textContent).toContain('Configured inventory · no live generator inventory')
+  })
 
   it('shows controller, Vite server, and UX build metadata on the system card', async () => {
     await act(async () => {
@@ -668,7 +689,7 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('Auth Mode: development auth bypass is enabled')
     expect(container.textContent).toContain('Generator Inventory')
     expect(container.textContent).toContain('0/0 connected')
-    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts'])
+    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts', 'parquet-analysis'])
 
     await clickMonitorTab('Telemetry')
 
@@ -724,10 +745,10 @@ describe('MonitoringPage', () => {
       )
     })
 
-    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts'])
+    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts', 'parquet-analysis'])
     await clickMonitorTab('Telemetry')
     expect(onCategoryChange).toHaveBeenCalledWith('telemetry')
-    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts'])
+    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts', 'parquet-analysis'])
 
     await act(async () => {
       root.render(
@@ -748,6 +769,7 @@ describe('MonitoringPage', () => {
       root.render(
         <NavigationGuardRunnerContext.Provider value={{
           hasDirtyGuard: () => true,
+          markClean: () => undefined,
           runGuarded: proceed => { pending = proceed },
         }}>
           <MonitoringPage connectionState="connected" />
@@ -757,9 +779,28 @@ describe('MonitoringPage', () => {
 
     await clickMonitorTab('Telemetry')
     expect(pending).not.toBeNull()
-    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts'])
+    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts', 'parquet-analysis'])
     await act(async () => (pending as unknown as () => void)())
     expect(visibleMonitorCardIds()).toEqual(['run-monitor-sources', 'telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors', 'elk-connections', 'dynatrace-connections'])
+  })
+
+  it('summarizes the worst telemetry condition the header counts, not the newest sample', async () => {
+    await act(async () => {
+      root.render(
+        <MonitoringPage
+          connectionState="connected"
+          initialCategoryId="telemetry"
+          telemetryDiagnostics={[
+            { test_id: 'run-1', test_name: 'Checkout', timestamp: '2026-05-12T20:01:00Z', diagnostic: { severity: 'healthy', summary: 'live telemetry healthy', conditions: [], samples: [] } },
+            { test_id: 'run-1', test_name: 'Checkout', timestamp: '2026-05-12T20:00:00Z', diagnostic: { severity: 'danger', summary: 'Publisher dropped samples', conditions: ['dropped_samples'], samples: [] } },
+          ]}
+        />,
+      )
+    })
+    const summary = container.querySelector<HTMLElement>('.telemetry-summary-details')
+    expect(summary?.textContent).toContain('Latest danger')
+    expect(summary?.textContent).toContain('Publisher dropped samples')
+    expect(summary?.textContent).not.toContain('live telemetry healthy')
   })
 
   it('traps focus in telemetry details, closes on Escape, and restores the trigger', async () => {
@@ -961,6 +1002,53 @@ describe('MonitoringPage', () => {
     expect(container.textContent).not.toContain('17 available')
   })
 
+  it('shows saved clusters and pools on Fleet until they report generators', async () => {
+    apiMock.getSystemInventory.mockResolvedValue({ execution_mode: 'local', generators: [], controller: { status: 'ok' } } as never)
+    apiMock.getFleetAlerts.mockResolvedValue({ alerts: [], count: 0, unacknowledged_count: 0 })
+    apiMock.listAuthAuditEvents.mockResolvedValue({ events: [], count: 0 })
+    capacityApiMock.listTimeslots.mockResolvedValue({ timeslots: [], count: 0 })
+    fleetApiMock.listGeneratorMetadata.mockResolvedValue({ generators: [], count: 0 })
+    fleetApiMock.getProvisioner.mockResolvedValue(null)
+    fleetApiMock.listProvisionRequests.mockResolvedValue({ provisioning_requests: [], count: 0 })
+    apiMock.getFleetCapacity.mockResolvedValue({ project_id: 'project-1', total_generators: 0, eligible_generators: 0, available_slots: 0, max_slots: 0, compatible_features: [], rejection_reasons: [] })
+    clustersApiMock.listClusters.mockResolvedValue({ clusters: [{ id: 'c1', name: 'uxr cluster', kind: 'kubeconfig', last_check_status: '' }], total: 1 })
+    fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [{ id: 'p1', name: 'uxr pool', cloud_provider: 'kubernetes', status: 'active' }], count: 1 })
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" activeCategoryId="fleet" canManageSystem />)
+    })
+    await flushAsyncWork()
+    const configured = container.querySelector('[aria-label="Configured clusters and pools"]')
+    expect(configured?.textContent).toContain('uxr cluster')
+    expect(configured?.textContent).toContain('not tested yet')
+    expect(configured?.textContent).toContain('uxr pool')
+    expect(Array.from(container.querySelectorAll('a')).some(link => link.textContent === 'Configure distributed generator targets')).toBe(true)
+  })
+
+  it('filters and pages a large fleet alert feed, with a distinct name for every acknowledge button', async () => {
+    const alerts = Array.from({ length: 30 }, (_, index) => ({ id: `a${index}`, type: 'generator_offline', target: `gen-${index}`, severity: index < 5 ? 'danger' : 'warning', summary: `Generator gen-${index} offline`, acknowledged: false }))
+    apiMock.getSystemInventory.mockResolvedValue({ execution_mode: 'local', generators: [], controller: { status: 'ok' } } as never)
+    apiMock.getFleetAlerts.mockResolvedValue({ alerts, count: alerts.length, unacknowledged_count: alerts.length } as never)
+    apiMock.listAuthAuditEvents.mockResolvedValue({ events: [], count: 0 })
+    capacityApiMock.listTimeslots.mockResolvedValue({ timeslots: [], count: 0 })
+    fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [], count: 0 })
+    fleetApiMock.listGeneratorMetadata.mockResolvedValue({ generators: [], count: 0 })
+    fleetApiMock.getProvisioner.mockResolvedValue(null)
+    fleetApiMock.listProvisionRequests.mockResolvedValue({ provisioning_requests: [], count: 0 })
+    clustersApiMock.listClusters.mockResolvedValue({ clusters: [], total: 0 })
+    apiMock.getFleetCapacity.mockResolvedValue({ project_id: 'project-1', total_generators: 0, eligible_generators: 0, available_slots: 0, max_slots: 0, compatible_features: [], rejection_reasons: [] })
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" activeCategoryId="fleet" canManageSystem />)
+    })
+    await flushAsyncWork()
+    const ackButtons = () => Array.from(container.querySelectorAll('button')).filter(button => button.textContent === 'Ack')
+    expect(ackButtons()).toHaveLength(25)
+    expect(new Set(ackButtons().map(button => button.getAttribute('aria-label'))).size).toBe(25)
+    expect(container.textContent).toContain('Showing 25 of 30 matching')
+    const severity = container.querySelector('[aria-label="Filter fleet alerts"] select') as HTMLSelectElement
+    await act(async () => { severity.value = 'danger'; severity.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(ackButtons()).toHaveLength(5)
+  })
+
   it('does not report a refresh timestamp when every requested endpoint fails', async () => {
     for (const request of [
       apiMock.getHealth,
@@ -1015,7 +1103,7 @@ describe('MonitoringPage', () => {
     expect(readiness!.querySelectorAll('.monitor-infrastructure-status-checking')).toHaveLength(3)
     expect(readiness!.textContent).toContain('Waiting for readiness data.')
     expect(container.textContent).toContain('Waiting for /api/v1/system/readiness.')
-    expect(container.textContent).toContain('Waiting for system data...')
+    expect(container.textContent).toContain('Waiting for system data…')
     expect(container.textContent).not.toContain('Readiness data incomplete')
   })
 
@@ -1527,7 +1615,7 @@ describe('MonitoringPage', () => {
       root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
     })
 
-    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts'])
+    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts', 'parquet-analysis'])
     expect(container.textContent).toContain('Readiness & Services')
     expect(container.textContent).toContain('4/4 active')
     expect(container.textContent).toContain('Backend')
@@ -1574,7 +1662,7 @@ describe('MonitoringPage', () => {
       root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
     })
 
-    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts'])
+    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts', 'parquet-analysis'])
     expect(container.textContent).not.toContain('Active Services')
     const storedOrder = JSON.parse(window.localStorage.getItem('apexload.monitoring.cardOrder') || '[]') as string[]
     expect(storedOrder).not.toContain('active-services')
@@ -1786,8 +1874,11 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('10,000')
     expect(container.textContent).toContain('Project Active Slots')
     expect(container.textContent).toContain('Project Pending Slots')
-    expect(container.textContent).toContain('project-1: 250 active / 400 pending slots (reserved)')
-    expect(container.textContent).toContain('fleet placement API')
+    // Project usage is a neutral row (label + value), not a warning entry.
+    const projectSlots = Array.from(container.querySelectorAll('.monitor-row')).find(row => row.querySelector('.monitor-label')?.textContent === 'project-1')
+    expect(projectSlots?.querySelector('.monitor-value')?.textContent).toBe('250 active / 400 pending slots (reserved)')
+    expect(Array.from(container.querySelectorAll('.monitor-warning-list')).some(list => list.textContent?.includes('250 active'))).toBe(false)
+    expect(container.textContent).toContain('Live generator inventory (fleet placement)')
     expect(container.textContent).toContain('http, browser')
 
     expect(container.querySelector('[data-testid="fleet-provisioner"]')).toBeTruthy()

@@ -140,6 +140,10 @@ export type BrowserRecorderConvertRequest = {
   end_seq?: number
   split_at_transactions?: boolean
   also_create_http_script?: boolean
+  /** "url" (default) replays recorded URLs; "html" turns link, image and form clicks into HTML-mode steps. */
+  http_script_level?: 'url' | 'html'
+  /** Project recording profile the HAR-derived HTTP script applies. */
+  recording_profile_id?: string
   parameterize?: boolean
   // Save-only override applied to the fresh server conversion before its
   // create transaction. The script index binds each opaque requirement ID to

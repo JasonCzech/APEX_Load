@@ -121,7 +121,9 @@ func (tr *TestRunner) persistIntervalDistributionArchive(ctx context.Context, te
 			if err != nil {
 				return 0, err
 			}
-			truncated = cut || skipped > 0 && count > 0
+			// The store keeps a bounded number of interval rows per run: a run
+			// that reached that bound may have lost its oldest.
+			truncated = cut || skipped > 0 && count > 0 || count > 0 && nativeEvidenceTrimmed(ctx, tr.testStore, testID)
 			if cut {
 				return 0, nil
 			}
@@ -189,6 +191,9 @@ func copyNativeIntervalDistributions(ctx context.Context, reader storage.NativeI
 		previous = timestamp
 		out := IntervalDistributionRecord{Schema: intervalDistributionSchema, Timestamp: timestamp, WindowSeconds: evidence.WindowSeconds, Source: intervalDistributionSourceNative, EvidenceVersion: evidence.Version, DigestUnit: intervalDistributionDigestUnit, Incomplete: evidence.Incomplete, Dimensions: map[string]map[string]IntervalDistributionMetric{}}
 		for dimension, values := range evidence.Dimensions {
+			if dimension == storage.NativeJointDimension {
+				continue // joint tuples have their own sidecar (joint_intervals_v4)
+			}
 			keys := make(map[string]IntervalDistributionMetric, len(values))
 			for key, metric := range values {
 				keys[key] = intervalDistributionFromNative(metric)

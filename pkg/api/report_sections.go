@@ -312,7 +312,12 @@ func csvSLARows(write reportCSVWriteFunc, section string, rows []SLAComplianceRo
 		}
 		entries := [][2]string{
 			{"volume", formatCSVInt(row.Volume)},
+			{"min_ms", formatCSVFloat(row.MinMs)},
+			{"p50_ms", formatCSVFloat(row.P50Ms)},
+			{"p90_ms", formatCSVFloat(row.P90Ms)},
 			{"p95_ms", formatCSVFloat(row.P95Ms)},
+			{"p99_ms", formatCSVFloat(row.P99Ms)},
+			{"max_ms", formatCSVFloat(row.MaxMs)},
 			{"sla_ms", sla},
 			{"error_pct", formatCSVFloat(row.ErrorPct)},
 			{"result", row.Result},
@@ -462,7 +467,11 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	add(reportSectionRenderer{ID: "verdict", Label: "Verdict",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
 			pdfHeading(lines, "Verdict")
-			*lines = append(*lines, fmt.Sprintf("%s - %s", d.Verdict.Status, d.Verdict.Explanation), "")
+			*lines = append(*lines, fmt.Sprintf("%s - %s", d.Verdict.Status, d.Verdict.Explanation))
+			if d.AnalystAssessmentInVerdict() {
+				*lines = append(*lines, "Analyst assessment: "+d.Annotations.VerdictOverride+" - "+reportProvidedValue(d.Annotations.VerdictExplanation), "Assessment author: "+reportProvidedValue(d.Annotations.VerdictAuthor()))
+			}
+			*lines = append(*lines, "")
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
 			if err := write("verdict", "", "status", d.Verdict.Status); err != nil {
@@ -499,11 +508,13 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 					*lines = append(*lines, fmt.Sprintf("%s: %d records, %d errors, p95 %.1f ms, average %s/s", reportPopulationLabel(key), population.Transactions, population.Errors, population.P95Ms, reportPopulationRate(population.AverageRate)))
 				}
 			}
+			headline := reportHeadline(report)
 			*lines = append(*lines,
 				fmt.Sprintf("Archive records: %s", formatPDFInt(report.Overview.Transactions)),
-				fmt.Sprintf("Archive record errors: %s (%s)", formatPDFInt(report.Overview.Errors), formatReportPercentage(report.Overview.ErrorPct)),
-				fmt.Sprintf("Archive record average: %.1f ms (min %.1f ms / max %.1f ms)", report.Overview.AvgResponseMs, report.Overview.MinResponseMs, report.Overview.MaxResponseMs),
-				fmt.Sprintf("Peak successful transaction TPS: %.1f", report.Overview.PeakTPS),
+				"Headline metrics: "+headline.Label,
+				fmt.Sprintf("Error rate: %s (%s of %s)", formatReportPercentage(headline.ErrorPct), formatPDFInt(headline.Errors), formatPDFInt(headline.Transactions)),
+				fmt.Sprintf("P95 latency: %s; average %s (min %.1f ms / max %.1f ms)", formatReportMs(headline.P95Ms), formatReportMs(headline.AvgResponseMs), headline.MinResponseMs, headline.MaxResponseMs),
+				fmt.Sprintf("Peak TPS (attempts/s): %.1f", headline.PeakTPS),
 				fmt.Sprintf("Peak active VUsers: %s", formatPDFInt(report.Overview.PeakActiveVUsers)),
 			)
 			if report.Overview.PeakTargetTPS > 0 {
@@ -520,7 +531,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			}
 			for _, key := range []string{"action", "transaction", "unknown"} {
 				if population, ok := report.MetricPopulations[key]; ok {
-					for _, item := range [][2]string{{"count", formatCSVInt(population.Transactions)}, {"errors", formatCSVInt(population.Errors)}, {"error_pct", formatCSVFloat(population.ErrorPct)}, {"p95_ms", formatCSVFloat(population.P95Ms)}, {"average_rate_per_second", reportPopulationRate(population.AverageRate)}} {
+					for _, item := range [][2]string{{"count", formatCSVInt(population.Transactions)}, {"errors", formatCSVInt(population.Errors)}, {"error_pct", formatCSVFloat(population.ErrorPct)}, {"p95_ms", formatCSVFloat(population.P95Ms)}, {"peak_tps", reportPopulationPeakTPS(population)}, {"average_rate_per_second", reportPopulationRate(population.AverageRate)}} {
 						if err := write("metric_populations", key, item[0], item[1]); err != nil {
 							return err
 						}
@@ -658,7 +669,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	add(reportSectionRenderer{ID: "signoff", Label: "Recommendation & Sign-Off",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
 			pdfHeading(lines, "Sign-Off")
-			*lines = append(*lines, "Prepared by: "+reportProvidedValue(d.Annotations.PreparedBy), "Analyst assessment: "+reportProvidedValue(d.Annotations.VerdictOverride), "Rationale: "+reportProvidedValue(d.Annotations.VerdictExplanation), "Assessment author: "+reportProvidedValue(d.Annotations.UpdatedBy), "")
+			*lines = append(*lines, "Prepared by: "+reportProvidedValue(d.Annotations.PreparedBy), "Analyst assessment: "+reportProvidedValue(d.Annotations.VerdictOverride), "Rationale: "+reportProvidedValue(d.Annotations.VerdictExplanation), "Assessment author: "+reportProvidedValue(d.Annotations.VerdictAuthor()), "")
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
 			prepared := strings.TrimSpace(d.Annotations.PreparedBy)
@@ -714,6 +725,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 		}})
 
 	// --- Completeness ------------------------------------------------------
+	add(reportSectionRenderer{ID: "telemetry_acceptance", Label: "Telemetry Acceptance", PDF: telemetryAcceptanceReportPDF, CSV: telemetryAcceptanceReportCSV})
 	add(reportSectionRenderer{ID: "completeness", Label: "Completeness Score",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
 			pdfHeading(lines, "Completeness")

@@ -50,6 +50,12 @@ const (
 	// ciOutcomeRunInvalid is a run whose validity the project's CI validity
 	// gate fails: the measurement cannot judge the system under test.
 	ciOutcomeRunInvalid = "run_invalid"
+	// ciOutcomeTelemetryFailed is an otherwise passed run whose telemetry
+	// failed a fail_ci acceptance policy (or was inconclusive and mapped to
+	// fail); ciOutcomeTelemetryInconclusive is one whose inconclusive verdict
+	// had no mapping.
+	ciOutcomeTelemetryFailed       = "telemetry_failed"
+	ciOutcomeTelemetryInconclusive = "telemetry_inconclusive"
 )
 
 var (
@@ -130,6 +136,7 @@ type ciArgs struct {
 	githubOutput             string
 	githubSummary            string
 	idempotencyKey           string
+	telemetryInconclusive    string
 }
 
 type optionalFloat struct{ value **float64 }
@@ -231,6 +238,7 @@ func parseCIArgs(arguments []string) (ciArgs, error) {
 	fs.StringVar(&args.githubOutput, "github-output", "", "GitHub output file")
 	fs.StringVar(&args.githubSummary, "github-summary", "", "GitHub job summary file")
 	fs.StringVar(&args.idempotencyKey, "idempotency-key", "", "explicit idempotency key")
+	fs.StringVar(&args.telemetryInconclusive, "telemetry-inconclusive", "", "map an inconclusive fail_ci telemetry verdict: pass or fail (no default)")
 	if err := fs.Parse(arguments); err != nil {
 		return args, err
 	}
@@ -243,6 +251,7 @@ func parseCIArgs(arguments []string) (ciArgs, error) {
 	args.projectID = strings.TrimSpace(args.projectID)
 	args.scriptPath = strings.TrimSpace(args.scriptPath)
 	args.scriptID = strings.TrimSpace(args.scriptID)
+	args.telemetryInconclusive = strings.ToLower(strings.TrimSpace(args.telemetryInconclusive))
 	return args, validateCIArgs(args)
 }
 
@@ -268,7 +277,15 @@ func validateCIArgs(args ciArgs) error {
 	if err := validateDistinctCIOutputPaths(args); err != nil {
 		return err
 	}
+	switch args.telemetryInconclusive {
+	case "", "pass", "fail":
+	default:
+		return fmt.Errorf("--telemetry-inconclusive must be pass or fail")
+	}
 	if args.executionMode == "local" {
+		if args.telemetryInconclusive != "" {
+			return fmt.Errorf("--telemetry-inconclusive requires controller mode")
+		}
 		if args.monitorBindingsFile != "" || args.monitorRulesFile != "" {
 			return fmt.Errorf("monitoring configuration requires controller mode")
 		}
@@ -439,6 +456,10 @@ type CIResult struct {
 	// Validity is the controller's run validity verdict and the project's
 	// CI validity gate.
 	Validity *CIRunValidity `json:"validity,omitempty"`
+
+	// TelemetryVerdict is the controller's telemetry acceptance verdict,
+	// separate from the application outcome.
+	TelemetryVerdict *CITelemetryVerdict `json:"telemetry_verdict,omitempty"`
 }
 
 func ciCmd() {
@@ -634,7 +655,7 @@ func executeControllerCI(ctx context.Context, args ciArgs, variables map[string]
 			MaxAvgTransferMs:         args.maxAvgTransferMs, MaxErrorCount: args.maxErrorCount,
 			RequireSLA: args.requireSLA, RequireResults: args.requireResults,
 		},
-		Source: sourceFromEnvironment(), PublishCheck: args.publishCheck,
+		Source: sourceFromEnvironment(), PublishCheck: args.publishCheck, TelemetryInconclusive: args.telemetryInconclusive,
 	}
 	if len(rawScript) > 0 {
 		request.Script = json.RawMessage(rawScript)
@@ -1614,7 +1635,7 @@ func ciResultFromResponse(response *CIRunResponse) CIResult {
 		SLAEvaluated: response.SLAEvaluated, SLABreached: response.SLABreached, SLADetails: append([]string(nil), response.SLADetails...),
 		Transactions: transactions, Errors: errorsCount, TPS: tps,
 		DurationMS: durationMS, ReportURL: response.ReportURL, CheckURL: response.CheckURL, Message: response.Error,
-		Validity: response.Validity.clone(),
+		Validity: response.Validity.clone(), TelemetryVerdict: response.TelemetryVerdict.clone(),
 	}
 }
 
@@ -1625,7 +1646,7 @@ func isTerminalCIResponse(response *CIRunResponse) bool {
 	if response.Outcome == "monitoring_pending" {
 		return false
 	}
-	if containsCIString([]string{ciOutcomePassed, ciOutcomeSLABreached, ciOutcomeExecutionError, ciOutcomeConfigurationError, ciOutcomeTimedOut, ciOutcomeCancelled, ciOutcomeInconclusive, ciOutcomeMonitoringIncomplete, ciOutcomeRunInvalid}, response.Outcome) {
+	if containsCIString([]string{ciOutcomePassed, ciOutcomeSLABreached, ciOutcomeExecutionError, ciOutcomeConfigurationError, ciOutcomeTimedOut, ciOutcomeCancelled, ciOutcomeInconclusive, ciOutcomeMonitoringIncomplete, ciOutcomeRunInvalid, ciOutcomeTelemetryFailed, ciOutcomeTelemetryInconclusive}, response.Outcome) {
 		return true
 	}
 	switch strings.ToUpper(response.Status) {
@@ -1640,7 +1661,7 @@ func classifyCIResult(result *CIResult) {
 	if result == nil {
 		return
 	}
-	if containsCIString([]string{ciOutcomeSLABreached, ciOutcomeExecutionError, ciOutcomeConfigurationError, ciOutcomeTimedOut, ciOutcomeCancelled, ciOutcomeInconclusive, ciOutcomeMonitoringIncomplete, ciOutcomeRunInvalid}, result.Outcome) {
+	if containsCIString([]string{ciOutcomeSLABreached, ciOutcomeExecutionError, ciOutcomeConfigurationError, ciOutcomeTimedOut, ciOutcomeCancelled, ciOutcomeInconclusive, ciOutcomeMonitoringIncomplete, ciOutcomeRunInvalid, ciOutcomeTelemetryFailed, ciOutcomeTelemetryInconclusive}, result.Outcome) {
 		return
 	}
 	if result.SLABreached {
@@ -1774,13 +1795,16 @@ func writeCICoreEvidence(args ciArgs, result CIResult) ([]byte, error) {
 		return nil, fmt.Errorf("write JSON evidence: %w", err)
 	}
 	var runErr error
-	if result.Outcome != ciOutcomePassed && result.Outcome != ciOutcomeSLABreached {
+	// The telemetry outcomes have their own test case: the application run
+	// itself passed.
+	if result.Outcome != ciOutcomePassed && result.Outcome != ciOutcomeSLABreached && result.Outcome != ciOutcomeTelemetryFailed && result.Outcome != ciOutcomeTelemetryInconclusive {
 		runErr = errors.New(firstNonEmptyCLI(result.Message, result.Outcome))
 	}
 	sla := &SLASummary{Evaluated: result.SLAEvaluated, Breached: result.SLABreached, Details: result.SLADetails}
 	if err := writeJUnitReport(args.junitPath, junitInput{
 		suiteName: "apexload:ci", classname: "apexload", duration: time.Duration(result.DurationMS) * time.Millisecond,
 		transactions: result.Transactions, errors: result.Errors, tps: result.TPS, runErr: runErr, sla: sla,
+		telemetry: result.TelemetryVerdict,
 	}); err != nil {
 		return nil, err
 	}
@@ -1801,12 +1825,12 @@ func writeCIOutputs(path string, args ciArgs, result CIResult) error {
 		"sla-evaluated": strconv.FormatBool(result.SLAEvaluated), "sla-breached": strconv.FormatBool(result.SLABreached),
 		"transactions": strconv.FormatInt(result.Transactions, 10), "errors": strconv.FormatInt(result.Errors, 10),
 		"tps": strconv.FormatFloat(result.TPS, 'f', -1, 64), "duration-ms": strconv.FormatInt(result.DurationMS, 10),
-		"report-url": result.ReportURL, "check-url": result.CheckURL,
+		"report-url": result.ReportURL, "check-url": result.CheckURL, "telemetry-verdict": telemetryVerdictOutcome(result.TelemetryVerdict),
 		"json-path": absoluteOutputPath(args.jsonPath), "junit-path": absoluteOutputPath(args.junitPath),
 		"apexload-evidence-complete": "true",
 	}
 	var builder strings.Builder
-	for _, key := range []string{"outcome", "test-id", "status", "sla-evaluated", "sla-breached", "transactions", "errors", "tps", "duration-ms", "report-url", "check-url", "json-path", "junit-path", "apexload-evidence-complete"} {
+	for _, key := range []string{"outcome", "test-id", "status", "sla-evaluated", "sla-breached", "transactions", "errors", "tps", "duration-ms", "report-url", "check-url", "telemetry-verdict", "json-path", "junit-path", "apexload-evidence-complete"} {
 		appendGitHubOutput(&builder, key, values[key])
 	}
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
@@ -1828,9 +1852,19 @@ func writeCISummary(path string, result CIResult) error {
 	if validity := result.Validity; validity != nil {
 		text += fmt.Sprintf("| Run validity | %s |\n| Validity gate | %s |\n", markdownCell(validity.Verdict), markdownCell(firstNonEmptyCLI(validity.Gate, "advisory")))
 	}
+	if telemetry := result.TelemetryVerdict; telemetry != nil {
+		text += fmt.Sprintf("| Telemetry verdict | %s |\n| Telemetry policy mode | %s |\n", markdownCell(telemetry.Outcome), markdownCell(telemetryVerdictModeLabel(telemetry)))
+	}
 	if result.ReportURL != "" {
 		reportURL := strings.ReplaceAll(strings.ReplaceAll(result.ReportURL, "\r", ""), "\n", "")
 		text += "\n[Open APEX Load report](" + strings.ReplaceAll(reportURL, ")", "%29") + ")\n"
+	}
+	if telemetry := result.TelemetryVerdict; telemetry != nil && len(telemetry.Reasons) > 0 {
+		text += "\n### Telemetry acceptance\n"
+		for _, reason := range telemetry.Reasons {
+			text += "\n- " + strings.ReplaceAll(strings.ReplaceAll(reason, "\r", " "), "\n", " ")
+		}
+		text += "\n"
 	}
 	if len(result.SLADetails) > 0 {
 		text += "\n### SLA details\n"
@@ -1910,8 +1944,11 @@ func ciExitCode(outcome string) int {
 	switch strings.ToLower(strings.TrimSpace(outcome)) {
 	case ciOutcomePassed:
 		return exitCodeSuccess
-	case ciOutcomeSLABreached, ciOutcomeRunInvalid:
+	case ciOutcomeSLABreached, ciOutcomeRunInvalid, ciOutcomeTelemetryFailed:
 		return exitCodeTestFailure
+	case ciOutcomeTelemetryInconclusive:
+		// The remedy is the caller's mapping (--telemetry-inconclusive).
+		return exitCodeUsageOrConfiguration
 	case ciOutcomeConfigurationError:
 		return exitCodeUsageOrConfiguration
 	default:
@@ -1930,9 +1967,37 @@ Authentication:
   OIDC is the default and requires GitHub Actions id-token: write.
   Use --auth-mode=api-key with APEXLOAD_API_KEY for the scoped fallback.
 
+Telemetry acceptance:
+  --telemetry-inconclusive pass|fail
+                         How an inconclusive telemetry verdict maps when the
+                         project's acceptance policy is fail_ci. No default:
+                         the controller refuses a fail_ci run without it.
+                         An advisory policy never changes the exit code.
+
 Evidence:
   --json PATH            JSON result path (default apexload-result.json)
   --junit PATH           JUnit XML path (default apexload-results.xml)
   --github-output PATH   Append stable scalar outputs for a composite action
   --github-summary PATH  Append a Markdown job summary`)
+}
+
+// telemetryVerdictOutcome is a verdict's outcome, or empty without one.
+func telemetryVerdictOutcome(verdict *CITelemetryVerdict) string {
+	if verdict == nil {
+		return ""
+	}
+	return verdict.Outcome
+}
+
+func telemetryVerdictModeLabel(verdict *CITelemetryVerdict) string {
+	label := verdict.Mode
+	if verdict.Enforced {
+		label += " (decided the outcome)"
+	} else if verdict.Mode != "fail_ci" {
+		label += " (never changes the outcome)"
+	}
+	if verdict.InconclusivePolicy != "" {
+		label += "; inconclusive maps to " + verdict.InconclusivePolicy
+	}
+	return label
 }

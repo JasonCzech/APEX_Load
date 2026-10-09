@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/engine"
 )
 
 func TestNativeQueryUsesCanonicalMetricCatalog(t *testing.T) {
@@ -55,7 +56,9 @@ func TestCatalogQueryProfilesMatchNativeValidators(t *testing.T) {
 				}
 				for mask := 0; mask < 1<<len(profile.AllowedFilters); mask++ {
 					q := AnalyticsQuery{Population: profile.Population, Metric: metric.Name, Aggregation: aggregation, EndSeconds: profile.MaxWindowSeconds, BucketSeconds: profile.MaxBucketSeconds, MaxSeries: profile.MaxSeries, EvidenceMode: profile.EvidenceMode, LiveBucketMode: profile.LiveBucketMode, Filters: map[string]string{}}
-					if profile.Grouping != "" {
+					if profile.JointEvidence {
+						q.JointEvidence, q.Dimensions = true, profile.GroupingDimensions[:profile.MaxGroupingDimensions]
+					} else if profile.Grouping != "" {
 						q.Dimensions = []string{profile.Grouping}
 					}
 					for i, filter := range profile.AllowedFilters {
@@ -85,6 +88,13 @@ func TestCatalogQueryProfilesMatchNativeValidators(t *testing.T) {
 						q.PropertyName, q.PropertyValue = "category", "selected"
 						check(q)
 					}
+					// A projected property groups and filters like a dimension.
+					if profile.PropertyMode == "projected_category" {
+						q.Dimensions = append(slices.Clone(q.Dimensions[:profile.MaxGroupingDimensions-1]), "property:category")
+						check(q)
+						q.Filters["property:category"] = "selected"
+						check(q)
+					}
 				}
 			}
 		}
@@ -93,7 +103,7 @@ func TestCatalogQueryProfilesMatchNativeValidators(t *testing.T) {
 
 func TestCatalogDoesNotAdvertiseUnavailableNativeDimensions(t *testing.T) {
 	for _, profile := range analysis.Catalog().QueryProfiles {
-		if profile.Grouping == "protocol" || profile.Grouping == "group" || profile.Population == analysis.PopulationTransaction && profile.PropertyMode != "disabled" {
+		if profile.Grouping == "protocol" || profile.Grouping == "group" || profile.Population == analysis.PopulationTransaction && profile.PropertyMode != "disabled" && !profile.JointEvidence {
 			t.Fatalf("unsupported native dimension advertised: %+v", profile)
 		}
 		if profile.EvidenceMode == "live" && (profile.Grouping == "phase" || profile.Grouping == "hierarchy") && (profile.Population != analysis.PopulationAction || profile.LiveBucketMode != "merged" || !slices.Contains(profile.RequiredEvidence, "native_joint_evidence.v3")) {
@@ -138,5 +148,23 @@ func TestNativeBrowserDocumentQuerySelectsOneTuple(t *testing.T) {
 	q.Population = analysis.PopulationAction
 	if ValidateNativeArchiveQuery(q) == nil {
 		t.Fatal("document metric admitted for actions")
+	}
+}
+
+func TestCatalogJointEvidenceDimensionsMatchTheEngine(t *testing.T) {
+	if !slices.Equal(analysis.JointEvidenceDimensions, engine.JointDimensions) {
+		t.Fatalf("catalog joint dimensions %v, engine %v", analysis.JointEvidenceDimensions, engine.JointDimensions)
+	}
+	advertised := 0
+	for _, profile := range analysis.Catalog().QueryProfiles {
+		if profile.JointEvidence {
+			advertised++
+			if profile.EvidenceMode != "live" || profile.LiveBucketMode != "merged" || !slices.Contains(profile.RequiredEvidence, "native_joint_evidence.v4") {
+				t.Fatalf("joint profile %+v", profile)
+			}
+		}
+	}
+	if advertised != 2 {
+		t.Fatalf("%d joint evidence v4 profiles, want one per population", advertised)
 	}
 }

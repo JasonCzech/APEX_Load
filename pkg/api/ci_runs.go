@@ -108,6 +108,10 @@ type ciRunCreateRequest struct {
 	Goals           ciRunGoalsRequest         `json:"goals"`
 	Source          ciRunSource               `json:"source"`
 	PublishCheck    *bool                     `json:"publish_check,omitempty"`
+	// TelemetryInconclusive maps an inconclusive telemetry verdict under a
+	// fail_ci acceptance policy: pass or fail. It has no default; a project
+	// whose default acceptance policy is fail_ci requires it (C7).
+	TelemetryInconclusive string `json:"telemetry_inconclusive,omitempty"`
 }
 
 func (r ciRunCreateRequest) shouldPublishCheck() bool {
@@ -135,6 +139,10 @@ type ciRunMetadata struct {
 	// ValidityGate is the project's CI validity gate when the run was
 	// accepted.
 	ValidityGate string `json:"validity_gate,omitempty"`
+
+	// TelemetryInconclusive is the caller's mapping of an inconclusive
+	// telemetry verdict under a fail_ci policy: pass, fail or none.
+	TelemetryInconclusive string `json:"telemetry_inconclusive,omitempty"`
 }
 
 type ciRunResponse struct {
@@ -164,6 +172,10 @@ type ciRunResponse struct {
 
 	// Validity is the run's validity verdict and the gate it was judged by.
 	Validity *ciRunValidity `json:"validity,omitempty"`
+
+	// TelemetryVerdict is the run's telemetry acceptance verdict, beside the
+	// application outcome; only a fail_ci policy changes Outcome (C7).
+	TelemetryVerdict *ciTelemetryVerdict `json:"telemetry_verdict,omitempty"`
 }
 
 type ciAbortRequest struct {
@@ -254,7 +266,12 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 	if deploymentLeaseToken != "" {
 		deploymentLeaseTokenSHA = deploymentLeaseTokenHash(deploymentLeaseToken)
 	}
-	metadata := ciRunMetadata{MonitorBindings: req.MonitorBindings, SchemaVersion: ciRunSchemaVersion, Source: req.Source, Name: strings.TrimSpace(req.Name), ReleaseID: strings.TrimSpace(req.ReleaseID), ScriptPath: firstNonEmpty(req.ScriptPath, req.Source.ScriptPath), ScriptIdentity: scriptIdentity, Execution: req.Execution, Goals: req.Goals, RequireSLA: req.Goals.RequireSLA, RequireResults: req.Goals.RequireResults, PublishCheck: req.shouldPublishCheck(), CheckInstallationID: githubPolicy.AppInstallationID, PolicyRevision: policy.Revision, ValidityGate: policy.ValidityGate, IdempotencySHA: sha256String(idempotencyKey), DeploymentLeaseTokenSHA: deploymentLeaseTokenSHA}
+	req.TelemetryInconclusive = strings.ToLower(strings.TrimSpace(req.TelemetryInconclusive))
+	if req.TelemetryInconclusive != "" && req.TelemetryInconclusive != ciTelemetryInconclusivePass && req.TelemetryInconclusive != ciTelemetryInconclusiveFail {
+		writeError(w, http.StatusBadRequest, "telemetry_inconclusive must be pass or fail")
+		return
+	}
+	metadata := ciRunMetadata{MonitorBindings: req.MonitorBindings, SchemaVersion: ciRunSchemaVersion, Source: req.Source, Name: strings.TrimSpace(req.Name), ReleaseID: strings.TrimSpace(req.ReleaseID), ScriptPath: firstNonEmpty(req.ScriptPath, req.Source.ScriptPath), ScriptIdentity: scriptIdentity, Execution: req.Execution, Goals: req.Goals, RequireSLA: req.Goals.RequireSLA, RequireResults: req.Goals.RequireResults, PublishCheck: req.shouldPublishCheck(), CheckInstallationID: githubPolicy.AppInstallationID, PolicyRevision: policy.Revision, ValidityGate: policy.ValidityGate, IdempotencySHA: sha256String(idempotencyKey), DeploymentLeaseTokenSHA: deploymentLeaseTokenSHA, TelemetryInconclusive: req.TelemetryInconclusive}
 	existing, existingOK := s.runner.GetTest(testID)
 	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
 	runActor := testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}
@@ -295,6 +312,10 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := validateCIRunRequest(req, policy, script, resolver); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if status, message := s.ciTelemetryInconclusiveRequirement(req.ProjectID, req.TelemetryInconclusive); status != 0 {
+			writeError(w, status, message)
 			return
 		}
 	}
@@ -2079,10 +2100,13 @@ func ciValidityGateFails(gate, verdict string) bool {
 }
 
 // finalizeCIRunOutcome sets a terminal run's outcome: its status and SLA,
-// then incomplete required monitoring, then the project's validity gate. A
-// run the gate fails is run_invalid even when its SLA was breached, since an
-// invalid measurement cannot judge the system.
+// then incomplete required monitoring, then the project's validity gate, then
+// a fail_ci telemetry acceptance verdict. A run the gate fails is run_invalid
+// even when its SLA was breached, since an invalid measurement cannot judge
+// the system.
 func finalizeCIRunOutcome(response *ciRunResponse, metadata ciRunMetadata) {
+	// The telemetry verdict is judged last, and only against a passed run.
+	defer applyCITelemetryVerdict(response, metadata)
 	response.Outcome = ciRunOutcome(response.Status, response.SLABreached, response.SLAEvaluated, response.ResultsPresent, metadata, response.Error)
 	if strings.EqualFold(response.Status, "COMPLETE") && response.MonitoringIncomplete && !response.SLABreached {
 		response.Outcome = "monitoring_incomplete"

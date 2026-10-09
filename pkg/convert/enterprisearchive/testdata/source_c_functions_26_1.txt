@@ -1,7 +1,7 @@
 # OpenText C/VUser 26.1 C Vuser utility function baseline.
 # Format: name,family,support_mode
-web_reg_async_attributes,web,review_only
-web_stop_async,web,review_only
+web_reg_async_attributes,web,executable
+web_stop_async,web,executable
 lr_abort,runtime,executable
 lr_advance_param,parameter,review_only
 lr_aws_get_secret,secret,external_required

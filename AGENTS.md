@@ -47,9 +47,11 @@ pkg/
   api/static/    — Embedded dashboard build output (from dashboard/)
   storage/       — SQLite (default) / PostgreSQL persistence layer
   recorder/      — HTTP recording + HAR conversion + browser recording
+  recordingprofile/ — Project recording profiles (VuGen-style recording options) shared by the recorders and HAR import
   convert/       — Multi-format import hub (LR archive, Bruno, JMeter, k6, DevWeb, HAR, OpenAPI, WSDL, Postman, AsyncAPI, TruClient, SAP GUI, Java-family imports)
   selector/      — Shared element-selector model (CSS/XPath/role/text) + replay self-heal
   scrub/         — PII/credential redaction for recorder artifacts and HAR exports
+  harsynth/      — Synthetic HAR 1.2 from retained browser network evidence (never invents timings or content)
   refkey/        — Human-readable, environment-aware reference keys
   buildinfo/     — Build metadata (version/commit/build-time) via -ldflags
   config/        — Configuration types
@@ -90,7 +92,8 @@ pkg/
   importartifact/ — Content-addressed, encrypted immutable source bundles for governed runners
   fileasset/     — Bounded local file/asset opening for import paths
   internal/      — Cross-package internal guards: archiveingest, archivequota, boundedcache, boundedtext, diskspace,
-                   filelock, subprocessguard, zipbounds
+                   filelock, subprocessguard, zipbounds; paritytest is the test-only LoadRunner web
+                   parity harness (fixture server, expected requests, one-iteration replay)
 api/
   proto/         — gRPC protobuf definitions (controller ↔ generator)
 dashboard/       — React 18 + TypeScript + Recharts SPA
@@ -177,6 +180,14 @@ requirement — not optional. When adding or modifying code:
 - Test files live next to the code they test (e.g. `pkg/engine/metrics_test.go` tests `metrics.go`).
 - Use table-driven tests where multiple input/output combinations exist.
 - Do not mock internal packages unless required for isolation; prefer testing against real implementations.
+
+## Dashboard Copy Conventions
+- Labels use sentence case (`src/labelCasing.test.ts` ratchets Title Case leftovers).
+- Action verbs: **Save** persists a form, **Apply** takes effect now without saving, **Create** makes a new object, **Add** appends to a list, **Cancel**/**Close** dismiss. Qualify a verb only when two savable things share a screen ("Save domain changes").
+- Loading and empty are different states: `components/ux/LoadingState` ("Loading <things>…", one ellipsis character, `role="status"`) and `components/ux/EmptyState` ("No <things> yet." plus the next action).
+- One name per Settings destination: page cards and both section lists read `SETTINGS_DESTINATIONS` titles (`destinationTitle`).
+- Metric names and units come from `src/metricLabels.ts`: headers carry the unit in parentheses ("P95 (ms)"), values after the number ("1,006 ms").
+- Say "VUsers" for virtual users and "load generator" for the machine that runs them; "pool" means a group of load generators.
 
 ## Build & Run
 ```bash

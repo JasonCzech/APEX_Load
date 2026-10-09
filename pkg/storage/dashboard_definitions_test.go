@@ -1,6 +1,11 @@
 package storage
 
-import "testing"
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+)
 
 func sampleDashboardDefinition(id string) *DashboardDefinition {
 	return &DashboardDefinition{
@@ -117,5 +122,122 @@ func TestNativeArchiveDefinitionRoundTrip(t *testing.T) {
 	q := got.Tabs[0].Panels[0].Query
 	if q.Population != "action" || q.PropertyName != "kind" || q.PropertyValue != "paid" || q.ComparisonRunID != "baseline" || q.Filters["action"] != "Checkout" || q.EndSeconds != 60 || q.MaxSeries != 1 {
 		t.Fatalf("lost saved selection: %+v", q)
+	}
+}
+
+func TestDashboardDefinitionRevisionsAreKeptAndReopenable(t *testing.T) {
+	store, err := NewSQLiteStore(t.TempDir() + "/dashboard-revisions.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	definition := sampleDashboardDefinition("revisioned-dashboard")
+	if err := store.SaveDashboardDefinition(definition); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.GetDashboardDefinition(definition.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded.Name, loaded.Tabs[0].Panels[0].Query.Aggregation = "Shared operations v2", "p99"
+	if updated, err := store.UpdateDashboardDefinitionIfRevision(loaded, 1); err != nil || !updated {
+		t.Fatalf("update = %v %v", updated, err)
+	}
+	first, err := store.GetDashboardDefinitionRevision(definition.ID, 1)
+	if err != nil || first.Revision != 1 || first.Name != "Shared operations" || first.Tabs[0].Panels[0].Query.Aggregation != "p95" || first.ProjectID != DefaultProjectID {
+		t.Fatalf("revision 1 = %#v %v", first, err)
+	}
+	second, err := store.GetDashboardDefinitionRevision(definition.ID, 2)
+	if err != nil || second.Name != "Shared operations v2" || second.Tabs[0].Panels[0].Query.Aggregation != "p99" {
+		t.Fatalf("revision 2 = %#v %v", second, err)
+	}
+	if listed, err := store.ListDashboardDefinitionRevisions(definition.ID); err != nil || len(listed) != 2 || listed[0].Revision != 2 || listed[1].Revision != 1 {
+		t.Fatalf("revisions = %#v %v", listed, err)
+	}
+	if _, err := store.GetDashboardDefinitionRevision(definition.ID, 3); !errors.Is(err, ErrDashboardRevisionNotRetained) {
+		t.Fatalf("unsaved revision = %v", err)
+	}
+	// A stale update saves no revision.
+	stale := sampleDashboardDefinition(definition.ID)
+	if updated, _ := store.UpdateDashboardDefinitionIfRevision(stale, 1); updated {
+		t.Fatal("stale update accepted")
+	}
+	if listed, _ := store.ListDashboardDefinitionRevisions(definition.ID); len(listed) != 2 {
+		t.Fatalf("stale update recorded a revision: %#v", listed)
+	}
+	// The newest maxDashboardDefinitionRevisions are kept.
+	for revision := int64(2); revision < 2+maxDashboardDefinitionRevisions; revision++ {
+		loaded.Name = fmt.Sprintf("Shared operations r%d", revision+1)
+		if updated, err := store.UpdateDashboardDefinitionIfRevision(loaded, revision); err != nil || !updated {
+			t.Fatalf("update %d = %v %v", revision, updated, err)
+		}
+	}
+	listed, err := store.ListDashboardDefinitionRevisions(definition.ID)
+	if err != nil || len(listed) != maxDashboardDefinitionRevisions || listed[0].Revision != 2+maxDashboardDefinitionRevisions || listed[len(listed)-1].Revision != 3 {
+		t.Fatalf("pruned revisions = %d first %d last %d %v", len(listed), listed[0].Revision, listed[len(listed)-1].Revision, err)
+	}
+	if _, err := store.GetDashboardDefinitionRevision(definition.ID, 2); !errors.Is(err, ErrDashboardRevisionNotRetained) {
+		t.Fatalf("pruned revision = %v", err)
+	}
+	// Deleting the definition deletes its revisions.
+	if deleted, err := store.DeleteDashboardDefinitionIfRevision(definition.ID, DefaultProjectID, 2+maxDashboardDefinitionRevisions); err != nil || !deleted {
+		t.Fatalf("delete = %v %v", deleted, err)
+	}
+	if listed, err := store.ListDashboardDefinitionRevisions(definition.ID); err != nil || len(listed) != 0 {
+		t.Fatalf("revisions after delete = %#v %v", listed, err)
+	}
+	if _, err := store.GetDashboardDefinitionRevision(definition.ID, 3); !errors.Is(err, ErrDashboardRevisionNotRetained) {
+		t.Fatalf("revision of a deleted definition = %v", err)
+	}
+}
+
+func TestDashboardQueryVersionIsValidated(t *testing.T) {
+	definition := sampleDashboardDefinition("versioned-dashboard")
+	definition.Tabs[0].Panels[0].Query.QueryVersion = AnalyticsQueryVersion
+	if err := validateDashboardDefinition(definition); err != nil {
+		t.Fatalf("current query version refused: %v", err)
+	}
+	definition.Tabs[0].Panels[0].Query.QueryVersion = AnalyticsQueryVersion + 1
+	if err := validateDashboardDefinition(definition); err == nil {
+		t.Fatal("a future query version was accepted")
+	}
+	// Running a query refuses newer semantics too, not only saving one.
+	future := *definition.Tabs[0].Panels[0].Query
+	if err := ValidateNativeArchiveQuery(future); err == nil || !strings.Contains(err.Error(), "query_version") {
+		t.Fatalf("archive query with a future version = %v", err)
+	}
+	future.EvidenceMode = "archive"
+	if err := ValidateNativeEvidenceQuery(future); err == nil || !strings.Contains(err.Error(), "query_version") {
+		t.Fatalf("evidence query with a future version = %v", err)
+	}
+}
+
+// An edit locks its project row: once the project is gone (here its row is
+// removed under the definition), the edit is refused and records no revision
+// a project deletion would leave behind.
+func TestDashboardDefinitionEditOfAGoneProjectRecordsNoRevision(t *testing.T) {
+	store, err := NewSQLiteStore(t.TempDir() + "/dashboard-gone-project.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.SaveProject(&Project{ID: "gone-project", Name: "Gone"}); err != nil {
+		t.Fatal(err)
+	}
+	definition := sampleDashboardDefinition("gone-project-dashboard")
+	definition.ProjectID = "gone-project"
+	if err := store.SaveDashboardDefinition(definition); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec(`DELETE FROM projects WHERE id = ?`, "gone-project"); err != nil {
+		t.Fatal(err)
+	}
+	definition.Name = "edited after the project went"
+	if updated, err := store.UpdateDashboardDefinitionIfRevision(definition, 1); err != nil || updated {
+		t.Fatalf("edit of a gone project = %v %v", updated, err)
+	}
+	var revisions int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM dashboard_definition_revisions WHERE definition_id = ? AND revision > 1`, definition.ID).Scan(&revisions); err != nil || revisions != 0 {
+		t.Fatalf("revisions after the refused edit = %d %v", revisions, err)
 	}
 }

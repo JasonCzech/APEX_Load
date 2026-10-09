@@ -221,17 +221,43 @@ one policy of each kind may set `apply_by_default`. A browser policy's
 a queued run is promoted, the project's default policy of each kind is pinned
 into the run's admission record and appears as `policy_pins` in its provenance
 and archive manifest; a later edit never changes a pinned run. Pins are
-recorded with `applied: false`: no evaluation consumes them yet. A project
+recorded with `applied: false`, a field kept for compatibility that says
+nothing about enforcement (the pin is written at admission, before any
+consumer judges the run). The consumers that judge a run against its pins say
+so in their own results: telemetry acceptance verdicts (`enforced` under
+`fail_ci`), browser findings, journey accounting and RCA's browser baseline
+(`browser_baseline.policy`) each name the pinned revision they used. A project
 whose defaults cannot be read unambiguously refuses Start (and a queued run's
 promotion) instead of running without its pins. Only project defaults are
 pinned; system-wide telemetry defaults and scenario-level policy selection
 are not yet resolved into the snapshot.
 
+A `telemetry_policy` revision can also be named explicitly in a
+`telemetry_acceptance` evaluation (`POST /api/v1/analysis/evaluations`), which
+re-classifies up to ten runs' retained interval lag evidence under that one
+revision as a derived, hashed result without changing the runs; see the
+[telemetry guide](guides/TELEMETRY_POLICY_RECEIPTS.md#comparing-runs-and-re-evaluating-under-a-common-policy).
+
 An external dataset keeps its own identity. Associate it explicitly with a run
 in the same project before comparing it with managed evidence. Comparisons
 select datasets, bound monitor evidence, or archived transaction durations and
 align UTC buckets. Lagged correlation reports paired bucket count, coverage and
-an optional coefficient; constant or insufficient evidence stays unscored.
+an optional coefficient; constant or insufficient evidence stays unscored and
+says which (`constant_series`, `insufficient_pairs`). A positive lag pairs each
+left bucket with the right series that much later. `correlation_semantics`
+keeps each side's own unit, kind and source kind, population, statistic and
+scalar conversion (a counter's per-second rate, a summary's declared
+statistic, a percentile of raw observations, a percentile estimated from
+histogram buckets) and any derivation, with its valid buckets, the buckets
+kept out, and the raw samples bucketing could not use, by reason (stale,
+clock skew, dropped, and a raw counter's resets and duplicate instants; a side
+read from an imported dataset is aggregated by its dataset query and reports
+buckets only). Two sides share a unit only when unit, kind and source kind
+match and, where both declare one, the population; a side with
+no evidence or no declared unit leaves that unknown (`units_undeclared`).
+Series in different units are associated, never compared value for value:
+the comparison view gives each its own labelled axis, and series in one unit
+share one.
 Correlation is association, never proof of causation. Saved comparison
 definitions are revisioned and recheck ownership when used.
 
@@ -596,6 +622,87 @@ steps (about 2% at either setting).
 The fault corpus (WP3.9) calibrates these values; until then they are the
 plan's starting values.
 
+## Browser baseline anomalies
+
+An assessment of a run with browser document evidence also carries
+`browser_baseline` (`pkg/rca/browser_baseline.go`, version
+`browser_baseline.v1`). It compares each browser document cohort with the same
+cohort of the workload-qualified baseline run, at the same steady load. Only
+it compares browser document series with the baseline: the general detector
+judges them within the run, so the two never disagree about one cohort.
+
+The run's pinned `browser_policy` applies here: its effect floors raise the
+defaults below (never lower them), and its baseline mode decides whether a
+comparison is made. `none` turns it off (`policy_baseline_off`), `pinned_run`
+compares only when the analysis's baseline is the pinned run
+(`policy_pinned_run` when it compares with another run; without a qualified
+baseline the section says `no_qualified_baseline`), and `latest_compatible`
+uses the analysis's baseline run. The section names the policy (`policy`, id@revision). A pinned
+revision that is missing, no longer matches its pin or is invalid leaves the
+defaults (`policy_unavailable`, `partial`); a store that cannot read it fails
+the analysis, which can be retried.
+
+- **Cohorts.** A cohort is one exact measurement tuple: metric and algorithm
+  version, engine, device profile, scenario group and region, frame scope,
+  lifecycle phase and the actual runtime cohort. The runtime cohort covers
+  browser version, platform, viewport, device emulation, CPU and network
+  shaping, and cache and new-user policy. Document, navigation and measurement
+  IDs are lineage only, never matching keys. Each document counts once, at its
+  latest retained measurement, so a republished observation adds nothing.
+  Documents become per-bucket p75 values before any comparison.
+- **Scoring.** The run's value at a level is the median of its bucket p75
+  values there. It is scored with the three-sigma scorer of
+  `pkg/analysis/anomaly.go` (`ThreeSigmaScore`) against the baseline's valid
+  buckets at every steady level with the same load. A cohort needs at least
+  30 such buckets. An anomaly needs |z| ≥ 3 and a practical effect: at least
+  max(50 ms, 10% of the baseline mean) for a timing, 0.02 for layout shift,
+  or a catalog floor for any other metric.
+- **Results.** Each result is `anomaly` (with its direction), `within_range`
+  or `unscored`. An unscored result has a reason:
+  - `insufficient_baseline`: fewer than 30 buckets;
+  - `zero_variance`;
+  - `no_same_load_window`;
+  - `no_baseline_cohort`;
+  - `cohort_changed`: the baseline measured the same measurement under another
+    runtime cohort, and the result's detail names the fields that differ from
+    the closest baseline cohort, such as `shaping_applied`. A result is also
+    `cohort_changed` when its scenario group ran a different or unrecorded
+    script in the baseline (`script_changed`, `script_unrecorded`: only that
+    group's cohorts), or when the run's configuration or workload changed or
+    was not recorded (`config_changed`, `config_unrecorded`,
+    `workload_unrecorded`: every cohort), since the group then no longer
+    stands for the same authored pages;
+  - `baseline_evidence_unavailable`: the baseline's document evidence was not
+    fully read (unreadable, dropped observations or cut by the series
+    budget), so its matching cohort may be missing; the section is then
+    `partial`.
+
+  When the run's own document evidence was not fully read (dropped
+  observations or series the budget left out), the section is `partial` with
+  `run_evidence_incomplete`, and a cohort left out has no result (`unavailable`
+  when none was read); when it could not be read at all, the section is
+  `unavailable` with `run_evidence_unavailable` rather than missing.
+
+  Every result carries current and baseline bucket and document counts, the
+  baseline run with its qualification and reasons, its own evidence
+  reference, the level's start (two steady levels at one load stay apart),
+  and `source_loss` or `baseline_source_loss` when that run's document
+  evidence dropped observations. A scored result also carries the expected
+  range, the baseline's evidence reference, z and the effect. The expected
+  range is the baseline mean ± the larger of 3σ and the effect floor (never
+  below zero), so a value inside it is within range and one outside it is an
+  anomaly.
+
+  Buckets outside every steady level (ramp, pause, settle) are counted under
+  `excluded.outside_steady_load`. Without a qualified or partial baseline run,
+  or without steady levels, the section is `unavailable` with that
+  limitation. At most 200 results are kept, anomalies first; an assessment
+  trimmed to fit its size limit cuts these advisory results before its graph,
+  anomalies or hypotheses, and says so (`browser_baseline_truncated`).
+- **Advisory.** Browser baseline results never affect hypotheses, CI outcomes
+  or stop decisions; application SLAs own those. The RCA panel lists them
+  under **Browser baseline**.
+
 ## Root-cause graph
 
 Each assessment carries the run's typed graph (`graph`, schema
@@ -774,7 +881,9 @@ MCP tools keep returning v1.
 - **Frozen inputs.** An analysis's `input_digest` hashes the archive's
   manifest digest, the evidence revision, the baseline archive's digest, the
   digest of the mapping decisions frozen into the evidence revision, the
-  policy revision (none yet), the signature set and the engine version. The
+  policy revision (unused: the pinned `browser_policy` the browser baseline
+  applies is covered by the archive manifest digest, and its revision is
+  immutable), the signature set and the engine version. The
   engine version (`rca.EngineVersion`) carries the rules', parameters' and
   signatures' versions and a fingerprint of every value the stages use: the
   budget, detection parameters, validity rules, hypothesis, graph and
@@ -1000,6 +1109,63 @@ Live summaries expose `properties`; archive reports recompute `by_property` from
 Run pages now offer native project panel creation with line, latest-value and table views, using the retained run time window. Supported run measurements include TPS, response-time means/interval percentiles, errors, VUsers and process resources. Project viewers can reopen saved panels. Missing intervals remain gaps, interval percentiles are never averaged, and unsupported stored query dimensions/filters/aggregations are explicitly unavailable. Archived action/transaction and property filtering is described below. General dimensions and monitor/imported-dataset overlay authoring remain follow-on work.
 
 
+### Saved panel revisions and pinned inputs
+
+Every save of a project dashboard (panel) definition is kept as a revision.
+That covers create, and each edit that wins the definition's revision check.
+The newest 100 revisions are kept, and they are deleted with the definition
+or its project.
+
+- **Reopening a revision.** `GET
+  /api/v1/monitoring/dashboard-definitions/{id}?revision=N` returns exactly what
+  was saved as revision N, with `current_revision` (the definition's revision
+  now; equal to N when N is current) beside it. Reading one definition lists
+  its `retained_revisions`, newest first (the list of definitions does not),
+  never one newer than the definition returned. `apexctl analysis panel
+  --revision N` refuses an answer that is not revision N (a controller that
+  predates saved revisions answers the current one). A revision that was never saved, or that
+  was pruned, is `404`. Access is resolved from the stored definition's project,
+  never from the request. On the run page, **Saved revision** opens a past
+  revision read-only; a definition saved before revisions were kept has only its
+  current revision.
+- **Edits and deletes.** Both still need the revision they replace: a stale or
+  racing edit or delete is `409`, and an edit of a deleted definition is `404`.
+- **Query version.** New panels state `query_version` (2), the query semantics
+  they were saved under. A missing version is read with the same rules; a
+  version newer than the controller's is refused when a panel is saved and
+  when a query runs.
+- **Pinned dataset artifacts.** A committed dataset reports `artifact_sha256`,
+  a digest of its normalized artifacts, wherever it is read (one dataset or
+  import, the import list, a commit of a ready import, an association). A mapping change or a new commit
+  replaces it; associating the dataset with a run does not. A comparison
+  selection or a dataset overlay may pin it as `dataset_artifact_sha256`. A
+  pinned dataset whose artifacts changed since is refused with `409`, naming
+  both digests, rather than answered from different evidence; each side's pin
+  is checked, also when both sides read one dataset. `apexctl analysis
+  compare` and `save-comparison` carry the pin. An unpinned selection reads
+  the current artifacts.
+
+`apexctl analysis` covers the same workflows. A command that prints the
+controller's response as it is streams it to standard output instead of
+loading it whole. Commands that read the response first still read it within
+a response limit: `journeys`, `browser-findings`, `browser-har list`,
+`browser-documents`, `telemetry-policy`, `telemetry-reevaluate`,
+`panel --revision` and `baseline --fail-on-regression` (8 MiB), and
+`browser-resources` (one 2 MiB page at a time):
+
+| Command | Does |
+| --- | --- |
+| `catalog --project P` | The analysis capabilities and catalog (same as `capabilities`). |
+| `panels --project P` | Lists the project's saved panel definitions. |
+| `panel --id ID [--revision N]` | Shows a definition, or exactly its saved revision N. |
+| `save-panel --file def.json` | Creates a definition (the file names `project_id`). |
+| `update-panel --id ID --file patch.json` | Edits a definition; the patch carries the expected `revision`. |
+| `delete-panel --id ID --revision N` | Deletes a definition at revision N. |
+| `run-query --id RUN --file query.json` | Runs a native archive query of one run (and its `comparison_run_id`). |
+
+The `list`, `create`, `upload`, `map`, `commit`, `query`, `compare`,
+`mappings` and `comparisons` commands keep covering imports and comparisons.
+
 ## Filtered archive panels and comparisons
 
 In a run's **Create project analytics panel** form, choose **Archived actions** or **Archived business transactions**. Select a case-sensitive exact action/transaction name, an optional retained approved property category (actions only), elapsed start/end seconds and bucket width. An optional comparison run ID saves a two-run query with the same selection and elapsed wall-time window for both runs. Editors save project definitions; viewers can reopen and query them. Existing run-total definitions keep their previous semantics.
@@ -1019,9 +1185,9 @@ Choose **Filtered live intervals** or **Grouped archive and overlays** in the na
 
 Live panels refresh every ten seconds after the preceding request completes. They read the newest 1,000 retained publication intervals within the saved elapsed window. Action, business-transaction, property, region and dependency summaries are retained in the existing bounded history, persisted in an optional versioned `native_evidence_json` column, and restored after restart. Detailed evidence is queried separately from the metrics WebSocket feed. Each dimension retains at most 128 identities; incomplete intervals remain unavailable. A generator's additive native-evidence version marks support; mixed peers and source-plan runtimes without the required summaries cannot claim complete evidence.
 
-Completed archives also carry these distributions in `interval_distributions.jsonl` (`apexload.interval_distribution.v1`), so they outlive history retention and travel with exported archives. Finalization copies every retained interval with version 2 or later native evidence: per dimension and key, the count, errors, the t-digest in nanoseconds, the percentiles live showed and the incomplete flag. Runs without such evidence are rebuilt from one scan of the archived transaction rows, per transaction and action, within 100,000 observations, 1,000 intervals and 128 keys per dimension, and marked `reconstructed_from_rows`. The manifest records `interval_distributions_file`, its count and source, and `interval_distributions_truncated` when a bound, skipped interval or the sidecar's byte allowance cut it short. The sidecar is written once; later metadata refreshes keep it. Merge digests across intervals; never average the percentiles.
+Completed archives also carry these distributions in `interval_distributions.jsonl` (`apexload.interval_distribution.v1`), so they outlive history retention and travel with exported archives. Finalization copies every retained interval with version 2 or later native evidence: per dimension and key, the count, errors, the t-digest in nanoseconds, the percentiles live showed and the incomplete flag. Runs without such evidence are rebuilt from one scan of the archived transaction rows, per transaction and action, within 100,000 observations, 1,000 intervals and 128 keys per dimension, and marked `reconstructed_from_rows`. The manifest records `interval_distributions_file`, its count and source, and `interval_distributions_truncated` when a bound, skipped interval or the sidecar's byte allowance cut it short, or when the run reached the store's 3,600 retained interval rows (its oldest may have been trimmed). The sidecar is written once; later metadata refreshes keep it. Merge digests across intervals; never average the percentiles.
 
-Live percentiles describe their original publication summaries and are never averaged or re-bucketed. The configured bucket width applies to archive and overlay queries. Live regions describe business transactions; dependencies and properties describe actions. Independent live dimension summaries cannot answer intersections: action/property filtering requires version 2 merged evidence; action/network/hierarchy/lifecycle filtering requires version 3 merged evidence. Unsupported combinations and unavailable peers return explicit errors. History eviction, old rows and missing observations cannot be interpreted as zeros. Selected live elapsed windows are fixed, not automatically sliding.
+Live percentiles describe their original publication summaries and are never averaged or re-bucketed. The configured bucket width applies to archive and overlay queries. Live regions describe business transactions; dependencies and properties describe actions. Independent live dimension summaries cannot answer intersections: action/property filtering requires version 2 merged evidence; action/network/hierarchy/lifecycle filtering requires version 3 merged evidence. Unsupported combinations and unavailable peers return explicit errors. History eviction, old rows and missing observations cannot be interpreted as zeros. Selected live elapsed windows are fixed, not automatically sliding. In a distributed run the controller publishes at most about once a second for the whole fleet, and each published point carries one generator's window, so a merged version 2 or 3 query over several generators sees only the published windows: a bucket that lacks any expected generator's window is a gap; a bucket where every generator published but whose window is not wholly covered shows counts and distributions from the published windows only (an undercount), no rates, and coverage below 1, and the query carries the partial-coverage warning. Joint evidence v4 (below) carries every accepted batch instead.
 
 For an overlay, select a run monitor source or an imported dataset, its metric and aggregation, and optionally a monitor host. Imported datasets must be ready, project-authorized and explicitly associated with this run; association is checked before analytical reads. Monitor and dataset project flags still apply, and imported queries require the native DuckDB profile. A metric must have a known unit; the existing analytical query layer rejects mixed or incompatible series. Different measurements use separately labelled axes, with no implied numerical equivalence. Missing/stale/invalid-quality values remain gaps. The table and CSV preserve original values and units.
 
@@ -1036,6 +1202,14 @@ Action/property intersections use bounded joint evidence (128 identities per int
 ### Dimensions, timeline annotations and transaction investigation
 
 Archive panels can filter and group by network profile, hierarchy and lifecycle phase, retaining existing action/property/region/dependency options. Network profile is also available as an independent live action marginal. Merged live action evidence version 3 supports hierarchy and lifecycle grouping, and exact action/network-profile/hierarchy/phase intersections. These tuples retain at most 128 identities per publication, each with a mergeable duration distribution. Unretained combinations (including property with hierarchy) fail explicitly, as do missing selected labels; older peers remain unavailable for these queries. Dimension filters exclude missing legacy values; missing is never zero.
+
+Joint evidence v4 measures configured intersections. Set `joint_evidence` when creating a run: one population (`action` or `transaction`) and up to three dimensions from `name`, `protocol`, `group`, `region`, `dependency`, `page`, `hierarchy`, `phase`, `network_profile`, `browser_profile`, `browser_engine`, `browser_platform` and one `property:<category>`. The projection is frozen at Start and sent only to generators advertising `native_joint_evidence_v4`; each counts every sample of the population under the exact tuple of its values (a dimension a sample lacks is the empty value). A publication keeps at most 512 tuples; the rest go to an explicit other bucket, the distinct omitted tuples are counted and the window is marked incomplete. Generators' tuples merge by exact key; an older generator's windows are `unavailable` (`source_lacks_joint_evidence_v4`) and leave the fleet window incomplete. Merged live queries with `joint_evidence: true` group by up to three projected dimensions (series are named by the JSON array of the selected values) and filter on projected dimensions, summing exact tuples over the rest; a window with unavailable, incomplete or differently projected evidence is a gap, and an unprojected dimension or another population is refused. Joint evidence is incomplete only past its own tuple bound or once samples were lost (dropped results or subscriber batches, missing windows; these counters are cumulative for the run, so every window after the first loss is incomplete); the marginal dimensions' 128-key caps do not affect it. The catalog advertises these as the `live/merged/<population>/projected/joint_v4` query profiles, with `property_mode: projected_category` for a projected `property:<category>`, which groups and filters like a dimension. Distributed publications are throttled fleet-wide, so a generator batch accepted between two published points does not get its own point: the next published point carries the joint evidence of every such batch (at most 1,024 batches or about 64 MiB held; past that the oldest are dropped and counted), and merged live queries and the archive read them as separate source publications identified by source, source epoch, execution generation and sequence. The carried batches count toward the in-memory history limit, so such a run keeps a shorter live window in memory. When a generator in the fleet publishes no native evidence, published points cannot carry the batches: the archive gets only those still held at finalize and, if any were dropped past the bound, is marked truncated. After finalize the archive holds `joint_intervals_v4.jsonl` and `.parquet`, read from the run's persisted interval evidence: one row per measured tuple of each source publication (including the batches carried by a published point, each with its `source_epoch`), one for its other bucket and one per unavailable source window. Batches still held at finalize are added after the history. The file is marked truncated when any were dropped past the bound, when a distributed run was adopted after a failover or reloaded after a restart (the previous controller's held batches are unknown), when the run reached the store's 3,600 retained interval rows (its oldest may have been trimmed), or when it is first written after the held generator batches were released: by a later refresh after its write at finalize failed (they are released when the archive is committed), or by a later recovery archive after this controller collected none (they are released when no archive is collected, and on leadership loss). A publication the controller still holds in memory but whose persisted write is missing is added, and the file is then marked truncated (earlier writes may have failed too). Each file has its own byte allowance (`APEXLOAD_ARCHIVE_JOINT_INTERVALS_MAX_BYTES`, 64 MiB; the Parquet copy has 1 MiB more for its format); a JSONL that reaches it is marked truncated, and a failed write leaves neither file.
+
+Limits: the projection is set only when creating a run through the test API (`POST /api/v1/tests`); scenario runs, schedules, CI runs and execution plans do not carry it, and no dashboard control sets it. Any syntactically valid `property:<category>` is accepted, not only promoted categories. Labels are capped at 256 bytes and keys at 1 KiB, but a publication's joint payload has no byte cap of its own, and digests are validated when queried rather than at ingest.
+
+Journey accounting counts how a finished run's declared journeys turned out under its pinned `journey_policy` (or a named revision): completed, failed, aborted, skipped and censored attempts per journey, step failures separately, and the weighted failure index, which is test-journey risk and never revenue. Every archived row carries its VUser and iteration; a failure recorded once its VUser was stopping (the run's stop or end, a ramp-down or scale-down, a goal boundary), or caused by the generator's own resource limit, is marked `interrupted` and censors the attempts it cut instead of failing them. Read it from the run report's Journey risk panel, `GET /api/v1/tests/{id}/archive/journeys` or `apexctl analysis journeys`; see the [journey accounting guide](guides/JOURNEY_ACCOUNTING.md).
+
+Browser findings judge a run's archived document metrics against its pinned `browser_policy` as a `browser_intelligence` evaluation job (automatically at finalize for runs that pinned one and captured document evidence, or on demand): threshold findings per engine and device profile at the qualified p75 (active, suppressed outside applicability, or unscored with a reason), collection-health findings kept apart, and a weighted `browser_score.v1` that is withheld when a required metric is missing. Read them in the report's Browser findings panel, `GET /api/v1/tests/{id}/archive/browser-findings` or `apexctl analysis browser-findings`; see the [browser findings guide](guides/BROWSER_FINDINGS.md).
 
 Select a grouped archive bucket to inspect up to 25 raw observations per page. The selection retains population, property, time and exact group identity, including capitalization. The timing waterfall shows retained DNS/connect/TLS durations, TTFB as an elapsed milestone, and total observation duration. Unrecorded timing phases remain unavailable.
 

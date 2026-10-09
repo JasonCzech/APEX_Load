@@ -143,6 +143,7 @@ func NewBrowserRecorderBridgeServer(cfg BrowserRecorderBridgeConfig) *Server {
 		WriteTimeout:   60 * time.Second,
 		IdleTimeout:    120 * time.Second,
 		MaxHeaderBytes: 1 << 20,
+		ErrorLog:       httpServerErrorLog(),
 	}
 	return s
 }

@@ -808,7 +808,7 @@ describe('SettingsPage', () => {
     expect(container.querySelector<HTMLElement>('#settings-section-feature-access')?.hidden).toBe(false)
     expect(container.querySelector<HTMLElement>('#settings-section-general')?.hidden).toBe(true)
     expect(container.textContent).toContain('Loading feature policy permissions')
-    expect(container.querySelector('nav[aria-label="Access administration"] a[aria-current="page"]')?.textContent).toBe('Feature policy')
+    expect(container.querySelector('nav[aria-label="Access administration"] a[aria-current="page"]')?.textContent).toBe('Domain feature policy')
     await act(async () => resolve({enabled:true,authenticated:true,resources:[]}))
     await flushPromises()
     expect(container.querySelector<HTMLElement>('#settings-section-feature-access')?.hidden).toBe(false)
@@ -872,7 +872,7 @@ describe('SettingsPage', () => {
     if (!generalSection) return
 
     const topbar = container.querySelector('[data-testid="settings-topbar"]')
-    expect(topbar?.textContent).not.toContain('Performance Thresholds')
+    expect(topbar?.textContent).not.toContain('Performance thresholds')
     expect(container.querySelector('nav[aria-label="Settings sections"]')?.textContent).toContain('Alert & stop policies')
     expect(container.querySelector('.settings-section-switcher')).toBeNull()
 
@@ -949,13 +949,13 @@ describe('SettingsPage', () => {
     expect(governancePanel).toBeTruthy()
     const governanceTabs = Array.from(governancePanel?.querySelectorAll(':scope > .settings-subsection-layout > .settings-subnav .settings-subnav-label') || [])
       .map(tab => tab.textContent)
-    expect(governanceTabs).toEqual(['Schedule Defaults', 'Script Imports', 'Service Account APIs', 'Recent Audit Events'])
-    expect(findSettingsSubnavButton(governancePanel || generalSection, 'Schedule Defaults')?.getAttribute('aria-selected')).toBe('true')
+    expect(governanceTabs).toEqual(['Schedule defaults', 'Script imports', 'Service account APIs', 'Governance audit'])
+    expect(findSettingsSubnavButton(governancePanel || generalSection, 'Schedule defaults')?.getAttribute('aria-selected')).toBe('true')
     expect(governancePanel?.querySelector('#settings-governance-panel-schedule-defaults')?.hasAttribute('hidden')).toBe(false)
     expect(governancePanel?.querySelector('#settings-governance-panel-service-account-apis')?.hasAttribute('hidden')).toBe(true)
     expect(governancePanel?.querySelector('#settings-governance-panel-recent-audit-events')?.hasAttribute('hidden')).toBe(true)
 
-    expect(generalSection.textContent).toContain('Scenario Schedule Defaults')
+    expect(generalSection.textContent).toContain('Schedule defaults')
     const approvalSelect = findSettingSelect(generalSection, 'Approval Policy')
     const missedRunSelect = findSettingSelect(generalSection, 'Missed Run Policy')
     expect(approvalSelect?.value).toBe('auto')
@@ -1009,7 +1009,7 @@ describe('SettingsPage', () => {
     expect(generalSection).toBeTruthy()
     if (!generalSection) return
     await selectGeneralSubnav(generalSection, 'Governance')
-    await selectSettingsSubnav(generalSection, 'Script Imports')
+    await selectSettingsSubnav(generalSection, 'Script imports')
 
     const policyInput = findSettingInput(generalSection, 'Allow source secret migration')
     expect(policyInput?.checked).toBe(false)
@@ -1033,22 +1033,22 @@ describe('SettingsPage', () => {
 
     await flushPromises()
 
-    await selectTopLevelSettingsTab('Capacity Planning')
+    await selectTopLevelSettingsTab('Capacity planning')
     const capacitySection = container.querySelector('#settings-section-capacity')
     expect(capacitySection).toBeTruthy()
     if (!capacitySection) return
     expect(findSettingsSubnavButton(capacitySection, 'Availability')?.getAttribute('aria-selected')).toBe('true')
     expect(capacitySection.querySelector('#settings-capacity-panel-availability')?.hasAttribute('hidden')).toBe(false)
-    await selectSettingsSubnav(capacitySection, 'Generator Profile')
+    await selectSettingsSubnav(capacitySection, 'Generator profile')
     expect(capacitySection.querySelector('#settings-capacity-panel-availability')?.hasAttribute('hidden')).toBe(true)
     expect(capacitySection.querySelector('#settings-capacity-panel-generator')?.hasAttribute('hidden')).toBe(false)
 
-    await selectTopLevelSettingsTab('Projects & Compliance')
+    await selectTopLevelSettingsTab('Projects & compliance')
     const projectSection = container.querySelector('#settings-section-projects')
     expect(projectSection).toBeTruthy()
     if (!projectSection) return
-    expect(findSettingsSubnavButton(projectSection, 'Project Catalog')?.getAttribute('aria-selected')).toBe('true')
-    await selectSettingsSubnav(projectSection, 'Redaction Rules')
+    expect(findSettingsSubnavButton(projectSection, 'Project catalog')?.getAttribute('aria-selected')).toBe('true')
+    await selectSettingsSubnav(projectSection, 'Redaction rules')
     expect(projectSection.querySelector('#settings-projects-panel-catalog')?.hasAttribute('hidden')).toBe(true)
     expect(projectSection.querySelector('#settings-projects-panel-redaction')?.hasAttribute('hidden')).toBe(false)
 
@@ -1056,7 +1056,7 @@ describe('SettingsPage', () => {
     const integrationsSection = container.querySelector('#settings-section-integrations')
     expect(integrationsSection).toBeTruthy()
     if (!integrationsSection) return
-    expect(findSettingsSubnavButton(integrationsSection, 'Library Federation')?.getAttribute('aria-selected')).toBe('true')
+    expect(findSettingsSubnavButton(integrationsSection, 'Library federation')?.getAttribute('aria-selected')).toBe('true')
     await selectSettingsSubnav(integrationsSection, 'Notifications')
     expect(integrationsSection.querySelector('#settings-integrations-panel-library')?.hasAttribute('hidden')).toBe(true)
     expect(integrationsSection.querySelector('#settings-integrations-panel-notifications')?.hasAttribute('hidden')).toBe(false)
@@ -1583,8 +1583,8 @@ describe('SettingsPage', () => {
     expect(capacitySection).toBeTruthy()
     if (!capacitySection) return
 
-    await selectTopLevelSettingsTab('Capacity Planning')
-    await selectSettingsSubnav(capacitySection, 'Generator Profile')
+    await selectTopLevelSettingsTab('Capacity planning')
+    await selectSettingsSubnav(capacitySection, 'Generator profile')
 
     const maxVUsersInput = findSettingInput(capacitySection, 'Generator Max VUsers')
     const cpuCoresInput = findSettingInput(capacitySection, 'Generator CPU (cores)')
@@ -1615,10 +1615,10 @@ describe('SettingsPage', () => {
     expect(capacitySection).toBeTruthy()
     if (!capacitySection) return
 
-    await selectTopLevelSettingsTab('Capacity Planning')
+    await selectTopLevelSettingsTab('Capacity planning')
     await selectSettingsSubnav(capacitySection, 'Retention')
 
-    expect(capacitySection.textContent).toContain('Archive Retention Executor')
+    expect(capacitySection.textContent).toContain('Archive & HAR retention')
     expect(capacitySection.textContent).toContain('Default Retention Days')
     expect(findSettingInput(capacitySection, 'Default Retention Days')?.value).toBe('45')
     expect(capacitySection.textContent).toContain('HAR Retention Days')
@@ -1661,7 +1661,8 @@ describe('SettingsPage', () => {
     expect(generalSection.textContent).toContain('2.00 MB')
     expect(generalSection.textContent).toContain('COMPLETE=2')
     expect(generalSection.textContent).toContain('usage-snapshot-1')
-    expect(generalSection.textContent).toContain('project-1 / 2 runs / 81,000 VUser seconds')
+    expect(generalSection.textContent).toMatch(/Customer Portal · May 18, 2026, \d+:01:00 [AP]M [A-Z]/)
+    expect(generalSection.textContent).toContain('2 runs · 81,000 VUser seconds')
 
     const captureButton = Array.from(generalSection.querySelectorAll('button')).find(button => button.textContent?.includes('Capture Snapshot'))
     expect(captureButton).toBeDefined()
@@ -1675,7 +1676,7 @@ describe('SettingsPage', () => {
     expect(apiMock.captureUsageAccountingSnapshot).toHaveBeenCalledWith('project-1')
     expect(generalSection.textContent).toContain('Usage snapshot captured for 3 runs.')
 
-    const exportButton = Array.from(generalSection.querySelectorAll('button')).find(button => button.textContent?.includes('Export Usage CSV'))
+    const exportButton = Array.from(generalSection.querySelectorAll('button')).find(button => button.textContent?.includes('Export usage CSV'))
     expect(exportButton).toBeDefined()
     if (!exportButton) return
 
@@ -1831,7 +1832,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
 
-    await selectTopLevelSettingsTab('Capacity Planning')
+    await selectTopLevelSettingsTab('Capacity planning')
     const capacitySection = container.querySelector('#settings-section-capacity')
     expect(capacitySection).toBeTruthy()
     if (!capacitySection) return
@@ -1931,11 +1932,11 @@ describe('SettingsPage', () => {
 
     await flushPromises()
 
-    await selectTopLevelSettingsTab('Capacity Planning')
+    await selectTopLevelSettingsTab('Capacity planning')
     const capacitySection = container.querySelector('#settings-section-capacity')
     expect(capacitySection).toBeTruthy()
     if (!capacitySection) return
-    await selectSettingsSubnav(capacitySection, 'Generator Profile')
+    await selectSettingsSubnav(capacitySection, 'Generator profile')
 
     const livePresetButton = Array.from(capacitySection.querySelectorAll('button')).find(button => button.textContent?.includes('Live Pod Capacity'))
     expect(livePresetButton).toBeDefined()
@@ -1979,7 +1980,7 @@ describe('SettingsPage', () => {
     await flushPromises()
     await flushPromises()
 
-    await selectTopLevelSettingsTab('Projects & Compliance')
+    await selectTopLevelSettingsTab('Projects & compliance')
 
     const projectSection = container.querySelector('#settings-section-projects')
     expect(projectSection).toBeTruthy()
@@ -1996,8 +1997,8 @@ describe('SettingsPage', () => {
     await setFieldValue(quotaInputs[2], '150')
     await setFieldValue(quotaInputs[3], '30')
 
-    await selectSettingsSubnav(projectSection, 'Redaction Rules')
-    expect(projectSection.textContent).toContain('Custom Redaction Rules')
+    await selectSettingsSubnav(projectSection, 'Redaction rules')
+    expect(projectSection.textContent).toContain('Project redaction rules')
     const addRuleButton = findButton('Add Rule')
     expect(addRuleButton).toBeDefined()
     if (!addRuleButton) return
@@ -2112,7 +2113,7 @@ describe('SettingsPage', () => {
     await flushPromises()
     await flushPromises()
 
-    await selectTopLevelSettingsTab('Projects & Compliance')
+    await selectTopLevelSettingsTab('Projects & compliance')
 
     const projectSection = container.querySelector('#settings-section-projects')
     expect(projectSection).toBeTruthy()
@@ -2120,7 +2121,7 @@ describe('SettingsPage', () => {
 
     // The automation identity loaded from the project policy is shown in the form
     // and round-trips back out on save (regression: it used to be dropped).
-    await selectSettingsSubnav(projectSection, 'GitHub Policy')
+    await selectSettingsSubnav(projectSection, 'GitHub policy')
     const identityInput = Array.from(projectSection.querySelectorAll('input')).find(
       input => input.value === 'apexload-bot',
     ) as HTMLInputElement | undefined
@@ -2248,7 +2249,7 @@ describe('SettingsPage', () => {
     await flushPromises()
     await flushPromises()
 
-    await selectTopLevelSettingsTab('Projects & Compliance')
+    await selectTopLevelSettingsTab('Projects & compliance')
 
     const projectSection = container.querySelector('#settings-section-projects')
     expect(projectSection).toBeTruthy()
@@ -2308,7 +2309,7 @@ describe('SettingsPage', () => {
     await flushPromises()
     await flushPromises()
 
-    await selectTopLevelSettingsTab('Projects & Compliance')
+    await selectTopLevelSettingsTab('Projects & compliance')
     const projectSection = container.querySelector('#settings-section-projects')
     expect(projectSection).toBeTruthy()
     if (!projectSection) return
@@ -2319,7 +2320,7 @@ describe('SettingsPage', () => {
     await setFieldValue(newProjectInput, 'Restricted Project')
 
     expect(findButton('Add Project')?.disabled).toBe(true)
-    await selectSettingsSubnav(projectSection, 'Redaction Rules')
+    await selectSettingsSubnav(projectSection, 'Redaction rules')
     expect(findButton('Add Rule')?.disabled).toBe(true)
     expect(projectSection.textContent).toContain('Current session can view this project but cannot change project governance.')
 
@@ -2349,7 +2350,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
     await flushPromises()
-    await selectTopLevelSettingsTab('Projects & Compliance')
+    await selectTopLevelSettingsTab('Projects & compliance')
     const projectSection = container.querySelector('#settings-section-projects')
     const input = Array.from(projectSection?.querySelectorAll('input') || [])
       .find(candidate => candidate.placeholder?.includes('Create project')) as HTMLInputElement | undefined
@@ -2419,7 +2420,7 @@ describe('SettingsPage', () => {
     await flushPromises()
     await flushPromises()
 
-    await selectTopLevelSettingsTab('Projects & Compliance')
+    await selectTopLevelSettingsTab('Projects & compliance')
     const projectSection = container.querySelector('#settings-section-projects')
     expect(projectSection).toBeTruthy()
     if (!projectSection) return
@@ -2490,7 +2491,7 @@ describe('SettingsPage', () => {
       renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
     await flushPromises()
-    await selectTopLevelSettingsTab('Projects & Compliance')
+    await selectTopLevelSettingsTab('Projects & compliance')
     const projectSection = container.querySelector('#settings-section-projects')
     if (!projectSection) return
     const secondaryButton = Array.from(projectSection.querySelectorAll<HTMLButtonElement>('.settings-app-card'))
@@ -2542,7 +2543,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
     await flushPromises()
-    await selectTopLevelSettingsTab('Projects & Compliance')
+    await selectTopLevelSettingsTab('Projects & compliance')
     const projectSection = container.querySelector('#settings-section-projects')
     if (!projectSection) return
     const pooledProject = Array.from(projectSection.querySelectorAll<HTMLButtonElement>('.settings-app-card'))
@@ -2593,7 +2594,7 @@ describe('SettingsPage', () => {
 		})
 		await flushPromises()
 		await flushPromises()
-		await selectTopLevelSettingsTab('Projects & Compliance')
+		await selectTopLevelSettingsTab('Projects & compliance')
 		const projectSection = container.querySelector('#settings-section-projects')
 		if (!projectSection) return
 		await selectSettingsSubnav(projectSection, 'Limits')
@@ -2630,12 +2631,12 @@ describe('SettingsPage', () => {
     await flushPromises()
     await flushPromises()
 
-    await selectTopLevelSettingsTab('Projects & Compliance')
+    await selectTopLevelSettingsTab('Projects & compliance')
     const projectSection = container.querySelector('#settings-section-projects')
     expect(projectSection).toBeTruthy()
     if (!projectSection) return
 
-    await selectSettingsSubnav(projectSection, 'Redaction Rules')
+    await selectSettingsSubnav(projectSection, 'Redaction rules')
     const addRuleButton = findButton('Add Rule')
     expect(addRuleButton).toBeDefined()
     if (!addRuleButton) return
@@ -2844,21 +2845,21 @@ describe('SettingsPage', () => {
     expect(container.textContent).toContain('Current session can view settings but cannot save global configuration changes.')
 
     await selectGeneralSubnav(generalSection, 'Governance')
-    expect(findSettingsSubnavButton(generalSection, 'Schedule Defaults')?.getAttribute('aria-selected')).toBe('true')
+    expect(findSettingsSubnavButton(generalSection, 'Schedule defaults')?.getAttribute('aria-selected')).toBe('true')
     expect(generalSection.textContent).toContain('Global Settings Permission Required')
 
-    await selectSettingsSubnav(generalSection, 'Script Imports')
+    await selectSettingsSubnav(generalSection, 'Script imports')
     const migrationPolicyInput = findSettingInput(generalSection, 'Allow source secret migration')
     expect(migrationPolicyInput?.disabled).toBe(true)
     expect(generalSection.textContent).toContain('Only a system administrator can change source-secret migration policy.')
 
-    await selectSettingsSubnav(generalSection, 'Service Account APIs')
+    await selectSettingsSubnav(generalSection, 'Service account APIs')
     expect(generalSection.textContent).toContain('Access & API Keys')
     expect(generalSection.textContent).toContain('Current session can view auth settings but cannot manage service-account API keys.')
     expect(findButton('Open Access & API Keys')?.disabled).toBe(true)
 
-    await selectSettingsSubnav(generalSection, 'Recent Audit Events')
-    expect(generalSection.textContent).toContain('Recent Audit Events')
+    await selectSettingsSubnav(generalSection, 'Governance audit')
+    expect(generalSection.textContent).toContain('Governance audit')
     expect(findButton('Export CSV')?.disabled).toBe(true)
   })
 
@@ -2904,7 +2905,7 @@ describe('SettingsPage', () => {
     const usageButton = findGeneralSubnavButton(generalSection, 'Usage')
     await act(async () => usageButton?.click())
     expect(findButton('Refresh Usage')?.disabled).toBe(false)
-    expect(findButton('Export Usage CSV')?.disabled).toBe(false)
+    expect(findButton('Export usage CSV')?.disabled).toBe(false)
     expect(findButton('Capture Snapshot')?.disabled).toBe(true)
 
     const governanceButton = findGeneralSubnavButton(generalSection, 'Governance')
@@ -2912,7 +2913,7 @@ describe('SettingsPage', () => {
     await act(async () => governanceButton?.click())
     expect(governanceButton?.getAttribute('aria-selected')).toBe('true')
 
-    const auditButton = findSettingsSubnavButton(generalSection, 'Recent Audit Events')
+    const auditButton = findSettingsSubnavButton(generalSection, 'Governance audit')
     expect(auditButton?.closest('fieldset')).toBeNull()
     await act(async () => auditButton?.click())
     expect(auditButton?.getAttribute('aria-selected')).toBe('true')
@@ -2952,7 +2953,13 @@ describe('SettingsPage', () => {
     expect(redirectURLInput).toBeTruthy()
     if (!issuerInput || !clientIDInput || !redirectURLInput) return
 
+    // An invalid issuer is reported on the field itself, not only in a detached list.
+    await setFieldValue(issuerInput, 'ftp://login.example.test')
+    expect(issuerInput.getAttribute('aria-invalid')).toBe('true')
+    expect(document.getElementById(issuerInput.getAttribute('aria-describedby') || '')?.textContent).toMatch(/Issuer URL/)
+
     await setFieldValue(issuerInput, 'https://login.example.test/tenant/v2.0')
+    expect(issuerInput.getAttribute('aria-invalid')).toBeNull()
     await setFieldValue(clientIDInput, 'apexload-dashboard')
     await setFieldValue(redirectURLInput, 'https://apexload.example.test/api/v1/auth/callback')
 
@@ -3130,9 +3137,9 @@ describe('SettingsPage', () => {
     expect(generalSection.textContent).toContain('Development Bypass')
 
     await selectGeneralSubnav(generalSection, 'Governance')
-    expect(findSettingsSubnavButton(generalSection, 'Schedule Defaults')?.getAttribute('aria-selected')).toBe('true')
+    expect(findSettingsSubnavButton(generalSection, 'Schedule defaults')?.getAttribute('aria-selected')).toBe('true')
 
-    await selectSettingsSubnav(generalSection, 'Service Account APIs')
+    await selectSettingsSubnav(generalSection, 'Service account APIs')
     expect(generalSection.textContent).toContain('Service Account API Keys')
     expect(generalSection.textContent).toContain('Generate, rotate, disable, and delete scoped API keys from Access & API Keys.')
     expect(generalSection.querySelector('#settings-governance-panel-service-account-apis')?.hasAttribute('hidden')).toBe(false)
@@ -3149,10 +3156,10 @@ describe('SettingsPage', () => {
     expect(apiMock.createAuthServiceAccount).not.toHaveBeenCalled()
     expect(apiMock.rotateAuthServiceAccount).not.toHaveBeenCalled()
 
-    await selectSettingsSubnav(generalSection, 'Recent Audit Events')
+    await selectSettingsSubnav(generalSection, 'Governance audit')
     const auditPanel = generalSection.querySelector('#settings-governance-panel-recent-audit-events')
     expect(auditPanel?.hasAttribute('hidden')).toBe(false)
-    expect(auditPanel?.textContent).toContain('Recent Audit Events')
+    expect(auditPanel?.textContent).toContain('Governance audit')
     expect(auditPanel?.textContent).toContain('system.settings.update')
 
     const auditFilterInputs = Array.from(auditPanel?.querySelectorAll('input') || []).filter(input => {
@@ -3218,13 +3225,15 @@ describe('SettingsPage', () => {
     await act(async () => {
       renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} authStatus={{ enabled: false, mode: 'dev', authenticated: false }} onNavigate={vi.fn()} />)
     })
+    // Audit history loads once effective access confirms view_audit.
+    await flushPromises()
     await flushPromises()
 
     const generalSection = container.querySelector('#settings-section-general')
     expect(generalSection).toBeTruthy()
     if (!generalSection) return
     await selectGeneralSubnav(generalSection, 'Governance')
-    await selectSettingsSubnav(generalSection, 'Recent Audit Events')
+    await selectSettingsSubnav(generalSection, 'Governance audit')
     const auditPanel = generalSection.querySelector('#settings-governance-panel-recent-audit-events')
     const rows = () => auditPanel?.querySelectorAll('.access-table-wrap tbody tr').length
     expect(rows()).toBe(20)
@@ -3349,7 +3358,7 @@ describe('SettingsPage', () => {
     expect(generalSection.textContent).toContain('Pass | alice-admin')
 
     await selectGeneralSubnav(generalSection, 'Governance')
-    await selectSettingsSubnav(generalSection, 'Service Account APIs')
+    await selectSettingsSubnav(generalSection, 'Service account APIs')
     expect(generalSection.querySelector('#settings-governance-panel-service-account-apis')?.hasAttribute('hidden')).toBe(false)
     expect(generalSection.textContent).toContain('Built-In Role Reference')
     expect(generalSection.textContent).toContain('Manage global settings')
@@ -3804,7 +3813,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
 
-    await selectTopLevelSettingsTab('Performance Thresholds')
+    await selectTopLevelSettingsTab('Performance thresholds')
     const thresholdsSection = container.querySelector('#settings-section-thresholds')
     expect(thresholdsSection).toBeTruthy()
     if (!thresholdsSection) return
@@ -3821,7 +3830,10 @@ describe('SettingsPage', () => {
     // With a badge showing, the chip's aria-label folds in the issue count so
     // assistive tech announces it.
     expect(topbar).toBeTruthy()
-    expect(container.querySelector('nav[aria-label="Settings sections"] [aria-label="Validation issues"]')).toBeTruthy()
+    // Only the destination that owns the bad field is marked, with a count.
+    const marked = Array.from(container.querySelectorAll('nav[aria-label="Settings sections"] .settings-nav-issue-count'))
+    expect(marked.map(badge => badge.parentElement?.textContent?.replace(badge.textContent || '', ''))).toEqual(['Alert & stop policies'])
+    expect(marked[0]?.getAttribute('aria-label')).toBe('1 validation issue')
   })
 
   it('summarizes validation errors from other sections with a jump control', async () => {
@@ -3830,7 +3842,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
 
-    await selectTopLevelSettingsTab('Performance Thresholds')
+    await selectTopLevelSettingsTab('Performance thresholds')
     const thresholdsSection = container.querySelector('#settings-section-thresholds')
     if (!thresholdsSection) return
     const p99Input = findSettingInput(thresholdsSection, 'Max Response Time (P99 ms)')
@@ -3839,7 +3851,7 @@ describe('SettingsPage', () => {
 
     await selectTopLevelSettingsTab('General')
     const errorsBlock = container.querySelector('.settings-errors')
-    expect(errorsBlock?.textContent).toContain('1 issue in Performance Thresholds')
+    expect(errorsBlock?.textContent).toContain('1 issue in Performance thresholds')
 
     const reviewButton = Array.from(errorsBlock?.querySelectorAll('button') ?? []).find(button => button.textContent === 'Review')
     expect(reviewButton).toBeTruthy()
@@ -3856,16 +3868,16 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
 
-    await selectTopLevelSettingsTab('Capacity Planning')
+    await selectTopLevelSettingsTab('Capacity planning')
     const capacitySection = container.querySelector('#settings-section-capacity')
     expect(capacitySection).toBeTruthy()
     if (!capacitySection) return
-    await selectSettingsSubnav(capacitySection, 'Generator Profile')
+    await selectSettingsSubnav(capacitySection, 'Generator profile')
     const cpuInput = findSettingInput(capacitySection, 'Generator CPU (cores)')
     if (!cpuInput) return
     await setFieldValue(cpuInput, '0')
 
-    const generatorTab = findSettingsSubnavButton(capacitySection, 'Generator Profile')
+    const generatorTab = findSettingsSubnavButton(capacitySection, 'Generator profile')
     expect(generatorTab?.querySelector('.settings-subnav-badge')?.textContent).toBe('1')
     expect(capacitySection.textContent).toContain('Generator CPU cores must be greater than 0.')
   })
@@ -3876,7 +3888,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
 
-    await selectTopLevelSettingsTab('Capacity Planning')
+    await selectTopLevelSettingsTab('Capacity planning')
     const capacitySection = container.querySelector('#settings-section-capacity')
     if (!capacitySection) return
     await selectSettingsSubnav(capacitySection, 'Availability')
@@ -3913,7 +3925,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
 
-    await selectTopLevelSettingsTab('Capacity Planning')
+    await selectTopLevelSettingsTab('Capacity planning')
     const capacitySection = container.querySelector('#settings-section-capacity')
     if (!capacitySection) return
     await selectSettingsSubnav(capacitySection, 'Availability')
@@ -3940,7 +3952,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
 
-    await selectTopLevelSettingsTab('Capacity Planning')
+    await selectTopLevelSettingsTab('Capacity planning')
     const capacitySection = container.querySelector('#settings-section-capacity')
     if (!capacitySection) return
     await selectSettingsSubnav(capacitySection, 'Availability')
@@ -3980,7 +3992,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
 
-    await selectTopLevelSettingsTab('Performance Thresholds')
+    await selectTopLevelSettingsTab('Performance thresholds')
     const thresholdsSection = container.querySelector('#settings-section-thresholds')
     if (!thresholdsSection) return
     const errorRateInput = findSettingInput(thresholdsSection, 'Max Error Rate (%)')
@@ -3988,10 +4000,10 @@ describe('SettingsPage', () => {
     // assert on the wrapping fieldset.
     expect(errorRateInput?.closest('fieldset')?.disabled).toBe(true)
 
-    await selectTopLevelSettingsTab('Capacity Planning')
+    await selectTopLevelSettingsTab('Capacity planning')
     const capacitySection = container.querySelector('#settings-section-capacity')
     if (!capacitySection) return
-    await selectSettingsSubnav(capacitySection, 'Generator Profile')
+    await selectSettingsSubnav(capacitySection, 'Generator profile')
     const cpuInput = findSettingInput(capacitySection, 'Generator CPU (cores)')
     expect(cpuInput?.closest('fieldset')?.disabled).toBe(true)
   })
@@ -4033,7 +4045,7 @@ describe('SettingsPage', () => {
       ))
     })
     await flushPromises()
-    await selectTopLevelSettingsTab('Performance Thresholds')
+    await selectTopLevelSettingsTab('Performance thresholds')
     let errorRateInput = findSettingInput(container, 'Max Error Rate (%)')
     expect(errorRateInput?.closest('fieldset')?.disabled).toBe(false)
     if (!errorRateInput) return
@@ -4069,7 +4081,7 @@ describe('SettingsPage', () => {
 
     const retryButton = findButton('Retry Loading Settings')
     expect(retryButton).toBeTruthy()
-    await selectTopLevelSettingsTab('Performance Thresholds')
+    await selectTopLevelSettingsTab('Performance thresholds')
     const thresholdsSection = container.querySelector('#settings-section-thresholds')
     if (!thresholdsSection) return
     const errorRateInput = findSettingInput(thresholdsSection, 'Max Error Rate (%)')
@@ -4157,7 +4169,7 @@ describe('SettingsPage', () => {
     expect(settingsGuards.length).toBeGreaterThan(0)
     expect(settingsGuards[settingsGuards.length - 1].guard.isDirty()).toBe(false)
 
-    await selectTopLevelSettingsTab('Performance Thresholds')
+    await selectTopLevelSettingsTab('Performance thresholds')
     const thresholdsSection = container.querySelector('#settings-section-thresholds')
     if (!thresholdsSection) return
     const p99Input = findSettingInput(thresholdsSection, 'Max Response Time (P99 ms)')
@@ -4354,7 +4366,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
     await flushPromises()
-    await selectTopLevelSettingsTab('Projects & Compliance')
+    await selectTopLevelSettingsTab('Projects & compliance')
     const projectSection = container.querySelector('#settings-section-projects')
     if (!projectSection) return
     await selectSettingsSubnav(projectSection, 'Limits')
@@ -4395,7 +4407,7 @@ describe('SettingsPage', () => {
       )
     })
     await flushPromises()
-    await selectTopLevelSettingsTab('Projects & Compliance')
+    await selectTopLevelSettingsTab('Projects & compliance')
     const projectSection = container.querySelector('#settings-section-projects')
     if (!projectSection) return
 
@@ -4424,7 +4436,7 @@ describe('SettingsPage', () => {
     )
     await act(async () => renderPage())
     await flushPromises()
-    await selectTopLevelSettingsTab('Projects & Compliance')
+    await selectTopLevelSettingsTab('Projects & compliance')
     const projectSection = container.querySelector('#settings-section-projects')
     if (!projectSection) return
 
@@ -4462,7 +4474,7 @@ describe('SettingsPage', () => {
       )
     })
     await flushPromises()
-    await selectTopLevelSettingsTab('Applications & Releases')
+    await selectTopLevelSettingsTab('Applications & releases')
     const applicationSection = container.querySelector('#settings-section-applications')
     if (!applicationSection) return
 
@@ -4503,7 +4515,7 @@ describe('SettingsPage', () => {
       )
     })
     await flushPromises()
-    await selectTopLevelSettingsTab('Applications & Releases')
+    await selectTopLevelSettingsTab('Applications & releases')
     const applicationSection = container.querySelector('#settings-section-applications')
     if (!applicationSection) return
 
@@ -4697,7 +4709,7 @@ describe('SettingsPage', () => {
       )
     })
     await flushPromises()
-    await selectTopLevelSettingsTab('Data Pools')
+    await selectTopLevelSettingsTab('Data pools')
 
     expect(container.querySelector('#settings-section-data-pools')?.textContent)
       .toContain('Created data pool "Orders" in project "Customer Portal". Switch to that project to manage it.')
@@ -4759,7 +4771,7 @@ describe('SettingsPage', () => {
       )
     })
     await flushPromises()
-    await selectTopLevelSettingsTab('Applications & Releases')
+    await selectTopLevelSettingsTab('Applications & releases')
     const applicationSection = container.querySelector('#settings-section-applications')
     const nameInput = applicationSection?.querySelector<HTMLInputElement>('input[placeholder="Create application, e.g. ACC"]')
     if (!applicationSection || !nameInput) return
@@ -4794,7 +4806,7 @@ describe('SettingsPage', () => {
       )
     })
     await flushPromises()
-    await selectTopLevelSettingsTab('Data Pools')
+    await selectTopLevelSettingsTab('Data pools')
     const poolSection = container.querySelector('#settings-section-data-pools')
 
     expect(poolSection?.textContent).toContain('Select a project to create data pools.')
@@ -4816,7 +4828,7 @@ describe('SettingsPage', () => {
       )
     })
     await flushPromises()
-    await selectTopLevelSettingsTab('Data Pools')
+    await selectTopLevelSettingsTab('Data pools')
     const poolSection = container.querySelector('#settings-section-data-pools')
 
     expect(poolSection?.textContent).toContain('Creates in project "Customer Portal".')
@@ -4846,7 +4858,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
     await flushPromises()
-    await selectTopLevelSettingsTab('Projects & Compliance')
+    await selectTopLevelSettingsTab('Projects & compliance')
     const projectSection = container.querySelector('#settings-section-projects')
     if (!projectSection) return
     await selectSettingsSubnav(projectSection, 'Limits')
@@ -4903,7 +4915,7 @@ describe('SettingsPage', () => {
     await act(async () => renderPage())
     await flushPromises()
     await flushPromises()
-    await selectTopLevelSettingsTab('Applications & Releases')
+    await selectTopLevelSettingsTab('Applications & releases')
     const applicationSection = container.querySelector('#settings-section-applications')
     const releaseRow = applicationSection?.querySelector('.settings-release-row')
     const rename = Array.from(releaseRow?.querySelectorAll('button') || [])
@@ -4968,7 +4980,7 @@ describe('SettingsPage', () => {
     )
     await act(async () => renderPage())
     await flushPromises()
-    await selectTopLevelSettingsTab('Applications & Releases')
+    await selectTopLevelSettingsTab('Applications & releases')
     const applicationSection = container.querySelector('#settings-section-applications')
     expect(applicationSection?.textContent).toContain(releaseA.name)
 
@@ -5007,7 +5019,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
     await flushPromises()
-    await selectTopLevelSettingsTab('Applications & Releases')
+    await selectTopLevelSettingsTab('Applications & releases')
     const applicationSection = container.querySelector('#settings-section-applications')
     const releaseRow = applicationSection?.querySelector('.settings-release-row')
     const rename = Array.from(releaseRow?.querySelectorAll('button') || [])
@@ -5048,7 +5060,7 @@ describe('SettingsPage', () => {
       renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
     await flushPromises()
-    await selectTopLevelSettingsTab('Applications & Releases')
+    await selectTopLevelSettingsTab('Applications & releases')
     const applicationSection = container.querySelector('#settings-section-applications')
     if (!applicationSection) return
     await act(async () => findButton('Edit')?.click())
@@ -5087,7 +5099,7 @@ describe('SettingsPage', () => {
       renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
     await flushPromises()
-    await selectTopLevelSettingsTab('Applications & Releases')
+    await selectTopLevelSettingsTab('Applications & releases')
     const applicationSection = container.querySelector('#settings-section-applications')
     expect(applicationSection).toBeTruthy()
     if (!applicationSection) return
@@ -5135,7 +5147,7 @@ describe('SettingsPage', () => {
       renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
     await flushPromises()
-    await selectTopLevelSettingsTab('Applications & Releases')
+    await selectTopLevelSettingsTab('Applications & releases')
     const applicationSection = container.querySelector('#settings-section-applications')
     const currentRow = Array.from(applicationSection?.querySelectorAll('.setting-row') || []).find(row => row.textContent?.includes('Current Application'))
     const deleteButton = Array.from(currentRow?.querySelectorAll('button') || []).find(button => button.textContent === 'Delete') as HTMLButtonElement | undefined
@@ -5180,7 +5192,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
     await flushPromises()
-    await selectTopLevelSettingsTab('Applications & Releases')
+    await selectTopLevelSettingsTab('Applications & releases')
     const applicationSection = container.querySelector('#settings-section-applications')
     const releaseRow = applicationSection?.querySelector('.settings-release-row')
     const renameButton = Array.from(releaseRow?.querySelectorAll('button') || []).find(button => button.textContent === 'Edit') as HTMLButtonElement | undefined
@@ -5231,7 +5243,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
     await flushPromises()
-    await selectTopLevelSettingsTab('Applications & Releases')
+    await selectTopLevelSettingsTab('Applications & releases')
     const applicationSection = container.querySelector('#settings-section-applications')
     const releaseRow = applicationSection?.querySelector('.settings-release-row')
     const rename = Array.from(releaseRow?.querySelectorAll('button') || [])
@@ -5276,7 +5288,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
     await flushPromises()
-    await selectTopLevelSettingsTab('Applications & Releases')
+    await selectTopLevelSettingsTab('Applications & releases')
     const applicationSection = container.querySelector('#settings-section-applications')
     const deleteButton = Array.from(applicationSection?.querySelectorAll('.settings-release-row button') || [])
       .find(button => button.textContent === 'Delete') as HTMLButtonElement | undefined
@@ -5316,7 +5328,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
     await flushPromises()
-    await selectTopLevelSettingsTab('Applications & Releases')
+    await selectTopLevelSettingsTab('Applications & releases')
     const applicationSection = container.querySelector('#settings-section-applications')
     const archive = Array.from(applicationSection?.querySelectorAll('.settings-release-row button') || [])
       .find(button => button.textContent === 'Archive') as HTMLButtonElement | undefined
@@ -5354,7 +5366,7 @@ describe('SettingsPage', () => {
       )
     })
     await flushPromises()
-    await selectTopLevelSettingsTab('Applications & Releases')
+    await selectTopLevelSettingsTab('Applications & releases')
     const applicationSection = container.querySelector('#settings-section-applications')
     const currentRow = Array.from(applicationSection?.querySelectorAll('.setting-row') || [])
       .find(row => row.textContent?.includes('Current Application'))
@@ -5408,7 +5420,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
     await flushPromises()
-    await selectTopLevelSettingsTab('Applications & Releases')
+    await selectTopLevelSettingsTab('Applications & releases')
     const applicationSection = container.querySelector('#settings-section-applications')
     const releaseRow = applicationSection?.querySelector('.settings-release-row')
     const rename = Array.from(releaseRow?.querySelectorAll('button') || [])
@@ -5451,7 +5463,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
     await flushPromises()
-    await selectTopLevelSettingsTab('Applications & Releases')
+    await selectTopLevelSettingsTab('Applications & releases')
     const applicationSection = container.querySelector('#settings-section-applications')
     const archive = Array.from(applicationSection?.querySelectorAll('button') || [])
       .find(button => button.textContent === 'Archive') as HTMLButtonElement | undefined
@@ -5478,7 +5490,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
 
-    await selectTopLevelSettingsTab('Performance Thresholds')
+    await selectTopLevelSettingsTab('Performance thresholds')
     const thresholdsSection = container.querySelector('#settings-section-thresholds')
     if (!thresholdsSection) return
     const sampleAgeInput = findSettingInput(thresholdsSection, 'Max Telemetry Sample Age (ms)')
@@ -5509,7 +5521,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
 
-    await selectTopLevelSettingsTab('Performance Thresholds')
+    await selectTopLevelSettingsTab('Performance thresholds')
     const thresholdsSection = container.querySelector('#settings-section-thresholds')
     if (!thresholdsSection) return
     const samplesInput = findSettingInput(thresholdsSection, 'P99 Stop After Breached Samples')
@@ -5526,7 +5538,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
 
-    await selectTopLevelSettingsTab('Performance Thresholds')
+    await selectTopLevelSettingsTab('Performance thresholds')
     const thresholdsSection = container.querySelector('#settings-section-thresholds')
     if (!thresholdsSection) return
     const constrainedInput = findSettingInput(thresholdsSection, 'Fleet Constrained Free Slots')
@@ -6026,7 +6038,7 @@ describe('SettingsPage', () => {
 
     const section = container.querySelector('#settings-section-data-pools')
     const addButton = Array.from(section?.querySelectorAll('button') || [])
-      .find(button => button.textContent === 'Add Row')
+      .find(button => button.textContent === 'Add row')
     expect(addButton).toBeTruthy()
     if (!addButton) return
     await act(async () => {
@@ -6044,6 +6056,34 @@ describe('SettingsPage', () => {
     expect(section?.textContent).toContain('C-10001')
     expect(section?.textContent).not.toContain('stale initial row read failed')
     expect(section?.textContent).not.toContain('Unable to load data pool rows')
+  })
+
+  it('explains invalid row JSON beside the row editor, not at the top of the page', async () => {
+    apiMock.listDataPools.mockResolvedValue({
+      data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' }],
+      count: 1,
+    })
+    apiMock.getDataPool.mockReset().mockResolvedValue({ data_pool: { id: 'pool-1', name: 'Customers' }, rows: [], total: 0, has_more: false, next_cursor: '' })
+    apiMock.createDataPoolRow.mockReset()
+    window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    const section = container.querySelector('#settings-section-data-pools')!
+    const editor = section.querySelector('textarea[aria-labelledby="data-pool-row-label"]') as HTMLTextAreaElement
+    expect(editor).toBeTruthy()
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(editor, '{"customer_id": ')
+      editor.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const addButton = Array.from(section.querySelectorAll('button')).find(button => button.textContent === 'Add row')!
+    await act(async () => addButton.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const error = section.querySelector('#data-pool-row-error')
+    expect(error?.getAttribute('role')).toBe('alert')
+    expect(error?.textContent).toContain('Row data is not valid JSON')
+    expect(error?.textContent).not.toContain('Unexpected')
+    expect(apiMock.createDataPoolRow).not.toHaveBeenCalled()
   })
 
   it('reports a created data-pool row as saved when only the reconciliation read fails', async () => {
@@ -6080,7 +6120,7 @@ describe('SettingsPage', () => {
 
     const section = container.querySelector('#settings-section-data-pools')
     const addButton = Array.from(section?.querySelectorAll('button') || [])
-      .find(button => button.textContent === 'Add Row')
+      .find(button => button.textContent === 'Add row')
     expect(addButton).toBeTruthy()
     if (!addButton) return
 
@@ -6137,7 +6177,7 @@ describe('SettingsPage', () => {
       editButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     const updateButton = Array.from(section?.querySelectorAll('button') || [])
-      .find(button => button.textContent === 'Update Row')
+      .find(button => button.textContent === 'Save row')
     expect(updateButton).toBeTruthy()
     if (!updateButton) return
 
@@ -6411,7 +6451,7 @@ describe('SettingsPage', () => {
 
     const section = container.querySelector('#settings-section-data-pools')
     const addButton = Array.from(section?.querySelectorAll('button') || [])
-      .find(button => button.textContent === 'Add Row')
+      .find(button => button.textContent === 'Add row')
     expect(addButton).toBeTruthy()
     if (!addButton) return
     await act(async () => {
@@ -6640,7 +6680,7 @@ describe('SettingsPage', () => {
     })
     expect(section.textContent).toContain('Edit Row')
 
-    const updateButton = Array.from(section.querySelectorAll('button')).find(button => button.textContent === 'Update Row')
+    const updateButton = Array.from(section.querySelectorAll('button')).find(button => button.textContent === 'Save row')
     expect(updateButton).toBeTruthy()
     if (!updateButton) return
     await act(async () => {
@@ -6665,7 +6705,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
 
-    await selectTopLevelSettingsTab('Capacity Planning')
+    await selectTopLevelSettingsTab('Capacity planning')
     const capacitySection = container.querySelector('#settings-section-capacity')
     if (!capacitySection) return
     await selectSettingsSubnav(capacitySection, 'Standing allocations')
@@ -6701,7 +6741,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
 
-    await selectTopLevelSettingsTab('Capacity Planning')
+    await selectTopLevelSettingsTab('Capacity planning')
     const capacitySection = container.querySelector('#settings-section-capacity')
     if (!capacitySection) return
     await selectSettingsSubnav(capacitySection, 'Standing allocations')
@@ -6948,8 +6988,10 @@ function findGeneralSubnavButton(root: Element, label: string) {
 }
 
 async function selectTopLevelSettingsTab(label: string) {
-  const destinationLabels: Record<string, string> = { General: 'Controller & runtime', 'Performance Thresholds': 'Alert & stop policies', 'Capacity Planning': 'Capacity source', Domains: 'Domains & placement defaults', 'Projects & Compliance': 'Projects', 'Applications & Releases': 'Applications & releases', 'Data Pools': 'Shared data pools', Integrations: 'Library federation', 'Feature Access': 'Domain feature policy' }
-  const button = findButton(destinationLabels[label] || label)
+  const destinationLabels: Record<string, string> = { General: 'Controller & runtime', 'Performance thresholds': 'Alert & stop policies', 'Capacity planning': 'Capacity source', Domains: 'Domains & placement defaults', 'Projects & compliance': 'Projects', 'Applications & releases': 'Applications & releases', 'Data pools': 'Shared data pools', Integrations: 'Library federation', 'Feature access': 'Domain feature policy' }
+  const name = destinationLabels[label] || label
+  // Entries owned by another page carry an "Opens …" cue after their title.
+  const button = findButton(name) || Array.from(document.querySelectorAll<HTMLButtonElement>('nav button')).find(item => item.firstChild?.textContent === name && item.querySelector('.settings-nav-elsewhere'))
   expect(button).toBeTruthy()
   if (!button) return
   await act(async () => {

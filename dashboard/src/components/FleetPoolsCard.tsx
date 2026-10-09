@@ -17,6 +17,8 @@ import type { DeploymentProvider, DomainDeploymentTarget } from '../types/deploy
 import { clustersForProvider, providerLabel } from './deploymentTargetModel'
 import { listAllFleetPools, listAllGeneratorMetadata, runtimePoolMemberCount } from './fleetCatalogModel'
 import './parityPanels.css'
+import LoadingState from './ux/LoadingState'
+import EmptyState from './ux/EmptyState'
 
 interface Props {
   resourceId?: string
@@ -625,9 +627,9 @@ export default function FleetPoolsCard({ canManage = false, resourceId = '' }: P
       )}
 
       {loading ? (
-        <div className="pp-empty">Loading pools…</div>
+        <LoadingState what="pools" className="pp-loading" />
       ) : pools.length === 0 ? (
-        <div className="pp-empty">No managed generator pools. Pools group load generators for cloud-backed scaling.</div>
+        <EmptyState title="No managed generator pools yet." hint="Pools group load generators for cloud-backed scaling." />
       ) : (
         <div className="pp-list">
           {resourceId && <p role="status">Selected resource: {resourceId}. {!pools.some(item => item.id === resourceId) && 'This resource was not found or is no longer accessible.'} <a href={window.location.hash.replace(/([?&])resourceId=[^&]*&?/, '$1').replace(/[?&]$/, '')}>Show all resources</a></p>}
@@ -646,7 +648,7 @@ export default function FleetPoolsCard({ canManage = false, resourceId = '' }: P
                   {pool.region ? <span>{pool.region}</span> : null}
                   {pool.lifecycle_mode ? <span>{pool.lifecycle_mode.replace('_', ' ')}</span> : null}
                   {pool.execution_target_id ? <span>target {pool.execution_target_id}</span> : null}
-                  <span>size {pool.desired_size ?? 0} ({pool.min_size ?? 0}–{pool.max_size ?? 0})</span>
+                  <span>size {pool.desired_size ?? 0} ({pool.min_size ?? 0}–{(pool.max_size ?? 0) > 0 ? pool.max_size : 'no max'})</span>
                   <span>{memberCount} runtime member{memberCount === 1 ? '' : 's'}</span>
                   {!pool.execution_target_id && memberCount < initialProvisionCount ? <span>associate {initialProvisionCount - memberCount} more target{initialProvisionCount - memberCount === 1 ? '' : 's'} before provisioning</span> : null}
                 </div>
@@ -684,7 +686,7 @@ export default function FleetPoolsCard({ canManage = false, resourceId = '' }: P
           <span className="pp-muted">{provisionRequests.length} request{provisionRequests.length === 1 ? '' : 's'}</span>
         </div>
         {provisionRequests.length === 0 ? (
-          <div className="pp-empty pp-empty-compact">No provisioning requests recorded yet.</div>
+          <EmptyState compact title="No provisioning requests yet." />
         ) : (
           <div className="pp-list">
             {provisionRequests.map(request => {
@@ -849,15 +851,15 @@ export default function FleetPoolsCard({ canManage = false, resourceId = '' }: P
               <div className="pp-field-row">
                 <label className="pp-field">
                   <span>Min size</span>
-                  <input type="number" min={0} step={1} disabled={busy} value={draft.min_size} onChange={e => setDraft(d => (d ? { ...d, min_size: Number(e.target.value) } : d))} />
+                  <input type="number" min={0} step={1} disabled={busy} value={draft.min_size} aria-invalid={Boolean(sizingError) || undefined} aria-describedby={sizingError ? 'pool-sizing-error' : undefined} onChange={e => setDraft(d => (d ? { ...d, min_size: Number(e.target.value) } : d))} />
                 </label>
                 <label className="pp-field">
                   <span>Desired</span>
-                  <input type="number" min={0} step={1} disabled={busy} value={draft.desired_size} onChange={e => setDraft(d => (d ? { ...d, desired_size: Number(e.target.value) } : d))} />
+                  <input type="number" min={0} step={1} disabled={busy} value={draft.desired_size} aria-invalid={Boolean(sizingError) || undefined} aria-describedby={sizingError ? 'pool-sizing-error' : undefined} onChange={e => setDraft(d => (d ? { ...d, desired_size: Number(e.target.value) } : d))} />
                 </label>
                 <label className="pp-field">
-                  <span>Max size</span>
-                  <input type="number" min={0} step={1} disabled={busy} value={draft.max_size} onChange={e => setDraft(d => (d ? { ...d, max_size: Number(e.target.value) } : d))} />
+                  <span>Max size (0 = no limit)</span>
+                  <input type="number" min={0} step={1} disabled={busy} value={draft.max_size} aria-invalid={Boolean(sizingError) || undefined} aria-describedby={sizingError ? 'pool-sizing-error' : undefined} onChange={e => setDraft(d => (d ? { ...d, max_size: Number(e.target.value) } : d))} />
                 </label>
               </div>
               <details><summary>Advanced lifecycle & admission policy</summary><p>Defaults inherit the execution target policy. Standing pools keep capacity available; warm and on-demand pools manage capacity around runs.</p>
@@ -871,7 +873,7 @@ export default function FleetPoolsCard({ canManage = false, resourceId = '' }: P
                 <label className="pp-field"><span>Idle grace (seconds)</span><input type="number" min={0} step={1} value={draft.idle_grace_seconds} disabled={busy} onChange={e => setDraft(d => d ? { ...d, idle_grace_seconds: Number(e.target.value) } : d)} /></label>
               </div>
               </details>
-              {sizingError ? <div className="pp-error" role="alert">{sizingError}</div> : null}
+              {sizingError ? <div id="pool-sizing-error" className="pp-error" role="alert">{sizingError}</div> : null}
             </div>
             <div className="pp-modal-actions">
               <button type="button" className="btn btn-secondary" onClick={closeDraft} disabled={busy}>Cancel</button>

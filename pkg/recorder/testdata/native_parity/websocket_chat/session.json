@@ -1,0 +1,31 @@
+{
+  "name": "websocket_chat",
+  "base_url": "http://parity.test",
+  "requests": [
+    {
+      "seq": 1, "timestamp": "2026-01-01T00:00:00Z", "method": "POST", "url": "http://parity.test/login", "scheme": "http", "path": "/login", "host": "parity.test",
+      "headers": {"Content-Type": "application/x-www-form-urlencoded"},
+      "body": "user=ada",
+      "status_code": 200, "response_time_ms": 20,
+      "response_headers": {"Content-Type": "text/html", "Set-Cookie": "SESSION=s-42; Path=/"},
+      "response_body": "<html><title>Welcome</title></html>"
+    },
+    {
+      "seq": 2, "timestamp": "2026-01-01T00:00:01Z", "method": "GET", "url": "ws://parity.test/chat", "scheme": "ws", "path": "/chat", "host": "parity.test",
+      "headers": {"Origin": "http://parity.test", "Cookie": "SESSION=s-42", "Upgrade": "websocket", "Connection": "Upgrade", "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==", "Sec-WebSocket-Version": "13"},
+      "status_code": 101,
+      "websocket_messages": [
+        {"direction": "client_to_server", "opcode": 1, "payload": "{\"type\":\"join\"}", "timestamp": "2026-01-01T00:00:01.100Z"},
+        {"direction": "server_to_client", "opcode": 1, "payload": "{\"room\":\"r-12345\"}", "timestamp": "2026-01-01T00:00:01.200Z"},
+        {"direction": "client_to_server", "opcode": 1, "payload": "{\"type\":\"leave\",\"room\":\"r-12345\"}", "timestamp": "2026-01-01T00:00:04Z"}
+      ]
+    },
+    {
+      "seq": 3, "timestamp": "2026-01-01T00:00:02Z", "method": "GET", "url": "http://parity.test/history?room=r-12345", "scheme": "http", "path": "/history", "query_string": "room=r-12345", "host": "parity.test",
+      "headers": {"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"},
+      "status_code": 200, "response_time_ms": 15,
+      "response_headers": {"Content-Type": "application/json"},
+      "response_body": "{\"messages\":[]}"
+    }
+  ]
+}

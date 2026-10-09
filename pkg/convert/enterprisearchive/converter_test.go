@@ -571,6 +571,11 @@ func sampleSourceFunctionCall(def SourceFunctionDefinition) string {
 		return "\tlr_json_stringify(\"JsonObject=Doc\", \"OutputParam=DocText\", LAST);"
 	case "lr_aws_get_secret", "lr_azure_ad_client_get_token", "lr_azure_kv_get_secret", "lr_azure_set_service_port", "lr_cyberark_get_vault":
 		return "\t" + def.Name + "(\"SecretName\", \"SecretParam\");"
+	case "web_reg_async_attributes":
+		return "\tweb_reg_async_attributes(\"ID=poll\", \"Pattern=Poll\", LAST);"
+	case "web_stop_async":
+		// A stop converts only for a conversation the script started.
+		return "\tweb_reg_async_attributes(\"ID=poll\", \"Pattern=Poll\", LAST);\n\tweb_url(\"Poll\", \"URL=https://example.test/poll\", LAST);\n\tweb_stop_async(\"ID=poll\", LAST);"
 	default:
 		return "\t" + def.Name + "(\"Arg1\", \"Arg2\");"
 	}
@@ -656,17 +661,16 @@ func TestConvertInfersSourceFormTargetsAndIgnoresCommentedCode(t *testing.T) {
 	if len(result.Script.Actions) != 2 {
 		t.Fatalf("actions = %#v, want two converted actions", result.Script.Actions)
 	}
+	// web_submit_form resolves its form, URL and hidden fields from the page
+	// at replay, so no URL is inferred at import.
 	form := result.Script.Actions[1]
-	if form.Target != "/mi/login.jsp" {
-		t.Fatalf("form target = %q, want inferred /mi/login.jsp", form.Target)
+	if form.Target != htmlStepTarget || form.Metadata["inferred_url_from"] != nil {
+		t.Fatalf("form target = %q, metadata = %#v; want an HTML-mode step", form.Target, form.Metadata)
 	}
 	// Structural, not a substring probe: assert the exact surviving field list.
 	// `!strings.Contains(body, "disabled")` also passes when the live "user" field
 	// was dropped, reordered, or duplicated.
-	assertFormBodyFields(t, form.Body, []formField{{"user", "{{var.username}}"}})
-	if form.Metadata["inferred_url_from"] != "source_form_context" {
-		t.Fatalf("metadata = %#v, want inferred URL marker", form.Metadata)
-	}
+	assertFormBodyFields(t, htmlStepFormBody(form), []formField{{"user", "{{var.username}}"}})
 }
 
 func TestConvertPreservesSaveCountAndRegexpCorrelations(t *testing.T) {
@@ -865,16 +869,19 @@ Action()
 		t.Fatalf("unsupported funcs = %#v skipped=%d, want none", result.Stats.UnsupportedFuncs, result.Stats.Skipped)
 	}
 	auth := result.Script.Config.HTTP.Auth
-	if auth.Type != "basic" || auth.Username != "perfuser" ||
+	if auth.Type != "negotiate_any" || auth.Username != "perfuser" ||
 		auth.Password != "perfpass" {
-		t.Fatalf("http auth = %#v, want web_set_user basic auth", auth)
+		t.Fatalf("http auth = %#v, want web_set_user challenge-driven auth", auth)
 	}
 	requirements := result.ProtectedRequirements.Take()
 	if len(requirements) != 0 {
 		t.Fatalf("protected auth requirements = %#v, want no re-entry requirement for an imported executable password", requirements)
 	}
-	if result.Script.Config.WebRuntime.AdditionalAttributes["web_set_user.host"] != "secure.example.com:443" {
-		t.Fatalf("web runtime attrs = %#v, want web_set_user host", result.Script.Config.WebRuntime.AdditionalAttributes)
+	if len(auth.Hosts) != 1 || auth.Hosts[0] != "secure.example.com:443" {
+		t.Fatalf("auth hosts = %#v, want the web_set_user host scope", auth.Hosts)
+	}
+	if _, kept := result.Script.Config.WebRuntime.AdditionalAttributes["web_set_user.host"]; kept {
+		t.Fatalf("a scoped host must not also linger as a compatibility attribute: %#v", result.Script.Config.WebRuntime.AdditionalAttributes)
 	}
 	preserved := result.Script.Metadata.Import.Preserved
 	authControls, ok := preserved["source_authentication"].([]map[string]any)
@@ -909,11 +916,11 @@ func TestConvertPreservesWebSetUserAcrossRuntimeConfigMerge(t *testing.T) {
 		t.Fatalf("convert error: %v", err)
 	}
 	auth := result.Script.Config.HTTP.Auth
-	if auth.Type != "basic" || auth.Username != "perfuser" || auth.Password != "perfpass" {
-		t.Fatalf("http auth = %#v, want web_set_user basic auth after config merge", auth)
+	if auth.Type != "negotiate_any" || auth.Username != "perfuser" || auth.Password != "perfpass" {
+		t.Fatalf("http auth = %#v, want web_set_user challenge-driven auth after config merge", auth)
 	}
-	if got := result.Script.Config.WebRuntime.AdditionalAttributes["web_set_user.host"]; got != "secure.example.com:443" {
-		t.Fatalf("web_set_user.host = %q, want preserved host", got)
+	if len(auth.Hosts) != 1 || auth.Hosts[0] != "secure.example.com:443" {
+		t.Fatalf("auth hosts = %#v, want the web_set_user host scope after config merge", auth.Hosts)
 	}
 }
 
@@ -1951,13 +1958,17 @@ EnableModemSpeed=0
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
-	if len(result.Script.Init) != 1 {
-		t.Fatalf("init actions = %d, want 1: %#v", len(result.Script.Init), result.Script.Init)
+	if len(result.Script.Init) != 2 {
+		t.Fatalf("init actions = %d, want the cookie_set and the login request: %#v", len(result.Script.Init), result.Script.Init)
 	}
 	if len(result.Script.Actions) != 4 {
 		t.Fatalf("main actions = %d, want 3: %#v", len(result.Script.Actions), result.Script.Actions)
 	}
-	init := result.Script.Init[0]
+	if cookie := result.Script.Init[0]; cookie.Type != "cookie_set" || cookie.Params["name"] != "sid" ||
+		cookie.Params["value"] != "{{var.c_lightning_sid}}" || cookie.Params["domain"] != "attone--perfhyper2.sandbox.lightning.force.com" {
+		t.Fatalf("web_add_cookie = %#v, want a positional cookie_set for sid", cookie)
+	}
+	init := result.Script.Init[1]
 	if init.Target != "/login" {
 		t.Fatalf("init target = %q, want /login", init.Target)
 	}
@@ -1978,8 +1989,8 @@ EnableModemSpeed=0
 	if got := lightning.Headers["X-B3-TraceId"]; got != "{{var.traceid}}" {
 		t.Fatalf("auto header on lightning = %q, want parameterized trace id", got)
 	}
-	if got := lightning.Headers["Cookie"]; got != "sid={{var.c_lightning_sid}}" {
-		t.Fatalf("cookie header = %q, want response-derived session variable preserved", got)
+	if got := lightning.Headers["Cookie"]; got != "" {
+		t.Fatalf("cookie header = %q, want the sid cookie left to the cookie_set jar entry", got)
 	}
 	if _, ok := result.Script.Actions[2].Headers["X-B3-TraceId"]; ok {
 		t.Fatalf("auto header should be removed after web_revert_auto_header: %#v", result.Script.Actions[2].Headers)
@@ -2350,8 +2361,17 @@ vuser_end()
 	if address.Target != "https://acme.lightning.force.com/aura" {
 		t.Fatalf("address target = %q, want absolute lightning URL", address.Target)
 	}
-	if got := address.Headers["Cookie"]; got != "sid={{var.sessionid}}" {
-		t.Fatalf("address cookie = %q, want response-derived session variable preserved", got)
+	if got := address.Headers["Cookie"]; got != "" {
+		t.Fatalf("address cookie header = %q, want web_add_cookie in the cookie jar instead", got)
+	}
+	foundCookieSet := false
+	for _, action := range append(append([]dsl.Action(nil), result.Script.Init...), result.Script.Actions...) {
+		if action.Type == "cookie_set" && action.Params["name"] == "sid" && action.Params["value"] == "{{var.sessionid}}" && action.Params["domain"] == "acme.lightning.force.com" {
+			foundCookieSet = true
+		}
+	}
+	if !foundCookieSet {
+		t.Fatalf("want a cookie_set preserving the response-derived session variable: init %#v actions %#v", result.Script.Init, result.Script.Actions)
 	}
 	if got := address.Headers["X-SFDC-Page-Scope-Id"]; got != "{{var.pagescopeid}}" {
 		t.Fatalf("auto header = %q, want persistent parameterized page scope", got)
@@ -2411,7 +2431,7 @@ vuser_end()
 	if convertParam.Params["source_string"] != "{{var.pkceverifier}}" || convertParam.Params["target_encoding"] != "URL" {
 		t.Fatalf("web_convert_param params = %#v, want source string and URL target encoding", convertParam.Params)
 	}
-	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_custom_request", "init[2]", "converted")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_custom_request", "init[3]", "converted")
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_submit_data", "actions[3]", "converted")
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_url", "teardown[0]", "converted")
 }

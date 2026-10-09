@@ -8,7 +8,7 @@ test('imports an unpacked VuGen project folder', async ({ page }) => {
   await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   await page.getByRole('button', { name: 'Import', exact: true }).click()
-  await page.getByRole('button', { name: /Import Loadrunner Script Archive/ }).click()
+  await page.getByRole('button', { name: /LoadRunner Script Archive/ }).click()
 
   const folder = path.join(process.cwd(), '../pkg/convert/enterprisearchive/testdata/golden_web_http_html_vugen24')
   await page.locator('input[webkitdirectory]').setInputFiles(folder)
@@ -21,5 +21,5 @@ test('imports an unpacked VuGen project folder', async ({ page }) => {
   expect(response.ok()).toBeTruthy()
   const result = await response.json()
   expect(result.script?.name).toBe('VuGen24Real')
-  await expect(page.getByRole('tab', { name: 'Review', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: /^Review(,|$)/ })).toBeVisible()
 })

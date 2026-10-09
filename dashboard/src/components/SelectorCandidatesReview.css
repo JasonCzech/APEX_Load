@@ -99,15 +99,15 @@
 
 .selector-confidence-high {
   background: rgba(var(--success-rgb), 0.15);
-  color: var(--success);
+  color: var(--success-text);
 }
 
 .selector-confidence-medium {
   background: rgba(var(--warning-rgb), 0.15);
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .selector-confidence-low {
   background: rgba(var(--danger-rgb), 0.15);
-  color: var(--danger);
+  color: var(--danger-text);
 }

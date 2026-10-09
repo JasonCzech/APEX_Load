@@ -1,0 +1,13 @@
+{
+  "description": "URL-mode baseline: boundary correlation from a page body feeds a URL-encoded form post and a JSON request.",
+  "source": "VuGen 26.1 Function Reference: web_reg_save_param_ex (LB/RB, Scope=Body), web_submit_data (ITEMDATA, application/x-www-form-urlencoded), web_custom_request (Body, EncType).",
+  "outcome": "replay",
+  "responses": [
+    {"method": "GET", "path": "/app/home", "headers": {"Content-Type": "text/html"}, "body": "<form><input type=\"hidden\" name=\"session\" value=\"RUNTIME-7f3a\"></form>"}
+  ],
+  "requests": [
+    {"method": "GET", "path": "/app/home", "query": ""},
+    {"method": "POST", "path": "/app/login", "headers": {"Content-Type": "application/x-www-form-urlencoded"}, "body": "user=jojo&session=RUNTIME-7f3a"},
+    {"method": "POST", "path": "/api/orders", "query": "session=RUNTIME-7f3a", "headers": {"Content-Type": "application/json"}, "body": "{\"item\":\"widget\",\"qty\":2}"}
+  ]
+}

@@ -71,7 +71,7 @@
 
 .expand-toggle.open {
   transform: rotate(90deg);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .scenario-info {
@@ -254,7 +254,7 @@
 
 .run-row:hover .run-arrow {
   transform: translateX(2px);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 
@@ -446,7 +446,7 @@
 
 .stepped-ramp-heading > span,
 .stepped-ramp-stage-preview-header span {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: var(--label-tracking, 0.08em);
@@ -492,7 +492,7 @@
   border: 1px solid var(--accent-border);
   border-radius: 50%;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 12px;
   font-weight: 800;
 }
@@ -553,7 +553,7 @@
 .stepped-ramp-choice button:focus-visible,
 .stepped-ramp-scope button:focus-visible,
 .stepped-ramp-toggle input:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -727,7 +727,7 @@
 }
 
 .stepped-ramp-stage-preview td:nth-child(3) {
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 800;
 }
 
@@ -769,7 +769,7 @@
 }
 
 .scenario-shape-guidance-category {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 11px;
   text-transform: var(--label-case, uppercase);
   letter-spacing: var(--label-tracking, 0.04em);
@@ -834,7 +834,7 @@
 }
 
 .scenario-run-settings-tab:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -873,7 +873,7 @@
 }
 
 .scenario-settings-section-tab:hover { border-color: var(--accent-border); color: var(--text-primary); }
-.scenario-settings-section-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.scenario-settings-section-tab:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .scenario-settings-section-tab.active { border-color: var(--accent-border); background: var(--accent-soft); color: var(--text-primary); }
 
 .scenario-settings-section-panel { display: grid; gap: 14px; min-width: 0; }
@@ -942,7 +942,7 @@
 }
 
 .scenario-group-tab:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -1014,7 +1014,7 @@
 }
 
 .scenario-source-card strong {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 11px;
   text-transform: var(--label-case, uppercase);
   letter-spacing: var(--label-tracking, 0.05em);
@@ -1625,6 +1625,10 @@
   border-radius: 0;
 }
 
+/* An opaque footer: a fade let the step content (the Review runtime list)
+   show through it. Sticky stops at .main-content's 28px bottom padding
+   (App.css), so the shadow fills that band too; otherwise content scrolls
+   visibly underneath the footer. */
 .scenario-builder-actions {
   position: sticky;
   bottom: 0;
@@ -1632,8 +1636,10 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding: 12px 0 0;
-  background: linear-gradient(180deg, transparent, var(--bg-primary) 26%);
+  padding: 12px 0;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-primary);
+  box-shadow: 0 28px 0 var(--bg-primary);
 }
 
 .scenario-browser-panel {
@@ -1737,7 +1743,7 @@
   padding: 6px 8px;
   border: 1px solid var(--border-subtle, var(--border));
   border-radius: 8px;
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--bg-primary);
 }
 
@@ -1868,7 +1874,7 @@
 }
 
 .scenario-stage-status.error {
-  color: var(--danger, var(--danger));
+  color: var(--danger-text);
   background: rgba(var(--danger-rgb), 0.1);
   border: 1px solid rgba(var(--danger-rgb), 0.28);
 }
@@ -1916,7 +1922,7 @@
 }
 
 .scenario-template-card strong {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 11px;
   text-transform: var(--label-case, uppercase);
   letter-spacing: var(--label-tracking, 0.05em);
@@ -2011,7 +2017,7 @@
 }
 
 .scenario-load-status.needs-review {
-  color: var(--warning);
+  color: var(--warning-text);
   background: rgba(var(--warning-rgb), 0.14);
 }
 
@@ -2167,7 +2173,7 @@
   border-radius: 999px;
   background: rgba(0, 163, 255, 0.12);
   border: 1px solid rgba(0, 163, 255, 0.22);
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 12px;
   font-weight: 600;
 }
@@ -2204,7 +2210,7 @@
 .scenario-table-browser-badge {
   padding: 3px 8px;
   border-radius: 999px;
-  color: var(--success);
+  color: var(--success-text);
   background: rgba(var(--success-rgb), 0.12);
   border: 1px solid rgba(var(--success-rgb), 0.22);
   font-size: 10px;
@@ -2223,13 +2229,13 @@
 }
 
 .scenario-table-assignment-badge.auto {
-  color: var(--accent);
+  color: var(--accent-text);
   background: rgba(0, 163, 255, 0.12);
   border: 1px solid rgba(0, 163, 255, 0.22);
 }
 
 .scenario-table-assignment-badge.manual {
-  color: var(--warning);
+  color: var(--warning-text);
   background: rgba(var(--warning-rgb), 0.12);
   border: 1px solid rgba(var(--warning-rgb), 0.24);
 }
@@ -2266,7 +2272,7 @@
 
 .scenario-script-selection-status {
   margin: 6px 0 0;
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 12px;
   font-weight: 600;
 }
@@ -2445,7 +2451,7 @@
 }
 
 .runtime-source-badge.source-group {
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-soft);
   border-color: var(--accent-border);
 }
@@ -2487,25 +2493,10 @@
   width: auto;
 }
 
-.secondary-button {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 6px 12px;
-  cursor: pointer;
-  font-size: 13px;
-}
-
-.secondary-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .link-button {
   background: none;
   border: none;
-  color: var(--accent);
+  color: var(--accent-text);
   cursor: pointer;
   padding: 0;
   font-size: 12px;
@@ -2526,9 +2517,7 @@ fieldset.scenario-builder { min-width: 0; border: 0; margin-inline: 0; }
 .scenario-shape-catalog-card .scenario-support-card-header small { display: block; margin: 5px 0; }
 .scenario-library-table table { min-width: 720px; }
 .scenario-library-table td:last-child { min-width: 160px; white-space: normal; position: sticky; right: 0; background: var(--bg-secondary); }
-.scenario-more-actions { display: inline-block; position: relative; margin: 6px; }
-.scenario-more-actions summary { cursor: pointer; color: var(--text-secondary); }
-.scenario-more-actions[open] { display: flex; flex-direction: column; }
+.scenario-more-actions { margin: 6px; }
 .scenario-builder-workspace.with-preview, .scenario-builder-workspace.with-preview.stepped-ramp-layout { grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); }
 .stepped-ramp-layout .scenario-builder-preview { position: static; max-height: none; overflow: visible; }
 .scenario-wizard-panel { scroll-margin-top: 110px; }
@@ -2600,9 +2589,9 @@ fieldset.scenario-builder { min-width: 0; border: 0; margin-inline: 0; }
 .scenario-picker-selection input { flex: 0 0 auto; margin-top: 3px; }
 .scenario-clone-table table { width: 100%; min-width: 0; table-layout: fixed; }
 .scenario-clone-table th:first-child { width: 40%; }
-.scenario-clone-table th:last-child { width: 100px; }
+.scenario-clone-table th:last-child { width: 136px; }
 .scenario-clone-table td { white-space: normal; overflow-wrap: anywhere; }
-.scenario-clone-table details { margin-top: 8px; }
+.scenario-clone-table td:last-child .btn { white-space: nowrap; }
 .scenario-picker-filters { display: grid; }
 @media (max-width: 640px) {
   .scenario-script-library-dialog .data-table th:first-child { width: 50%; }

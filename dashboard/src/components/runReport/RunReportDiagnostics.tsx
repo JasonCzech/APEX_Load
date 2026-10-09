@@ -23,7 +23,7 @@ export default function RunReportDiagnostics({ report, loading, error }: Props) 
           <p>Network and generator resource evidence.</p>
         </div>
       </div>
-      {loading && <p role="status">Loading diagnostics...</p>}
+      {loading && <p role="status">Loading diagnostics…</p>}
       {error && <p className="run-report-error">{error}</p>}
       <details>
         <summary>Network phases</summary>

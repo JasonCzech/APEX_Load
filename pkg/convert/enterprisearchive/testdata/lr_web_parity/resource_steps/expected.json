@@ -1,0 +1,34 @@
+{
+  "description": "A Resource=1 step whose image is missing (404) is reported as a warning and the script continues, as LoadRunner does for resource steps; the page step after it still runs.",
+  "source": "VuGen 26.1 Function Reference: web_url (Resource=1, Mode); Run-time Settings > Preferences > Non-critical resource errors as warnings.",
+  "outcome": "replay",
+  "responses": [
+    {
+      "method": "GET",
+      "path": "/static/missing.png",
+      "status": 404,
+      "headers": {
+        "Content-Type": "text/plain"
+      },
+      "body": "not found"
+    },
+    {
+      "method": "GET",
+      "path": "/app/home",
+      "headers": {
+        "Content-Type": "text/html"
+      },
+      "body": "<html>home</html>"
+    }
+  ],
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/static/missing.png"
+    },
+    {
+      "method": "GET",
+      "path": "/app/home"
+    }
+  ]
+}

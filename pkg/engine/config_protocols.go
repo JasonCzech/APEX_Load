@@ -4,7 +4,9 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 // Per-protocol config appenders extracted from buildProtoConfigWithSecretResolver.
@@ -27,6 +29,9 @@ func appendHTTPConfig(cfg map[string]any, script *dsl.Script) {
 	cfg["cache_max_unused_iterations"] = float64(httpCfg.CacheMaxUnusedIterations)
 	cfg["cache_excluded_mime_types"] = httpCfg.CacheExcludedMIMETypes
 	cfg["html_parse_mode"] = httpCfg.HTMLParseMode
+	if scriptUsesHTMLSteps(script) {
+		cfg[httpprotocol.HTMLPageContextConfig] = true
+	}
 	if httpCfg.AuraRecordedFailures != "" {
 		cfg["aura_recorded_failures"] = httpCfg.AuraRecordedFailures
 	}
@@ -908,4 +913,27 @@ func appendHTTPSecurityConfig(cfg map[string]any, script *dsl.Script) {
 	if auth.Domain != "" {
 		cfg["auth_domain"] = auth.Domain
 	}
+	if len(auth.Hosts) > 0 {
+		cfg["auth_hosts"] = append([]string(nil), auth.Hosts...)
+	}
+}
+
+// scriptUsesHTMLSteps reports whether any action is an HTML-mode step, so the
+// HTTP protocol indexes pages only for scripts that need it.
+func scriptUsesHTMLSteps(script *dsl.Script) bool {
+	found := false
+	_ = dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+		if ref.Action != nil {
+			if _, ok := ref.Action.Params[httpprotocol.HTMLStepParam]; ok {
+				found = true
+			}
+		}
+		if params, ok := ref.Request["params"].(map[string]any); ok {
+			if _, ok := params[httpprotocol.HTMLStepParam]; ok {
+				found = true
+			}
+		}
+		return nil
+	})
+	return found
 }

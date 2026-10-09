@@ -61,7 +61,7 @@
 }
 
 .destructive-force-row strong {
-  color: var(--danger);
+  color: var(--danger-text);
   font-size: 13px;
 }
 

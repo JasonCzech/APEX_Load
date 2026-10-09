@@ -1,0 +1,20 @@
+{
+  "name": "redirect_login",
+  "base_url": "http://parity.test",
+  "requests": [
+    {
+      "seq": 1, "method": "POST", "url": "http://parity.test/app/login", "scheme": "http", "path": "/app/login", "host": "parity.test",
+      "headers": {"Content-Type": "application/x-www-form-urlencoded"},
+      "body": "user=jojo&pass=bean",
+      "status_code": 302,
+      "response_headers": {"Location": "http://parity.test/sso/cb?code=Rec0rdedCodeValue12&state=1"}
+    },
+    {
+      "seq": 2, "method": "GET", "url": "http://parity.test/sso/cb?code=Rec0rdedCodeValue12&state=1", "scheme": "http", "path": "/sso/cb", "query_string": "code=Rec0rdedCodeValue12&state=1", "host": "parity.test",
+      "headers": {"Accept": "text/html"},
+      "status_code": 200,
+      "response_headers": {"Content-Type": "text/html"},
+      "response_body": "<html><title>Welcome</title></html>"
+    }
+  ]
+}

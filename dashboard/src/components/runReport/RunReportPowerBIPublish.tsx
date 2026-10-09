@@ -33,6 +33,8 @@ function describePublish(publish: DashboardPowerBIPublish) {
 // confirm row then offers the force re-publish path.
 export default function RunReportPowerBIPublish({ testId, publish, getStatus }: Props) {
   const [enabled, setEnabled] = useState(false)
+  // 'loading' until the first status answer; 'failed' when it could not be read.
+  const [statusState, setStatusState] = useState<'loading' | 'loaded' | 'failed'>('loading')
   const [latest, setLatest] = useState<DashboardPowerBIPublish | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -43,8 +45,9 @@ export default function RunReportPowerBIPublish({ testId, publish, getStatus }: 
       const response = await getStatus(testId)
       setEnabled(response.enabled)
       setLatest(response.publishes[0] || null)
+      setStatusState('loaded')
     } catch {
-      // Status is decorative; a failed fetch just hides the panel state.
+      setStatusState('failed')
     }
   }, [getStatus, testId])
 
@@ -78,7 +81,16 @@ export default function RunReportPowerBIPublish({ testId, publish, getStatus }: 
     }
   }
 
-  if (!enabled) return null
+  // The disclosure that holds this panel must never open onto nothing.
+  if (!enabled) {
+    return <p className="run-report-muted" role="status">
+      {statusState === 'loading'
+        ? 'Checking Power BI publishing…'
+        : statusState === 'failed'
+          ? 'Power BI publishing status could not be checked. Try again later.'
+          : 'Power BI publishing is not set up for this deployment. An administrator can configure it under Settings › Connections › Power BI.'}
+    </p>
+  }
 
   return (
     <section className="run-report-panel run-report-export" data-testid="powerbi-publish-panel">
@@ -95,7 +107,7 @@ export default function RunReportPowerBIPublish({ testId, publish, getStatus }: 
           onClick={() => void runPublish(false)}
           disabled={busy || confirmingForce}
         >
-          {busy ? 'Publishing...' : 'Publish to Power BI'}
+          {busy ? 'Publishing…' : 'Publish to Power BI'}
         </button>
         {confirmingForce && (
           <>

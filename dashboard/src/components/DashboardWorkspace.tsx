@@ -598,7 +598,10 @@ export default function DashboardWorkspace({
     else if (event.key === 'End') targetTab = selectedProfile.tabs[selectedProfile.tabs.length - 1]
     else return
     event.preventDefault()
-    if (targetTab) selectTab(targetTab.id)
+    if (!targetTab) return
+    selectTab(targetTab.id)
+    // preventDefault stops the shared tab-list handler, so move focus here.
+    tabButtonRefs.current[targetTab.id]?.focus()
   }
 
   const handleCardKeyDown = (event: KeyboardEvent<HTMLButtonElement>, cardId: string, tabId: string) => {

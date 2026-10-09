@@ -163,8 +163,8 @@ func (s *SQLiteStore) writePreparedTestWithExecutor(executor testSaveExecutor, t
 		}
 		allowMaterializedPrelaunchAbort = strings.EqualFold(strings.TrimSpace(previousStatus), "INITIALIZING")
 	}
-	query := `INSERT INTO tests (id, ref_key, materialization_key, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, termination_mode, shakeout_enabled, resource_baseline_enabled, start_delay, assignment_json, total_vusers, duration_ns, start_time, scheduled_start_at, started_at, pending_since, paused_at, cumulative_pause_ns, capacity_window_start_at, capacity_window_end_at, baseline_pinned, baseline_pinned_at, end_time, error, created_by_subject, created_by_display_name, started_by_subject, started_by_display_name, stopped_by_subject, stopped_by_display_name, groups_json, data_pools_json, runtime_settings_json, goal_config_json, traffic_profile_json, elk_capture_json, dynatrace_capture_json, start_authorization_json, execution_plan_approval_json, initial_provenance_json, timeslot_id, monitor_bindings_json, trace_context_json)
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	query := `INSERT INTO tests (id, ref_key, materialization_key, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, termination_mode, shakeout_enabled, resource_baseline_enabled, start_delay, assignment_json, total_vusers, duration_ns, start_time, scheduled_start_at, started_at, pending_since, paused_at, cumulative_pause_ns, capacity_window_start_at, capacity_window_end_at, baseline_pinned, baseline_pinned_at, end_time, error, created_by_subject, created_by_display_name, started_by_subject, started_by_display_name, stopped_by_subject, stopped_by_display_name, groups_json, data_pools_json, runtime_settings_json, goal_config_json, traffic_profile_json, elk_capture_json, dynatrace_capture_json, start_authorization_json, execution_plan_approval_json, initial_provenance_json, timeslot_id, monitor_bindings_json, trace_context_json, joint_evidence_json)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			  ON CONFLICT(id) DO UPDATE SET
 			  ref_key=excluded.ref_key,
 			  materialization_key=excluded.materialization_key,
@@ -184,7 +184,7 @@ func (s *SQLiteStore) writePreparedTestWithExecutor(executor testSaveExecutor, t
 			    WHEN tests.initial_provenance_json IS NULL OR TRIM(tests.initial_provenance_json) IN ('', 'null') THEN excluded.initial_provenance_json
 			    ELSE tests.initial_provenance_json
 			  END,
-			  timeslot_id=excluded.timeslot_id, monitor_bindings_json=excluded.monitor_bindings_json, trace_context_json=excluded.trace_context_json
+			  timeslot_id=excluded.timeslot_id, monitor_bindings_json=excluded.monitor_bindings_json, trace_context_json=excluded.trace_context_json, joint_evidence_json=excluded.joint_evidence_json
 			  WHERE tests.project_id=excluded.project_id`
 
 	result, err := executor.Exec(query, args...)
@@ -238,8 +238,8 @@ func (s *SQLiteStore) createTestIfAbsentWithExecutor(executor testSaveExecutor, 
 	if err := lockActiveReleaseForNewTest(executor, test); err != nil {
 		return false, err
 	}
-	result, err := executor.Exec(`INSERT INTO tests (id, ref_key, materialization_key, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, termination_mode, shakeout_enabled, resource_baseline_enabled, start_delay, assignment_json, total_vusers, duration_ns, start_time, scheduled_start_at, started_at, pending_since, paused_at, cumulative_pause_ns, capacity_window_start_at, capacity_window_end_at, baseline_pinned, baseline_pinned_at, end_time, error, created_by_subject, created_by_display_name, started_by_subject, started_by_display_name, stopped_by_subject, stopped_by_display_name, groups_json, data_pools_json, runtime_settings_json, goal_config_json, traffic_profile_json, elk_capture_json, dynatrace_capture_json, start_authorization_json, execution_plan_approval_json, initial_provenance_json, timeslot_id, monitor_bindings_json, trace_context_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	result, err := executor.Exec(`INSERT INTO tests (id, ref_key, materialization_key, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, termination_mode, shakeout_enabled, resource_baseline_enabled, start_delay, assignment_json, total_vusers, duration_ns, start_time, scheduled_start_at, started_at, pending_since, paused_at, cumulative_pause_ns, capacity_window_start_at, capacity_window_end_at, baseline_pinned, baseline_pinned_at, end_time, error, created_by_subject, created_by_display_name, started_by_subject, started_by_display_name, stopped_by_subject, stopped_by_display_name, groups_json, data_pools_json, runtime_settings_json, goal_config_json, traffic_profile_json, elk_capture_json, dynatrace_capture_json, start_authorization_json, execution_plan_approval_json, initial_provenance_json, timeslot_id, monitor_bindings_json, trace_context_json, joint_evidence_json)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO NOTHING`, args...)
 	if err != nil {
 		return false, err
@@ -359,7 +359,11 @@ func prepareTestSaveArgs(test *TestRecord) ([]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []any{test.ID, test.RefKey, test.MaterializationKey, test.Name, test.Status, test.ApplicationID, test.ReleaseID, nullableString(test.ScenarioID), test.ProjectID, nullableStringPointer(test.FolderID), test.ScenarioMode, test.TerminationMode, test.ScriptShakeout, test.ResourceBaseline, test.StartDelay, assignmentJSON, test.TotalVUsers, test.Duration, test.StartTime, test.ScheduledStartAt, test.StartedAt, test.PendingSince, test.PausedAt, test.CumulativePause, test.CapacityWindowStartAt, test.CapacityWindowEndAt, test.BaselinePinned, test.BaselinePinnedAt, test.EndTime, test.Error, test.CreatedBySubject, test.CreatedByDisplayName, test.StartedBySubject, test.StartedByDisplayName, test.StoppedBySubject, test.StoppedByDisplayName, groupsJSON, dataPoolsJSON, runtimeSettingsJSON, goalConfigJSON, trafficProfileJSON, elkCaptureJSON, dynatraceCaptureJSON, startAuthorizationJSON, executionPlanApprovalJSON, initialProvenanceValue, nullableStringPointer(test.TimeslotID), monitorBindingsJSON, traceContextJSON}, nil
+	jointEvidenceJSON, err := marshalTestField("joint_evidence_json", test.JointEvidence)
+	if err != nil {
+		return nil, err
+	}
+	return []any{test.ID, test.RefKey, test.MaterializationKey, test.Name, test.Status, test.ApplicationID, test.ReleaseID, nullableString(test.ScenarioID), test.ProjectID, nullableStringPointer(test.FolderID), test.ScenarioMode, test.TerminationMode, test.ScriptShakeout, test.ResourceBaseline, test.StartDelay, assignmentJSON, test.TotalVUsers, test.Duration, test.StartTime, test.ScheduledStartAt, test.StartedAt, test.PendingSince, test.PausedAt, test.CumulativePause, test.CapacityWindowStartAt, test.CapacityWindowEndAt, test.BaselinePinned, test.BaselinePinnedAt, test.EndTime, test.Error, test.CreatedBySubject, test.CreatedByDisplayName, test.StartedBySubject, test.StartedByDisplayName, test.StoppedBySubject, test.StoppedByDisplayName, groupsJSON, dataPoolsJSON, runtimeSettingsJSON, goalConfigJSON, trafficProfileJSON, elkCaptureJSON, dynatraceCaptureJSON, startAuthorizationJSON, executionPlanApprovalJSON, initialProvenanceValue, nullableStringPointer(test.TimeslotID), monitorBindingsJSON, traceContextJSON, jointEvidenceJSON}, nil
 }
 
 // validateTestPlacement locks and verifies every durable tenant-bearing parent
@@ -893,7 +897,7 @@ func (s *SQLiteStore) ListTestCapacityBindings(testIDs []string) ([]TestCapacity
 }
 
 func testSelectColumns() string {
-	return `SELECT id, COALESCE(ref_key, ''), COALESCE(materialization_key, ''), name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(termination_mode, 'duration'), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(start_delay, ''), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, scheduled_start_at, started_at, pending_since, paused_at, COALESCE(cumulative_pause_ns, 0), capacity_window_start_at, capacity_window_end_at, COALESCE(baseline_pinned, 0), baseline_pinned_at, end_time, error, COALESCE(created_by_subject, ''), COALESCE(created_by_display_name, ''), COALESCE(started_by_subject, ''), COALESCE(started_by_display_name, ''), COALESCE(stopped_by_subject, ''), COALESCE(stopped_by_display_name, ''), groups_json, COALESCE(data_pools_json, ''), COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, ''), COALESCE(traffic_profile_json, ''), COALESCE(elk_capture_json, ''), COALESCE(dynatrace_capture_json, ''), COALESCE(start_authorization_json, ''), COALESCE(execution_plan_approval_json, ''), COALESCE(initial_provenance_json, ''), timeslot_id, COALESCE(continuity_checkpoint_json, ''), COALESCE(monitor_bindings_json,''), COALESCE(trace_context_json, '')`
+	return `SELECT id, COALESCE(ref_key, ''), COALESCE(materialization_key, ''), name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(termination_mode, 'duration'), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(start_delay, ''), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, scheduled_start_at, started_at, pending_since, paused_at, COALESCE(cumulative_pause_ns, 0), capacity_window_start_at, capacity_window_end_at, COALESCE(baseline_pinned, 0), baseline_pinned_at, end_time, error, COALESCE(created_by_subject, ''), COALESCE(created_by_display_name, ''), COALESCE(started_by_subject, ''), COALESCE(started_by_display_name, ''), COALESCE(stopped_by_subject, ''), COALESCE(stopped_by_display_name, ''), groups_json, COALESCE(data_pools_json, ''), COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, ''), COALESCE(traffic_profile_json, ''), COALESCE(elk_capture_json, ''), COALESCE(dynatrace_capture_json, ''), COALESCE(start_authorization_json, ''), COALESCE(execution_plan_approval_json, ''), COALESCE(initial_provenance_json, ''), timeslot_id, COALESCE(continuity_checkpoint_json, ''), COALESCE(monitor_bindings_json,''), COALESCE(trace_context_json, ''), COALESCE(joint_evidence_json, '')`
 }
 
 // rowScanner abstracts *sql.Row and *sql.Rows so scan helpers work with both
@@ -906,8 +910,8 @@ type rowScanner interface {
 // JSON-encoded fields. Shared by GetTest, ListTests, and ListTestsByContext.
 func scanTest(scanner rowScanner) (TestRecord, error) {
 	var test TestRecord
-	var groupsJSON, dataPoolsJSON, assignmentJSON, runtimeSettingsJSON, goalConfigJSON, trafficProfileJSON, elkCaptureJSON, dynatraceCaptureJSON, startAuthorizationJSON, executionPlanApprovalJSON, initialProvenanceJSON, monitorBindingsJSON, traceContextJSON string
-	if err := scanner.Scan(&test.ID, &test.RefKey, &test.MaterializationKey, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.TerminationMode, &test.ScriptShakeout, &test.ResourceBaseline, &test.StartDelay, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.ScheduledStartAt, &test.StartedAt, &test.PendingSince, &test.PausedAt, &test.CumulativePause, &test.CapacityWindowStartAt, &test.CapacityWindowEndAt, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &test.StoppedBySubject, &test.StoppedByDisplayName, &groupsJSON, &dataPoolsJSON, &runtimeSettingsJSON, &goalConfigJSON, &trafficProfileJSON, &elkCaptureJSON, &dynatraceCaptureJSON, &startAuthorizationJSON, &executionPlanApprovalJSON, &initialProvenanceJSON, &test.TimeslotID, &test.ContinuityCheckpoint, &monitorBindingsJSON, &traceContextJSON); err != nil {
+	var groupsJSON, dataPoolsJSON, assignmentJSON, runtimeSettingsJSON, goalConfigJSON, trafficProfileJSON, elkCaptureJSON, dynatraceCaptureJSON, startAuthorizationJSON, executionPlanApprovalJSON, initialProvenanceJSON, monitorBindingsJSON, traceContextJSON, jointEvidenceJSON string
+	if err := scanner.Scan(&test.ID, &test.RefKey, &test.MaterializationKey, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.TerminationMode, &test.ScriptShakeout, &test.ResourceBaseline, &test.StartDelay, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.ScheduledStartAt, &test.StartedAt, &test.PendingSince, &test.PausedAt, &test.CumulativePause, &test.CapacityWindowStartAt, &test.CapacityWindowEndAt, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &test.StoppedBySubject, &test.StoppedByDisplayName, &groupsJSON, &dataPoolsJSON, &runtimeSettingsJSON, &goalConfigJSON, &trafficProfileJSON, &elkCaptureJSON, &dynatraceCaptureJSON, &startAuthorizationJSON, &executionPlanApprovalJSON, &initialProvenanceJSON, &test.TimeslotID, &test.ContinuityCheckpoint, &monitorBindingsJSON, &traceContextJSON, &jointEvidenceJSON); err != nil {
 		return test, err
 	}
 	if monitorBindingsJSON != "" && monitorBindingsJSON != "null" {
@@ -971,6 +975,11 @@ func scanTest(scanner rowScanner) (TestRecord, error) {
 	if traceContextJSON != "" && traceContextJSON != "null" {
 		if err := json.Unmarshal([]byte(traceContextJSON), &test.TraceContext); err != nil {
 			return test, fmt.Errorf("decode test %s trace_context_json: %w", test.ID, err)
+		}
+	}
+	if jointEvidenceJSON != "" && jointEvidenceJSON != "null" {
+		if err := json.Unmarshal([]byte(jointEvidenceJSON), &test.JointEvidence); err != nil {
+			return test, fmt.Errorf("decode test %s joint_evidence_json: %w", test.ID, err)
 		}
 	}
 	return test, nil
@@ -1794,6 +1803,15 @@ func deleteTestGraphTx(tx *storeTx, id, projectID string) error {
 	if err := deleteRCAForTestTx(tx, id); err != nil {
 		return err
 	}
+	// Evaluations of this run, pinned (its browser findings) and under a named
+	// revision (a separate subject), go with it; a queued or running one then
+	// completes against no row (its fenced write matches nothing), so it can
+	// never be served for a later run reusing the ID.
+	// Scoped by project so the subject index (project_id, kind, subject_id)
+	// serves it from its leading column, never a scan of every job.
+	if _, err := tx.Exec(`DELETE FROM feature_evaluation_jobs WHERE project_id = ? AND subject_id IN (?, ?)`, normalizeProjectID(projectID), id, id+EvaluationSubjectRequestedSuffix); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM test_notes WHERE test_id = ?`, id); err != nil {
 		return err
 	}
@@ -1820,10 +1838,11 @@ func deleteTestGraphTx(tx *storeTx, id, projectID string) error {
 	if _, err := tx.Exec(`UPDATE run_evidence_receipts SET state = ?, updated_at = ? WHERE test_id = ?`, EvidenceReceiptTombstoned, time.Now().UTC(), id); err != nil {
 		return err
 	}
-	annotationPrefix := "report:annotations:" + id + ":"
-	if _, err := tx.Exec(`DELETE FROM app_settings
-		WHERE SUBSTR(key, 1, LENGTH(?)) = ?`, annotationPrefix, annotationPrefix); err != nil {
-		return err
+	for _, prefix := range []string{"report:annotations:" + id + ":", RunNotificationClaimPrefix(id)} {
+		if _, err := tx.Exec(`DELETE FROM app_settings
+			WHERE SUBSTR(key, 1, LENGTH(?)) = ?`, prefix, prefix); err != nil {
+			return err
+		}
 	}
 	if _, err := tx.Exec(`UPDATE scenario_schedules SET last_run_test_id = NULL WHERE last_run_test_id = ?`, id); err != nil {
 		return err

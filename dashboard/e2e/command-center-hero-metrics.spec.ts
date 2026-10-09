@@ -10,7 +10,7 @@ test('[U12 U20] live run summary shows readable averaged throughput and observed
   await expect(shelf).toBeVisible()
   const summary = shelf.locator('[aria-label="Run summary"]')
   await expect(summary.locator('.command-metric-pill > span')).toHaveText([
-    'Observed / Target Load', 'Remaining', 'TPS (10s avg)', 'Overall Error Rate',
+    'Observed / Target Load', 'Elapsed · remaining', 'TPS (10s avg)', 'Response time (latest avg · P95)', 'Error Rate (run to date)',
   ])
   const tps = summary.locator('.command-metric-pill').filter({ hasText: 'TPS (10s avg)' }).locator('strong')
   await expect(tps).toHaveText(/^[\d,]+\.\d$/)

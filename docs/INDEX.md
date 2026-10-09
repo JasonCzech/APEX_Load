@@ -62,6 +62,7 @@ kept for planning or audit context only.
 | [PROTOCOL_DIAGNOSTICS.md](PROTOCOL_DIAGNOSTICS.md) | gRPC measurement semantics, availability, distributed summaries, and archive compatibility |
 | [IMPORT_FIDELITY_AND_REPAIRS.md](IMPORT_FIDELITY_AND_REPAIRS.md) | JMeter and LoadRunner import fidelity, source-plan execution, guided repair, native archive compatibility, and regression coverage |
 | [RUNTIME_SETTINGS_PARITY.md](RUNTIME_SETTINGS_PARITY.md) | Runtime-settings parity evidence and API contract |
+| [RECORDING_PROFILES.md](RECORDING_PROFILES.md) | Project recording profiles and how VuGen's recording options map to them |
 | [PERFORMANCE_BENCHMARKS.md](PERFORMANCE_BENCHMARKS.md) | Harness-overhead benchmark, local performance evidence, and browser benchmark procedures |
 | [JAVA_VUSER_POOLING_IMPLEMENTATION.md](JAVA_VUSER_POOLING_IMPLEMENTATION.md) | Experimental Java evidence tooling, operator AppCDS, slot foundations, and remaining pooling/AKS gates |
 | [JAVA_BOUNDARY_ATTESTOR_CONTRACT.md](JAVA_BOUNDARY_ATTESTOR_CONTRACT.md) | Authenticated external runtime and infrastructure-fencing proof contract for dedicated Java cleanup |

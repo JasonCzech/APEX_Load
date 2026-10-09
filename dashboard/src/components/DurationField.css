@@ -82,7 +82,7 @@
 .duration-field-preset.active {
   border-color: rgba(0, 163, 255, 0.32);
   background: rgba(0, 163, 255, 0.12);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .duration-field-preset:disabled {
@@ -91,7 +91,7 @@
 }
 
 .duration-field-error {
-  color: var(--danger, var(--danger));
+  color: var(--danger-text);
   font-size: 11px;
   line-height: 1.3;
 }

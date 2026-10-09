@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import ArchivedNativePanel from './ArchivedNativePanel'
 import NativeEvidencePanel from './NativeEvidencePanel'
 import './NativeAnalyticsPanel.css'
 import { Line, LineChart, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import type { MetricsHistoryPoint } from '../types'
-import type { DashboardDefinitionPanel, DashboardDefinition } from '../hooks/api/useDashboardDefinitionsApi'
+import { ANALYTICS_QUERY_VERSION, fetchDashboardDefinition, type DashboardDefinitionPanel, type DashboardDefinition } from '../hooks/api/useDashboardDefinitionsApi'
 import ExportableChart from './ExportableChart'
 import { nativeMetrics, nativePopulationMetrics, nativePanelRows } from './nativeAnalyticsModel'
 
@@ -17,7 +17,7 @@ export default function NativeAnalyticsPanel({ panel, history }: { panel: Dashbo
   if (panel.kind === 'stat') return <div><strong>{latest === undefined ? 'No current observation' : latest.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong><p>{metric.label} · {panel.query?.aggregation} per source interval</p></div>
   if (panel.kind !== 'line' && panel.kind !== 'table') return <p role="status">This panel visualization is unavailable.</p>
   return <ExportableChart allowSVG={panel.kind === 'line'} definitionId={panel.id} title={panel.title} description={`${metric.label}; retained run observations. Gaps remain missing and interval percentiles are not averaged.`} rows={rows} columns={[{ key: 'time', label: 'Time', value: row => row.time }, { key: 'value', label: metric.label, value: row => row.value ?? '' }]}>
-    {panel.kind === 'table' ? <table><thead><tr><th>Time</th><th>{metric.label}</th></tr></thead><tbody>{rows.slice(-100).map((row, index) => <tr key={index}><td>{row.time}</td><td>{row.value ?? 'Missing'}</td></tr>)}</tbody></table> : <ResponsiveContainer width="100%" height={240}><LineChart data={rows}><XAxis dataKey="time" /><YAxis /><Tooltip /><Line type="linear" name={metric.label} dataKey="value" stroke="#38bdf8" connectNulls={false} dot={false} isAnimationActive={false} /></LineChart></ResponsiveContainer>}
+    {panel.kind === 'table' ? <table><thead><tr><th>Time</th><th>{metric.label}</th></tr></thead><tbody>{rows.slice(-100).map((row, index) => <tr key={index}><td>{row.time}</td><td>{row.value ?? 'Missing'}</td></tr>)}</tbody></table> : <ResponsiveContainer width="100%" height={240}><LineChart data={rows}><XAxis dataKey="time" /><YAxis /><Tooltip /><Line type="linear" name={metric.label} dataKey="value" stroke="var(--chart-5)" connectNulls={false} dot={false} isAnimationActive={false} /></LineChart></ResponsiveContainer>}
   </ExportableChart>
 }
 
@@ -48,7 +48,7 @@ export function NativePanelAuthoring({ onSave, properties = [] }: { properties?:
   const [busy, setBusy] = useState(false)
   return <details className="native-panel-authoring"><summary>Create project analytics panel</summary><form onSubmit={async event => {
     event.preventDefault(); setBusy(true); setError('')
-    try { await onSave({ name: title.trim(), tabs: [{ id: 'analytics', title: 'Analytics', panels: [{ id: 'metric', title: title.trim(), kind, x: 0, y: 0, w: 24, h: 8, query: { metric, aggregation, max_series: evidenceMode ? maxSeries : 1, ...(evidenceMode ? { evidence_mode: evidenceMode as 'live' | 'archive', ...(evidenceMode === 'live' && merged ? { live_bucket_mode: 'merged' as const } : {}), dimensions: group ? [group] : [], ...(overlayType ? { overlay_selection: { ...(overlayType === 'dataset' ? { dataset_id: overlayId.trim() } : { source_id: overlayId.trim() }), metric: overlayMetric.trim(), aggregation: overlayAggregation, host: overlayType === 'monitor' ? overlayHost.trim() || undefined : undefined, max_lag_seconds: lag } } : {}) } : {}), ...(population ? { population: population as 'action' | 'transaction', filters: { ...dimensionFilters, ...(action ? { action } : {}) }, start_seconds: start, end_seconds: end, bucket_seconds: bucket, comparison_run_id: evidenceMode ? undefined : baseline.trim() || undefined, ...(population === 'action' && property ? { property_name: property.split('=')[0], property_value: evidenceMode && group === 'property' ? undefined : property.slice(property.indexOf('=') + 1) } : {}) } : {}) } }] }] }) } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to save panel') } finally { setBusy(false) }
+    try { await onSave({ name: title.trim(), tabs: [{ id: 'analytics', title: 'Analytics', panels: [{ id: 'metric', title: title.trim(), kind, x: 0, y: 0, w: 24, h: 8, query: { query_version: ANALYTICS_QUERY_VERSION, metric, aggregation, max_series: evidenceMode ? maxSeries : 1, ...(evidenceMode ? { evidence_mode: evidenceMode as 'live' | 'archive', ...(evidenceMode === 'live' && merged ? { live_bucket_mode: 'merged' as const } : {}), dimensions: group ? [group] : [], ...(overlayType ? { overlay_selection: { ...(overlayType === 'dataset' ? { dataset_id: overlayId.trim() } : { source_id: overlayId.trim() }), metric: overlayMetric.trim(), aggregation: overlayAggregation, host: overlayType === 'monitor' ? overlayHost.trim() || undefined : undefined, max_lag_seconds: lag } } : {}) } : {}), ...(population ? { population: population as 'action' | 'transaction', filters: { ...dimensionFilters, ...(action ? { action } : {}) }, start_seconds: start, end_seconds: end, bucket_seconds: bucket, comparison_run_id: evidenceMode ? undefined : baseline.trim() || undefined, ...(population === 'action' && property ? { property_name: property.split('=')[0], property_value: evidenceMode && group === 'property' ? undefined : property.slice(property.indexOf('=') + 1) } : {}) } : {}) } }] }] }) } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to save panel') } finally { setBusy(false) }
   }}>
     <label>Panel title<input required maxLength={256} value={title} onChange={event => setTitle(event.target.value)} /></label>
     <label>Evidence workflow<select aria-label="Evidence workflow" value={evidenceMode} onChange={event => { const mode = event.target.value; setEvidenceMode(mode); setDimensionFilters({}); if (mode) { setPopulation('action'); setMetric('response_time'); setAggregation('avg'); setGroup('action') } else { setGroup(''); setOverlayType('') } }}><option value="">Run totals / archive comparison</option><option value="live">Filtered live intervals</option><option value="archive">Grouped archive and overlays</option></select></label>
@@ -77,9 +77,45 @@ export function NativePanelAuthoring({ onSave, properties = [] }: { properties?:
 
 export function NativeProjectPanels({ definitions, history, testId }: { definitions: DashboardDefinition[]; history: MetricsHistoryPoint[]; testId?: string }) {
   const [selected, setSelected] = useState('')
-  const definition = definitions.find(item => item.id === selected) || definitions[0]
-  if (!definition) return null
-  return <section className="native-project-panels" aria-label="Project analytics panels"><label>Project dashboard<select aria-label="Project dashboard" value={definition.id} onChange={event => setSelected(event.target.value)}>{definitions.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+  const current = definitions.find(item => item.id === selected) || definitions[0]
+  // A viewer may reopen exactly a saved revision of the dashboard.
+  const [revision, setRevision] = useState(0)
+  const [retained, setRetained] = useState<NonNullable<DashboardDefinition['retained_revisions']>>([])
+  // The definition as fetched when it was selected: newer than the list when
+  // someone saved since the list was loaded.
+  const [latest, setLatest] = useState<DashboardDefinition | null>(null)
+  const [opened, setOpened] = useState<DashboardDefinition | null>(null)
+  const [revisionError, setRevisionError] = useState('')
+  const currentID = current?.id || ''
+  useEffect(() => {
+    setRevision(0)
+    setOpened(null)
+    setLatest(null)
+    setRetained([])
+    setRevisionError('')
+    if (!currentID) return
+    const controller = new AbortController()
+    fetchDashboardDefinition(currentID, undefined, controller.signal)
+      .then(item => { if (!controller.signal.aborted) { setLatest(item); setRetained(item.retained_revisions || []) } })
+      .catch(() => { if (!controller.signal.aborted) setRetained([]) })
+    return () => controller.abort()
+  }, [currentID])
+  useEffect(() => {
+    if (!currentID || !revision) return
+    const controller = new AbortController()
+    fetchDashboardDefinition(currentID, revision, controller.signal)
+      .then(item => { if (!controller.signal.aborted) setOpened(item) })
+      .catch(reason => { if (!controller.signal.aborted) { setOpened(null); setRevisionError(reason instanceof Error ? reason.message : 'Unable to open the saved revision') } })
+    return () => controller.abort()
+  }, [currentID, revision])
+  if (!current) return null
+  const head = latest && latest.id === current.id ? latest : current
+  const past = revision && opened && opened.id === current.id && opened.revision === revision && opened.revision !== head.revision ? opened : null
+  const definition = past || head
+  return <section className="native-project-panels" aria-label="Project analytics panels"><label>Project dashboard<select aria-label="Project dashboard" value={current.id} onChange={event => setSelected(event.target.value)}>{definitions.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+    {retained.length > 1 && <label>Saved revision<select aria-label="Saved revision" value={revision || head.revision} onChange={event => { setRevisionError(''); setRevision(Number(event.target.value) === head.revision ? 0 : Number(event.target.value)) }}>{retained.map(item => <option key={item.revision} value={item.revision}>{item.revision === head.revision ? `Current (revision ${item.revision})` : `Revision ${item.revision} · ${new Date(item.saved_at).toLocaleString()}`}</option>)}</select></label>}
+    {past && <p role="status">Showing saved revision {past.revision} of “{past.name}”, exactly as it was saved. The current revision is {past.current_revision ?? head.revision}.</p>}
+    {revisionError && <p role="alert">{revisionError}</p>}
     {definition.tabs.map(tab => <section key={tab.id} aria-label={tab.title}>{tab.panels.filter(panel => panel.query).map(panel => <article key={panel.id}><h3>{panel.title}</h3>{panel.query?.evidence_mode ? testId ? <NativeEvidencePanel key={`${testId}-${JSON.stringify(panel.query)}`} panel={panel} testId={testId} /> : <p>Run identity unavailable.</p> : panel.query?.population ? testId ? <ArchivedNativePanel key={`${testId}-${JSON.stringify(panel.query)}`} panel={panel} testId={testId} /> : <p>Archive run identity unavailable.</p> : <NativeAnalyticsPanel panel={panel} history={history} />}</article>)}</section>)}
   </section>
 }

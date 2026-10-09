@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -864,6 +865,48 @@ func TestHandleImportPostman(t *testing.T) {
 	}
 	assertReviewSection(t, result.ReviewSections, "postman_requests", "info", "GET /orders/{{var.order_id}}")
 	assertReviewSection(t, result.ReviewSections, "postman_variables", "info", "order_id")
+}
+
+// The validation route reviews a collection exactly as the import route does:
+// the same script, preflight and review sections.
+func TestValidatePostmanImportReviewsLikeTheImport(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	body, err := json.Marshal(map[string]any{"name": "Orders Postman", "project_id": "proj-postman", "content": `{
+  "info": {"name": "Orders Collection", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+  "variable": [{"key": "baseUrl", "value": "https://api.example.test"}],
+  "item": [{"name": "Get Order", "request": {"method": "GET", "url": "{{baseUrl}}/orders/{{order_id}}"}}]
+}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	review := func(path string) map[string]any {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", path, resp.Code, resp.Body.String())
+		}
+		var out map[string]any
+		if err := json.Unmarshal(resp.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	imported, validated := review("/api/v1/scripts/import/postman"), review("/api/v1/scripts/import/postman/validate")
+	for _, key := range []string{"preflight", "review_sections"} {
+		if !reflect.DeepEqual(imported[key], validated[key]) {
+			t.Fatalf("%s differs:\n import %v\n validate %v", key, imported[key], validated[key])
+		}
+	}
+	// The scripts match apart from each request's own import session.
+	importedScript, validatedScript := imported["script"].(map[string]any), validated["script"].(map[string]any)
+	for _, key := range []string{"name", "protocol", "config", "parameters", "actions"} {
+		if !reflect.DeepEqual(importedScript[key], validatedScript[key]) {
+			t.Fatalf("script %s differs:\n import %v\n validate %v", key, importedScript[key], validatedScript[key])
+		}
+	}
 }
 
 func TestHandleImportPostmanMultipartEnvironment(t *testing.T) {

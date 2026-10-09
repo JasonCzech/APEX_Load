@@ -269,6 +269,9 @@ function surface(
   }
 }
 
+// Library health badges show an icon and a number; their accessible names carry the words.
+const healthLabels = (root: Element | null | undefined) => Array.from(root?.querySelectorAll('.script-health-badge') || []).map(badge => badge.getAttribute('aria-label') || '').join(' | ')
+
 describe('ScriptsPage', () => {
   let container: HTMLDivElement
   let root: Root
@@ -546,8 +549,8 @@ describe('ScriptsPage', () => {
     })
     const readyRow = Array.from(container.querySelectorAll('tr')).find(row => row.textContent?.includes('Script 1'))
     const stillPendingRow = Array.from(container.querySelectorAll('tr')).find(row => row.textContent?.includes('Script 2'))
-    expect(readyRow?.textContent).not.toContain('Checking secrets')
-    expect(stillPendingRow?.textContent).toContain('1 secret missing')
+    expect(healthLabels(readyRow)).not.toContain('Checking secrets')
+    expect(healthLabels(stillPendingRow)).toContain('View 1 missing secret detail')
   })
 
   it('checks assigned scripts against their application before the project', async () => {
@@ -609,7 +612,7 @@ describe('ScriptsPage', () => {
     await flushPromises()
     expect(apiMock.listScripts).toHaveBeenCalledTimes(2)
     expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledTimes(2)
-    expect(container.textContent).not.toContain('Checking secrets')
+    expect(healthLabels(container)).not.toContain('Checking secrets')
     confirmSpy.mockRestore()
   })
 
@@ -646,9 +649,9 @@ describe('ScriptsPage', () => {
 
     expect(apiMock.getProjectSecretStatuses).toHaveBeenNthCalledWith(1, 'project-1', ['ALPHA_TOKEN', 'BETA_TOKEN'])
     expect(apiMock.getProjectSecretStatuses).toHaveBeenNthCalledWith(2, 'project-1', ['ALPHA_TOKEN'])
-    expect(alphaRow?.textContent).not.toContain('Secret status unavailable')
+    expect(healthLabels(alphaRow)).not.toContain('Secret status unavailable')
     const betaRow = Array.from(container.querySelectorAll('tr')).find(row => row.textContent?.includes('Beta Script'))
-    expect(betaRow?.textContent).toContain('Secret status unavailable')
+    expect(healthLabels(betaRow)).toContain('Secret status unavailable')
   })
 
   it('canonicalizes every backend-valid secret reference before readiness lookup', async () => {
@@ -683,7 +686,7 @@ describe('ScriptsPage', () => {
 
     expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledWith('project-1', ['1TOKEN', 'LOGIN_TOKEN'])
     const row = Array.from(container.querySelectorAll('tr')).find(candidate => candidate.textContent?.includes('Canonical Secrets'))
-    expect(row?.textContent).not.toContain('secret missing')
+    expect(healthLabels(row)).not.toContain('missing secret')
   })
 
   it('does not issue ID-routed requests or actions for scripts with missing or noncanonical IDs', async () => {
@@ -714,8 +717,7 @@ describe('ScriptsPage', () => {
     const legacyRow = Array.from(container.querySelectorAll('tbody > tr'))
       .find(row => row.textContent?.includes('Legacy Blank ID'))
     expect(legacyRow).toBeDefined()
-    expect(legacyRow?.textContent).toContain('Script unavailable')
-    expect(legacyRow?.textContent).toContain('missing script id')
+    expect(healthLabels(legacyRow)).toContain('Script unavailable')
     expect(legacyRow?.textContent).toContain('Unavailable')
     expect(Array.from(legacyRow?.querySelectorAll('button') || []).some(button => (
       ['Edit', 'Delete', 'GitHub', 'Push', 'Compare'].includes(button.textContent?.trim() || '')
@@ -724,7 +726,7 @@ describe('ScriptsPage', () => {
 
     const whitespaceRow = Array.from(container.querySelectorAll('tbody > tr'))
       .find(row => row.textContent?.includes('Legacy Whitespace ID'))
-    expect(whitespaceRow?.textContent).toContain('Script unavailable')
+    expect(healthLabels(whitespaceRow)).toContain('Script unavailable')
     expect(whitespaceRow?.textContent).toContain('Unavailable')
     expect(whitespaceRow?.querySelector<HTMLButtonElement>('.script-row-toggle')?.disabled).toBe(true)
   })
@@ -740,8 +742,8 @@ describe('ScriptsPage', () => {
 
     expect(container.textContent).toContain('Script Library')
     expect(container.textContent).toContain('Existing Script')
-    expect(container.textContent).toContain('Needs Review · 72')
-    expect(container.textContent).toContain('1 warning')
+    expect(healthLabels(container)).toContain('Needs review, score 72')
+    expect(healthLabels(container)).toContain('View 1 warning detail')
     const libraryHeaders = Array.from(container.querySelectorAll('th')).map(th => th.textContent || '')
     expect(libraryHeaders.some(header => header.includes('Script'))).toBe(true)
     expect(libraryHeaders.some(header => header.includes('Usage'))).toBe(true)
@@ -767,7 +769,7 @@ describe('ScriptsPage', () => {
 
     await clickButton('Script Builder')
 
-    expect(container.textContent).toContain('Create Script')
+    expect(container.textContent).toContain('Create script')
     expect(container.textContent).toContain('Start New Script')
 
     await clickButton('Create')
@@ -840,7 +842,10 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Run release')
     expect(container.textContent).toContain('Search scripts')
     expect(container.textContent).not.toContain('Asset Type')
-    expect(container.textContent).not.toContain('Select a Remote Workspace first.')
+    // Only a row's closed "More" menu explains its disabled Push; the page itself does not.
+    const visible = container.cloneNode(true) as HTMLElement
+    visible.querySelectorAll('[hidden]').forEach(element => element.remove())
+    expect(visible.textContent).not.toContain('Select a Remote Workspace first.')
 
     await clickButton('Script Builder')
 
@@ -851,13 +856,13 @@ describe('ScriptsPage', () => {
     expect(container.textContent).not.toContain('Script Library (')
     await clickButton('Use existing')
     const builderHeaders = Array.from(container.querySelectorAll('.script-create-existing-table th')).map(header => header.textContent || '')
-    expect(builderHeaders.some(header => header.includes('Source'))).toBe(true)
+    expect(builderHeaders.some(header => header.includes('Source'))).toBe(false)
     expect(builderHeaders.some(header => header.includes('Script'))).toBe(true)
     expect(builderHeaders.some(header => header.includes('Health'))).toBe(true)
     expect(builderHeaders.some(header => header.includes('Usage'))).toBe(true)
     expect(builderHeaders.some(header => header.includes('Run releases'))).toBe(true)
-    expect(builderHeaders.some(header => header.includes('Create Date'))).toBe(true)
-    expect(builderHeaders.some(header => header.includes('Last Run'))).toBe(true)
+    expect(builderHeaders.some(header => header.includes('Created'))).toBe(true)
+    expect(builderHeaders.some(header => header.includes('Last run'))).toBe(true)
     expect(builderHeaders.some(header => header.includes('Actions'))).toBe(true)
 
     await clickButton('Script Library')
@@ -1588,7 +1593,7 @@ describe('ScriptsPage', () => {
 
     const headers = Array.from(container.querySelectorAll('th')).map(th => th.textContent || '')
     expect(headers.some(header => header.includes('Run releases'))).toBe(true)
-    expect(headers.some(header => header.includes('Create Date'))).toBe(true)
+    expect(headers.some(header => header.includes('Created'))).toBe(true)
     expect(headers.some(header => header.includes('Folder'))).toBe(true)
     expect(container.textContent).toContain('Checkout Script')
     expect(container.textContent).toContain('Payments Script')
@@ -1678,7 +1683,7 @@ describe('ScriptsPage', () => {
 
     expect(apiMock.getScript).toHaveBeenCalledWith('script-1')
     expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
-    expect(onAuthoringStateChange).toHaveBeenCalledWith({ subView: 'edit', editingId: 'script-1' })
+    expect(onAuthoringStateChange).toHaveBeenCalledWith({ subView: 'edit', editingId: 'script-1', importLauncher: null })
   })
 
   it('filters the script library by authoring health categories', async () => {
@@ -1973,7 +1978,7 @@ describe('ScriptsPage', () => {
     })
 
     expect(container.querySelector('[data-testid="enterprise-archive-import"]')).toBeNull()
-    expect(container.textContent).toContain('Create Script')
+    expect(container.textContent).toContain('Create script')
     await clickButton('Import')
     expect(container.textContent).toContain('Import JMeter')
   })
@@ -2053,7 +2058,7 @@ describe('ScriptsPage', () => {
     })
 
     expect(container.querySelector('[data-testid="jmeter-import"]')).toBeNull()
-    expect(container.textContent).toContain('Create Script')
+    expect(container.textContent).toContain('Create script')
     expect(container.textContent).toContain('Source-driven authoring')
     expect(container.textContent).not.toContain('Start New Script')
     expect(container.textContent).toContain('Import Loadrunner Script Archive')

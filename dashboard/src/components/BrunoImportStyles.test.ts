@@ -46,7 +46,7 @@ describe('Bruno import responsive layout', () => {
     expect(choice).toContain('min-width: 0;')
     expect(choice).toContain('max-width: 100%;')
     expect(reference).toContain('overflow-wrap: anywhere;')
-    expect(pathScrollFocus).toContain('outline: 2px solid var(--accent);')
+    expect(pathScrollFocus).toContain('outline: 2px solid var(--focus-ring);')
     expect(css).toContain('@container secret-binding-review (max-width: 720px)')
   })
 

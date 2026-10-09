@@ -43,35 +43,35 @@ const (
 // MetricPoint is a measurement, not an aggregated percentile. Value is absent
 // when the source reports missing or dropped evidence; zero remains a real value.
 type MetricPoint struct {
-	SchemaVersion   string               `json:"schema_version"`
-	ProjectID       string               `json:"project_id"`
-	DatasetID       string               `json:"dataset_id,omitempty"`
-	RunID           string               `json:"run_id,omitempty"`
-	ScenarioID      string               `json:"scenario_id,omitempty"`
-	Source          string               `json:"source"`
-	Host            string               `json:"host,omitempty"`
-	Service         string               `json:"service,omitempty"`
-	TimestampUTC    time.Time            `json:"timestamp_utc"`
-	ReceivedAt      time.Time            `json:"received_at,omitempty"`
-	RelativeTimeMS  *int64               `json:"relative_time_ms,omitempty"`
-	ActiveRuntimeMS *int64               `json:"active_runtime_ms,omitempty"`
-	MetricName      string               `json:"metric_name"`
-	Population      string               `json:"population,omitempty"`
-	MetricVersion   string               `json:"metric_version,omitempty"`
-	Derivation      []DerivationStep     `json:"derivation,omitempty"`
-	Kind            string               `json:"kind"`
-	InputKind       string               `json:"input_kind,omitempty"` // Original semantics for derived bucket gauges.
-	Value           *float64             `json:"value,omitempty"`
-	Unit            string               `json:"unit,omitempty"`
-	Dimensions      map[string]string    `json:"dimensions,omitempty"`
-	Quality         string               `json:"quality"`
-	MissingReason   string               `json:"missing_reason,omitempty"` // Why a derived summary or histogram bucket is missing although its input existed.
-	EstimateBin     *EstimateBin         `json:"estimate_bin,omitempty"`   // Histogram bin holding an interpolated percentile.
+	SchemaVersion   string            `json:"schema_version"`
+	ProjectID       string            `json:"project_id"`
+	DatasetID       string            `json:"dataset_id,omitempty"`
+	RunID           string            `json:"run_id,omitempty"`
+	ScenarioID      string            `json:"scenario_id,omitempty"`
+	Source          string            `json:"source"`
+	Host            string            `json:"host,omitempty"`
+	Service         string            `json:"service,omitempty"`
+	TimestampUTC    time.Time         `json:"timestamp_utc"`
+	ReceivedAt      time.Time         `json:"received_at,omitempty"`
+	RelativeTimeMS  *int64            `json:"relative_time_ms,omitempty"`
+	ActiveRuntimeMS *int64            `json:"active_runtime_ms,omitempty"`
+	MetricName      string            `json:"metric_name"`
+	Population      string            `json:"population,omitempty"`
+	MetricVersion   string            `json:"metric_version,omitempty"`
+	Derivation      []DerivationStep  `json:"derivation,omitempty"`
+	Kind            string            `json:"kind"`
+	InputKind       string            `json:"input_kind,omitempty"` // Original semantics for derived bucket gauges.
+	Value           *float64          `json:"value,omitempty"`
+	Unit            string            `json:"unit,omitempty"`
+	Dimensions      map[string]string `json:"dimensions,omitempty"`
+	Quality         string            `json:"quality"`
+	MissingReason   string            `json:"missing_reason,omitempty"` // Why a derived summary or histogram bucket is missing although its input existed.
+	EstimateBin     *EstimateBin      `json:"estimate_bin,omitempty"`   // Histogram bin holding an interpolated percentile.
 	// ReadingAt is, for a counter-readings bucket, the instant of the
 	// closing reading it reports (inside the bucket), so a rate divides by
 	// the time between readings rather than the bucket width.
-	ReadingAt *time.Time `json:"reading_at,omitempty"`
-	Provider        *ProviderMeasurement `json:"provider,omitempty"`
+	ReadingAt *time.Time           `json:"reading_at,omitempty"`
+	Provider  *ProviderMeasurement `json:"provider,omitempty"`
 	// Timing is the controller's account of the point's clock; optional and
 	// additive within metric_point.v1.
 	Timing *PointTiming `json:"timing,omitempty"`

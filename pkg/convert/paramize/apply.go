@@ -3,7 +3,9 @@ package paramize
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -120,7 +122,7 @@ func validateSelectedSuggestionApplication(script *dsl.Script, suggestions []Sug
 				if existing.Name != suggestion.Extractor.Name {
 					continue
 				}
-				if existing != *suggestion.Extractor {
+				if !reflect.DeepEqual(existing, *suggestion.Extractor) {
 					return fmt.Errorf("selected correlation %q conflicts with the existing extractor %q", suggestion.ID, existing.Name)
 				}
 				extractorExists = true
@@ -136,7 +138,7 @@ func validateSelectedSuggestionApplication(script *dsl.Script, suggestions []Sug
 					pendingExtractors[sourceKey] = pending
 				}
 				if sibling, exists := pending[suggestion.Extractor.Name]; exists {
-					if sibling != *suggestion.Extractor {
+					if !reflect.DeepEqual(sibling, *suggestion.Extractor) {
 						return fmt.Errorf("selected correlation %q conflicts with another selected extractor %q", suggestion.ID, suggestion.Extractor.Name)
 					}
 				} else {
@@ -209,6 +211,9 @@ func locationContainsOutsideTemplates(script *dsl.Script, location Location, lit
 		return false
 	}
 	contains := func(value string) bool { return containsOutsideTemplates(value, literal) }
+	if value, ok := multipartFieldValue(action, location.Field); ok {
+		return contains(*value)
+	}
 	switch location.Field {
 	case "target":
 		return contains(action.Target)
@@ -270,6 +275,9 @@ func locationStringValues(script *dsl.Script, location Location) []string {
 	action := actionAt(script, location.Section, location.ActionIndex)
 	if action == nil {
 		return nil
+	}
+	if value, ok := multipartFieldValue(action, location.Field); ok {
+		return []string{*value}
 	}
 	switch location.Field {
 	case "target":
@@ -540,6 +548,14 @@ func replaceInFieldValues(action *dsl.Action, location Location, replacements ma
 	replace := func(current string) (string, bool) {
 		updated := replaceOutsideTemplates(current, replacements)
 		return updated, updated != current
+	}
+	if value, isMultipart := multipartFieldValue(action, location.Field); isMultipart {
+		before = *value
+		if updated, changed := replace(*value); changed {
+			*value = updated
+			return before, updated, true
+		}
+		return "", "", false
 	}
 	switch location.Field {
 	case "target":
@@ -864,4 +880,26 @@ func cloneScript(in *dsl.Script) (*dsl.Script, error) {
 // templates, so it must not be reimplemented elsewhere.
 func ReplaceOutsideTemplates(value string, replacements map[string]string) string {
 	return replaceOutsideTemplates(value, replacements)
+}
+
+// multipartFieldPrefix addresses the text value of a body_multipart part:
+// "body_multipart.<index>".
+const multipartFieldPrefix = "body_multipart."
+
+// multipartFieldValue returns the text value a "body_multipart.<index>"
+// location addresses.
+func multipartFieldValue(action *dsl.Action, field string) (*string, bool) {
+	raw, ok := strings.CutPrefix(field, multipartFieldPrefix)
+	if !ok || action == nil || action.BodyMultipart == nil {
+		return nil, false
+	}
+	index, err := strconv.Atoi(raw)
+	if err != nil || index < 0 || index >= len(action.BodyMultipart.Parts) {
+		return nil, false
+	}
+	part := &action.BodyMultipart.Parts[index]
+	if strings.EqualFold(strings.TrimSpace(part.ValueEncoding), "base64") {
+		return nil, false
+	}
+	return &part.Value, true
 }

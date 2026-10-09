@@ -75,7 +75,7 @@ func NewJavaPooledPilot(cfg Config, options JavaPooledPilotOptions) (*Engine, er
 	if json.Unmarshal(data, &script) != nil {
 		return nil, errors.New("pooled_script_invalid")
 	}
-	if script.Protocol != "java_vuser" || isOpenWorkload(&script) || len(script.Config.RunLogic.ActionSequence) != 0 || script.Config.RunLogic.BlockScheduling != "" && script.Config.RunLogic.BlockScheduling != "sequential" {
+	if script.Protocol != "java_vuser" || isOpenWorkload(&script) || len(script.Config.RunLogic.ActionSequence) != 0 || len(script.Config.RunLogic.Blocks) != 0 || script.Config.RunLogic.BlockScheduling != "" && script.Config.RunLogic.BlockScheduling != "sequential" {
 		return nil, errors.New("pooled_pilot_workload_unsupported")
 	}
 	for i, phase := range [][]dsl.Action{script.Init, script.Actions, script.Teardown} {

@@ -4,7 +4,7 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { useAuthStatus } from './useAuthStatus'
+import { requestAuthStatusRefresh, useAuthStatus } from './useAuthStatus'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -144,6 +144,29 @@ describe('useAuthStatus', () => {
 
     expect(authApiMock.getAuthStatus).toHaveBeenCalledTimes(2)
     expect(container.textContent).toContain('ready:anonymous')
+  })
+
+  it('ignores a slower, older check that resolves after a refresh', async () => {
+    let resolveStale: (value: unknown) => void = () => {}
+    authApiMock.getAuthStatus
+      .mockImplementationOnce(() => new Promise(resolve => { resolveStale = resolve }))
+      .mockResolvedValueOnce({ enabled: true, mode: 'local', authenticated: true, user: { subject: 'local:dev' } })
+
+    await act(async () => {
+      root.render(<Harness />)
+    })
+    // Signed in again while the first check is still in flight.
+    await act(async () => {
+      requestAuthStatusRefresh()
+    })
+    await flushPromises()
+    expect(container.textContent).toContain('ready:local:dev')
+
+    await act(async () => {
+      resolveStale({ enabled: true, mode: 'local', authenticated: false, session_status: 'expired' })
+    })
+    await flushPromises()
+    expect(container.textContent).toContain('ready:local:dev')
   })
 })
 

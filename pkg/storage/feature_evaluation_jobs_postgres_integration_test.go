@@ -43,6 +43,11 @@ func TestPostgresEvaluationJobReviewFixes(t *testing.T) {
 	exerciseEvaluationJobReviewFixes(t, store)
 }
 
+func TestPostgresRunDeletionDeletesEvaluations(t *testing.T) {
+	store, _ := newPostgresScenarioRevisionFixture(t)
+	exerciseRunDeletionDeletesEvaluations(t, store)
+}
+
 func TestPostgresEvaluationJobCompletionFences(t *testing.T) {
 	store, _ := newPostgresScenarioRevisionFixture(t)
 	exerciseEvaluationJobCompletionFences(t, store)

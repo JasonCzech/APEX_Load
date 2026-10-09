@@ -80,6 +80,11 @@ func (service *testRunnerExecutionPlanService) Validate(plan *storage.ExecutionP
 		return http.StatusBadRequest, "run_mode must be parallel or sequential"
 	}
 	planProject := normalizeProjectID(plan.ProjectID)
+	if service.store != nil {
+		if err := validateExecutionPlanTimeslot(service.store, planProject, plan.TimeslotID); err != nil {
+			return http.StatusBadRequest, err.Error()
+		}
+	}
 	for entryIndex := range plan.Entries {
 		entry := &plan.Entries[entryIndex]
 		if strings.TrimSpace(entry.ScenarioID) == "" {
@@ -128,6 +133,9 @@ func (service *testRunnerExecutionPlanService) Validate(plan *storage.ExecutionP
 			if err := validateExecutionPlanDataPoolProjects(service.store, planProject, entry.DataPools); err != nil {
 				return http.StatusBadRequest, err.Error()
 			}
+			if err := validateExecutionPlanTimeslot(service.store, planProject, entry.TimeslotID); err != nil {
+				return http.StatusBadRequest, err.Error()
+			}
 		} else if service.runner != nil {
 			if scenario, ok := service.runner.GetScenario(entry.ScenarioID); ok && normalizeProjectID(scenario.ProjectID) != planProject {
 				return http.StatusBadRequest, "an execution plan entry references a scenario in a different project"
@@ -135,6 +143,27 @@ func (service *testRunnerExecutionPlanService) Validate(plan *storage.ExecutionP
 		}
 	}
 	return 0, ""
+}
+
+// validateExecutionPlanTimeslot rejects a timeslot reference that does not
+// exist in the plan's project, so a typo is reported when the plan is saved
+// instead of being stored and failing when the plan runs.
+func validateExecutionPlanTimeslot(store storage.Store, projectID string, timeslotID *string) error {
+	id := trimPtr(timeslotID)
+	if store == nil || id == "" {
+		return nil
+	}
+	reservation, err := store.GetCapacityReservation(id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("timeslot %q not found", id)
+		}
+		return fmt.Errorf("load timeslot %q: %w", id, err)
+	}
+	if normalizeProjectID(reservation.ProjectID) != normalizeProjectID(projectID) {
+		return fmt.Errorf("timeslot %q does not belong to the plan's project", id)
+	}
+	return nil
 }
 
 func validateExecutionPlanDataPoolProjects(store storage.Store, projectID string, bindings []storage.ScenarioDataPoolBinding) error {

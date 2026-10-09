@@ -768,6 +768,15 @@ func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *st
 	}
 	input.Detection.Series = append(input.Detection.Series, documents...)
 	input.Detection.Limitations = append(input.Detection.Limitations, limitations...)
+	input.Detection.DocumentsIncomplete, input.Detection.DocumentsUnreadable = rcaDocumentEvidenceLoss(limitations)
+	// The run's pinned browser policy sets the browser baselines' effect
+	// floors and baseline mode; a run without document series has no
+	// browser baseline to apply it to.
+	if len(documents) > 0 {
+		if input.Detection.BrowserPolicy, err = s.rcaBrowserBaselinePolicy(analysis.ProjectID, manifest); err != nil {
+			return nil, nil, err
+		}
+	}
 	if budget.MaxSeries > 0 {
 		var gaveWay int
 		if input.Detection.Series, gaveWay = trimRCAJointSeries(input.Detection.Series, budget.MaxSeries); gaveWay > 0 {
@@ -932,7 +941,8 @@ func (s *Server) rcaBaselineEvidence(ctx context.Context, manifest *RunArchiveMa
 		return missing, nil
 	}
 	baselineKey := comparisonWorkloadKey(&baselineComparisonRun{manifest: baselineManifest}, nil, "")
-	qualification := rca.QualifyBaseline(comparisonWorkloadKey(&baselineComparisonRun{manifest: manifest}, nil, ""), baselineKey)
+	currentKey := comparisonWorkloadKey(&baselineComparisonRun{manifest: manifest}, nil, "")
+	qualification := rca.QualifyBaseline(currentKey, baselineKey)
 	status := rca.CoverageComplete
 	if qualification.Status != rca.BaselineQualified {
 		status = rca.CoveragePartial
@@ -967,10 +977,15 @@ func (s *Server) rcaBaselineEvidence(ctx context.Context, manifest *RunArchiveMa
 			if budget.MaxSeries > 0 {
 				documentLimit = max(0, budget.MaxSeries-rcaNonJointSeries(evidence.Series))
 			}
+			documentsIncomplete := false
 			if documents, limitations, docErr := rcaBrowserDocumentSeries(ctx, record, baselineManifest, summaries, documentLimit, budget.MaxSeriesPoints); docErr == nil {
 				evidence.Series = append(evidence.Series, documents...)
 				evidence.Limitations = append(evidence.Limitations, limitations...)
+				// Each limitation here says document evidence is missing:
+				// dropped observations or series the budget left out.
+				documentsIncomplete = len(limitations) > 0
 			} else if ctx.Err() == nil {
+				documentsIncomplete = true
 				evidence.Limitations = append(evidence.Limitations, rca.Limitation{Code: limitationDetectionEvidenceCut, Detail: "the baseline's browser document evidence could not be read: " + docErr.Error()})
 			}
 			if budget.MaxSeries > 0 {
@@ -989,7 +1004,8 @@ func (s *Server) rcaBaselineEvidence(ctx context.Context, manifest *RunArchiveMa
 				coverage.Status = rca.CoveragePartial
 				coverage.Detail += "; baseline evidence: " + strings.Join(slices.Compact(slices.Sorted(slices.Values(codes))), ", ")
 			}
-			return coverage, &rca.DetectionBaseline{TestID: baselineID, Qualification: qualification.Status, Levels: evidence.Levels, Series: evidence.Series}
+			return coverage, &rca.DetectionBaseline{TestID: baselineID, Qualification: qualification.Status, QualificationReasons: qualification.Reasons,
+				ScriptChangedGroups: rca.ScriptChangedGroups(currentKey, baselineKey), DocumentsIncomplete: documentsIncomplete, Levels: evidence.Levels, Series: evidence.Series}
 		}
 	}
 	coverage.Status, coverage.Detail = rca.CoveragePartial, detail+"; its series could not be read"

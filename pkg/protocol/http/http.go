@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/credential"
+	"github.com/jasonczech/apexload/pkg/internal/bodyencoding"
 	"github.com/jasonczech/apexload/pkg/internal/contentdecode"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"go.opentelemetry.io/otel"
@@ -74,11 +75,17 @@ type HTTP struct {
 	traceparentEnabled         bool
 	traceparentSampled         bool
 	authConfig                 *protocol.AuthConfig
+	authHosts                  []authHostScope // empty = script-level auth applies to every host
 	cache                      *httpResponseCache
 	cacheContentURLsOnly       bool
 	cacheCheckNewerVersions    bool
 	resources                  *resourceFetcher
 	captureCorrelationEvidence bool
+	// page is the virtual user's HTML page context, shared with the
+	// per-version clones; nil unless the script has HTML-mode steps.
+	page *pageContextState
+	// webSockets runs the script's WebSocket steps (websocket_steps.go).
+	webSockets *webSocketSession
 }
 
 const (
@@ -196,6 +203,12 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	h.defaultHeaderList = buildDefaultHeaderList(config)
 	h.contentChecks = parseContentChecks(config)
 	h.dataFormattingAutoDetect = parseDataFormattingAutoDetect(config)
+	if enabled, _ := config[HTMLPageContextConfig].(bool); enabled {
+		h.page = &pageContextState{}
+	} else {
+		h.page = nil
+	}
+	h.webSockets = &webSocketSession{config: config}
 	h.dataFormattingChain = parseDataFormattingChain(config)
 	h.streaming = parseStreamingProfile(config)
 	if parseHTTPCacheEnabled(config) {
@@ -215,6 +228,11 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	if err := ValidateAuthWireValues(h.authConfig); err != nil {
 		return err
 	}
+	authHosts, err := parseAuthHostScopes(config["auth_hosts"])
+	if err != nil {
+		return err
+	}
+	h.authHosts = authHosts
 
 	// Protocol instances are per-VUser, so the bounded pool must be shared at
 	// process scope; a per-instance pool would still retain one backing array per
@@ -225,6 +243,9 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 }
 
 func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
+	if action != nil && IsWebSocketStep(action.Type) {
+		return h.executeWebSocketStep(ctx, action)
+	}
 	ctx, verification := h.verificationContext(ctx)
 	result := &protocol.Result{
 		ActionName:     protocol.ActionName(action),
@@ -235,6 +256,15 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	}
 	resourceTimeoutWarned := false
 	callerCtx := ctx
+	// A resource step's failure becomes a warning once its request is sent
+	// (not for an action that cannot be sent). The defer is registered first
+	// so it runs last, after the page deadline's failure.
+	resourceStepStarted := false
+	defer func() {
+		if resourceStepStarted {
+			h.outcome.downgradeResourceStepFailure(result)
+		}
+	}()
 	if h.pageTimeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeoutCause(ctx, h.pageTimeout, errPageDeadline)
@@ -264,6 +294,31 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.Success = true
 		result.ProtocolEvidence = map[string]any{"legacy_html_check": "disabled"}
 		return result, nil
+	}
+	if step, ok := action.Params[HTMLStepParam].(map[string]any); ok {
+		pageEvidence := pageContextEvidence(h.page.current())
+		resolved, done, err := h.resolveHTMLStep(action, step)
+		if err != nil || done {
+			result.Success = err == nil
+			if err != nil {
+				result.ErrorMessage = err.Error()
+				if code := htmlStepFailureCode(err); code != "" {
+					pageEvidence["failure_code"] = code
+				}
+			}
+			result.Duration = time.Since(result.StartTime)
+			result.ProtocolEvidence = pageEvidence
+			return result, nil
+		}
+		action = resolved
+		defer func() {
+			for key, value := range pageEvidence {
+				if result.ProtocolEvidence == nil {
+					result.ProtocolEvidence = map[string]any{}
+				}
+				result.ProtocolEvidence[key] = value
+			}
+		}()
 	}
 	policy, policyErr := h.effectiveHTTPVersion(action)
 	if policyErr == nil {
@@ -327,9 +382,24 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			redactedRequestBody, _ = encodeWindows1252Body(redactedRequestBody)
 		}
 	}
+	if bodyencoding.IsUTF16LE(action.BodyEncoding) {
+		encoded, err := bodyencoding.EncodeUTF16LE(string(action.Body))
+		if err != nil {
+			result.ErrorMessage = "HTTP body cannot be represented in UTF-16LE"
+			result.Duration = time.Since(result.StartTime)
+			return result, nil
+		}
+		requestBody = encoded
+		if len(redactedRequestBody) > 0 {
+			if encodedRedacted, err := bodyencoding.EncodeUTF16LE(string(redactedRequestBody)); err == nil {
+				redactedRequestBody = encodedRedacted
+			}
+		}
+	}
 	requestBytes := int64(len(requestBody))
 	connectionReused := false
 	redirectCount := 0
+	responseSet := newResponseSetCollector(action.Extractors)
 	redirectDuration := time.Duration(0)
 	redirectLegStart := result.StartTime
 
@@ -354,6 +424,12 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 
 	authHeader := h.authHeader
 	digestAuth := digestAuthConfig(h.authConfig)
+	if !authHostScopesAllow(h.authHosts, targetURL) {
+		// Script-level credentials are scoped to their hosts; an action-level
+		// auth override below still applies.
+		authHeader = ""
+		digestAuth = nil
+	}
 	actionAuthHeader, actionAuthOverride, actionAuthErr := buildActionAuthHeader(action.Auth)
 	if actionAuthErr != nil {
 		result.StatusCode = http.StatusBadRequest
@@ -395,6 +471,20 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	_, authorizationAuthored := authoredHeaderNames["authorization"]
 	if digestAuth != nil && (requestHeaderKeyPresent(req.Header, "Authorization") || authorizationAuthored) {
 		digestAuth = nil
+	}
+	integratedAuth := h.authConfig
+	if actionAuthOverride {
+		integratedAuth = action.Auth
+	}
+	if integratedAuth != nil && IsIntegratedAuthType(integratedAuth.Type) && !authorizationAuthored &&
+		(actionAuthOverride || authHostScopesAllow(h.authHosts, targetURL)) {
+		var integratedDigest *protocol.AuthConfig
+		req, integratedDigest = applyIntegratedAuth(req, integratedAuth)
+		if integratedDigest != nil {
+			digestAuth = integratedDigest
+		}
+		appliedTypedAuthHeader = req.Header.Get("Authorization")
+		typedAuthApplied = true
 	}
 	typedAuthApplied = typedAuthApplied && req.Header.Get("Authorization") == appliedTypedAuthHeader
 	redactedAuthConfig := h.authConfig
@@ -519,6 +609,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	baseCheckRedirect := client.CheckRedirect
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		observeVerificationRedirect(ctx, req.Response, false)
+		responseSet.addHop(req.Response)
 		traceMu.Lock()
 		redirectCount = len(via)
 		if !redirectLegStart.IsZero() {
@@ -558,6 +649,9 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.BytesSent = requestBytes
 	}
 
+	// From here a resource step's failure is the server's or the transport's,
+	// which LoadRunner reports as a warning.
+	resourceStepStarted = isResourceStep(action)
 	if !cacheHit {
 		var err error
 		resp, err = client.Do(req)
@@ -821,107 +915,40 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		h.unavailableResponseContentEvidence(result, result.Success)
 	}
 	extractorWork := newExtractorInputWorkBudget(resp.Header, respBody)
-extractors:
+	surfaces := responseSurfaces{headers: resp.Header, body: respBody, status: resp.StatusCode}
+	if resp.Request != nil && resp.Request.URL != nil {
+		surfaces.url = resp.Request.URL.String()
+	}
+	// Extractors scoped to resources wait until the page's resources are
+	// fetched; every other extractor runs now, before assertions.
+	resourcesPlanned := responseSet != nil && responseSet.wantResources && h.pageResourcesPlanned(action, resp, respBody, contentComplete)
+	var deferredExtractors []protocol.Extractor
 	for _, ext := range action.Extractors {
 		if err := extractorWork.charge(ext); err != nil {
 			result.Success = false
 			result.Extractions = nil
 			result.ExtractionsIncomplete = true
 			result.ErrorMessage = fmt.Sprintf("extractor %q input rejected: %v", ext.Name, err)
+			deferredExtractors = nil
 			break
 		}
-		if ext.Mode == "all" {
-			values, err := extractAll(ext, resp.Header, respBody)
-			if errors.Is(err, errExtractorResourceLimit) {
-				result.Success = false
-				result.Extractions = nil
-				result.ExtractionsIncomplete = true
-				result.ErrorMessage = fmt.Sprintf("extractor %q output rejected: %v", ext.Name, err)
-				break
-			}
-			if ext.OnMiss == "default" && (ext.DefaultValue == nil || (err != nil && !errors.Is(err, protocol.ErrExtractionMiss))) {
-				result.Success = false
-				result.ErrorMessage = fmt.Sprintf("extractor %q default rejected: %v", ext.Name, err)
-				continue
-			}
-			if err == nil && len(values) > 0 {
-				for i, value := range values {
-					if !storeHTTPExtraction(result, ext, fmt.Sprintf("%s_%d", ext.Name, i+1), value) {
-						break extractors
-					}
-				}
-				if !storeHTTPExtraction(result, ext, ext.Name+"_count", fmt.Sprintf("%d", len(values))) {
-					break
-				}
-				continue
-			}
-			if ext.OnMiss == "fail" {
-				if result.Success {
-					result.Success = false
-					if err == nil {
-						err = fmt.Errorf("no matches")
-					}
-					result.ErrorMessage = fmt.Sprintf("extractor %q found no match: %v", ext.Name, err)
-				}
-				continue
-			}
-			// A lenient miss still publishes the count so loops over
-			// {{var.name_count}} behave.
-			if !storeHTTPExtraction(result, ext, ext.Name+"_count", "0") {
-				break
-			}
-			if ext.OnMiss == "default" && ext.DefaultValue != nil {
-				if !storeHTTPExtraction(result, ext, ext.Name, *ext.DefaultValue) {
-					break extractors
-				}
-			}
-			if ext.OnMiss == "empty" {
-				// Mirror single-value "empty" semantics: assign the base
-				// variable an empty string so {{var.name}} expands to "" rather
-				// than leaking the literal template into later requests.
-				if !storeHTTPExtraction(result, ext, ext.Name, "") {
-					break
-				}
-			}
+		if resourcesPlanned && ext.Scope != nil && scopeIncludes(ext.Scope.Resources) {
+			deferredExtractors = append(deferredExtractors, ext)
 			continue
 		}
-		val, err := extract(ext, resp.Header, respBody)
-		if errors.Is(err, errExtractorResourceLimit) {
+		candidates := scopedCandidates(ext, surfaces, responseSet)
+		if err := chargeCandidates(extractorWork, ext, candidates); err != nil {
 			result.Success = false
 			result.Extractions = nil
 			result.ExtractionsIncomplete = true
-			result.ErrorMessage = fmt.Sprintf("extractor %q output rejected: %v", ext.Name, err)
+			result.ErrorMessage = fmt.Sprintf("extractor %q input rejected: %v", ext.Name, err)
+			deferredExtractors = nil
 			break
 		}
-		if err == nil {
-			if !storeHTTPExtraction(result, ext, ext.Name, val) {
-				break
-			}
-			continue
-		}
-		switch ext.OnMiss {
-		case "default":
-			if ext.DefaultValue == nil || !errors.Is(err, protocol.ErrExtractionMiss) {
-				result.Success = false
-				result.ErrorMessage = fmt.Sprintf("extractor %q failed: %v", ext.Name, err)
-				continue
-			}
-			if ext.DefaultValue != nil {
-				if !storeHTTPExtraction(result, ext, ext.Name, *ext.DefaultValue) {
-					break extractors
-				}
-			}
-		case "fail":
-			if result.Success {
-				result.Success = false
-				result.ErrorMessage = fmt.Sprintf("extractor %q found no match: %v", ext.Name, err)
-			}
-		case "empty":
-			// Source-tool NotFound=warning/empty semantics: the variable is
-			// assigned an empty string so later templates expand to "".
-			if !storeHTTPExtraction(result, ext, ext.Name, "") {
-				break extractors
-			}
+		if applyHTTPExtractor(result, ext, candidates) {
+			// Extraction stopped: the deferred extractors do not run either.
+			deferredExtractors = nil
+			break
 		}
 	}
 
@@ -983,12 +1010,16 @@ extractors:
 	// outcome (not result.Success, which extractors/assertions may have
 	// flipped) — a real browser fetches resources for any rendered page.
 	observeVerification(ctx, resp.Header, respBody, false, contentComplete)
+	h.page.observeMainDocument(action, resp, respBody, contentComplete)
 	var resourceEvidence *resourceCapture
 	resourceCtx := ctx
 	if action.CaptureResourceDetails {
 		resourceEvidence = newResourceCapture(action.MessageDetailMaxItemBytes)
 		defer resourceEvidence.lease.release()
 		resourceCtx = context.WithValue(ctx, resourceCaptureKey{}, resourceEvidence)
+	}
+	if resourcesPlanned {
+		resourceCtx = context.WithValue(resourceCtx, responseSetKey{}, responseSet)
 	}
 	explicit, _ := ParseExplicitResources(action.Params)
 	fetcher := h.resources
@@ -1001,7 +1032,7 @@ extractors:
 			finalURL = resp.Request.URL
 		}
 		var pageBody []byte
-		if h.shouldParseHTML(resp.Header) {
+		if h.shouldParseHTML(resp.Header) && stepHTMLMode(action) {
 			pageBody = respBody
 		}
 		if len(explicit) > 0 || len(pageBody) > 0 {
@@ -1014,6 +1045,20 @@ extractors:
 				result.ErrorMessage = callerCtx.Err().Error()
 			}
 			result.Duration = time.Since(result.StartTime)
+		}
+	}
+
+	for _, ext := range deferredExtractors {
+		candidates := scopedCandidates(ext, surfaces, responseSet)
+		if err := chargeCandidates(extractorWork, ext, candidates); err != nil {
+			result.Success = false
+			result.Extractions = nil
+			result.ExtractionsIncomplete = true
+			result.ErrorMessage = fmt.Sprintf("extractor %q input rejected: %v", ext.Name, err)
+			break
+		}
+		if applyHTTPExtractor(result, ext, candidates) {
+			break
 		}
 	}
 
@@ -1326,7 +1371,8 @@ func deleteRequestHeaders(req *http.Request, names map[string]struct{}) {
 	}
 }
 
-func (h *HTTP) Teardown(_ context.Context) error {
+func (h *HTTP) Teardown(ctx context.Context) error {
+	h.teardownWebSockets(ctx)
 	if h.cache != nil {
 		h.cache.clear()
 	}
@@ -1597,7 +1643,7 @@ func (h *HTTP) attachCorrelationEvidence(result *protocol.Result, action *protoc
 	result.CorrelationEvidence = &protocol.CorrelationEvidence{
 		RequestURL:             requestURL,
 		RequestBody:            string(fallbackBody),
-		RequestBodyTransformed: action != nil && (strings.EqualFold(strings.TrimSpace(action.BodyEncoding), "base64") || strings.EqualFold(action.BodyEncoding, "windows-1252")),
+		RequestBodyTransformed: action != nil && (strings.EqualFold(strings.TrimSpace(action.BodyEncoding), "base64") || strings.EqualFold(action.BodyEncoding, "windows-1252") || bodyencoding.IsUTF16LE(action.BodyEncoding) || bodyencoding.IsCEscaped(action.BodyEncoding)),
 		RequestHeaders:         correlationEvidenceRequestHeaders(wireRequest),
 		ResponseBody:           string(responseBody),
 		ResponseHeaders:        responseHeaders,

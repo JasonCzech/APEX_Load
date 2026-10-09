@@ -251,6 +251,28 @@ message WorkAssignment {
   repeated string correlation_carriers = 45;
   // Test name used in transaction markers; the run ID is used when empty.
   string correlation_test_name = 46;
+  // The run's joint evidence v4 projection, frozen at Start. Send only to
+  // native_joint_evidence_v4 peers; omission publishes no joint evidence.
+  JointEvidenceProjection joint_evidence_projection = 47;
+}
+
+// JointEvidenceProjection chooses up to three dimensions of one population
+// (action or transaction) whose exact tuples a generator counts.
+message JointEvidenceProjection {
+  string population = 1;
+  repeated string dimensions = 2;
+}
+
+// JointMetricsInfo describes a batch's joint evidence v4: the projection
+// it was counted under, the samples of tuples past the publication bound
+// (other) and how many distinct tuples were omitted.
+message JointMetricsInfo {
+  uint32 version = 1;
+  string population = 2;
+  repeated string dimensions = 3;
+  MetricAggregate other = 4;
+  int64 omitted_tuples = 5;
+  bool incomplete = 6;
 }
 
 // Additive process resources, plus a nonadditive per-processor partition ceiling.
@@ -559,6 +581,11 @@ message MetricsBatch {
   // publication (no metric window), so a subscriber starting here has lost
   // nothing before it and has observed the epoch's origin.
   bool sequence_prefix_state_only = 33;
+  // Joint evidence v4: one aggregate per measured tuple, named by the JSON
+  // array of its values, at most 512, with joint_metrics_info. Older
+  // generators send neither.
+  repeated MetricAggregate joint_metrics_v4 = 34;
+  JointMetricsInfo joint_metrics_info = 35;
 }
 
 message MetricsBatchTelemetry {

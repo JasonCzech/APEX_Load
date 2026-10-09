@@ -267,7 +267,7 @@ export default function SharedImportValues({
               disabled={!canApply}
               onClick={() => { if (guided && !reviewing) setReviewing(true); else void handleApply() }}
             >
-              {applying ? 'Applying...' : guided ? reviewing ? 'Apply reviewed substitutions' : 'Preview substitutions' : `Apply to all scripts${selectedIds.length > 0 ? ` (${selectedIds.length})` : ''}`}
+              {applying ? 'Applying…' : guided ? reviewing ? 'Apply reviewed substitutions' : 'Preview substitutions' : `Apply to all scripts${selectedIds.length > 0 ? ` (${selectedIds.length})` : ''}`}
             </button>
             <small>Nothing changes until you apply.</small>
           </>

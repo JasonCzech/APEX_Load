@@ -12,6 +12,7 @@ import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
+import { buildComparisonActionCsv, comparisonCsvFilename } from './comparisonCsv'
 import { downloadBlob } from '../utils/fileUtils'
 import { isCompletedTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
 import { Application, ExternalResultImport, IntervalSummaryRecord, Release, RunArchiveActionStats, RunArchiveReport, TestSummary } from '../types'
@@ -63,6 +64,9 @@ import { loadResultTestTail } from './resultTestPagination'
 import { parseDurationToSeconds } from '../utils/timeUtils'
 import { ARCHIVE_CHART_MAX_SAMPLES } from './archiveHistorySampling'
 import { boundedAllSettled } from '../utils/boundedAllSettled'
+import { formatFixed } from '../utils/numberFormat'
+import { MISSING_VALUE } from './runReport/reportPresentation'
+import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
 
 interface Props {
   testStatuses: Record<string, string>
@@ -106,7 +110,7 @@ type ResultSourceRow = {
 }
 
 function formatDate(value?: string) {
-  return value ? new Date(value).toLocaleString() : 'Never'
+  return formatDisplayDateTime(value, { fallback: 'Never' })
 }
 
 function runStartedAt(test: TestSummary) {
@@ -222,7 +226,7 @@ function externalResultNumber(result: ExternalResultImport, key: string) {
 
 function formatBrowserMetric(value: unknown, suffix = '', digits = 1) {
   const observed = finiteBrowserMetric(value)
-  return observed === undefined ? 'n/a' : `${observed.toFixed(digits)}${suffix}`
+  return observed === undefined ? MISSING_VALUE : `${formatFixed(observed, digits)}${suffix}`
 }
 
 function hasBrowserOverview(report?: RunArchiveReport) {
@@ -572,6 +576,10 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
   const [comparisonChartMetric, setComparisonChartMetric] = useState<ComparisonChartMetric>('tps')
   const [comparisonActionFilter, setComparisonActionFilter] = useState(ALL_COMPARISON_ACTIONS)
   const [operationError, setError] = useState('')
+  // Completion of a delete, announced in the page's status line.
+  const [deleteNotice, setDeleteNotice] = useState('')
+  // A delete confirmation belongs to the catalog it happened in.
+  useEffect(() => { setDeleteNotice('') }, [resultCatalogScopeKey])
   const [sortField, setSortField] = useState<SortField>('started')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [search, setSearch] = useState('')
@@ -579,6 +587,8 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
   const [toDate, setToDate] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [archiveFilter, setArchiveFilter] = useState<ArchiveFilter>('all')
+  // A failed list load is not an empty library: report it, with a Retry.
+  const resultsLoadFailed = Boolean(listError) && firstResultPage.length === 0
   const error = operationError || listError || resultTailError || externalImportsError
   // Older local pages stream in behind the first page. Keep the usable first
   // page visible while that background work continues.
@@ -743,6 +753,9 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
 
     return rows
   }, [activeRelease?.id, activeRelease?.name, completed, externalImports, localCatalogById, remoteItems, sourceFilter, syncStatusForLocal, testStatuses])
+  // With nothing to show, the failure replaces the empty library; with remote
+  // rows still listed, it stays in the banner above the table.
+  const showResultsLoadErrorCard = resultsLoadFailed && sourceRows.length === 0
 
   const applicationQualifiedRows = useMemo(
     () => sourceRows.filter(row => (
@@ -1007,6 +1020,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
     [comparisonActionFiltered, comparisonCards],
   )
 
+  const selectedComparisonBreakdown = comparisonBreakdown
   const exportComparison = useCallback(async () => {
     if (comparisonCards.length < 2 || comparisonCards.length > MAX_COMPARISON_RUNS || !comparisonCards.every(item => item.report)) {
       return
@@ -1015,6 +1029,18 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
     const [baseline, ...comparisonRuns] = comparisonCards
     const action = comparisonActionFiltered ? comparisonActionFilter : undefined
     const actionFilename = action ? `-${comparisonFilenameToken(action)}` : ''
+    if (!action && !comparisonHasBrowserBreakdowns) {
+      // Export the comparison on screen (per action and run, with deltas);
+      // a browser breakdown would be empty for protocol-level runs.
+      try {
+        await downloadBlob(new Blob([buildComparisonActionCsv(comparisonCards)], { type: 'text/csv' }), comparisonCsvFilename(comparisonCards))
+        setComparisonError('')
+      } catch (error: unknown) {
+        setComparisonError(getErrorMessage(error, 'Unable to export comparison CSV'))
+      }
+      return
+    }
+    const comparisonBreakdown = action || comparisonHasBrowserBreakdowns ? selectedComparisonBreakdown : 'overall'
     try {
       if (comparisonCards.length === 2) {
         const [current] = comparisonRuns
@@ -1033,7 +1059,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
     } catch (error: unknown) {
       setComparisonError(getErrorMessage(error, 'Unable to export comparison CSV'))
     }
-  }, [api, comparisonActionFilter, comparisonActionFiltered, comparisonBreakdown, comparisonCards])
+  }, [api, comparisonActionFilter, comparisonActionFiltered, selectedComparisonBreakdown, comparisonCards, comparisonHasBrowserBreakdowns])
 
   const comparisonActionRows = useMemo(() => {
     if (comparisonCards.length < 2 || !comparisonCards.every(item => item.report)) return []
@@ -1167,22 +1193,26 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
     setComparisonTestIds(sortedSelection.map(test => test.id))
   }, [canCompareSelected, selectedArchivedTests])
 
-  const handleDelete = async (id: string, event: React.MouseEvent) => {
+  const handleDelete = async (test: TestSummary, event: React.MouseEvent) => {
     event.stopPropagation()
-    await deleteResult(id)
+    await deleteResult(test)
   }
 
-  const deleteResult = async (id: string) => {
+  const deleteResult = async (test: TestSummary) => {
+    const id = test.id
+    const label = formatComparisonRunLabel(test)
     if (deletingResultIdsRef.current.has(id)) return
-    if (!(await confirmAction('Delete this scenario result?'))) return
+    if (!(await confirmAction(`Delete run “${label}”? Its archived evidence and report are removed. This cannot be undone.`, { title: 'Delete run', confirmLabel: 'Delete run', destructive: true }))) return
     if (deletingResultIdsRef.current.has(id)) return
     const requestScopeKey = resultCatalogScopeKey
     deletingResultIdsRef.current.add(id)
     setDeletingResultIds(new Set(deletingResultIdsRef.current))
     setError('')
+    setDeleteNotice('')
     try {
       await api.deleteTest(id)
       if (resultCatalogScopeKeyRef.current === requestScopeKey) {
+        setDeleteNotice(`Deleted run “${label}”.`)
         invalidateResultTailAfterDelete([id])
         setDeletedResultIds(current => new Set(current).add(id))
         if (comparisonTestIds.includes(id)) {
@@ -1209,17 +1239,20 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
 
   const deleteSelected = async () => {
     const ids = visibleSelectedIds.filter(id => !deletingResultIdsRef.current.has(id))
-    if (ids.length === 0 || !(await confirmAction(`Delete ${ids.length} selected results?`))) return
+    const runs = `${ids.length} selected run${ids.length === 1 ? '' : 's'}`
+    if (ids.length === 0 || !(await confirmAction(`Delete ${runs}? Their archived evidence and reports are removed. This cannot be undone.`, { title: 'Delete runs', confirmLabel: `Delete ${ids.length === 1 ? 'run' : 'runs'}`, destructive: true }))) return
     const requestScopeKey = resultCatalogScopeKey
     ids.forEach(id => deletingResultIdsRef.current.add(id))
     setDeletingResultIds(new Set(deletingResultIdsRef.current))
     setError('')
+    setDeleteNotice('')
     const outcomes = await boundedAllSettled(ids, id => api.deleteTest(id))
     const deletedIDs = ids.filter((_, index) => outcomes[index]?.status === 'fulfilled')
     const failed = outcomes.flatMap((outcome, index) => outcome.status === 'rejected'
       ? [{ id: ids[index], reason: getErrorMessage(outcome.reason, 'delete failed') }]
       : [])
     if (deletedIDs.length > 0 && resultCatalogScopeKeyRef.current === requestScopeKey) {
+      if (failed.length === 0) setDeleteNotice(`Deleted ${deletedIDs.length} run${deletedIDs.length === 1 ? '' : 's'}.`)
       invalidateResultTailAfterDelete(deletedIDs)
       setDeletedResultIds(current => {
         const next = new Set(current)
@@ -1245,7 +1278,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
     if (failed.length > 0 && resultCatalogScopeKeyRef.current === requestScopeKey) {
       const failureSummary = failed.slice(0, 3).map(item => `${item.id}: ${item.reason}`).join('; ')
       const suffix = failed.length > 3 ? `; ${failed.length - 3} more failed` : ''
-      setError(`Deleted ${deletedIDs.length} of ${ids.length} selected results. ${failureSummary}${suffix}`)
+      setError(`Deleted ${deletedIDs.length} of ${ids.length} selected runs. ${failureSummary}${suffix}`)
     }
   }
 
@@ -1326,7 +1359,6 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
         </td>
         <td className="cell-name">
           <div>{row.name}</div>
-          {(test || externalImport) && <div onClick={event => event.stopPropagation()}><ObjectHistory projectId={test?.project_id || externalImport?.project_id} resourceType={test ? 'test' : 'external_result_import'} resourceId={(test || externalImport)!.id} activity={test?.activity || externalImport?.activity} /></div>}
           <div className="results-compact-status" aria-hidden="true">{test ? <StatusBadge status={row.status} stoppedByOperator={Boolean(test.stopped_by_subject)} /> : <span className={`script-health-token ${resultSourceStatusTone(row.status)}`}>{row.status}</span>}</div>
           {test?.archive && <ResultHeadline testId={test.id} />}
           <div className="script-table-meta">
@@ -1341,6 +1373,8 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
                 {item?.content_hash && <span className="script-health-token">hash {shortLibraryHash(item.content_hash)}</span>}
               </>
             )}
+            {/* One compact line: reference, then History (attribution is inside it). */}
+            {(test || externalImport) && <span onClick={event => event.stopPropagation()}><ObjectHistory compact projectId={test?.project_id || externalImport?.project_id} resourceType={test ? 'test' : 'external_result_import'} resourceId={(test || externalImport)!.id} activity={test?.activity || externalImport?.activity} /></span>}
           </div>
         </td>
         <td>
@@ -1356,27 +1390,24 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
         <td className="cell-muted">{row.duration || '-'}{!row.test && <small> (source-reported)</small>}</td>
         <td className="cell-muted">
           {test
-            ? (test.archive ? `${test.archive.transaction_count} archive records` : 'Unavailable')
+            ? (test.archive ? <span title="Raw archive rows (requests + transactions): each request and each named transaction that wraps it is a separate row, so this exceeds the transaction count.">{test.archive.transaction_count.toLocaleString()} rows</span> : 'Unavailable')
             : (externalImport && row.archiveCount !== undefined ? `${row.archiveCount} tx` : (row.hasArchive ? 'Ready' : '-'))}
           {test?.baseline_pinned && (
-            <>
-              <br />
-              <span title={formatBaselinePin(test.baseline_pinned_at)}>Pinned baseline</span>
-            </>
+            <div><span className="script-health-token healthy" title={`Pinned comparison baseline${test.baseline_pinned_at ? ` · ${formatBaselinePin(test.baseline_pinned_at)}` : ''}`}>Baseline</span></div>
           )}
         </td>
         <td>
           <div className="results-row-actions">
             {test ? (
               <>
-                <button className="btn btn-sm btn-primary" onClick={event => { event.stopPropagation(); (onOpenReport ?? onOpenTestArchive ?? onSelectTest)(test.id) }}>
+                <button className="btn btn-sm btn-primary" aria-label={`View results for ${test.name}`} onClick={event => { event.stopPropagation(); (onOpenReport ?? onOpenTestArchive ?? onSelectTest)(test.id) }}>
                   View results
                 </button>
-                <RowActions className="results-management">
+                <RowActions className="results-management" label={test.name}>
                 <button className="btn btn-sm btn-ghost" onClick={event => toggleBaselinePin(test, event)}>
                   {test.baseline_pinned ? 'Unpin Baseline' : 'Pin Baseline'}
                 </button>
-                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={event => handleDelete(test.id, event)} disabled={deletingResultIds.has(test.id)}>
+                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger-text)' }} onClick={event => handleDelete(test, event)} disabled={deletingResultIds.has(test.id)}>
                   {deletingResultIds.has(test.id) ? 'Deleting…' : 'Delete'}
                 </button>
                 <button
@@ -1471,7 +1502,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
           <div className="results-actions">
             {showResultsLoadStatus && (
               <span className={`results-load-status${resultsSourcesLoading || resultTailLoading || resultsRefreshing ? '' : ' idle'}`} aria-live="polite">
-                {resultsSourcesLoading ? 'Loading results...' : resultTailLoading ? 'Loading older results...' : resultsRefreshing ? 'Refreshing...' : 'Results refreshed'}
+                {resultsSourcesLoading ? 'Loading results…' : resultTailLoading ? 'Loading older results…' : resultsRefreshing ? 'Refreshing…' : 'Results refreshed'}
               </span>
             )}
             {showComparisonLoadedHint && (
@@ -1481,7 +1512,12 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
         )}
       </div>
 
-      {error && <div className="settings-error-inline">{error}</div>}
+      <p className="sr-only" role="status" aria-live="polite">{deleteNotice}</p>
+      {deleteNotice && !error && <p className="setting-desc results-delete-notice">{deleteNotice}</p>}
+      {error && !(showResultsLoadErrorCard && error === listError) && <div className="settings-error-inline" role="alert">
+        {resultsLoadFailed && error === listError ? `Local results could not be loaded: ${listError}` : error}
+        {resultsLoadFailed && error === listError && <button className="btn btn-secondary btn-sm" type="button" onClick={() => { void refreshLocalResults() }}>Retry</button>}
+      </div>}
 
       {(comparisonCards.length >= 2 || comparisonLoading || comparisonError) && (
         <div className="page-section">
@@ -1530,7 +1566,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
               )}
             </div>
 
-            {comparisonLoading && <p className="results-compare-status">Loading comparison...</p>}
+            {comparisonLoading && <p className="results-compare-status">Loading comparison…</p>}
             {comparisonError && <p className="results-compare-status error">{comparisonError}</p>}
 
             {comparisonCards.length >= 2 && comparisonCards.every(item => item.report) && (
@@ -1581,7 +1617,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
                               </div>
                               <div className="results-compare-metric">
                                 <span className="results-compare-label">Error Rate</span>
-                                <span className="results-compare-value">{cardErrorPct === undefined ? 'Unknown' : `${cardErrorPct.toFixed(2)}%`}</span>
+                                <span className="results-compare-value">{cardErrorPct === undefined ? 'Unknown' : `${formatFixed(cardErrorPct, 2)}%`}</span>
                               </div>
                               <div className="results-compare-metric">
                                 <span className="results-compare-label">Peak {comparisonActionFiltered ? 'request' : 'transaction'} attempts/s</span>
@@ -1595,7 +1631,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
                                   </div>
                                   <div className="results-compare-metric">
                                     <span className="results-compare-label">CPU Peak</span>
-                                    <span className="results-compare-value">{report!.resource_peaks.cpu_process_pct.toFixed(1)}%</span>
+                                    <span className="results-compare-value">{formatFixed(report!.resource_peaks.cpu_process_pct, 1)}%</span>
                                   </div>
                                 </>
                               )}
@@ -1805,14 +1841,16 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
               </>
             )}
             summaryText={resultsSourcesLoading
-              ? 'Loading local and remote result sources...'
-              : `${filteredRows.length} matching run${filteredRows.length === 1 ? '' : 's'} · ${activeRelease.name}.`}
+              ? 'Loading local and remote result sources…'
+              : showResultsLoadErrorCard
+                ? 'Results could not be loaded.'
+                : `${resultsLoadFailed ? 'Local results could not be loaded; showing remote results only. ' : ''}${filteredRows.length} matching run${filteredRows.length === 1 ? '' : 's'} · ${activeRelease.name}.`}
           />
           {(search || fromDate || toDate || statusFilter !== 'all' || archiveFilter !== 'all' || releaseFilter !== (activeRelease?.id || 'all')) && <div className="settings-inline-actions" aria-label="Active result filters">
             <span>{[search && `Search: ${search}`, fromDate && `From ${fromDate}`, toDate && `Through ${toDate}`, releaseFilter !== (activeRelease?.id || 'all') && `Release: ${releaseFilter === 'all' ? 'All releases' : releaseFilter}`, statusFilter !== 'all' && `Status: ${statusFilter}`, archiveFilter !== 'all' && `Archive: ${archiveFilter === 'ready' ? 'ready' : 'unavailable'}`].filter(Boolean).join(' · ')}</span>
             <button className="btn btn-secondary btn-sm" type="button" onClick={() => { setSearch(''); setFromDate(''); setToDate(''); setStatusFilter('all'); setArchiveFilter('all'); setReleaseFilter(activeRelease?.id || 'all') }}>Reset result filters</button>
           </div>}
-          <p className="setting-desc">Lifecycle elapsed uses recorded start and end times; configured duration is never substituted. Report evidence windows may differ.</p>
+          <p className="setting-desc">Elapsed is the run's lifecycle time from its recorded start and end; configured duration is never substituted. Report evidence windows may differ.</p>
           {resultsTruncated && (
             <p className="results-truncation-status" role="status" aria-live="polite">
               Loaded {tests.length.toLocaleString()} of {resultListTotal.toLocaleString()} local results. Older results continue loading in the background.
@@ -1833,9 +1871,15 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
             <div className="empty-card results-loading-card" role="status" aria-live="polite" aria-busy="true">
               <span className="results-loading-spinner" aria-hidden="true" />
               <div>
-                <p>Loading result sources...</p>
+                <p>Loading result sources…</p>
                 <p className="empty-hint">Fetching completed runs and library catalog entries for this release.</p>
               </div>
+            </div>
+          ) : showResultsLoadErrorCard ? (
+            <div className="empty-card results-load-error" role="alert">
+              <p>Results could not be loaded.</p>
+              <p className="empty-hint">{listError}</p>
+              <button className="btn btn-secondary" type="button" onClick={() => { void refreshLocalResults() }}>Retry</button>
             </div>
           ) : sourceRows.length === 0 ? (
             <div className="empty-card">
@@ -1874,12 +1918,12 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
                       />
                     </th>
                     <SortHeader label="Source" field="source" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
-                    <SortHeader label="Scenario" field="name" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
+                    <SortHeader label="Run" field="name" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
                     <SortHeader label="Status" field="status" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
                     <SortHeader label="VUsers" field="total_vusers" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} numeric />
                     <SortHeader label="Groups" field="groups" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} numeric />
                     <SortHeader label="Started" field="started" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
-                    <SortHeader label="Lifecycle elapsed" field="duration" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} numeric />
+                    <SortHeader label="Elapsed" field="duration" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} numeric />
                     <SortHeader label="Archive" field="archive" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
                     <th className="results-actions-column">Actions</th>
                   </tr>

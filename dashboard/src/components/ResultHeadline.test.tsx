@@ -18,7 +18,7 @@ describe('ResultHeadline', () => {
    await act(async () => { visible([{ isIntersecting: true }] as IntersectionObserverEntry[], {} as IntersectionObserver) })
    expect(api.getTestArchiveReport).toHaveBeenCalledWith('run', { includeReleaseTrend: false, timeoutMs: 30000 })
    expect(div.textContent).toContain('Not assessed')
-   expect(div.textContent).toContain('p95 120 ms')
+   expect(div.textContent).toContain('P95 120 ms')
    expect(div.textContent).toContain('<0.01%')
    expect(div.textContent).not.toContain('999')
   } finally { act(() => root.unmount()) }

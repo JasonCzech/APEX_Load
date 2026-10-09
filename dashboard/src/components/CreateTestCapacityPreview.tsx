@@ -17,7 +17,7 @@ interface Props {
   estimateError: string
 }
 
-const GROUP_COLORS = ['#00a3ff', '#00ff94', '#ff006e', '#ffbe0b', '#8338ec', '#fb5607']
+const GROUP_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)']
 
 function formatDraftAvailabilitySource(source?: 'configured' | 'configured_plus_live', hasLive?: boolean): string {
   if (source === 'configured_plus_live') {
@@ -97,7 +97,7 @@ export default function CreateTestCapacityPreview({ chartData, groups, draftEsti
       <div className={`draft-capacity-card ${draftEstimate?.capacity_advisory?.requires_override ? 'warning' : 'ready'}`}>
         <div className="draft-capacity-header">
           <h4>Draft Capacity Estimate</h4>
-          {estimateLoading && <span className="draft-capacity-status">Refreshing...</span>}
+          {estimateLoading && <span className="draft-capacity-status">Refreshing…</span>}
         </div>
         {estimateError ? (
           <p className="draft-capacity-error">{estimateError}</p>

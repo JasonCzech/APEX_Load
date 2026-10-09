@@ -1,10 +1,12 @@
 package enterprisearchive
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 // publishedWebHTTPFunctionExpectations pins the disposition of every function in
@@ -27,7 +29,7 @@ var publishedWebHTTPFunctionExpectations = map[string]struct {
 	"web_cleanup_cookies":            {"web", SourceFunctionSupportExecutable},
 	"web_concurrent_end":             {"web", SourceFunctionSupportExecutable},
 	"web_concurrent_start":           {"web", SourceFunctionSupportExecutable},
-	"web_convert_date_param":         {"parameter", SourceFunctionSupportReviewOnly},
+	"web_convert_date_param":         {"parameter", SourceFunctionSupportExecutable},
 	"web_convert_from_formatted":     {"parameter", SourceFunctionSupportReviewOnly},
 	"web_convert_param":              {"parameter", SourceFunctionSupportExecutable},
 	"web_convert_to_formatted":       {"parameter", SourceFunctionSupportReviewOnly},
@@ -47,7 +49,7 @@ var publishedWebHTTPFunctionExpectations = map[string]struct {
 	"web_link":                       {"web", SourceFunctionSupportExecutable},
 	"web_load_cache":                 {"web", SourceFunctionSupportNativeNoop},
 	"web_reg_add_cookie":             {"web", SourceFunctionSupportExecutable},
-	"web_reg_async_attributes":       {"web", SourceFunctionSupportReviewOnly},
+	"web_reg_async_attributes":       {"web", SourceFunctionSupportExecutable},
 	"web_reg_find":                   {"web", SourceFunctionSupportExecutable},
 	"web_reg_save_param":             {"web", SourceFunctionSupportExecutable},
 	"web_reg_save_param_attrib":      {"web", SourceFunctionSupportExecutable},
@@ -62,8 +64,8 @@ var publishedWebHTTPFunctionExpectations = map[string]struct {
 	"web_rest":                       {"web", SourceFunctionSupportExecutable},
 	"web_revert_auto_header":         {"web", SourceFunctionSupportExecutable},
 	"web_save_header":                {"web", SourceFunctionSupportReviewOnly},
-	"web_save_param_length":          {"parameter", SourceFunctionSupportReviewOnly},
-	"web_save_timestamp_param":       {"parameter", SourceFunctionSupportReviewOnly},
+	"web_save_param_length":          {"parameter", SourceFunctionSupportExecutable},
+	"web_save_timestamp_param":       {"parameter", SourceFunctionSupportExecutable},
 	"web_set_certificate":            {"web", SourceFunctionSupportReviewOnly},
 	"web_set_certificate_ex":         {"web", SourceFunctionSupportExecutable},
 	"web_set_max_html_param_len":     {"web", SourceFunctionSupportNativeNoop},
@@ -78,7 +80,7 @@ var publishedWebHTTPFunctionExpectations = map[string]struct {
 	"web_set_timeout":                {"web", SourceFunctionSupportExecutable},
 	"web_set_user":                   {"web", SourceFunctionSupportExecutable},
 	"web_sjis_to_euc_param":          {"parameter", SourceFunctionSupportReviewOnly},
-	"web_stop_async":                 {"web", SourceFunctionSupportReviewOnly},
+	"web_stop_async":                 {"web", SourceFunctionSupportExecutable},
 	"web_stream_close":               {"web", SourceFunctionSupportReviewOnly},
 	"web_stream_get_param_double":    {"web", SourceFunctionSupportReviewOnly},
 	"web_stream_get_param_int":       {"web", SourceFunctionSupportReviewOnly},
@@ -93,7 +95,10 @@ var publishedWebHTTPFunctionExpectations = map[string]struct {
 	"web_stream_wait":                {"web", SourceFunctionSupportReviewOnly},
 	"web_submit_data":                {"web", SourceFunctionSupportExecutable},
 	"web_submit_form":                {"web", SourceFunctionSupportExecutable},
-	"web_sync":                       {"web", SourceFunctionSupportReviewOnly},
+	"web_sync":                       {"web", SourceFunctionSupportExecutable},
+	"web_websocket_close":            {"websocket", SourceFunctionSupportExecutable},
+	"web_websocket_connect":          {"websocket", SourceFunctionSupportExecutable},
+	"web_websocket_send":             {"websocket", SourceFunctionSupportExecutable},
 	"web_url":                        {"web", SourceFunctionSupportExecutable},
 	"web_util_set_request_body":      {"parameter", SourceFunctionSupportReviewOnly},
 	"web_util_set_request_url":       {"parameter", SourceFunctionSupportReviewOnly},
@@ -134,7 +139,7 @@ func sampleWebFunctionCall(name string) string {
 	case "web_url":
 		return `web_url("Home", "URL=https://example.test/home", LAST);`
 	case "web_link":
-		return `web_link("Catalog", "Text=Catalog", "URL=https://example.test/catalog", LAST);`
+		return `web_link("Catalog", "Text=Catalog", LAST);`
 	case "web_image":
 		return `web_image("Logo", "Alt=Logo", "Src=https://example.test/logo.png", LAST);`
 	case "web_image_check":
@@ -236,7 +241,7 @@ func sampleWebFunctionCall(name string) string {
 	case "web_convert_param":
 		return `web_convert_param("Param", "SourceEncoding=HTML", "TargetEncoding=URL", LAST);`
 	case "web_convert_date_param":
-		return `web_convert_date_param("Out", "SourceString={In}", LAST);`
+		return `web_convert_date_param("Out", "SourceFormat=%d/%m/%Y", "TargetFormat=%Y-%m-%d", LAST);`
 	case "web_convert_from_formatted":
 		return `web_convert_from_formatted("Out", "Format=%d", "Source={In}", LAST);`
 	case "web_convert_to_formatted":
@@ -258,13 +263,21 @@ func sampleWebFunctionCall(name string) string {
 	case "web_reg_async_attributes":
 		return `web_reg_async_attributes("ID=poll", "Pattern=Poll", LAST);`
 	case "web_stop_async":
-		return `web_stop_async("poll");`
+		// A stop converts only for a conversation the script started.
+		return "web_reg_async_attributes(\"ID=poll\", \"Pattern=Poll\", LAST);\n\tweb_url(\"Poll\", \"URL=https://example.test/poll\", LAST);\n\tweb_stop_async(\"ID=poll\", LAST);"
 	case "web_js_run":
 		return `web_js_run("Code=return 1;", "ResultParam=R", LAST);`
 	case "web_js_reset":
 		return `web_js_reset(LAST);`
+	case "web_websocket_connect":
+		return `web_websocket_connect("ID=0", "URI=wss://example.test/socket", "Origin=https://example.test", LAST);`
+	case "web_websocket_send":
+		// A send or close converts only on a connection the script opened.
+		return "web_websocket_connect(\"ID=0\", \"URI=wss://example.test/socket\", LAST);\n\tweb_websocket_send(\"ID=0\", \"Buffer=hello\", \"IsBinary=0\", LAST);"
+	case "web_websocket_close":
+		return "web_websocket_connect(\"ID=0\", \"URI=wss://example.test/socket\", LAST);\n\tweb_websocket_close(\"ID=0\", \"Code=1000\", \"Reason=done\", LAST);"
 	case "web_sync":
-		return `web_sync("WaitForResponse=https://example.test/ready", LAST);`
+		return `web_sync("ParamExists=status", "Timeout=5", LAST);`
 	}
 	if strings.HasPrefix(name, "web_stream_") {
 		return name + `("StreamName");`
@@ -323,42 +336,80 @@ func convertSingleWebSource(t *testing.T, body string) *ConvertResult {
 	return result
 }
 
-func TestWebLinkImageConvertToGetRequests(t *testing.T) {
+func htmlStepOf(action dsl.Action) map[string]any {
+	step, _ := action.Params[httpprotocol.HTMLStepParam].(map[string]any)
+	return step
+}
+
+func TestWebLinkAndWebImageResolveAgainstThePage(t *testing.T) {
 	result := convertSingleWebSource(t, `
 	web_link("Catalog", "Text=Catalog", "URL=https://example.test/catalog", LAST);
-	web_image("Logo", "Alt=Logo", "Src=https://example.test/logo.png", LAST);`)
-	if len(result.Script.Actions) != 2 {
-		t.Fatalf("actions = %d, want 2 GET requests", len(result.Script.Actions))
+	web_image("Logo", "Alt=Logo", "Src=https://example.test/logo.png", "Ordinal=2", LAST);
+	web_link("Continue", "Text/IC=continue", LAST);`)
+	if len(result.Script.Actions) != 3 {
+		t.Fatalf("actions = %d, want three", len(result.Script.Actions))
 	}
+	link := result.Script.Actions[0]
+	if link.Method != "GET" || !strings.Contains(link.Target, "/catalog") || htmlStepOf(link) != nil {
+		t.Errorf("web_link with an explicit URL = %s %q, want a GET of the catalog URL", link.Method, link.Target)
+	}
+	image := result.Script.Actions[1]
+	if image.Target != htmlStepTarget || !reflect.DeepEqual(htmlStepOf(image), map[string]any{"kind": "image", "alt": "Logo", "src": "https://example.test/logo.png", "ordinal": 2}) {
+		t.Fatalf("web_image = %q %v, want an image step", image.Target, htmlStepOf(image))
+	}
+	if !reflect.DeepEqual(htmlStepOf(result.Script.Actions[2]), map[string]any{"kind": "link", "text": "continue", "case_insensitive": true}) {
+		t.Fatalf("web_link without URL = %v", htmlStepOf(result.Script.Actions[2]))
+	}
+	assertSourceReviewSupportMode(t, result.SourceReview.Mappings, "web_image", SourceFunctionSupportExecutable)
+}
+
+func TestHTMLStepsThatCannotBeResolvedKeepTheGate(t *testing.T) {
+	result := convertSingleWebSource(t, `
+	web_link("Menu", "Text=Menu", "FrameName=nav", LAST);
+	web_image("East", "Src=map.png", "MapName=regions", "AreaAlt=East", LAST);`)
 	for _, action := range result.Script.Actions {
-		if action.Method != "GET" || action.Type != "GET" {
-			t.Errorf("action %q method/type = %s/%s, want GET", action.Name, action.Method, action.Type)
+		if blockers, _ := action.Metadata["execution_blockers"].([]string); action.Type != "source_review" || len(blockers) != 1 || blockers[0] != htmlNavigationReasonCode {
+			t.Fatalf("action = %+v, want the navigation gate", action)
 		}
 	}
-	if got := result.Script.Actions[0].Target; !strings.Contains(got, "/catalog") {
-		t.Errorf("web_link target = %q, want catalog URL", got)
-	}
-	if got := result.Script.Actions[1].Target; !strings.Contains(got, "/logo.png") {
-		t.Errorf("web_image target = %q, want image Src URL", got)
+	if len(result.Script.Actions) != 2 || !hasWarningContaining(result.Warnings, "frame") || !hasWarningContaining(result.Warnings, "image-map area") {
+		t.Fatalf("actions = %d, warnings = %v", len(result.Script.Actions), result.Warnings)
 	}
 }
 
-func TestWebLinkWithoutURLIsReviewedNotFabricated(t *testing.T) {
+func TestWebImageCheckBecomesAPageCheck(t *testing.T) {
 	result := convertSingleWebSource(t, `
 	web_url("Home", "URL=https://example.test/home", LAST);
-	web_link("Continue", "Text=Continue", LAST);`)
-	// Only the anchor request is emitted; the context-resolved link is not a request.
-	for _, action := range result.Script.Actions {
-		if action.Type == "GET" && strings.EqualFold(action.Name, "Continue") {
-			t.Fatalf("web_link without a URL must not fabricate a GET action: %#v", action)
-		}
+	web_image_check("LogoCheck", "Src=https://example.test/logo.png", LAST);`)
+	check := result.Script.Actions[1]
+	if !reflect.DeepEqual(htmlStepOf(check), map[string]any{"kind": "image_check", "src": "https://example.test/logo.png"}) {
+		t.Fatalf("web_image_check = %v, want an image_check step", htmlStepOf(check))
 	}
-	if result.Stats.ReviewOnlyFunctions == 0 {
-		t.Fatalf("web_link without URL should be classified review_only, stats=%#v", result.Stats)
+	if check.Params["legacy_html_check"] != true {
+		t.Fatalf("web_image_check must stay a legacy check, params=%v", check.Params)
 	}
-	assertSourceReviewSupportMode(t, result.SourceReview.Mappings, "web_link", SourceFunctionSupportReviewOnly)
-	if !hasWarningContaining(result.Warnings, "no URL") {
-		t.Errorf("expected a 'no URL' warning, got %v", result.Warnings)
+}
+
+func TestWebSubmitFormBecomesAPageFormStep(t *testing.T) {
+	result := convertSingleWebSource(t, `
+	web_url("Home", "URL=https://example.test/WebTours/", LAST);
+	web_submit_form("login.pl", "Ordinal=2", ITEMDATA, "Name=username", "Value={User}", ENDITEM, "Name=login.x", "Value=21", ENDITEM,
+		STARTHIDDENS, "Name=userSession", "Value=recorded", ENDITEM, ENDHIDDENS, LAST);`)
+	form := result.Script.Actions[1]
+	want := map[string]any{
+		"kind":    "form",
+		"ordinal": 2,
+		"fields":  []any{map[string]any{"name": "username", "value": "{{var.user}}"}, map[string]any{"name": "login.x", "value": "21"}},
+		"hidden":  []any{map[string]any{"name": "userSession", "value": "recorded"}},
+	}
+	if form.Type != "POST" || !reflect.DeepEqual(htmlStepOf(form), want) {
+		t.Fatalf("web_submit_form = %s %v", form.Type, htmlStepOf(form))
+	}
+	if _, reviewed := form.Metadata["review_reasons"]; reviewed {
+		t.Fatalf("a page-resolved form needs no review, metadata = %v", form.Metadata)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("validation = %v", issues)
 	}
 }
 
@@ -417,6 +468,28 @@ func TestWebRemoveCookieStopsAttachingDownstream(t *testing.T) {
 	action := result.Script.Actions[0]
 	if cookie, ok := action.Headers["Cookie"]; ok && strings.Contains(cookie, "SessionID") {
 		t.Fatalf("web_remove_cookie did not stop the cookie attaching: Cookie=%q", cookie)
+	}
+}
+
+// LoadRunner removes the cookie from its cookie cache, so a cookie the
+// server set leaves the VUser's jar too, with the domain and path the
+// cookie string names.
+func TestWebRemoveCookieExpiresAServerSetCookie(t *testing.T) {
+	result := convertSingleWebSource(t, `
+	web_url("Login", "URL=https://app.example.test/login", LAST);
+	web_remove_cookie("JSESSIONID=x; path=/app; domain=app.example.test");
+	web_url("Home", "URL=https://app.example.test/home", LAST);`)
+	actions := result.Script.Actions
+	if len(actions) != 3 {
+		t.Fatalf("actions = %d, want the requests around a cookie_set removal: %#v", len(actions), actions)
+	}
+	removal := actions[1]
+	if removal.Type != "cookie_set" || removal.Params["remove"] != true || removal.Params["name"] != "JSESSIONID" ||
+		removal.Params["domain"] != "app.example.test" || removal.Params["path"] != "/app" {
+		t.Fatalf("removal = %#v, want cookie_set remove of JSESSIONID on app.example.test/app", removal)
+	}
+	if _, hasValue := removal.Params["value"]; hasValue {
+		t.Fatalf("removal carries a value: %#v", removal.Params)
 	}
 }
 
@@ -535,15 +608,30 @@ func actionTypes(actions []dsl.Action) []string {
 
 // Re-adding a cookie with the same name, domain and path replaces it, as the
 // source cookie jar does; distinct domains keep their own cookie.
-func TestWebAddCookieReplacesTheSameCookie(t *testing.T) {
-	action := convertSingleAction(t, ""+
-		`web_add_cookie("rxvt=1|first; DOMAIN=app.example.com");`+"\n\t"+
-		`web_add_cookie("rxvt=2|second; DOMAIN=.app.example.com");`+"\n\t"+
-		`web_add_cookie("rxvt=other; DOMAIN=other.example.com");`+"\n\t"+
-		`web_add_cookie("dtPC=abc; DOMAIN=app.example.com");`+"\n\t"+
-		`web_url("Home", "URL=https://app.example.com/home", LAST);`, ConvertOptions{})
-	cookie := action.Headers["Cookie"]
-	if cookie != "rxvt=2|second; dtPC=abc" {
-		t.Fatalf("Cookie = %q, want one rxvt with the latest value and dtPC", cookie)
+func TestWebAddCookieBecomesPositionalCookieSets(t *testing.T) {
+	result := convertSingleWebSource(t, `
+	web_add_cookie("rxvt=1|first; DOMAIN=app.example.com");
+	web_add_cookie("rxvt=2|second; DOMAIN=.app.example.com; SECURE");
+	web_add_cookie("dtPC={PC}; DOMAIN=app.example.com; PATH=/app");
+	web_url("Home", "URL=https://app.example.com/home", LAST);
+	web_remove_cookie("dtPC");`)
+	actions := result.Script.Actions
+	if len(actions) != 5 {
+		t.Fatalf("actions = %d, want three cookie_set steps, the request and the removal: %#v", len(actions), actions)
+	}
+	if actions[0].Type != "cookie_set" || actions[0].Params["value"] != "1|first" {
+		t.Fatalf("first cookie = %#v", actions[0])
+	}
+	if actions[1].Params["value"] != "2|second" || actions[1].Params["domain"] != ".app.example.com" || actions[1].Params["secure"] != true {
+		t.Fatalf("second cookie = %#v, want the later value (the jar replaces the first)", actions[1])
+	}
+	if actions[2].Params["value"] != "{{var.pc}}" || actions[2].Params["path"] != "/app" {
+		t.Fatalf("third cookie = %#v", actions[2])
+	}
+	if cookie := actions[3].Headers["Cookie"]; cookie != "" {
+		t.Fatalf("the request must not carry a literal Cookie header, got %q", cookie)
+	}
+	if actions[4].Type != "cookie_set" || actions[4].Params["remove"] != true || actions[4].Params["name"] != "dtPC" || actions[4].Params["path"] != "/app" {
+		t.Fatalf("removal = %#v, want cookie_set remove matching the added cookie", actions[4])
 	}
 }

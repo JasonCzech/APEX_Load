@@ -15,7 +15,10 @@ import (
 	"time"
 	"unicode"
 
+	"golang.org/x/net/http/httpguts"
+
 	"github.com/jasonczech/apexload/pkg/fileasset"
+	"github.com/jasonczech/apexload/pkg/internal/bodyencoding"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
@@ -840,6 +843,10 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 	}
 	var issues []string
 	protocol = ProtocolFamily(protocol)
+	if protocol == "http" && isWebSocketStepType(action.Type) {
+		// WebSocket steps inside an HTTP script follow the websocket rules.
+		return validateHTTPScriptWebSocketStep(path, index, action)
+	}
 	if action.HTTPVersion.IsPresent() {
 		if err := action.HTTPVersion.Validate(); err != nil {
 			issues = append(issues, actionLabel(path, action)+": "+err.Error())
@@ -860,7 +867,9 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 		}
 	}
 	issues = append(issues, validateBodyFileIssues(path, action)...)
+	issues = append(issues, validateMultipartBodyIssues(protocol, path, action)...)
 	issues = append(issues, validateBase64BodyEncodingIssues(path, action)...)
+	issues = append(issues, validateCEscapedBodyEncodingIssues(path, action)...)
 	issues = append(issues, validateExtractorIssues(protocol, path, action)...)
 	if protocol == "http" || protocol == "soap" || protocol == "java_http" {
 		issues = append(issues, validateHTTPActionBoundsIssues(path, action)...)
@@ -908,8 +917,74 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 	if CanonicalActionType(action.Type) == "http_oauth2_token" {
 		return issues
 	}
+	if step, ok := action.Params[httpprotocol.HTMLStepParam]; ok {
+		// An HTML-mode step resolves its URL from the page at replay.
+		return append(issues, validateHTMLStepIssues(actionLabel(path, action), protocol, step)...)
+	}
 	if action.Target == "" {
 		issues = append(issues, fmt.Sprintf("%s: missing target", actionLabel(path, action)))
+	}
+	return issues
+}
+
+// validateHTMLStepIssues checks params.html_step of an HTML-mode step.
+func validateHTMLStepIssues(label, protocol string, raw any) []string {
+	if protocol != "http" {
+		return []string{fmt.Sprintf("%s: params.html_step is supported only by the http protocol", label)}
+	}
+	step, ok := raw.(map[string]any)
+	if !ok {
+		return []string{fmt.Sprintf("%s: params.html_step must be an object", label)}
+	}
+	text := func(key string) string {
+		value, _ := step[key].(string)
+		return strings.TrimSpace(value)
+	}
+	kind := strings.ToLower(text("kind"))
+	var issues []string
+	switch kind {
+	case "link":
+		if text("text") == "" {
+			issues = append(issues, fmt.Sprintf("%s: params.html_step link requires text", label))
+		}
+	case "image", "image_check":
+		if text("alt") == "" && text("src") == "" {
+			issues = append(issues, fmt.Sprintf("%s: params.html_step %s requires alt or src", label, kind))
+		}
+	case "form":
+		for _, key := range []string{"fields", "hidden", "submit"} {
+			if value, present := step[key]; present {
+				items, ok := value.([]any)
+				if !ok {
+					issues = append(issues, fmt.Sprintf("%s: params.html_step %s must be a list of {name, value}", label, key))
+					continue
+				}
+				for _, item := range items {
+					entry, ok := item.(map[string]any)
+					name, _ := entry["name"].(string)
+					if !ok || strings.TrimSpace(name) == "" {
+						issues = append(issues, fmt.Sprintf("%s: params.html_step %s entries need a name", label, key))
+						break
+					}
+				}
+			}
+		}
+	default:
+		issues = append(issues, fmt.Sprintf("%s: params.html_step kind must be link, image, image_check or form (got %q)", label, kind))
+	}
+	if ordinal, present := step["ordinal"]; present {
+		whole := false
+		switch number := ordinal.(type) {
+		case float64:
+			whole = number >= 0 && number == float64(int(number))
+		case int:
+			whole = number >= 0
+		case int64:
+			whole = number >= 0
+		}
+		if !whole {
+			issues = append(issues, fmt.Sprintf("%s: params.html_step ordinal must be a whole number", label))
+		}
 	}
 	return issues
 }
@@ -928,6 +1003,19 @@ func validateBase64BodyEncodingIssues(path string, action Action) []string {
 	}
 	if _, err := base64.StdEncoding.DecodeString(body); err != nil {
 		return []string{fmt.Sprintf("%s: body_encoding base64 body must be valid standard base64: %v", label, err)}
+	}
+	return nil
+}
+
+// validateCEscapedBodyEncodingIssues checks the authored escapes of a
+// c_escaped body. Templates are resolved before decoding and their values are
+// sent verbatim, so only the text outside {{...}} must decode.
+func validateCEscapedBodyEncodingIssues(path string, action Action) []string {
+	if !bodyencoding.IsCEscaped(action.BodyEncoding) || action.Body == "" {
+		return nil
+	}
+	if _, err := bodyencoding.DecodeCEscapes(runIdentityTemplatePattern.ReplaceAllString(action.Body, "")); err != nil {
+		return []string{fmt.Sprintf("%s: body_encoding c_escaped body has an invalid escape: %v", actionLabel(path, action), err)}
 	}
 	return nil
 }
@@ -1103,6 +1191,9 @@ func collectActionFileReferences(action Action) []string {
 	refs = appendFileTemplateRefs(refs, action.Selector)
 	refs = appendFileTemplateRefs(refs, action.Value)
 	refs = appendFileTemplateRefs(refs, action.Body)
+	for _, value := range action.BodyMultipart.MultipartTemplateStrings() {
+		refs = appendFileTemplateRefs(refs, value)
+	}
 	refs = appendFileTemplateRefsFromStringMap(refs, action.Headers)
 	for _, header := range action.HeaderList {
 		refs = appendFileTemplateRefs(refs, header.Name)
@@ -1230,18 +1321,89 @@ func validateExtractorIssues(protocol string, path string, action Action) []stri
 					issues = append(issues, fmt.Sprintf("%s: extractors[%d] type %q is not supported for body extraction", label, i, ext.Type))
 				}
 			case "header":
-				if !isAllowedValue(strings.TrimSpace(ext.Type), "", "header", "regex", "boundary") {
+				if !isAllowedValue(strings.TrimSpace(ext.Type), "", "header", "regex", "regex_count", "regex_ordinal", "boundary") {
 					issues = append(issues, fmt.Sprintf("%s: extractors[%d] type %q is not supported for header extraction", label, i, ext.Type))
 				}
+			case "all", "cookies":
+				if !isAllowedValue(strings.TrimSpace(ext.Type), "regex", "regex_count", "regex_ordinal", "boundary") {
+					surface := map[string]string{"all": "headers-and-body", "cookies": "cookie"}[strings.TrimSpace(ext.Source)]
+					issues = append(issues, fmt.Sprintf("%s: extractors[%d] type %q is not supported for %s extraction (use regex, regex_count, regex_ordinal or boundary)", label, i, ext.Type, surface))
+				}
+			case "url", "status":
+				if !isAllowedValue(strings.TrimSpace(ext.Type), "", "regex", "regex_count", "regex_ordinal", "boundary") {
+					issues = append(issues, fmt.Sprintf("%s: extractors[%d] type %q is not supported for %s extraction (use \"\" for the whole value, regex, regex_count, regex_ordinal or boundary)", label, i, ext.Type, strings.TrimSpace(ext.Source)))
+				}
 			default:
-				issues = append(issues, fmt.Sprintf("%s: extractors[%d] source must be \"\", \"body\", or \"header\" (got %q)", label, i, ext.Source))
+				issues = append(issues, fmt.Sprintf("%s: extractors[%d] source must be \"\", \"body\", \"header\", \"all\", \"cookies\", \"url\", or \"status\" (got %q)", label, i, ext.Source))
 			}
 		}
+		issues = append(issues, validateExtractorScopeIssues(label, i, ext, enforceSourceType)...)
+		issues = append(issues, validateExtractorDFEIssues(label, i, ext, enforceSourceType)...)
 		if ext.SaveOffset < 0 {
 			issues = append(issues, fmt.Sprintf("%s: extractors[%d] save_offset must be zero or greater", label, i))
 		}
 		if ext.SaveLength < 0 {
 			issues = append(issues, fmt.Sprintf("%s: extractors[%d] save_length must be zero or greater", label, i))
+		}
+	}
+	return issues
+}
+
+// validateExtractorScopeIssues checks an HTTP extractor's response scope.
+func validateExtractorScopeIssues(label string, index int, ext Extractor, httpFamily bool) []string {
+	scope := ext.Scope
+	if scope == nil {
+		return nil
+	}
+	if !httpFamily {
+		return []string{fmt.Sprintf("%s: extractors[%d] scope is supported only by HTTP-family protocols", label, index)}
+	}
+	var issues []string
+	for _, field := range [][2]string{{"redirects", scope.Redirects}, {"resources", scope.Resources}} {
+		field, value := field[0], field[1]
+		if !isAllowedValue(strings.TrimSpace(value), "", "include", "exclude") {
+			issues = append(issues, fmt.Sprintf("%s: extractors[%d] scope.%s must be \"include\" or \"exclude\" (got %q)", label, index, field, value))
+		}
+	}
+	for _, field := range [][2]string{{"request_url", scope.RequestURL}, {"content_type", scope.ContentType}} {
+		field, pattern := field[0], field[1]
+		if len(pattern) > httpprotocol.MaxExtractorExpressionBytes {
+			issues = append(issues, fmt.Sprintf("%s: extractors[%d] scope.%s exceeds %d bytes", label, index, field, httpprotocol.MaxExtractorExpressionBytes))
+		}
+	}
+	if len(scope.HeaderNames) > 0 {
+		switch strings.TrimSpace(ext.Source) {
+		case "header", "all", "cookies":
+		default:
+			issues = append(issues, fmt.Sprintf("%s: extractors[%d] scope.header_names applies only to the header, all or cookies sources", label, index))
+		}
+		if len(scope.HeaderNames) > 64 {
+			issues = append(issues, fmt.Sprintf("%s: extractors[%d] scope.header_names lists more than 64 headers", label, index))
+		}
+		for _, name := range scope.HeaderNames {
+			if !httpguts.ValidHeaderFieldName(strings.TrimSpace(name)) {
+				issues = append(issues, fmt.Sprintf("%s: extractors[%d] scope.header_names has an invalid header name %q", label, index, name))
+			}
+		}
+	}
+	return issues
+}
+
+// validateExtractorDFEIssues checks an HTTP extractor's data-format chain.
+func validateExtractorDFEIssues(label string, index int, ext Extractor, httpFamily bool) []string {
+	if len(ext.DFEs) == 0 {
+		return nil
+	}
+	if !httpFamily {
+		return []string{fmt.Sprintf("%s: extractors[%d] dfes are supported only by HTTP-family protocols", label, index)}
+	}
+	var issues []string
+	if len(ext.DFEs) > httpprotocol.MaxExtractorDFEs {
+		issues = append(issues, fmt.Sprintf("%s: extractors[%d] dfes lists more than %d transforms", label, index, httpprotocol.MaxExtractorDFEs))
+	}
+	for _, name := range ext.DFEs {
+		if !httpprotocol.ExtractorDFETypes[strings.ToLower(strings.TrimSpace(name))] {
+			issues = append(issues, fmt.Sprintf("%s: extractors[%d] dfes has unsupported transform %q (use base64, gzip, json_to_xml, xml_to_json, url_decode, url_encode, html_unescape or html_escape)", label, index, name))
 		}
 	}
 	return issues
@@ -1258,6 +1420,8 @@ func validateEngineActionIssues(protocol string, path string, index int, action 
 		return rebaseActionIssues(fmt.Sprintf("actions[%d]", index), path, validateRendezvousActionIssues(index, action))
 	case "ws_on_message", "control_if", "control_switch", "control_loop", "control_parallel":
 		return validateControlFlowIssues(protocol, path, action)
+	case "http_async_start", "http_async_stop", "http_sync":
+		return validateHTTPAsyncIssues(protocol, path, action)
 	case "error_message":
 		label := actionLabel(path, action)
 		if strings.TrimSpace(action.Value) == "" {
@@ -1397,7 +1561,7 @@ func validateParallelBranchScope(actions []Action, path string, loopDepth int) [
 		actionPath := fmt.Sprintf("%s[%d]", path, index)
 		actionType := CanonicalActionType(strings.ToLower(strings.TrimSpace(action.Type)))
 		switch actionType {
-		case "control_parallel", "rendezvous":
+		case "control_parallel", "rendezvous", "http_async_start", "http_async_stop", "http_sync":
 			issues = append(issues, fmt.Sprintf("%s: %s is not permitted inside control_parallel", actionPath, actionType))
 		}
 		if (actionType == "control_break" || actionType == "control_continue") && loopDepth == 0 {
@@ -1639,13 +1803,23 @@ func actionParamString(params map[string]any, key string) string {
 	return value
 }
 
-// ValidateScriptError returns the first validation issue as an error.
+// ValidationError carries every static finding of a script, as the API's
+// validation routes report them, so the parser and the routes agree on what
+// is wrong (AUTH-2 parity). Error joins them with "; ".
+type ValidationError struct {
+	Issues []string
+}
+
+func (e *ValidationError) Error() string { return strings.Join(e.Issues, "; ") }
+
+// ValidateScriptError returns every validation issue as a *ValidationError,
+// or nil for a valid script.
 func ValidateScriptError(script *Script) error {
 	issues := ValidateScriptIssues(script)
 	if len(issues) == 0 {
 		return nil
 	}
-	return fmt.Errorf("%s", issues[0])
+	return &ValidationError{Issues: issues}
 }
 
 // visitScriptActions walks every executable section and nested control-flow
@@ -1957,6 +2131,7 @@ func validateWebRuntimeIssues(script *Script) []string {
 			issues = append(issues, fmt.Sprintf("config.run_logic.action_sequence[%d] must be init, action, teardown, vuser_init, or vuser_end", index))
 		}
 	}
+	issues = append(issues, validateRunLogicBlocks(script)...)
 
 	for key := range script.Config.WebRuntime.AdditionalAttributes {
 		if strings.TrimSpace(key) == "" {
@@ -2041,6 +2216,9 @@ func validateWebRuntimeIssues(script *Script) []string {
 	}
 	if err := httpprotocol.ValidateAuthType(httpCfg.Auth.Type); err != nil {
 		issues = append(issues, fmt.Sprintf("config.http.auth.type: %v", err))
+	}
+	if err := httpprotocol.ValidateAuthHosts(httpCfg.Auth.Hosts); err != nil {
+		issues = append(issues, fmt.Sprintf("config.http.auth.hosts: %v", err))
 	}
 	if httpCfg.TLS.MinVersion != "" && !isAllowedValue(httpCfg.TLS.MinVersion, "1.0", "1.1", "1.2", "1.3") {
 		issues = append(issues, "config.http.tls.min_version must be 1.0, 1.1, 1.2, or 1.3")

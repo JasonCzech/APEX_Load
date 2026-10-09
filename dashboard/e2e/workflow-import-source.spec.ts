@@ -20,18 +20,20 @@ test('source catalog search and importer guidance stay consistent across formats
   await expect(page.getByText('17 of 17 sources')).toBeVisible()
 
   for (const [query, title, sourceHeading] of [
-    ['OpenAPI', 'Import OpenAPI', 'OpenAPI / Swagger'], ['Bruno', 'Import Bruno Collection', 'Bruno Collection'],
-    ['Postman', 'Import Postman Collection', 'Postman Collection'], ['WSDL', 'Import WSDL', 'WSDL / SOAP'],
-    ['AsyncAPI', 'Import AsyncAPI', 'AsyncAPI / Kafka'], ['RAML', 'Import RAML', 'RAML / Anypoint'],
-    ['HAR Traffic', 'Import HAR', 'HAR Traffic'], ['Playwright', 'Import Browser Recording', 'Recorder Export / Playwright Codegen'],
-    ['Request / Response', 'Build Script From Sample', 'Request / Response Sample'], ['JMeter', 'Import JMeter Test Plan', 'Import JMeter'],
-    ['DevWeb', 'Import DevWeb Script', 'DevWeb Source'], ['k6', 'Import k6 Script', 'k6 Script'],
+    // The page is titled "Import <source>"; the importer's own heading names the source.
+    ['OpenAPI', 'Import OpenAPI / Swagger', 'OpenAPI / Swagger'], ['Bruno', 'Import Bruno Collection', 'Bruno Collection'],
+    ['Postman', 'Import Postman Collection', 'Postman Collection'], ['WSDL', 'Import WSDL / SOAP', 'WSDL / SOAP'],
+    ['AsyncAPI', 'Import AsyncAPI / Kafka', 'AsyncAPI / Kafka'], ['RAML', 'Import RAML / Anypoint', 'RAML / Anypoint'],
+    ['HAR Traffic', 'Import HAR Traffic', 'HAR Traffic'], ['Playwright', 'Import Recorder Export / Playwright Codegen', 'Recorder Export / Playwright Codegen'],
+    ['Request / Response', 'Import Request / Response Sample', 'Request / Response Sample'], ['JMeter', 'Import JMeter Test Plan', 'JMeter Test Plan'],
+    ['DevWeb', 'Import DevWeb Source', 'DevWeb Source'], ['k6', 'Import k6 Script', 'k6 Script'],
     ['CloudTest', 'Import Akamai CloudTest Export', 'Akamai CloudTest Export'], ['Event Hubs', 'Import Event Hubs Capture', 'Event Hubs Capture'],
     ['Broker Config', 'Import Broker Config', 'Broker Config'],
   ]) {
     await search.fill(query)
     await page.locator('.script-create-option').filter({ has: page.getByRole('heading', { name: sourceHeading, exact: true }) }).click()
-    await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: title, exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 2, name: sourceHeading, exact: true })).toBeVisible()
     const guide = page.getByRole('list', { name: 'Import workflow', exact: true })
     await expect(guide).toBeVisible()
     await expect(guide.locator('[aria-current="step"]')).toContainText('Provide source')
@@ -184,7 +186,7 @@ test('JMeter review uses the shared six tabs and retains project scope during up
   expect((await settingsApply).ok()).toBeTruthy()
   await expect(controls.getByRole('region', { name: 'Additional APEX settings', exact: true })).toContainText('6500')
   await expect(controls.getByRole('tabpanel')).toContainText('Orders')
-  await tabs.getByRole('tab', { name: 'Data & parameters', exact: true }).click()
+  await tabs.getByRole('tab', { name: /^Data & parameters(,|$)/ }).click()
   const dataViews = controls.getByRole('tablist', { name: 'Data views' })
   await expect(dataViews).toBeVisible()
   expect(await dataViews.evaluate(nav => getComputedStyle(nav).flexDirection)).toBe('column')
@@ -195,7 +197,7 @@ test('JMeter review uses the shared six tabs and retains project scope during up
   await page.setViewportSize({ width: 1280, height: 900 })
   await tabs.getByRole('tab', { name: 'DSL Preview', exact: true }).click()
   await expect(controls.getByRole('tabpanel')).toContainText('Get orders')
-  await tabs.getByRole('tab', { name: 'Review', exact: true }).click()
+  await tabs.getByRole('tab', { name: /^Review(,|$)/ }).click()
   await expect(controls.locator('.import-source-setup')).not.toHaveAttribute('open')
   const reference = controls.locator('.import-conversion-details')
   await expect(reference).not.toHaveAttribute('open')

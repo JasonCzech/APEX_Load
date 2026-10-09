@@ -1,0 +1,13 @@
+{
+  "description": "web_add_cookie adds to the VUser's cookie jar: the server's later Set-Cookie replaces the injected value, so each cookie is sent once, and web_remove_cookie removes it.",
+  "source": "VuGen 26.1 Function Reference: web_add_cookie, web_remove_cookie (cookie cache semantics).",
+  "outcome": "replay",
+  "responses": [
+    {"method": "GET", "path": "/app/home", "headers": {"Set-Cookie": "sid=fromServer; Path=/"}}
+  ],
+  "requests": [
+    {"method": "GET", "path": "/app/home", "header_counts": {"Cookie:sid": 1, "Cookie:consent": 1}, "header_contains": {"Cookie": "sid=injected"}},
+    {"method": "GET", "path": "/app/account", "header_counts": {"Cookie:sid": 1, "Cookie:consent": 1}, "header_contains": {"Cookie": "sid=fromServer"}},
+    {"method": "GET", "path": "/app/final", "header_counts": {"Cookie:sid": 1, "Cookie:consent": 0}}
+  ]
+}

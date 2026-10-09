@@ -1,12 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- APEX Load mark, small cut, fixed AT&amp;T colors (the in-app Logo.tsx retones per theme). -->
   <defs>
-    <linearGradient id="apex" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#a78bfa"/>
-      <stop offset="1" stop-color="#8b5cf6"/>
+    <clipPath id="tile"><rect width="100" height="100" rx="22"/></clipPath>
+    <linearGradient id="fade" gradientUnits="userSpaceOnUse" x1="0" y1="24" x2="0" y2="96">
+      <stop offset="0" stop-color="#009FDB" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#009FDB" stop-opacity="0"/>
     </linearGradient>
   </defs>
-  <path d="M21 9 L30 27 H12 Z" fill="url(#apex)" opacity="0.4"/>
-  <path d="M12 4 L23 27 H1 Z" fill="url(#apex)"/>
-  <path d="M12 4 L16.4 13.2 L12 11.4 L7.6 13.2 Z" fill="#ffffff" opacity="0.9"/>
-  <rect x="1" y="29" width="30" height="1.6" rx="0.8" fill="#8b5cf6"/>
+  <rect width="100" height="100" rx="22" fill="#00388F"/>
+  <path d="M8 66C8.9 66.2 11.4 67 13.1 67.2C14.8 67.5 16.5 67.6 18.2 67.4C20 67.2 21.7 66.7 23.4 66C25.1 65.4 26.8 64.4 28.5 63.5C30.2 62.7 31.9 61.6 33.6 60.9C35.3 60.1 37 59.4 38.8 59C40.5 58.6 42.2 58.4 43.9 58.3C45.6 58.2 47.3 58.4 49 58.3C50.7 58.3 52.4 58.3 54.1 58C55.8 57.7 57.5 57.2 59.2 56.3C61 55.3 62.7 54.1 64.4 52.6C66.1 51.1 67.8 49.2 69.5 47.3C71.2 45.4 72.9 43.3 74.6 41.3C76.3 39.3 78 37.3 79.8 35.4C81.5 33.5 83.2 31.8 84.9 29.9C86.6 28 89.1 25 90 24L90 100L8 100Z" fill="url(#fade)" clip-path="url(#tile)"/>
+  <polygon points="12,84 62,14 62,72 88,72 88,84 50,84 50,53.2 28,84" fill="#FFFFFF"/>
+  <path d="M8 66C8.9 66.2 11.4 67 13.1 67.2C14.8 67.5 16.5 67.6 18.2 67.4C20 67.2 21.7 66.7 23.4 66C25.1 65.4 26.8 64.4 28.5 63.5C30.2 62.7 31.9 61.6 33.6 60.9C35.3 60.1 37 59.4 38.8 59C40.5 58.6 42.2 58.4 43.9 58.3C45.6 58.2 47.3 58.4 49 58.3C50.7 58.3 52.4 58.3 54.1 58C55.8 57.7 57.5 57.2 59.2 56.3C61 55.3 62.7 54.1 64.4 52.6C66.1 51.1 67.8 49.2 69.5 47.3C71.2 45.4 72.9 43.3 74.6 41.3C76.3 39.3 78 37.3 79.8 35.4C81.5 33.5 83.2 31.8 84.9 29.9C86.6 28 89.1 25 90 24" fill="none" stroke="#009FDB" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

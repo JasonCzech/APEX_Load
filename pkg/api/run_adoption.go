@@ -188,6 +188,14 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 	if len(tests) == 0 {
 		return nil
 	}
+	// An adopted run's batches were held by another controller (B5): any it
+	// had not published are unknown here, even if this controller once
+	// started the run.
+	tr.mu.Lock()
+	for _, test := range tests {
+		test.jointHeldFromStart = false
+	}
+	tr.mu.Unlock()
 	generation, ownerID, leaseDeadline, err := tr.generatorExecutionClaim()
 	if err != nil {
 		return err
@@ -673,12 +681,16 @@ func (tr *TestRunner) installAdoptedRun(b *distributedExecutionBackend, candidat
 	if err == nil {
 		test.remoteArchiveClientsByTarget = archives
 		test.continuityFailovers = append(append([]RunFailover(nil), test.continuityFailovers...), failover)
+		// A stage recorder this process kept from an earlier ownership samples
+		// only from the adoption (a new one starts there anyway).
+		test.telemetryStages.adopted(adoptedAt)
 		for target := range completed {
 			test.remoteTargetStates[target] = "complete"
 		}
 		// This controller requires each generator from the adoption; one
 		// that completed during the gap is never required here.
 		ledger := telemetrySourceLedgerLocked(test)
+		ledger.markAdopted()
 		for target := range adopted {
 			ledger.assign(target, adoptedAt)
 		}
@@ -728,6 +740,7 @@ func (tr *TestRunner) bindRunAdoptionOutcome(b *distributedExecutionBackend, tes
 		test.remoteArchiveClientsByTarget = archives
 		adoptedAt := time.Now().UTC()
 		ledger := telemetrySourceLedgerLocked(test)
+		ledger.markAdopted()
 		for target := range completed {
 			test.remoteTargetStates[target] = "complete"
 			// Completed during the gap: never observed or required here.

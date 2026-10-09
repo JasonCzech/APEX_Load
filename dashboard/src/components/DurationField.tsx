@@ -1,6 +1,6 @@
-import { useId, useMemo, useRef } from 'react'
+import { useEffect, useId, useMemo, useReducer, useRef } from 'react'
 
-import { DurationUnit, isValidDurationInput, serializeDurationFieldValue, splitDurationInput } from '../utils/timeUtils'
+import { DurationUnit, isValidDurationInput, isValidNonNegativeDurationInput, serializeDurationFieldValue, splitDurationInput } from '../utils/timeUtils'
 import './DurationField.css'
 
 const DEFAULT_PRESETS = ['30s', '1m', '5m', '10m', '30m', '1h']
@@ -21,6 +21,10 @@ interface DurationFieldProps {
   unitLabel?: string
   showPresets?: boolean
   showValidation?: boolean
+  /** Zero is a meaningful value (for example an instant ramp), serialized as 0 in the unit shown. */
+  allowZero?: boolean
+  /** Reports when the field shows an error, so a parent can block saving. */
+  onInvalidChange?: (invalid: boolean) => void
 }
 
 const UNIT_LABELS: Record<DurationUnit, string> = {
@@ -45,23 +49,50 @@ export default function DurationField({
   unitLabel = 'Unit',
   showPresets = false,
   showValidation = true,
+  allowZero = false,
+  onInvalidChange,
 }: DurationFieldProps) {
   const generatedId = useId()
   const inputId = id || generatedId
-  const parts = useMemo(() => splitDurationInput(value), [value])
+  const parts = useMemo(() => {
+    const zero = allowZero ? /^0+(?:\.0*)?(s|m|h)$/.exec(value.trim()) : null
+    return zero ? { value: '0', unit: zero[1] as DurationUnit } : splitDurationInput(value)
+  }, [allowZero, value])
   const isEmpty = value.trim() === ''
   const retainedUnitRef = useRef<DurationUnit>(parts.unit)
-  if (!isEmpty) retainedUnitRef.current = parts.unit
-  const displayedUnit = isEmpty ? retainedUnitRef.current : parts.unit
-  const isValid = isValidDurationInput(value, allowEmpty)
+  // While the value is the one this field just emitted, show exactly what the
+  // user typed in the unit they chose: re-splitting it (0.5 m → 30 s) would
+  // switch the unit under the cursor, so the next keystroke lands in the
+  // wrong unit. A value set from outside (preset, loaded draft) is re-derived.
+  const lastEmittedRef = useRef<string | null>(null)
+  // Choosing a unit on an empty field emits the same empty value, so the
+  // parent does not re-render; render here or the select snaps back.
+  const [, renderUnitChoice] = useReducer((count: number) => count + 1, 0)
+  const typedRef = useRef('')
+  const ownValue = lastEmittedRef.current !== null && value === lastEmittedRef.current
+  if (!isEmpty && !ownValue) retainedUnitRef.current = parts.unit
+  const displayedUnit = isEmpty || ownValue ? retainedUnitRef.current : parts.unit
+  const displayedValue = ownValue ? typedRef.current : parts.value
+  // Typed text that is not a duration empties the value; it is still an error, not "empty".
+  const typedInvalid = ownValue && isEmpty && typedRef.current.trim() !== ''
+  const isValid = !typedInvalid && (allowZero ? isValidNonNegativeDurationInput(value, allowEmpty) : isValidDurationInput(value, allowEmpty))
   const error = !showValidation || isValid
     ? ''
-    : isEmpty
+    : isEmpty && !typedInvalid
       ? 'Duration is required.'
-      : 'Enter a positive duration.'
+      : allowZero ? 'Enter zero or a positive duration.' : 'Enter a positive duration.'
+  const onInvalidChangeRef = useRef(onInvalidChange)
+  onInvalidChangeRef.current = onInvalidChange
+  useEffect(() => { onInvalidChangeRef.current?.(Boolean(error)) }, [error])
 
   const emitValue = (nextValue: string, nextUnit: DurationUnit) => {
-    onChange(serializeDurationFieldValue(nextValue, nextUnit))
+    typedRef.current = nextValue
+    retainedUnitRef.current = nextUnit
+    // Exponent notation (1e2) is not a duration anyone means to type.
+    const zero = allowZero && /^0+(?:\.0*)?$/.test(nextValue.trim())
+    const serialized = /e/i.test(nextValue) ? '' : zero ? `0${nextUnit}` : serializeDurationFieldValue(nextValue, nextUnit)
+    lastEmittedRef.current = serialized
+    onChange(serialized)
   }
 
   const rootClassName = [
@@ -82,7 +113,7 @@ export default function DurationField({
           type="number"
           min={0}
           step="any"
-          value={parts.value}
+          value={displayedValue}
           placeholder={placeholder}
           disabled={disabled}
           required={required}
@@ -99,8 +130,8 @@ export default function DurationField({
           aria-label={label ? `${label} ${unitLabel}` : unitLabel}
           onChange={(event) => {
             const nextUnit = event.target.value as DurationUnit
-            retainedUnitRef.current = nextUnit
-            emitValue(parts.value, nextUnit)
+            emitValue(displayedValue, nextUnit)
+            renderUnitChoice()
           }}
         >
           {Object.entries(UNIT_LABELS).map(([unit, text]) => (

@@ -45,6 +45,12 @@ func newArchiveScanBudget(ctx context.Context, maxRecords int, maxBytes int64) *
 	return &archiveScanBudget{ctx: ctx, maxRecords: maxRecords, maxBytes: maxBytes}
 }
 
+// archiveScanBudgetError is an archive scan stopped by its record or byte
+// budget (a whole-archive reader can report it as an incomplete result).
+type archiveScanBudgetError struct{ message string }
+
+func (e *archiveScanBudgetError) Error() string { return e.message }
+
 func (b *archiveScanBudget) Observe(record []byte) error {
 	if err := b.ctx.Err(); err != nil {
 		return err
@@ -52,10 +58,10 @@ func (b *archiveScanBudget) Observe(record []byte) error {
 	b.records++
 	b.bytes += int64(len(record))
 	if b.maxRecords > 0 && b.records > b.maxRecords {
-		return fmt.Errorf("archive query exceeds record budget %d", b.maxRecords)
+		return &archiveScanBudgetError{fmt.Sprintf("archive query exceeds record budget %d", b.maxRecords)}
 	}
 	if b.maxBytes > 0 && b.bytes > b.maxBytes {
-		return fmt.Errorf("archive query exceeds byte budget %d", b.maxBytes)
+		return &archiveScanBudgetError{fmt.Sprintf("archive query exceeds byte budget %d", b.maxBytes)}
 	}
 	return nil
 }

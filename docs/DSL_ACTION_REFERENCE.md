@@ -16,12 +16,12 @@ to their `source_*` equivalents.
 | `type` | string | yes | Action type discriminator; see the per-protocol action catalog. |
 | `think_time` | object |  | Per-action think-time override (type, mean_ms, ...). |
 | `think_time_after` | bool |  | Apply think time after this action completes. |
-| `extractors` | array |  | Response extractors: {name, source, type, expression, on_miss, default_value, mode, save_offset, save_length, convert}. on_miss: "fail" fails the request when nothing matches, "empty" assigns an empty string; "default" assigns default_value (including an explicitly empty default); mode "all" saves every match as name_1..name_N plus name_count; save_offset/save_length trim each value (bytes); convert post-processes it (url_encode | url_decode | html_decode | html_url_encode). The behavior fields are honored by the HTTP protocol family. |
-| `assertions` | array |  | Response assertions: {type, expected, value, max}. HTTP supports status/time/body checks plus header_contains (value is a case-insensitive header name; expected is a case-sensitive substring) and body_regex_capture_equals (value is a Go/RE2 pattern up to 4 KiB; expected equals the first capture group, or the full match when no group exists). aura_actions_success structurally verifies that the actual outgoing Aura request and response contain unique matching action IDs and SUCCESS states; malformed, incomplete, unknown or over-limit envelopes fail with bounded value-free evidence, and framework error responses (*/…/*ERROR*/ or an exception event) fail as invalid_session, client_out_of_sync or framework_error. Its optional expected, {"recorded": [{"ordinal", "state"}]}, lists actions that failed in the recording: a repeat failure is labelled "also failed in the recording", and config.http.aura_recorded_failures "accept_recorded" accepts one that ends in the recorded state. |
+| `extractors` | array |  | Response extractors: {name, source, type, expression, on_miss, default_value, mode, save_offset, save_length, convert, scope, dfes}. HTTP source: "body" (default), "header" (named header, or regex/boundary over the flattened headers), "all" (regex, regex_count, regex_ordinal or boundary over the flattened headers followed by the body, LoadRunner's default search scope), "cookies" (the same text types over the Set-Cookie header lines, LoadRunner's Scope=Cookies), "url" (the final request URL after redirects) or "status" (the final status code); url and status also accept type "" to save the whole value. HTTP scope widens or filters the responses searched (LoadRunner registrations search every response of a step): {redirects: include\|exclude (each redirect hop's status and headers), resources: include\|exclude (fetched resource responses), request_url and content_type (wildcard filters; * spans any text, ? one character, every other character is literal, case-insensitive; no wildcard = substring), header_names (limit header/all/cookies searches)}; responses are tried hops first, then the final response, then resources in arrival order, and the first match wins. Without scope only the final response is searched. HTTP dfes (body and all sources) transforms each searched response body in order before the expression runs (LoadRunner data-format extensions): base64, gzip, json_to_xml, xml_to_json, url_decode, url_encode, html_unescape, html_escape; a body a transform cannot read counts as a miss. on_miss: "fail" fails the request when nothing matches, "empty" assigns an empty string; "default" assigns default_value (including an explicitly empty default); mode "all" saves every match as name_1..name_N plus name_count; save_offset/save_length trim each value (bytes); convert post-processes it (url_encode \| url_decode \| html_decode \| html_url_encode). The behavior fields are honored by the HTTP protocol family. |
+| `assertions` | array |  | Response assertions: {type, expected, value, max, case_insensitive, source}. HTTP supports status/time/body checks; text_contains, text_not_contains, text_matches and text_not_matches (value is literal text or an RE2 pattern; a parameter inside a pattern is matched literally; case_insensitive applies) over source "body" (default), "headers" (the raw header block, one "Name: value" CRLF line per value) or "all" (headers, a blank line, then the body), as LoadRunner's web_reg_find searches; plus header_contains (value is a case-insensitive header name; expected is a case-sensitive substring) and body_regex_capture_equals (value is a Go/RE2 pattern up to 4 KiB; expected equals the first capture group, or the full match when no group exists). aura_actions_success structurally verifies that the actual outgoing Aura request and response contain unique matching action IDs and SUCCESS states; malformed, incomplete, unknown or over-limit envelopes fail with bounded value-free evidence, and framework error responses (*/…/*ERROR*/ or an exception event) fail as invalid_session, client_out_of_sync or framework_error. Its optional expected, {"recorded": [{"ordinal", "state"}]}, lists actions that failed in the recording: a repeat failure is labelled "also failed in the recording", and config.http.aura_recorded_failures "accept_recorded" accepts one that ends in the recorded state. |
 | `metadata` | object |  | Free-form metadata; importers preserve source details here. |
 | `timeout_ms` | int |  | Per-action timeout override in milliseconds. |
 | `max_redirects` | int |  | Per-action redirect-policy override (-1 disables). |
-| `auth` | object |  | Per-action auth override: {type, username, password, token, domain}. |
+| `auth` | object |  | Per-action auth override: {type, username, password, token, domain}. HTTP types: basic (sent preemptively), bearer, digest, and the challenge-driven ntlm, negotiate (Negotiate carrying NTLM; domain prefixes the user) and negotiate_any (answers whichever Basic, Digest, NTLM or Negotiate challenge the server sends, as LoadRunner's web_set_user does; write DOMAIN\user for a domain). kerberos is not supported. |
 
 ## Engine actions (any protocol)
 
@@ -83,6 +83,19 @@ Ordered conditional branches: executes the first matching case, or the default b
 
 Clears every cookie in the VUser's HTTP session at this point (imported from web_cleanup_cookies). Protocols without a cookie store treat it as a no-op.
 
+### `cookie_set`
+
+Sets (or, with params.remove, expires) one cookie in the VUser's HTTP cookie store at this point (imported from web_add_cookie and web_remove_cookie). A later Set-Cookie from the server replaces it. Protocols without a cookie store treat it as a no-op.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.name` | string | yes | Cookie name. |
+| `params.value` | string |  | Cookie value; templates are resolved at run time. |
+| `params.domain` | string |  | Domain the cookie is sent to, including subdomains; empty means host-only for the script's base URL host. |
+| `params.path` | string |  | Cookie path; defaults to /. |
+| `params.secure` | bool |  | Send only over HTTPS. |
+| `params.remove` | bool |  | Expire the cookie instead of setting it. |
+
 ### `custom_call`
 
 Imported custom/user C function; logged for manual review during replay.
@@ -104,9 +117,39 @@ Requires one of: `value`, `params.format`
 | `params.format` | string |  | Printf-style format rendered with params.args. |
 | `params.args` | array |  | Arguments substituted into params.format. |
 
+### `http_async_start`
+
+Starts a background HTTP conversation (imported from web_reg_async_attributes): params.request is sent repeatedly while the script continues, until http_async_stop or the end of the iteration. Responses are recorded as "async <id>" and their extractors and callbacks run on the virtual user between actions. HTTP scripts only.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.id` | string | yes | Conversation ID used by http_async_stop; at most 8 conversations run per virtual user. |
+| `params.pattern` | enum |  | poll sends the request every interval_ms, the first one as part of this step (its response is applied before the script continues); long_poll re-sends it as soon as a response arrives; push re-opens a streaming response (read as server-sent events, see params.stream on HTTP requests) when it ends. Defaults to poll. One of: `poll`, `long_poll`, `push`. |
+| `params.interval_ms` | int |  | Poll interval in milliseconds; at least 100. Ignored by long_poll and push, which wait at least 100 ms between requests. |
+| `params.request` | object | yes | The HTTP request action to repeat. Templates are resolved again after each response, so a value one response extracts is sent by the next request. |
+| `control.branches` | array |  | Callback branches {name, steps} run on the virtual user, at most 64 steps each: on_request before the request is resolved again (at start and after each dispatch of responses), on_response after each response (var.async_response_status, var.async_response_success, var.async_response_body), on_body_chunk for each chunk of a streamed response (var.async_chunk: one server-sent event's data, or the whole body of a response that is not an event stream). var.async_conversation_id names the conversation; http_async_stop inside a callback ends the conversation after the callback. |
+
+### `http_async_stop`
+
+Stops a background HTTP conversation and applies its last responses (imported from web_stop_async).
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.id` | string | yes | Conversation ID given to http_async_start. |
+
 ### `http_connections_close`
 
 Closes the VUser's idle pooled HTTP connections without interrupting active requests. Protocols without a connection pool treat it as a no-op.
+
+### `http_sync`
+
+Waits until a background conversation or a WebSocket message callback sets a variable (imported from web_sync), applying conversation responses and dispatching ws_on_message callbacks while it waits.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.variable` | string | yes | Variable to wait for (without the var. prefix). |
+| `params.value` | string |  | Value to wait for; without it any non-empty value ends the wait. |
+| `params.timeout_ms` | int |  | Maximum wait in milliseconds; defaults to 10000. The step fails when it passes. |
 
 ### `rendezvous`
 
@@ -162,7 +205,7 @@ Logs an informational message from an imported script (lr_output_message family)
 | `value` | string |  | Literal message. Used when params.format is absent. |
 | `params.format` | string |  | Printf-style format rendered with params.args. |
 | `params.args` | array |  | Arguments substituted into params.format. |
-| `params.level` | enum: debug\|info\|error |  | Log level; defaults to info. |
+| `params.level` | enum |  | Log level; defaults to info. One of: `debug`, `info`, `error`. |
 | `params.status_message` | bool |  | Also publish the message as the VUser status. |
 
 ### `source_metric`
@@ -260,8 +303,8 @@ Navigates the current page to the previous browser-history entry.
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `params.wait_until` | enum: load\|domcontentloaded\|networkidle\|commit |  | Navigation readiness point; defaults to Playwright's load event. |
-| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `params.wait_until` | enum |  | Navigation readiness point; defaults to Playwright's load event. One of: `load`, `domcontentloaded`, `networkidle`, `commit`. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_check`
@@ -277,7 +320,7 @@ Requires one of: `target`, `selector`, `object_ref`
 | `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
 | `value` | string |  | Desired state. Use false/unchecked to uncheck; defaults to true. |
 | `params.checked` | bool |  | Desired checked state; overrides value when present. |
-| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_click`
@@ -291,9 +334,9 @@ Requires one of: `target`, `selector`, `object_ref`
 | `target` | string |  | Element locator; target, selector, or object_ref is required. |
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
-| `params.button` | enum: left\|right\|middle |  | Mouse button to use; defaults to left. The runtime also accepts primary, secondary, auxiliary, and aux aliases case-insensitively. |
+| `params.button` | enum |  | Mouse button to use; defaults to left. The runtime also accepts primary, secondary, auxiliary, and aux aliases case-insensitively. One of: `left`, `right`, `middle`. |
 | `params.modifiers` | array |  | Modifier keys held for the click, such as Control, Shift, Alt, Meta, or ControlOrMeta. |
-| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_dblclick`
@@ -307,9 +350,9 @@ Requires one of: `target`, `selector`, `object_ref`
 | `target` | string |  | Element locator; target, selector, or object_ref is required. |
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
-| `params.button` | enum: left\|right\|middle |  | Mouse button to use; defaults to left. The runtime also accepts primary, secondary, auxiliary, and aux aliases case-insensitively. |
+| `params.button` | enum |  | Mouse button to use; defaults to left. The runtime also accepts primary, secondary, auxiliary, and aux aliases case-insensitively. One of: `left`, `right`, `middle`. |
 | `params.modifiers` | array |  | Modifier keys held for the double-click, such as Control, Shift, Alt, Meta, or ControlOrMeta. |
-| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_download`
@@ -329,7 +372,7 @@ Requires one of: `target`, `selector`, `object_ref`
 | `params.timeout_ms` | int |  | Maximum wait in milliseconds; defaults to the action timeout. |
 | `params.save_as` | string |  | Full local path to save the downloaded file. |
 | `params.save_dir` | string |  | Directory where the download should be saved using the suggested filename. |
-| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_drag_and_drop`
@@ -344,7 +387,7 @@ Requires one of: `target`, `selector`, `object_ref`
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
 | `params.target` | string | yes | Drop-target locator. |
-| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_evaluate_js`
@@ -354,7 +397,7 @@ Evaluates a reviewed JavaScript snippet in the page (subject to the browser revi
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `target` | string | yes | JavaScript source to evaluate. |
-| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_fill`
@@ -369,9 +412,9 @@ Requires one of: `target`, `selector`, `object_ref`
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
 | `value` | string |  | Text to enter; empty string clears the field and template variables are expanded. |
-| `params.input_mode` | enum: fill\|type |  | fill (default) sets the value; type clears the field and sends per-character keyboard events. |
+| `params.input_mode` | enum |  | fill (default) sets the value; type clears the field and sends per-character keyboard events. One of: `fill`, `type`. |
 | `params.typing_delay_ms` | int |  | Delay between keys in type mode, 0–1000 milliseconds. |
-| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_forward`
@@ -380,8 +423,8 @@ Navigates the current page to the next browser-history entry.
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `params.wait_until` | enum: load\|domcontentloaded\|networkidle\|commit |  | Navigation readiness point; defaults to Playwright's load event. |
-| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `params.wait_until` | enum |  | Navigation readiness point; defaults to Playwright's load event. One of: `load`, `domcontentloaded`, `networkidle`, `commit`. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_handle_dialog`
@@ -390,10 +433,10 @@ Handles the next native dialog (alert/confirm/prompt) by accepting or dismissing
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `params.action` | enum: accept\|dismiss | yes | How to respond: accept or dismiss (required). |
-| `params.dialog_type` | enum: alert\|confirm\|prompt\|beforeunload |  | Expected dialog kind for documentation/validation. |
+| `params.action` | enum | yes | How to respond: accept or dismiss (required). One of: `accept`, `dismiss`. |
+| `params.dialog_type` | enum |  | Expected dialog kind for documentation/validation. One of: `alert`, `confirm`, `prompt`, `beforeunload`. |
 | `params.expected_message` | string |  | If set, the captured dialog message must contain this text. |
-| `params.match_mode` | enum: exact\|contains\|normalized |  | Message comparison mode; recorder-origin dialogs default to contains. |
+| `params.match_mode` | enum |  | Message comparison mode; recorder-origin dialogs default to contains. One of: `exact`, `contains`, `normalized`. |
 | `params.prompt_text` | string |  | Text entered into a prompt dialog when accepting. |
 | `params.wait_ms` | int |  | How long to wait for the dialog to appear (default 1000; maximum 3600000). |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
@@ -409,7 +452,7 @@ Requires one of: `target`, `selector`, `object_ref`
 | `target` | string |  | Element locator; target, selector, or object_ref is required. |
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
-| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_long_press`
@@ -424,7 +467,7 @@ Requires one of: `target`, `selector`, `object_ref`
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
 | `params.duration_ms` | int |  | Press duration in milliseconds; must be greater than zero and at most 3600000. |
-| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_navigate`
@@ -437,7 +480,7 @@ Requires one of: `target`, `selector`
 |-------|------|----------|-------------|
 | `target` | string |  | Destination URL; target or selector is required. |
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
-| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_open_window`
@@ -450,7 +493,7 @@ Requires one of: `target`, `params.url`
 |-------|------|----------|-------------|
 | `target` | string |  | Destination URL. |
 | `params.url` | string |  | Destination URL alternative to target. |
-| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_press_key`
@@ -466,7 +509,7 @@ Requires one of: `value`, `params.key`, `params.key_name`, `params.keyName`
 | `params.key` | string |  | Key name alternative to value. |
 | `params.key_name` | string |  | Key name alternative to value. |
 | `params.modifiers` | array |  | Modifier keys held for the press, such as Control, Shift, Alt, Meta, or ControlOrMeta. |
-| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_reload`
@@ -475,8 +518,8 @@ Reloads the current page.
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `params.wait_until` | enum: load\|domcontentloaded\|networkidle\|commit |  | Navigation readiness point; defaults to Playwright's load event. |
-| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `params.wait_until` | enum |  | Navigation readiness point; defaults to Playwright's load event. One of: `load`, `domcontentloaded`, `networkidle`, `commit`. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_screenshot`
@@ -502,7 +545,7 @@ Scrolls the page or a scrollable element by a pixel delta.
 | `params.delta_y` | int |  | Vertical scroll delta in pixels. Positive values scroll down. |
 | `params.scroll_x` | int |  | Recorded absolute horizontal scroll position after capture; informational. |
 | `params.scroll_y` | int |  | Recorded absolute vertical scroll position after capture; informational. |
-| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_select`
@@ -519,7 +562,7 @@ Requires one of: `target`, `selector`, `object_ref`
 | `value` | string |  | Single option value or label to select. |
 | `params.values` | array |  | Option values or labels to select for a multi-select. |
 | `params.option_index` | int |  | Zero-based option index, 0–999999. Cannot be combined with value or values. |
-| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_set_files`
@@ -539,7 +582,7 @@ Requires one of: `value`, `params.file`, `params.path`, `params.files`
 | `params.file` | string |  | Single file path alternative to value. |
 | `params.path` | string |  | Single file path alternative to value. |
 | `params.files` | array |  | Multiple file paths. |
-| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_set_geolocation`
@@ -565,9 +608,9 @@ Requires one of: `target`, `selector`, `object_ref`
 | `target` | string |  | Element locator; target, selector, or object_ref is required. |
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
-| `params.direction` | enum: left\|right\|up\|down |  | Swipe direction. |
+| `params.direction` | enum |  | Swipe direction. One of: `left`, `right`, `up`, `down`. |
 | `params.distance` | int |  | Swipe distance in pixels; must be greater than zero. |
-| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_switch_frame`
@@ -582,7 +625,7 @@ Requires one of: `selector`, `target`, `params.frame`, `params.frame_selector`
 | `target` | string |  | Frame locator alternative to selector. |
 | `params.frame` | any |  | Frame name or zero-based index. |
 | `params.frame_selector` | string |  | Frame element locator. |
-| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_switch_window`
@@ -592,7 +635,7 @@ Switches the action scope to another window or tab.
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `target` | string |  | Window title, URL, or index to switch to. |
-| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_tap`
@@ -606,7 +649,7 @@ Requires one of: `target`, `selector`, `object_ref`
 | `target` | string |  | Element locator; target, selector, or object_ref is required. |
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
-| `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
+| `sync` | object |  | Post-step synchronization: {type (network_idle\|dom_stable\|element_visible\|duration\|load\|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_wait`
@@ -620,7 +663,7 @@ Requires one of: `wait_for`, `selector`, `target`
 | `wait_for` | object |  | Wait condition: {type, value, timeout_ms}. One of wait_for, selector, or target is required. |
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `target` | string |  | Element locator alternative to selector. |
-| `params.operator` | enum: =\|==\|===\|!=\|!==\|>\|>=\|<\|<= |  | Element-count comparison operator used with params.count; defaults to >= when count is set. |
+| `params.operator` | enum |  | Element-count comparison operator used with params.count; defaults to >= when count is set. One of: `=`, `==`, `===`, `!=`, `!==`, `>`, `>=`, `<`, `<=`. |
 | `params.text` | string |  | Required text substring for wait_for.type=element_text; waits for visible matching text in the selected element/frame. |
 | `params.count` | int |  | Required element count for count-based waits; zero or greater. |
 
@@ -634,7 +677,7 @@ Waits for a browser network response matching URL, method, status, or resource f
 | `params.url_contains` | string |  | URL substring to match; target is used when this is empty. |
 | `params.url` | string |  | Exact response URL to match. |
 | `params.url_regex` | string |  | Regular expression matched against response URL. |
-| `params.method` | enum: GET\|POST\|PUT\|PATCH\|DELETE\|HEAD\|OPTIONS |  | HTTP method filter. |
+| `params.method` | enum |  | HTTP method filter. One of: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`. |
 | `params.status` | int |  | Expected HTTP status code; alias of params.status_code. |
 | `params.status_code` | int |  | Expected HTTP status code. |
 | `params.resource_type` | string |  | Browser resource type filter, such as xhr, fetch, document, script, or image. |
@@ -649,9 +692,9 @@ Asserts that matching WebSocket events have been observed in the replayed browse
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `params.url_contains` | string |  | Substring that must appear in the WebSocket URL. |
-| `params.direction` | enum: open\|sent\|received |  | Observed event direction. |
+| `params.direction` | enum |  | Observed event direction. One of: `open`, `sent`, `received`. |
 | `params.match` | string |  | Payload match text or regex. |
-| `params.match_mode` | enum: contains\|exact\|regex |  | Payload comparison mode. |
+| `params.match_mode` | enum |  | Payload comparison mode. One of: `contains`, `exact`, `regex`. |
 | `params.count` | int |  | Number of matching events required. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
@@ -662,9 +705,9 @@ Waits for a WebSocket open event or frame observed in the replayed browser page.
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `params.url_contains` | string |  | Substring that must appear in the WebSocket URL. |
-| `params.direction` | enum: open\|sent\|received |  | Observed event direction. |
+| `params.direction` | enum |  | Observed event direction. One of: `open`, `sent`, `received`. |
 | `params.match` | string |  | Payload match text or regex. |
-| `params.match_mode` | enum: contains\|exact\|regex |  | Payload comparison mode. |
+| `params.match_mode` | enum |  | Payload comparison mode. One of: `contains`, `exact`, `regex`. |
 | `params.timeout_ms` | int |  | Maximum wait in milliseconds. |
 | `params.count` | int |  | Number of matching events required. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
@@ -838,17 +881,21 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
+| `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `body_multipart` | object |  | multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
+| `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
+| `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
-| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
+| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
 ### `GET`
 
@@ -858,17 +905,21 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
+| `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `body_multipart` | object |  | multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
+| `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
+| `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
-| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
+| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
 ### `HEAD`
 
@@ -878,17 +929,21 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
+| `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `body_multipart` | object |  | multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
+| `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
+| `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
-| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
+| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
 ### `OPTIONS`
 
@@ -898,17 +953,21 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
+| `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `body_multipart` | object |  | multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
+| `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
+| `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
-| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
+| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
 ### `PATCH`
 
@@ -918,17 +977,21 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
+| `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `body_multipart` | object |  | multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
+| `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
+| `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
-| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
+| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
 ### `POST`
 
@@ -938,17 +1001,21 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
+| `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `body_multipart` | object |  | multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
+| `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
+| `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
-| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
+| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
 ### `PUT`
 
@@ -958,17 +1025,21 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
+| `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `body_multipart` | object |  | multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
+| `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
+| `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
-| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
+| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
 ### `http_oauth2_token`
 
@@ -997,8 +1068,71 @@ Composite HTTP step with sequential execution by default or bounded concurrent r
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `params.requests` | array | yes | Child HTTP requests with full action fields. At least one required; concurrent mode permits at most 256. Concurrent children are prepared in source order, joined, then publish extractions in source order. A concurrent group whose every child sets metadata.source_request_transaction records one transaction per child under that name, timed by the child's request and passing when it succeeds, instead of the group's aggregate transaction; each counts toward a transaction goal. Naming only some children is rejected. |
-| `params.execution_mode` | enum: sequential\|concurrent |  | Sequential when absent. Concurrent requests share the parent HTTP session; debugger pause and step occur at the group boundary. |
+| `params.execution_mode` | enum |  | Sequential when absent. Concurrent requests share the parent HTTP session; debugger pause and step occur at the group boundary. One of: `sequential`, `concurrent`. |
 | `params.max_concurrency` | int |  | Integer 1..16. Concurrent default is min(8, child count). Concurrent preparation is bounded to 16 MiB of source and prepared surfaces and 64 MiB of work. Duplicate extractor names and nonzero child think time are rejected before traffic. |
+
+### `ws_close`
+
+Closes the WebSocket connection.
+
+Protocols: websocket, http
+
+### `ws_connect`
+
+Opens the WebSocket connection.
+
+Protocols: websocket, http
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string | yes | WebSocket URL (ws:// or wss://); relative paths resolve against config.base_url. In an HTTP script the handshake shares the script's cookie jar and TLS settings, so a socket opened after an HTTP login carries the session cookie. |
+| `headers` | object |  | Handshake request headers. |
+
+### `ws_dispatch`
+
+Waits until the next callback interval and dispatches queued messages serially.
+
+Protocols: websocket, http
+
+### `ws_on_message`
+
+Registers serial per-VUser message callbacks for the current connection; reconnect requires registration again.
+
+Protocols: websocket, http
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `control` | object | yes | control.steps executes for each queued message; var.ws_message and var.ws_message_type contain the event. |
+
+### `ws_ping`
+
+Sends a ping control frame.
+
+Protocols: websocket, http
+
+### `ws_receive`
+
+Waits for the next inbound message.
+
+Protocols: websocket, http
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.timeout_ms` | int |  | Receive timeout in milliseconds; zero through 3600000. |
+
+### `ws_send`
+
+Sends a message over the open connection.
+
+Protocols: websocket, http
+
+Requires one of: `body`, `body_file`
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `body` | string |  | Message payload; template variables are expanded. |
+| `body_file` | string |  | Local file containing the message payload. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
+| `params.type` | enum |  | Message frame type; defaults to text. One of: `text`, `binary`. |
 
 ## Protocol: java_http
 
@@ -1010,17 +1144,21 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
+| `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `body_multipart` | object |  | multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
+| `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
+| `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
-| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
+| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
 ### `GET`
 
@@ -1030,17 +1168,21 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
+| `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `body_multipart` | object |  | multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
+| `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
+| `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
-| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
+| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
 ### `HEAD`
 
@@ -1050,17 +1192,21 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
+| `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `body_multipart` | object |  | multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
+| `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
+| `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
-| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
+| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
 ### `OPTIONS`
 
@@ -1070,17 +1216,21 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
+| `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `body_multipart` | object |  | multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
+| `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
+| `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
-| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
+| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
 ### `PATCH`
 
@@ -1090,17 +1240,21 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
+| `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `body_multipart` | object |  | multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
+| `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
+| `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
-| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
+| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
 ### `POST`
 
@@ -1110,17 +1264,21 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
+| `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `body_multipart` | object |  | multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
+| `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
+| `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
-| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
+| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
 ### `PUT`
 
@@ -1130,17 +1288,21 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
+| `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `body_multipart` | object |  | multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
+| `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
+| `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
-| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
+| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
 ## Protocol: java_vuser
 
@@ -1151,7 +1313,7 @@ Runs a LoadRunner Java Vuser lifecycle through the governed JVM sidecar runner.
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `target` | string | yes | Java class name to load, usually Actions. |
-| `params.method` | enum: init\|vuser_init\|initialize\|action\|run\|end\|vuser_end\|teardown\|full_lifecycle |  | Source lifecycle method name or legacy full lifecycle sequence to invoke. |
+| `params.method` | enum |  | Source lifecycle method name or legacy full lifecycle sequence to invoke. One of: `init`, `vuser_init`, `initialize`, `action`, `run`, `end`, `vuser_end`, `teardown`, `full_lifecycle`. |
 | `params.source_archive_ref` | string |  | Preserved source archive or authoring artifact reference. |
 | `params.timeout_ms` | int |  | Per-run timeout in milliseconds (maximum 3600000); falls back to config.java_vuser.action_timeout_ms. |
 | `params.runner_requirement` | string |  | Governance gate required before execution, usually java_vuser_jvm_runner. |
@@ -1173,7 +1335,7 @@ Browses a queue non-destructively (JMS QueueBrowser); messages are not consumed.
 |-------|------|----------|-------------|
 | `target` | string |  | Queue to browse; falls back to config.jms.destination. |
 | `params.destination` | string |  | Queue alternative to target; falls back to config.jms.destination. |
-| `params.destination_type` | enum: queue\|topic |  | Destination kind; falls back to config.jms.destination_type. |
+| `params.destination_type` | enum |  | Destination kind; falls back to config.jms.destination_type. One of: `queue`, `topic`. |
 | `params.subscription` | string |  | Topic subscription name to browse (required when browsing a topic). |
 | `params.selector` | string |  | JMS message selector (SQL-92 subset) restricting which messages are browsed. |
 | `params.max` | int |  | Maximum messages to browse (default 10). |
@@ -1202,12 +1364,12 @@ Consumes the next message from a queue or topic.
 |-------|------|----------|-------------|
 | `target` | string |  | Source queue/topic; falls back to config.jms.destination. |
 | `params.destination` | string |  | Source alternative to target; falls back to config.jms.destination. |
-| `params.destination_type` | enum: queue\|topic |  | Destination kind; falls back to config.jms.destination_type. |
+| `params.destination_type` | enum |  | Destination kind; falls back to config.jms.destination_type. One of: `queue`, `topic`. |
 | `params.subscription` | string |  | Topic subscription name (also the Azure Service Bus topic subscription); falls back to config.jms.subscription. Required to consume from a topic. |
-| `params.subscription_mode` | enum: non_durable\|durable\|shared |  | Topic subscription mode. A subscription is identified by name: multiple consumers using the same subscription name compete for its messages (shared), while distinct names each get their own copy (fan-out). durable persists the named subscription on Solace/AMQP; non_durable/shared do not. Service Bus subscriptions are natively durable. |
+| `params.subscription_mode` | enum |  | Topic subscription mode. A subscription is identified by name: multiple consumers using the same subscription name compete for its messages (shared), while distinct names each get their own copy (fan-out). durable persists the named subscription on Solace/AMQP; non_durable/shared do not. Service Bus subscriptions are natively durable. One of: `non_durable`, `durable`, `shared`. |
 | `params.timeout_ms` | int |  | Consume timeout in milliseconds; falls back to config.jms.timeout_ms. |
 | `params.dead_letter` | bool |  | Consume from / classify the dead-letter destination. |
-| `params.sub_queue` | enum: none\|dead_letter\|transfer_dead_letter |  | Azure Service Bus sub-queue to receive from (requires jms_servicebus_real). |
+| `params.sub_queue` | enum |  | Azure Service Bus sub-queue to receive from (requires jms_servicebus_real). One of: `none`, `dead_letter`, `transfer_dead_letter`. |
 | `params.peek_lock` | bool |  | Azure Service Bus: defer settlement instead of auto-completing, returning a settlement_token for a later jms_settle (requires jms_servicebus_real). |
 | `params.session_token` | string |  | Token from jms_session_accept used to consume through an accepted Azure Service Bus session (requires jms_servicebus_real). |
 | `params.selector` | string |  | JMS message selector (SQL-92 subset over headers/properties) — only matching messages are consumed. Supported by Solace/AMQP and the mock; Azure Service Bus uses subscription rules instead. |
@@ -1223,7 +1385,7 @@ Publishes a message to a queue or topic.
 | `body_file` | string |  | Local file containing the message payload. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `headers` | object |  | Message properties/headers. |
 | `params.destination` | string |  | Destination alternative to target; falls back to config.jms.destination. |
-| `params.destination_type` | enum: queue\|topic |  | Destination kind; falls back to config.jms.destination_type. |
+| `params.destination_type` | enum |  | Destination kind; falls back to config.jms.destination_type. One of: `queue`, `topic`. |
 | `params.correlation_id` | string |  | Correlation ID set on the outgoing message. |
 | `params.dead_letter` | bool |  | Marks this action as targeting a dead-letter destination (drives dead-letter classification). |
 | `params.message_id` | string |  | Explicit message ID (Service Bus duplicate detection uses it); defaults to a generated UUID. |
@@ -1231,10 +1393,10 @@ Publishes a message to a queue or topic.
 | `params.partition_key` | string |  | Azure Service Bus partition key (co-locates messages on one partition); requires the real Service Bus adapter. |
 | `params.scheduled_enqueue_ms` | int |  | Azure Service Bus scheduled enqueue delay in milliseconds; requires the real Service Bus adapter, which holds the message until then. |
 | `params.time_to_live_ms` | int |  | Message time-to-live in milliseconds before the broker expires it. |
-| `params.message_type` | enum: text\|bytes\|map\|stream\|object |  | JMS message type. map/stream read params.map_body/params.stream_body; text/bytes/object use body. |
+| `params.message_type` | enum |  | JMS message type. map/stream read params.map_body/params.stream_body; text/bytes/object use body. One of: `text`, `bytes`, `map`, `stream`, `object`. |
 | `params.map_body` | object |  | Named values for a MapMessage (message_type=map); JSON-encoded into the body for replay. |
 | `params.stream_body` | array |  | Ordered values for a StreamMessage (message_type=stream); JSON-encoded into the body for replay. |
-| `params.delivery_mode` | enum: persistent\|non_persistent |  | Per-message delivery mode; falls back to config.jms.delivery_mode. Applied by the AMQP/Solace adapter. |
+| `params.delivery_mode` | enum |  | Per-message delivery mode; falls back to config.jms.delivery_mode. Applied by the AMQP/Solace adapter. One of: `persistent`, `non_persistent`. |
 | `params.priority` | int |  | JMS message priority 0-9; applied by the AMQP/Solace adapter (Azure Service Bus carries it as a JMSPriority property but does not honor priority ordering). |
 
 ### `jms_receive_deferred`
@@ -1245,7 +1407,7 @@ Receives previously deferred Azure Service Bus messages by sequence number (peek
 |-------|------|----------|-------------|
 | `target` | string |  | Source queue/topic; falls back to config.jms.destination. |
 | `params.destination` | string |  | Source queue/topic alternative to target; falls back to config.jms.destination. |
-| `params.destination_type` | enum: queue\|topic |  | Source destination kind; falls back to config.jms.destination_type. |
+| `params.destination_type` | enum |  | Source destination kind; falls back to config.jms.destination_type. One of: `queue`, `topic`. |
 | `params.subscription` | string |  | Topic subscription when receiving deferred messages from a topic. |
 | `params.sequence_numbers` | any | yes | Positive sequence numbers to fetch (array of numbers, one number, or a comma-separated string). |
 | `params.timeout_ms` | int |  | Receive timeout in milliseconds. |
@@ -1273,7 +1435,7 @@ Sends a request message and waits for the correlated reply.
 | `params.subscription` | string |  | Azure Service Bus topic subscription for consuming replies from a topic; falls back to config.jms.subscription. |
 | `params.timeout_ms` | int |  | Reply timeout in milliseconds. |
 | `params.destination` | string |  | Request destination alternative to target; falls back to config.jms.destination. |
-| `params.destination_type` | enum: queue\|topic |  | Destination kind; falls back to config.jms.destination_type. |
+| `params.destination_type` | enum |  | Destination kind; falls back to config.jms.destination_type. One of: `queue`, `topic`. |
 | `params.correlation_id` | string |  | Correlation ID for matching the reply; defaults to the request message ID. |
 | `params.dead_letter` | bool |  | Marks the request destination as a dead-letter destination for dependency classification. |
 | `params.message_id` | string |  | Explicit request message ID; defaults to a generated UUID. |
@@ -1281,10 +1443,10 @@ Sends a request message and waits for the correlated reply.
 | `params.partition_key` | string |  | Azure Service Bus partition key for the request message; requires the real Service Bus adapter. |
 | `params.scheduled_enqueue_ms` | int |  | Azure Service Bus scheduled enqueue delay for the request message; requires the real Service Bus adapter. |
 | `params.time_to_live_ms` | int |  | Request message time-to-live in milliseconds. |
-| `params.message_type` | enum: text\|bytes\|map\|stream\|object |  | JMS message type of the request. map/stream read params.map_body/params.stream_body; text/bytes/object use body. |
+| `params.message_type` | enum |  | JMS message type of the request. map/stream read params.map_body/params.stream_body; text/bytes/object use body. One of: `text`, `bytes`, `map`, `stream`, `object`. |
 | `params.map_body` | object |  | Named values for a MapMessage request (message_type=map); JSON-encoded into the body for replay. |
 | `params.stream_body` | array |  | Ordered values for a StreamMessage request (message_type=stream); JSON-encoded into the body for replay. |
-| `params.delivery_mode` | enum: persistent\|non_persistent |  | Per-message delivery mode of the request; falls back to config.jms.delivery_mode. |
+| `params.delivery_mode` | enum |  | Per-message delivery mode of the request; falls back to config.jms.delivery_mode. One of: `persistent`, `non_persistent`. |
 | `params.priority` | int |  | JMS message priority 0-9 of the request; applied by the AMQP/Solace adapter. |
 
 ### `jms_rollback`
@@ -1299,7 +1461,7 @@ Accepts an Azure Service Bus session (specific or next available), returning a s
 |-------|------|----------|-------------|
 | `target` | string |  | Session-enabled queue/topic; falls back to config.jms.destination. |
 | `params.destination` | string |  | Session-enabled queue/topic alternative to target; falls back to config.jms.destination. |
-| `params.destination_type` | enum: queue\|topic |  | Destination kind; falls back to config.jms.destination_type. |
+| `params.destination_type` | enum |  | Destination kind; falls back to config.jms.destination_type. One of: `queue`, `topic`. |
 | `params.session_id` | string |  | Specific session id to accept; empty accepts the next available session. |
 | `params.subscription` | string |  | Topic subscription when the destination is a topic. |
 | `params.timeout_ms` | int |  | Session-accept timeout in milliseconds; falls back to config.jms.timeout_ms. |
@@ -1330,7 +1492,7 @@ Settles a peek-locked Azure Service Bus message (complete/abandon/dead-letter/de
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `params.settlement_token` | string | yes | Token from a peek_lock jms_consume identifying the in-flight message. |
-| `params.disposition` | enum: complete\|abandon\|dead_letter\|defer |  | How to settle the message (default complete). |
+| `params.disposition` | enum |  | How to settle the message (default complete). One of: `complete`, `abandon`, `dead_letter`, `defer`. |
 | `params.dead_letter_reason` | string |  | Reason recorded when disposition=dead_letter. |
 | `params.dead_letter_description` | string |  | Description recorded when disposition=dead_letter. |
 | `params.timeout_ms` | int |  | Settlement operation timeout in milliseconds; falls back to config.jms.timeout_ms. |
@@ -1417,7 +1579,7 @@ Aliases: `dns_lookup`
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `target` | string | yes | Hostname to resolve. |
-| `params.record_type` | enum: A\|AAAA\|CNAME\|MX\|NS\|TXT |  | DNS record type; defaults to A. |
+| `params.record_type` | enum |  | DNS record type; defaults to A. One of: `A`, `AAAA`, `CNAME`, `MX`, `NS`, `TXT`. |
 
 ### `ftp_command`
 
@@ -1572,7 +1734,7 @@ Execution posture: `external_runner_required` — Authorable and importable, but
 |-------|------|----------|-------------|
 | `target` | string | yes | Full SAP GUI control ID. |
 | `value` | string |  | Operation value, when applicable. |
-| `params.method` | enum: select_row\|select_cell\|double_click_cell\|press_toolbar_button\|set_cell\|sort\|filter |  | Typed operation. |
+| `params.method` | enum |  | Typed operation. One of: `select_row`, `select_cell`, `double_click_cell`, `press_toolbar_button`, `set_cell`, `sort`, `filter`. |
 | `params.row` | int |  | Row index. |
 | `params.column` | string |  | Column name or ID. |
 
@@ -1629,7 +1791,7 @@ Execution posture: `external_runner_required` — Authorable and importable, but
 |-------|------|----------|-------------|
 | `target` | string | yes | Full SAP GUI control ID. |
 | `value` | string | yes | Value to set. |
-| `params.control` | enum: text\|combo\|checkbox\|radio\|button\|grid\|table\|tree\|menu\|shell\|unknown |  | Recorded control family. |
+| `params.control` | enum |  | Recorded control family. One of: `text`, `combo`, `checkbox`, `radio`, `button`, `grid`, `table`, `tree`, `menu`, `shell`, `unknown`. |
 | `params.description` | string |  | Recorded control description. |
 
 ### `sapgui_sync`
@@ -1641,7 +1803,7 @@ Execution posture: `external_runner_required` — Authorable and importable, but
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `target` | string |  | Optional control/status target. |
-| `params.wait_for` | enum: status_bar\|screen_change\|session_idle |  | Synchronization mode. |
+| `params.wait_for` | enum |  | Synchronization mode. One of: `status_bar`, `screen_change`, `session_idle`. |
 | `params.timeout_ms` | int |  | Timeout in milliseconds. |
 
 ### `sapgui_table`
@@ -1654,7 +1816,7 @@ Execution posture: `external_runner_required` — Authorable and importable, but
 |-------|------|----------|-------------|
 | `target` | string | yes | Full SAP GUI control ID. |
 | `value` | string |  | Operation value, when applicable. |
-| `params.method` | enum: select_row\|set_cell\|get_cell\|press_cell\|scroll |  | Typed operation. |
+| `params.method` | enum |  | Typed operation. One of: `select_row`, `set_cell`, `get_cell`, `press_cell`, `scroll`. |
 | `params.row` | int |  | Row index. |
 | `params.column` | string |  | Column name or ID. |
 
@@ -1668,7 +1830,7 @@ Execution posture: `external_runner_required` — Authorable and importable, but
 |-------|------|----------|-------------|
 | `target` | string | yes | Full SAP GUI control ID. |
 | `value` | string |  | Operation value, when applicable. |
-| `params.method` | enum: select_node\|expand_node\|collapse_node\|double_click_node |  | Typed operation. |
+| `params.method` | enum |  | Typed operation. One of: `select_node`, `expand_node`, `collapse_node`, `double_click_node`. |
 | `params.row` | int |  | Row index. |
 | `params.column` | string |  | Column name or ID. |
 
@@ -1682,7 +1844,7 @@ Execution posture: `external_runner_required` — Authorable and importable, but
 |-------|------|----------|-------------|
 | `target` | string | yes | Control or status bar ID. |
 | `value` | string | yes | Expected value/text. |
-| `params.method` | enum: equals\|contains\|matches |  | Comparison method. |
+| `params.method` | enum |  | Comparison method. One of: `equals`, `contains`, `matches`. |
 
 ### `sapgui_window`
 
@@ -1693,7 +1855,7 @@ Execution posture: `external_runner_required` — Authorable and importable, but
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `target` | string | yes | Window ID such as wnd[0]. |
-| `params.method` | enum: activate\|maximize\|resize\|close |  | Window operation. |
+| `params.method` | enum |  | Window operation. One of: `activate`, `maximize`, `resize`, `close`. |
 
 ## Protocol: soap
 
@@ -1705,17 +1867,21 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
+| `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `body_multipart` | object |  | multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
+| `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
+| `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
-| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
+| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
 ### `GET`
 
@@ -1725,17 +1891,21 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
+| `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `body_multipart` | object |  | multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
+| `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
+| `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
-| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
+| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
 ### `HEAD`
 
@@ -1745,17 +1915,21 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
+| `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `body_multipart` | object |  | multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
+| `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
+| `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
-| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
+| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
 ### `OPTIONS`
 
@@ -1765,17 +1939,21 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
+| `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `body_multipart` | object |  | multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
+| `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
+| `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
-| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
+| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
 ### `PATCH`
 
@@ -1785,17 +1963,21 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
+| `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `body_multipart` | object |  | multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
+| `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
+| `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
-| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
+| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
 ### `POST`
 
@@ -1805,17 +1987,21 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
+| `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `body_multipart` | object |  | multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
+| `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
+| `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
-| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
+| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
 ### `PUT`
 
@@ -1825,17 +2011,21 @@ Protocols: http, soap, java_http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
+| `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step). |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `http_version` | enum: auto\|1.1\|2 |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. |
+| `http_version` | enum |  | Request transport policy. Omission inherits config.http.version; auto negotiates, 1.1 requires HTTP/1.1, and 2 requires HTTP/2 (TLS or prior-knowledge h2c) without fallback. Null and empty strings are invalid. One of: `auto`, `1.1`, `2`. |
 | `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\xNN`, octal, `\\`, `\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary). |
+| `body_multipart` | object |  | multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children). |
+| `params.html_step` | object |  | HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet. |
+| `params.html_mode` | bool |  | LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both. |
+| `params.resource_step` | bool |  | LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
-| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
+| `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml\|generated)}. |
 
 ## Protocol: websocket
 
@@ -1843,22 +2033,30 @@ Protocols: http, soap, java_http
 
 Closes the WebSocket connection.
 
+Protocols: websocket, http
+
 ### `ws_connect`
 
 Opens the WebSocket connection.
 
+Protocols: websocket, http
+
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | WebSocket URL (ws:// or wss://); relative paths resolve against config.base_url. |
+| `target` | string | yes | WebSocket URL (ws:// or wss://); relative paths resolve against config.base_url. In an HTTP script the handshake shares the script's cookie jar and TLS settings, so a socket opened after an HTTP login carries the session cookie. |
 | `headers` | object |  | Handshake request headers. |
 
 ### `ws_dispatch`
 
 Waits until the next callback interval and dispatches queued messages serially.
 
+Protocols: websocket, http
+
 ### `ws_on_message`
 
 Registers serial per-VUser message callbacks for the current connection; reconnect requires registration again.
+
+Protocols: websocket, http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
@@ -1868,9 +2066,13 @@ Registers serial per-VUser message callbacks for the current connection; reconne
 
 Sends a ping control frame.
 
+Protocols: websocket, http
+
 ### `ws_receive`
 
 Waits for the next inbound message.
+
+Protocols: websocket, http
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
@@ -1880,11 +2082,13 @@ Waits for the next inbound message.
 
 Sends a message over the open connection.
 
+Protocols: websocket, http
+
 Requires one of: `body`, `body_file`
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `body` | string |  | Message payload; template variables are expanded. |
 | `body_file` | string |  | Local file containing the message payload. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `params.type` | enum: text\|binary |  | Message frame type; defaults to text. |
+| `params.type` | enum |  | Message frame type; defaults to text. One of: `text`, `binary`. |
 

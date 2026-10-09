@@ -1,0 +1,1 @@
+import{ct as e}from"./vendor-DpcE_Qse.js";var t=e();function n({title:e,hint:n,action:r,compact:i=!1}){return(0,t.jsxs)(`div`,{className:`pp-empty ux-empty-state${i?` pp-empty-compact`:``}`,children:[(0,t.jsx)(`p`,{className:`ux-empty-title`,children:e}),n&&(0,t.jsx)(`p`,{children:n}),r]})}export{n as t};

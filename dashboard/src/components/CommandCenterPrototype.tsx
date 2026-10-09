@@ -5,11 +5,13 @@ import ResourceSnapshotList from './ResourceSnapshotList'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
 import { createContext, lazy, Suspense, useContext, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import type { CommandCenterRouteView } from '../appRouting'
 import { createPortal } from 'react-dom'
 import {
   Area,
   AreaChart,
   CartesianGrid,
+  Legend,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -21,7 +23,7 @@ import PageViewToggle from './PageViewToggle'
 import StatusBadge from './StatusBadge'
 import CommandCenterOverview, { type CommandCenterOverviewProps } from './CommandCenterOverview'
 import { useTestApi } from '../hooks/api/useTestApi'
-import { isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
+import { formatRunClock, isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
 import { isCompletedTestStatus, isLiveTestStatus, isPendingTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
 import { useRunActionConfirmation } from './useRunActionConfirmation'
 import type { BrowserReplaySnapshot, GroupLiveMetrics, ImportedDashboardResult, IntervalSummaryRecord, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, PrometheusGraph, TestGroup, TestGroupParametersUpdateResult, TestGroupRuntimeSettingsUpdateResult, TestStatus, TestSummary, TransactionEvent, TxMetrics, VUserRampStatus } from '../types'
@@ -63,8 +65,12 @@ import {
   formatSnapshotRequestLineAndHeaders,
   formatSnapshotResponseStatusAndHeaders,
 } from '../utils/snapshotFormatUtils'
+import { attemptErrorPercent, errorRateBasisLabel, groupRunCounts, groupRunErrorPercent, liveRunCounts, type ErrorRateBasis } from '../utils/liveErrorRate'
+import { formatPercentValue } from '../utils/numberFormat'
 import './TestExecution.css'
 import './CommandCenterPrototype.css'
+import { MISSING_VALUE } from './runReport/reportPresentation'
+import LoadingState from './ux/LoadingState'
 
 const TestExecutionScenarioEditor = lazy(() => import('./TestExecutionScenarioEditor'))
 
@@ -83,6 +89,9 @@ export function historicalGroupSummaryQuery(groups: string[]) {
 
 interface CommandCenterPrototypeProps {
   testId?: string
+  /** Analysis view held in the route (`?view=`); absent is the operations view. */
+  routeView?: CommandCenterRouteView
+  onRouteViewChange?: (view: CommandCenterRouteView | undefined) => void
   history?: MetricsHistoryPoint[]
   statusOverride?: string
   initialTest?: TestSummary
@@ -92,6 +101,10 @@ interface CommandCenterPrototypeProps {
   scopeLabel?: string
   onSelectRun?: (id: string) => void
   canManageTests?: boolean
+  /** Set once access is known and this role cannot control runs: controls are shown read-only with this reason. */
+  runControlsReadOnlyReason?: string
+  /** The live update stream; when it is down, live values may be stale. */
+  liveStreamState?: 'connected' | 'connecting' | 'disconnected'
   onOpenOverview?: () => void
   runViewMemory?: Map<string, Map<string, unknown>>
   overviewActions?: Pick<CommandCenterOverviewProps, 'onNewTest' | 'newTestDisabledReason' | 'onBrowseScenarios' | 'releases' | 'onSelectRelease' | 'onOpenRepository'>
@@ -195,17 +208,9 @@ function formatNumber(value: number, digits = 0) {
 }
 
 function formatPercent(value: number) {
-  return `${value.toFixed(2)}%`
+  return formatPercentValue(value)
 }
 
-function formatRemaining(seconds: number) {
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  const remSeconds = seconds % 60
-  return hours > 0
-    ? `${hours}h ${minutes.toString().padStart(2, '0')}m`
-    : `${minutes}m ${remSeconds.toString().padStart(2, '0')}s`
-}
 
 function clampTarget(value: number, role?: TestGroup['role']) {
   return clampVUsersForRole(value, role)
@@ -245,7 +250,7 @@ function coerceTestStatus(status: string | undefined, fallback: TestStatus = 'RU
 }
 
 function formatTimeValue(value?: string) {
-  if (!value) return 'n/a'
+  if (!value) return MISSING_VALUE
   const parsed = Date.parse(value)
   return Number.isNaN(parsed) ? value : new Date(parsed).toLocaleTimeString()
 }
@@ -268,17 +273,28 @@ function isHistoricalRunStatus(status: TestStatus | string | undefined) {
   return status === 'COMPLETE' || status === 'FAILED' || status === 'ABORTED'
 }
 
+// The group settings dialogs open from a context-menu item that unmounts when
+// the dialog opens; focus returns to that group's row action button instead.
+function groupActionsSelector(groupName: string) {
+  // Escape for a double-quoted CSS attribute value (CSS.escape is not in every runtime).
+  const label = `${groupName} group actions`.replace(/["\\]/g, match => `\\${match}`)
+  return `button.command-group-name[aria-label="${label}"]`
+}
+
+// Error rates on this page are run-to-date whenever the controller reports
+// run counters; a one-second window misreports a failing run as 0.00%.
 function groupErrorPercent(group: GroupLiveMetrics | undefined) {
-  if (!group) return 0
-  const attempts = group.transactions + group.errors
-  return attempts > 0 ? group.errors / attempts * 100 : 0
+  return groupRunErrorPercent(group)
 }
 
 function wholeTestErrorPercent(metrics: LiveMetrics | undefined, groups: CommandGroup[]) {
-  const totalTransactions = metrics?.total_transactions ?? groups.reduce((sum, group) => sum + group.transactions, 0)
-  const totalErrors = metrics?.total_errors ?? groups.reduce((sum, group) => sum + group.errors, 0)
-  const attempts = totalTransactions + totalErrors
-  return attempts > 0 ? totalErrors / attempts * 100 : 0
+  const counts = liveRunCounts(metrics)
+  if (counts) return attemptErrorPercent(counts.transactions, counts.errors)
+  return attemptErrorPercent(groups.reduce((sum, group) => sum + group.transactions, 0), groups.reduce((sum, group) => sum + group.errors, 0))
+}
+
+function wholeTestErrorRateBasis(metrics: LiveMetrics | undefined): ErrorRateBasis | undefined {
+  return liveRunCounts(metrics)?.basis
 }
 
 function highestGroupErrorRate(groups: CommandGroup[]) {
@@ -363,6 +379,7 @@ function buildLiveGroups(test: TestSummary, targetDrafts: Record<string, number>
   return (test.groups || []).map((group, index) => {
     const metrics = test.live_metrics?.groups?.[group.name]
     const aggregateFallback = !metrics && test.groups.length === 1 ? test.live_metrics : undefined
+    const fallbackCounts = liveRunCounts(aggregateFallback)
     const activeVuserRamp = test.vuser_ramps?.[group.name]
     const liveTargetVusers = activeVuserRamp?.target_vusers ?? group.vusers
     const liveTarget = targetMode === 'tps' ? goalTargets[group.name] : liveTargetVusers
@@ -387,18 +404,21 @@ function buildLiveGroups(test: TestSummary, targetDrafts: Record<string, number>
       activeVuserRamp,
       tps: metrics?.tps ?? aggregateFallback?.tps ?? 0,
       art: metrics?.avg_response_ms ?? aggregateFallback?.avg_response_ms ?? 0,
-      errorPct: metrics ? groupErrorPercent(metrics) : aggregateFallback?.error_pct ?? 0,
+      errorPct: metrics ? groupErrorPercent(metrics) : fallbackCounts ? attemptErrorPercent(fallbackCounts.transactions, fallbackCounts.errors) : 0,
       p99: metrics?.p99_ms ?? aggregateFallback?.p99_ms ?? 0,
-      transactions: metrics?.transactions ?? aggregateFallback?.total_transactions ?? 0,
-      errors: metrics?.errors ?? aggregateFallback?.total_errors ?? 0,
+      transactions: groupRunCounts(metrics)?.transactions ?? fallbackCounts?.transactions ?? 0,
+      errors: groupRunCounts(metrics)?.errors ?? fallbackCounts?.errors ?? 0,
       color: COMMAND_GROUP_COLORS[index % COMMAND_GROUP_COLORS.length],
     }
   })
 }
 
 function buildLiveErrorPatterns(metrics?: LiveMetrics): ErrorPattern[] {
-  return (metrics?.error_patterns || []).map((pattern, index) => {
-    const rate = pattern.error_pct ?? (metrics?.total_transactions ? pattern.count / metrics.total_transactions * 100 : 0)
+  const patterns = metrics?.error_patterns || []
+  const totalErrors = patterns.reduce((sum, pattern) => sum + (pattern.count || 0), 0)
+  return patterns.map((pattern, index) => {
+    // One rate per signature everywhere on this page: its share of all errors.
+    const rate = pattern.share_of_errors_pct ?? (totalErrors > 0 ? pattern.count / totalErrors * 100 : 0)
     const group = pattern.affected_groups?.join(', ') || 'Multiple groups'
     // Fall back to the pattern's identifying evidence when the backend supplied
     // no signature, and to the index when there is no evidence either. The
@@ -421,7 +441,7 @@ function buildLiveErrorPatterns(metrics?: LiveMetrics): ErrorPattern[] {
       rate,
       firstSeen: formatTimeValue(pattern.first_seen),
       latestSeen: formatTimeValue(pattern.latest_seen),
-      severity: rate >= 1 || pattern.status_code && pattern.status_code >= 500 ? 'danger' : 'warning',
+      severity: rate >= 50 || pattern.status_code && pattern.status_code >= 500 ? 'danger' : 'warning',
       sample: pattern.sample || 'No sample captured yet.',
       statusCode: pattern.status_code,
       actions: pattern.actions || [],
@@ -449,6 +469,8 @@ function CommandLoadObservation({ test }: { test: TestSummary }) {
 
 export default function CommandCenterPrototype({
   testId: testIdProp,
+  routeView,
+  onRouteViewChange,
   history = [],
   statusOverride,
   initialTest,
@@ -458,6 +480,8 @@ export default function CommandCenterPrototype({
   scopeLabel = 'Current workspace',
   onSelectRun,
   canManageTests = false,
+  runControlsReadOnlyReason,
+  liveStreamState = 'connected',
   onOpenOverview,
   runViewMemory,
   overviewActions,
@@ -469,7 +493,7 @@ export default function CommandCenterPrototype({
   prototypeMode = false,
   active = true,
 }: CommandCenterPrototypeProps = {}) {
-  const [experienceVersion, setExperienceVersion] = useState<'original' | 'v2'>('original')
+  const [experienceVersion, setExperienceVersion] = useState<'original' | 'v2'>(routeView ? 'v2' : 'original')
   const api = useTestApi()
   const pageRef = useRef<HTMLDivElement>(null)
   const wasActive = useRef(active)
@@ -533,7 +557,34 @@ export default function CommandCenterPrototype({
   }, [discoveryScopeKey, runMemories, testId])
   const currentRunRef = useRef(testId)
   currentRunRef.current = testId
-  const [variant, setVariant] = useState<VariantId>('ops')
+  const [variant, setVariant] = useState<VariantId>(routeView === 'wall' ? 'grafana' : 'ops')
+  // Follow the route (Back/Forward, a pasted link) when it names another view.
+  // While kept mounted behind a run's details page the route is not ours.
+  // Only a change of the route's view is applied: coming back from a run's
+  // details page (same route view) keeps the cockpit exactly as it was.
+  const appliedRouteViewRef = useRef(routeView)
+  const wasActiveRef = useRef(active)
+  useEffect(() => {
+    const reactivated = active && !wasActiveRef.current
+    wasActiveRef.current = active
+    if (!active || routeView === appliedRouteViewRef.current) return
+    // Coming back through a link without a view ("Back to Command Center")
+    // keeps the cockpit as it was left and restores its view in the address.
+    if (reactivated && routeView === undefined) {
+      if (testIdProp) onRouteViewChange?.(appliedRouteViewRef.current)
+      return
+    }
+    appliedRouteViewRef.current = routeView
+    setExperienceVersion(routeView ? 'v2' : 'original')
+    setVariant(routeView === 'wall' ? 'grafana' : 'ops')
+  }, [active, onRouteViewChange, routeView, testIdProp])
+  const showView = (version: 'original' | 'v2', nextVariant: VariantId) => {
+    setExperienceVersion(version)
+    setVariant(nextVariant)
+    const nextRouteView = version === 'v2' ? (nextVariant === 'grafana' ? 'wall' : 'analysis') : undefined
+    appliedRouteViewRef.current = nextRouteView
+    onRouteViewChange?.(nextRouteView)
+  }
   const [liveTest, setLiveTest] = useState<TestSummary | null>(() => initialTest || null)
   const [loadError, setLoadError] = useState('')
   const [expandedCharts, setExpandedCharts] = useState<Record<VariantId, string | null>>({ ops: null, grafana: null })
@@ -830,7 +881,7 @@ export default function CommandCenterPrototype({
     ...EMPTY_COMMAND_CENTER_TEST,
     id: testId || '',
     ref_key: testId || '',
-    name: 'Loading command-center run...',
+    name: 'Loading command-center run…',
     status: 'INITIALIZING',
     groups: [],
     total_vusers: 0,
@@ -1133,7 +1184,7 @@ export default function CommandCenterPrototype({
   ])
   const feedback = loadError
     || prototypeFixturesError
-    || (hasLiveRoute && !activeLiveTest ? 'Loading live run data for the command center...' : '')
+    || (hasLiveRoute && !activeLiveTest ? 'Loading live run data for the command center…' : '')
     || (emptyMode ? 'No active run is selected for the command center.' : '')
     || (historicalRun ? DEFAULT_HISTORICAL_FEEDBACK : '')
     || (liveMode && state.feedback === DEFAULT_PROTOTYPE_FEEDBACK ? DEFAULT_LIVE_FEEDBACK : state.feedback)
@@ -1341,7 +1392,17 @@ export default function CommandCenterPrototype({
         }))
       } catch (error: unknown) {
         if (currentRunRef.current !== testId) return
-        setState(prev => ({ ...prev, feedback: getErrorMessage(error, targetMode === 'tps' ? 'Unable to update goal target' : 'Unable to scale VUsers') }))
+        // The controller rejected the change: drop the staged value so the
+        // hero, row and chart show the committed target again, and say so.
+        const drafts = { ...(viewMemory.values.get('targetDrafts') as Record<string, number> || {}) }
+        delete drafts[groupName]
+        viewMemory.values.set('targetDrafts', drafts)
+        const reason = getErrorMessage(error, targetMode === 'tps' ? 'Unable to update goal target' : 'Unable to scale VUsers')
+        setState(prev => {
+          const vuserTargets = { ...prev.vuserTargets }
+          delete vuserTargets[groupName]
+          return { ...prev, vuserTargets, feedback: `Not applied: ${groupName} keeps its current ${targetMode === 'tps' ? 'TPS target' : 'VUser target'}. ${reason}` }
+        })
       }
       return
     }
@@ -1374,7 +1435,7 @@ export default function CommandCenterPrototype({
   }
 
   const changeVariant = (nextVariant: VariantId) => {
-    setVariant(nextVariant)
+    showView(experienceVersion, nextVariant)
     setActiveGraphCursor(null)
   }
 
@@ -1387,9 +1448,9 @@ export default function CommandCenterPrototype({
 
   const experienceSwitch = (
     <div className="command-center-experience-switch" role="group" aria-label="Command Center tools">
-      {experienceVersion === 'v2' ? <button type="button" onClick={() => { setExperienceVersion('original'); setVariant('ops') }}>Back to operations</button>
-        : <button type="button" onClick={() => { setExperienceVersion('v2'); setVariant('ops') }}>Open analysis</button>}
-      {experienceVersion === 'v2' && <><button type="button" aria-pressed={variant === 'ops'} onClick={() => setVariant('ops')}>OPS VIEW</button><button type="button" aria-pressed={variant === 'grafana'} onClick={() => setVariant('grafana')}>GRAPH WALL</button></>}
+      {experienceVersion === 'v2' ? <button type="button" onClick={() => showView('original', 'ops')}>Back to operations</button>
+        : <button type="button" onClick={() => showView('v2', 'ops')}>Open analysis</button>}
+      {experienceVersion === 'v2' && <><button type="button" aria-pressed={variant === 'ops'} onClick={() => showView('v2', 'ops')}>OPS VIEW</button><button type="button" aria-pressed={variant === 'grafana'} onClick={() => showView('v2', 'grafana')}>GRAPH WALL</button></>}
     </div>
   )
   const commandCenterTopbarTarget = typeof document === 'undefined'
@@ -1426,6 +1487,7 @@ export default function CommandCenterPrototype({
         {discoveryError && <span role="alert">Run list is stale. <button type="button" className="btn btn-secondary" onClick={() => setDiscoveryRetry(value => value + 1)}>Retry active runs</button></span>}
       </nav>}
       {liveMode && <CommandLoadObservation test={displayTest} />}
+      {liveMode && liveStreamState !== 'connected' && <p className="command-stream-note" role="status">Live stream: {liveStreamState}. Run status is polled separately; live values may be stale until the stream reconnects.</p>}
       <RunControlShelf
         test={displayTest}
         status={runStatus}
@@ -1434,10 +1496,14 @@ export default function CommandCenterPrototype({
         totalTarget={totalTarget}
         targetMode={targetMode}
         errorPct={noRequestSamples ? undefined : wholeTestErrorPercent(displayTest.live_metrics, groups)}
+        errorRateBasis={wholeTestErrorRateBasis(displayTest.live_metrics)}
         noRequestSamples={noRequestSamples}
         highestErrorGroup={noRequestSamples ? undefined : highestGroupErrorRate(groups)}
         tps={runSummaryTps}
         tpsHint={runSummaryAverages.tps !== undefined ? '10s avg' : undefined}
+        // Average and P95 from the same metrics window, so P95 never reads below the average.
+        responseAvgMs={displayTest.live_metrics?.avg_response_ms}
+        responseP95Ms={displayTest.live_metrics?.p95_ms}
         feedback={feedback}
         historicalRun={historicalRun || (hasLiveRoute && !liveMode)}
         onStart={confirmRunAction('start', startRun)}
@@ -1449,12 +1515,13 @@ export default function CommandCenterPrototype({
         onOpenTestNotes={testId ? () => setShowNotes(true) : undefined}
         onChangeDuration={liveMode && displayTest.termination_mode !== 'iterations' && runStatus === 'RUNNING' ? () => setShowRuntimeAdjustment(true) : undefined}
         changeDurationDisabled={showRuntimeAdjustment || pendingAction !== null}
+        readOnlyReason={runControlsReadOnlyReason}
         onCreateQueuedCopy={queuedRevisionScope ? () => { void queuedRevision.open() } : undefined}
         queuedCopyLoading={queuedRevision.loading}
       />
       {queuedRevision.error && <div className="settings-inline-error" role="alert">{queuedRevision.error}</div>}
       {queuedRevision.snapshot && (
-        <Suspense fallback={<div role="status">Loading queued-run editor…</div>}>
+        <Suspense fallback={<LoadingState what="queued-run editor" className="" />}>
           <TestExecutionScenarioEditor key={queuedRevision.incarnation} open test={queuedRevision.snapshot} onClose={queuedRevision.close} onSelectTest={queuedRevision.created} />
         </Suspense>
       )}
@@ -1477,6 +1544,7 @@ export default function CommandCenterPrototype({
       {showRuntimeAdjustment && testId && liveMode && runStatus === 'RUNNING' && (
         <RuntimeAdjustmentDialog
           test={displayTest}
+          returnFocusSelector='[data-command-action="change-duration"]'
           onClose={() => setShowRuntimeAdjustment(false)}
           onApplied={(result) => {
             setLiveTest(current => {
@@ -1525,6 +1593,7 @@ export default function CommandCenterPrototype({
           key={visibleGroupSettingsDialog.plannedOwner ? `${visibleGroupSettingsDialog.plannedOwner.scope}:${visibleGroupSettingsDialog.plannedOwner.token.generation}` : undefined}
           testId={testId}
           groupName={visibleGroupSettingsDialog.group}
+          returnFocusSelector={groupActionsSelector(visibleGroupSettingsDialog.group)}
           onClose={() => {
             const owner = visibleGroupSettingsDialog.plannedOwner
             if (owner && (plannedSettingsScopeRef.current !== owner.scope || plannedSettingsTokenRef.current !== owner.token)) return
@@ -1541,6 +1610,7 @@ export default function CommandCenterPrototype({
         <GroupParametersDialog
           testId={testId}
           groupName={visibleGroupSettingsDialog.group}
+          returnFocusSelector={groupActionsSelector(visibleGroupSettingsDialog.group)}
           onClose={() => setGroupSettingsDialog(null)}
           onSaved={handleGroupParametersSaved}
         />
@@ -1582,7 +1652,7 @@ export default function CommandCenterPrototype({
           runStatus={runStatus}
           totalDurationSeconds={totalDurationSeconds}
           remainingSeconds={remainingSeconds}
-          readOnly={historicalRun || displayTest.termination_mode === 'iterations'}
+          readOnly={historicalRun || displayTest.termination_mode === 'iterations' || Boolean(runControlsReadOnlyReason)}
           targetTransitionMode={state.targetTransitionMode}
           targetRampDuration={state.targetRampDuration}
           onTargetTransitionModeChange={changeTargetTransitionMode}
@@ -1663,9 +1733,13 @@ interface RunControlShelfProps {
   totalTarget: number
   targetMode: CommandGroup['targetMode']
   errorPct?: number
+  errorRateBasis?: ErrorRateBasis
   highestErrorGroup?: { name: string; errorPct: number }
   tps?: number
   tpsHint?: string
+  /** Average and P95 response time (ms) from the latest metrics window. */
+  responseAvgMs?: number
+  responseP95Ms?: number
   feedback: string
   historicalRun?: boolean
   onStart: () => void
@@ -1676,6 +1750,8 @@ interface RunControlShelfProps {
   onOpenTestNotes?: () => void
   onChangeDuration?: () => void
   changeDurationDisabled?: boolean
+  /** Why this role cannot control the run; the controls stay visible but disabled. */
+  readOnlyReason?: string
   onCreateQueuedCopy?: () => void
   queuedCopyLoading?: boolean
 }
@@ -1688,9 +1764,12 @@ function RunControlShelf({
   totalTarget,
   targetMode,
   errorPct,
+  errorRateBasis,
   highestErrorGroup,
   tps,
   tpsHint,
+  responseAvgMs,
+  responseP95Ms,
   feedback,
   historicalRun = false,
   onStart,
@@ -1701,14 +1780,21 @@ function RunControlShelf({
   onOpenTestNotes,
   onChangeDuration,
   changeDurationDisabled = false,
+  readOnlyReason,
   onCreateQueuedCopy,
   queuedCopyLoading = false,
   noRequestSamples = false,
 }: RunControlShelfProps) {
+  const readOnly = Boolean(readOnlyReason)
+  const readOnlyNoteId = readOnly ? `command-controls-readonly-${test.id}` : undefined
   const terminal = status === 'ABORTED' || status === 'STOPPING' || status === 'COMPLETE' || status === 'FAILED'
   // Abort must stay available during STOPPING so a wedged graceful stop can still be escalated.
   const fullyTerminal = status === 'ABORTED' || status === 'COMPLETE' || status === 'FAILED'
   const canStart = status === 'QUEUED' || status === 'RESERVED'
+  const startedMs = test.started_at ? Date.parse(test.started_at) : Number.NaN
+  const endMs = test.ended_at ? Date.parse(test.ended_at) : Date.now()
+  // An unreadable timestamp shows 0:00 rather than NaN.
+  const elapsedSeconds = Number.isFinite(startedMs) && Number.isFinite(endMs) ? Math.max(0, (endMs - startedMs) / 1000) : 0
   const canPauseResume = status === 'RUNNING' || status === 'PAUSED'
   const canStop = status === 'RUNNING' || status === 'INITIALIZING' || status === 'PAUSED'
   return (
@@ -1721,7 +1807,7 @@ function RunControlShelf({
         </div>
       </div>
 
-      <div className={`command-run-stats${tps !== undefined ? ' with-tps' : ''}${test.groups.length > 1 ? ' with-highest-error' : ''}`} aria-label="Run summary">
+      <div className="command-run-stats" aria-label="Run summary">
         <MetricPill
           label={canStart ? "Planned load" : "Observed / Target Load"}
           value={canStart ? `${formatNumber(totalTarget)} ${targetMode === 'tps' ? 'TPS' : 'VU'} · Not started` : noRequestSamples && !test.live_metrics ? `No samples / ${formatNumber(totalTarget)} ${targetMode === 'tps' ? 'TPS' : 'VU'}` : targetMode === 'tps'
@@ -1729,13 +1815,14 @@ function RunControlShelf({
             : `${formatNumber(totalCurrent)} / ${formatNumber(totalTarget)} VU`}
           tone="info"
         />
-        {test.termination_mode === 'iterations' ? <><MetricPill label="Completed / expected iterations" value={`${test.live_metrics?.completed_iterations ?? 0} / ${test.groups.reduce((n,g) => n + g.vusers * (g.iterations || 0), 0)}`} /><MetricPill label="Elapsed" value={formatRemaining(test.started_at ? Math.max(0, ((test.ended_at ? Date.parse(test.ended_at) : Date.now()) - Date.parse(test.started_at)) / 1000) : 0)} /></> : <MetricPill label="Remaining" value={formatRemaining(remainingSeconds)} tone={remainingSeconds <= 60 ? 'warning' : 'default'} />}
+        {test.termination_mode === 'iterations' ? <><MetricPill label="Completed / expected iterations" value={`${test.live_metrics?.completed_iterations ?? 0} / ${test.groups.reduce((n,g) => n + g.vusers * (g.iterations || 0), 0)}`} /><MetricPill label="Elapsed" value={formatRunClock(elapsedSeconds)} /></> : <MetricPill label="Elapsed · remaining" value={`${formatRunClock(elapsedSeconds)} · ${formatRunClock(remainingSeconds)}`} tone={!canStart && remainingSeconds <= 60 ? 'warning' : 'default'} />}
         {tps !== undefined && <MetricPill label={tpsHint ? `TPS (${tpsHint})` : 'TPS'} value={canStart ? "Not started" : noRequestSamples ? "No samples" : formatNumber(tps, 1)} tone="accent" />}
-        <MetricPill label="Overall Error Rate" value={canStart || noRequestSamples ? "No samples" : formatOptionalPercent(errorPct)} tone={errorPct && errorPct > 0 ? "danger" : "default"} />
+        <MetricPill label="Response time (latest avg · P95)" value={canStart ? 'Not started' : noRequestSamples ? 'No samples' : `${formatOptionalMs(responseAvgMs)} · ${formatOptionalMs(responseP95Ms)}`} />
+        <MetricPill label={`Error Rate (${errorRateBasisLabel(errorRateBasis)})`} value={canStart || noRequestSamples ? "No samples" : formatOptionalPercent(errorPct)} tone={errorPct && errorPct > 0 ? "danger" : "default"} />
         {test.groups.length > 1 && (
           <MetricPill
-            label="Highest Error Rate"
-            value={canStart || noRequestSamples ? "No samples" : highestErrorGroup ? `${highestErrorGroup.errorPct < 0.005 ? "<0.01%" : formatOptionalPercent(highestErrorGroup.errorPct)} · ${highestErrorGroup.name}` : errorPct && errorPct > 0 ? "No group data" : "No errors"}
+            label={`Highest Error Rate (${errorRateBasisLabel(errorRateBasis)})`}
+            value={canStart || noRequestSamples ? "No samples" : highestErrorGroup ? `${formatOptionalPercent(highestErrorGroup.errorPct)} · ${highestErrorGroup.name}` : errorPct && errorPct > 0 ? "No group data" : "No errors"}
             tone={highestErrorGroup ? "danger" : "default"}
           />
         )}
@@ -1750,7 +1837,7 @@ function RunControlShelf({
         {onOpenTestNotes && (
           <button type="button" className="btn btn-sm btn-ghost" onClick={onOpenTestNotes}>
             <NotesIcon />
-            Test Notes
+            Test notes
           </button>
         )}
         {onCreateQueuedCopy && (
@@ -1759,29 +1846,29 @@ function RunControlShelf({
           </button>
         )}
         {onChangeDuration && (
-          <button type="button" className="btn btn-sm btn-accent" onClick={onChangeDuration} disabled={changeDurationDisabled}>
-            Change duration
+          <button type="button" className="btn btn-sm btn-primary" data-command-action="change-duration" onClick={onChangeDuration} disabled={changeDurationDisabled || readOnly} aria-describedby={readOnlyNoteId}>
+            Adjust run
           </button>
         )}
         {!historicalRun && (
           <>
             {canStart && (
-              <button type="button" className="btn btn-sm btn-success" onClick={onStart}>
+              <button type="button" className="btn btn-sm btn-success" onClick={onStart} disabled={readOnly} aria-describedby={readOnlyNoteId}>
                 Start Test
               </button>
             )}
             {canPauseResume && (
-              <button type="button" className={`btn btn-sm ${status === 'PAUSED' ? 'btn-success' : 'btn-secondary'}`} onClick={onPauseResume} disabled={terminal}>
+              <button type="button" className={`btn btn-sm ${status === 'PAUSED' ? 'btn-success' : 'btn-secondary'}`} onClick={onPauseResume} disabled={terminal || readOnly} aria-describedby={readOnlyNoteId}>
                 {status === 'PAUSED' ? 'Resume' : 'Pause'}
               </button>
             )}
             {canStop && (
-              <button type="button" className="btn btn-sm btn-secondary" onClick={onStop} disabled={terminal}>
+              <button type="button" className="btn btn-sm btn-secondary" onClick={onStop} disabled={terminal || readOnly} aria-describedby={readOnlyNoteId}>
                 Stop
               </button>
             )}
             {!fullyTerminal && (
-              <button type="button" className="btn btn-sm btn-danger" onClick={onAbort} disabled={fullyTerminal}>
+              <button type="button" className="btn btn-sm btn-danger" onClick={onAbort} disabled={fullyTerminal || readOnly} aria-describedby={readOnlyNoteId}>
                 Abort
               </button>
             )}
@@ -1789,6 +1876,7 @@ function RunControlShelf({
         )}
       </div>
 
+      {readOnlyReason && !historicalRun && <p className="command-control-readonly" id={readOnlyNoteId}>{readOnlyReason}</p>}
       <p className="command-control-feedback" role="status">{feedback}</p>
     </section>
   )
@@ -2168,8 +2256,9 @@ function OpsCockpitV2View({
                   <YAxis stroke="var(--text-muted)" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
                   <Tooltip contentStyle={chartTooltipContentStyle} labelStyle={chartTooltipLabelStyle} labelFormatter={value => `${formatNumber(Number(value))}% elapsed`} />
                   <ReferenceLine x={progressPct} stroke="var(--text-primary)" strokeWidth={1.5} ifOverflow="extendDomain" />
-                  <Area type="stepAfter" dataKey="planned" name="Target VUsers" stroke="var(--accent)" strokeDasharray="5 4" fill="transparent" strokeWidth={2} dot={false} isAnimationActive={false} />
-                  <Area type="stepAfter" dataKey="actual" name="Actual VUsers" stroke="var(--chart-2)" fill="var(--accent-soft)" fillOpacity={0.32} strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Area type="stepAfter" dataKey="planned" name="Target VUsers" stroke="var(--chart-1)" strokeDasharray="5 4" fill="transparent" strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Area type="stepAfter" dataKey="actual" name="Actual VUsers" stroke="var(--chart-2)" fill="var(--chart-2)" fillOpacity={0.16} strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Legend verticalAlign="bottom" height={22} iconType="plainline" wrapperStyle={{ fontSize: 11, color: 'var(--text-secondary)' }} />
                 </AreaChart>
               </ResponsiveContainer></SeriesChartExport>
             </div>
@@ -2228,15 +2317,15 @@ function OpsCockpitV2View({
           />
         </div>
 
-        <aside className="command-v2-inspector" aria-label="Change duration and target transition">
+        <aside className="command-v2-inspector" aria-label="Adjust run: duration and target transition">
           <section>
-            <div className="command-v2-inspector-title"><h3>Change Duration</h3><span>{formatRemaining(remainingSeconds)} left</span></div>
+            <div className="command-v2-inspector-title"><h3>Change duration</h3><span>{formatRunClock(remainingSeconds)} left</span></div>
             <dl>
-              <div><dt>Current duration</dt><dd>{formatRemaining(totalDurationSeconds)}</dd></div>
+              <div><dt>Current duration</dt><dd>{formatRunClock(totalDurationSeconds)}</dd></div>
               <div><dt>Elapsed</dt><dd>{formatNumber(progressPct, 0)}%</dd></div>
             </dl>
             <div className="command-v2-inspector-actions">
-              <button type="button" className="primary" disabled={readOnly || !onChangeDuration} onClick={onChangeDuration}>Change Duration</button>
+              <button type="button" className="primary" disabled={readOnly || !onChangeDuration} onClick={onChangeDuration}>Adjust run</button>
             </div>
           </section>
 
@@ -2426,7 +2515,7 @@ function GroupSelectionPanel({
 }
 
 const COMMAND_TABLE_TABS: Array<{ id: CommandTableTab; label: string }> = [
-  { id: 'scenario', label: 'Scenario Run' },
+  { id: 'scenario', label: 'Run metrics' },
   { id: 'errors', label: 'Error Details' },
   { id: 'infrastructure', label: 'Infrastructure' },
 ]
@@ -2619,11 +2708,12 @@ function ScenarioRunTable({
   onSort: (key: string) => void
 }) {
   const essentialColumns = [0, 1, 4, 5, 6, 11, 15]
-  const labels = ['Name', 'Group', 'Type', 'Protocol', 'Current VU', 'Target VU', 'TPS', 'Target TPS', 'Gap', 'Tx', 'Errors', 'Error %', 'ART', 'p50', 'p90', 'p95', 'p99']
+  const labels = ['Name', 'Group', 'Type', 'Protocol', 'Current VUsers', 'Target VUsers', 'TPS', 'Target TPS', 'Gap', 'Attempts', 'Errors', 'Error rate', 'ART', 'P50', 'P90', 'P95', 'P99']
   const [columns, setColumns] = useCommandViewState('scenarioColumns', essentialColumns)
   const fullMetrics = columns.length === labels.length
   return (
-    <div className="command-data-table-wrap" role="tabpanel" aria-label="Scenario run metrics">
+    <div className="command-data-table-wrap" role="tabpanel" aria-label="Run metrics" tabIndex={0}>
+      <p className="command-table-caption">Rates and counts cover the last sample window; Group Load shows run-to-date error rates.</p>
       <label className="command-column-preset"><input type="checkbox" checked={fullMetrics} onChange={event => setColumns(event.target.checked ? labels.map((_, index) => index) : essentialColumns)} /> Show all 17 metrics</label>
       <details className="command-column-picker"><summary>Choose columns</summary>
         <div>{labels.map((label, index) => <label key={label}><input type="checkbox" checked={columns.includes(index)} disabled={index < 2} onChange={event => setColumns(previous => event.target.checked ? [...previous, index] : previous.filter(column => column !== index))} />{label}</label>)}</div>
@@ -2635,19 +2725,19 @@ function ScenarioRunTable({
             <SortableHeader hidden={!columns.includes(1)} label="Group" sortKey="group" sort={sort} onSort={onSort} />
             <SortableHeader hidden={!columns.includes(2)} label="Type" sortKey="type" sort={sort} onSort={onSort} />
             <SortableHeader hidden={!columns.includes(3)} label="Protocol" sortKey="protocol" sort={sort} onSort={onSort} />
-            <SortableHeader hidden={!columns.includes(4)} label="Current VU" sortKey="currentVusers" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(5)} label="Target VU" sortKey="targetVusers" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(4)} label="Current VUsers" sortKey="currentVusers" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(5)} label="Target VUsers" sortKey="targetVusers" sort={sort} onSort={onSort} align="right" />
             <SortableHeader hidden={!columns.includes(6)} label="TPS" sortKey="tps" sort={sort} onSort={onSort} align="right" />
             <SortableHeader hidden={!columns.includes(7)} label="Target TPS" sortKey="targetTps" sort={sort} onSort={onSort} align="right" />
             <SortableHeader hidden={!columns.includes(8)} label="Gap" sortKey="throughputGap" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(9)} label="Tx" sortKey="transactions" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(9)} label="Attempts" sortKey="transactions" sort={sort} onSort={onSort} align="right" />
             <SortableHeader hidden={!columns.includes(10)} label="Errors" sortKey="errors" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(11)} label="Error %" sortKey="errorPct" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(11)} label="Error rate" sortKey="errorPct" sort={sort} onSort={onSort} align="right" />
             <SortableHeader hidden={!columns.includes(12)} label="ART" sortKey="art" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(13)} label="p50" sortKey="p50" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(14)} label="p90" sortKey="p90" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(15)} label="p95" sortKey="p95" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(16)} label="p99" sortKey="p99" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(13)} label="P50" sortKey="p50" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(14)} label="P90" sortKey="p90" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(15)} label="P95" sortKey="p95" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(16)} label="P99" sortKey="p99" sort={sort} onSort={onSort} align="right" />
           </tr>
         </thead>
         <tbody>
@@ -2714,7 +2804,7 @@ function ErrorDetailsTable({
             <tr>
               <SortableHeader label="Signature" sortKey="title" sort={sort} onSort={onSort} />
               <SortableHeader label="Count" sortKey="count" sort={sort} onSort={onSort} align="right" />
-              <SortableHeader label="Rate" sortKey="rate" sort={sort} onSort={onSort} align="right" />
+              <SortableHeader label="Share of errors" sortKey="rate" sort={sort} onSort={onSort} align="right" />
               <SortableHeader label="Status" sortKey="statusCode" sort={sort} onSort={onSort} align="right" />
               <SortableHeader label="Affected Groups" sortKey="group" sort={sort} onSort={onSort} />
               <SortableHeader label="Actions" sortKey="transaction" sort={sort} onSort={onSort} />
@@ -2735,8 +2825,8 @@ function ErrorDetailsTable({
               >
                 <td><strong>{row.title}</strong><span className="command-table-subtext">{row.sample}</span></td>
                 <td className="numeric">{formatNumber(row.count)}</td>
-                <td className={`numeric ${metricTone(row.rate, 0.75, 1.5)}`}>{formatPercent(row.rate)}</td>
-                <td className="numeric">{row.statusCode || '--'}</td>
+                <td className="numeric">{formatPercent(row.rate)}</td>
+                <td className="numeric">{row.statusCode || MISSING_VALUE}</td>
                 <td>{row.affectedGroups.join(', ') || row.group}</td>
                 <td>{row.actions.join(', ') || row.transaction}</td>
                 <td>{row.firstSeen}</td>
@@ -2825,7 +2915,7 @@ function ErrorEvidencePanel({
                   >
                     <td>{formatTimeValue(item.timestamp)}</td>
                     <td>{item.action}</td>
-                    <td>{item.group || '--'}</td>
+                    <td>{item.group || MISSING_VALUE}</td>
                     <td className="numeric">{formatOptionalMs(item.duration_ms)}</td>
                     <td className="numeric">{item.status_code || item.status}</td>
                     <td>{item.error_message || item.signature}</td>
@@ -2916,9 +3006,9 @@ function InfrastructureTable({
             <SortableHeader label="Region" sortKey="region" sort={sort} onSort={onSort} />
             <SortableHeader label="Active VU" sortKey="activeVusers" sort={sort} onSort={onSort} align="right" />
             <SortableHeader label="TPS" sortKey="tps" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader label="Error %" sortKey="errorPct" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader label="p95" sortKey="p95" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader label="p99" sortKey="p99" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader label="Error rate" sortKey="errorPct" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader label="P95" sortKey="p95" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader label="P99" sortKey="p99" sort={sort} onSort={onSort} align="right" />
             <SortableHeader label="Saturation" sortKey="saturation" sort={sort} onSort={onSort} />
             <SortableHeader label="CPU" sortKey="cpu" sort={sort} onSort={onSort} align="right" />
             <SortableHeader label="Memory" sortKey="memory" sort={sort} onSort={onSort} align="right" />
@@ -3121,23 +3211,23 @@ function compareSortValues(left: unknown, right: unknown, direction: SortDirecti
 }
 
 function formatOptionalNumber(value?: number, digits = 0) {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return '--'
+  if (typeof value !== 'number' || !Number.isFinite(value)) return MISSING_VALUE
   return formatNumber(value, digits)
 }
 
 function formatOptionalMs(value?: number) {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return '--'
+  if (typeof value !== 'number' || !Number.isFinite(value)) return MISSING_VALUE
   return `${formatNumber(value)} ms`
 }
 
 function formatOptionalPercent(value?: number) {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return '--'
+  if (typeof value !== 'number' || !Number.isFinite(value)) return MISSING_VALUE
   return formatPercent(value)
 }
 
 function snapshotSection(snapshot: BrowserReplaySnapshot) {
   return {
-    request_method: snapshot.request_method || 'n/a',
+    request_method: snapshot.request_method || MISSING_VALUE,
     request_url: snapshot.request_url || '',
     request_headers: snapshot.request_headers,
     request_body: snapshot.request_body,
@@ -3646,7 +3736,7 @@ function LoadModelPanel({
       <div className="command-panel-header command-load-model-header">
         <div>
           <h3>Load Model</h3>
-          <p>{phase} / {formatRemaining(remainingSeconds)} remaining</p>
+          <p>{phase} / {formatRunClock(remainingSeconds)} remaining</p>
           {runStatus === 'PAUSED' && <p>Allocated users are retained while active load pauses. Rolling throughput decays as its averaging window clears.</p>}
         </div>
         <span className="command-load-model-badge">{formatNumber(progressPct, 0)}% elapsed</span>
@@ -3662,7 +3752,7 @@ function LoadModelPanel({
       </details>
       <div className="command-load-model-chart" aria-hidden="true">
         <ResponsiveContainer width="100%" height={132} minWidth={240}>
-          <AreaChart data={profile} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+          <AreaChart data={profile} margin={{ top: 8, right: 8, left: -18, bottom: 0 }} accessibilityLayer={false}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
             <XAxis
               dataKey="pct"
@@ -3861,7 +3951,7 @@ function GroupLoadTable({
       <div className="command-group-table" role="table">
         <div className="command-group-row header" role="row">
           <span role="columnheader">Group</span>
-          <span role="columnheader">Current VU</span>
+          <span role="columnheader">Current VUsers</span>
           <span role="columnheader">{targetHeader}</span>
           <span role="columnheader">TPS</span>
           <span role="columnheader">ART</span>
@@ -3936,8 +4026,8 @@ function GroupLoadTable({
                   </span>
                 )}
               </span>
-              <span role="cell" data-label="Current VU">{formatNumber(group.current)}</span>
-              <span role="cell" className="command-target-cell" data-label={isGoalTarget ? "Target TPS" : "Target VU"}>
+              <span role="cell" data-label="Current VUsers">{formatNumber(group.current)}</span>
+              <span role="cell" className="command-target-cell" data-label={isGoalTarget ? "Target TPS" : "Target VUsers"}>
                 {readOnly ? (
                   <span className="command-target-readout">
                     <strong>{formatTargetValue(group.target, group.targetMode)}</strong>
@@ -3974,7 +4064,7 @@ function GroupLoadTable({
                         activeRamp={group.activeVuserRamp}
                       />
                     </div>
-                    <button type="button" className="btn btn-sm btn-accent" disabled={applyDisabled} onClick={() => onApplyTarget(group.name, group.target)}>
+                    <button type="button" className="btn btn-sm btn-primary" disabled={applyDisabled} onClick={() => onApplyTarget(group.name, group.target)}>
                       Apply
                     </button>
                   </>
@@ -3987,7 +4077,7 @@ function GroupLoadTable({
                 </span>
               </span>
               <span role="cell" data-label="ART">{formatNumber(group.art)} ms</span>
-              <span role="cell" data-label="Error %" className={metricTone(group.errorPct, 0.75, 1.5)}>{formatPercent(group.errorPct)}</span>
+              <span role="cell" data-label="Error rate" className={metricTone(group.errorPct, 0.75, 1.5)}>{formatPercent(group.errorPct)}</span>
             </div>
           )
         })}
@@ -4128,7 +4218,7 @@ function ErrorDrilldown({
           >
             <span>{pattern.title}</span>
             <strong>{pattern.count}</strong>
-            <small>{pattern.group} / {formatPercent(pattern.rate)}</small>
+            <small>{pattern.group} / {formatPercent(pattern.rate)} of errors</small>
           </button>
         ))}
       </div>
@@ -4146,7 +4236,7 @@ function ErrorDrilldown({
               <dd>{selectedError.firstSeen}</dd>
             </div>
             <div>
-              <dt>Error rate</dt>
+              <dt>Share of errors</dt>
               <dd>{formatPercent(selectedError.rate)}</dd>
             </div>
           </dl>

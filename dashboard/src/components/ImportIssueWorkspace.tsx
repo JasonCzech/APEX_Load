@@ -61,7 +61,7 @@ export default function ImportIssueWorkspace({ issues, onNavigate, onSourceSelec
   return <section className="shared-import-issue-workspace" aria-label="Resolve import issues">
     <ImportReviewSectionHeader
       title="Resolve import issues"
-      description={normalizedEvidence ? `${grouped.length} findings · ${blockers} blocking · ${warnings} warnings · ${notes} notes. Informational findings do not block replay.` : `${grouped.length} findings · ${blockers} blocking · ${warnings} warning${warnings === 1 ? '' : 's'} · ${notes} review note${notes === 1 ? '' : 's'}. Repeated findings are grouped by the operator decision they require.`}
+      description={`${normalizedEvidence ? `${grouped.length} findings · ${blockers} blocking · ${warnings} warnings · ${notes} notes` : `${grouped.length} findings · ${blockers} blocking · ${warnings} warning${warnings === 1 ? '' : 's'} · ${notes} review note${notes === 1 ? '' : 's'}`}${reviewedCount ? ` · ${reviewedCount} reviewed` : ''}. ${normalizedEvidence ? 'Informational findings do not block replay.' : 'Repeated findings are grouped by the operator decision they require.'}`}
       actions={nextIssue && <button type="button" className="btn btn-primary" onClick={() => setSelectedId(nextIssue.id)}>Next unresolved issue</button>}
     />
     <div className="import-review-toolbar">

@@ -7,21 +7,36 @@ import "slices"
 // aggregations are intersected with AllowedAggregations. Required evidence must
 // still be captured and qualified for the selected run before execution.
 type NativeQueryProfile struct {
-	ID                  string   `json:"id"`
-	Population          string   `json:"population"`
-	EvidenceMode        string   `json:"evidence_mode"`
-	LiveBucketMode      string   `json:"live_bucket_mode,omitempty"`
-	Grouping            string   `json:"grouping,omitempty"`
-	AllowedFilters      []string `json:"allowed_filters"`
-	RequiredFilters     []string `json:"required_filters,omitempty"`
-	PropertyMode        string   `json:"property_mode"` // disabled, optional_exact, required_category
+	ID              string   `json:"id"`
+	Population      string   `json:"population"`
+	EvidenceMode    string   `json:"evidence_mode"`
+	LiveBucketMode  string   `json:"live_bucket_mode,omitempty"`
+	Grouping        string   `json:"grouping,omitempty"`
+	AllowedFilters  []string `json:"allowed_filters"`
+	RequiredFilters []string `json:"required_filters,omitempty"`
+	// PropertyMode is disabled, optional_exact, required_category, or (joint
+	// evidence v4) projected_category: one property:<category> the run's
+	// projection names may be grouped by or filtered on like a dimension.
+	PropertyMode        string   `json:"property_mode"`
 	AllowedAggregations []string `json:"allowed_aggregations"`
 	RequiredEvidence    []string `json:"required_evidence"`
 	MaxSeries           int      `json:"max_series"`
 	MaxBuckets          int      `json:"max_buckets"`
 	MaxWindowSeconds    int      `json:"max_window_seconds"`
 	MaxBucketSeconds    int      `json:"max_bucket_seconds"`
+	// JointEvidence profiles read a run's joint evidence v4 (B5): they group
+	// by up to MaxGroupingDimensions of the run's projection, chosen from
+	// GroupingDimensions or one property:<category>, and filter on projected
+	// dimensions.
+	JointEvidence         bool     `json:"joint_evidence,omitempty"`
+	GroupingDimensions    []string `json:"grouping_dimensions,omitempty"`
+	MaxGroupingDimensions int      `json:"max_grouping_dimensions,omitempty"`
 }
+
+// JointEvidenceDimensions are the dimensions a joint evidence v4
+// projection may name besides one property:<category> (PropertyMode
+// projected_category); they match the engine's.
+var JointEvidenceDimensions = []string{"name", "protocol", "group", "region", "dependency", "page", "hierarchy", "phase", "network_profile", "browser_profile", "browser_engine", "browser_platform"}
 
 func nativeQueryProfiles() []NativeQueryProfile {
 	allAggregations := []string{"avg", "min", "max", "count", "rate", "p50", "p90", "p95", "p99"}
@@ -89,6 +104,14 @@ func nativeQueryProfiles() []NativeQueryProfile {
 		before := len(profiles)
 		add(PopulationAction, "live", "merged", group, "disabled", filters, required, "native_joint_evidence.v3")
 		profiles[before].ID += "/joint_v3"
+	}
+	// Joint evidence v4: up to three dimensions of the run's projection.
+	for _, population := range []string{PopulationAction, PopulationTransaction} {
+		before := len(profiles)
+		add(population, "live", "merged", "projected", "projected_category", JointEvidenceDimensions, nil, "native_joint_evidence.v4")
+		profile := &profiles[before]
+		profile.ID += "/joint_v4"
+		profile.JointEvidence, profile.GroupingDimensions, profile.MaxGroupingDimensions = true, slices.Clone(JointEvidenceDimensions), 3
 	}
 	// One archive selection of one browser document measurement tuple.
 	before := len(profiles)

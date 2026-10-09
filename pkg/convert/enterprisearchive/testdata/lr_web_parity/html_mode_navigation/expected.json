@@ -1,0 +1,53 @@
+{
+  "description": "HTML-mode clicks resolve against the page the previous step loaded: web_link follows the second link's text match, and web_image follows the anchor around the matching image. The image itself is never fetched as the click target, and each click sends the page as its Referer.",
+  "source": "VuGen 26.1 Function Reference: web_link (Text, Ordinal) and web_image (Src, Alt) emulate clicking a hyperlink on the current page.",
+  "outcome": "replay",
+  "responses": [
+    {
+      "method": "GET",
+      "path": "/WebTours/",
+      "headers": {
+        "Content-Type": "text/html"
+      },
+      "body": "<html><body><a href=\"nav.pl?page=menu\">Home</a> <a href=\"welcome.pl?page=flights\">\n  Flights\n</a></body></html>"
+    },
+    {
+      "method": "GET",
+      "path": "/WebTours/welcome.pl",
+      "headers": {
+        "Content-Type": "text/html"
+      },
+      "body": "<html><body><a href=\"reservations.pl?page=welcome\"><img src=\"/WebTours/images/flights.gif\" alt=\"Search Flights Button\"></a></body></html>"
+    },
+    {
+      "method": "GET",
+      "path": "/WebTours/reservations.pl",
+      "headers": {
+        "Content-Type": "text/html"
+      },
+      "body": "<html><body>Find Flight</body></html>"
+    }
+  ],
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/WebTours/"
+    },
+    {
+      "method": "GET",
+      "path": "/WebTours/welcome.pl",
+      "query": "page=flights",
+      "headers": {
+        "Referer": "http://parity.test/WebTours/"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/WebTours/reservations.pl",
+      "query": "page=welcome",
+      "headers": {
+        "Referer": "http://parity.test/WebTours/welcome.pl?page=flights"
+      }
+    }
+  ]
+}

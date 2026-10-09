@@ -172,7 +172,7 @@ export default function TestExecutionLiveControls({
                       )}
                     />
                     <button
-                      className="btn btn-sm btn-accent"
+                      className="btn btn-sm btn-primary"
                       onClick={() => onScaleVUsers(group.name)}
                       disabled={test.termination_mode === 'iterations' || isApplyDisabled}
                     >
@@ -215,7 +215,7 @@ export default function TestExecutionLiveControls({
                     disabled={test.termination_mode === 'iterations'}
                     onChange={onDurationInputChange}
                   />
-                  <button className="btn btn-sm btn-accent" onClick={onAdjustDuration} disabled={test.termination_mode === 'iterations' || durationInputInvalid}>
+                  <button className="btn btn-sm btn-primary" onClick={onAdjustDuration} disabled={test.termination_mode === 'iterations' || durationInputInvalid}>
                     Apply
                   </button>
                 </div>

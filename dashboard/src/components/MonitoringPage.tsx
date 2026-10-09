@@ -17,6 +17,10 @@ import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, typ
 import { formatDatetimeLocalValue } from './newTestScheduleFormat'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
+import { useClustersApi } from '../hooks/api/useClustersApi'
+import { useFleetApi } from '../hooks/api/useFleetApi'
+import type { ClusterConnection } from '../types/cluster'
+import type { FleetPool } from '../types/fleet'
 import { useProject } from '../hooks/useProject'
 import { useNavigationGuardRunner } from '../hooks/NavigationGuardProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
@@ -33,6 +37,7 @@ import PrometheusConnectionsCard from './PrometheusConnectionsCard'
 import TimeslotsPanel from './TimeslotsPanel'
 import { dialogBackdropProps } from './dialogBackdropProps'
 import { frontendBuildMetadata, type FrontendBuildComponentInfo } from '../buildMetadata'
+import { fleetCapacitySummary } from '../utils/fleetCapacitySummary'
 import './CreateTestModal.css'
 import './StatusBadge.css'
 
@@ -433,8 +438,15 @@ function restartErrorMessage(error: unknown): string {
   return 'Restart request failed.'
 }
 
+const FLEET_ALERT_PAGE = 25
+
 export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], onSelectTest, canManageSystem = false, canManageProjects = false, canManageTests = false, initialCategoryId = 'overview', activeCategoryId: controlledCategoryId, onCategoryChange, onScheduleForDate, fleetEventSignal = 0 }: Props) {
   const api = useApi()
+  const { listClusters } = useClustersApi()
+  const { listFleetPools } = useFleetApi()
+  // Saved clusters and pools, shown on Fleet until they report generators, so
+  // a configuration made in Settings is visible where the fleet is watched.
+  const [fleetConfiguration, setFleetConfiguration] = useState<{ clusters: ClusterConnection[]; pools: FleetPool[] } | null>(null)
   const { runGuarded } = useNavigationGuardRunner()
   const { activeProject } = useProject()
   const activeProjectId = activeProject?.id
@@ -576,6 +588,12 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const telemetryWarningCount = telemetryDiagnostics.filter(entry => entry.diagnostic.severity === 'warning').length
   const telemetryDangerCount = telemetryDiagnostics.filter(entry => entry.diagnostic.severity === 'danger').length
   const telemetryLatestEntry = telemetryDiagnostics[0] ?? null
+  // The summary shows the worst current condition the header counts, not
+  // whichever sample arrived last (newest entries come first).
+  const telemetryFocusEntry = telemetryDiagnostics.find(entry => entry.diagnostic.severity === 'danger')
+    ?? telemetryDiagnostics.find(entry => entry.diagnostic.severity === 'warning')
+    ?? telemetryLatestEntry
+  const telemetryFocusLabel = telemetryFocusEntry?.diagnostic.severity === 'danger' ? 'Latest danger' : telemetryFocusEntry?.diagnostic.severity === 'warning' ? 'Latest warning' : 'Latest sample'
   const telemetryHeaderSeverity = telemetryDangerCount > 0 ? 'danger' : telemetryWarningCount > 0 ? 'warning' : telemetryDiagnostics.length ? 'healthy' : 'unknown'
   const telemetryHeaderLabel = telemetryDangerCount > 0
     ? `${telemetryDangerCount} danger`
@@ -605,6 +623,14 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     ? `${generatorConnectedCount}/${generators.length} online`
     : 'no inventory'
   const fleetAlertList = fleetAlerts ?? EMPTY_FLEET_ALERTS
+  // Large fleets raise hundreds of alerts: filter them and show a page at a time.
+  const [fleetAlertFilter, setFleetAlertFilter] = useState<{ query: string; severity: string; status: string; limit: number }>({ query: '', severity: 'all', status: 'open', limit: FLEET_ALERT_PAGE })
+  const filteredFleetAlerts = useMemo(() => fleetAlertList.filter(alert => (
+    (fleetAlertFilter.severity === 'all' || alert.severity === fleetAlertFilter.severity)
+    && (fleetAlertFilter.status === 'all' || (fleetAlertFilter.status === 'open' ? !alert.acknowledged : alert.acknowledged))
+    && (!fleetAlertFilter.query.trim() || `${alert.summary} ${alert.target || ''} ${alert.type || ''}`.toLowerCase().includes(fleetAlertFilter.query.trim().toLowerCase()))
+  )), [fleetAlertFilter.query, fleetAlertFilter.severity, fleetAlertFilter.status, fleetAlertList])
+  const visibleFleetAlerts = useMemo(() => filteredFleetAlerts.slice(0, fleetAlertFilter.limit), [filteredFleetAlerts, fleetAlertFilter.limit])
   // Not fetched yet, or the latest fetch failed: the feed cannot be summarised as clear.
   const fleetAlertsUnknown = fleetAlerts === null || staleCardIds.includes('fleet-alerts')
   const fleetAlertDangerCount = fleetAlertList.filter(alert => alert.severity === 'danger').length
@@ -774,6 +800,16 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     return request
   }, [activeProjectId, api])
 
+  // Overview polls system health. Fleet needs it only for the configured
+  // capacity fallback, so it loads health just when no response is held yet
+  // (for example when Fleet is opened directly) instead of polling it twice.
+  const healthLoadedRef = useRef(false)
+  const loadHealth = useCallback(async () => {
+    const response = await api.getHealth()
+    healthLoadedRef.current = true
+    return response
+  }, [api])
+
   const refresh = useCallback((categoryId: MonitorCategoryId = activeCategoryId) => runCoalescedRefresh(async () => {
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
     const generation = refreshGenerationRef.current
@@ -782,7 +818,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
 
     if (categoryId === 'overview') {
       const [healthRes, inventoryRes, restartCapsRes, readinessOk, servicesRes] = await Promise.all([
-        settleApiCall(() => api.getHealth()),
+        settleApiCall(loadHealth),
         settleApiCall(() => api.getSystemInventory()),
         canManageSystem ? settleApiCall(() => api.getRestartCapabilities()) : Promise.resolve({ ok: false } as const),
         refreshReadiness(),
@@ -802,15 +838,19 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     }
 
     if (categoryId === 'fleet') {
-      const [inventoryRes, restartCapsRes, fleetAlertsRes, fleetAuditRes, fleetCapacityRes, provisionerRes] = await Promise.all([
+      const [inventoryRes, restartCapsRes, fleetAlertsRes, fleetAuditRes, fleetCapacityRes, provisionerRes, healthRes] = await Promise.all([
         settleApiCall(() => api.getSystemInventory()),
         canManageSystem ? settleApiCall(() => api.getRestartCapabilities()) : Promise.resolve({ ok: false } as const),
         settleApiCall(() => api.getFleetAlerts()),
         canManageSystem ? settleApiCall(() => api.listAuthAuditEvents({ limit: 8, category: 'fleet' })) : Promise.resolve({ ok: false } as const),
         settleApiCall(() => api.getFleetCapacity(projectScope ? { project_id: projectScope } : undefined)),
         settleApiCall(() => api.getFleetProvisioner()),
+        // The capacity card falls back to the configured generator count from
+        // health when there is no live generator inventory.
+        healthLoadedRef.current ? Promise.resolve({ ok: false } as const) : settleApiCall(loadHealth),
       ])
       if (!isCurrent()) return
+      if (healthRes.ok) setHealth(healthRes.value)
       if (inventoryRes.ok) setInventory(inventoryRes.value)
       if (restartCapsRes.ok) setRestartCapabilities(restartCapsRes.value)
       if (fleetAlertsRes.ok) setFleetAlerts(fleetAlertsRes.value.alerts || [])
@@ -860,7 +900,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     if (runCalendarRes.ok) setRunCalendar(runCalendarRes.value)
     recordCardFreshness([{ cardId: 'run-calendar', ok: scheduleHealthRes.ok && runCalendarRes.ok }])
     if (scheduleHealthRes.ok || runCalendarRes.ok) setLastRefreshed(new Date())
-  }), [activeCategoryId, activeProjectId, api, calendarRange.from, calendarRange.to, canManageSystem, recordCardFreshness, refreshReadiness, runCoalescedRefresh])
+  }), [activeCategoryId, activeProjectId, api, calendarRange.from, calendarRange.to, canManageSystem, loadHealth, recordCardFreshness, refreshReadiness, runCoalescedRefresh])
 
   const refreshAllCategories = useCallback(async (): Promise<boolean> => {
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return false
@@ -911,6 +951,19 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     renderedCategoryRef.current = activeCategoryId
     if (activeCategoryId === 'overview') void refresh('overview')
   }, [activeCategoryId, refresh])
+
+  useEffect(() => {
+    if (activeCategoryId !== 'fleet' || !canManageSystem) return undefined
+    let cancelled = false
+    void Promise.allSettled([listClusters(), listFleetPools({ limit: 50 })]).then(([clusters, pools]) => {
+      if (cancelled) return
+      setFleetConfiguration({
+        clusters: clusters.status === 'fulfilled' ? clusters.value?.clusters || [] : [],
+        pools: pools.status === 'fulfilled' ? pools.value?.fleet_pools || [] : [],
+      })
+    })
+    return () => { cancelled = true }
+  }, [activeCategoryId, canManageSystem, listClusters, listFleetPools])
 
   useEffect(() => {
     if (activeCategoryId === 'overview') return
@@ -1075,9 +1128,10 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     }
   }, [api, refresh, restartAction])
 
+  const capacitySummary = useMemo(() => fleetCapacitySummary(fleetCapacity, health), [fleetCapacity, health])
   const cards = useMemo<MonitorCard[]>(() => [
-    { id: 'run-monitor-sources', title: 'Run monitor sources', icon: <span aria-hidden="true">M</span>, content: <RunMonitorSources key={activeProjectId} projectId={activeProjectId} canManage={canManageProjects} /> },
-    { id: 'parquet-analysis', title: 'Analysis workspace', icon: <span aria-hidden="true">PT</span>, content: <AnalysisWorkspace key={activeProjectId} projectId={activeProjectId} canEdit={canManageTests} /> },
+    { id: 'run-monitor-sources', title: 'Run monitor sources', icon: <span aria-hidden="true">M</span>, content: <RunMonitorSources key={activeProjectId} projectId={activeProjectId} canManage={canManageProjects} showEnableHint={canManageSystem} /> },
+    { id: 'parquet-analysis', title: 'Analysis workspace', icon: <span aria-hidden="true">PT</span>, content: <AnalysisWorkspace key={activeProjectId} projectId={activeProjectId} canEdit={canManageTests} showEnableHint={canManageSystem} /> },
     {
       id: 'system-health',
       title: 'Control Plane',
@@ -1097,7 +1151,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
             <span className="monitor-label">API</span>
             <span className="monitor-stat">
               <span className={`monitor-indicator ${apiHealthSeverity === 'healthy' ? 'healthy' : 'unknown'}`} />
-              <span className="monitor-value">{health?.status || 'Checking...'}</span>
+              <span className="monitor-value">{health?.status || 'Checking…'}</span>
             </span>
           </div>
           <div className="monitor-row">
@@ -1267,13 +1321,14 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
               </div>
               <div className="telemetry-summary-details">
                 <div className="telemetry-summary-headline">
-                  <span className={`telemetry-diagnostic-badge ${telemetryLatestEntry ? telemetryDiagnosticSeverityClass(telemetryLatestEntry.diagnostic.severity) : 'healthy'}`}>
-                    {telemetryLatestEntry?.diagnostic.severity || 'No diagnostic samples'}
+                  <span className="telemetry-summary-label">{telemetryFocusLabel}</span>
+                  <span className={`telemetry-diagnostic-badge ${telemetryFocusEntry ? telemetryDiagnosticSeverityClass(telemetryFocusEntry.diagnostic.severity) : 'healthy'}`}>
+                    {telemetryFocusEntry?.diagnostic.severity || 'No diagnostic samples'}
                   </span>
-                  <span className="telemetry-diagnostic-time">{telemetryLatestEntry ? formatTelemetryDiagnosticTime(telemetryLatestEntry.timestamp) : 'No issues'}</span>
+                  <span className="telemetry-diagnostic-time">{telemetryFocusEntry ? formatTelemetryDiagnosticTime(telemetryFocusEntry.timestamp) : 'No issues'}</span>
                 </div>
                 <div className="telemetry-diagnostic-summary">
-                  {telemetryLatestEntry ? `${telemetryLatestEntry.test_name || telemetryLatestEntry.test_id}: ${telemetryLatestEntry.diagnostic.summary}` : 'No issues detected.'}
+                  {telemetryFocusEntry ? `${telemetryFocusEntry.test_name || telemetryFocusEntry.test_id}: ${telemetryFocusEntry.diagnostic.summary}` : 'No issues detected.'}
                 </div>
                 <div className="telemetry-summary-cta">View details</div>
               </div>
@@ -1390,7 +1445,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
             const totalSlots = (fleetCapacity?.active_slots || 0) + (fleetCapacity?.available_slots || 0) + (fleetCapacity?.reserved_slots || 0)
             const usedSlots = (fleetCapacity?.active_slots || 0) + (fleetCapacity?.reserved_slots || 0)
             const usagePct = totalSlots > 0 ? Math.round((usedSlots / totalSlots) * 100) : 0
-            return totalSlots > 0 ? (
+            return totalSlots > 0 && capacitySummary.hasLiveInventory ? (
               <div className="capacity-gauge">
                 <div className="capacity-gauge-header">
                   <span className="capacity-gauge-label">Utilization</span>
@@ -1413,7 +1468,8 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
                 <span className={`status-badge ${provisioner.can_provision ? 'status-running' : 'status-idle'}`}>
                   {provisioner.can_provision ? 'on-demand' : 'static fleet'}
                 </span>
-                {' '}{provisioner.name}
+                {/* The built-in provisioner's name only repeats the badge. */}
+                {provisioner.name.replace(/[-_]+/g, ' ').toLowerCase() !== (provisioner.can_provision ? 'on-demand' : 'static fleet') && <>{' '}{provisioner.name}</>}
                 {provisioner.supported_regions && provisioner.supported_regions.length > 0 && (
                   <span className="cell-muted"> · {provisioner.supported_regions.join(', ')}</span>
                 )}
@@ -1422,11 +1478,11 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           )}
           <div className="monitor-row">
             <span className="monitor-label">Effective Available</span>
-            <span className="monitor-value">{fleetCapacity?.available_slots?.toLocaleString() ?? health?.capacity_availability?.effective_available_generators ?? '-'}</span>
+            <span className="monitor-value">{capacitySummary.effectiveAvailable?.toLocaleString() ?? '-'}</span>
           </div>
           <div className="monitor-row">
             <span className="monitor-label">Eligible Generators</span>
-            <span className="monitor-value">{fleetCapacity ? `${fleetCapacity.eligible_generators}/${fleetCapacity.total_generators}` : health?.capacity_availability?.configured_available_generators ?? '-'}</span>
+            <span className="monitor-value">{capacitySummary.eligibleLabel}</span>
           </div>
           <div className="monitor-row">
             <span className="monitor-label">Active Slots</span>
@@ -1446,17 +1502,15 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           </div>
           <div className="monitor-row">
             <span className="monitor-label">Source</span>
-            <span className="monitor-value">{fleetCapacity ? 'fleet placement API' : health?.capacity_availability?.source || '-'}</span>
+            <span className="monitor-value">{capacitySummary.sourceLabel}</span>
           </div>
-          {fleetCapacity?.project_slots?.length ? (
-            <div className="monitor-warning-list">
-              {fleetCapacity.project_slots.slice(0, 3).map(slots => (
-                <p key={slots.project_id}>
-                  {slots.project_name || slots.project_id}: {slots.active_slots.toLocaleString()} active / {slots.pending_slots.toLocaleString()} pending slots ({slots.fair_share_tier})
-                </p>
-              ))}
+          {/* Usage is information, not a fault: neutral rows, unlike rejection reasons below. */}
+          {fleetCapacity?.project_slots?.length ? fleetCapacity.project_slots.slice(0, 3).map(slots => (
+            <div className="monitor-row" key={slots.project_id}>
+              <span className="monitor-label">{slots.project_name || slots.project_id}</span>
+              <span className="monitor-value">{slots.active_slots.toLocaleString()} active / {slots.pending_slots.toLocaleString()} pending slots ({slots.fair_share_tier})</span>
             </div>
-          ) : null}
+          )) : null}
           {fleetCapacity?.pending_runs?.length ? <div className="monitor-warning-list"><strong>Pending runs</strong>{fleetCapacity.pending_runs.map(run => <p key={run.id}><button type="button" className="btn btn-secondary btn-sm" onClick={() => onSelectTest?.(run.id)} disabled={!onSelectTest}>{run.name || run.id}</button> · {run.status} · {run.vusers.toLocaleString()} slots</p>)}</div> : null}
           {fleetCapacity?.compatible_features?.length ? (
             <div className="monitor-row">
@@ -1531,11 +1585,29 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
               </div>
             </button>
           ) : (
-            <p className="monitor-hint">
-              {inventory?.execution_mode === 'distributed'
-                ? 'No generator inventory was returned by the controller.'
-                : 'Local mode is active. Configure distributed generator targets to list generator pods here.'}
-            </p>
+            <div className="monitor-hint">
+              <p>
+                {inventory?.execution_mode === 'distributed'
+                  ? 'No generator inventory was returned by the controller.'
+                  : 'Local mode is active: runs use the controller’s in-process engine. '}
+                {inventory?.execution_mode !== 'distributed' && (canManageSystem
+                  ? <a href={settingsHref('cloud')}>Configure distributed generator targets</a>
+                  : 'An administrator can configure distributed generator targets.')}
+              </p>
+              {Boolean(fleetConfiguration && (fleetConfiguration.clusters.length || fleetConfiguration.pools.length)) && (
+                <div className="fleet-configured-sources" aria-label="Configured clusters and pools">
+                  <strong>Configured, not reporting generators yet</strong>
+                  <ul>
+                    {fleetConfiguration!.clusters.map(cluster => (
+                      <li key={`cluster-${cluster.id}`}>Cluster <strong>{cluster.name}</strong> · {cluster.kind} · {cluster.last_check_status ? `last test: ${cluster.last_check_status}` : 'not tested yet'} · <a href={settingsHref('clusters')}>Open</a></li>
+                    ))}
+                    {fleetConfiguration!.pools.map(pool => (
+                      <li key={`pool-${pool.id}`}>Pool <strong>{pool.name}</strong> · {pool.cloud_provider}{pool.region ? ` · ${pool.region}` : ''} · {pool.status} · <a href={settingsHref('pools')}>Open</a></li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           )}
         </div>
       ),
@@ -1566,8 +1638,17 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           ) : (
             <div className="monitor-scroll-area">
               {fleetAlertActionError && <p className="monitor-action-message text-danger">{fleetAlertActionError}</p>}
+              {fleetAlertList.length > FLEET_ALERT_PAGE && (
+                <div className="fleet-alert-filters" role="search" aria-label="Filter fleet alerts">
+                  <label>Find<input type="search" value={fleetAlertFilter.query} placeholder="Generator or summary" onChange={event => setFleetAlertFilter(current => ({ ...current, query: event.target.value, limit: FLEET_ALERT_PAGE }))} /></label>
+                  <label>Severity<select value={fleetAlertFilter.severity} onChange={event => setFleetAlertFilter(current => ({ ...current, severity: event.target.value, limit: FLEET_ALERT_PAGE }))}><option value="all">All</option><option value="danger">Critical</option><option value="warning">Warning</option></select></label>
+                  <label>Status<select value={fleetAlertFilter.status} onChange={event => setFleetAlertFilter(current => ({ ...current, status: event.target.value, limit: FLEET_ALERT_PAGE }))}><option value="open">Not acknowledged</option><option value="acknowledged">Acknowledged</option><option value="all">All</option></select></label>
+                  <span role="status">Showing {visibleFleetAlerts.length} of {filteredFleetAlerts.length} matching ({fleetAlertList.length} total)</span>
+                </div>
+              )}
+              {fleetAlertList.length > FLEET_ALERT_PAGE && filteredFleetAlerts.length === 0 && <p className="monitor-hint">No alerts match these filters.</p>}
               <div className="monitor-warning-list">
-                {fleetAlertList.map(alert => (
+                {(fleetAlertList.length > FLEET_ALERT_PAGE ? visibleFleetAlerts : fleetAlertList).map(alert => (
                   <div key={alert.id || `${alert.type}:${alert.target}`} className="monitor-warning-row">
                     <p className={alert.severity === 'danger' ? 'text-danger' : ''}>
                       {alert.summary}
@@ -1579,13 +1660,17 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
                         className="btn btn-secondary btn-sm"
                         disabled={fleetAlertActionBusy === alert.id}
                         onClick={() => void toggleFleetAlertAck(alert)}
+                        aria-label={`${alert.acknowledged ? 'Clear acknowledgement of' : 'Acknowledge'} ${alert.target || alert.summary}`}
                       >
-                        {fleetAlertActionBusy === alert.id ? 'Saving...' : alert.acknowledged ? 'Clear' : 'Ack'}
+                        {fleetAlertActionBusy === alert.id ? 'Saving…' : alert.acknowledged ? 'Clear' : 'Ack'}
                       </button>
                     ) : null}
                   </div>
                 ))}
               </div>
+              {fleetAlertList.length > FLEET_ALERT_PAGE && visibleFleetAlerts.length < filteredFleetAlerts.length && (
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setFleetAlertFilter(current => ({ ...current, limit: current.limit + FLEET_ALERT_PAGE }))}>Show {Math.min(FLEET_ALERT_PAGE, filteredFleetAlerts.length - visibleFleetAlerts.length)} more</button>
+              )}
             </div>
           )}
         </div>
@@ -1612,7 +1697,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         <div className="monitor-body">
           {!canManageSystem ? (
             <p className="monitor-hint">System admin access is required to view fleet audit activity.</p>
-          ) : <><AuditEventTable events={fleetAuditEvents} emptyMessage="No recent fleet audit activity was returned." /><a href={settingsHref('audit')}>Filter and export audit history</a></>}
+          ) : <><AuditEventTable events={fleetAuditEvents} emptyMessage="No recent fleet audit activity was returned." emptyHint={null} /><a href={settingsHref('audit')}>Filter and export audit history</a></>}
 
         </div>
       ),
@@ -1690,7 +1775,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     },
     { id: 'prometheus-test-connections', title: 'Prometheus Test Monitoring', icon: <span aria-hidden="true">P</span>, content: <PrometheusConnectionsCard summaryOnly projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} /> },
 
-  ], [activeProjectId, activeProject?.id, allConfiguredReadinessChecksPassing, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, showQueuedRuns, canManageTests, canManageProjects, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertActionBusy, fleetAlertActionError, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlertList, fleetAlertsUnknown, fleetAuditEvents, fleetAuditHeaderLabel, fleetAuditHeaderSeverity, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, hasAllRequiredInfrastructureChecks, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onScheduleForDate, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessDisplayedCheckCount, readinessFailureChecks, readinessFetchState, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, thresholdAlertHeaderLabel, thresholdAlertHeaderSeverity, toggleFleetAlertAck, websocketLabel, websocketValueClass])
+  ], [capacitySummary, activeProjectId, activeProject?.id, allConfiguredReadinessChecksPassing, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, showQueuedRuns, canManageTests, canManageProjects, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertActionBusy, fleetAlertActionError, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlertList, fleetAlertsUnknown, fleetAlertFilter.query, fleetAlertFilter.severity, fleetAlertFilter.status, filteredFleetAlerts, visibleFleetAlerts, fleetConfiguration, fleetAuditEvents, fleetAuditHeaderLabel, fleetAuditHeaderSeverity, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, hasAllRequiredInfrastructureChecks, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onScheduleForDate, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessDisplayedCheckCount, readinessFailureChecks, readinessFetchState, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryFocusEntry, telemetryFocusLabel, telemetryDiagnostics, telemetryWarningCount, thresholdAlertHeaderLabel, thresholdAlertHeaderSeverity, toggleFleetAlertAck, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => {
@@ -1711,8 +1796,11 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   }, [cards, cardOrder])
 
   const activeCategory = MONITOR_CATEGORIES.find(category => category.id === activeCategoryId) ?? MONITOR_CATEGORIES[0]
-  const activeCategoryCardIds = new Set<string>(activeCategory.cardIds.filter(id => id !== 'parquet-analysis' || nativeAnalysisAvailable))
-  const activeVisibleCards = orderedCards.filter(card => activeCategoryCardIds.has(card.id)).sort((a, b) => (a.id === 'production-readiness' ? -1 : b.id === 'production-readiness' ? 1 : 0))
+  // A gated-off analysis card stays as a one-line note, so the capability is discoverable.
+  const activeCategoryCardIds = new Set<string>(activeCategory.cardIds)
+  // Readiness leads; a gated-off analysis note trails the cards that have content.
+  const cardRank = (card: MonitorCard) => card.id === 'production-readiness' ? -1 : card.id === 'parquet-analysis' && !nativeAnalysisAvailable ? 1 : 0
+  const activeVisibleCards = orderedCards.filter(card => activeCategoryCardIds.has(card.id)).sort((a, b) => cardRank(a) - cardRank(b))
 
   const selectCategory = useCallback((id: MonitorCategoryId) => {
     runGuarded(() => {
@@ -1815,11 +1903,11 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       : overallSeverity === 'unknown'
         ? readinessHeaderSeverity === 'unknown'
           ? readinessFetchState === 'loading' && !systemReadiness
-            ? 'Waiting for system data...'
+            ? 'Waiting for system data…'
             : readinessFetchState === 'error' && !systemReadiness
               ? 'Readiness unavailable'
               : 'Readiness data incomplete'
-          : 'Waiting for system data...'
+          : 'Waiting for system data…'
         : 'All systems operational'
   const advisoryEntries = severityEntries.filter(entry => entry.severity === 'danger' || entry.severity === 'warning')
   const advisoryTone: TopbarMetaTone | null = overallSeverity === 'danger'
@@ -1905,7 +1993,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           <div
             key={card.id}
             data-card-id={card.id}
-            className={`monitor-card${['parquet-analysis', 'run-monitor-sources'].includes(card.id) ? ' monitor-card-full' : ''}${staleCardIds.includes(card.id) ? ' stale' : ''}`}
+            className={`monitor-card${(card.id === 'parquet-analysis' ? nativeAnalysisAvailable : card.id === 'run-monitor-sources') ? ' monitor-card-full' : ''}${staleCardIds.includes(card.id) ? ' stale' : ''}`}
           >
             <div className="monitor-header">
               {card.icon}
@@ -1936,7 +2024,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       )}
 
       {isTelemetryModalOpen && telemetryDiagnostics.length > 0 && (
-        <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(() => setIsTelemetryModalOpen(false), 'Close telemetry diagnostics')}>
+        <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(() => setIsTelemetryModalOpen(false))}>
           <div ref={telemetryDialogRef} className="modal modal-wide telemetry-modal" role="dialog" aria-modal="true" aria-labelledby="telemetry-diagnostics-title">
             <div className="modal-header telemetry-modal-header">
               <div>
@@ -1967,7 +2055,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       )}
 
       {isGeneratorsModalOpen && generators.length > 0 && (
-        <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(() => setIsGeneratorsModalOpen(false), 'Close generator inventory')}>
+        <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(() => setIsGeneratorsModalOpen(false))}>
           <div ref={generatorsDialogRef} className="modal modal-wide telemetry-modal" role="dialog" aria-modal="true" aria-labelledby="generator-inventory-title">
             <div className="modal-header telemetry-modal-header">
               <div>
@@ -2541,7 +2629,7 @@ function RunCalendarPanel({
                 <div className="run-calendar-detail-actions">
                   <button type="button" className="btn btn-secondary btn-sm" onClick={onCloseDetails}>Close</button>
                   {canOpenSelectedTest && (
-                    <button type="button" className="btn btn-accent-action btn-sm" onClick={onOpenSelectedTest}>Open Test</button>
+                    <button type="button" className="btn btn-primary btn-sm" onClick={onOpenSelectedTest}>Open Test</button>
                   )}
                 </div>
               </div>

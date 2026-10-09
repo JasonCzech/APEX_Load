@@ -661,7 +661,7 @@ Apply `Is Latest Publish = 1` as a report/page filter (equivalent measure on `tr
 - 429/5xx responses are retried with `Retry-After` honored; a failure mid-publish is recorded as `partial` and surfaced on the run report — recover by force re-publishing.
 - The run row is pushed **last**, so a run never appears in trend visuals until all of its transaction rows landed.
 - **Schema drift**: if the dataset predates a schema change (or its tables were altered), publishing fails with a drift error. Drift detection is dataset-scoped — it compares against the newest publish into that dataset across all tests. Settings → Power BI → **Recreate dataset** deletes and recreates it with the current schema — this erases all previously pushed rows in Power BI (APEX Load's publish history is retained). The recreated dataset has a new ID, so previously published runs can be re-published into it without `force`.
-- The published `verdict` honors an analyst's verdict override saved via report annotations (executive profile wins, then engineer, then audit), matching what the rendered reports display.
+- The published `verdict` honors the analyst's verdict override saved via report annotations. The override is stored once per run, whichever report audience it was set from, so it matches every rendered report.
 - Every publish is recorded in the `powerbi_publishes` table and in the audit log (`powerbi.publish`).
 
 ### Recommended report layout (built by the BI team)
@@ -718,7 +718,7 @@ APEX Load sends lifecycle and telemetry-health notifications to Dynatrace throug
 
 #### Events
 
-Dynatrace webhooks can subscribe to the same event names as Slack and Teams, including `test_started`, `test_complete`, `test_failed`, `telemetry_degraded`, `telemetry_breached`, `telemetry_recovered`, `load_phase` and fleet alert events. `load_phase` events are sent as `CUSTOM_ANNOTATION` on the webhook's entity selector.
+Dynatrace webhooks can subscribe to the same event names as Slack and Teams, including `test_started`, `test_complete`, `test_failed`, `telemetry_degraded`, `telemetry_breached`, `telemetry_recovered`, `telemetry_acceptance`, `load_phase` and fleet alert events. `load_phase` events are sent as `CUSTOM_ANNOTATION` on the webhook's entity selector. A `telemetry_acceptance` event is an `ERROR_EVENT` when the verdict failed (severity `danger`) and a `CUSTOM_ALERT` when it was inconclusive (severity `warning`).
 
 ### Load-phase events and Grafana annotations
 

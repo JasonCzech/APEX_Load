@@ -1,11 +1,12 @@
 import './Access.css'
-import { settingsHref } from './settingsNavigation'
+import { useSectionListKeys } from './ux/useSectionListKeys'
+import { SETTINGS_DESTINATIONS, settingsHref } from './settingsNavigation'
 import { accessHref, type AccessView } from './accessDestinations'
 
 export interface AccessNavigationCounts {
-  users?: number | string
+  /** Totals only, never filtered or loaded-page counts. */
+  users?: number
   accounts?: number
-  activity?: number
   reviewAttention?: number
 }
 
@@ -16,14 +17,8 @@ const PEOPLE_ITEMS: ReadonlyArray<{ id: 'users' | 'accounts' | 'activity'; label
   { id: 'activity', label: 'Activity', view: 'events' },
 ]
 
-const POLICY_ITEMS = [
-  ['authentication', 'Authentication'],
-  ['features', 'Feature policy'],
-  ['imports', 'Import policy'],
-  ['redaction', 'Redaction'],
-  ['secrets', 'Project secrets'],
-  ['audit', 'Governance audit'],
-] as const
+// The same names the Settings list and each page card use, defined once.
+const POLICY_ITEMS = SETTINGS_DESTINATIONS.filter(item => item.group === 'Access & Security').map(item => [item.id, item.title] as const)
 
 function peopleItemFor(view: AccessView | undefined): (typeof PEOPLE_ITEMS)[number]['id'] {
   if (view === 'accounts' || view === 'create-account') return 'accounts'
@@ -43,10 +38,11 @@ export default function AccessNavigation({ currentSetting, currentView, counts =
   /** On the Access page the identity views switch in place (keeping the unsaved-changes guard). */
   onSelectView?: (view: AccessView) => void
 }) {
+  const navRef = useSectionListKeys()
   const currentPeople = currentSetting ? undefined : peopleItemFor(currentView)
-  const countFor = (id: (typeof PEOPLE_ITEMS)[number]['id']) => id === 'users' ? counts.users : id === 'accounts' ? counts.accounts : counts.activity
+  const countFor = (id: (typeof PEOPLE_ITEMS)[number]['id']) => id === 'users' ? counts.users : id === 'accounts' ? counts.accounts : undefined
   return (
-    <nav className="section-nav access-navigation" aria-label="Access administration">
+    <nav ref={navRef} className="section-nav access-navigation" aria-label="Access administration">
       <div>
         <h3>People</h3>
         {PEOPLE_ITEMS.map(item => {
@@ -56,7 +52,10 @@ export default function AccessNavigation({ currentSetting, currentView, counts =
               <span>{item.label}</span>
               {count !== undefined && <strong>{count}</strong>}
               {item.id === 'activity' && Boolean(counts.reviewAttention) && (
-                <span className="access-attention-badge" title={`${counts.reviewAttention} item(s) need review`}>{counts.reviewAttention}</span>
+                <span className="access-attention-badge" title={`${counts.reviewAttention} access review item${counts.reviewAttention === 1 ? '' : 's'} need attention (Activity › Access Review)`}>
+                  <span aria-hidden="true">{counts.reviewAttention}</span>
+                  <span className="sr-only">{counts.reviewAttention} access review item{counts.reviewAttention === 1 ? '' : 's'} need attention</span>
+                </span>
               )}
             </>
           )

@@ -17,6 +17,7 @@ var ErrComparisonPolicyConflict = errors.New("comparison policy changed; reload 
 type ComparisonStore interface {
 	SaveBaselineComparison(id, projectID, testID string, payload []byte) error
 	GetBaselineComparison(id, projectID, testID string) ([]byte, error)
+	VisitBaselineComparisons(projectID, testID string, limit int, visit func(BaselineComparisonRecord) error) error
 	GetComparisonPolicy(scenarioID, projectID string) ([]byte, int64, error)
 	SaveComparisonPolicy(scenarioID, projectID string, expectedRevision int64, payload []byte) (int64, error)
 }
@@ -33,6 +34,41 @@ func (s *SQLiteStore) GetBaselineComparison(id, projectID, testID string) ([]byt
 	var payload string
 	err := s.db.QueryRow(`SELECT payload FROM baseline_comparison_snapshots WHERE id = ? AND project_id = ? AND test_id = ?`, id, normalizeProjectID(projectID), testID).Scan(&payload)
 	return []byte(payload), err
+}
+
+// BaselineComparisonRecord is one saved comparison snapshot for a run.
+type BaselineComparisonRecord struct {
+	ID        string
+	Payload   []byte
+	CreatedAt time.Time
+}
+
+// VisitBaselineComparisons streams a run's saved comparisons, newest first.
+// Snapshots can be large (MaxComparisonSnapshotBytes), so rows are handed to
+// visit one at a time instead of being collected. visit runs while the query
+// cursor is open: it must not query the store (single-connection SQLite would
+// deadlock).
+func (s *SQLiteStore) VisitBaselineComparisons(projectID, testID string, limit int, visit func(BaselineComparisonRecord) error) error {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	rows, err := s.db.Query(`SELECT id, payload, created_at FROM baseline_comparison_snapshots WHERE project_id = ? AND test_id = ? ORDER BY created_at DESC LIMIT ?`, normalizeProjectID(projectID), testID, limit)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var record BaselineComparisonRecord
+		var payload string
+		if err := rows.Scan(&record.ID, &payload, &record.CreatedAt); err != nil {
+			return err
+		}
+		record.Payload = []byte(payload)
+		if err := visit(record); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
 }
 
 func (s *SQLiteStore) GetComparisonPolicy(scenarioID, projectID string) ([]byte, int64, error) {

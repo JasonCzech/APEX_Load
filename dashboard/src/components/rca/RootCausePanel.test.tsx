@@ -160,7 +160,10 @@ describe('RootCausePanel', () => {
   })
 
   it('stays hidden where the project does not present v2', async () => {
+    // An analyst is told the capability is off; others see nothing.
     await render(model(rcaTestResponse({ presented: false })))
+    expect(container.querySelector('[role="note"]')?.textContent).toContain('not enabled for this project')
+    await render(model(rcaTestResponse({ presented: false })), {}, false)
     expect(container.innerHTML).toBe('')
     // Before any response, a load or a failure shows only for a link that
     // names an analysis.

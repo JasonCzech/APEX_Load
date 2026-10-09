@@ -34,7 +34,7 @@ Save as sample_target.py and run `python3 sample_target.py`. Keep it running unt
 
 ### Create and prove the script
 
-Open [Scripts](#/scripts), create a script and use the JSON editor to load the example below. The editor accepts the wrapped form shown here (`{"script": {...}}`, the shape API requests use) or the bare script object. Save it in the selected project. The example sends only one GET per iteration and includes explicit response checks.
+Open [Scripts](#/scripts), choose **Create script**, then **Blank & Assisted Editors** › **Start New Script**, and paste the example below into the editor's **Source** tab. The editor accepts the wrapped form shown here (`{"script": {...}}`, the shape API requests use) or the bare script object. Save it in the selected project. The example sends only one GET per iteration and includes explicit response checks.
 
 ```json
 {
@@ -61,7 +61,7 @@ Open [Scripts](#/scripts), create a script and use the JSON editor to load the e
 }
 ```
 
-Click Validate and resolve every reported issue. Validation checks the script contract; launch still checks permissions, capacity and deployment capabilities. Replay once and inspect the response. Expect HTTP 200, a body containing `ok`, and successful checks. If replay cannot reach the endpoint, fix connectivity before increasing load. See [Validate & replay](APPLICATION_USER_GUIDE.md#validating-and-replaying).
+Choose **Validate Script(s)** and resolve every reported issue. Validation checks the script contract; launch still checks permissions, capacity and deployment capabilities. Then choose **Debug one iteration** and inspect the response. Expect HTTP 200, a body containing `ok`, and successful checks. If replay cannot reach the endpoint, fix connectivity before increasing load. See [Validate & replay](APPLICATION_USER_GUIDE.md#validating-and-replaying).
 
 ### Run a small scenario
 

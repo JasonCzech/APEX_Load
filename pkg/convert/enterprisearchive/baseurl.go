@@ -185,6 +185,9 @@ func detectBaseURL(functions []ParsedFunction) string {
 	}
 
 	if len(urls) == 0 {
+		if base := webSocketBaseURL(functions); base != "" {
+			return base
+		}
 		return "https://example.com"
 	}
 

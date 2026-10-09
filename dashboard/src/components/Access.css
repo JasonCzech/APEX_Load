@@ -63,7 +63,7 @@
 }
 
 .access-tab:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -349,7 +349,7 @@
 .access-chip.active {
   background: var(--accent-soft);
   border-color: var(--accent-border);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .access-project-role-list {
@@ -719,14 +719,14 @@
 }
 
 .access-subtab:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
 .access-subtab.active {
   border-color: var(--accent-border);
   background: color-mix(in srgb, var(--accent) 10%, var(--bg-card));
-  color: var(--accent);
+  color: var(--accent-text);
   box-shadow: var(--glow-sm);
 }
 
@@ -880,7 +880,7 @@
 }
 
 .access-data-table th.sortable button:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
 
@@ -926,11 +926,11 @@
 
 .access-row-primary:hover,
 .access-row-primary:focus-visible {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .access-row-primary:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
   border-radius: 3px;
 }
@@ -1070,7 +1070,7 @@
 .access-page .ux-form-field { display: flex; flex-direction: column; gap: 8px; }
 .access-page .ux-form-field label { font-size: 12px; color: var(--text-secondary); }
 .access-page .ux-form-field input { min-height: 38px; width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-primary); background: var(--bg-surface); font: inherit; }
-.access-chip:focus-visible, .access-page button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.access-chip:focus-visible, .access-page button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
 .access-chip[aria-pressed="true"]::before { content: '✓ '; }
 .access-pagination { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 12px 0; }
 .access-load-older { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 12px; padding: 12px; border-top: 1px solid var(--border); color: var(--text-secondary); font-size: 12px; }

@@ -70,7 +70,7 @@ describe('UnsavedChangesModal', () => {
     expect(container.textContent).toContain('Save did not complete')
     expect(button('Keep editing').disabled).toBe(true)
     expect(button('Discard changes').disabled).toBe(true)
-    expect(button('Saving...').disabled).toBe(true)
+    expect(button('Saving…').disabled).toBe(true)
     expect(container.querySelector('[role="alert"]')?.textContent).toBe('Save did not complete')
   })
 

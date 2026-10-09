@@ -1,4 +1,5 @@
 import PropertyAnalyticsFields from './PropertyAnalyticsFields'
+import AuthHostsField from './AuthHostsField'
 import { requiresScriptBaseURL } from './scriptAuthoringAssist'
 import { MessageDetailFields } from './MessageDetailFields'
 import { HTTPReplayPolicyFields } from './HTTPReplayPolicyFields'
@@ -266,7 +267,7 @@ export function ScriptRuntimeSettingsView({
     if (leftSelected !== rightSelected) return leftSelected - rightSelected
     return left.localeCompare(right)
   })
-  const hasPreservedRunOrder = script.config.run_logic?.block_scheduling !== undefined || Boolean(script.config.run_logic?.action_sequence?.length)
+  const hasPreservedRunOrder = script.config.run_logic?.block_scheduling !== undefined || Boolean(script.config.run_logic?.action_sequence?.length) || Boolean(script.config.run_logic?.blocks?.length)
   const hasImportedRuntimeFiles = importedRuntimeFileNames.length > 0
   const importedDispositionSummary = summarizeImportedRuntimeDispositions(importedRuntimeDispositions)
 
@@ -303,7 +304,7 @@ export function ScriptRuntimeSettingsView({
   }
 
   const categoryModified = (category: typeof RUNTIME_WORKSPACE_CATEGORIES[number]) => category.id === 'imported_source'
-    ? ['block_scheduling', 'action_sequence'].some(field => JSON.stringify(script.config.run_logic?.[field as keyof NonNullable<ScriptConfig['run_logic']>]) !== JSON.stringify(baselineConfig?.run_logic?.[field as keyof NonNullable<ScriptConfig['run_logic']>]))
+    ? ['block_scheduling', 'action_sequence', 'blocks'].some(field => JSON.stringify(script.config.run_logic?.[field as keyof NonNullable<ScriptConfig['run_logic']>]) !== JSON.stringify(baselineConfig?.run_logic?.[field as keyof NonNullable<ScriptConfig['run_logic']>]))
     : category.fields.some(field => JSON.stringify(script.config[field]) !== JSON.stringify(baselineConfig?.[field]))
   const visibleCategories = RUNTIME_WORKSPACE_CATEGORIES.filter(category => {
     const terms = `${category.label} ${category.group} ${category.fields.join(' ')} ${RUNTIME_SEARCH_TERMS[category.id] || ''}`.toLowerCase()
@@ -316,7 +317,7 @@ export function ScriptRuntimeSettingsView({
   {!hideSave && <div className="center-document-header runtime-settings-save-header">
     <div className="runtime-settings-header-actions">
       <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saveScriptDisabled} title={saveScriptTitle}>
-        {saving ? 'Saving...' : 'Save Script'}
+        {saving ? 'Saving…' : 'Save Script'}
       </button>
     </div>
   </div>}
@@ -1305,8 +1306,10 @@ export function ScriptRuntimeSettingsView({
                 <option value="basic">Basic</option>
                 <option value="bearer">Bearer Token</option>
                 <option value="ntlm">NTLM</option>
+                <option value="negotiate">Negotiate (NTLM)</option>
+                <option value="negotiate_any">Any challenge (Basic, Digest, NTLM, Negotiate)</option>
               </select></label>
-            {(script.config.http?.auth?.type === 'basic' || script.config.http?.auth?.type === 'ntlm') && (
+            {['basic', 'ntlm', 'negotiate', 'negotiate_any'].includes(script.config.http?.auth?.type || '') && (
               <>
                 <label><span>Username</span>
                   <input value={script.config.http?.auth?.username || ''}
@@ -1314,12 +1317,23 @@ export function ScriptRuntimeSettingsView({
                 <label><span>Password</span>
                   <input type="password" value={script.config.http?.auth?.password || ''}
                     onChange={e => updateField('config.http', { ...script.config.http, auth: { ...script.config.http?.auth, password: e.target.value } })} /></label>
+                {['ntlm', 'negotiate'].includes(script.config.http?.auth?.type || '') && (
+                  <label><span>Domain</span>
+                    <input aria-label="Auth domain" value={script.config.http?.auth?.domain || ''} placeholder="CORP (sent as CORP\user)"
+                      onChange={e => updateField('config.http', { ...script.config.http, auth: { ...script.config.http?.auth, domain: e.target.value || undefined } })} /></label>
+                )}
               </>
             )}
             {script.config.http?.auth?.type === 'bearer' && (
               <label className="full-width"><span>Token</span>
                 <input value={script.config.http?.auth?.token || ''} placeholder="eyJhbGciOiJIUzI1NiIs..."
                   onChange={e => updateField('config.http', { ...script.config.http, auth: { ...script.config.http?.auth, token: e.target.value } })} /></label>
+            )}
+            {Boolean(script.config.http?.auth?.type) && (
+              <AuthHostsField
+                hosts={script.config.http?.auth?.hosts}
+                onChange={hosts => updateField('config.http', { ...script.config.http, auth: { ...script.config.http?.auth, hosts } })}
+              />
             )}
           </div>
         </div>}
@@ -1727,7 +1741,7 @@ export function ScriptRuntimeSettingsView({
       <div className="section-body">
         <div className="logging-settings-layout">
           <label>
-            <span>Log Level</span>
+            <span>Log level</span>
             <select value={script.config.log?.level || 'standard'}
               onChange={e => updateField('config.log', { ...script.config.log, level: e.target.value })}>
               <option value="disabled">Disabled</option>

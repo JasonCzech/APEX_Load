@@ -59,11 +59,40 @@ function issuePresentation(issue: ImportWorkspaceIssue): ImportWorkspaceIssue {
     impact: 'The draft does not extract and reuse a response value. Later requests may need an extractor if they depend on dynamic data.',
     resolution: 'If the source flow expects a returned value, add an extractor in the Visual Editor after saving. Otherwise, record that no correlation is needed.',
   }
+  if (/^har artifact governance$/i.test(issue.title.trim())) return {
+    ...issue,
+    title: 'Review HAR storage policy',
+    impact: 'The stored HAR keeps the recorded traffic, including any credentials, cookies and tokens it captured. This policy does not change replay.',
+    resolution: 'Confirm the stored HAR may be kept under this policy, then mark this note reviewed.',
+  }
   if (/credential|secret|authorization|token/.test(evidence)) return { ...issue, targetTab: 'credentials', actionLabel: 'Review credentials' }
   if (/parameter|variable|csv|data source|extractor|correlation/.test(evidence)) return { ...issue, targetTab: 'data', actionLabel: 'Configure data & parameters' }
   if (/runtime|thread group|duration|iteration|timer|timestamp|tls|sandbox/.test(evidence)) return { ...issue, targetTab: 'runtime', actionLabel: 'Review runtime settings' }
   if (/source|mapping|provenance|unsupported/.test(evidence)) return { ...issue, targetTab: 'source', actionLabel: 'Inspect source evidence' }
   return issue
+}
+
+const diagnosticKindTitles: Record<string, string> = {
+  import_missing_variables: 'Unresolved variables',
+  import_credential_preserved: 'Imported credential kept in the script',
+  import_review_required: 'Imported behavior needs review',
+  jmeter_timestamp_timezone_required: 'Timestamp timezone policy required',
+  jmeter_invalid_header_value: 'Invalid header value',
+  jmeter_review_traversal_failed: 'Review traversal failed',
+}
+
+// Titles a normalized import diagnostic by what is wrong, then where. The
+// element alone is often a sampler name that says nothing about the problem.
+export function importDiagnosticTitle(item: { code?: string; element: string; detail?: string }): string {
+  const code = item.code || ''
+  // These codes embed the element, which already names the kind of finding.
+  if (!code || code.startsWith('jmeter_diagnostic:')) return item.element
+  if (code.startsWith('jmeter_warning:')) return 'Source warning'
+  const words = code.replace(/^(?:import|jmeter)_/, '').replace(/_/g, ' ')
+  const kind = diagnosticKindTitles[code] || `${words.charAt(0).toUpperCase()}${words.slice(1)}`
+  const variables = code === 'import_missing_variables' ? /:\s*([^:]+)$/.exec(item.detail || '')?.[1]?.trim() : ''
+  const subject = variables ? `${kind}: ${variables}` : kind
+  return item.element && !/^(?:JMeter (?:source|script)|imported credential)$/i.test(item.element) ? `${subject} in ${item.element}` : subject
 }
 
 export function groupImportWorkspaceIssues(issues: ImportWorkspaceIssue[]): GroupedImportWorkspaceIssue[] {

@@ -43,6 +43,8 @@ export interface ScriptsAuthoringSurfaceProps {
   // session is approved; omitting it saves to project root.
   folderId?: string | null
   activeProject?: Project | null
+  /** The project's library, used to warn when a name repeats within its folder. */
+  libraryScripts?: Array<Pick<StoredScript, 'id' | 'name' | 'folder_id'>>
   onSaved: (script: StoredScript, options?: ScriptSaveOptions) => void
   onOpenLibrary: () => void
   onOpenCreateOptions: () => void
@@ -123,6 +125,7 @@ function ScriptsAuthoringContent({
   draftInitiallyDirty,
   projectId,
   folderId,
+  libraryScripts = [],
   activeProject,
   onSaved,
   onOpenLibrary,
@@ -156,6 +159,13 @@ function ScriptsAuthoringContent({
   )
   // Empty string is "project root"; the save APIs expect null rather than "".
   const destinationFolderValue = destinationFolderId || null
+  // An edited script's folder comes from the library list; when it is not
+  // listed the folder is unknown, so no namesake is reported rather than a wrong one.
+  const editedEntry = subView === 'edit' ? libraryScripts.find(script => script.id === editingId) : undefined
+  const nameFolder = subView === 'edit' ? editedEntry?.folder_id ?? null : destinationFolderValue
+  const takenScriptNames = subView === 'edit' && !editedEntry
+    ? []
+    : libraryScripts.filter(script => script.id !== editingId && (script.folder_id || null) === (nameFolder || null)).map(script => script.name)
   const renderCreateOptionsSurface = (content: ReactNode, hidden = false) =>
     createOptionsSurface(content, hidden, destinationFolderControl, destinationOperationBusy)
   const enterpriseArchiveEditReturnTarget: AuthoringReturnTarget = {
@@ -186,14 +196,14 @@ function ScriptsAuthoringContent({
                 {draftReturnTarget.description && <span>{draftReturnTarget.description}</span>}
               </div>
               {authoringNotice && <div className="settings-notice">{authoringNotice}</div>}
-              <ScriptEditor initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={destinationFolderValue} onSave={onSaved} onClose={closeCreateEditor} />
+              <ScriptEditor initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={onSaved} onClose={closeCreateEditor} />
             </div>
           </div>
         )
       }
-      return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={destinationFolderValue} onSave={onSaved} onClose={closeCreateEditor} /></div>
+      return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={onSaved} onClose={closeCreateEditor} /></div>
     case 'edit':
-      return <div className="page">{editingId && <ObjectHistory key={editingId} projectId={projectId} resourceType="script" resourceId={editingId} activity={editingActivity} />}{editingScript?.archived_at ? <section aria-label="Archived script"><h2>{editingScript.name} — Archived</h2><p>Restore this script from the library before editing or executing it.</p><button className="btn btn-secondary" onClick={onOpenLibrary}>Back to library</button><pre className="object-archive-content">{JSON.stringify(editingScript, null, 2)}</pre></section> : <>{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor scriptId={editingId} initialScript={editingScript} initialAuthoring={editingAuthoring} initialRetainedDraft={editingRetainedDraft} initialRetainedNeedsReview={editingRetainedNeedsReview} initialRetainedJsonText={editingRetainedJsonText} initialRetainedCreatedSecretNames={editingRetainedCreatedSecretNames} projectId={projectId} folderId={destinationFolderValue} onSave={onSaved} onClose={onOpenLibrary} /></>}</div>
+      return <div className="page">{editingId && <ObjectHistory key={editingId} projectId={projectId} resourceType="script" resourceId={editingId} activity={editingActivity} />}{editingScript?.archived_at ? <section aria-label="Archived script"><h2>{editingScript.name} — Archived</h2><p>Restore this script from the library before editing or executing it.</p><button className="btn btn-secondary" onClick={onOpenLibrary}>Back to library</button><pre className="object-archive-content">{JSON.stringify(editingScript, null, 2)}</pre></section> : <>{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor scriptId={editingId} initialScript={editingScript} initialAuthoring={editingAuthoring} initialRetainedDraft={editingRetainedDraft} initialRetainedNeedsReview={editingRetainedNeedsReview} initialRetainedJsonText={editingRetainedJsonText} initialRetainedCreatedSecretNames={editingRetainedCreatedSecretNames} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={onSaved} onClose={onOpenLibrary} /></>}</div>
     case 'import':
       return (
         <div className="scripts-authoring-stack">

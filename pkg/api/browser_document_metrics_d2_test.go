@@ -6,11 +6,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -324,6 +326,169 @@ func TestRCABrowserDocumentSeriesUseFinalDistributionsPerTuple(t *testing.T) {
 	}
 }
 
+// The run's own document evidence that the series budget cut, or that could
+// not be read, is classified as incomplete or unreadable (the assessment test
+// below shows an unreadable sidecar reaching the browser baseline).
+func TestRCARunDocumentEvidenceLossIsClassified(t *testing.T) {
+	server, store := baselineTestServer(t)
+	run := comparisonArchiveFixture(t, server, store, "current", 200, 150)
+	record := server.runner.archives[run.ID]
+	start := *run.StartedAt
+	attachD2Documents(t, record, d2Document{id: 1, metric: "lcp", cohort: d2Cohort("141.0"), at: start.Add(31 * time.Second), value: 100, progress: 10, final: true})
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summaries, err := readAllArchiveSummariesContext(context.Background(), record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, limitations, err := rcaBrowserDocumentSeries(context.Background(), record, manifest, summaries, -1, 0); err != nil {
+		t.Fatal(err)
+	} else if incomplete, unreadable := rcaDocumentEvidenceLoss(limitations); incomplete || unreadable {
+		t.Fatalf("complete evidence = %v %v %+v", incomplete, unreadable, limitations)
+	}
+	if _, limitations, _ := rcaBrowserDocumentSeries(context.Background(), record, manifest, summaries, 0, 0); func() bool { incomplete, _ := rcaDocumentEvidenceLoss(limitations); return !incomplete }() {
+		t.Fatalf("budget-cut evidence = %+v", limitations)
+	}
+	if err := os.WriteFile(filepath.Join(record.ArchivePath, manifest.BrowserDocumentsFile), []byte("not document evidence\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, limitations, _ := rcaBrowserDocumentSeries(context.Background(), record, manifest, summaries, -1, 0); func() bool { _, unreadable := rcaDocumentEvidenceLoss(limitations); return !unreadable }() {
+		t.Fatalf("unreadable evidence = %+v", limitations)
+	}
+}
+
+// The run's pinned browser policy reaches the browser baseline: its effect
+// floors and baseline mode; a revision that no longer matches its pin is
+// reported (the defaults apply); a store that fails is an error.
+func TestRCABrowserBaselinePolicyFromThePin(t *testing.T) {
+	server, store := baselineTestServer(t)
+	manifest := &RunArchiveManifest{}
+	if policy, err := server.rcaBrowserBaselinePolicy(storage.DefaultProjectID, manifest); policy != nil || err != nil {
+		t.Fatalf("no pin = %+v %v", policy, err)
+	}
+	definition := e1Policy(e1LCP)
+	timing := 250.0
+	definition.EffectFloors.TimingMs = &timing
+	definition.Baseline = BrowserPolicyBaseline{Mode: "pinned_run", RunID: "golden"}
+	pin := saveBrowserPolicy(t, store, "web", 1, definition)
+	manifest.Provenance.PolicyPins = []RunPolicyPin{pin}
+	policy, err := server.rcaBrowserBaselinePolicy(storage.DefaultProjectID, manifest)
+	if err != nil || policy == nil || policy.Ref != "web@1" || policy.TimingMs == nil || *policy.TimingMs != 250 || policy.Mode != "pinned_run" || policy.RunID != "golden" || policy.Unavailable != "" {
+		t.Fatalf("pinned policy = %+v %v", policy, err)
+	}
+	manifest.Provenance.PolicyPins[0].SHA256 = strings.Repeat("0", 64)
+	if policy, err := server.rcaBrowserBaselinePolicy(storage.DefaultProjectID, manifest); err != nil || policy == nil || policy.Unavailable != "its revision no longer matches the pin" || policy.TimingMs != nil {
+		t.Fatalf("mismatched pin = %+v %v", policy, err)
+	}
+	manifest.Provenance.PolicyPins[0].Revision = 9
+	if policy, err := server.rcaBrowserBaselinePolicy(storage.DefaultProjectID, manifest); err != nil || policy == nil || policy.Unavailable != "its revision was not found" {
+		t.Fatalf("missing revision = %+v %v", policy, err)
+	}
+	// A stored revision that is not a valid browser policy leaves the defaults.
+	invalid := saveBrowserPolicy(t, store, "broken", 1, BrowserPolicyDefinition{Version: analysisPolicyVersion, Baseline: BrowserPolicyBaseline{Mode: "sometimes"}})
+	manifest.Provenance.PolicyPins = []RunPolicyPin{invalid}
+	if policy, err := server.rcaBrowserBaselinePolicy(storage.DefaultProjectID, manifest); err != nil || policy == nil || policy.Unavailable != "its revision is invalid" {
+		t.Fatalf("invalid revision = %+v %v", policy, err)
+	}
+	server.store = journeyPolicyLookupStore{SQLiteStore: store, err: errors.New("database is locked")}
+	if _, err := server.rcaBrowserBaselinePolicy(storage.DefaultProjectID, manifest); err == nil {
+		t.Fatal("a store failure was read as a missing policy")
+	}
+}
+
+// An RCA assessment of a run with document evidence applies the run's pinned
+// browser policy to its browser baseline: the floor it raised, named.
+func TestRCAAssessmentAppliesThePinnedBrowserPolicy(t *testing.T) {
+	server, store := baselineTestServer(t)
+	run := comparisonArchiveFixture(t, server, store, "current", 200, 150)
+	record := server.runner.archives[run.ID]
+	start := *run.StartedAt
+	attachD2Documents(t, record, d2Document{id: 1, metric: "lcp", cohort: d2Cohort("141.0"), at: start.Add(31 * time.Second), value: 100, progress: 10, final: true})
+	timing := 250.0
+	definition := e1Policy(e1LCP)
+	definition.EffectFloors.TimingMs = &timing
+	definition.Baseline.Mode = "latest_compatible"
+	pin := saveBrowserPolicy(t, store, "web", 1, definition)
+	raw, err := os.ReadFile(record.ManifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest RunArchiveManifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest.Provenance.PolicyPins = []RunPolicyPin{pin}
+	raw, _ = json.Marshal(manifest)
+	if err := os.WriteFile(record.ManifestPath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	record.ManifestSHA256 = sha256BytesHex(raw)
+	digest, err := rcaArchiveDigest(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assessment, err := server.assessRCAAnalysis(context.Background(), &storage.RCAAnalysis{ID: "a", ProjectID: storage.DefaultProjectID, TestID: run.ID},
+		rcaAnalysisPayload{Inputs: rca.InputDigests{Archive: digest, Engine: rcaEngineVersion}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseline := assessment.BrowserBaseline
+	if baseline == nil || baseline.Policy != "web@1" || baseline.Params.TimingFloorMs != 250 {
+		t.Fatalf("browser baseline = %+v", baseline)
+	}
+	// A run whose document evidence cannot be read has an unavailable
+	// browser baseline that says so, never a missing one.
+	if err := os.WriteFile(filepath.Join(record.ArchivePath, manifest.BrowserDocumentsFile), []byte("not document evidence\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if digest, err = rcaArchiveDigest(record); err != nil {
+		t.Fatal(err)
+	}
+	assessment, err = server.assessRCAAnalysis(context.Background(), &storage.RCAAnalysis{ID: "b", ProjectID: storage.DefaultProjectID, TestID: run.ID},
+		rcaAnalysisPayload{Inputs: rca.InputDigests{Archive: digest, Engine: rcaEngineVersion}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if baseline := assessment.BrowserBaseline; baseline == nil || baseline.Status != rca.DetectionUnavailable || len(baseline.Limitations) == 0 || baseline.Limitations[0].Code != rca.BrowserBaselineRunEvidenceUnavailable {
+		t.Fatalf("unreadable run documents = %+v", baseline)
+	}
+}
+
+// A run without browser document evidence never reads its pinned browser
+// policy, so a store failure cannot fail its RCA.
+func TestRCAAssessmentWithoutDocumentsSkipsTheBrowserPolicy(t *testing.T) {
+	server, store := baselineTestServer(t)
+	run := comparisonArchiveFixture(t, server, store, "plain", 200, 150)
+	record := server.runner.archives[run.ID]
+	pin := saveBrowserPolicy(t, store, "web", 1, e1Policy(e1LCP))
+	raw, err := os.ReadFile(record.ManifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest RunArchiveManifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest.Provenance.PolicyPins = []RunPolicyPin{pin}
+	raw, _ = json.Marshal(manifest)
+	if err := os.WriteFile(record.ManifestPath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	record.ManifestSHA256 = sha256BytesHex(raw)
+	digest, err := rcaArchiveDigest(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.store = journeyPolicyLookupStore{SQLiteStore: store, err: errors.New("database is locked")}
+	assessment, err := server.assessRCAAnalysis(context.Background(), &storage.RCAAnalysis{ID: "a", ProjectID: storage.DefaultProjectID, TestID: run.ID},
+		rcaAnalysisPayload{Inputs: rca.InputDigests{Archive: digest, Engine: rcaEngineVersion}})
+	if err != nil || assessment == nil || assessment.BrowserBaseline != nil {
+		t.Fatalf("assessment without documents = %+v %v", assessment, err)
+	}
+}
+
 // Baseline-mode RCA reads the baseline run's browser document tuples too, so
 // a document series is judged against the same tuple of the baseline run
 // rather than only within its own run.
@@ -368,6 +533,27 @@ func TestRCABaselineEvidenceCarriesBrowserDocumentSeries(t *testing.T) {
 	if !found {
 		t.Fatal("the baseline's browser document series were not read under the run's series ID")
 	}
+	// The detector receives the qualification, the groups whose script
+	// changed, and whether the baseline's documents were fully read.
+	// The fixture's runs record no script digests, so the qualification says
+	// so and every group both runs ran counts as changed.
+	if evidence.Qualification == "" || !slices.Contains(evidence.QualificationReasons, rca.ReasonScriptUnrecorded) || !evidence.ScriptChangedGroups["checkout"] || !evidence.ScriptChangedGroups["search"] || evidence.DocumentsIncomplete {
+		t.Fatalf("baseline evidence = qualification %q reasons %v changed groups %v incomplete %t", evidence.Qualification, evidence.QualificationReasons, evidence.ScriptChangedGroups, evidence.DocumentsIncomplete)
+	}
+	baselineRecord := server.runner.archives[baseline.ID]
+	baselineManifest, err := loadRunArchiveManifestFromRecord(baselineRecord)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(baselineRecord.ArchivePath, baselineManifest.BrowserDocumentsFile), []byte("not document evidence\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if digest, err = rcaArchiveDigest(baselineRecord); err != nil {
+		t.Fatal(err)
+	}
+	if _, unread := server.rcaBaselineEvidence(context.Background(), manifest, baseline.ID, digest, rca.NewBudgeter(rca.DefaultBudget, nil, nil), rca.DefaultBudget); unread == nil || !unread.DocumentsIncomplete {
+		t.Fatalf("an unreadable baseline document sidecar = %+v", unread)
+	}
 }
 
 // Document tuples pair through the comparison policy's group mappings, as
@@ -400,5 +586,99 @@ func TestBaselineComparisonMapsDocumentGroups(t *testing.T) {
 	snapshot := compareBaselineRuns(a, []*baselineComparisonRun{b}, request, p)
 	if snapshot == nil || len(snapshot.BrowserDocuments) != 1 || !snapshot.BrowserDocuments[0].Comparable || snapshot.BrowserDocuments[0].Group != "Checkout" || snapshot.BrowserDocuments[0].Cohort != protocol.BrowserRuntimeCohortDigest(cohort) {
 		t.Fatalf("mapped group not compared: %+v", snapshot)
+	}
+}
+
+// Browser baseline input (E2): each document bucket says how many documents
+// it summarizes, a republished measurement counts once, and the series names
+// its cohort so a changed runtime cohort can be explained.
+func TestRCABrowserDocumentSeriesCountDocumentsOnceAndNameTheirCohort(t *testing.T) {
+	server, store := baselineTestServer(t)
+	current := comparisonArchiveFixture(t, server, store, "current", 200, 150)
+	record := server.runner.archives[current.ID]
+	start := *current.StartedAt
+	first := d2Document{id: 1, metric: "lcp", cohort: d2Cohort("141.0"), at: start.Add(31 * time.Second), value: 1200, progress: 3, final: true}
+	second := d2Document{id: 2, metric: "lcp", cohort: d2Cohort("141.0"), at: start.Add(31*time.Second + 200*time.Millisecond), value: 1400, final: true}
+	// The first document's evidence is published twice, as a retried
+	// publication would deliver it.
+	attachD2Documents(t, record, first, first, second)
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summaries, err := readAllArchiveSummariesContext(context.Background(), record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	series, _, err := rcaBrowserDocumentSeries(context.Background(), record, manifest, summaries, -1, 0)
+	if err != nil || len(series) != 1 {
+		t.Fatalf("series %d %v", len(series), err)
+	}
+	var counts int64
+	for _, p := range series[0].Points {
+		if p.Valid {
+			counts += int64(p.Count)
+		} else if p.Count != 0 {
+			t.Fatalf("a gap carries a count: %+v", p)
+		}
+	}
+	if counts != 2 {
+		t.Fatalf("documents counted %d times, want 2", counts)
+	}
+	document := series[0].Document
+	if document == nil || document.Metric != "lcp" || document.Family == "" || document.Fields["browser_version"] != "141.0" || document.Fields["shaping_applied"] != "true" || document.Incomplete {
+		t.Fatalf("document cohort = %+v", document)
+	}
+	// Another runtime cohort of the same measurement shares the family but
+	// not the series.
+	other := rcaDocumentCohort(protocol.BrowserDocumentObservationTuple(protocol.BrowserDocumentObservation{Metric: "lcp", Algorithm: protocol.BrowserVitalsAlgorithm, AlgorithmSHA256: protocol.BrowserVitalsAlgorithmSHA256,
+		Unit: "ms", Engine: "chromium", DeviceProfile: "desktop", Cohort: d2Cohort("142.0"), FrameScope: "main_frame", LifecyclePhase: "navigation"}), false)
+	if other.Family != document.Family || other.Fields["browser_version"] != "142.0" {
+		t.Fatalf("cohorts of one measurement: %+v vs %+v", other, document)
+	}
+}
+
+// Two archives' document series of one cohort meet by series ID, so the
+// browser baseline judges the run against the baseline's same tuple; another
+// browser version meets only by family and is reported as changed.
+func TestRCABrowserDocumentSeriesMatchAcrossArchives(t *testing.T) {
+	server, store := baselineTestServer(t)
+	build := func(id, version string) rca.Series {
+		t.Helper()
+		run := comparisonArchiveFixture(t, server, store, id, 200, 150)
+		record := server.runner.archives[run.ID]
+		start := *run.StartedAt
+		attachD2Documents(t, record, d2Document{id: 1, metric: "lcp", cohort: d2Cohort(version), at: start.Add(31 * time.Second), value: 1200, final: true})
+		manifest, err := loadRunArchiveManifestFromRecord(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		summaries, err := readAllArchiveSummariesContext(context.Background(), record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		series, _, err := rcaBrowserDocumentSeries(context.Background(), record, manifest, summaries, -1, 0)
+		if err != nil || len(series) != 1 {
+			t.Fatalf("%s series %d %v", id, len(series), err)
+		}
+		return series[0]
+	}
+	current, same, other := build("e2-current", "141.0"), build("e2-same", "141.0"), build("e2-other", "142.0")
+	if current.ID != same.ID || current.Document.Family != same.Document.Family || current.ID == other.ID || current.Document.Family != other.Document.Family {
+		t.Fatalf("cross-run keys: %s/%s %s/%s %s/%s", current.ID, current.Document.Family, same.ID, same.Document.Family, other.ID, other.Document.Family)
+	}
+	first := current.Points[0].At
+	level := rca.LoadLevel{Start: first, End: first.Add(10 * time.Minute), VUsers: 10}
+	judge := func(baseline rca.Series) rca.BrowserBaselineResult {
+		input := rca.DetectionInput{Levels: []rca.LoadLevel{level}, Series: []rca.Series{current},
+			Baseline: &rca.DetectionBaseline{TestID: "baseline", Qualification: rca.BaselineQualified, Levels: []rca.LoadLevel{level}, Series: []rca.Series{baseline}}}
+		return rca.DetectBrowserBaseline(input, rca.DefaultBrowserBaselineParams).Results[0]
+	}
+	// The same tuple is found (one bucket is too few to score).
+	if got := judge(same); got.Reason != rca.BrowserBaselineInsufficient || got.BaselineBuckets != 1 {
+		t.Fatalf("same cohort = %+v", got)
+	}
+	if got := judge(other); got.Reason != rca.BrowserBaselineCohortChanged || !strings.Contains(got.Detail, "browser_version") {
+		t.Fatalf("other browser version = %+v", got)
 	}
 }

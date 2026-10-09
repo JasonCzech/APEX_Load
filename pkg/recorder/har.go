@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -46,6 +47,17 @@ type harEntry struct {
 	WebSocketMessages         []harWebSocketMessage                `json:"_webSocketMessages,omitempty"`
 	ResponseContentProvenance requestimport.ResponseContentCapture `json:"_apexload_response_content"`
 	HTTPVersionProvenance     map[string]any                       `json:"_apexload_http_version,omitempty"`
+
+	// Recorder facts a HAR cannot otherwise say, read by the shared HAR
+	// conversion (pkg/convert/sample): the recorder's static classification,
+	// the tester's step and transaction names, the pause before the request
+	// as measured or edited, and a request body cut off at the capture limit.
+	Static               bool   `json:"_apexload_static"`
+	StepName             string `json:"_apexload_step_name,omitempty"`
+	Transaction          string `json:"_apexload_transaction,omitempty"`
+	ThinkTimeMs          int64  `json:"_apexload_think_time_ms"`
+	RequestBodyTruncated bool   `json:"_apexload_request_body_truncated,omitempty"`
+	RequestBodyBytes     int    `json:"_apexload_request_body_bytes,omitempty"`
 }
 
 type harRequest struct {
@@ -144,6 +156,13 @@ func ExportHAR(session *Session, includeExcluded bool) ([]byte, error) {
 }
 
 func exportHAREntry(req RecordedRequest, pageID string) harEntry {
+	return buildHAREntry(req, pageID, req.HeadersMulti, req.ResponseHeadersMulti, req.Timestamp)
+}
+
+// buildHAREntry writes one recorded request as a HAR entry with the given
+// request and response headers: the redacted view for an export, the
+// correlation view for a conversion.
+func buildHAREntry(req RecordedRequest, pageID string, requestHeaders, responseHeaders map[string][]string, startedAt time.Time) harEntry {
 	capture := effectiveRecordedResponseContent(req)
 	body, encoding, decodedSize := req.ResponseBody, req.ResponseBodyEncoding, capture.DecodedSizeBytes
 	var storedBody *string
@@ -154,14 +173,14 @@ func exportHAREntry(req RecordedRequest, pageID string) harEntry {
 		body, encoding, decodedSize = "", "", -1
 	}
 	entry := harEntry{
-		StartedDateTime: req.Timestamp,
+		StartedDateTime: startedAt,
 		Time:            req.ResponseTimeMs,
 		Request: harRequest{
 			Method:      req.Method,
 			URL:         req.URL,
 			HTTPVersion: exportedObservedHTTPVersion(req.RequestHTTPVersion),
-			Cookies:     headerCookies(req.HeadersMulti, "Cookie"),
-			Headers:     harHeaders(req.HeadersMulti),
+			Cookies:     headerCookies(requestHeaders, "Cookie"),
+			Headers:     harHeaders(requestHeaders),
 			QueryString: harQueryString(req.URL, req.QueryString),
 			HeadersSize: -1,
 			BodySize:    req.BodySizeBytes,
@@ -170,15 +189,15 @@ func exportHAREntry(req RecordedRequest, pageID string) harEntry {
 			Status:      req.StatusCode,
 			StatusText:  http.StatusText(req.StatusCode),
 			HTTPVersion: exportedObservedHTTPVersion(req.ResponseHTTPVersion),
-			Cookies:     responseCookies(req.ResponseHeadersMulti),
-			Headers:     harHeaders(req.ResponseHeadersMulti),
+			Cookies:     responseCookies(responseHeaders),
+			Headers:     harHeaders(responseHeaders),
 			Content: harContent{
 				Size:     decodedSize,
 				MimeType: req.responseMimeType(),
 				Text:     storedBody,
 				Encoding: encoding,
 			},
-			RedirectURL: firstHeaderValue(req.ResponseHeadersMulti, "Location"),
+			RedirectURL: firstHeaderValue(responseHeaders, "Location"),
 			HeadersSize: -1,
 			BodySize:    req.ResponseBodySizeBytes,
 		},
@@ -191,6 +210,14 @@ func exportHAREntry(req RecordedRequest, pageID string) harEntry {
 		Comment:                   req.Note,
 		HTTPVersionProvenance:     requestimport.ProxyHTTPVersionProvenance(),
 		ResponseContentProvenance: capture,
+		Static:                    req.IsStatic,
+		StepName:                  strings.TrimSpace(req.StepName),
+		Transaction:               strings.TrimSpace(req.TransactionName),
+		ThinkTimeMs:               max(req.ThinkTimeMs, 0),
+		RequestBodyTruncated:      req.BodyTruncated,
+	}
+	if req.BodyTruncated {
+		entry.RequestBodyBytes = req.BodySizeBytes
 	}
 	for _, msg := range req.WebSocketMessages {
 		entry.WebSocketMessages = append(entry.WebSocketMessages, harWebSocketMessage{
@@ -253,12 +280,18 @@ func harHeaders(headers map[string][]string) []harNameVal {
 	if len(headers) == 0 {
 		return []harNameVal{}
 	}
-	items := make([]harNameVal, 0)
-	for name, values := range headers {
-		if isRecorderControlHeader(name) {
-			continue
+	names := make([]string, 0, len(headers))
+	for name := range headers {
+		if !isRecorderControlHeader(name) {
+			names = append(names, name)
 		}
-		for _, value := range values {
+	}
+	// A recorded header map has no order; sorting keeps exports and the
+	// scripts converted from them deterministic.
+	sort.Strings(names)
+	items := make([]harNameVal, 0, len(names))
+	for _, name := range names {
+		for _, value := range headers[name] {
 			items = append(items, harNameVal{Name: name, Value: value})
 		}
 	}

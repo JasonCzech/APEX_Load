@@ -56,7 +56,7 @@
 
 .replay-preflight-alerts span {
   border-color: rgba(var(--warning-rgb), 0.42);
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .replay-preflight-alerts .btn {

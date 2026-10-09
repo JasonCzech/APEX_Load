@@ -9,6 +9,8 @@ var runArchiveAPIRouteCatalog = preserveRawAccessRequirementsForMethod(apiRouteC
 		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/tests/{id}/analysis/annotations", "handleCreateRunAnnotation", editorProjectAccessWithBodyLimit(resolveTestProjectID, 8<<10), func(s *Server) http.Handler { return http.HandlerFunc(s.handleCreateRunAnnotation) }),
 		newAuthenticatedAPIRoute(http.MethodDelete, "/api/v1/tests/{id}/analysis/annotations/{annotation_id}", "handleDeleteRunAnnotation", editorProjectAccess(resolveTestProjectID), func(s *Server) http.Handler { return http.HandlerFunc(s.handleDeleteRunAnnotation) }),
 
+		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/tests/{id}/telemetry/client-render", "handleReportClientRender", viewerProjectAccessWithBodyLimit(resolveTestProjectID, clientRenderMaxBodyBytes), func(s *Server) http.Handler { return http.HandlerFunc(s.handleReportClientRender) }),
+		newAuthenticatedAPIRoute(http.MethodPut, "/api/v1/projects/{id}/telemetry-policy", "handleUpdateProjectTelemetryPolicy", editorProjectAccessWithBodyLimit(resolveProjectIDFromPath, 4<<10), func(s *Server) http.Handler { return http.HandlerFunc(s.handleUpdateProjectTelemetryPolicy) }),
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/messaging-progress", "handleMessagingProgress", analysisQueryAccess(resolveTestProjectID), func(s *Server) http.Handler { return http.HandlerFunc(s.handleMessagingProgress) }),
 		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/tests/{id}/native-series", "handleNativeEvidenceSeries", analysisQueryAccess(resolveTestProjectID), func(s *Server) http.Handler { return http.HandlerFunc(s.handleNativeEvidenceSeries) }),
 		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/tests/{id}/archive/native-series", "handleNativeArchiveSeries", analysisQueryAccess(resolveTestProjectID), func(s *Server) http.Handler { return http.HandlerFunc(s.handleNativeArchiveSeries) }),
@@ -27,9 +29,24 @@ var runArchiveAPIRouteCatalog = preserveRawAccessRequirementsForMethod(apiRouteC
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/browser-diagnostics", "handleDownloadRunArchiveBrowserDiagnostics", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleDownloadRunArchiveBrowserDiagnostics)
 		}),
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/browser/har", "handleListRunArchiveBrowserHARs", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleListRunArchiveBrowserHARs)
+		}),
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/browser/har/{artifact}", "handleDownloadRunArchiveBrowserHAR", editorProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleDownloadRunArchiveBrowserHAR)
+		}),
 		browserResourceDeadlineRoute(newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/browser-resources", "handleGetRunArchiveBrowserResources", viewerProjectAccess(resolveBrowserResourceArchiveProjectID), func(s *Server) http.Handler { return http.HandlerFunc(s.handleGetRunArchiveBrowserResources) })),
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/transactions", "handleGetRunArchiveTransactions", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetRunArchiveTransactions)
+		}),
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/browser-findings", "handleGetRunArchiveBrowserFindings", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleGetRunArchiveBrowserFindings)
+		}),
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/browser-interactions", "handleGetRunArchiveBrowserInteractions", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleGetRunArchiveBrowserInteractions)
+		}),
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/journeys", "handleGetRunArchiveJourneys", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleGetRunArchiveJourneys)
 		}),
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/resources", "handleGetRunArchiveResources", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetRunArchiveResources)

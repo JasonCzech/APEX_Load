@@ -55,8 +55,30 @@ export interface BrowserDocumentComparison {
  comparable: boolean; reason?: string; current_final: number; baseline_final: number
  current_p75?: number; baseline_p75?: number; delta_p75?: number
 }
+// What decided how a run's telemetry was classified (C6).
+export interface TelemetryRunProfile {
+ run_id: string; policy_availability: 'available' | 'unavailable' | string; policy_hash?: string
+ budgets?: { stage: string; enabled: boolean; limit_ms: number }[]; sustained_breach_window_ms?: number
+ cadence_ms?: number; cadence_scope?: string
+ policy_pin?: { kind: string; id: string; name: string; revision: number; sha256: string }
+ source_capabilities: string[]; workload_version?: number
+ // The run's own telemetry verdict under its pinned acceptance policy (C7)
+ // and its loss totals; verdicts are shown side by side, never compared.
+ acceptance?: import('../../types').TelemetryAcceptanceVerdict
+ // Set when the verdict was looked for; a comparison saved before verdicts has neither.
+ acceptance_evaluated?: boolean
+ loss?: { dropped_results?: { state: string; value: number; reason?: string } }
+}
+// Whether one baseline's whole-run telemetry health compares with the
+// current run's, and the deltas (current minus baseline) when it does.
+export interface TelemetryComparison {
+ baseline_run_id: string; scope: 'whole_run' | string; comparable: boolean; reasons: string[]; notes?: string[]
+ current: TelemetryRunProfile; baseline: TelemetryRunProfile
+ breached_interval_pct_delta?: number; health_coverage_pct_delta?: number; breached_known_fraction_delta?: number
+}
 export interface ComparisonSnapshot {
  telemetry?: TelemetryEvidence[]
+ telemetry_comparisons?: TelemetryComparison[]
  browser_documents?: BrowserDocumentComparison[]
  browser_soft_navigation?: 'unsupported'
   verdict?: { status: 'passed' | 'regressed' | 'not_evaluated'; evaluated: number; unavailable: number; metrics: string[]; evidence: { row_id: string; baseline_id: string; metric: string; status: string; reason?: string }[] }
@@ -68,9 +90,22 @@ export interface ComparisonSnapshot {
 }
 export const defaultPolicy: ComparisonPolicy = { revision: 0, load_tolerance_pct: 5, latency_pct: 10, latency_ms: 10, throughput_pct: 10, error_points: 1, resource_pct: 20 }
 const runPath = (id: string) => `/tests/${encodeURIComponent(id)}`
+/** A saved comparison for a run, listed so the report can reopen it. */
+export interface SavedComparisonSummary {
+  id: string
+  created_at: string
+  baselines: RunIdentity[]
+  verdict?: string
+}
+export function comparisonVerdictLabel(status?: string): string {
+  if (!status) return 'Not evaluated'
+  const text = status.replace(/_/g, ' ')
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
 export const comparisonApi = {
   candidates: (id: string, other: boolean, q: string, offset: number, signal?: AbortSignal) => request<{ runs: RunIdentity[]; total: number; suggested_baseline?: RunIdentity | null }>(`${runPath(id)}/baseline-candidates?${new URLSearchParams({ other_scenarios: String(other), q, offset: String(offset), limit: '50' })}`, { signal }),
   evaluate: (id: string, body: ComparisonRequest, signal?: AbortSignal) => request<ComparisonSnapshot>(`${runPath(id)}/baseline-comparisons`, { method: 'POST', body: JSON.stringify(body), signal, timeoutMs: 120000 }),
+  saved: (id: string, signal?: AbortSignal) => request<{ comparisons: SavedComparisonSummary[] }>(`${runPath(id)}/baseline-comparisons`, { signal }),
   snapshot: (id: string, comparison: string, signal?: AbortSignal) => request<ComparisonSnapshot>(`${runPath(id)}/baseline-comparisons/${encodeURIComponent(comparison)}`, { signal }),
   policy: (scenario: string, signal?: AbortSignal) => request<ComparisonPolicy>(`/scenarios/${encodeURIComponent(scenario)}/comparison-policy`, { signal }),
   savePolicy: (scenario: string, policy: ComparisonPolicy) => request<ComparisonPolicy>(`/scenarios/${encodeURIComponent(scenario)}/comparison-policy`, { method: 'PUT', body: JSON.stringify(policy) }),
@@ -91,7 +126,7 @@ export function difference(current?: number, baseline?: number): string {
   const delta = current - baseline
   return `${delta > 0 ? '+' : ''}${number(delta)}${baseline === 0 ? ' · baseline zero' : ` (${delta > 0 ? '+' : ''}${number(delta / Math.abs(baseline) * 100)}%)`}`
 }
-export const metricOptions = [ ['p95', 'Successful P95'], ['mean', 'Successful mean'], ['p50', 'Successful P50'], ['p90', 'Successful P90'], ['p99', 'Successful P99'], ['min', 'Successful minimum'], ['max', 'Successful maximum'], ['throughput', 'Throughput / s'], ['successful_throughput', 'Successful throughput / s'], ['error_pct', 'Error %'], ['samples', 'Sample count'] ] as const
+export const metricOptions = [ ['p95', 'Successful P95'], ['mean', 'Successful mean'], ['p50', 'Successful P50'], ['p90', 'Successful P90'], ['p99', 'Successful P99'], ['min', 'Successful minimum'], ['max', 'Successful maximum'], ['throughput', 'Attempts/s'], ['successful_throughput', 'Successful TPS'], ['error_pct', 'Error rate'], ['samples', 'Sample count'] ] as const
 export type Metric = typeof metricOptions[number][0]
 
 export const comparisonColors = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5, #ab69c6)', 'var(--chart-6, #bc7731)']

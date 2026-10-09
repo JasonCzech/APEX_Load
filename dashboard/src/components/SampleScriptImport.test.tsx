@@ -287,7 +287,7 @@ describe('SampleScriptImport', () => {
       root.render(<SampleScriptImport preset="java-http" onClose={onClose} />)
     })
 
-    expect(container.textContent).toContain('Import Java over HTTP Samples')
+    expect(container.textContent).toContain('Import Java over HTTP samples')
     const closeButtons = Array.from(container.querySelectorAll('button'))
       .filter(button => button.textContent?.trim() === 'Back')
     expect(closeButtons).toHaveLength(1)
@@ -472,7 +472,7 @@ describe('SampleScriptImport', () => {
     await flushPromises()
 
     const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.trim() === 'Save and Open in Visual Editor')
+      .find(button => button.textContent?.trim() === 'Save and open in Visual Editor')
     expect(editButton).toBeDefined()
     await act(async () => editButton?.click())
     await flushPromises()
@@ -807,7 +807,7 @@ describe('SampleScriptImport', () => {
       root.render(<SampleScriptImport preset="java-http" onImported={onImported} />)
     })
 
-    expect(container.textContent).toContain('Import Java over HTTP Samples')
+    expect(container.textContent).toContain('Import Java over HTTP samples')
     expect(container.textContent).toContain('base64-encoded serialized Java payloads')
     expect(container.textContent).not.toContain('REST JSON')
     // HAR is now an accepted Java-over-HTTP source format.
@@ -1029,3 +1029,47 @@ function setControlValue(control: HTMLInputElement | HTMLTextAreaElement | HTMLS
   setter?.call(control, value)
   control.dispatchEvent(new Event(control instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }))
 }
+
+it('follows a pasted raw HTTP sample instead of parsing it as JSON', async () => {
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<SampleScriptImport projectId="project-1" />))
+    const format = container.querySelector<HTMLSelectElement>('select[aria-label="Sample format"]')!
+    expect(format.value).toBe('rest_json')
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Primary Sample"]')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, 'POST /api/orders HTTP/1.1\nHost: shop.example\n\n{"sku":"A1"}')
+      textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(format.value).toBe('raw_http')
+    // The pasted text is kept, and the switch is announced.
+    expect(textarea.value).toContain('POST /api/orders')
+    expect(container.querySelector('.sample-import-format-notice')?.textContent).toContain('Raw HTTP')
+  } finally {
+    await act(async () => root.unmount())
+    container.remove()
+  }
+})
+
+it('keeps HAR selected for a single pasted HAR entry', async () => {
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  const root = createRoot(container)
+  try {
+    await act(async () => root.render(<SampleScriptImport projectId="project-1" />))
+    const format = container.querySelector<HTMLSelectElement>('select[aria-label="Sample format"]')!
+    await act(async () => setControlValue(format, 'har'))
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Primary Sample"]')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, '{"request":{"method":"GET","url":"https://shop.example/"},"response":{"status":200}}')
+      textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(format.value).toBe('har')
+    expect(container.querySelector('.sample-import-format-notice')).toBeNull()
+  } finally {
+    await act(async () => root.unmount())
+    container.remove()
+  }
+})

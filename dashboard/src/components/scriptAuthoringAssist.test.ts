@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { ScriptDefinition } from '../types/scripts'
 import { getCachedDslActionCatalog, setCachedDslActionCatalog } from './dslActionCatalog'
 import {
+  scriptBaseURLError,
   applyAuthoringComponentToScript,
   applyMigrationAssistantSuggestion,
   applyScriptRepairSuggestion,
@@ -650,4 +651,17 @@ it('locates missing targets on nested requests by their exact branch path', () =
   const script = { name: 'Nested', version: '1.0', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'Poll', type: 'control_loop', target: '', control: { count: 2, steps: [{ name: 'Read', type: 'GET', target: '' }] } }] }
   const issue = collectAuthoringIssues(script).find(issue => issue.id.endsWith(':target'))
   expect(issue).toMatchObject({ phase: 'action', actionIndex: 0, stepPath: ['loop[0]'] })
+})
+
+describe('scriptBaseURLError', () => {
+  const script = (base_url: string, protocol = 'http') => ({ protocol, config: { base_url } }) as Parameters<typeof scriptBaseURLError>[0]
+  it('rejects values that cannot reach a target', () => {
+    expect(scriptBaseURLError(script('not a url'))).toContain('absolute http(s) URL')
+    expect(scriptBaseURLError(script('ftp://files.example.com'))).toContain('absolute http(s) URL')
+    expect(scriptBaseURLError(script('shop.example.com'))).toContain('absolute http(s) URL')
+  })
+  it('accepts absolute, parameterized, relative and non-HTTP values', () => {
+    for (const value of ['https://shop.example.com', 'http://127.0.0.1:18189', '{{base_url}}', '/api', '']) expect(scriptBaseURLError(script(value))).toBe('')
+    expect(scriptBaseURLError(script('broker:9092', 'kafka'))).toBe('')
+  })
 })

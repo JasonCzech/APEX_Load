@@ -1,0 +1,1 @@
+import{ct as e}from"./vendor-DpcE_Qse.js";var t=e();function n({title:e,description:n,actions:r}){return(0,t.jsxs)(`div`,{className:`import-review-section-heading`,children:[(0,t.jsxs)(`div`,{children:[(0,t.jsx)(`h3`,{children:e}),n&&(0,t.jsx)(`p`,{children:n})]}),r&&(0,t.jsx)(`div`,{className:`import-review-section-actions`,children:r})]})}export{n as t};

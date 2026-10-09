@@ -159,6 +159,48 @@ func TestTelemetryRunCoverageWithoutALedger(t *testing.T) {
 	}
 }
 
+// Each source's unknown time is measured over the time it was required: a
+// generator evacuated halfway and its replacement are each required for half
+// the window, and neither is unknown for the other half.
+func TestTelemetrySourceCoverageIsMeasuredOverItsRequirement(t *testing.T) {
+	start := time.Unix(1_800_000_000, 0).UTC()
+	end := start.Add(100 * time.Second)
+	half := start.Add(50 * time.Second)
+	ledger := newTelemetrySourceLedger()
+	ledger.assign("gen-a", start)
+	observeSecondly(ledger, "gen-a", start, 0, 50, nil)
+	ledger.retire("gen-a", half)
+	ledger.assign("gen-b", half)
+	observeSecondly(ledger, "gen-b", start, 50, 90, nil)
+	record := telemetryRunCoverageRecord(ledger, []string{"gen-a", "gen-b"}, start, end, healthyRows(start, 100), nil)
+	want := map[string][2]int64{"gen-a": {50_000, 0}, "gen-b": {50_000, 10_000}}
+	if len(record.Coverage.Sources) != 2 || !record.Coverage.SourceRequirements {
+		t.Fatalf("coverage = %+v", record.Coverage)
+	}
+	for _, source := range record.Coverage.Sources {
+		if got := [2]int64{source.RequiredMs, source.UnknownMs}; got != want[source.Source] {
+			t.Fatalf("%s required/unknown = %v, want %v", source.Source, got, want[source.Source])
+		}
+	}
+}
+
+// Live coverage on a controller that adopted the run says observed time is a
+// lower bound, as the coverage recorded at finalize will.
+func TestTelemetryLiveCoverageAfterAdoptionIsALowerBound(t *testing.T) {
+	start := time.Unix(1_800_000_000, 0).UTC()
+	ledger := newTelemetrySourceLedger()
+	ledger.assign("gen-a", start.Add(30*time.Second))
+	observeSecondly(ledger, "gen-a", start, 30, 60, nil)
+	test := &ManagedTest{ID: "adopted-run", Status: "RUNNING", StartedAt: &start, telemetrySources: ledger}
+	if coverage := telemetryLiveCoverageLocked(test, start.Add(60*time.Second)); coverage == nil || coverage.ObserverLost != "" || !coverage.SourceRequirements {
+		t.Fatalf("an unadopted run's live coverage = %+v", coverage)
+	}
+	ledger.markAdopted()
+	if coverage := telemetryLiveCoverageLocked(test, start.Add(60*time.Second)); coverage == nil || coverage.ObserverLost != telemetryCoverageAdopted {
+		t.Fatalf("an adopted run's live coverage = %+v", coverage)
+	}
+}
+
 // A captured policy that fails validation names no hash.
 func TestTelemetryPolicySegmentRejectsAnInvalidPolicy(t *testing.T) {
 	start := time.Unix(1_800_000_000, 0).UTC()

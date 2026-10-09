@@ -1,0 +1,39 @@
+{
+  "description": "BodyBinary decodes its \\xHH escapes into raw bytes, with a parameter value sent verbatim (its backslash is not an escape); BodyFilePath sends the archived file's bytes; BodyUnicode is sent as UTF-16LE without a byte-order mark.",
+  "source": "VuGen 26.1 Function Reference: web_custom_request (BodyBinary \\xHH escapes, BodyUnicode UTF-16LE, BodyFilePath).",
+  "outcome": "replay",
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/api/upload",
+      "headers": {
+        "Content-Type": "application/octet-stream"
+      },
+      "body_base64": "AAFBQkP/"
+    },
+    {
+      "method": "POST",
+      "path": "/api/upload",
+      "headers": {
+        "Content-Type": "application/octet-stream"
+      },
+      "body_base64": "AmFceDQxAw=="
+    },
+    {
+      "method": "POST",
+      "path": "/api/upload",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"order\":1}\n"
+    },
+    {
+      "method": "POST",
+      "path": "/api/upload",
+      "headers": {
+        "Content-Type": "text/plain"
+      },
+      "body_base64": "aABlAGwAbABvACAAYQBcAHgANAAxAA=="
+    }
+  ]
+}

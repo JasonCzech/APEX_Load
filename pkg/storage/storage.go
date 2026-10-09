@@ -6,6 +6,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 )
 
 const DefaultProjectID = "unassigned"
@@ -1115,8 +1116,17 @@ type ProjectAuthoringPolicy struct {
 	RequireScenarioSaveIfMatch bool `json:"require_scenario_save_if_match,omitempty"`
 }
 
+// ProjectTelemetryPolicy holds a project's telemetry evidence opt-ins.
+type ProjectTelemetryPolicy struct {
+	// ClientRenderEvidence lets dashboard tabs viewing the project's live
+	// runs report how long a publication took from receipt to render
+	// (advisory; it never affects run health).
+	ClientRenderEvidence bool `json:"client_render_evidence,omitempty"`
+}
+
 type ProjectSettings struct {
 	Authoring          *ProjectAuthoringPolicy `json:"authoring,omitempty"`
+	Telemetry          *ProjectTelemetryPolicy `json:"telemetry,omitempty"`
 	RedactionRules     []engine.RedactionRule  `json:"redaction_rules,omitempty"`
 	MaxConcurrentTests int                     `json:"max_concurrent_tests,omitempty"`
 	MaxVUsers          int                     `json:"max_vusers,omitempty"`
@@ -1132,6 +1142,9 @@ type ProjectSettings struct {
 	// fields mean no limit; an absent key means no pool-specific cap.
 	PoolQuotas map[string]PoolProjectQuota `json:"pool_quotas,omitempty"`
 	Features   ProjectFeatureFlags         `json:"features,omitempty"`
+	// RecordingProfiles are the project's saved recording options, applied
+	// by the proxy and browser recorders and HAR imports.
+	RecordingProfiles []recordingprofile.Profile `json:"recording_profiles,omitempty"`
 }
 
 // ProjectFeatureFlags are explicit preview opt-ins. They default false so a
@@ -1385,10 +1398,12 @@ type TestRecord struct {
 	TrafficProfile        any                       `json:"traffic_profile,omitempty"`  // JSON blob
 	ELKCapture            any                       `json:"elk_capture,omitempty"`      // JSON blob
 	MonitorBindings       *MonitorBindings          `json:"monitor_bindings,omitempty"`
-	TraceContext          any                       `json:"trace_context,omitempty"`           // JSON blob
-	DynatraceCapture      any                       `json:"dynatrace_capture,omitempty"`       // JSON blob
-	StartAuthorization    any                       `json:"start_authorization,omitempty"`     // JSON blob
-	ExecutionPlanApproval any                       `json:"execution_plan_approval,omitempty"` // JSON blob
+	TraceContext          any                       `json:"trace_context,omitempty"` // JSON blob
+	// JointEvidence is the run's joint evidence v4 projection (JSON blob).
+	JointEvidence         any `json:"joint_evidence,omitempty"`
+	DynatraceCapture      any `json:"dynatrace_capture,omitempty"`       // JSON blob
+	StartAuthorization    any `json:"start_authorization,omitempty"`     // JSON blob
+	ExecutionPlanApproval any `json:"execution_plan_approval,omitempty"` // JSON blob
 	// InitialProvenance is the immutable, masked start-of-run archive snapshot.
 	// It is stored as an opaque JSON blob because the API archive model must not
 	// become a dependency of the storage package.

@@ -934,6 +934,7 @@ func TestFleetMutationHandlersReturn503OnFollower(t *testing.T) {
 		{"pool update", http.MethodPut, "/api/v1/fleet/pools/pool-1", `{"name":"pool","cloud_provider":"kubernetes"}`, "pool-1", s.handleUpdateFleetPool},
 		{"pool delete", http.MethodDelete, "/api/v1/fleet/pools/pool-1", ``, "pool-1", s.handleDeleteFleetPool},
 		{"metadata patch", http.MethodPatch, "/api/v1/fleet/generators/gen-1", `{"cordoned":true}`, "gen-1", s.handlePatchGeneratorMetadata},
+		{"metadata delete", http.MethodDelete, "/api/v1/fleet/generators/gen-1", ``, "gen-1", s.handleDeleteGeneratorMetadata},
 		{"provision create", http.MethodPost, "/api/v1/fleet/provision-requests", `{"fleet_pool_id":"pool-1","desired_count":2}`, "", s.handleCreateProvisioningRequest},
 		{"provision cancel", http.MethodPost, "/api/v1/fleet/provision-requests/req-1/cancel", ``, "req-1", s.handleCancelProvisioningRequest},
 		{"provision retry", http.MethodPost, "/api/v1/fleet/provision-requests/req-1/retry", ``, "req-1", s.handleRetryProvisioningRequest},

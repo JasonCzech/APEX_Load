@@ -394,6 +394,32 @@ describe('useScriptApi import wrappers', () => {
     expect(Array.from((options.body as FormData).keys()).slice(0, 2)).toEqual(['project_id', 'file'])
   })
 
+  // The controller authorizes multipart imports from the project_id query or a
+  // multipart field that precedes the first file part (it never buffers file
+  // bytes before authorization). A file-first body is rejected with 400, which
+  // silently broke nine importers once; pin the ordering for every wrapper.
+  it.each([
+    'importDevWeb',
+    'importK6',
+    'importCloudTest',
+    'importEventHubsCapture',
+    'importBrokerConfig',
+    'importBrowserRecording',
+    'validateBrowserRecordingImport',
+    'replayBrowserRecordingImport',
+    'importRAML',
+    'importWSDL',
+    'importAsyncAPI',
+    'importOpenAPI',
+  ] as const)('%s sends project_id before the file part', async method => {
+    const file = new File(['spec'], 'source.txt', { type: 'text/plain' })
+    await (api[method] as (file: File, options: { project_id: string }) => Promise<unknown>)(file, { project_id: 'project-1' })
+    const [, options] = (apiFetch as Mock).mock.calls[0]
+    const keys = Array.from((options.body as FormData).keys())
+    expect(keys).toContain('project_id')
+    expect(keys.indexOf('project_id')).toBeLessThan(keys.indexOf('file'))
+  })
+
   it('posts k6 imports as multipart with script_name/base_url/project_id', async () => {
     const file = new File(['import http from "k6/http";'], 'script.js', { type: 'application/javascript' })
     await api.importK6(file, { project_id: 'p1', base_url: 'https://api.example.test', name: 'My k6' })

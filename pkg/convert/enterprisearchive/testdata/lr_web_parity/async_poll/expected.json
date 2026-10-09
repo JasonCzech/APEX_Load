@@ -1,0 +1,59 @@
+{
+  "description": "web_reg_async_attributes(Pattern=Poll) turns the next step into a background conversation: the status URL is polled every PollIntervalMs while the script continues (here, to web_sync), the registered JSON extraction applies to each poll response, web_sync waits until a poll saves JobStatus=done, and web_stop_async ends the series before the next step. VuGen's empty RequestCB and ResponseBodyBufferCB stubs need nothing; the ResponseCB body (lr_save_string) runs after each poll response.",
+  "source": "VuGen 26.1 Function Reference: web_reg_async_attributes (ID, Pattern, URL, PollIntervalMs, RequestCB, ResponseCB, ResponseBodyBufferCB), web_stop_async, web_sync (ParamValueEquals, Timeout); Asynchronous communication: callbacks in AsyncCallbacks.c.",
+  "outcome": "replay",
+  "responses": [
+    {
+      "method": "GET",
+      "path": "/api/status",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"status\":\"queued\"}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/status",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"status\":\"running\"}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/status",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"status\":\"done\"}"
+    },
+    {
+      "method": "GET",
+      "path": "/app/result",
+      "headers": {
+        "Content-Type": "text/html"
+      },
+      "body": "<html>result</html>"
+    }
+  ],
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/api/status"
+    },
+    {
+      "method": "GET",
+      "path": "/api/status"
+    },
+    {
+      "method": "GET",
+      "path": "/api/status",
+      "extra_repeats": 1
+    },
+    {
+      "method": "GET",
+      "path": "/app/result",
+      "query": "job=done&seen=yes"
+    }
+  ]
+}

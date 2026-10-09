@@ -19,9 +19,16 @@ type BrowserReplayStartRequest struct {
 	Breakpoints     []int                  `json:"breakpoints,omitempty"`
 	Browser         *dsl.BrowserConfig     `json:"browser,omitempty"`
 	IgnoreThinkTime *bool                  `json:"ignore_think_time,omitempty"`
-	Script          *dsl.Script            `json:"script,omitempty"`
-	Preflight       *ReplayPreflight       `json:"-"`
-	SecretResolver  engine.SecretResolver  `json:"-"`
+	// RecordHAR records a native HAR of the replay. It is opt-in: a
+	// recording runs under the HAR size, memory and owner limits, which close
+	// the browser context, so an unrequested one could fail a replay that
+	// would otherwise pass. Without it the replay serves the native HAR its
+	// script's own capture policy recorded, if any, or else the synthetic HAR
+	// built from the report's network entries.
+	RecordHAR      *bool                 `json:"record_har,omitempty"`
+	Script         *dsl.Script           `json:"script,omitempty"`
+	Preflight      *ReplayPreflight      `json:"-"`
+	SecretResolver engine.SecretResolver `json:"-"`
 	// trustedPreservedImport is server-owned provenance set only for the
 	// unchanged durable script loaded by the canonical stored-script route.
 	// Draft JSON cannot set it.
@@ -127,6 +134,7 @@ func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, r *http.
 		return
 	}
 	script = applyBrowserReplayOverrides(script, req)
+	submitted := script
 	var prepared bool
 	script, prepared = prepareTransientExecutableScript(
 		w,
@@ -149,10 +157,7 @@ func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, r *http.
 		return
 	}
 	issues := append(
-		validateScriptForReplayWithImportTrust(
-			script,
-			req.trustedPreservedImport,
-		),
+		s.transientStaticIssues(submitted, script, req.trustedPreservedImport),
 		refIssues...,
 	)
 	warnings := append(validationWarnings(script), refWarnings...)

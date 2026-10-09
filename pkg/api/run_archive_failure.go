@@ -20,6 +20,14 @@ func (tr *TestRunner) archiveFailureStore() runArchiveFailureStore {
 }
 
 func (tr *TestRunner) recordRemoteArchiveFailure(test *ManagedTest, reason string) {
+	// No archive of this run was collected here, so no commit will release
+	// the joint batches held for its sidecar (B5): a later recovery archive
+	// is marked truncated.
+	if test != nil {
+		tr.mu.Lock()
+		releaseHeldJointPublicationsLocked(test)
+		tr.mu.Unlock()
+	}
 	tr.recordRunArchiveFailure(test, reason)
 }
 

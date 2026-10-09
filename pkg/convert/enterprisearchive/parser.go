@@ -49,6 +49,10 @@ type ParsedFunction struct {
 	javaJDBCConnection                  *javaJDBCConnection
 	itemDataReviewReason                string
 	itemDataURLForm                     bool
+	// itemDataMultipart holds the ITEMDATA items of a multipart/form-data
+	// step; the converter rebuilds the body from them (request_multipart.go)
+	// or keeps itemDataReviewReason's gate.
+	itemDataMultipart []sourceMultipartItem
 	// embeddedCall marks a call to a script-defined C function made inside
 	// an expression rather than as its own statement (see
 	// embeddedHelperCallKind). It runs only through helper inlining.
@@ -703,9 +707,10 @@ func parseWebURL(fn *ParsedFunction, inner string) {
 // parseWebLinkImage parses the HTML-mode navigation steps web_link/web_image/
 // web_image_check. In HTML mode the absolute target is resolved from page context
 // at record time, so the static .c usually carries only the element label
-// ("Text="/"Alt="). An explicit "URL=" (URL-mode recording) or an image "Src="
-// gives a usable target; otherwise fn.URL is left empty and the converter
-// preserves the step for review instead of fabricating a request.
+// ("Text="/"Alt="/"Src="). Only an explicit "URL=" gives a usable target (and
+// web_image_check's "Src=", which names the image it verifies); otherwise
+// fn.URL is left empty and the converter gates the step instead of
+// fabricating a request.
 func parseWebLinkImage(fn *ParsedFunction, inner string) {
 	if len(fn.RawArgs) > 0 {
 		fn.StepName = fn.RawArgs[0]
@@ -714,7 +719,10 @@ func parseWebLinkImage(fn *ParsedFunction, inner string) {
 	extractNamedArgs(fn, inner)
 	if v := fn.Args["URL"]; v != "" {
 		fn.URL = v
-	} else if v := fn.Args["Src"]; v != "" {
+	} else if v := fn.Args["Src"]; v != "" && fn.Name == "web_image_check" {
+		// web_image_check verifies that an image is present, so its Src names
+		// that image. web_image instead clicks the hyperlink wrapping the image:
+		// its Src is a selector, never the request target.
 		fn.URL = v
 	}
 }
@@ -763,6 +771,7 @@ func parseWebCustomRequest(fn *ParsedFunction, inner string) {
 		fn.Body = fn.Args["Body"]
 		fn.RawBody = rawSourceArgument(fn, "Body", fn.Body)
 	}
+	concatenateSourceBodySegments(fn)
 	applyMaskedBodyReference(fn)
 }
 
@@ -790,6 +799,7 @@ func parseWebREST(fn *ParsedFunction, inner string) {
 		fn.Body = rawSourceStringContent(m[1])
 		fn.RawBody = m[1]
 	}
+	concatenateSourceBodySegments(fn)
 	applyMaskedBodyReference(fn)
 	extractWebRESTHeaders(fn)
 }
@@ -969,11 +979,12 @@ const unsupportedItemDataEncodingReason = "web_submit_data_itemdata_encoding_uns
 // for review and leave the executable body empty instead of emitting
 // URL-encoded bytes under a contradictory Content-Type.
 func extractItemData(fn *ParsedFunction, inner string) {
-	type formField struct{ name, value string }
+	type formField = sourceMultipartItem
 	formData := make([]formField, 0)
 	current := formField{}
 	hasName := false
 	hasValue := false
+	hasEncryptedValue := false
 	inItemData := false
 	hasItemData := false
 	hasUnsupportedField := false
@@ -1050,8 +1061,22 @@ func extractItemData(fn *ParsedFunction, inner string) {
 			}
 			current.value = arg.Value
 			hasValue = true
-		case "encryptedvalue", "file", "filepath", "contenttype", "contenttransferencoding":
+		case "file", "filepath", "contenttype", "contenttransferencoding":
+			// Multipart attributes: serializable only as multipart/form-data.
 			hasUnsupportedField = true
+			switch strings.ToLower(arg.Name) {
+			case "file":
+				current.file = strings.EqualFold(strings.TrimSpace(arg.Value), "yes")
+			case "filepath":
+				current.filePath = arg.Value
+			case "contenttype":
+				current.contentType = arg.Value
+			default:
+				current.transferEncoding = arg.Value
+			}
+		case "encryptedvalue":
+			hasUnsupportedField = true
+			hasEncryptedValue = true
 		default:
 			// Unknown ITEMDATA attributes must not be discarded: they may alter
 			// serialization or identify a source field shape APEX does not model.
@@ -1070,6 +1095,11 @@ func extractItemData(fn *ParsedFunction, inner string) {
 		fn.Body = ""
 		delete(fn.Headers, "Content-Type")
 		fn.itemDataReviewReason = unsupportedItemDataEncodingReason
+		// File parts outside multipart/form-data, encrypted values and
+		// malformed items keep the gate.
+		if !hasMalformedItem && !hasEncryptedValue && sourceItemDataIsMultipart(fn.Args) {
+			fn.itemDataMultipart = formData
+		}
 		return
 	}
 

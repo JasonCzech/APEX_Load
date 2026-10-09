@@ -1,9 +1,6 @@
-.result-headline { display: grid; gap: 4px; font-size: 12px; margin: 6px 0; font-weight: 400; }
+.result-headline { display: flex; flex-wrap: wrap; gap: 0 6px; font-size: 12px; margin: 4px 0; font-weight: 400; }
 .result-headline span { color: var(--text-muted); line-height: 1.5; }
 .results-management { min-width: 70px; }
-.results-management summary { cursor: pointer; color: var(--text-muted); padding: 8px; }
-.results-management[open] { display: flex; flex-direction: column; }
-.results-management button { display: block; margin: 4px 0; }
 
 .results-library-source-table .cell-name { min-width: 220px; word-break: normal; overflow-wrap: break-word; }
 .results-library-source-table th:last-child, .results-library-source-table td:last-child { position: sticky; right: 0; background: var(--bg-secondary); z-index: 1; min-width: 160px; }

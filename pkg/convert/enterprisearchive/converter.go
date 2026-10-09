@@ -91,7 +91,10 @@ type ConvertStats struct {
 
 // ConvertOptions controls the conversion behavior.
 type ConvertOptions struct {
-	sourceEncoding       string
+	sourceEncoding string
+	// archiveFiles holds the archive's files by archive-relative name, so
+	// request steps can read the files they reference (BodyFilePath).
+	archiveFiles         map[string]string
 	ScriptName           string  // Override the generated script name
 	BaseURL              string  // Override base URL (otherwise auto-detected from first URL)
 	DefaultThinkTimeMs   float64 // Default think time if none in script (0 = no default)
@@ -101,6 +104,9 @@ type ConvertOptions struct {
 	// projection runs only after parameter files have been attached and known
 	// source parameters have been rewritten to {{param.*}} references.
 	deferArchiveFinalization bool
+	// runLogicActionNames maps action files to their run-logic action names
+	// (see tagRunLogicActions).
+	runLogicActionNames map[string]string
 	// Render lr_unmask(...) request bodies as governed secret references. Archive
 	// imports enable this so payload bytes never leak while operators get a
 	// re-provisioning handle; lower-level conversions keep opaque bodies empty.
@@ -197,6 +203,9 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 		baseURL = detectBaseURL(projectionFunctions)
 	}
 	result.Script.Config.BaseURL = baseURL
+	// A Base URL override never repoints recorded traffic to another host, so
+	// count the requests it cannot apply to and say so instead of staying silent.
+	overrideMissedTargets := 0
 	result.RecordedResourceURLs = collectRecordedResourceURLs(projectionFunctions)
 	result.RecordedResourceURLsCaptured = true
 
@@ -213,6 +222,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	var pendingHeaders map[string]string
 	var autoHeaders map[string]string
 	var persistentCookies []ParsedCookie
+	addedCookies := map[string]ParsedCookie{}
 	var pendingSourceMappings []SourceReviewMapping
 	var currentTransaction string
 	var currentSubTransaction string
@@ -234,6 +244,14 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	var sourceRuntimeControls []ParsedFunction
 
 	actionNameCounts := make(map[string]int)
+	unmodelledRequestArgs := make(map[string]int)
+	var pendingFindings []importreview.Finding
+	var pendingFilters []*pendingRegistrationFilter
+	// pendingAsync is a web_reg_async_attributes waiting for its step;
+	// startedAsync holds the conversation IDs that became http_async_start.
+	var pendingAsync *sourceAsync
+	startedAsync := map[string]bool{}
+	var webSockets sourceWebSockets
 	trackLastExecutable := func(fn ParsedFunction) {
 		lastExecutablePhase = fn.Phase
 		lastExecutableIndex = actionCountForPhase(result.Script, fn.Phase) - 1
@@ -268,11 +286,84 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			))
 			continue
 		}
+		reviewAsync := func(async *sourceAsync, reason string) {
+			notes := "The async conversation is preserved and not executed: " + reason + "."
+			appendTrackedSourceAction(async.fn, asyncReviewAction(async.fn, notes), SourceFunctionSupportReviewOnly, notes)
+			result.Warnings = append(result.Warnings, fmt.Sprintf("%s:%d web_reg_async_attributes requires review: %s", async.fn.Filename, async.fn.LineNumber, reason))
+		}
 		switch fn.Name {
+		case "web_reg_async_attributes":
+			if pendingAsync != nil {
+				reviewAsync(pendingAsync, "another web_reg_async_attributes replaced it before a step")
+			}
+			async, reason := parseSourceAsync(fn)
+			if async == nil {
+				pendingAsync = nil
+				reviewAsync(&sourceAsync{fn: fn}, reason)
+				continue
+			}
+			pendingAsync = async
+
+		case "web_stop_async":
+			id := sourceStopAsyncID(fn)
+			if !startedAsync[id] {
+				notes := fmt.Sprintf("No background conversation %q was converted, so there is nothing to stop; preserved and not executed.", id)
+				appendTrackedSourceAction(fn, asyncReviewAction(fn, notes), SourceFunctionSupportReviewOnly, notes)
+				continue
+			}
+			appendTrackedSourceAction(fn, dsl.Action{Name: "Stop " + id, Type: "http_async_stop", Params: map[string]any{"id": id}, Metadata: sourceFunctionMetadata(fn)}, SourceFunctionSupportExecutable,
+				"Converted to http_async_stop, which ends the background conversation and applies its last responses.")
+
+		case "web_websocket_connect":
+			actions, warnings, reason := convertWebSocketConnect(fn, &webSockets, opts.archiveFiles)
+			if reason != "" {
+				notes := "The WebSocket connection is preserved and not executed: " + reason + "."
+				appendTrackedSourceAction(fn, webSocketReviewAction(fn, notes), SourceFunctionSupportReviewOnly, notes)
+				result.Warnings = append(result.Warnings, fmt.Sprintf("%s:%d web_websocket_connect requires review: %s", fn.Filename, fn.LineNumber, reason))
+				continue
+			}
+			result.Warnings = append(result.Warnings, warnings...)
+			appendTrackedSourceAction(fn, actions[0], SourceFunctionSupportExecutable, "Converted to ws_connect; the socket shares the HTTP session's cookies and TLS settings.")
+			if len(actions) > 1 {
+				tagSourceFlowMetadata(result, fn, &actions[1])
+				appendActionForPhase(result.Script, fn.Phase, actions[1])
+				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, sourceReviewActionPath(fn.Phase, actionCountForPhase(result.Script, fn.Phase)-1), actions[1].Name, "action", "contributor",
+					"OnMessageCB translated to ws_on_message steps run for each received message.", SourceFunctionSupportExecutable))
+			}
+
+		case "web_websocket_send", "web_websocket_close":
+			var action dsl.Action
+			var reason string
+			if fn.Name == "web_websocket_send" {
+				action, reason = convertWebSocketSend(fn, &webSockets)
+			} else {
+				action, reason = convertWebSocketClose(fn, &webSockets)
+			}
+			if reason != "" {
+				notes := "Preserved and not executed: " + reason + "."
+				appendTrackedSourceAction(fn, webSocketReviewAction(fn, notes), SourceFunctionSupportReviewOnly, notes)
+				continue
+			}
+			appendTrackedSourceAction(fn, action, SourceFunctionSupportExecutable, "Converted to "+action.Type+" on the script's WebSocket.")
+
+		case "web_sync":
+			if action, ok := sourceWebSyncAction(fn); ok {
+				appendTrackedSourceAction(fn, action, SourceFunctionSupportExecutable, "Converted to http_sync, which waits for a background conversation to set the parameter.")
+				continue
+			}
+			notes := "Only web_sync ParamExists= and ParamValueEquals= (with Timeout=) are converted; preserved and not executed."
+			appendTrackedSourceAction(fn, asyncReviewAction(fn, notes), SourceFunctionSupportReviewOnly, notes)
+
 		case "web_reg_save_param", "web_reg_save_param_regexp", "web_reg_save_param_json", "web_reg_save_param_xpath", "web_reg_save_param_ex", "web_reg_save_param_attrib":
-			ext, extractorWarnings := convertExtractor(fn)
-			result.Warnings = append(result.Warnings, extractorWarnings...)
+			registration := convertRegistration(fn)
+			ext := registration.extractor
+			result.Warnings = append(result.Warnings, registration.warnings...)
 			if ext != nil {
+				pendingFindings = append(pendingFindings, registration.findings...)
+				if registration.filter != nil {
+					pendingFilters = append(pendingFilters, registration.filter)
+				}
+
 				pendingExtractors = append(pendingExtractors, *ext)
 				pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", ext.Name, "extractor", "contributor", "Applied to the next converted request action.", SourceFunctionSupportExecutable))
 				result.Stats.Extractors++
@@ -281,7 +372,8 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			}
 
 		case "web_reg_find":
-			assertion, saveCountExtractor, supportMode, warning := convertFindAssertion(fn)
+			assertion, saveCountExtractor, supportMode, warning, findFindings := convertFindAssertionWithFindings(fn)
+			pendingFindings = append(pendingFindings, findFindings...)
 			mapped := false
 			if assertion != nil {
 				pendingAssertions = append(pendingAssertions, *assertion)
@@ -310,9 +402,16 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			if fn.Args != nil && fn.Args["Text"] == "" && fn.Args["What"] != "" {
 				fn.Args["Text"] = fn.Args["What"]
 			}
-			assertion, saveCountExtractor, supportMode, warning := convertFindAssertion(fn)
+			assertion, saveCountExtractor, supportMode, warning, findFindings := convertFindAssertionWithFindings(fn)
 			if assertion != nil {
 				assertion.LegacyHTMLCheck = true
+			}
+			if len(findFindings) > 0 {
+				if prev := actionAtPhaseIndex(result.Script, lastRequestPhase, lastRequestIndex); prev != nil {
+					importreview.ApplyToAction(prev, findFindings)
+				} else {
+					pendingFindings = append(pendingFindings, findFindings...)
+				}
 			}
 			// web_find validates the previous response, so attach to the LAST emitted
 			// request action. pendingAssertions/pendingExtractors would flush forward
@@ -396,7 +495,21 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			result.Stats.ContributorFunctions++
 			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 
-		case "web_add_cookie", "web_add_cookie_ex", "web_reg_add_cookie":
+		case "web_add_cookie", "web_add_cookie_ex":
+			// The cookie goes into the VUser's cookie jar at this point, as
+			// LoadRunner adds it to its cookie cache: a later Set-Cookie from the
+			// server replaces it instead of both being sent.
+			for _, cookie := range fn.Cookies {
+				if cookie.Name == "" {
+					continue
+				}
+				appendTrackedSourceAction(fn, cookieSetAction(fn, cookie, false), SourceFunctionSupportExecutable, "Converted to a positional cookie_set action on the VUser's cookie jar.")
+				addedCookies[strings.ToLower(cookie.Name)] = cookie
+			}
+
+		case "web_reg_add_cookie":
+			// Registered (conditional) cookies keep their downstream Cookie-header
+			// approximation.
 			for _, cookie := range fn.Cookies {
 				if cookie.Name == "" {
 					continue
@@ -412,6 +525,18 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			// Drop a previously-added cookie (or ALL) from the persistent set so it
 			// stops attaching to downstream requests.
 			removed := removePersistentCookie(&persistentCookies, fn)
+			if cookie, ok := sourceCookieRemoval(fn); ok {
+				// LoadRunner removes the cookie from its cookie cache, so it leaves
+				// the VUser's jar whether web_add_cookie or the server set it.
+				notes := "Converted to a positional cookie_set action that expires the cookie in the VUser's cookie jar."
+				if added, found := addedCookies[strings.ToLower(cookie.Name)]; found {
+					cookie = added
+					delete(addedCookies, strings.ToLower(cookie.Name))
+					notes = "Converted to a positional cookie_set action that expires the cookie added earlier."
+				}
+				appendTrackedSourceAction(fn, cookieSetAction(fn, cookie, true), SourceFunctionSupportExecutable, notes)
+				break
+			}
 			targetPath := "actions[].headers.Cookie"
 			notes := "Removed a source cookie from downstream HTTP requests."
 			if !removed {
@@ -568,6 +693,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			// Cookie headers on later requests by applyPersistentCookies) would
 			// keep attaching after the cleanup, replaying cleared session/auth state.
 			persistentCookies = nil
+			clear(addedCookies)
 			preserveSourceRuntimeControl(result.Script, "source_runtime_controls", fn, map[string]any{
 				"mapped_to": "actions[].cookie_clear",
 			})
@@ -606,7 +732,18 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 		case "web_set_user":
 			sourceRuntimeControls = append(sourceRuntimeControls, fn)
 			details := applySourceWebSetUser(result, fn)
-			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.http.auth", convertutil.FirstNonEmpty(stringMapValue(details, "username", ""), fn.Name), "config", "converted", "Mapped from source web_set_user authentication.", SourceFunctionSupportExecutable))
+			if conflict, _ := details["conflict"].(bool); conflict {
+				// APEX keeps one script-level credential set; a second set for
+				// another host cannot be expressed yet, so execution is gated
+				// rather than sending the wrong credentials.
+				appendTrackedSourceAction(fn, webSetUserConflictGate(fn, stringMapValue(details, "host", "")), SourceFunctionSupportReviewOnly,
+					"A second web_set_user credential set cannot be expressed; execution is gated.")
+				break
+			}
+			if unscoped, _ := details["host_unscoped"].(bool); unscoped {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("%s:%d web_set_user host %q is parameterized or not a plain host, so its credentials apply to every host", fn.Filename, fn.LineNumber, stringMapValue(details, "host", "")))
+			}
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.http.auth", convertutil.FirstNonEmpty(stringMapValue(details, "username", ""), fn.Name), "config", "converted", "Mapped from source web_set_user authentication, scoped to its host.", SourceFunctionSupportExecutable))
 			result.Stats.ContributorFunctions++
 			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 
@@ -659,8 +796,25 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 
 		case "web_url", "web_submit_data", "web_submit_form", "web_custom_request", "web_rest", "web_service_call",
 			"web_link", "web_image", "web_image_check":
-			action, warnings := convertAction(fn, baseURL, currentTransaction, currentSubTransaction, opts, lastRequestURL)
-			if contextURL := sourceRequestContextURL(fn, lastRequestURL); contextURL != "" && fn.Name != "web_image_check" {
+			var action *dsl.Action
+			var warnings []string
+			if isHTMLStepFunction(fn) {
+				action, warnings = convertHTMLStepAction(fn, currentTransaction, currentSubTransaction, opts)
+			} else {
+				action, warnings = convertAction(fn, baseURL, currentTransaction, currentSubTransaction, opts, lastRequestURL)
+			}
+			argumentGated := false
+			if action != nil {
+				var unknownArgs []string
+				unknownArgs, argumentGated = applyRequestArgumentReview(action, fn, opts)
+				for _, name := range unknownArgs {
+					unmodelledRequestArgs[name]++
+				}
+			}
+			if opts.BaseURL != "" && action != nil && (strings.HasPrefix(action.Target, "http://") || strings.HasPrefix(action.Target, "https://")) {
+				overrideMissedTargets++
+			}
+			if contextURL := sourceRequestContextURL(fn, lastRequestURL); contextURL != "" && fn.Name != "web_image_check" && !isHTMLStepFunction(fn) {
 				lastRequestURL = contextURL
 			}
 			if action != nil {
@@ -684,6 +838,18 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				if len(pendingExtractors) > 0 && fn.Name != "web_image_check" {
 					action.Extractors = append(action.Extractors, pendingExtractors...)
 					pendingExtractors = nil
+				}
+				// Review findings and search filters of the registrations that
+				// apply to this request.
+				if fn.Name != "web_image_check" {
+					for _, filter := range pendingFilters {
+						pendingFindings = append(pendingFindings, filter.findingsForAttachedRequest(action, firstNonEmptyArg(fn, "RecContentType"))...)
+					}
+					pendingFilters = nil
+					if len(pendingFindings) > 0 {
+						importreview.ApplyToAction(action, pendingFindings)
+						pendingFindings = nil
+					}
 				}
 
 				// Attach pending headers
@@ -711,6 +877,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				applyPersistentCookies(action, persistentCookies, rawURLForCookieMatch(fn, lastRequestURL))
 
 				applySOAPImportHints(action, fn)
+				applyDefaultCustomRequestContentType(action, fn)
 
 				// Default assertions
 				if opts.IncludeAssertions {
@@ -726,16 +893,38 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 					action.Name = fmt.Sprintf("%s_%d", action.Name, actionNameCounts[action.Name])
 				}
 
+				var asyncWrap *sourceAsync
+				if pendingAsync != nil && fn.Name != "web_image_check" {
+					async := pendingAsync
+					pendingAsync = nil
+					switch {
+					case argumentGated || metadataBool(action.Metadata, "masked_body") || metadataString(action.Metadata, "source_itemdata_encoding") == "review_required":
+						reviewAsync(async, "the step it applies to is gated for review")
+					case !async.appliesTo(fn, action):
+						reviewAsync(async, "its URL names a request inside the step, which cannot run apart from the step")
+					default:
+						asyncWrap = async
+					}
+				}
+
 				actionIndex := actionCountForPhase(result.Script, fn.Phase)
 				targetPath := sourceReviewActionPath(fn.Phase, actionIndex)
+				contributorPath := targetPath
+				if asyncWrap != nil {
+					contributorPath = targetPath + ".params.request"
+				}
 				mappingStatus := "converted"
 				mappingNotes := "Converted to a generated APEX Load action."
 				mappingMode := SourceFunctionSupportExecutable
-				if metadataBool(action.Metadata, "masked_body") {
+				if argumentGated {
+					mappingStatus = "review_only"
+					mappingNotes = "The step uses request attributes the importer cannot reproduce yet; execution is gated until the request is rebuilt (see the action's import review)."
+					mappingMode = SourceFunctionSupportReviewOnly
+				} else if metadataBool(action.Metadata, "masked_body") {
 					mappingStatus = "review_only"
 					mappingNotes = fmt.Sprintf("Request argument is produced by %s(...); APEX has no verified decoder for this payload; supply a restored body through protected import repair — the action requires manual review.", metadataString(action.Metadata, "masked_body_function"))
 					mappingMode = SourceFunctionSupportReviewOnly
-				} else if fn.itemDataReviewReason != "" {
+				} else if metadataString(action.Metadata, "source_itemdata_encoding") == "review_required" {
 					mappingStatus = "review_only"
 					mappingNotes = "ITEMDATA uses an encoding or field shape that cannot be serialized faithfully; the source is preserved and execution is blocked until the request body is rebuilt."
 					mappingMode = SourceFunctionSupportReviewOnly
@@ -761,7 +950,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 						contributorIndex = assertionIndex
 						assertionIndex++
 					}
-					pendingMapping.TargetPath = sourceReviewContributorTargetPath(targetPath, pendingMapping.TargetKind, contributorIndex)
+					pendingMapping.TargetPath = sourceReviewContributorTargetPath(contributorPath, pendingMapping.TargetKind, contributorIndex)
 					if pendingMapping.TargetName == "" {
 						pendingMapping.TargetName = action.Name
 					}
@@ -770,6 +959,20 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				pendingSourceMappings = retainedMappings
 
 				tagSourceFlowMetadata(result, fn, action)
+				if asyncWrap != nil {
+					callbacks := translateAsyncCallbacks(asyncWrap, opts.archiveFiles)
+					wrapped, err := wrapAsyncConversation(asyncWrap, *action, callbacks)
+					if err != nil {
+						return nil, fmt.Errorf("wrap async conversation %q: %w", asyncWrap.id, err)
+					}
+					result.Warnings = append(result.Warnings, droppedCallbackLogsWarnings(asyncWrap.fn, callbacks)...)
+					*action = wrapped
+					startedAsync[asyncWrap.id] = true
+					appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(asyncWrap.fn, targetPath, action.Name, "action", "contributor",
+						"Runs this step as a background conversation (http_async_start) until web_stop_async or the end of the iteration.", SourceFunctionSupportExecutable))
+					result.Stats.ContributorFunctions++
+					recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
+				}
 				appendActionForPhase(result.Script, fn.Phase, *action)
 				if fn.Name != "web_image_check" {
 					lastRequestPhase = fn.Phase
@@ -780,13 +983,13 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				result.Stats.RawRequestActions++
 				recordSourceFunctionSupport(result, mappingMode)
 			} else if isHTMLModeNavigationFunction(fn.Name) {
-				// HTML-mode web_link/web_image/web_image_check whose absolute target was
-				// resolved from page context at record time (no URL=/Src= in the static
-				// source). Preserve honestly as review_only instead of dropping it or
-				// inventing a URL. convertAction already appended the "no URL" warning.
-				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "metadata.import.preserved.unresolved_html_navigation", convertutil.FirstNonEmpty(fn.StepName, fn.Name), "review", "review_only", "HTML-mode navigation whose absolute URL is resolved from page context at replay; re-record in URL mode or add an explicit URL/Src to execute it. Preserved for manual review.", SourceFunctionSupportReviewOnly))
-				result.Stats.ContributorFunctions++
-				recordSourceFunctionSupport(result, SourceFunctionSupportReviewOnly)
+				// HTML-mode web_link/web_image/web_image_check whose target VuGen
+				// resolves from the previous page at replay. Dropping the click would
+				// replay a flow the server never sees, and inventing a URL would be
+				// wrong, so an execution-gated review action holds its position.
+				// convertAction already appended the "no URL" warning.
+				appendTrackedSourceAction(fn, htmlNavigationGateAction(fn), SourceFunctionSupportReviewOnly,
+					"HTML-mode click resolved from the previous page at replay; execution is gated until it is replaced with an explicit request or the script is re-recorded in URL mode.")
 			}
 			result.Warnings = append(result.Warnings, warnings...)
 
@@ -826,6 +1029,13 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				continue
 			}
 			if action, mode, ok := convertSourceFunctionAction(fn); ok {
+				if fn.Name == "web_save_param_length" && action.Type != "source_review" && strings.EqualFold(opts.sourceEncoding, "windows-1252") {
+					// LoadRunner counts the value's code-page bytes.
+					if action.Params == nil {
+						action.Params = map[string]any{}
+					}
+					action.Params["code_page"] = "windows-1252"
+				}
 				appendTrackedSourceAction(fn, action, mode, sourceSupportNotes(fn, mode))
 				continue
 			}
@@ -834,6 +1044,14 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			appendSourceReviewMapping(result, sourceReviewMappingForFunction(fn, "metadata.import.preserved.unsupported_functions", fn.Name, "unsupported", "review_only", "No executable APEX Load mapping exists for this source function yet."))
 		}
 	}
+	if pendingAsync != nil {
+		notes := "The async conversation is preserved and not executed: no step follows it."
+		appendTrackedSourceAction(pendingAsync.fn, asyncReviewAction(pendingAsync.fn, notes), SourceFunctionSupportReviewOnly, notes)
+	}
+	if warning := unmodelledRequestArgumentsWarning(unmodelledRequestArgs); warning != "" {
+		result.Warnings = append(result.Warnings, warning)
+	}
+
 	preserveTrailingRequestContributors(
 		result,
 		pendingExtractors,
@@ -884,6 +1102,10 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	if opts.RuntimeSettings != nil {
 		mergeScriptConfig(&result.Script.Config, opts.RuntimeSettings)
 	}
+	tagRunLogicActions(result.Script, opts.runLogicActionNames)
+	for _, note := range pruneEmptyRunLogicChildren(result.Script) {
+		result.Warnings = append(result.Warnings, "Run logic: "+note+".")
+	}
 	for _, fn := range sourceRuntimeControls {
 		reapplySourceRuntimeControlConfig(result, fn)
 	}
@@ -904,6 +1126,9 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			[]*dsl.Script{result.Script},
 			archiveFinalizationContext{},
 		)
+	}
+	if overrideMissedTargets > 0 {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("%d recorded request(s) use absolute URLs on another host; the Base URL override applies only to relative targets, so these still go to the recorded host. Edit their targets to repoint them.", overrideMissedTargets))
 	}
 
 	return result, nil

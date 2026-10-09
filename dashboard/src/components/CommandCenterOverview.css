@@ -11,14 +11,14 @@
 .command-overview caption { text-align: left; color: var(--text-secondary); padding: 12px 0; line-height: 1.5; }
 .command-overview th, .command-overview td { padding: 12px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
 .command-overview small { display: block; margin-top: 6px; color: var(--text-secondary); line-height: 1.5; }
-.command-overview-run { padding: 0; background: transparent; border: 0; color: var(--accent); text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.command-overview-run { padding: 0; background: transparent; border: 0; color: var(--accent-text); text-align: left; cursor: pointer; overflow-wrap: anywhere; }
 .command-overview-run strong { display: block; font-size: 14px; }
-.command-overview .command-overview-warning { color: var(--warning); }
+.command-overview .command-overview-warning { color: var(--warning-text); }
 .command-overview-results { margin-top: 20px; }
 .command-run-switcher { padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); }
 .command-run-switcher label { flex: 1; min-width: 180px; }
 .command-run-switcher select { width: 100%; }
-.command-overview button:focus-visible, .command-run-switcher :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.command-overview button:focus-visible, .command-run-switcher :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
 @media (max-width: 1100px) {
   .command-overview thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .command-overview tbody, .command-overview tr { display: block; }

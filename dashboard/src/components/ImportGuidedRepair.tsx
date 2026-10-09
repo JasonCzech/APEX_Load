@@ -18,10 +18,11 @@ type Props = {
   categoryFocus?: { category: IssueCategory | 'all'; revision: number };
   focusPath?: string; focusRequest?: number; onBusyChange?: (busy: boolean) => void
   view?: 'overview' | 'data' | 'hidden'; additionalFindings?: ImportFinding[]; onReview?: (result: RepairResult) => void
+  onReviewedChange?: (issueIds: string[]) => void
 }
 const labels: Record<string, string> = { restore_body: 'Restored body', add_parameter: 'Parameter values, one per line', add_extractor: 'Extractor expression', bind_variable: 'Existing producer or parameter name', replace_proxy_secret: 'Project secret name' }
 
-export function ImportGuidedRepair({ script, projectId, disabled, disabledReason, onApplied, onViewSource, onSection, onCredentialTarget, onReimport, view = 'overview', additionalFindings = [], onReview, categoryFocus, focusPath, focusRequest, onBusyChange }: Props) {
+export function ImportGuidedRepair({ script, projectId, disabled, disabledReason, onApplied, onViewSource, onSection, onCredentialTarget, onReimport, view = 'overview', additionalFindings = [], onReview, onReviewedChange, categoryFocus, focusPath, focusRequest, onBusyChange }: Props) {
   const settings = useImportSettings()
   const candidate = String(script.metadata?.import?.preserved?.server_import_attestation_v1 || '')
   const scope = `${candidate}:${projectId}`
@@ -62,6 +63,8 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
   const [resolved, setResolved] = useState<ImportIssue[]>([])
   const [announcement, setAnnouncement] = useState('')
   const [reviewed, setReviewed] = useState<Set<string>>(new Set())
+  const onReviewedChangeRef = useRef(onReviewedChange); onReviewedChangeRef.current = onReviewedChange
+  useEffect(() => { onReviewedChangeRef.current?.([...reviewed]) }, [reviewed])
   const formDrafts = useRef(new Map<string, { kind: string; value: string; responsePath: string; extractorType: string; occurrence: string }>())
   useEffect(() => { if (selection) formDrafts.current.set(selection, { kind, value, responsePath, extractorType, occurrence }) }, [selection, kind, value, responsePath, extractorType, occurrence])
   useEffect(() => { formDrafts.current.clear(); setReviewed(new Set()) }, [scope])
@@ -75,8 +78,15 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
   const options = finding ? issueRepairOptions(finding.code) : []
   const selectedResolved = !!selected && !issues.some(i => i.id === selected.id)
   const blocked = issues.filter(i => i.blocking).length
-  const reviewCount = issues.length - blocked
-  const shown = (filter === 'resolved' ? resolved : issues).filter(i => (category === 'all' || i.category === category) && (filter !== 'blockers' || i.blocking) && (filter !== 'review' || !i.blocking) && (filter !== 'reviewed' || reviewed.has(i.id)) && `${i.title} ${i.findings.map(f => `${f.source_ref} ${f.action_path} ${f.detail}`).join(' ')}`.toLowerCase().includes(search.toLowerCase()))
+  // A review mark settles a non-blocking note for this session, so it leaves
+  // the unresolved counts and moves to the reviewed filter.
+  const reviewedCount = issues.filter(issue => !issue.blocking && reviewed.has(issue.id)).length
+  const unresolvedCount = issues.length - reviewedCount
+  const reviewCount = unresolvedCount - blocked
+  const inView = (i: ImportIssue) => (category === 'all' || i.category === category) && (filter !== 'blockers' || i.blocking) && (filter !== 'review' || !i.blocking) && `${i.title} ${i.findings.map(f => `${f.source_ref} ${f.action_path} ${f.detail}`).join(' ')}`.toLowerCase().includes(search.toLowerCase())
+  const shown = (filter === 'resolved' ? resolved : issues).filter(i => inView(i) && (filter === 'reviewed' ? reviewed.has(i.id) : filter === 'resolved' || i.blocking || !reviewed.has(i.id)))
+  // Notes this view would list if they were not marked reviewed.
+  const hiddenAsReviewed = filter === 'all' || filter === 'review' ? issues.filter(i => inView(i) && !i.blocking && reviewed.has(i.id)).length : 0
   const expiry = review?.expires_at ? new Date(review.expires_at).getTime() : NaN
   const expired = Number.isFinite(expiry) && expiry <= now
   const locked = !!disabled || busy || loading || expired
@@ -180,12 +190,12 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
   return <section className="lr-issue-workspace" aria-label={view === 'data' ? 'Preview unique data allocation' : 'Guided import repair'} hidden={view === 'hidden' || (view === 'data' && (!hasUniqueParameters || (!!settings && settings.dataView !== 'allocation')))}>
     <p className="lr-repair-announcement" role="status">{announcement || (loading ? 'Checking current repair requirements…' : '')}</p>
     {view !== 'data' ? <>
-      <ImportReviewSectionHeader title="Resolve import issues" description={`${resolved.length} resolved in this session. Repeated findings are grouped; request locations are available within each issue.`} actions={
+      <ImportReviewSectionHeader title="Resolve import issues" description={`${resolved.length} resolved${reviewedCount ? ` and ${reviewedCount} reviewed` : ''} in this session. Repeated findings are grouped; request locations are available within each issue.`} actions={
         <button type="button" className="btn btn-primary" disabled={busy || loading || filter === 'resolved' || !nextIssue || nextIssue.id === selection} onClick={() => nextIssue && choose(nextIssue)}>Next unresolved issue</button>
       } />
       {(expired || (!candidate.startsWith('protected:') && issues.some(issue => issue.findings.some(item => issueRepairOptions(item.code).length > 0)))) && <div className="lr-issue-unavailable" role="status"><strong>{expired ? 'This protected draft has expired' : 'Protected repairs unavailable for this draft'}</strong><p>{expired ? 'Revalidate the archive to renew its repair session.' : 'Body, correlation, and TLS repairs require encrypted import storage. Existing settings and credential editors remain available when supported.'}</p>{onReimport && <button type="button" className="btn btn-secondary btn-sm" onClick={onReimport}>Open archive setup to revalidate</button>}</div>}
       <div className="import-review-toolbar"><label>Find an issue<input type="search" value={search} placeholder="Search values or source locations" onChange={e => setSearch(e.target.value)} /></label>
-        <label>Show<select value={filter} onChange={e => setFilter(e.target.value)}><option value="all">All unresolved ({issues.length})</option><option value="blockers">Blockers ({blocked})</option><option value="review">Review notes ({reviewCount})</option><option value="resolved">Resolved ({resolved.length})</option><option value="reviewed">Reviewed with limitation ({issues.filter(issue => reviewed.has(issue.id)).length})</option></select></label>
+        <label>Show<select value={filter} onChange={e => setFilter(e.target.value)}><option value="all">All unresolved ({unresolvedCount})</option><option value="blockers">Blockers ({blocked})</option><option value="review">Review notes ({reviewCount})</option><option value="resolved">Resolved ({resolved.length})</option><option value="reviewed">Reviewed with limitation ({reviewedCount})</option></select></label>
         <label>Issue category<select value={category} onChange={e => { setCategory(e.target.value as IssueCategory | 'all'); setSelection(''); resetPreview() }}><option value="all">All categories</option>{(Object.keys(issueCategories) as IssueCategory[]).map(key => <option value={key} key={key}>{issueCategories[key]}</option>)}</select></label>
         <span role="status">{shown.length} matching issues</span>
       </div>
@@ -204,7 +214,7 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
             <span className="lr-issue-row-title">{issue.title}</span><span className="lr-issue-row-meta"><ImportIssueSeverityTag severity={filter === 'resolved' ? 'resolved' : issue.blocking ? 'blocker' : 'info'} /><span>{reviewed.has(issue.id) ? 'Reviewed with limitation · ' : ''}{issueScope(issue)}</span></span>
           </button></li>)}</ul></details>
         })}
-        {!shown.length && <p>{search ? 'No issues match this search.' : filter === 'resolved' ? 'Applied repairs will appear here when their issues are resolved.' : 'No issues in this view.'}</p>}
+        {!shown.length && <p>{hiddenAsReviewed ? 'Every issue in this view is marked reviewed. Show "Reviewed with limitation" to reopen one.' : search ? 'No issues match this search.' : filter === 'resolved' ? 'Applied repairs will appear here when their issues are resolved.' : 'No issues in this view.'}</p>}
       </div><section className="lr-issue-detail" aria-label="Selected issue">
         {!selected || !finding ? <><h4>Select an issue to get started</h4><p>See its impact, inspect the source, and preview the repair before applying it.</p></> : <>
           <header className="lr-issue-detail-heading"><h4 tabIndex={-1} ref={detailRef} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.currentTarget.closest('.lr-issue-layout')?.querySelector<HTMLButtonElement>('.lr-issue-row[aria-pressed="true"]')?.focus() } }}>{selected.title}</h4>

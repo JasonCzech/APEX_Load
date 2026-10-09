@@ -54,6 +54,7 @@ describe('ReportComposer test notes source panel', () => {
         findings: [],
         updated_at: '2026-06-24T12:00:00Z',
         updated_by: 'Ava',
+        verdict_updated_at: '2026-06-24T11:00:00Z',
       },
     })
     apiMock.listTestNotes.mockResolvedValue({
@@ -168,6 +169,8 @@ describe('ReportComposer test notes source panel', () => {
 
     expect(apiMock.saveTestReportAnnotations).toHaveBeenCalledTimes(1)
     const payload = apiMock.saveTestReportAnnotations.mock.calls[0][2]
+    // The shared verdict is saved against the revision this composer loaded.
+    expect(payload.expected_verdict_updated_at).toBe('2026-06-24T11:00:00Z')
     expect(payload.executive_narrative).toContain('Observed **spike**')
     expect(payload.section_comments.overview).toContain('Observed **spike**')
     expect(payload.findings[0]).toMatchObject({
@@ -334,6 +337,26 @@ describe('ReportComposer test notes source panel', () => {
 
     expect(container.textContent).toContain('Action Summary')
     expect(container.textContent).not.toContain('Network Phase Breakdown')
+  })
+
+  it('previews headline metrics from the same population as the on-screen KPIs', async () => {
+    apiMock.getTestArchiveReport.mockResolvedValueOnce({
+      ...sampleReport(),
+      overview: { ...sampleReport().overview, error_pct: 10.2, avg_response_ms: 240.4, peak_tps: 56 },
+      metric_populations: {
+        action: { transactions: 2991, errors: 30, error_pct: 1, avg_response_ms: 1006, min_response_ms: 12, max_response_ms: 4100, p95_ms: 1533, peak_tps: 61.2 },
+        transaction: { transactions: 610, errors: 5, error_pct: 0.8, avg_response_ms: 1100, min_response_ms: 20, max_response_ms: 4200, p95_ms: 1538, peak_tps: 19 },
+      },
+    })
+
+    await renderComposer('executive')
+
+    const metrics = container.querySelector('.report-metrics')?.textContent ?? ''
+    expect(metrics).toContain('Peak TPS (attempts/s)')
+    expect(metrics).toContain('61.2')
+    expect(metrics).toContain('1.00%')
+    expect(metrics).not.toContain('10.20%')
+    expect(container.textContent).toContain('Headline metrics: Requests / actions · whole run')
   })
 
   it('previews the generated root cause apart from the analyst findings', async () => {

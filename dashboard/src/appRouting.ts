@@ -9,17 +9,17 @@ export type AppWorkspaceScope = {
 }
 
 export type AppView = AppWorkspaceScope & (
-  | { page: Exclude<NavPage, 'command-center' | 'new-test' | 'scripts' | 'tests' | 'docs' | 'monitoring' | 'settings' | 'access' | 'repository'> }
+  | { page: Exclude<NavPage, 'command-center' | 'new-test' | 'scripts' | 'tests' | 'docs' | 'monitoring' | 'settings' | 'access' | 'repository' | 'activity'> }
+  | { page: 'activity'; activityQuery?: string }
   | { page: 'settings' | 'access' | 'repository'; setting?: string; returnTo?: string; resourceId?: string; accessView?: AccessView }
   | { page: 'monitoring'; category?: MonitoringCategoryID }
   | { page: 'docs'; guidePage?: ApiGuideContentPageID; guideArticle?: string; guideSection?: string }
-  | { page: 'command-center'; testId?: string }
-  | { page: 'report'; testId: string; lens?: ReportLens; compare?: string; comparisonId?: string; section?: ReportSection; transaction?: string; population?: 'action' | 'transaction' | 'unknown' } & RootCauseRouteState
+  | { page: 'command-center'; testId?: string; ccView?: CommandCenterRouteView }
+  | { page: 'report'; testId: string; lens?: ReportLens; compare?: string; comparisonId?: string; section?: ReportSection; transaction?: string; population?: 'action' | 'transaction' | 'unknown'; focus?: ReportFocus } & RootCauseRouteState
   | { page: 'tests'; scenarioView?: 'library' | 'builder' | 'plans' }
   | { page: 'new-test'; scenarioId?: string; prefillStartLocal?: string }
   | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string }
   | { page: 'swagger'; search?: string }
-  | { page: 'repository-guide' }
   | { page: 'recorder-panel'; sessionId: string; folderId?: string }
   | { page: 'test'; testId: string; tab?: TestWorkspaceTabID }
 )
@@ -45,6 +45,27 @@ const SCRIPT_MODES = ['list', 'create', 'edit', 'import'] as const
 const SCENARIO_VIEWS = ['library', 'builder', 'plans'] as const
 const TEST_WORKSPACE_TABS = ['overview', 'diagnostics', 'configuration', 'infrastructure', 'control', 'graphs', 'archive', 'action-summary', 'load-impact', 'transaction-drilldown'] as const
 const MONITORING_CATEGORIES = ['overview', 'telemetry', 'alerts'] as const
+// Activity filters and page travel in the URL so a reload or link keeps them.
+// Content inside a report section that an old archive-tab link pointed at;
+// the report opens and scrolls to it.
+export type ReportFocus = 'action-summary' | 'load-impact' | 'transaction-drilldown'
+const REPORT_FOCUS: readonly ReportFocus[] = ['action-summary', 'load-impact', 'transaction-drilldown']
+
+// Command Center's analysis tools are part of the address so a reload or a
+// shared link reopens the same view (operations is the default).
+export type CommandCenterRouteView = 'analysis' | 'wall'
+const COMMAND_CENTER_ROUTE_VIEWS: readonly CommandCenterRouteView[] = ['analysis', 'wall']
+
+export const ACTIVITY_QUERY_KEYS = ['q', 'actor', 'type', 'action', 'after', 'before', 'page'] as const
+
+function activityQueryFromParams(params: URLSearchParams): string {
+  const query = new URLSearchParams()
+  for (const key of ACTIVITY_QUERY_KEYS) {
+    const value = params.get(key)
+    if (value) query.set(key, value.slice(0, 240))
+  }
+  return query.toString()
+}
 // RootCauseRouteState is a root-cause investigation's shareable state: the
 // analysis and its revision, the hypothesis being investigated and the time
 // window in focus (two RFC 3339 times joined by "~").
@@ -92,8 +113,10 @@ export function navPageForAppView(view: AppView): NavPage {
     return isArchiveTestWorkspaceTab(view.tab) ? 'results' : 'command-center'
   }
   if (view.page === 'report') return 'results'
-  if (view.page === 'swagger' || view.page === 'repository-guide') return 'docs'
+  if (view.page === 'swagger') return 'docs'
   if (view.page === 'recorder-panel') return 'scripts'
+  // Fleet and Schedules are Monitoring tabs, so Monitoring stays the current nav item.
+  if (view.page === 'fleet' || view.page === 'schedules') return 'monitoring'
   return view.page
 }
 
@@ -203,9 +226,13 @@ export function parseAppViewFromHash(hash: string): AppView {
 
   if (page === 'command-center') {
     const testId = segments[1] || params.get('testId') || undefined
-    return testId
-      ? { page: 'command-center', testId, ...workspaceScope }
-      : { page: 'command-center', ...workspaceScope }
+    const ccView = COMMAND_CENTER_ROUTE_VIEWS.find(value => value === params.get('view'))
+    return {
+      page: 'command-center',
+      ...(testId ? { testId } : {}),
+      ...(ccView ? { ccView } : {}),
+      ...workspaceScope,
+    }
   }
 
   if (page === 'report' && segments[1]) {
@@ -224,6 +251,7 @@ export function parseAppViewFromHash(hash: string): AppView {
       ...(params.get('comparison_id') ? { comparisonId: params.get('comparison_id')! } : {}),
       ...(transaction ? { transaction } : {}),
       ...(population === 'action' || population === 'transaction' || population === 'unknown' ? { population } : {}),
+      ...(REPORT_FOCUS.includes(params.get('focus') as ReportFocus) ? { focus: params.get('focus') as ReportFocus } : {}),
       ...workspaceScope,
     }
   }
@@ -259,6 +287,9 @@ export function parseAppViewFromHash(hash: string): AppView {
 
   if (page === 'monitoring') {
     const category = params.get('category')
+    // Fleet and Schedules are Monitoring tabs with their own pages; a category
+    // link to either opens that page, as the tab itself does.
+    if (category === 'fleet' || category === 'schedules') return { page: category, ...workspaceScope }
     return {
       page: 'monitoring',
       ...(isMonitoringCategory(category) && category !== 'overview' ? { category } : {}),
@@ -266,12 +297,19 @@ export function parseAppViewFromHash(hash: string): AppView {
     }
   }
 
+  if (page === 'activity') {
+    const activityQuery = activityQueryFromParams(params)
+    return { page: 'activity', ...(activityQuery ? { activityQuery } : {}), ...workspaceScope }
+  }
+
   if (page === 'swagger') {
     return { page: 'swagger', ...(params.get('search') ? { search: params.get('search')!.slice(0, 240) } : {}), ...workspaceScope }
   }
 
+  // The former repository-sourced API guide: old bookmarks open its article
+  // under the docs address, so the URL names what is shown.
   if (page === 'repository-guide') {
-    return { page: 'repository-guide', ...workspaceScope }
+    return { page: 'docs', guideArticle: 'api-workflows', ...workspaceScope }
   }
 
   if (page === 'recorder-panel') {
@@ -292,6 +330,7 @@ const DESKTOP_DEEP_LINK_PAGES = new Set<string>([
   'report',
   'test',
   'swagger',
+  // The legacy repository-guide address still opens (as its docs article).
   'repository-guide',
   'recorder-panel',
 ])
@@ -381,6 +420,7 @@ export function viewToLocationHash(view: AppView): string {
 
   if (view.page === 'command-center') {
     const params = new URLSearchParams()
+    if (view.ccView) params.set('view', view.ccView)
     appendWorkspaceScope(params, view)
     const query = params.toString()
     const path = view.testId ? `#/command-center/${encodeURIComponent(view.testId)}` : '#/command-center'
@@ -399,6 +439,7 @@ export function viewToLocationHash(view: AppView): string {
     if (view.rev) params.set('rev', view.rev)
     if (view.hypothesis) params.set('hypothesis', view.hypothesis)
     if (view.window) params.set('window', view.window)
+    if (view.focus) params.set('focus', view.focus)
     appendWorkspaceScope(params, view)
     const query = params.toString()
     return query ? `#/report/${encodeURIComponent(view.testId)}?${query}` : `#/report/${encodeURIComponent(view.testId)}`
@@ -431,19 +472,19 @@ export function viewToLocationHash(view: AppView): string {
     return query ? `#/monitoring?${query}` : '#/monitoring'
   }
 
+  if (view.page === 'activity') {
+    const params = new URLSearchParams(activityQueryFromParams(new URLSearchParams(view.activityQuery || '')))
+    appendWorkspaceScope(params, view)
+    const query = params.toString()
+    return query ? `#/activity?${query}` : '#/activity'
+  }
+
   if (view.page === 'swagger') {
     const params = new URLSearchParams()
     if (view.search) params.set('search', view.search)
     appendWorkspaceScope(params, view)
     const query = params.toString()
     return query ? `#/swagger?${query}` : '#/swagger'
-  }
-
-  if (view.page === 'repository-guide') {
-    const params = new URLSearchParams()
-    appendWorkspaceScope(params, view)
-    const query = params.toString()
-    return query ? `#/repository-guide?${query}` : '#/repository-guide'
   }
 
   if (view.page === 'recorder-panel') {
@@ -573,6 +614,8 @@ export function resetProjectScopedAssetView(view: AppView, projectId?: string): 
     return { page: 'command-center', ...(projectId ? { projectId } : {}) }
   }
   if (view.page === 'report') return { page: 'results' }
+  // Activity filters and paging belong to the project they were set in.
+  if (view.page === 'activity') return { page: 'activity', ...(projectId ? { projectId } : {}) }
   return view
 }
 
@@ -629,6 +672,8 @@ export function terminalRunReportView(view: AppView, status: string, enabled: bo
     overview: 'execution', configuration: 'execution', infrastructure: 'execution', control: 'execution', graphs: 'performance', diagnostics: 'diagnostics',
     archive: 'evidence', 'action-summary': 'performance', 'load-impact': 'performance', 'transaction-drilldown': 'diagnostics',
   }
+  const focus = view.page === 'test' && REPORT_FOCUS.includes(view.tab as ReportFocus) ? view.tab as ReportFocus : undefined
   return { page: 'report', testId: view.testId, ...workspaceScopeForAppView(view),
-    section: view.page === 'test' && view.tab ? sections[view.tab] || 'execution' : 'execution' }
+    section: view.page === 'test' && view.tab ? sections[view.tab] || 'execution' : 'execution',
+    ...(focus ? { focus } : {}) }
 }

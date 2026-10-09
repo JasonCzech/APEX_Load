@@ -5,7 +5,7 @@ import NativeAnalyticsPanel, { NativePanelAuthoring, NativeProjectPanels } from 
 import ObjectHistory from './ObjectHistory'
 import { OrchestrationReturn } from './OrchestrationReturn'
 import RunOutcomeSummary from './RunOutcomeSummary'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   MetricsHistoryPoint,
@@ -14,7 +14,7 @@ import {
 import { isTestWorkspaceTab, type TestWorkspaceTabID } from '../appRouting'
 import { topbarRunStatusLabel } from '../appTopbar'
 import { useTopbarContribution, type TopbarContribution, type TopbarMetaTone } from '../hooks/TopbarContributionProvider'
-import { formatTimeCompact, isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
+import { formatRunClock, isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
 import TestExecutionArchive from './TestExecutionArchive'
 import { useExecutionActionBridge } from './useExecutionActionBridge'
 import { useExecutionArchiveResourceHistory } from './useExecutionArchiveResourceHistory'
@@ -22,6 +22,8 @@ import { useExecutionArchiveSummaryHistory } from './useExecutionArchiveSummaryH
 import { useExecutionArchiveModel } from './useExecutionArchiveModel'
 import { useExecutionLiveControls } from './useExecutionLiveControls'
 import { useExecutionMetricsStream } from './useExecutionMetricsStream'
+import { useClientRenderReporter } from './clientRenderReporter'
+import { ProjectContext } from '../hooks/projectContext'
 import { useRunActionConfirmation } from './useRunActionConfirmation'
 import { useExecutionTestPolling } from './useExecutionTestPolling'
 import { useExecutionViewState } from './useExecutionViewState'
@@ -196,6 +198,10 @@ export default function TestExecution({
     snapshotError,
   } = useExecutionScenarioPreviewModel(test, manifest, manifestLoading, manifestError)
   const { localMetricsHistory, latestMetrics } = useExecutionMetricsStream(testId, test?.status)
+  // Outside a project provider (embedded views, tests) nothing has opted in.
+  const projectContext = useContext(ProjectContext)
+  const clientRenderEvidence = Boolean(projectContext?.projects.find(project => project.id === test?.project_id)?.settings?.telemetry?.client_render_evidence)
+  useClientRenderReporter(testId, clientRenderEvidence, latestMetrics)
   const {
     archiveResourceHistory,
     archiveResourceError,
@@ -432,8 +438,8 @@ export default function TestExecution({
       { id: 'duration', label: test.termination_mode === 'iterations' ? 'Iteration completion' : test.duration || 'No duration', tone: 'default' },
       { id: 'groups', label: `${groupCount} ${groupCount === 1 ? 'group' : 'groups'}`, tone: isMultiGroup ? 'accent' : 'default' },
       { id: 'started', label: `Started ${formatRunStartTime(test.started_at || test.start_time)}`, tone: 'default', hidden: !showLiveControls },
-      { id: 'remaining', label: test.termination_mode === 'iterations' ? `Iterations ${test.live_metrics?.completed_iterations ?? 0} / ${(test.groups || []).reduce((n,g) => n + g.vusers * (g.iterations || 0), 0)}` : `Remaining ${formatTimeCompact(remainingSeconds)}`, tone: remainingSeconds <= 60 ? 'warning' : 'default', hidden: !showLiveControls },
-      { id: 'stopping', label: 'Stopping...', tone: 'danger', hidden: !isStopping },
+      { id: 'remaining', label: test.termination_mode === 'iterations' ? `Iterations ${test.live_metrics?.completed_iterations ?? 0} / ${(test.groups || []).reduce((n,g) => n + g.vusers * (g.iterations || 0), 0)}` : `Remaining ${formatRunClock(remainingSeconds)}`, tone: remainingSeconds <= 60 ? 'warning' : 'default', hidden: !showLiveControls },
+      { id: 'stopping', label: 'Stopping…', tone: 'danger', hidden: !isStopping },
     ],
     secondaryActions: [
       {
@@ -445,7 +451,7 @@ export default function TestExecution({
       },
       {
         id: 'test-notes',
-        label: 'Test Notes',
+        label: 'Test notes',
         compactLabel: 'Notes',
         tone: 'secondary',
         onClick: () => setShowTestNotes(true),
@@ -478,7 +484,7 @@ export default function TestExecution({
 
   if (!test) {
     return <div className="execution">
-      <OrchestrationReturn testId={testId} /><p className="loading">Loading...</p></div>
+      <OrchestrationReturn testId={testId} /><p className="loading">Loading…</p></div>
   }
 
   const {
@@ -1047,7 +1053,6 @@ export default function TestExecution({
   return (
     <div className="execution">
       <OrchestrationReturn testId={testId} />
-      <RunMonitorTimeline key={`monitor-${testId}`} projectId={test.project_id} testId={testId} history={filteredData} />
       {Boolean(test.monitor_warnings?.length) && <section className="tx-section" aria-label="Run monitoring warnings"><h3>Run monitoring warnings</h3><ul>{test.monitor_warnings?.map((warning, index) => <li key={index}>{warning}</li>)}</ul></section>}
       <PreparationControls canEdit={canManageTests} key={`preparation-${testId}`} testId={testId} projectId={test.project_id} status={test.status} />
 
@@ -1108,14 +1113,6 @@ export default function TestExecution({
       )}
 
       {archiveReport && <RunOutcomeSummary report={archiveReport} />}
-      {canManageTests && api && test.project_id && <NativePanelAuthoring properties={[...new Set([...Object.keys(archiveReport?.by_property || {}), ...Object.keys(test.live_metrics?.properties || {})])].sort()} key={`panels-${testId}`} onSave={async definition => {
-        const created = await api.createDashboardDefinition({ ...definition, project_id: test.project_id!, visibility: 'project' })
-        setProjectDashboardDefinitions(current => [...current, created])
-      }} />}
-      <MessagingProgressDiagnostics snapshot={test.live_metrics?.messaging_progress} />
-      <MessagingDiagnostics series={Object.entries(test.live_metrics?.messaging || {}).map(([name, messaging]) => ({ name, messaging }))} />
-      <RunAnnotations key={`annotations-${testId}`} testId={testId} startedAt={test.started_at} canEdit={canManageTests} />
-      <NativeProjectPanels testId={testId} key={`project-panels-${testId}`} definitions={projectDashboardDefinitions} history={filteredData} />
       <DashboardWorkspace
         key={testId}
         ariaLabel="Test execution workspace"
@@ -1132,6 +1129,17 @@ export default function TestExecution({
         initialActiveTabId={initialWorkspaceTabId}
         onActiveTabChange={handleWorkspaceActiveTabChange}
       />
+      {/* The selected tab's own content leads; run-wide supplementary evidence
+          and the project panel builder follow it. */}
+      <NativeProjectPanels testId={testId} key={`project-panels-${testId}`} definitions={projectDashboardDefinitions} history={filteredData} />
+      <RunMonitorTimeline key={`monitor-${testId}`} projectId={test.project_id} testId={testId} history={filteredData} />
+      <MessagingProgressDiagnostics snapshot={test.live_metrics?.messaging_progress} />
+      <MessagingDiagnostics series={Object.entries(test.live_metrics?.messaging || {}).map(([name, messaging]) => ({ name, messaging }))} />
+      <RunAnnotations key={`annotations-${testId}`} testId={testId} startedAt={test.started_at} canEdit={canManageTests} />
+      {canManageTests && api && test.project_id && <NativePanelAuthoring properties={[...new Set([...Object.keys(archiveReport?.by_property || {}), ...Object.keys(test.live_metrics?.properties || {})])].sort()} key={`panels-${testId}`} onSave={async definition => {
+        const created = await api.createDashboardDefinition({ ...definition, project_id: test.project_id!, visibility: 'project' })
+        setProjectDashboardDefinitions(current => [...current, created])
+      }} />}
     </div>
   )
 }

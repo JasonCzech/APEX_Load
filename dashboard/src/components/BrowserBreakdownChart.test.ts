@@ -23,7 +23,7 @@ describe('BrowserBreakdownChart helpers', () => {
   it('formats tooltip values by metric type', () => {
     expect(formatBrowserBreakdownTooltipValue(240, 'ms')).toBe('240.0 ms')
     expect(formatBrowserBreakdownTooltipValue(0.0314, 'score')).toBe('0.031')
-    expect(formatBrowserBreakdownTooltipValue(undefined, 'ms')).toBe('n/a')
+    expect(formatBrowserBreakdownTooltipValue(undefined, 'ms')).toBe('—')
     expect(formatBrowserBreakdownTooltipLabel('WebKit', 'Engine')).toBe('Engine: WebKit')
     expect(formatBrowserBreakdownTooltipLabel(undefined, 'Device')).toBe('Device: unknown')
   })
@@ -156,7 +156,7 @@ describe('legacy browser summary availability', () => {
     const insight = buildBrowserUXInsight({ ...completeSummary, avg_inp_ms: value } as BrowserLiveMetrics)!
     expect(insight.score).toBeNull()
     expect(insight.coverage).toEqual({ observed: 6, required: 7 })
-    expect(insight.signals[1]).toMatchObject({ value: 'n/a', status: value === undefined ? 'missing' : 'invalid', score: null, contribution: null, severity: 'unscored' })
+    expect(insight.signals[1]).toMatchObject({ value: '—', status: value === undefined ? 'missing' : 'invalid', score: null, contribution: null, severity: 'unscored' })
     expect(insight.signals[0].score).toBe(100)
     expect(insight.signals[0].weight).toBe(1)
     expect(insight.signals[0].contribution).toBeCloseTo(100 / 7)
@@ -212,7 +212,7 @@ describe('legacy browser summary availability', () => {
     expect(buildBrowserBreakdownData('engine', { devices: { a: large, b: large } })[0].lcp).toBe(Number.MAX_VALUE)
     expect(buildBrowserBreakdownData('engine', { devices: { a: { ...large, samples: Number.MAX_SAFE_INTEGER }, b: large } })[0].lcp).toBeUndefined()
     expect(buildBrowserBreakdownData('overall', { summary: { samples: 1, avg_lcp_ms: -1, avg_inp_ms: Infinity, avg_cls_score: 0 } })).toEqual([{ segment: 'Overall', cohortKey: JSON.stringify(['overall']), lcp: undefined, inp: undefined, cls: 0 }])
-    expect(formatBrowserBreakdownTooltipValue(-1)).toBe('n/a')
+    expect(formatBrowserBreakdownTooltipValue(-1)).toBe('—')
   })
 })
 

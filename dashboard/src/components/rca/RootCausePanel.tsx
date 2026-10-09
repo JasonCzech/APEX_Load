@@ -6,6 +6,7 @@ import { useApi } from '../../hooks/useApi'
 import type { RcaAssessment, RcaCritique, RcaHypothesis } from '../../types/rca'
 import { formatNumber } from '../runReport/runReportModel'
 import RootCauseInvestigation from './RootCauseInvestigation'
+import RcaBrowserBaselineSection from './RcaBrowserBaseline'
 import {
   formatRcaDuration,
   formatRcaEffect,
@@ -124,7 +125,11 @@ export default function RootCausePanel({ testId, model, report, history, history
   const { response, loading, error } = model
   // Only a project that presents v2 shows the panel. Until a response says
   // so, it shows only for a link that names an analysis.
-  if (response ? !response.presented : !(route.analysis || route.hypothesis)) return null
+  if (response && !response.presented) {
+    // An analyst learns the capability exists; others see nothing.
+    return canAnalyze ? <p className="run-report-muted" role="note">Root-cause analysis is not enabled for this project. A system administrator enables it per project.</p> : null
+  }
+  if (!response && !(route.analysis || route.hypothesis)) return null
   const assessment = response?.assessment
   const pinned = response?.analysis_id ? { analysis: response.analysis_id, rev: response.revision ? String(response.revision) : undefined } : {}
   const selected = assessment?.hypotheses.find(h => h.id === route.hypothesis)
@@ -198,6 +203,7 @@ export default function RootCausePanel({ testId, model, report, history, history
             </table>
           )}
         </details>
+        <RcaBrowserBaselineSection baseline={assessment.browser_baseline} />
         <details>
           <summary>Evidence coverage ({assessment.coverage.filter(c => c.status !== 'complete').length} gaps)</summary>
           <ul className="rca-coverage">{assessment.coverage.map((c, i) => <li key={i}><Badge tone={rcaTone(c.status)}>{rcaStatusLabel(c.status)}</Badge> {rcaStatusLabel(c.evidence)}{c.detail ? `: ${c.detail}` : ''}</li>)}</ul>

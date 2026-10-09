@@ -80,6 +80,10 @@ type SeriesPoint struct {
 	At    time.Time
 	Value float64
 	Valid bool
+	// Count is how many observations a valid value summarizes, when known
+	// (browser document buckets); 0 otherwise. It is an int32 so it packs
+	// beside Valid and every point stays 40 bytes.
+	Count int32
 }
 
 // Series is one measured quantity of the run, in time order.
@@ -106,6 +110,9 @@ type Series struct {
 	// Equal identities name the same measurement; they never by themselves
 	// authorize a baseline comparison.
 	Identity string
+	// Document describes a browser document series' cohort (browser
+	// baseline, browser_baseline.v1); nil for every other series.
+	Document *DocumentCohort
 }
 
 // External reports whether a series measures the system under test from
@@ -154,8 +161,18 @@ func sameLoad(a, b LoadLevel, tolerance float64) bool {
 type DetectionBaseline struct {
 	TestID        string
 	Qualification string
-	Levels        []LoadLevel
-	Series        []Series
+	// QualificationReasons say why a partial baseline is partial.
+	QualificationReasons []string
+	// ScriptChangedGroups are the groups whose script differs from the run's
+	// or is unrecorded; nil when unknown (every script reason then applies
+	// to the whole run).
+	ScriptChangedGroups map[string]bool
+	// DocumentsIncomplete says the baseline's browser document evidence
+	// was not fully read (unreadable, or cut by the series budget), so a
+	// cohort missing from it may exist.
+	DocumentsIncomplete bool
+	Levels              []LoadLevel
+	Series              []Series
 }
 
 // DetectionInput is the frozen evidence onset detection reads.
@@ -165,6 +182,14 @@ type DetectionInput struct {
 	Baseline *DetectionBaseline
 	// Limitations the caller found while building the series.
 	Limitations []Limitation
+	// DocumentsIncomplete says the run's own browser document evidence was
+	// not fully read (dropped observations or series the budget left out);
+	// DocumentsUnreadable that it could not be read at all.
+	DocumentsIncomplete bool
+	DocumentsUnreadable bool
+	// BrowserPolicy is what the run's pinned browser_policy sets for its
+	// browser baselines; nil when the run pinned none.
+	BrowserPolicy *BrowserBaselinePolicy
 }
 
 // JudgedSeries records, per scope, the series detection compared with a
@@ -236,6 +261,13 @@ func Detect(input DetectionInput, params DetectParams, budgeter *Budgeter) ([]An
 		comparable, _ := comparableSeries(b.Series)
 		baseline = make(map[string]Series, len(comparable))
 		for _, s := range comparable {
+			// Browser document series are compared with the baseline by
+			// browser_baseline.v1, which refuses cohorts whose authored
+			// pages changed; here they are judged within the run only, so
+			// the two never disagree about one cohort.
+			if s.Kind == SeriesBrowserDocument {
+				continue
+			}
 			baseline[s.ID] = boundedSeries(s, budgeter)
 		}
 	}

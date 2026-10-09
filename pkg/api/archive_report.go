@@ -160,7 +160,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		overallQuantiles.Add(tx.DurationMs)
 		if !tx.Success {
 			report.Overview.Errors++
-			signature := normalizeArchiveErrorSignature(archiveErrorPatternSource(tx))
+			signature := archiveErrorPatternSignature(tx)
 			if _, exists := errorPatterns[signature]; !exists && len(errorPatterns) >= maxArchiveAnalysisDimensions {
 				return fmt.Errorf("archive report exceeds %d distinct error patterns", maxArchiveAnalysisDimensions)
 			}
@@ -342,6 +342,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 			if pattern == nil {
 				continue
 			}
+			finalizeArchiveErrorPatterns(pattern)
 			if actions := errorPatternActions[signature]; len(actions) > 0 {
 				pattern.Actions = make([]string, 0, len(actions))
 				for action := range actions {
@@ -452,6 +453,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	}
 
 	report.Validity = archiveRunValidity(manifest, validityResults.counted(), summaries, resources)
+	report.TelemetryAcceptance = telemetryAcceptanceForManifest(manifest)
 	report.Overview.ResourceSamples = int64(len(resources))
 	for _, sample := range resources {
 		if sample.CPUProcessPct > report.ResourcePeaks.CPUProcessPct {
@@ -936,8 +938,8 @@ func buildRunArchiveReportProfiles() []RunArchiveReportProfile {
 			// storage-aware handler layer ((*Server).attachReleaseTrend) and the section
 			// degrades to a no-baseline/no-release note rather than a ghost. "run_context"
 			// folds completeness + change attribution into one compact confidence block.
-			IncludedSections: []string{"baseline_comparison", "verdict", "executive_overview", "graphs", "dashboard_panels", "sla_rollup", "release_trend", "risk_summary", "rca", "run_context", "recommendations", "signoff"},
-			SectionOrder:     []string{"baseline_comparison", "verdict", "executive_overview", "graphs", "dashboard_panels", "sla_rollup", "release_trend", "risk_summary", "rca", "run_context", "recommendations", "signoff"},
+			IncludedSections: []string{"baseline_comparison", "verdict", "executive_overview", "graphs", "dashboard_panels", "sla_rollup", "telemetry_acceptance", "release_trend", "risk_summary", "rca", "run_context", "recommendations", "signoff"},
+			SectionOrder:     []string{"baseline_comparison", "verdict", "executive_overview", "graphs", "dashboard_panels", "sla_rollup", "telemetry_acceptance", "release_trend", "risk_summary", "rca", "run_context", "recommendations", "signoff"},
 			// The executive report states the leading hypothesis only.
 			RootCauseHypothesisLimit: 1,
 		},
@@ -948,8 +950,8 @@ func buildRunArchiveReportProfiles() []RunArchiveReportProfile {
 			Audience:         "Performance engineers, SREs, developers, and test analysts.",
 			BestFor:          "Bottleneck isolation, regression diagnosis, resource saturation, and remediation planning.",
 			ExportFormats:    []string{"html", "json", "csv", "analysis_zip", "pdf", "docx", "jsonl", "parquet"},
-			IncludedSections: []string{"baseline_comparison", "verdict", "technical_overview", "sla_detail", "graphs", "dashboard_panels", "rca", "root_cause", "recommendations", "test_setup", "raw_exports", "generator_manifest", "controller_failover", "completeness", "schema_compatibility", "change_attribution", "summary_timeline", "errors", "resources", "actions", "protocol_diagnostics", "browser", "soap", "network_phases", "web2_migration"},
-			SectionOrder:     []string{"baseline_comparison", "verdict", "technical_overview", "sla_detail", "graphs", "dashboard_panels", "rca", "root_cause", "recommendations", "test_setup", "raw_exports", "generator_manifest", "controller_failover", "completeness", "schema_compatibility", "change_attribution", "summary_timeline", "errors", "resources", "actions", "protocol_diagnostics", "browser", "soap", "network_phases", "web2_migration"},
+			IncludedSections: []string{"baseline_comparison", "verdict", "technical_overview", "sla_detail", "graphs", "dashboard_panels", "rca", "root_cause", "recommendations", "test_setup", "raw_exports", "generator_manifest", "controller_failover", "telemetry_acceptance", "completeness", "schema_compatibility", "change_attribution", "summary_timeline", "errors", "resources", "actions", "protocol_diagnostics", "browser", "soap", "network_phases", "web2_migration"},
+			SectionOrder:     []string{"baseline_comparison", "verdict", "technical_overview", "sla_detail", "graphs", "dashboard_panels", "rca", "root_cause", "recommendations", "test_setup", "raw_exports", "generator_manifest", "controller_failover", "telemetry_acceptance", "completeness", "schema_compatibility", "change_attribution", "summary_timeline", "errors", "resources", "actions", "protocol_diagnostics", "browser", "soap", "network_phases", "web2_migration"},
 		},
 		{
 			ID:               "audit",
@@ -958,8 +960,8 @@ func buildRunArchiveReportProfiles() []RunArchiveReportProfile {
 			Audience:         "Compliance, governance, change-control, and QA gatekeepers.",
 			BestFor:          "Evidence integrity, authorization traceability, reproducibility, and audit review.",
 			ExportFormats:    []string{"html", "json", "csv", "analysis_zip", "pdf", "docx"},
-			IncludedSections: []string{"baseline_comparison", "official_outcome", "audit_identity", "authorization", "governance", "provenance", "schema_compatibility", "evidence_tiers", "controller_failover", "completeness", "change_attribution", "artifact_integrity", "report_authorship"},
-			SectionOrder:     []string{"baseline_comparison", "official_outcome", "audit_identity", "authorization", "governance", "provenance", "schema_compatibility", "evidence_tiers", "controller_failover", "completeness", "change_attribution", "artifact_integrity", "report_authorship"},
+			IncludedSections: []string{"baseline_comparison", "official_outcome", "audit_identity", "authorization", "governance", "provenance", "schema_compatibility", "evidence_tiers", "controller_failover", "telemetry_acceptance", "completeness", "change_attribution", "artifact_integrity", "report_authorship"},
+			SectionOrder:     []string{"baseline_comparison", "official_outcome", "audit_identity", "authorization", "governance", "provenance", "schema_compatibility", "evidence_tiers", "controller_failover", "telemetry_acceptance", "completeness", "change_attribution", "artifact_integrity", "report_authorship"},
 		},
 	}
 }

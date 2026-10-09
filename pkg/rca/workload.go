@@ -132,6 +132,18 @@ func (k WorkloadKey) Mix() map[string]float64 {
 	return mix
 }
 
+// ScriptChangedGroups names the groups both workloads ran whose script
+// digest differs or is unrecorded in either.
+func ScriptChangedGroups(current, candidate WorkloadKey) map[string]bool {
+	changed := map[string]bool{}
+	for name, a := range current.Groups {
+		if b, ok := candidate.Groups[name]; ok && (a.ScriptDigest == "" || b.ScriptDigest == "" || a.ScriptDigest != b.ScriptDigest) {
+			changed[name] = true
+		}
+	}
+	return changed
+}
+
 // QualifyBaseline compares a candidate baseline's workload with the current
 // run's. A missing or incomplete key can make a baseline partial, never
 // qualified.

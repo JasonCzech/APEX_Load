@@ -1487,7 +1487,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
         </span>}
         {!inlineEditing && !onPreparedChange && (
           <button className="btn btn-primary" type="button" onClick={() => { void commit() }} disabled={!prepared.valid || applying || disabled}>
-            {applying ? 'Applying...' : 'Continue with credentials'}
+            {applying ? 'Applying…' : 'Continue with credentials'}
           </button>
         )}
       </div>

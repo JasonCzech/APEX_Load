@@ -25,7 +25,7 @@ test('two scenario editors reconcile a stale save without losing either change',
       await editor.goto(`/#/tests?view=library&${scopeQuery(workspace)}`)
       if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await editor.reload()
       const read = editor.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === `/api/v1/scenarios/${id}`)
-      await editor.locator('.scenario-library-table').getByRole('row').filter({ hasText: name }).getByRole('button', { name: 'Edit', exact: true }).click()
+      await editor.locator('.scenario-library-table').getByRole('row').filter({ hasText: name }).getByRole('button', { name: /^Edit\b/ }).click()
       expect((await read).headers().etag).toBe(initialTag)
       await expect(editor.getByPlaceholder('Scenario name')).toHaveValue(name)
     }
@@ -129,10 +129,10 @@ test('a library delete is refused for a scenario changed after the list loaded',
   let deletes = 0
   page.on('request', item => { if (item.method() === 'DELETE' && new URL(item.url()).pathname === `/api/v1/scenarios/${id}`) deletes++ })
   const requestDelete = async () => {
-    const more = row.locator('details.scenario-more-actions')
-    if (!await more.evaluate(element => (element as HTMLDetailsElement).open)) await more.locator('summary').click()
+    const more = row.locator('.scenario-more-actions > .ux-row-actions-toggle')
+    if (await more.getAttribute('aria-expanded') !== 'true') await more.click()
     await row.getByRole('button', { name: 'Delete', exact: true }).click()
-    await page.getByRole('dialog').getByRole('button', { name: 'Delete Scenario', exact: true }).click()
+    await page.getByRole('alertdialog', { name: 'Delete scenario' }).getByRole('button', { name: 'Delete scenario', exact: true }).click()
   }
   const relisted = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === '/api/v1/scenarios')
   await requestDelete()

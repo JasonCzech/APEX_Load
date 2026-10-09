@@ -1027,3 +1027,28 @@ func TestDesktopStaleGenerationLogoutClearsCapabilityBinding(t *testing.T) {
 		t.Fatal("desktop stale-generation logout retained the capability binding")
 	}
 }
+
+func TestLocalSessionRecordsLastSeen(t *testing.T) {
+	resetUserIdentitySeenThrottleForTests()
+	server, store := newLocalAuthTestServer(t, false)
+	login, cookie := localLogin(t, server, "dev", "dev")
+	if login.Code != http.StatusOK || cookie == nil {
+		t.Fatalf("login = %d", login.Code)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	request.AddCookie(cookie)
+	server.mux.ServeHTTP(httptest.NewRecorder(), request)
+	users, err := store.ListUsers(storage.UserFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, user := range users {
+		if user.Subject == "local:dev" {
+			if user.LastSeenAt == nil || user.LastSeenAt.IsZero() {
+				t.Fatalf("local user last_seen_at = %v, want the session's activity", user.LastSeenAt)
+			}
+			return
+		}
+	}
+	t.Fatal("local:dev user not found")
+}

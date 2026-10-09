@@ -8,6 +8,16 @@ export type DashboardTheme = 'dark' | 'light' | 'solarized-dark' | 'solarized-li
 // data-theme is always one of the concrete DashboardTheme values.
 export type DashboardThemePreference = DashboardTheme | 'system'
 
+/** Theme choices in display order, labelled the same in the top bar and in personal settings. */
+export const THEME_OPTIONS: ReadonlyArray<{ value: DashboardThemePreference; label: string }> = [
+  { value: 'system', label: 'System (Auto)' },
+  { value: 'dark', label: 'Dark Theme' },
+  { value: 'light', label: 'Light Theme' },
+  { value: 'solarized-dark', label: 'Solarized Dark' },
+  { value: 'solarized-light', label: 'Solarized Light' },
+  { value: 'monokai-dimmed', label: 'Monokai Dimmed' },
+]
+
 const THEME_STORAGE_KEY = 'apexload.theme'
 const DASHBOARD_THEMES = new Set<DashboardTheme>(['dark', 'light', 'solarized-dark', 'solarized-light', 'monokai-dimmed'])
 const THEME_PREFERENCES = new Set<DashboardThemePreference>([...DASHBOARD_THEMES, 'system'])

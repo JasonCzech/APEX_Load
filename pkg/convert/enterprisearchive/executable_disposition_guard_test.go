@@ -326,7 +326,7 @@ func TestExecutableDispositionGuardRejectsNonEmittingLines(t *testing.T) {
 // review_only functions — which by definition must NOT produce an executable step —
 // are rejected by exactly the check the two suites above apply.
 func TestExecutableDispositionGuardRejectsReviewOnlyFunctions(t *testing.T) {
-	reviewOnly := []string{"web_set_pac", "web_save_header", "web_sync", "web_stop_async"}
+	reviewOnly := []string{"web_set_pac", "web_save_header", "web_util_set_request_url", "web_get_int_property"}
 	for _, name := range reviewOnly {
 		def, ok := lookupSourceFunction(name)
 		if !ok {

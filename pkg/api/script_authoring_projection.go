@@ -409,7 +409,7 @@ func writeScriptAuthoringSaveOutcomeUnavailable(w http.ResponseWriter, unknown b
 	if unknown {
 		code = "script_save_outcome_unknown"
 	}
-	reference := newErrorReference()
+	reference := errorReferenceFor(w)
 	slog.Error("script save outcome needs verification", "ref", reference, "code", code)
 	writeJSON(w, http.StatusServiceUnavailable, ScriptAuthoringSaveOutcomeError{
 		Error: "script save outcome requires verification; reload the script before retrying",

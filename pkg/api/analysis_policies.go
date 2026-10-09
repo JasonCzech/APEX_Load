@@ -29,9 +29,12 @@ const analysisPolicyVersion = 1
 
 // RunPolicyPin is one policy revision a run was admitted under. SHA256 hashes
 // the stored definition bytes, so a report can prove which rules it applied.
-// Applied says whether anything enforced the pinned revision for this run.
-// Policies are pinned before their consumers exist, so it is false for now;
-// later reports and verdicts must not treat an unapplied pin as enforced.
+// The pin is part of the run's immutable admission receipt, written before
+// any consumer judges the run, so Applied stays false and says nothing about
+// enforcement: it is kept for compatibility. The consumers that judge a run
+// against its pins say so in their own results (a telemetry verdict's
+// enforced flag under fail_ci; browser findings, journey accounting and RCA's
+// browser baseline name the pinned revision they used).
 type RunPolicyPin struct {
 	Kind     string `json:"kind"`
 	ID       string `json:"id"`
@@ -813,24 +816,36 @@ func projectDefaultPolicy(store storage.AnalysisDefinitionStore, project, kind s
 }
 
 // resolveRunPolicyPins returns the default policy revisions for a project, in
-// stable kind order. Stores without analysis definitions have no policies.
-func (tr *TestRunner) resolveRunPolicyPins(projectID string) ([]RunPolicyPin, error) {
+// stable kind order, and the telemetry acceptance policy's definition to
+// freeze beside its pin. Stores without analysis definitions have no
+// policies.
+func (tr *TestRunner) resolveRunPolicyPins(projectID string) ([]RunPolicyPin, *TelemetryAcceptancePolicySnapshot, error) {
 	store, ok := tr.testStore.(storage.AnalysisDefinitionStore)
 	if !ok || store == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	projectID = normalizeProjectID(projectID)
 	pins := []RunPolicyPin{}
+	var acceptance *TelemetryAcceptancePolicySnapshot
 	for _, kind := range storage.AnalysisPolicyKinds {
 		policy, err := projectDefaultPolicy(store, projectID, kind)
 		if err != nil {
-			return nil, fmt.Errorf("resolve %s policy: %w", kind, err)
+			return nil, nil, fmt.Errorf("resolve %s policy: %w", kind, err)
 		}
 		if policy == nil {
 			continue
 		}
 		digest := sha256.Sum256(policy.Definition)
-		pins = append(pins, RunPolicyPin{Kind: kind, ID: policy.ID, Name: policy.Name, Revision: policy.Revision, SHA256: hex.EncodeToString(digest[:]), Source: "project_default"})
+		pin := RunPolicyPin{Kind: kind, ID: policy.ID, Name: policy.Name, Revision: policy.Revision, SHA256: hex.EncodeToString(digest[:]), Source: "project_default"}
+		pins = append(pins, pin)
+		if kind == storage.AnalysisDefinitionKindTelemetryAcceptancePolicy {
+			// The run's verdict is judged by this exact definition (C7),
+			// already validated by projectDefaultPolicy.
+			acceptance = &TelemetryAcceptancePolicySnapshot{Pin: pin}
+			if err := json.Unmarshal(policy.Definition, &acceptance.Definition); err != nil {
+				return nil, nil, fmt.Errorf("%w: default %s policy %q is invalid: %v", errRunPolicyConfiguration, kind, policy.Name, err)
+			}
+		}
 	}
-	return pins, nil
+	return pins, acceptance, nil
 }

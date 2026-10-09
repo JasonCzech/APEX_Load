@@ -18,8 +18,17 @@ export function formatScheduleTimestampInZone(value: string, timeZone?: string) 
   }
 }
 
+/** A schedule instant in the schedule's own timezone, so it matches the zone shown beside it. */
+export function formatScheduleInstant(value: string | undefined, timeZone?: string) {
+  return value ? formatScheduleTimestampInZone(value, timeZone) : 'Not scheduled'
+}
+
 export function formatLaunchTimestamp(value?: string) {
-  return value ? new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Pending'
+  if (!value) return 'Pending'
+  const date = new Date(value)
+  // The year is shown whenever it is not this year, so a window can't be misread.
+  const year = date.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' as const } : {}
+  return date.toLocaleString(undefined, { month: 'short', day: 'numeric', ...year, hour: 'numeric', minute: '2-digit' })
 }
 
 export function formatLaunchWindow(preflight?: LaunchPreflightResponse | null) {
@@ -240,6 +249,9 @@ export function describeCron(expr: string): string {
   const parts = expanded.split(/\s+/)
   if (parts.length !== 5) return ''
   const [minute, hour, dom, month, dow] = parts
+  // An invalid field means no description; the form reports the error itself.
+  const outOfRange = (field: string, min: number, max: number) => /^\d+$/.test(field) && (Number(field) < min || Number(field) > max)
+  if (outOfRange(minute, 0, 59) || outOfRange(hour, 0, 23) || outOfRange(dom, 1, 31) || outOfRange(month, 1, 12) || outOfRange(dow, 0, 7)) return ''
 
   const minuteStep = /^\*\/(\d+)$/.exec(minute)
   if (minuteStep && Number(minuteStep[1]) > 0 && hour === '*' && dom === '*' && month === '*' && dow === '*') {
@@ -256,7 +268,8 @@ export function describeCron(expr: string): string {
   const formatTime = (h: string, m: string) => {
     const hNum = parseInt(h, 10)
     const mNum = parseInt(m, 10)
-    if (isNaN(hNum) || isNaN(mNum)) return null
+    // An out-of-range field is an invalid expression, never "87:99 PM".
+    if (isNaN(hNum) || isNaN(mNum) || hNum < 0 || hNum > 23 || mNum < 0 || mNum > 59) return null
     const suffix = hNum >= 12 ? 'PM' : 'AM'
     const displayH = hNum === 0 ? 12 : hNum > 12 ? hNum - 12 : hNum
     return `${displayH}:${String(mNum).padStart(2, '0')} ${suffix}`

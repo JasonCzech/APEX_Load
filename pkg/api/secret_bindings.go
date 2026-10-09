@@ -1585,10 +1585,12 @@ func (s *Server) handleApplyScriptSecretBindings(w http.ResponseWriter, r *http.
 	if mutationClaim != nil {
 		rotatedExpiry, rotateErr := s.completeImportDraftMutation(r, mutationClaim, resolved)
 		if rotateErr != nil {
+			ref := logServerError(w, http.StatusServiceUnavailable, rotateErr, "code", "import_draft_attestation_unavailable")
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 				"error":     "credential-preserving import draft could not be secured; retry the import",
 				"code":      "import_draft_attestation_unavailable",
 				"retryable": true,
+				"ref":       ref,
 			})
 			return
 		}

@@ -752,7 +752,7 @@ describe('BrowserRecorderControlPanel', () => {
     await renderPanel({ folderId: 'browser-script-folder' })
     await clickButton('Preview Conversion')
     await flushPromises()
-    expect(container.textContent).toContain('Parameterization Review — Checkout Flow (1)')
+    expect(container.textContent).toContain('Parameterization review — Checkout Flow (1)')
     await act(async () => {
       container.querySelector<HTMLButtonElement>('.paramize-review button.btn-primary')?.click()
       await Promise.resolve()
@@ -1001,8 +1001,8 @@ describe('BrowserRecorderControlPanel', () => {
     expect(container.textContent).toContain('0 bindings need setup')
     expect(container.textContent).not.toContain('Save with 1 secret to configure')
 
-    expect(container.textContent).toContain('Save And Open In Visual Editor')
-    await clickButton('Save And Open In Visual Editor')
+    expect(container.textContent).toContain('Save and open in Visual Editor')
+    await clickButton('Save and open in Visual Editor')
     await flushPromises()
 
     expect(apiMock.applySecretBindings).not.toHaveBeenCalled()
@@ -1059,7 +1059,7 @@ describe('BrowserRecorderControlPanel', () => {
       const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
         .find(button => button.textContent?.includes('Save unverified draft'))!
       const edit = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Save And Open In Visual Editor'))!
+        .find(button => button.textContent?.includes('Save and open in Visual Editor'))!
       const applyParameterization = container.querySelector<HTMLButtonElement>('.paramize-review button.btn-primary')!
       const useProjectSecret = container.querySelector<HTMLInputElement>('input[id$="-project-secret"]')!
       expect(save.disabled).toBe(false)
@@ -2238,6 +2238,22 @@ describe('BrowserRecorderControlPanel', () => {
       split_at_transactions: true,
       also_create_http_script: true,
       parameterize: false,
+    }))
+  })
+
+  it('passes the recording profile and its preselected HTTP script level to convert', async () => {
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    await renderPanel({ recordingProfileId: 'checkout', recordingProfileHTTPScriptLevel: 'html' })
+    const dualHTTP = (Array.from(container.querySelectorAll('.brp-convert input[type="checkbox"]')) as HTMLInputElement[])
+      .find(c => c.parentElement?.textContent?.includes('HTTP'))!
+    await act(async () => { dualHTTP.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect((container.querySelector('select[aria-label="HTTP script level"]') as HTMLSelectElement | null)?.value ?? 'html').toBe('html')
+    await clickButton('Save unverified draft')
+    await flushPromises()
+    expect(apiMock.convertBrowserRecording).toHaveBeenCalledWith('brec-1', expect.objectContaining({
+      also_create_http_script: true,
+      http_script_level: 'html',
+      recording_profile_id: 'checkout',
     }))
   })
 

@@ -2,6 +2,8 @@
 // by SettingsPage. Extracted from SettingsPage.tsx to shrink that component and
 // make these reusable/testable in isolation. No React or component-state deps.
 
+import { formatTimeLong } from '../utils/timeUtils'
+import { formatDateTime as formatSharedDateTime } from '../utils/dateTime'
 import type {
   DashboardAuditEvent,
   DashboardAuthDiagnostics,
@@ -114,18 +116,12 @@ export function formatProjectRoleAssignments(projectRoles?: Record<string, strin
 }
 
 export function formatDateTime(value?: string): string {
-  if (!value) return 'Never'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString()
+  // The shared formatter labels the zone, like the rest of the app.
+  return formatSharedDateTime(value, { seconds: true, fallback: 'Never' })
 }
 
 export function formatDurationSeconds(value: number): string {
-  if (value < 60) return `${value}s`
-  const hours = Math.floor(value / 3600)
-  const minutes = Math.floor((value % 3600) / 60)
-  if (hours > 0) return `${hours}h ${minutes}m`
-  return `${minutes}m`
+  return formatTimeLong(value)
 }
 
 export function formatBytes(value?: number): string {

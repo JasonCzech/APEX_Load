@@ -30,7 +30,7 @@ export default function GenerateReportModal({ profiles, onClose, onGenerate }: P
   }, [reportTypes, selected])
 
   return (
-    <DialogLayer><div className="generate-report-backdrop" {...dialogBackdropProps(onClose, 'Close report generator')}>
+    <DialogLayer><div className="generate-report-backdrop" {...dialogBackdropProps(onClose)}>
       <div ref={dialogRef} className="generate-report-modal" role="dialog" aria-modal="true" aria-label="Generate report">
         <div className="generate-report-header">
           <h3>Generate Report</h3>

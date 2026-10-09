@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/har"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
@@ -18,6 +19,12 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	profile, err := s.projectRecordingProfile(normalizeProjectID(importReq.ProjectID), importReq.RecordingProfileID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	importReq.Opts.Profile = profile
 
 	result, err := har.Convert(importReq.Data, importReq.Opts)
 	if err != nil {
@@ -63,6 +70,7 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	applyClientGeneratedUUIDs(script, importReq.Data, result)
+	applyClientTimestamps(script, importReq.Data, result)
 
 	draft := importDraft{
 		Source:           source,
@@ -127,6 +135,41 @@ func harImportSummary(result *har.ConvertResult) map[string]any {
 	return summary
 }
 
+// harGovernanceItems states the governance facts as sentences. The raw enum
+// values stay available in the summary's governance block.
+func harGovernanceItems(governance *har.ArtifactGovernance) []string {
+	items := []string{}
+	switch governance.ArtifactMode {
+	case har.ArtifactModeDesignHAR:
+		items = append(items, "Imported as a design HAR: the recording is the source for the generated script.")
+	case har.ArtifactModeDesignHARPair:
+		items = append(items, "Imported as a design HAR pair: two recordings are compared to find values that change between sessions.")
+	case har.ArtifactModeRuntimeCanaryHAR:
+		items = append(items, "Imported as a runtime canary HAR: the recording is compared with live replay.")
+	default:
+		items = append(items, fmt.Sprintf("Artifact mode: %s", governance.ArtifactMode))
+	}
+	switch governance.Sensitivity {
+	case scrub.SensitivityRaw:
+		items = append(items, "The stored HAR keeps the recorded values, so it can contain credentials, cookies and tokens. Treat it as sensitive.")
+	case scrub.SensitivityScrubbed:
+		items = append(items, "Sensitive values were scrubbed from the stored HAR before review.")
+	default:
+		items = append(items, fmt.Sprintf("Sensitivity: %s", governance.Sensitivity))
+	}
+	if governance.RetentionDays == 1 {
+		items = append(items, "Retention period: 1 day.")
+	} else {
+		items = append(items, fmt.Sprintf("Retention period: %d days.", governance.RetentionDays))
+	}
+	if governance.Scope == "http_family_only" {
+		items = append(items, "Only HTTP traffic in the recording is converted.")
+	} else if governance.Scope != "" {
+		items = append(items, fmt.Sprintf("Scope: %s", governance.Scope))
+	}
+	return items
+}
+
 // harImportReviewSections is the HAR importer's own sections. Converter
 // diagnostics are not included: the shared augmentation pass appends those for
 // every format, and adding them here too would show each one twice.
@@ -136,12 +179,7 @@ func harImportReviewSections(result *har.ConvertResult) []scriptImportReviewSect
 	}
 	sections := []scriptImportReviewSection{}
 	if result.Governance != nil {
-		items := []string{
-			fmt.Sprintf("Artifact mode: %s", result.Governance.ArtifactMode),
-			fmt.Sprintf("Sensitivity: %s", result.Governance.Sensitivity),
-			fmt.Sprintf("Retention: %d day(s)", result.Governance.RetentionDays),
-			fmt.Sprintf("Scope: %s", result.Governance.Scope),
-		}
+		items := harGovernanceItems(result.Governance)
 		if result.Governance.RedactionEnabled {
 			items = append(items, "Scrub-on-write redaction was applied before the HAR source review was created.")
 		}
@@ -211,6 +249,8 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportR
 			ComparisonContent string             `json:"comparison_content,omitempty"`
 			ContentB          string             `json:"content_b,omitempty"`
 			Options           har.ConvertOptions `json:"options,omitempty"`
+			// RecordingProfileID names a project recording profile to apply.
+			RecordingProfileID string `json:"recording_profile_id,omitempty"`
 		}
 		if err := json.Unmarshal(upload.Data, &req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
@@ -220,10 +260,11 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportR
 		secondary := firstNonEmpty(req.SecondaryContent, req.ComparisonContent, req.ContentB)
 		req.Options.ArtifactMode = normalizeHARArtifactMode(req.Options.ArtifactMode, secondary != "")
 		return &harImportRequest{
-			Data:          []byte(req.Content),
-			SecondaryData: []byte(secondary),
-			ProjectID:     upload.jsonProjectID(req.ProjectID),
-			Opts:          req.Options,
+			Data:               []byte(req.Content),
+			SecondaryData:      []byte(secondary),
+			ProjectID:          upload.jsonProjectID(req.ProjectID),
+			Opts:               req.Options,
+			RecordingProfileID: strings.TrimSpace(req.RecordingProfileID),
 		}, true
 	}
 
@@ -237,9 +278,10 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportR
 		}
 	}
 	return &harImportRequest{
-		Data:          upload.Data,
-		SecondaryData: secondaryData,
-		ProjectID:     upload.ProjectID,
+		Data:               upload.Data,
+		SecondaryData:      secondaryData,
+		ProjectID:          upload.ProjectID,
+		RecordingProfileID: strings.TrimSpace(upload.Value("recording_profile_id")),
 		Opts: har.ConvertOptions{
 			ScriptName:          firstNonEmpty(upload.Value("name"), upload.Name),
 			BaseURL:             upload.Value("base_url"),
@@ -248,6 +290,7 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportR
 			RedactSensitive:     parseOptionalBool(upload.Value("redact_sensitive")),
 			IncludeStaticAssets: parseOptionalBool(upload.Value("include_static_assets")),
 			SalvageTruncated:    parseOptionalBool(upload.Value("salvage_truncated")),
+			AsyncScan:           parseOptionalBool(upload.Value("async_scan")),
 		},
 	}, true
 }

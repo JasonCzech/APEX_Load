@@ -16,6 +16,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 const maxHARDecodedContentBytes = requestimport.MaxResponseContentStorageBytes
@@ -113,8 +114,9 @@ func parseHAR(content string, includeStaticAssets bool, diagnostics *diag.Collec
 			continue
 		}
 		if isHARWebSocketUpgrade(item) {
-			diagnostics.Add(diag.Warning, "HAR websocket upgrade", fmt.Sprintf("HAR entry %d", index+1), "WebSocket upgrade/101 traffic is not converted by the generic HTTP HAR importer; import with a WebSocket-aware path before replay")
-			warnings = append(warnings, "HAR WebSocket upgrade entries were skipped by the generic HTTP importer")
+			// The connection becomes WebSocket steps (see harWebSockets),
+			// not an HTTP request.
+			diagnostics.Add(diag.Info, "HAR websocket upgrade", fmt.Sprintf("HAR entry %d", index+1), webSocketHARDiagnostic(item))
 			skipped++
 			continue
 		}
@@ -184,6 +186,10 @@ func extractHARItems(payload any) ([]map[string]any, error) {
 }
 
 func isStaticHAREntry(item map[string]any) bool {
+	if static, ok := item[harStaticKey].(bool); ok {
+		// The recorder classified the request itself.
+		return static
+	}
 	requestData, _ := item["request"].(map[string]any)
 	method := strings.ToUpper(strings.TrimSpace(stringValue(requestData["method"])))
 	if method != "" && method != http.MethodGet && method != http.MethodHead {
@@ -312,7 +318,41 @@ func parseHARItemWithProvenance(item map[string]any, diagnostics *diag.Collector
 	}
 	normalizeHARContentLength(&ex, requestData, diagnostics, location)
 	normalizeHARPseudoHeaders(&ex, diagnostics, location)
+	applyRecorderEntryFields(&ex, item, index)
 	return ex, nil
+}
+
+// HAR entry fields the APEX Load proxy recorder writes, for what a HAR
+// cannot say: its own static classification, the step and transaction
+// names the tester gave, the measured (or edited) pause before the request,
+// and a request body cut off at the capture limit.
+const (
+	harStaticKey             = "_apexload_static"
+	harStepNameKey           = "_apexload_step_name"
+	harTransactionKey        = "_apexload_transaction"
+	harThinkTimeKey          = "_apexload_think_time_ms"
+	harRequestTruncatedKey   = "_apexload_request_body_truncated"
+	harRecordedBodyBytesKey  = "_apexload_request_body_bytes"
+	harSourceTransactionMeta = "source_transaction"
+)
+
+func applyRecorderEntryFields(ex *exchange, item map[string]any, index int) {
+	ex.StepName = strings.TrimSpace(stringValue(item[harStepNameKey]))
+	if transaction := strings.TrimSpace(stringValue(item[harTransactionKey])); transaction != "" {
+		// The engine groups metrics by this metadata key.
+		if ex.Metadata == nil {
+			ex.Metadata = map[string]any{}
+		}
+		ex.Metadata[harSourceTransactionMeta] = transaction
+	}
+	if raw, ok := item[harThinkTimeKey]; ok {
+		if thinkMs := int64(floatValue(raw)); thinkMs >= 0 {
+			ex.RecordedThinkTimeMs, ex.HasRecordedThinkTime = thinkMs, true
+		}
+	}
+	if truncated, _ := item[harRequestTruncatedKey].(bool); truncated {
+		ex.ReviewFindings = append(ex.ReviewFindings, requestimport.RecordedBodyTruncatedFinding("har", fmt.Sprintf("entry-%d", index+1), intValue(item[harRecordedBodyBytesKey])))
+	}
 }
 
 func harRequestHeaderList(raw any) dsl.HeaderList {
@@ -507,6 +547,9 @@ func itemListMetadata(value any) ([]map[string]any, bool) {
 func isHARWebSocketUpgrade(item map[string]any) bool {
 	requestData, _ := item["request"].(map[string]any)
 	responseData, _ := item["response"].(map[string]any)
+	if messages, ok := item["_webSocketMessages"].([]any); ok && len(messages) > 0 {
+		return true
+	}
 	return strings.EqualFold(rawHARHeaderLookup(requestData["headers"], "Upgrade"), "websocket") ||
 		strings.EqualFold(rawHARHeaderLookup(responseData["headers"], "Upgrade"), "websocket") ||
 		intValue(responseData["status"]) == 101
@@ -877,4 +920,59 @@ func mergeHARCookies(value any, ex *exchange, diagnostics *diag.Collector, locat
 	ex.Headers["Cookie"] = cookieValue
 	ex.HeaderList = append(ex.HeaderList, dsl.HeaderEntry{Name: "Cookie", Value: cookieValue})
 	diagnostics.Add(diag.Info, "HAR cookies[]", location, "recorded request cookies[] were serialized in source order into a Cookie header for exact replay")
+}
+
+// harInStepResources attaches each static HAR entry to the page that
+// requested it, as VuGen's "record resources in the step" option does: the
+// earlier page whose URL matches the entry's Referer, otherwise the most
+// recent page before it. It returns the explicit resources per page entry
+// (keyed by SourceEntryID), bounded per page.
+func harInStepResources(content string) map[int][]any {
+	var payload any
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(content, "\uFEFF")), &payload); err != nil {
+		return nil
+	}
+	items, err := extractHARItems(payload)
+	if err != nil {
+		return nil
+	}
+	resources := map[int][]any{}
+	pageByURL := map[string]int{}
+	lastPage := 0
+	for index, item := range items {
+		requestData, _ := item["request"].(map[string]any)
+		rawURL := strings.TrimSpace(stringValue(requestData["url"]))
+		if !isStaticHAREntry(item) {
+			if !isHARWebSocketUpgrade(item) && !strings.EqualFold(strings.TrimSpace(stringValue(requestData["method"])), http.MethodConnect) {
+				lastPage = index + 1
+				pageByURL[rawURL] = index + 1
+			}
+			continue
+		}
+		referer := harRequestHeader(requestData, "Referer")
+		page := lastPage
+		if byReferer, ok := pageByURL[referer]; ok && referer != "" {
+			page = byReferer
+		}
+		if page == 0 || rawURL == "" || len(resources[page]) >= httpprotocol.MaxPageResources {
+			continue
+		}
+		resource := map[string]any{"url": rawURL}
+		if referer != "" {
+			resource["referer"] = referer
+		}
+		resources[page] = append(resources[page], resource)
+	}
+	return resources
+}
+
+func harRequestHeader(requestData map[string]any, name string) string {
+	headers, _ := requestData["headers"].([]any)
+	for _, raw := range headers {
+		header, _ := raw.(map[string]any)
+		if strings.EqualFold(stringValue(header["name"]), name) {
+			return strings.TrimSpace(stringValue(header["value"]))
+		}
+	}
+	return ""
 }

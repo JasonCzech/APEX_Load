@@ -1383,7 +1383,8 @@ func TestHandleImportHARPairReturnsDiffAndGovernance(t *testing.T) {
 			} `json:"har_diff"`
 		} `json:"summary"`
 		ReviewSections []struct {
-			Key string `json:"key"`
+			Key   string   `json:"key"`
+			Items []string `json:"items"`
 		} `json:"review_sections"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
@@ -1404,6 +1405,19 @@ func TestHandleImportHARPairReturnsDiffAndGovernance(t *testing.T) {
 	keys := map[string]bool{}
 	for _, section := range result.ReviewSections {
 		keys[section.Key] = true
+		if section.Key != "har_governance" {
+			continue
+		}
+		// Operators read these items; the enum values belong to the summary.
+		governance := strings.Join(section.Items, "\n")
+		for _, raw := range []string{"raw_contains_secrets", "design_har_pair", "http_family_only"} {
+			if strings.Contains(governance, raw) {
+				t.Fatalf("governance items = %q, want sentences without %q", section.Items, raw)
+			}
+		}
+		if !strings.Contains(governance, "Retention period: 3 days.") {
+			t.Fatalf("governance items = %q, want the retention period", section.Items)
+		}
 	}
 	if !keys["har_governance"] || !keys["har_pair_diff"] {
 		t.Fatalf("review section keys = %#v, want governance and pair diff", keys)

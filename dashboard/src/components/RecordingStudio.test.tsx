@@ -74,6 +74,8 @@ const apiMock = {
   clearBrowserRecorderBridge: vi.fn(),
   getBrowserRecorderBridgeStatus: vi.fn(),
   exportBrowserRecording: vi.fn(),
+  getRecordingProfiles: vi.fn(),
+  saveRecordingProfiles: vi.fn(),
   browserRecorderBridge: null as any,
   browserRecorderRequestScope: "api:http://127.0.0.1:3000",
 };
@@ -129,6 +131,8 @@ describe("RecordingStudio", () => {
     hasDesktopApiCapabilityMock.mockReturnValue(false);
     apiMock.browserRecorderBridge = null;
     apiMock.browserRecorderRequestScope = "api:http://127.0.0.1:3000";
+    apiMock.getRecordingProfiles.mockReset();
+    apiMock.getRecordingProfiles.mockResolvedValue({ profiles: [], rules: [], updated_at: "2026-10-09T00:00:00Z" });
     clipboardWriteMock.mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -1020,11 +1024,11 @@ describe("RecordingStudio", () => {
     expect(container.textContent).toContain("{{var.session_id}}");
     expect(container.textContent).toContain("85% confidence");
     expect(container.textContent).toContain("reused in a later request");
-    expect(container.textContent).toContain("Save To Script Library");
-    expect(container.textContent).toContain("Open In Visual Editor");
+    expect(container.textContent).toContain("Save to Script Library");
+    expect(container.textContent).toContain("Open in Visual Editor");
 
     const editButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Open In Visual Editor",
+      (button) => button.textContent?.trim() === "Open in Visual Editor",
     );
     expect(editButton).toBeDefined();
     if (!editButton) {
@@ -1057,7 +1061,7 @@ describe("RecordingStudio", () => {
     );
 
     const saveButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Save To Script Library",
+      (button) => button.textContent?.trim() === "Save to Script Library",
     );
     expect(saveButton).toBeDefined();
     if (!saveButton) {
@@ -1073,7 +1077,7 @@ describe("RecordingStudio", () => {
     expect(apiMock.createScript).toHaveBeenCalledTimes(1);
     const pendingSave = Array.from(
       container.querySelectorAll<HTMLButtonElement>("button"),
-    ).find((button) => button.textContent?.trim() === "Saving...");
+    ).find((button) => button.textContent?.trim() === "Saving…");
     expect(pendingSave?.disabled).toBe(true);
     const parameterizeInputs = container.querySelector<HTMLInputElement>(
       ".rec-convert-option input[type='checkbox']",
@@ -1225,7 +1229,7 @@ describe("RecordingStudio", () => {
     await act(async () => reviewButton?.click());
     await flushPromises();
 
-    expect(container.textContent).toContain("Parameterization Review (1)");
+    expect(container.textContent).toContain("Parameterization review (1)");
     await act(async () => {
       container
         .querySelector<HTMLButtonElement>(".paramize-review button.btn-primary")
@@ -1235,7 +1239,7 @@ describe("RecordingStudio", () => {
     });
     const saveButton = Array.from(
       container.querySelectorAll<HTMLButtonElement>("button"),
-    ).find((button) => button.textContent?.trim() === "Save To Script Library");
+    ).find((button) => button.textContent?.trim() === "Save to Script Library");
     await act(async () => {
       saveButton?.click();
       await Promise.resolve();
@@ -1342,7 +1346,7 @@ describe("RecordingStudio", () => {
     );
     const editButton = Array.from(
       container.querySelectorAll<HTMLButtonElement>("button"),
-    ).find((button) => button.textContent?.trim() === "Open In Visual Editor");
+    ).find((button) => button.textContent?.trim() === "Open in Visual Editor");
     const bindingInput = container.querySelector<HTMLInputElement>(
       '.secret-binding-review input[type="text"]',
     )!;
@@ -1562,7 +1566,7 @@ describe("RecordingStudio", () => {
       container.querySelectorAll<HTMLButtonElement>("button"),
     ).find(
       (button) =>
-        button.textContent?.trim() === "Save And Open In Visual Editor",
+        button.textContent?.trim() === "Save and open in Visual Editor",
     );
     await act(async () => {
       saveButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -1665,7 +1669,7 @@ describe("RecordingStudio", () => {
     await flushPromises();
     const editButton = Array.from(
       container.querySelectorAll<HTMLButtonElement>("button"),
-    ).find((button) => button.textContent?.trim() === "Open In Visual Editor");
+    ).find((button) => button.textContent?.trim() === "Open in Visual Editor");
     await act(async () => {
       editButton?.click();
       await Promise.resolve();
@@ -1677,7 +1681,7 @@ describe("RecordingStudio", () => {
         ".paramize-review button.btn-primary",
       )?.disabled,
     ).toBe(true);
-    expect(container.textContent).toContain("Preparing editor...");
+    expect(container.textContent).toContain("Preparing editor…");
   });
 
   it("ignores a late recorder credential result after a newer conversion", async () => {
@@ -1811,7 +1815,7 @@ describe("RecordingStudio", () => {
 
     expect(container.textContent).toContain("Unsaved Preview");
     const editButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Open In Visual Editor",
+      (button) => button.textContent?.trim() === "Open in Visual Editor",
     );
     await act(async () => {
       editButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -1821,7 +1825,7 @@ describe("RecordingStudio", () => {
     );
 
     const saveButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Save To Script Library",
+      (button) => button.textContent?.trim() === "Save to Script Library",
     );
     await act(async () => {
       saveButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -2112,7 +2116,7 @@ describe("RecordingStudio", () => {
 
     expect(container.textContent).toContain("stored-recorder-script");
     const editButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Open In Visual Editor",
+      (button) => button.textContent?.trim() === "Open in Visual Editor",
     );
     expect(editButton).toBeDefined();
     await act(async () => {
@@ -2123,7 +2127,7 @@ describe("RecordingStudio", () => {
     );
 
     const saveButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Save To Script Library",
+      (button) => button.textContent?.trim() === "Save to Script Library",
     );
     expect(saveButton).toBeDefined();
     await act(async () => {
@@ -2218,7 +2222,7 @@ describe("RecordingStudio", () => {
     expect(container.textContent).toContain("Save with 1 secret to configure");
     const editButton = Array.from(
       container.querySelectorAll<HTMLButtonElement>("button"),
-    ).find((button) => button.textContent?.trim() === "Open In Visual Editor");
+    ).find((button) => button.textContent?.trim() === "Open in Visual Editor");
     const deferredSaveButton = Array.from(
       container.querySelectorAll<HTMLButtonElement>("button"),
     ).find(
@@ -2264,7 +2268,7 @@ describe("RecordingStudio", () => {
       container.querySelector<HTMLButtonElement>(
         ".rec-convert-result .rec-result-actions .btn-primary",
       )?.textContent,
-    ).toBe("Saving...");
+    ).toBe("Saving…");
     expect(
       container.querySelector<HTMLButtonElement>(
         ".rec-convert-result .rec-result-actions .btn-primary",
@@ -2512,6 +2516,51 @@ describe("RecordingStudio", () => {
         capture_cookies: true,
         exclude_static: true,
       }),
+    );
+  });
+
+  it("threads the selected recording profile into the proxy start request", async () => {
+    apiMock.getRecordingProfiles.mockResolvedValue({
+      profiles: [{ id: "checkout", name: "Checkout profile", http_script_level: "html", capture_cookies: true }],
+      rules: [],
+      updated_at: "2026-10-09T00:00:00Z",
+    });
+    apiMock.startRecording.mockResolvedValue({
+      session: {
+        id: "rec-profile",
+        name: "Recording Session",
+        status: "recording",
+        started_at: "2026-10-09T00:00:00Z",
+        requests: [],
+        filters: { exclude_static: true, recording_profile_id: "checkout" },
+      },
+      proxy_addr: ":8081",
+      ca_cert_path: "artifacts/recorder/ca-cert.pem",
+    });
+
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: "proj-1", name: "Web" } as any} />);
+    });
+    await flushPromises();
+    expect(apiMock.getRecordingProfiles).toHaveBeenCalledWith("proj-1");
+    const picker = container.querySelector('select[aria-label="Recording profile"]') as HTMLSelectElement;
+    expect(picker.textContent).toContain("Checkout profile");
+    await act(async () => {
+      picker.value = "checkout";
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await openProxyAdvanced(container);
+    const startButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Start Recording",
+    )!;
+    await act(async () => {
+      startButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushPromises();
+
+    // The cookie checkbox shows the profile's choice, and that is what is sent.
+    expect(apiMock.startRecording).toHaveBeenCalledWith(
+      expect.objectContaining({ project_id: "proj-1", recording_profile_id: "checkout", capture_cookies: true }),
     );
   });
 

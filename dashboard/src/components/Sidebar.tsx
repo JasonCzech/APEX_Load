@@ -9,6 +9,7 @@ import { Application, ApplicationRepository, DashboardAuthStatus, Domain, Projec
 import BuildBadge from './BuildBadge'
 import Logo from './Logo'
 import ProjectModal from './ProjectModal'
+import { OPEN_PROJECT_PICKER_EVENT } from '../workspacePickerEvents'
 import './Sidebar.css'
 
 export type NavPage = 'dashboard' | 'command-center' | 'repository' | 'tests' | 'new-test' | 'scripts' | 'results' | 'activity' | 'monitoring' | 'fleet' | 'schedules' | 'docs' | 'access' | 'settings'
@@ -175,6 +176,10 @@ const NAV_GROUPS: { label: string; itemIds: NavPage[] }[] = [
   { label: 'Support', itemIds: ['docs'] },
 ]
 
+// Anything a click on the collapsed rail should leave to its own handler
+// rather than treating as "empty space".
+const RAIL_CONTROL_SELECTOR =
+  'a, button, input, select, textarea, label, summary, [role="button"], [role="link"], [role="menuitem"], [role="option"], [role="dialog"], [tabindex]:not([tabindex="-1"])'
 
 export default function Sidebar({
   active,
@@ -343,11 +348,22 @@ export default function Sidebar({
       setCollapsed(true)
     }
 
+    const swallowClick = (event: MouseEvent) => {
+      if (event.target instanceof Node && asideRef.current?.contains(event.target)) return
+      event.preventDefault()
+      event.stopPropagation()
+    }
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target
       if (target instanceof Node && asideRef.current?.contains(target)) {
         return
       }
+      // The outside press only dismisses the overlay: the click that follows
+      // must not also activate whatever was underneath it.
+      // The listener outlives this effect (collapsing re-runs it), so its own
+      // timer removes it if no click follows (a drag or scroll).
+      document.addEventListener('click', swallowClick, { capture: true, once: true })
+      window.setTimeout(() => document.removeEventListener('click', swallowClick, true), 700)
       collapse()
     }
 
@@ -364,6 +380,24 @@ export default function Sidebar({
       document.removeEventListener('keydown', handleKeyDown)
     }
   }, [anyMenuOpen, anyModalOpen, closeWorkspaceMenus, collapsed])
+
+  // While collapsed, a click on any empty part of the rail (such as the space
+  // below the icons) opens the sidebar. This is a pointer convenience only:
+  // keyboard and screen-reader users have the Expand sidebar button.
+  useEffect(() => {
+    const aside = asideRef.current
+    if (!collapsed || !aside) {
+      return undefined
+    }
+    const expandFromEmptySpace = (event: MouseEvent) => {
+      if (event.button !== 0 || !(event.target instanceof Element) || event.target.closest(RAIL_CONTROL_SELECTOR)) {
+        return
+      }
+      setCollapsed(false)
+    }
+    aside.addEventListener('click', expandFromEmptySpace)
+    return () => aside.removeEventListener('click', expandFromEmptySpace)
+  }, [collapsed])
 
   const navigateTo = (page: NavPage) => {
     onNavigate(page)
@@ -399,6 +433,25 @@ export default function Sidebar({
     setReleaseOpen(false)
     setCollapsed(false)
   }
+
+  // Another surface (a link to a project this session cannot open) asks for
+  // the picker: expand the rail, open the project menu and focus its button.
+  useEffect(() => {
+    const openProjectPicker = () => {
+      setWorkspaceOpen(true)
+      setDomainOpen(false)
+      setProjectOpen(true)
+      setApplicationOpen(false)
+      setReleaseOpen(false)
+      setCollapsed(false)
+      window.setTimeout(() => projectSelectorRef.current?.querySelector<HTMLElement>('.project-selector')?.focus(), 0)
+    }
+    window.addEventListener(OPEN_PROJECT_PICKER_EVENT, openProjectPicker)
+    return () => window.removeEventListener(OPEN_PROJECT_PICKER_EVENT, openProjectPicker)
+  }, [])
+
+  // The 'user' preview emulates an editor, so it is named for that role.
+  const devViewModeLabel = devViewMode === 'user' ? 'Editor' : 'Admin'
 
   const toggleApplicationMenu = () => {
     setWorkspaceOpen(true)
@@ -769,7 +822,7 @@ export default function Sidebar({
               tooltipPlacement="right"
             >
               <span aria-hidden="true">{identityInitials}</span>
-              {sessionExpiryNotice && <span className="sidebar-rail-avatar-alert" aria-hidden="true" />}
+              {sessionExpiryNotice && <span className="sidebar-rail-avatar-alert" aria-hidden="true">!</span>}
             </TooltipButton>
           )}
           {!collapsed && authStatus?.authenticated && authStatus.user && identityName && (
@@ -800,8 +853,8 @@ export default function Sidebar({
               <TooltipButton
                 type="button"
                 className="dev-view-toggle"
-                aria-label={`Preview permissions. Current mode: ${devViewMode}`}
-                title={collapsed ? `Preview permissions (${devViewMode})` : undefined}
+                aria-label={`Preview permissions. Current mode: ${devViewModeLabel}`}
+                title={collapsed ? `Preview permissions (${devViewModeLabel})` : undefined}
                 tooltipPlacement="right"
                 aria-expanded={devViewOpen && !collapsed}
                 aria-controls="sidebar-dev-view-panel"
@@ -834,7 +887,7 @@ export default function Sidebar({
                   aria-pressed={devViewMode === 'user'}
                   onClick={() => setDevViewMode('user')}
                 >
-                  User
+                  Editor
                 </button>
               </div>
               <button
@@ -849,9 +902,10 @@ export default function Sidebar({
             </div>
           )}
           <div className="sidebar-footer-row">
-            <div className={`sidebar-status ${connectionClass}`} title={collapsed ? connectionLabel : undefined}>
-              <span className="status-dot" />
-              <span className="status-text">{connectionLabel}</span>
+            <div className={`sidebar-status ${connectionClass}`} title={collapsed ? `Live connection: ${connectionLabel}` : undefined} role="status" aria-live="polite">
+              <span className="status-dot" aria-hidden="true" />
+              {/* Visually hidden in the collapsed rail, but still announced. */}
+              <span className="status-text"><span className="sr-only">Live connection: </span>{connectionLabel}</span>
             </div>
             <BuildBadge placement="up" />
           </div>

@@ -211,6 +211,9 @@ func (s *Server) handleReplayRequestContext(requestCtx context.Context, w http.R
 		RedactionRules:  req.RedactionRules,
 		SecretResolver:  secretResolver,
 		IgnoreThinkTime: ignoreThinkTime,
+		// Classic replays offer no HAR: one the script's own capture policy
+		// recorded is retired rather than left in the HAR directory.
+		DiscardHAR: retireReplayHARArtifacts,
 		OnProgress: func(event engine.ReplayProgressEvent) {
 			if replayCtx.Err() != nil {
 				return
@@ -222,6 +225,9 @@ func (s *Server) handleReplayRequestContext(requestCtx context.Context, w http.R
 			s.broadcastReplayProgress(replaySessionID, id, normalizeProjectID(script.ProjectID), event)
 		},
 	}, req.trustedPreservedImport)
+	if report != nil {
+		retireReplayHARArtifacts(report.TakeHARArtifacts())
+	}
 	if requestErr := requestCtx.Err(); requestErr != nil {
 		status := http.StatusRequestTimeout
 		message := "classic replay request was canceled"
@@ -293,7 +299,7 @@ func (s *Server) prepareClassicReplayScript(
 		return nil, nil, nil, false
 	}
 	issues := append(
-		validateScriptForReplayWithImportTrust(preparedScript, trusted),
+		s.transientStaticIssues(script, preparedScript, trusted),
 		refIssues...,
 	)
 	warnings := append(validationWarnings(preparedScript), refWarnings...)

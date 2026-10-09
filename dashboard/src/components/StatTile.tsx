@@ -1,4 +1,5 @@
 import SeriesChartExport from "./SeriesChartExport"
+import { MISSING_VALUE } from "./runReport/reportPresentation"
 interface StatTileProps {
   title: string
   value?: number
@@ -11,11 +12,12 @@ interface StatTileProps {
 }
 
 function formatStatValue(value: number): string {
-  if (!Number.isFinite(value)) return '—'
+  if (!Number.isFinite(value)) return MISSING_VALUE
   const abs = Math.abs(value)
-  if (abs !== 0 && (abs >= 1_000_000 || abs < 0.001)) {
-    return value.toExponential(2)
-  }
+  // Compact notation ("1.2M") and a floor marker instead of exponents, which
+  // read as noise beside the plain numbers on every other panel.
+  if (abs >= 1_000_000) return value.toLocaleString(undefined, { notation: 'compact', maximumFractionDigits: 2 })
+  if (abs !== 0 && abs < 0.001) return value > 0 ? '<0.001' : '>-0.001'
   // Trim to at most 3 significant fractional digits without trailing zeros.
   const rounded = Math.round(value * 1000) / 1000
   return rounded.toLocaleString(undefined, { maximumFractionDigits: 3 })

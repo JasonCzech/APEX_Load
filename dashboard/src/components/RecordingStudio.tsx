@@ -78,6 +78,8 @@ import {
   recorderProxyPort,
 } from "./recordingProxyCommands";
 import "./RecordingStudio.css";
+import RecordingProfilesCard from "./RecordingProfilesCard";
+import type { RecordingProfile } from "../types/recordingProfiles";
 
 interface RecordedRequest {
   seq: number;
@@ -616,6 +618,20 @@ export default function RecordingStudio({
   const [includeHosts, setIncludeHosts] = useState("");
   const [excludeHosts, setExcludeHosts] = useState("");
   const [captureCookies, setCaptureCookies] = useState(false);
+  // The project recording profile recordings started here apply.
+  const [recordingProfileId, setRecordingProfileId] = useState("");
+  const [recordingProfileLevel, setRecordingProfileLevel] = useState<
+    "url" | "html" | undefined
+  >(undefined);
+  const selectRecordingProfile = useCallback(
+    (id: string, profile?: RecordingProfile) => {
+      setRecordingProfileId(id);
+      setRecordingProfileLevel(profile?.http_script_level || undefined);
+      // Show the profile's cookie capture; the session records what is shown.
+      setCaptureCookies(profile?.capture_cookies === true);
+    },
+    [],
+  );
   const [feedback, setFeedback] = useState("");
   const [feedbackType, setFeedbackType] = useState<"success" | "error">(
     "success",
@@ -865,7 +881,7 @@ export default function RecordingStudio({
 
     let cancelled = false;
     setRecordingAgentChecksum(null);
-    setRecordingAgentChecksumStatus("Checking SHA-256...");
+    setRecordingAgentChecksumStatus("Checking SHA-256…");
     apiFetch(
       `/downloads/recording-agent/latest/checksum?platform=${encodeURIComponent(recordingAgentPlatform)}`,
     )
@@ -1519,8 +1535,9 @@ export default function RecordingStudio({
         );
       }
     } catch (e: any) {
+      // Older controllers return the browser engine's call log; keep only the cause.
       if (refreshScopeRef.current === sourceRecorderScope)
-        showFeedback(e.message, "error");
+        showFeedback(String(e?.message || "Recording could not start").split(/\n\s*Call log:/)[0].trim(), "error");
     } finally {
       if (browserStartScopeRef.current === sourceRecorderScope) {
         browserStartScopeRef.current = null;
@@ -1545,6 +1562,7 @@ export default function RecordingStudio({
       typeof window !== "undefined" &&
       !(await confirmAction(
         "Delete this stopped browser recording? This cannot be undone.",
+        { title: "Delete recording", confirmLabel: "Delete", destructive: true },
       ))
     ) {
       return;
@@ -1573,6 +1591,7 @@ export default function RecordingStudio({
         exclude_static: true,
         capture_cookies: captureCookies,
       };
+      if (recordingProfileId) data.recording_profile_id = recordingProfileId;
       if (includeHosts.trim()) {
         data.include_hosts = includeHosts
           .split(",")
@@ -2316,6 +2335,7 @@ export default function RecordingStudio({
       typeof window !== "undefined" &&
       !(await confirmAction(
         "Delete this stopped recording session? This cannot be undone.",
+        { title: "Delete recording session", confirmLabel: "Delete", destructive: true },
       ))
     ) {
       return;
@@ -2367,10 +2387,10 @@ export default function RecordingStudio({
         .map((requirement) => requirement.suggested_name),
     ).size;
   const convertedSaveLabel = convertedSaveInProgress
-    ? "Saving..."
+    ? "Saving…"
     : convertedDeferredSecretCount > 0
       ? `Save with ${convertedDeferredSecretCount} ${convertedDeferredSecretCount === 1 ? "secret" : "secrets"} to configure`
-      : "Save To Script Library";
+      : "Save to Script Library";
   const converting = convertTask.pending;
   const salesforceResult = salesforceTask.value;
   const salesforceScript =
@@ -2399,10 +2419,10 @@ export default function RecordingStudio({
         .map((requirement) => requirement.suggested_name),
     ).size;
   const salesforceSaveLabel = salesforceSaveInProgress
-    ? "Saving..."
+    ? "Saving…"
     : salesforceDeferredSecretCount > 0
       ? `Save with ${salesforceDeferredSecretCount} ${salesforceDeferredSecretCount === 1 ? "secret" : "secrets"} to configure`
-      : "Save To Script Library";
+      : "Save to Script Library";
   const reviewingSalesforce = salesforceTask.pending;
   const browserUnavailableReason = browserAvailability?.reason?.trim() || "";
   const browserUnavailableCode = browserAvailability?.code?.trim() || "";
@@ -2459,6 +2479,11 @@ export default function RecordingStudio({
         <button className="btn btn-secondary" aria-pressed={recordingMode === 'browser'} onClick={() => setRecordingMode('browser')}>Browser actions</button>
         <button className="btn btn-secondary" aria-pressed={recordingMode === 'proxy'} onClick={() => setRecordingMode('proxy')}>HTTP proxy (advanced)</button>
       </div>
+      <RecordingProfilesCard
+        projectId={activeProject?.id}
+        selectedId={recordingProfileId}
+        onSelect={selectRecordingProfile}
+      />
       <div className="rec-recorder-options-grid" style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}>
         <div className="rec-controls-card rec-browser-launcher" hidden={recordingMode !== 'browser'}>
           <div className="rec-option-heading">
@@ -2502,7 +2527,7 @@ export default function RecordingStudio({
                   disabled={installState.status === "installing"}
                 >
                   {installState.status === "installing"
-                    ? "Installing..."
+                    ? "Installing…"
                     : "Install Recording Browser"}
                 </button>
               )}
@@ -2533,7 +2558,7 @@ export default function RecordingStudio({
                           >
                             <option value="">
                               {recordingAgentPlatformDetecting
-                                ? "Detecting platform..."
+                                ? "Detecting platform…"
                                 : "Choose platform"}
                             </option>
                             {CLIENT_DOWNLOAD_PLATFORMS.map((platform) => (
@@ -2680,7 +2705,7 @@ export default function RecordingStudio({
                         onClick={handleVerifyBridgeAgent}
                         disabled={bridgeVerifying}
                       >
-                        {bridgeVerifying ? "Verifying..." : "Verify Agent"}
+                        {bridgeVerifying ? "Verifying…" : "Verify Agent"}
                       </button>
                     </div>
                   </div>
@@ -2695,7 +2720,7 @@ export default function RecordingStudio({
                         onClick={handlePairBridge}
                         disabled={bridgePairing}
                       >
-                        {bridgePairing ? "Pairing..." : "Pair Local Bridge"}
+                        {bridgePairing ? "Pairing…" : "Pair Local Bridge"}
                       </button>
                     </div>
                   </div>
@@ -2900,6 +2925,8 @@ export default function RecordingStudio({
             <BrowserRecorderControlPanel
               destinationControl={recordingMode === 'browser' ? destinationControl : undefined}
               sessionId={browserPanelSessionId}
+              recordingProfileId={recordingProfileId || undefined}
+              recordingProfileHTTPScriptLevel={recordingProfileLevel}
               folderId={folderId}
               onImported={onImported}
               onEdit={onEdit}
@@ -3577,7 +3604,7 @@ export default function RecordingStudio({
                     }}
                     disabled={converting}
                   >
-                    {converting ? "Converting..." : "Convert to Script"}
+                    {converting ? "Converting…" : "Convert to Script"}
                   </button>
                   <button
                     type="button"
@@ -3601,7 +3628,7 @@ export default function RecordingStudio({
                       disabled={reviewingSalesforce}
                     >
                       {reviewingSalesforce
-                        ? "Reviewing..."
+                        ? "Reviewing…"
                         : "Review Salesforce HTTP"}
                     </button>
                   )}
@@ -3944,10 +3971,10 @@ export default function RecordingStudio({
                 }
               >
                 {convertedCredentialActionInProgress
-                  ? "Preparing editor..."
+                  ? "Preparing editor…"
                   : convertedRequiresCredentialPreservingSave
-                    ? "Save And Open In Visual Editor"
-                    : "Open In Visual Editor"}
+                    ? "Save and open in Visual Editor"
+                    : "Open in Visual Editor"}
               </button>
             )}
           </div>
@@ -4117,10 +4144,10 @@ export default function RecordingStudio({
                 }
               >
                 {salesforceCredentialActionInProgress
-                  ? "Preparing editor..."
+                  ? "Preparing editor…"
                   : salesforceRequiresCredentialPreservingSave
-                    ? "Save And Open In Visual Editor"
-                    : "Open In Visual Editor"}
+                    ? "Save and open in Visual Editor"
+                    : "Open in Visual Editor"}
               </button>
             )}
           </div>

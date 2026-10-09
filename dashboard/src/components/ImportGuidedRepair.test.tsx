@@ -234,6 +234,10 @@ it('retains pending repair values while navigating and never treats a reviewed l
   await act(async () => button('Mark reviewed with limitation').click())
   expect(container.textContent).toContain('Replay requirements are unchanged')
   expect(container.querySelector('.lr-issue-detail')?.textContent).toContain('Reviewed with limitation · this session')
+  // A reviewed note leaves the unresolved queue until its decision is reopened.
+  expect(container.querySelectorAll('.lr-issue-row')).toHaveLength(1)
+  await act(async () => button('Reopen review decision').click())
+  expect(container.querySelectorAll('.lr-issue-row')).toHaveLength(2)
   await act(async () => button('Missing value: token').click())
   expect(container.querySelector<HTMLTextAreaElement>('[aria-label="Repair value"]')!.value).toBe('retained-value')
   await act(async () => root.render(<ImportGuidedRepair script={script} projectId="p" onApplied={vi.fn()} focusPath="actions[0]" focusRequest={2} />))
@@ -253,4 +257,35 @@ it('retains pending repair values while navigating and never treats a reviewed l
   expect(button('Back to issue list')).toBeUndefined()
   expect(mock.request).toHaveBeenCalledTimes(1) // inspection only; the review note is not a repair
  } finally { await act(async () => root.unmount()); container.remove(); vi.clearAllMocks() }
+})
+
+it('moves notes marked reviewed out of the unresolved counts and reports them upward', async () => {
+  const script = { name: 'Notes', version: '1.0', protocol: 'http', config: { base_url: 'https://example.test' }, actions: [], metadata: { import: { preserved: {} } } } as unknown as ScriptDefinition
+  const notes = [{ code: 'diagnostic:warnings', action_path: '', detail: 'Converted check differs.' }, { code: 'import_review_required', action_path: 'actions[1]', detail: 'Review the redirect.' }]
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container); const onReviewedChange = vi.fn()
+  const button = (text: string) => Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes(text))!
+  const filterText = () => Array.from(container.querySelectorAll('option')).map(option => option.textContent).join('|')
+  try {
+    await act(async () => root.render(<ImportGuidedRepair script={script} projectId="p" onApplied={vi.fn()} additionalFindings={notes} onReviewedChange={onReviewedChange} />))
+    expect(filterText()).toContain('All unresolved (2)')
+    await act(async () => button('Review conversion warnings').click())
+    await act(async () => button('Mark reviewed with limitation').click())
+    expect(filterText()).toContain('All unresolved (1)')
+    expect(filterText()).toContain('Review notes (1)')
+    expect(filterText()).toContain('Reviewed with limitation (1)')
+    expect(container.textContent).toContain('0 resolved and 1 reviewed in this session')
+    expect(Array.from(container.querySelectorAll('.lr-issue-row')).map(row => row.textContent)).not.toContainEqual(expect.stringContaining('Review conversion warnings'))
+    expect(onReviewedChange).toHaveBeenLastCalledWith(['diagnostic:warnings:'])
+    // An empty Blockers view is empty because there are none, not because of the review mark.
+    const show = Array.from(container.querySelectorAll('select')).find(select => select.querySelector('option[value="blockers"]'))!
+    await act(async () => { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(show, 'blockers'); show.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(container.textContent).toContain('No issues in this view.')
+    expect(container.textContent).not.toContain('marked reviewed. Show')
+    await act(async () => { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(show, 'reviewed'); show.dispatchEvent(new Event('change', { bubbles: true })) })
+    await act(async () => button('Review conversion warnings').click())
+    await act(async () => button('Reopen review decision').click())
+    expect(filterText()).toContain('All unresolved (2)')
+    expect(onReviewedChange).toHaveBeenLastCalledWith([])
+  } finally { await act(async () => root.unmount()); container.remove(); vi.clearAllMocks() }
 })

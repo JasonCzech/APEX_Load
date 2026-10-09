@@ -360,7 +360,8 @@ func desktopAuthMaterialMiddleware(
 func writeDesktopOAuthCallbackLanding(w http.ResponseWriter, title string) {
 	scriptNonce, err := generateDesktopSecret()
 	if err != nil {
-		http.Error(w, "desktop authentication callback failed", http.StatusInternalServerError)
+		ref := logServerError(w, http.StatusInternalServerError, err)
+		http.Error(w, "desktop authentication callback failed (ref "+ref+")", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")

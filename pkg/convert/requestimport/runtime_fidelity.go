@@ -1571,7 +1571,7 @@ func inheritedDefaultHeaderIssues(config dsl.HTTPConfig, ref dslwalk.SurfaceRef,
 }
 
 func runtimeSurfaceIsHTTPRequest(ref dslwalk.SurfaceRef) bool {
-	if ref.Kind == dslwalk.HTTPSequenceRequestSurface {
+	if ref.IsNestedRequest() {
 		return true
 	}
 	if ref.Action == nil {

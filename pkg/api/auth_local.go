@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -116,6 +117,16 @@ func resolveLocalSession(r *http.Request, store storage.Store, expectedGeneratio
 	}
 	if session.SessionEpoch < user.SessionEpoch {
 		return localSessionResolution{Session: session, Token: token, TokenHash: tokenHash, Status: "revoked"}
+	}
+	// Record activity like the OIDC and trusted-header paths do, so Access
+	// review does not flag every local user as "never signed in".
+	now := time.Now().UTC()
+	user.LastSeenAt = &now
+	if shouldUpdateUserIdentitySeen(user.ID, user.DisplayName, user.Email, user.DisplayName, user.Email, now) {
+		// Activity is not a modification: keep updated_at as it is.
+		if err := store.UpdateUserIdentitySeen(user.ID, user.DisplayName, user.Email, now, user.UpdatedAt); err != nil {
+			slog.Warn("failed to persist local user last-seen update", "user_id", user.ID, "error", err)
+		}
 	}
 	resolved := authenticatedUserFromStoredUser(user)
 	resolved.SessionScoped = true

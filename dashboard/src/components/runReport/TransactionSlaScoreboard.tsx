@@ -3,8 +3,10 @@ import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
 
 import type { RunArchiveSLARow, TransactionEvent } from '../../types'
 import { formatMs, formatNumber, formatPct } from './runReportModel'
+import { MISSING_VALUE } from './reportPresentation'
+import { formatDateTime } from '../../utils/dateTime'
 
-type SortKey = 'name' | 'volume' | 'p95' | 'error' | 'result'
+type SortKey = 'name' | 'volume' | 'p50' | 'p90' | 'p95' | 'p99' | 'error' | 'result'
 type SortDir = 'asc' | 'desc'
 
 interface Props {
@@ -21,13 +23,17 @@ function resultLabel(kind: string) {
   if (kind === 'fail') return 'Fail'
   if (kind === 'warn') return 'Warn'
   if (kind === 'pass') return 'Pass'
-  return 'n/a'
+  // No SLA, no result: the same mark the SLA column shows.
+  return MISSING_VALUE
 }
 
 function sortValue(row: RunArchiveSLARow, key: SortKey) {
   switch (key) {
     case 'volume': return row.volume
+    case 'p50': return row.p50_ms ?? -1
+    case 'p90': return row.p90_ms ?? -1
     case 'p95': return row.p95_ms
+    case 'p99': return row.p99_ms ?? -1
     case 'error': return row.error_pct
     case 'result': return row.result_kind
     case 'name':
@@ -44,17 +50,20 @@ function compareRows(a: RunArchiveSLARow, b: RunArchiveSLARow, key: SortKey, dir
   return factor * String(left).localeCompare(String(right))
 }
 
-function HeaderButton({ label, sortKey, activeKey, direction, onSort }: {
+function SortableTh({ label, sortKey, activeKey, direction, onSort }: {
   label: string
   sortKey: SortKey
   activeKey: SortKey
   direction: SortDir
   onSort: (key: SortKey) => void
 }) {
+  const active = activeKey === sortKey
   return (
-    <button className="run-report-table-sort" type="button" onClick={() => onSort(sortKey)}>
-      {label}{activeKey === sortKey ? (direction === 'asc' ? ' ↑' : ' ↓') : ''}
-    </button>
+    <th aria-sort={active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <button className="run-report-table-sort" type="button" onClick={() => onSort(sortKey)}>
+        {label}<span aria-hidden="true">{active ? (direction === 'asc' ? ' ↑' : ' ↓') : ''}</span>
+      </button>
+    </th>
   )
 }
 
@@ -63,8 +72,13 @@ function ScoreboardRow({ row, selected, onSelect }: { row: RunArchiveSLARow; sel
     <tr className={selected ? 'selected' : ''} onClick={() => onSelect?.(row.name)}>
       <td>{row.name}</td>
       <td>{formatNumber(row.volume, 0)}</td>
+      <td>{formatMs(row.min_ms)}</td>
+      <td>{formatMs(row.p50_ms)}</td>
+      <td>{formatMs(row.p90_ms)}</td>
       <td>{formatMs(row.p95_ms)}</td>
-      <td>{row.has_sla ? formatMs(row.sla_ms) : '—'}</td>
+      <td>{formatMs(row.p99_ms)}</td>
+      <td>{formatMs(row.max_ms)}</td>
+      <td>{row.has_sla ? formatMs(row.sla_ms) : MISSING_VALUE}</td>
       <td>{formatPct(row.error_pct)}</td>
       <td><span className={`run-report-sla-pill run-report-sla-${row.result_kind}`}>{resultLabel(row.result_kind)}</span></td>
     </tr>
@@ -128,7 +142,7 @@ export default function TransactionSlaScoreboard({
         <div className="run-report-table-controls">
           <input aria-label="Filter transactions" value={filter} onChange={event => setFilter(event.currentTarget.value)} placeholder="Filter transaction" />
           <select aria-label="Filter by SLA result" value={resultFilter} onChange={event => setResultFilter(event.currentTarget.value as (typeof RESULT_FILTERS)[number])}>
-            {RESULT_FILTERS.map(value => <option key={value} value={value}>{value === 'all' ? 'All results' : resultLabel(value)}</option>)}
+            {RESULT_FILTERS.map(value => <option key={value} value={value}>{value === 'all' ? 'All results' : value === 'na' ? 'No SLA' : resultLabel(value)}</option>)}
           </select>
         </div>
       </div>
@@ -136,20 +150,25 @@ export default function TransactionSlaScoreboard({
         <table className="run-report-table">
           <thead>
             <tr>
-              <th><HeaderButton label="Transaction" sortKey="name" activeKey={sortKey} direction={sortDir} onSort={sort} /></th>
-              <th><HeaderButton label="Volume" sortKey="volume" activeKey={sortKey} direction={sortDir} onSort={sort} /></th>
-              <th><HeaderButton label="P95" sortKey="p95" activeKey={sortKey} direction={sortDir} onSort={sort} /></th>
+              <SortableTh label="Transaction" sortKey="name" activeKey={sortKey} direction={sortDir} onSort={sort} />
+              <SortableTh label="Volume" sortKey="volume" activeKey={sortKey} direction={sortDir} onSort={sort} />
+              <th>Min</th>
+              <SortableTh label="P50" sortKey="p50" activeKey={sortKey} direction={sortDir} onSort={sort} />
+              <SortableTh label="P90" sortKey="p90" activeKey={sortKey} direction={sortDir} onSort={sort} />
+              <SortableTh label="P95" sortKey="p95" activeKey={sortKey} direction={sortDir} onSort={sort} />
+              <SortableTh label="P99" sortKey="p99" activeKey={sortKey} direction={sortDir} onSort={sort} />
+              <th>Max</th>
               <th>SLA</th>
-              <th><HeaderButton label="Errors" sortKey="error" activeKey={sortKey} direction={sortDir} onSort={sort} /></th>
-              <th><HeaderButton label="Result" sortKey="result" activeKey={sortKey} direction={sortDir} onSort={sort} /></th>
+              <SortableTh label="Errors" sortKey="error" activeKey={sortKey} direction={sortDir} onSort={sort} />
+              <SortableTh label="Result" sortKey="result" activeKey={sortKey} direction={sortDir} onSort={sort} />
             </tr>
           </thead>
           <tbody>
-            {virtualizeRows && virtualPaddingTop > 0 && <tr aria-hidden="true"><td aria-hidden="true" colSpan={6} style={{ height: virtualPaddingTop }} /></tr>}
+            {virtualizeRows && virtualPaddingTop > 0 && <tr aria-hidden="true"><td aria-hidden="true" colSpan={11} style={{ height: virtualPaddingTop }} /></tr>}
             {rowsToRender.map(({ row }) => (
               <ScoreboardRow key={row.name} row={row} selected={selectedAction === row.name} onSelect={onSelectAction} />
             ))}
-            {virtualizeRows && virtualPaddingBottom > 0 && <tr aria-hidden="true"><td aria-hidden="true" colSpan={6} style={{ height: virtualPaddingBottom }} /></tr>}
+            {virtualizeRows && virtualPaddingBottom > 0 && <tr aria-hidden="true"><td aria-hidden="true" colSpan={11} style={{ height: virtualPaddingBottom }} /></tr>}
           </tbody>
         </table>
       </div>
@@ -176,12 +195,12 @@ export default function TransactionSlaScoreboard({
       <div className="run-report-drilldown">
         <h3>{selectedAction || 'Select a transaction'}</h3>
         {loadingTransactions ? (
-          <p role="status">Loading drill-down...</p>
+          <p role="status">Loading drill-down…</p>
         ) : selectedAction && drilldownTransactions.length > 0 ? (
           <ul>
             {drilldownTransactions.slice(0, 5).map((event, index) => (
               <li key={`${event.timestamp}-${event.duration_ms}-${index}`}>
-                <span>{new Date(event.timestamp).toLocaleTimeString()}</span>
+                <span>{formatDateTime(event.timestamp, { seconds: true })}</span>
                 <strong>{formatMs(event.duration_ms)}</strong>
                 <em>{event.success ? 'ok' : event.error_message || 'error'}</em>
               </li>

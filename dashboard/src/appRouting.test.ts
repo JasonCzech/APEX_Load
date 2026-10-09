@@ -24,6 +24,22 @@ describe('appRouting', () => {
     }
     expect(navPageForAppView({ page: 'report', testId: 'run-1' })).toBe('results')
     expect(navPageForAppView({ page: 'tests' })).toBe('tests')
+    expect(navPageForAppView({ page: 'fleet' })).toBe('monitoring')
+    expect(navPageForAppView({ page: 'schedules' })).toBe('monitoring')
+  })
+
+  it('opens Fleet and Schedules from a monitoring category link', () => {
+    expect(parseAppViewFromHash('#/monitoring?category=fleet')).toEqual({ page: 'fleet' })
+    expect(parseAppViewFromHash('#/monitoring?category=schedules&projectId=p-1')).toEqual({ page: 'schedules', projectId: 'p-1' })
+  })
+
+  it('keeps the Command Center analysis view in the address', () => {
+    expect(parseAppViewFromHash('#/command-center/run-1?view=wall')).toEqual({ page: 'command-center', testId: 'run-1', ccView: 'wall' })
+    expect(parseAppViewFromHash('#/command-center?view=analysis')).toEqual({ page: 'command-center', ccView: 'analysis' })
+    // Unknown views fall back to operations.
+    expect(parseAppViewFromHash('#/command-center/run-1?view=bogus')).toEqual({ page: 'command-center', testId: 'run-1' })
+    expect(viewToLocationHash({ page: 'command-center', testId: 'run-1', ccView: 'wall' })).toBe('#/command-center/run-1?view=wall')
+    expect(viewToLocationHash({ page: 'command-center', testId: 'run-1' })).toBe('#/command-center/run-1')
   })
 
   it('defaults empty and invalid hashes to the dashboard', () => {
@@ -51,7 +67,8 @@ describe('appRouting', () => {
     expect(parseAppViewFromHash('#/docs?guide=not-real')).toEqual({ page: 'docs' })
     expect(parseAppViewFromHash('#/repository')).toEqual({ page: 'repository' })
     expect(parseAppViewFromHash('#/swagger')).toEqual({ page: 'swagger' })
-    expect(parseAppViewFromHash('#/repository-guide')).toEqual({ page: 'repository-guide' })
+    // Old repository-guide bookmarks open the API workflows article at its docs address.
+    expect(parseAppViewFromHash('#/repository-guide')).toEqual({ page: 'docs', guideArticle: 'api-workflows' })
   })
 
   it.each([
@@ -151,7 +168,7 @@ describe('appRouting', () => {
     expect(viewToLocationHash({ page: 'test', testId: 'run/123', tab: 'archive' })).toBe('#/test/run%2F123?tab=archive')
     expect(viewToLocationHash({ page: 'command-center', testId: 'run/123' })).toBe('#/command-center/run%2F123')
     expect(viewToLocationHash({ page: 'report', testId: 'run/123', lens: 'executive', compare: 'base/123' })).toBe('#/report/run%2F123?lens=executive&compare=base%2F123')
-    expect(parseAppViewFromHash(viewToLocationHash({ page: 'repository-guide' }))).toEqual({ page: 'repository-guide' })
+    expect(viewToLocationHash(parseAppViewFromHash('#/repository-guide'))).toBe('#/docs?article=api-workflows')
     expect(viewToLocationHash({ page: 'recorder-panel', sessionId: 'brec/1' })).toBe('#/recorder-panel?session=brec%2F1')
     expect(parseAppViewFromHash('#/recorder-panel?session=brec-1')).toEqual({ page: 'recorder-panel', sessionId: 'brec-1' })
     expect(parseAppViewFromHash(viewToLocationHash({ page: 'recorder-panel', sessionId: 'brec/1' }))).toEqual({
@@ -399,12 +416,20 @@ it('round trips report evidence sections and rejects unknown section names', () 
   expect(parseAppViewFromHash('#/report/run-1?section=unknown')).not.toHaveProperty('section')
 })
 
+it('round trips an archive-tab focus on the report and drops unknown focus targets', () => {
+  const view = parseAppViewFromHash('#/report/run-1?section=performance&focus=load-impact')
+  expect(view).toMatchObject({ page: 'report', section: 'performance', focus: 'load-impact' })
+  expect(parseAppViewFromHash(viewToLocationHash(view))).toEqual(view)
+  expect(parseAppViewFromHash('#/report/run-1?focus=elsewhere')).not.toHaveProperty('focus')
+})
+
 describe('terminal run route compatibility', () => {
   it.each(['COMPLETE', 'FAILED', 'ABORTED'])('keeps %s runs inside Results regardless of legacy entry point', status => {
     const scope = { projectId: 'p', applicationId: 'a', releaseId: 'r' }
     expect(terminalRunReportView({ page: 'command-center', testId: 'run', ...scope }, status, true)).toEqual({ page: 'report', testId: 'run', ...scope, section: 'execution' })
     for (const [tab, section] of [['overview', 'execution'], ['control', 'execution'], ['graphs', 'performance'], ['diagnostics', 'diagnostics'], ['archive', 'evidence'], ['action-summary', 'performance'], ['load-impact', 'performance'], ['transaction-drilldown', 'diagnostics']] as const) {
-      expect(terminalRunReportView({ page: 'test', testId: 'run', tab, ...scope }, status, true)).toEqual({ page: 'report', testId: 'run', ...scope, section })
+      const focus = ['action-summary', 'load-impact', 'transaction-drilldown'].includes(tab) ? { focus: tab } : {}
+      expect(terminalRunReportView({ page: 'test', testId: 'run', tab, ...scope }, status, true)).toEqual({ page: 'report', testId: 'run', ...scope, section, ...focus })
     }
   })
   it('preserves live controls, the command-center landing page, and the explicit feature flag', () => {
@@ -434,4 +459,18 @@ it('round trips Help articles, section links, and API searches through workspace
 it('round-trips an immutable baseline comparison without losing the run scope', () => {
   const view = { page: 'report' as const, testId: 'run/123', section: 'comparison' as const, comparisonId: 'comparison-1', projectId: 'project-1' }
   expect(parseAppViewFromHash(viewToLocationHash(view))).toEqual(view)
+})
+
+describe('activity route query', () => {
+  it('keeps activity filters and page through parse and serialize', () => {
+    const view = parseAppViewFromHash('#/activity?action=stop&q=checkout&page=2&projectId=p1&junk=1')
+    expect(view).toEqual({ page: 'activity', activityQuery: 'q=checkout&action=stop&page=2', projectId: 'p1' })
+    expect(viewToLocationHash(view)).toBe('#/activity?q=checkout&action=stop&page=2&projectId=p1')
+    expect(viewToLocationHash({ page: 'activity' })).toBe('#/activity')
+  })
+
+  it('starts activity on the newest events of a newly selected project', () => {
+    const view: AppView = { page: 'activity', activityQuery: 'action=stop&page=3', projectId: 'p1' }
+    expect(scopeAppViewToWorkspace(resetProjectScopedAssetView(view, 'p2'), { projectId: 'p2' })).toEqual({ page: 'activity', projectId: 'p2' })
+  })
 })

@@ -82,6 +82,9 @@ type Server struct {
 	// elasticHTTPClient replaces the allowlisted Elasticsearch query client in tests.
 	elasticHTTPClient *http.Client
 
+	// clientRenderReports rate-limits client render evidence per tab (C5).
+	clientRenderReports clientRenderLimiter
+
 	httpServer *http.Server
 	hub        *Hub
 	runner     *TestRunner
@@ -768,6 +771,10 @@ func NewServer(cfg ServerConfig) *Server {
 		slog.Warn("failed to recover abandoned direct import during construction", "error", err)
 	}
 	runner.setImportPublicationSnapshot(s.store, s.pendingDirectImportAssets)
+	// Browser findings are evaluated (E1) and a failed or inconclusive
+	// telemetry acceptance verdict is announced (C7) when a run's finalized
+	// archive is attached.
+	runner.archiveAttachedHook = s.runArchiveAttached
 
 	s.loadLibraryState()
 	s.routes(cfg.AllowedOrigins)
@@ -784,6 +791,7 @@ func NewServer(cfg ServerConfig) *Server {
 		WriteTimeout:   60 * time.Second,
 		IdleTimeout:    120 * time.Second,
 		MaxHeaderBytes: 1 << 20, // 1 MiB
+		ErrorLog:       httpServerErrorLog(),
 	}
 
 	s.startNativeAnalysisReconciliation()
@@ -1089,6 +1097,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.registerAPIRouteCatalog(archiveRetentionAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(powerBIAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(confluenceAPIRouteCatalog, standardRouteMiddleware)
+	s.registerAPIRouteCatalog(recordingProfileAPIRouteCatalog, standardRouteMiddleware)
 
 	// Reusable scenario definitions.
 	s.mux.Handle("POST /api/v1/scenarios", cors(log(auth(http.HandlerFunc(s.handleCreateScenario)))))
@@ -1290,6 +1299,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/ai/repairs", cors(log(auth(http.HandlerFunc(s.handleAIRepairSuggestions)))))
 	s.mux.Handle("POST /api/v1/ai/explain", cors(log(auth(http.HandlerFunc(s.handleAIExplain)))))
 	s.mux.Handle("GET /api/v1/browser-replay/sessions/{session_id}", cors(log(browserReplaySessionViewAuth(http.HandlerFunc(s.handleGetBrowserReplaySession)))))
+	s.mux.Handle("GET /api/v1/browser-replay/sessions/{session_id}/har", cors(log(browserReplaySessionEditAuth(http.HandlerFunc(s.handleDownloadBrowserReplayHAR)))))
+	s.mux.Handle("GET /api/v1/browser-replay/sessions/{session_id}/evidence", cors(log(browserReplaySessionEditAuth(http.HandlerFunc(s.handleDownloadBrowserReplayEvidence)))))
 	s.mux.Handle("POST /api/v1/browser-replay/sessions/{session_id}/pause", cors(log(browserReplaySessionEditAuth(http.HandlerFunc(s.handlePauseBrowserReplaySession)))))
 	s.mux.Handle("POST /api/v1/browser-replay/sessions/{session_id}/resume", cors(log(browserReplaySessionEditAuth(http.HandlerFunc(s.handleResumeBrowserReplaySession)))))
 	s.mux.Handle("POST /api/v1/browser-replay/sessions/{session_id}/stop", cors(log(browserReplaySessionEditAuth(http.HandlerFunc(s.handleStopBrowserReplaySession)))))
@@ -1855,6 +1866,7 @@ func (s *Server) startMetricsListener() error {
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  120 * time.Second,
+		ErrorLog:     httpServerErrorLog(),
 	}
 	listener, err := net.Listen("tcp", s.metricsAddr)
 	if err != nil {
@@ -2027,7 +2039,8 @@ func (s *Server) handleDesktopBrowserBootstrap(w http.ResponseWriter, r *http.Re
 	// desktop capability header/WebSocket query parameter.
 	scriptNonce, err := generateDesktopSecret()
 	if err != nil {
-		http.Error(w, "desktop browser bootstrap failed", http.StatusInternalServerError)
+		ref := logServerError(w, http.StatusInternalServerError, err)
+		http.Error(w, "desktop browser bootstrap failed (ref "+ref+")", http.StatusInternalServerError)
 		return
 	}
 	s.desktopBootstrapMu.Lock()

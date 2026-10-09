@@ -51,7 +51,7 @@ var testStoreWriteCallSitesOffLock = map[string]string{
 // through by not being on a list of known write names.
 var storeReadMethodPrefixes = []string{
 	"Get", "List", "Latest", "Count", "Load", "Find", "Has", "Exists",
-	"Lookup", "Read", "Fetch", "Query", "Select", "Stream", "Resolve",
+	"Lookup", "Read", "Fetch", "Query", "Select", "Stream", "Resolve", "ForEach",
 }
 
 type testStoreWriteCallSite struct {

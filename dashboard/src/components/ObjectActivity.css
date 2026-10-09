@@ -8,3 +8,6 @@
 .object-activity-filters label { display: grid; gap: .25rem; }
 .object-archive-controls { display: inline-flex; flex-wrap: wrap; gap: .25rem; align-items: center; }
 .object-archive-content { max-height: 30rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Dense tables: the History disclosure sits inline with the row's metadata. */
+.object-history.compact { display: inline-block; margin: 0; vertical-align: middle; }

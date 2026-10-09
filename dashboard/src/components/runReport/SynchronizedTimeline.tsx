@@ -33,8 +33,28 @@ import {
   type TimelineGraph,
 } from './timelineGraphModel'
 
+/** An operator note placed on the run timeline. */
+export interface TimelineAnnotation { id: string; label: string; timestamp: string }
+
+// The axis is categorical (sample labels), so a note sits on its nearest sample.
+function annotationMarkers(annotations: TimelineAnnotation[] | undefined, data: MetricsHistoryPoint[]) {
+  const sampled = data.filter(point => point.timestampMs !== undefined)
+  if (!annotations?.length || !sampled.length) return []
+  return annotations.flatMap(annotation => {
+    const at = Date.parse(annotation.timestamp)
+    if (!Number.isFinite(at)) return []
+    const first = sampled[0].timestampMs!
+    const last = sampled[sampled.length - 1].timestampMs!
+    // Notes outside the visible window are not pinned to its edge.
+    if (at < first - 5_000 || at > last + 5_000) return []
+    const nearest = sampled.reduce((best, point) => Math.abs(point.timestampMs! - at) < Math.abs(best.timestampMs! - at) ? point : best)
+    return [{ id: annotation.id, label: annotation.label, x: nearest.time }]
+  })
+}
+
 interface Props {
   data: MetricsHistoryPoint[]
+  annotations?: TimelineAnnotation[]
   goalConfig?: GoalConfig
   loading?: boolean
   error?: string
@@ -56,8 +76,10 @@ function LaneChart({
   onRemove,
   runId,
   baselineId,
+  annotations,
 }: {
   lane: TimelineGraph
+  annotations?: TimelineAnnotation[]
   data: MetricsHistoryPoint[]
   metricKeys: Set<string>
   goalConfig?: GoalConfig
@@ -159,6 +181,15 @@ function LaneChart({
                       strokeOpacity={0}
                     />
                   ))}
+                {annotationMarkers(annotations, data).map((marker) => (
+                  <ReferenceLine
+                    key={`annotation-${marker.id}`}
+                    x={marker.x}
+                    stroke="var(--accent-text)"
+                    strokeDasharray="2 3"
+                    label={{ value: marker.label, position: 'insideTopLeft', fill: 'var(--text-secondary)', fontSize: 10 }}
+                  />
+                ))}
                 {typeof sla === 'number' && (
                   <ReferenceLine
                     y={sla}
@@ -214,7 +245,7 @@ function LaneChart({
   )
 }
 
-export default function SynchronizedTimeline({ data, goalConfig, loading, error, showBaseline, runId, baselineId }: Props) {
+export default function SynchronizedTimeline({ data, annotations, goalConfig, loading, error, showBaseline, runId, baselineId }: Props) {
   const controlsId = useId()
   const [zoomState, dispatchZoom] = useReducer(timelineZoomReducer, initialTimelineZoomState)
   const [visibleLanes, setVisibleLanes] = useState(() => new Set(DEFAULT_TIMELINE_GRAPHS))
@@ -263,7 +294,7 @@ export default function SynchronizedTimeline({ data, goalConfig, loading, error,
   if (loading)
     return (
       <section className="run-report-panel run-report-timeline">
-        <p role="status">Loading timeline...</p>
+        <p role="status">Loading timeline…</p>
       </section>
     )
   if (error)
@@ -542,6 +573,7 @@ export default function SynchronizedTimeline({ data, goalConfig, loading, error,
             onRemove={() => toggleGraph(lane.id)}
             runId={runId}
             baselineId={baselineId}
+            annotations={annotations}
           />
         ))}
         {visibleLanes.size === 0 && (

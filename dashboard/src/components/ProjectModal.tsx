@@ -87,7 +87,7 @@ export default function ProjectModal({ returnFocusSelector, title = 'New Project
   }
 
   return (
-    <DialogLayer><div className="project-modal-backdrop" {...dialogBackdropProps(requestClose, `Close ${title}`)}>
+    <DialogLayer><div className="project-modal-backdrop" {...dialogBackdropProps(requestClose)}>
       <form ref={dialogRef} className="project-modal" role="dialog" aria-modal="true" aria-label={title} onSubmit={submit}>
         <div className="project-modal-header">
           <h3>{title}</h3>
@@ -105,7 +105,7 @@ export default function ProjectModal({ returnFocusSelector, title = 'New Project
         <div className="project-modal-actions">
           <button type="button" className="btn btn-secondary" onClick={requestClose} disabled={dismissLocked}>Cancel</button>
           <button type="submit" className="btn btn-primary" disabled={!name.trim() || saving}>
-            {saving ? 'Saving...' : title.startsWith('New ') ? `Create ${title.slice(4).toLowerCase()}` : 'Save changes'}
+            {saving ? 'Saving…' : title.startsWith('New ') ? `Create ${title.slice(4).toLowerCase()}` : 'Save changes'}
           </button>
         </div>
       </form>

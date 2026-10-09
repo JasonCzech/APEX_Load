@@ -124,6 +124,18 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			)
 		}
 	}
+	if actionFiles, ok := javaScriptWebActionFiles(files, projectConfig, projectSections); ok {
+		result, reason, err := convertJavaScriptWebZip(files, projectFileName, actionFiles, opts)
+		if err != nil {
+			return nil, err
+		}
+		if result != nil {
+			return result, nil
+		}
+		review := newJavaScriptWebReviewResult(files, projectConfig, actionFiles)
+		review.Warnings = append(review.Warnings, "The JavaScript could not be translated: "+reason+".")
+		return review, nil
+	}
 	javaArchive := isJavaProtocolsProject(projectConfig) ||
 		isJavaVuserArchive(files, projectConfig)
 	if sourceZipHasDevWebMain(files) && !javaArchive {
@@ -475,6 +487,8 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	case detected.APEXLoadProtocol == "http" || detected.APEXLoadProtocol == "soap":
 		opts.UseMaskedBodySecretReferences = true
 		opts.deferArchiveFinalization = true
+		opts.archiveFiles = files
+		opts.runLogicActionNames = runLogicActionNames(projectConfig)
 		result, convertErr = Convert(parsedActions, opts)
 		if result != nil {
 			result.DetectedProtocol = &detected
@@ -650,7 +664,14 @@ func finalizeEnterpriseArchiveImportResult(
 	appendCSourceParseFailureGates(result, ctx.ParsedActions)
 	appendSplicedCommentWarnings(result, ctx.ParsedActions)
 	applySourceParamBraces(result, ctx.ProjectConfig)
+	for _, script := range result.effectiveScripts() {
+		// Uploaded files become file data sources the tester can swap.
+		requestimport.HoistMultipartFiles(script)
+	}
 	result.Warnings = append(result.Warnings, ctx.InlineWarnings...)
+	if note := recordingSnapshotNote(ctx.Files, ctx.ParsedActions); note != "" {
+		result.Warnings = append(result.Warnings, note)
+	}
 	if len(ctx.UnscheduledActions) > 0 {
 		subject, object := "they were", "them"
 		if len(ctx.UnscheduledActions) == 1 {
@@ -2042,7 +2063,7 @@ func sourceZipHasDevWebMain(files map[string]string) bool {
 
 func isJavaVuserArchive(files map[string]string, projectConfig *ProjectConfig) bool {
 	if projectConfig != nil {
-		if strings.Contains(strings.ToLower(projectConfig.ScriptLanguage), "java") || strings.Contains(strings.ToLower(projectConfig.RunType), "java") {
+		if scriptLanguageIsJava(projectConfig.ScriptLanguage) || scriptLanguageIsJava(projectConfig.RunType) {
 			return true
 		}
 		for _, actionFile := range projectConfig.ActionFiles {

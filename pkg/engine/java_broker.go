@@ -68,7 +68,7 @@ func validateJavaBrokerScript(input *dsl.Script, duration time.Duration, o JavaB
 	// shapes continue through the ordinary dedicated runner until admitted here.
 	data, _ := json.Marshal(input)
 	var script dsl.Script
-	if json.Unmarshal(data, &script) != nil || script.Protocol != "java_vuser" || isOpenWorkload(&script) || len(script.Config.RunLogic.ActionSequence) != 0 || script.Config.RunLogic.BlockScheduling != "" && script.Config.RunLogic.BlockScheduling != "sequential" {
+	if json.Unmarshal(data, &script) != nil || script.Protocol != "java_vuser" || isOpenWorkload(&script) || len(script.Config.RunLogic.ActionSequence) != 0 || len(script.Config.RunLogic.Blocks) != 0 || script.Config.RunLogic.BlockScheduling != "" && script.Config.RunLogic.BlockScheduling != "sequential" {
 		return nil, errors.New("java_broker_workload_unsupported")
 	}
 	for i, phase := range [][]dsl.Action{script.Init, script.Actions, script.Teardown} {

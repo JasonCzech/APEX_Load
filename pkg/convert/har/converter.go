@@ -12,6 +12,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
@@ -33,10 +34,24 @@ type ConvertOptions struct {
 	InferExtractors     *bool  `json:"infer_extractors,omitempty"`
 	SanitizeSensitive   *bool  `json:"sanitize_sensitive,omitempty"`
 	IncludeStaticAssets *bool  `json:"include_static_assets,omitempty"`
-	DefaultThinkTimeMs  int    `json:"default_think_time_ms,omitempty"`
+	// PageTitleChecks adds a check on each HTML page's recorded <title>
+	// (default on); ResourceMode is runtime (default), in_step or separate.
+	PageTitleChecks    *bool  `json:"page_title_checks,omitempty"`
+	ResourceMode       string `json:"resource_mode,omitempty"`
+	DefaultThinkTimeMs int    `json:"default_think_time_ms,omitempty"`
+	// HTMLSteps (set by the browser recorder) turns the requests of the given
+	// 1-based HAR entries into HTML-mode steps.
+	HTMLSteps map[int]map[string]any `json:"-"`
 	// SalvageTruncated imports the complete entries of a HAR file that was cut
 	// off partway through (see SalvageTruncated); the import warns what is lost.
 	SalvageTruncated *bool `json:"salvage_truncated,omitempty"`
+	// AsyncScan (default on) collapses requests a page repeated in the
+	// background into background conversations; off keeps them inline.
+	AsyncScan *bool `json:"async_scan,omitempty"`
+	// Profile is the project recording profile; it applies its filters,
+	// header drop list, think-time threshold and correlation settings and
+	// supplies the options above that are left unset.
+	Profile *recordingprofile.Profile `json:"-"`
 }
 
 type ArtifactGovernance struct {
@@ -79,6 +94,17 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	if len(data) == 0 || strings.TrimSpace(string(data)) == "" {
 		return nil, fmt.Errorf("HAR content is required")
 	}
+	if profile := opts.Profile; profile != nil {
+		if opts.PageTitleChecks == nil {
+			opts.PageTitleChecks = profile.PageTitleChecks
+		}
+		if opts.ResourceMode == "" {
+			opts.ResourceMode = profile.ResourceMode
+		}
+		if opts.AsyncScan == nil {
+			opts.AsyncScan = profile.AsyncScan
+		}
+	}
 	artifactMode := normalizeArtifactMode(opts.ArtifactMode)
 	retentionDays := normalizeRetentionDays(opts.RetentionDays)
 	redactionEnabled := false
@@ -96,6 +122,11 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			InferExtractors:     opts.InferExtractors,
 			SanitizeSensitive:   boolPointer(false),
 			IncludeStaticAssets: opts.IncludeStaticAssets,
+			PageTitleChecks:     opts.PageTitleChecks,
+			ResourceMode:        opts.ResourceMode,
+			HTMLSteps:           opts.HTMLSteps,
+			AsyncScan:           opts.AsyncScan,
+			Profile:             opts.Profile,
 		},
 	})
 	if err != nil {

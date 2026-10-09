@@ -13,6 +13,8 @@ import {
 } from '../types'
 import ConfirmDestructiveModal from './ConfirmDestructiveModal'
 import { CronBuilder } from './ScheduleCronBuilder'
+import LoadingState from './ux/LoadingState'
+import { formatDateTime } from '../utils/dateTime'
 import {
   COMMON_TIMEZONES,
   datetimeLocalToISO,
@@ -72,10 +74,9 @@ function isoToLocalInput(iso?: string): string {
   return Number.isNaN(parsed.getTime()) ? '' : formatDatetimeLocalValue(parsed)
 }
 
+// Shared formatter: dates read the same, zone included, as the rest of the app.
 function formatTimestamp(iso?: string): string {
-  if (!iso) return '—'
-  const parsed = new Date(iso)
-  return Number.isNaN(parsed.getTime()) ? iso : parsed.toLocaleString()
+  return formatDateTime(iso, { seconds: true, fallback: '—' })
 }
 
 function occurrenceStatusPill(status: string): string {
@@ -499,10 +500,11 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
                     value={draft.missed_run_policy}
                     onChange={e => setDraft(d => (d ? { ...d, missed_run_policy: e.target.value } : d))}
                   >
-                    <option value="skip">skip</option>
-                    <option value="catch_up_once">catch_up_once</option>
-                    <option value="catch_up_all">catch_up_all</option>
-					<option value="require_operator_decision">require_operator_decision</option>
+                    {/* Same wording as Settings › Schedule defaults. */}
+                    <option value="skip">Skip missed runs</option>
+                    <option value="catch_up_once">Catch up once</option>
+                    <option value="catch_up_all">Catch up all</option>
+                    <option value="require_operator_decision">Require operator decision</option>
                   </select>
                 </label>
               </div>
@@ -548,7 +550,7 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
 
           {/* Schedule list */}
           {loading ? (
-            <div className="pp-empty">Loading schedules…</div>
+            <LoadingState what="schedules" className="pp-loading" />
           ) : schedules.length === 0 ? (
             <div className="pp-empty">No schedules yet. Add one to run this plan on a recurring cadence.</div>
           ) : (
@@ -600,7 +602,7 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin 
                   {occurrencesFor === schedule.id && (
                     <div className="pp-occurrences">
                       {occLoading ? (
-                        <div className="pp-empty">Loading runs…</div>
+                        <LoadingState what="runs" className="pp-loading" />
                       ) : occurrences.length === 0 ? (
                         <div className="pp-empty">No runs materialized yet.</div>
                       ) : (

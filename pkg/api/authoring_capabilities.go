@@ -272,7 +272,7 @@ func authoringImportSurfaces() []AuthoringImportSurface {
 		},
 		{
 			ID:          "enterprise_archive",
-			Title:       "Import Loadrunner Script Archive",
+			Title:       "LoadRunner Script Archive",
 			Description: "Import VuGen ZIP or USZ projects, including a package of several projects, and review each script, its settings, and migration requirements.",
 			Badge:       "ESA",
 			Category:    "Legacy & Tool Exports",
@@ -282,7 +282,7 @@ func authoringImportSurfaces() []AuthoringImportSurface {
 		},
 		{
 			ID:          "jmeter",
-			Title:       "Import JMeter",
+			Title:       "JMeter Test Plan",
 			Description: "Convert a JMeter .jmx plan into HTTP scripts with warnings, unsupported elements, and scenario draft context.",
 			Badge:       "JMX",
 			Category:    "Legacy & Tool Exports",
@@ -323,7 +323,7 @@ func authoringImportSurfaces() []AuthoringImportSurface {
 		{
 			ID:          "eventhubs_capture",
 			Title:       "Event Hubs Capture",
-			Description: "Seed native Event Hubs producer actions from Azure Event Hubs Capture Avro files.",
+			Description: "Seed native Event Hubs producer actions from Azure Event Hubs Capture files or any Avro data file.",
 			Badge:       "EH",
 			Category:    "Messaging & Cloud Artifacts",
 			Order:       300,
@@ -368,7 +368,7 @@ func authoringCapabilityResponse(projectIDs ...string) AuthoringCapabilityRespon
 	sources := []AuthoringSourceCapability{
 		{
 			Source:      "enterprise_script_archive",
-			DisplayName: "Loadrunner Script Archive",
+			DisplayName: "LoadRunner Script Archive",
 			Status:      "active",
 			Acquisition: []string{"zip_upload", "validate_only"},
 			Features: AuthoringFeatures{

@@ -21,6 +21,8 @@ import (
 
 	"github.com/andybalholm/brotli"
 	gorillawebsocket "github.com/gorilla/websocket"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 type recorderErrorReader struct {
@@ -1294,17 +1296,34 @@ func TestRecordRequestPreservesMultipartUploadBodyAsReplayableBase64(t *testing.
 		t.Fatalf("recorded multipart body did not round-trip")
 	}
 
+	// The upload converts to body_multipart: the text field stays
+	// editable, and the file becomes a file data source.
 	converted := ConvertSession(session, "")
 	action := converted.Script.Actions[0]
-	if action.BodyEncoding != "base64" {
-		t.Fatalf("converted body encoding = %q, want base64", action.BodyEncoding)
+	structured := action.BodyMultipart
+	if structured == nil || action.Body != "" || len(structured.Parts) != 2 {
+		t.Fatalf("converted action = %+v, want a two-part body_multipart", action)
 	}
-	decodedAction, err := base64.StdEncoding.DecodeString(action.Body)
-	if err != nil {
-		t.Fatalf("decode converted body: %v", err)
+	if structured.Parts[0].Name != "description" || structured.Parts[0].Value != "quarterly report" {
+		t.Fatalf("text part = %+v", structured.Parts[0])
 	}
-	if !bytes.Equal(decodedAction, reqBody) {
-		t.Fatalf("converted multipart body did not round-trip")
+	file := structured.Parts[1]
+	if file.Name != "file" || file.Filename != "report.bin" || file.Value != "{{file.upload_file}}" {
+		t.Fatalf("file part = %+v", file)
+	}
+	if got := action.Headers["Content-Type"]; got != "multipart/form-data" {
+		t.Fatalf("Content-Type = %q, want the boundary left to replay", got)
+	}
+	if issues := dsl.ValidateScriptIssues(converted.Script); len(issues) != 0 {
+		t.Fatalf("converted upload does not validate: %v", issues)
+	}
+	if len(converted.Script.DataSources) != 1 {
+		t.Fatalf("data sources = %+v", converted.Script.DataSources)
+	}
+	source := converted.Script.DataSources[0]
+	content, err := base64.StdEncoding.DecodeString(source.InlineData)
+	if err != nil || source.Name != "upload_file" || source.Type != "file" || source.FileName != "report.bin" || source.Encoding != "base64" || !bytes.Equal(content, fileBytes) {
+		t.Fatalf("file data source = %+v", source)
 	}
 }
 

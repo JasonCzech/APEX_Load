@@ -85,6 +85,38 @@ func TestNativeEvidenceReadAuthorizationAndHTTP(t *testing.T) {
 	}
 }
 
+// A stale dataset pin on the overlay is the changed-dataset conflict: the
+// route answers 409, never the generic 422, and a current pin does not.
+func TestNativeEvidenceStaleOverlayPinConflicts(t *testing.T) {
+	server, project := newGrafanaDashboardAPIServer(t)
+	record, _ := nativeSeriesFixture(t)
+	server.runner.tests["run"] = &ManagedTest{ID: "run", ProjectID: project, Status: "COMPLETE"}
+	server.runner.archives["run"] = record
+	if err := server.store.SaveTest(&storage.TestRecord{ID: "run", ProjectID: project, Name: "run", Status: "COMPLETE", StartTime: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	imports := server.store.(storage.AnalysisImportStore)
+	dataset, err := imports.SaveAnalysisImport(storage.AnalysisImport{ID: "00000000-0000-0000-0000-000000000023", ProjectID: project, Name: "external", State: "uploading", Files: []storage.AnalysisImportFile{{ID: "f", RelativePath: "source.parquet", Size: 16, Uploaded: 16}}}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dataset = publishAnalysisAPIFixture(t, imports, dataset, nil)
+	dataset.RunID = "run"
+	if dataset, err = imports.SaveAnalysisImport(*dataset, dataset.Revision); err != nil {
+		t.Fatal(err)
+	}
+	q := nativeEvidenceQuery("archive")
+	q.OverlaySelection = &storage.NativeOverlaySelection{DatasetID: dataset.ID, Metric: "value", Aggregation: "avg", DatasetArtifactSHA256: strings.Repeat("0", 64)}
+	response := dashboardAPIRequest(t, server, "POST", "/api/v1/tests/run/native-series", q)
+	if response.Code != 409 || !strings.Contains(response.Body.String(), "dataset changed") {
+		t.Fatalf("stale overlay pin: %d %s", response.Code, response.Body.String())
+	}
+	q.OverlaySelection.DatasetArtifactSHA256 = analysisDatasetArtifactSHA256(dataset)
+	if response = dashboardAPIRequest(t, server, "POST", "/api/v1/tests/run/native-series", q); response.Code == 409 {
+		t.Fatalf("current overlay pin conflicts: %s", response.Body.String())
+	}
+}
+
 func TestNativeEvidenceDatasetAssociationCheckedBeforeRead(t *testing.T) {
 	server, project := newGrafanaDashboardAPIServer(t)
 	imports := server.store.(storage.AnalysisImportStore)

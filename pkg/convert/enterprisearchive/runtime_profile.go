@@ -388,6 +388,24 @@ func applyRuntimeUSP(rc *RuntimeConfig, fileName, content string) {
 	}
 
 	applyRuntimeUSPActionSequence(rc, fileName, uspSections, valueOf("RunLogicActionOrder"))
+	if blocks, notes := runLogicBlocksFromUSP(uspSections); len(blocks) > 0 {
+		// config.run_logic.blocks expresses the run order exactly, so the
+		// action_sequence review it replaces is dropped.
+		rc.RunLogicBlocks = blocks
+		kept := rc.RuntimeIssues[:0]
+		for _, issue := range rc.RuntimeIssues {
+			if issue.ID != "run_logic_action_sequence" || !strings.Contains(issue.Notes, "multi-action run order") {
+				kept = append(kept, issue)
+			}
+		}
+		rc.RuntimeIssues = kept
+		for _, note := range notes {
+			rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
+				ID: "run_logic_blocks", Area: "Run Logic", Status: RuntimeSettingStatusCompatibilityOnly,
+				Notes: fmt.Sprintf("%s: %s.", boundedRuntimeReviewEvidence(fileName), note),
+			})
+		}
+	}
 
 	mode := strings.TrimSpace(valueOf("RunLogicPaceType"))
 	rc.PacingType = "none"

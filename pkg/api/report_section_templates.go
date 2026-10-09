@@ -111,6 +111,7 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
     .kpi .v { font-size: 26px; font-weight: 700; color: var(--navy); line-height: 1.05; }
     .kpi .v small { font-size: 13px; font-weight: 600; color: var(--slate); }
     .kpi .d { font-size: 11px; color: var(--slate); margin-top: 4px; }
+    .kpi-basis { font-size: 11px; color: var(--slate); margin: 0 0 8px; }
     table { width: 100%; table-layout: auto; border-collapse: collapse; border: 1px solid var(--line); margin: 6px 0 14px; font-size: 13px; }
     caption { caption-side: top; text-align: left; font-size: 11px; color: var(--slate); padding: 0 0 6px; font-style: italic; }
     th, td { overflow-wrap: anywhere; min-width: 0; padding: 9px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
@@ -204,7 +205,7 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
 <div class="meta-strip">
   <div class="meta-cell"><b>Environment</b><span>{{reportEnvironment .Data.Report}}</span></div>
   <div class="meta-cell"><b>Ended</b><span>{{formatTime .Data.Report.Manifest.CompletedAt}}</span></div>
-  <div class="meta-cell"><b>Peak load</b><span>{{.Data.Report.Overview.PeakActiveVUsers}} VUsers · {{formatFloat .Data.Report.Overview.PeakTPS}} TPS</span></div>
+  <div class="meta-cell"><b>Peak load</b><span>{{.Data.Report.Overview.PeakActiveVUsers}} VUsers · {{formatFloat (headline .Data.Report).PeakTPS}} attempts/s</span></div>
   <div class="meta-cell"><b>Profile</b><span>{{.Data.Profile.Label}}</span></div>
 </div>
 
@@ -215,11 +216,10 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
   <div class="review-summary-grid">
     <div><b>Run</b><span>{{reportRunName .Data.Report}}</span></div>
     <div><b>Environment</b><span>{{reportEnvironment .Data.Report}}</span></div>
-    <div><b>Evidence completeness</b><span>{{f0 .Data.Report.Completeness.ScorePct}}% · {{.Data.Report.Completeness.Status}}</span></div>
+    <div><b>Evidence completeness</b><span>{{f0 .Data.Report.Completeness.ScorePct}}% · {{tokenLabel .Data.Report.Completeness.Status}}</span></div>
     {{if eq .Data.Profile.ID "audit"}}<div><b>Artifact integrity</b><span>{{if .Data.Report.Integrity}}{{.Data.Report.Integrity.Status}}{{else}}Not verified{{end}}</span></div>{{end}}
     {{if ne .Data.Profile.ID "audit"}}
-    <div><b>Captured records</b><span>{{hint .Data.Report.Overview.Transactions}}</span></div>
-    <div><b>Archive error rate</b><span>{{formatPercent .Data.Report.Overview.ErrorPct}}</span></div>
+    {{with headline .Data.Report}}<div><b>Error rate</b><span>{{formatPercent .ErrorPct}} · {{hint .Errors}} of {{hint .Transactions}} ({{.Label}})</span></div>{{end}}
     <div><b>Peak load</b><span>{{.Data.Report.Overview.PeakActiveVUsers}} VUsers</span></div>
     {{end}}
   </div>
@@ -265,6 +265,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
   <div class="verdict-badge {{if .Verdict.Failed}}fail{{else if .Verdict.Conditional}}conditional{{end}}">{{.Verdict.Status}}</div>
   <div class="verdict-body {{if .Verdict.Failed}}fail{{else if .Verdict.Conditional}}conditional{{end}}">{{.Verdict.Explanation}}</div>
 </div>
+{{if .AnalystAssessmentInVerdict}}<p class="analyst-assessment">Analyst assessment: {{.Annotations.VerdictOverride}}{{with .Annotations.VerdictExplanation}} — {{.}}{{end}}. Assessment author: {{with .Annotations.VerdictAuthor}}{{.}}{{else}}Not provided{{end}}.</p>{{end}}
 {{end}}
 
 {{define "official_outcome"}}
@@ -274,12 +275,13 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 
 {{define "executive_overview"}}
 <h2>Executive Summary</h2>
+{{with headline .Report}}<p class="kpi-basis">Headline metrics: {{.Label}}</p>
 <div class="kpis">
-  <div class="kpi"><b>Peak successful transaction TPS</b><div class="v">{{formatFloat .Report.Overview.PeakTPS}}</div></div>
-  <div class="kpi"><b>Archive record p95</b><div class="v">{{f0 .Report.Overview.P95Ms}} <small>ms</small></div></div>
-  <div class="kpi {{if gt .Report.Overview.ErrorPct 0.0}}warn{{end}}"><b>Archive record error rate</b><div class="v">{{formatPercent .Report.Overview.ErrorPct}}</div></div>
-  <div class="kpi"><b>Peak VUsers</b><div class="v">{{.Report.Overview.PeakActiveVUsers}}</div></div>
-</div>
+  <div class="kpi"><b>Peak TPS (attempts/s)</b><div class="v">{{formatFloat .PeakTPS}}</div></div>
+  <div class="kpi"><b>P95 latency</b><div class="v">{{fms .P95Ms}}</div></div>
+  <div class="kpi {{if gt .ErrorPct 0.0}}warn{{end}}"><b>Error rate</b><div class="v">{{formatPercent .ErrorPct}}</div></div>
+  <div class="kpi"><b>Peak VUsers</b><div class="v">{{$.Report.Overview.PeakActiveVUsers}}</div></div>
+</div>{{end}}
 <div class="analyst">
   {{if .Annotations.ExecutiveNarrative}}<p>{{.Annotations.ExecutiveNarrative}}</p>{{end}}
   {{with index .Annotations.SectionComments "decision"}}<p>{{.}}</p>{{end}}
@@ -294,21 +296,22 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
   {{with index .Annotations.SectionComments "overview"}}<p>{{.}}</p>{{end}}
 </div>
 <h3>Run at a glance</h3>
+{{with headline .Report}}<p class="kpi-basis">Headline metrics: {{.Label}}</p>
 <div class="kpis">
-  <div class="kpi"><b>Peak throughput</b><div class="v">{{formatFloat .Report.Overview.PeakTPS}} <small>TPS</small></div><div class="d">{{if gt .Report.Overview.PeakTargetTPS 0.0}}target {{formatFloat .Report.Overview.PeakTargetTPS}}{{else}}observed peak{{end}}</div></div>
-  <div class="kpi"><b>Archive record p95</b><div class="v">{{f0 .Report.Overview.P95Ms}} <small>ms</small></div><div class="d">avg {{f0 .Report.Overview.AvgResponseMs}} ms</div></div>
-  <div class="kpi {{if gt .Report.Overview.ErrorPct 0.0}}warn{{end}}"><b>Archive record error rate</b><div class="v">{{formatPercent .Report.Overview.ErrorPct}}</div><div class="d">{{hint .Report.Overview.Errors}} of {{hint .Report.Overview.Transactions}}</div></div>
-  <div class="kpi"><b>Archive records</b><div class="v">{{hint .Report.Overview.Transactions}}</div><div class="d">peak {{.Report.Overview.PeakActiveVUsers}} VUsers</div></div>
+  <div class="kpi"><b>Peak TPS (attempts/s)</b><div class="v">{{formatFloat .PeakTPS}}</div><div class="d">{{if gt $.Report.Overview.PeakTargetTPS 0.0}}target {{formatFloat $.Report.Overview.PeakTargetTPS}} TPS{{else}}observed peak{{end}}</div></div>
+  <div class="kpi"><b>P95 latency</b><div class="v">{{fms .P95Ms}}</div><div class="d">avg {{fms .AvgResponseMs}}</div></div>
+  <div class="kpi {{if gt .ErrorPct 0.0}}warn{{end}}"><b>Error rate</b><div class="v">{{formatPercent .ErrorPct}}</div><div class="d">{{hint .Errors}} of {{hint .Transactions}}</div></div>
+  <div class="kpi"><b>Archive records</b><div class="v">{{hint $.Report.Overview.Transactions}}</div><div class="d">peak {{$.Report.Overview.PeakActiveVUsers}} VUsers</div></div>
 </div>
 <table>
-<caption>Table — Run summary</caption>
+<caption>Table — Run summary ({{.Label}})</caption>
 <thead><tr><th>Metric</th><th class="num">Value</th><th>Metric</th><th class="num">Value</th></tr></thead>
 <tbody>
-<tr><td>p50 / p90 / p99 (overall)</td><td class="num">{{f0 .Report.Overview.P50Ms}} / {{f0 .Report.Overview.P90Ms}} / {{f0 .Report.Overview.P99Ms}} ms</td><td>Peak concurrent VUsers</td><td class="num">{{.Report.Overview.PeakActiveVUsers}}</td></tr>
-<tr><td>Peak successful transaction TPS observed</td><td class="num">{{formatFloat .Report.Overview.PeakTPS}}</td><td>Load generators</td><td class="num">{{if gt .GeneratorCount 0}}{{.GeneratorCount}}{{else}}n/a{{end}}</td></tr>
-<tr><td>Response range</td><td class="num">{{f0 .Report.Overview.MinResponseMs}}–{{f0 .Report.Overview.MaxResponseMs}} ms</td><td>Data completeness</td><td class="num">{{formatFloat .Report.Completeness.ScorePct}}%</td></tr>
-<tr><td>Interval summaries</td><td class="num">{{.Report.Overview.IntervalSummaries}}</td><td>Resource samples</td><td class="num">{{.Report.Overview.ResourceSamples}}</td></tr>
-</tbody></table>
+<tr><td>p50 / p90 / p99</td><td class="num">{{f0 .P50Ms}} / {{f0 .P90Ms}} / {{f0 .P99Ms}} ms</td><td>Peak concurrent VUsers</td><td class="num">{{$.Report.Overview.PeakActiveVUsers}}</td></tr>
+<tr><td>Peak TPS (attempts/s)</td><td class="num">{{formatFloat .PeakTPS}}</td><td>Load generators</td><td class="num">{{if gt $.GeneratorCount 0}}{{$.GeneratorCount}}{{else}}n/a{{end}}</td></tr>
+<tr><td>Response range</td><td class="num">{{f0 .MinResponseMs}}–{{f0 .MaxResponseMs}} ms</td><td>Data completeness</td><td class="num">{{formatFloat $.Report.Completeness.ScorePct}}%</td></tr>
+<tr><td>Interval summaries</td><td class="num">{{$.Report.Overview.IntervalSummaries}}</td><td>Resource samples</td><td class="num">{{$.Report.Overview.ResourceSamples}}</td></tr>
+</tbody></table>{{end}}
 {{end}}
 
 {{define "sla_rollup"}}
@@ -443,7 +446,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "signoff"}}
-{{if .Annotations.VerdictOverride}}<p>Analyst assessment: {{.Annotations.VerdictOverride}} — {{.Annotations.VerdictExplanation}}</p><p>Assessment author: {{if .Annotations.UpdatedBy}}{{.Annotations.UpdatedBy}}{{else}}Not provided{{end}}</p>{{else}}<p>Analyst assessment: Not provided</p>{{end}}
+{{if .Annotations.VerdictOverride}}<p>Analyst assessment: {{.Annotations.VerdictOverride}} — {{.Annotations.VerdictExplanation}}</p><p>Assessment author: {{with .Annotations.VerdictAuthor}}{{.}}{{else}}Not provided{{end}}</p>{{else}}<p>Analyst assessment: Not provided</p>{{end}}
 <h2>Recommendation &amp; Sign-Off</h2>
 <div class="signoff">
   <div class="sign-cell"><b>Prepared by</b><div class="sign-line"></div><div class="sign-meta">{{if .Annotations.PreparedBy}}{{.Annotations.PreparedBy}}{{else}}Not provided{{end}}</div></div>
@@ -524,6 +527,32 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 </table>
 {{else}}<p class="section-copy">No controller failover occurred during this run.</p>{{end}}
 {{else}}<p class="section-copy">No controller failover occurred during this run.</p>{{end}}
+{{end}}
+
+{{define "telemetry_acceptance"}}
+<h2>Telemetry Acceptance</h2>
+{{with .TelemetryAcceptanceView}}
+<p class="section-copy">{{.Summary}}</p>
+{{if .Pins}}<table><thead><tr><th>Policy</th><th>Name</th><th class="num">Revision</th><th>SHA-256</th></tr></thead><tbody>
+{{range .Pins}}<tr><td>{{.Kind}}</td><td>{{.Name}}</td><td class="num">{{.Revision}}</td><td>{{.SHA256}}</td></tr>{{end}}
+</tbody></table>{{end}}
+{{if .Criteria}}<table><thead><tr><th>Criterion</th><th>Result</th><th>Observed</th><th>Bound</th><th>Threshold</th><th>Basis</th><th>Reason</th></tr></thead><tbody>
+{{range .Criteria}}<tr><td>{{.Criterion}}</td><td>{{.Outcome}}</td><td>{{.Observed}}</td><td>{{.Bound}}</td><td>{{.Threshold}}</td><td>{{.Basis}}</td><td>{{.Reason}}</td></tr>{{end}}
+</tbody></table>{{end}}
+{{if .Loss}}<table><thead><tr><th>Loss counter</th><th>Total</th><th>State</th><th>Reason</th></tr></thead><tbody>
+{{range .Loss}}<tr><td>{{.Counter}}</td><td>{{.Value}}</td><td>{{.State}}</td><td>{{.Reason}}</td></tr>{{end}}
+</tbody></table>{{else}}<p class="section-copy">Run-level loss totals were not recorded for this run.</p>{{end}}
+<p class="section-copy">Coverage: {{.Coverage}}</p>
+{{if .Sources}}<table><thead><tr><th>Source</th><th>Observed</th></tr></thead><tbody>
+{{range .Sources}}<tr><td>{{.Source}}</td><td>{{.Observed}}</td></tr>{{end}}
+</tbody></table>{{end}}
+<p class="section-copy">Classified time: {{.Breach}}</p>
+<p class="section-copy">Clock quality: {{.Clock}}</p>
+{{if .Stages}}<table><thead><tr><th>Stage</th><th>Availability</th><th class="num">Samples</th><th class="num">p50 ms</th><th class="num">p95 ms</th><th class="num">p99 ms</th><th class="num">max ms</th><th>Excluded</th></tr></thead><tbody>
+{{range .Stages}}<tr><td>{{.Stage}}</td><td>{{.Availability}}</td><td class="num">{{.Samples}}</td><td class="num">{{.P50}}</td><td class="num">{{.P95}}</td><td class="num">{{.P99}}</td><td class="num">{{.Max}}</td><td>{{.Excluded}}</td></tr>{{end}}
+</tbody></table>{{end}}
+{{if .Exclusions}}<ul>{{range .Exclusions}}<li>Excluded — {{.}}</li>{{end}}</ul>{{end}}
+{{end}}
 {{end}}
 
 {{define "completeness"}}

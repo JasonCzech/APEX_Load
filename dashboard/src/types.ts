@@ -19,6 +19,7 @@ import type {
 import type { ActiveLoadLevel, ClientMetrics } from './types/metrics'
 import type { BrowserDocumentSummary, BrowserDocumentObservation } from './types/browserDocumentEvidence'
 import type { ScenarioDataPoolBinding } from './types/dataPools'
+import type { TrafficProfile } from './types/trafficProfiles'
 import type {
   RedactionRule,
   RuntimeSettingsOverride,
@@ -387,6 +388,14 @@ export interface ProjectSettings {
   // fleet-pool id). Additive to the project-wide limits above.
   pool_quotas?: Record<string, PoolProjectQuota>
 	features?: ProjectFeatureFlags
+  telemetry?: ProjectTelemetryPolicy
+}
+
+// Opt-in telemetry evidence a project's viewers contribute (C5).
+export interface ProjectTelemetryPolicy {
+  // Dashboard tabs viewing a live run report receive-to-render times, which
+  // feed the run's advisory browser_render stage.
+  client_render_evidence?: boolean
 }
 
 export interface ProjectFeatureFlags {
@@ -1678,6 +1687,11 @@ export interface RunArchiveSLARow {
   name: string
   volume: number
   p95_ms: number
+  min_ms?: number
+  p50_ms?: number
+  p90_ms?: number
+  p99_ms?: number
+  max_ms?: number
   sla_ms?: number
   has_sla: boolean
   error_pct: number
@@ -1706,6 +1720,8 @@ export interface IntegrationOutcome {
 
 export interface RunArchiveReport {
   telemetry_policy?: import('./types/telemetryPolicy').TelemetryPolicyEvidence
+  // The finalized telemetry verdict under the run's pinned acceptance policy.
+  telemetry_acceptance?: TelemetryAcceptanceVerdict
   browser_documents?: BrowserDocumentSummary | null
   browser_document_evidence?: BrowserDocumentObservation[]
   browser_document_evidence_truncated?: boolean
@@ -1825,6 +1841,10 @@ export interface ReportAnnotations {
   findings?: ReportFinding[]
   updated_at: string
   updated_by: string
+  /** The verdict is stored once per run: which audience last set it, when and by whom. */
+  verdict_profile?: string
+  verdict_updated_at?: string
+  verdict_updated_by?: string
 }
 
 export interface ReportAnnotationsResponse {
@@ -1840,6 +1860,8 @@ export interface ReportAnnotationsInput {
   section_comments: Record<string, string>
   verdict_override: string
   verdict_explanation: string
+  /** Verdict revision the editor loaded; a stale verdict change is refused with 409. */
+  expected_verdict_updated_at?: string
   findings: ReportFinding[]
 }
 
@@ -2096,6 +2118,10 @@ export interface ScenarioDraft {
   goalConfig: GoalConfig
   groups: ScenarioDraftGroup[]
   runtimeSettings: ScenarioRuntimeSettingsDraft
+  /** Authored production traffic profile (TestHub's production-replay shape). */
+  trafficProfile?: TrafficProfile
+  /** Authored data-pool bindings of a saved scenario (a revision keeps its source's in revisionContext). */
+  dataPools?: ScenarioDataPoolBinding[]
   /** Immutable source-run context carried only when a queued run is revised. */
   revisionContext?: ScenarioDraftRevisionContext
 }
@@ -2130,9 +2156,18 @@ export interface LiveMetrics {
   throughput_gap_pct?: number
   throughput_target_missed?: boolean
   avg_response_ms: number
+  /** Error % of the last sample window (sample_window_seconds, normally 1 s). */
   error_pct: number
+  /** Successful transactions in the last sample window. */
   total_transactions: number
+  /** Failed transactions in the last sample window. */
   total_errors: number
+  /** Successful transactions since the run started (absent on older runs). */
+  run_total_transactions?: number
+  /** Failed transactions since the run started (absent on older runs). */
+  run_total_errors?: number
+  /** Failed ÷ all attempts since the run started (absent on older runs). */
+  run_error_pct?: number
   p50_ms: number
   p90_ms: number
   p95_ms: number
@@ -2243,6 +2278,75 @@ export interface TelemetryHealth {
   delivery_lag_ms?: number
   end_to_end_age_ms?: number
   sample_age_ms?: number
+  // Run-cumulative stage distributions (C5); the live snapshot only.
+  stage_distributions?: TelemetryStageDistribution[]
+  // Provisional telemetry verdict under the run's pinned acceptance policy
+  // (C7); the finalized verdict is in the run report.
+  acceptance?: TelemetryAcceptanceVerdict
+}
+
+// One telemetry acceptance criterion with the evidence it read (C7).
+export interface TelemetryAcceptanceCriterion {
+  criterion: string
+  outcome: 'pass' | 'fail' | 'inconclusive' | string
+  comparator: string
+  threshold: number
+  unit: 'ratio' | 'records' | 'ms' | string
+  observed?: number
+  // exact; lower_bound when more loss, observed time or lag may exist;
+  // upper_bound when the whole run's value is at most observed; partial when
+  // observed covers only part of the run's evidence and bounds nothing.
+  bound?: string
+  numerator?: number
+  denominator?: number
+  reason?: string
+  // A criterion on an advisory stage (browser render): shown, never decisive.
+  advisory?: boolean
+}
+
+export interface TelemetryAcceptancePolicyPin {
+  kind: string
+  id: string
+  name: string
+  revision: number
+  sha256: string
+  source?: string
+}
+
+// A run's telemetry verdict, separate from the application verdict. Only a
+// fail_ci policy can change a CI outcome; unknown evidence is inconclusive.
+export interface TelemetryAcceptanceVerdict {
+  outcome: 'pass' | 'fail' | 'inconclusive' | string
+  mode: 'advisory' | 'fail_ci' | 'unknown' | string
+  provisional?: boolean
+  policy?: TelemetryAcceptancePolicyPin
+  criteria: TelemetryAcceptanceCriterion[]
+  reasons?: string[]
+  exclusions?: string[]
+}
+
+export type TelemetryStageName = 'generator_processing' | 'transport' | 'controller_fanout' | 'sample_age' | 'browser_render'
+
+// One telemetry stage's sampled distribution so far. Percentiles exist only
+// for a measured stage, and stage percentiles are never added together.
+export interface TelemetryStageDistribution {
+  stage: TelemetryStageName | string
+  unit: string
+  availability: 'measured' | 'unavailable' | string
+  samples: number
+  excluded?: Record<string, number>
+  p50_ms?: number
+  p95_ms?: number
+  p99_ms?: number
+  max_ms?: number
+  // Advisory stages (browser render) never affect run health.
+  advisory?: boolean
+  // When this controller began sampling: a controller that adopted the run
+  // after a failover or restart samples only from then.
+  sampled_from?: string
+  // Why an unavailable stage has no evidence (recorder_lost: the finalizing
+  // controller never sampled the run).
+  reason?: string
 }
 
 export interface TelemetryRunHealth {
@@ -2397,7 +2501,10 @@ export interface LiveErrorPattern {
   actions?: string[]
   affected_groups?: string[]
   status_code?: number
+  /** @deprecated No longer sent; it was one action's one-second error rate. */
   error_pct?: number
+  /** This signature's share of all live errors so far. */
+  share_of_errors_pct?: number
   snapshot_url?: string
   evidence_url?: string
   evidence_count?: number
@@ -2449,6 +2556,9 @@ export interface GroupLiveMetrics {
   vusers: number
   transactions: number
   errors: number
+  run_transactions?: number
+  run_errors?: number
+  run_error_pct?: number
   tps: number
   target_tps?: number
   throughput_gap_pct?: number

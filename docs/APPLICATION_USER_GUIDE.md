@@ -54,8 +54,8 @@ ready-to-load script. In outline:
 
 1. Set your **Domain**, **Project**, and **Application/Release** in the left sidebar;
    scripts, scenarios, and results are all filtered by it.
-2. Create or import a script, add at least one assertion, then **Validate** and
-   **Replay** it once (see [Validating And Replaying](#validating-and-replaying)).
+2. Create or import a script, add at least one assertion, then **Validate Script(s)**
+   and **Debug one iteration** (see [Validating And Replaying](#validating-and-replaying)).
 3. Build a one-group scenario, launch it from **New Test**, and watch it in
    **Command Center**.
 4. When the run reaches `COMPLETE`, read the report from **Results** and pin it as the
@@ -99,10 +99,14 @@ Navigation shortcuts are two-key sequences: press `g`, release, then the second 
 | `g` `d` | Dashboard |
 | `g` `c` | Command Center |
 | `g` `n` | New Test |
+| `g` `t` | Scenarios |
 | `g` `s` | Scripts |
+| `g` `p` | Repository |
 | `g` `r` | Results |
+| `g` `v` | Activity |
 | `g` `m` | Monitoring |
 | `g` `f` | Fleet |
+| `g` `l` | Schedules |
 | `g` `h` | Help & documentation |
 | `g` `,` | Settings |
 | `g` `a` | Access (when you have access to it) |
@@ -114,7 +118,11 @@ Global keys:
 - `?` opens the shortcut help panel, which also lists the shortcuts that only apply to
   the page you are on.
 - `Backspace` goes back; `/` focuses the current page's search or filter box.
-- `Cmd/Ctrl` + `=` / `-` / `0` zoom the interface in, out, and back to normal.
+- `Cmd/Ctrl` + `=` / `-` / `0` zoom the interface in, out, and back to normal. The
+  command palette offers the same three zoom commands.
+
+The script editor adds its own keys while it is open; see **Editor keys** in the
+Script Debugger guide.
 
 ## The Dashboard
 
@@ -422,8 +430,8 @@ pool, so a rerun sees exactly the same data.
 
 ### Secrets
 
-**Application and project secrets** back the `{{secret.NAME}}` namespace. Manage
-shared application credentials in **Settings → Applications → Application Secret Vault**
+Application and project secrets back the `{{secret.NAME}}` namespace. Manage
+shared application credentials in **Settings → Applications & releases → Application Secret Vault**
 and project defaults under [Access → Project secrets](#/access?setting=secrets).
 Scripts assigned to one application can use the same secret name. A managed run uses
 the application selected for that run, even if a script is assigned elsewhere; direct
@@ -445,11 +453,11 @@ into application or project secrets when you want them genuinely protected.
 
 Before you run a script at scale, prove it works for a single user.
 
-1. **Validate** checks the script's structure, action fields, assertions, and settings
+1. **Validate Script(s)** checks the script's structure, action fields, assertions, and settings
    without executing anything. It runs the same validation the runtime applies at
    admission. Launch separately checks current permissions, capacity, secrets, runner capabilities and governance; validation does not guarantee admission.
-2. **Replay** runs the script once, interactively, through the controller's replay
-   engine.
+2. **Debug one iteration** replays the script once, interactively, through the
+   controller's replay engine.
 
 The replay debugger gives you:
 
@@ -463,7 +471,7 @@ The replay debugger gives you:
 - **Break on failure**, which pauses immediately after a failed action so you can
   inspect the request, response, variables, condition evidence, and logs before
   deciding to resume, step, or stop.
-- **Log levels** `trace`, `debug`, `info`, `warn`, `error`, and a session export in
+- **Log level** (`trace`, `debug`, `info`, `warn`, `error`) and a session export in
   JSON or raw text.
 - For browser scripts, captured screenshots, DOM, console, network, and Core Web
   Vitals as evidence.
@@ -565,8 +573,8 @@ A scenario brings together:
 - **Groups** — each group runs one script with its own VUser count, ramp-up, ramp-down,
   and optional iteration cap. Use multiple groups to model a realistic mix, for example
   80% browse and 20% checkout. A group's `role` distinguishes a normal **load** group
-  from an **observer** group — a browser experience canary that measures what a real
-  user sees while the load groups generate the pressure.
+  from an **observer** group (shown as **Observer Canary**) — a browser experience
+  canary that measures what a real user sees while the load groups generate the pressure.
 - **Load model** — total VUsers, ramp pattern, and duration. Multi-stage groups let you
   express step loads (ramp to 100, hold, ramp to 300, hold) rather than a single slope.
 - **Runtime settings** — per-group options such as think time, pacing, network
@@ -574,9 +582,11 @@ A scenario brings together:
   addresses).
 - **Placement** — which generators, regions, or load zones run each group, including
   weighted distribution across zones.
-- **Release context** — the application and release the scenario targets.
-- **Shakeout and resource baseline flags** — whether the run first proves the scripts
-  with a canary, and whether it captures an idle resource baseline before load starts.
+- **Application and release** — the scenario is assigned to the workspace's application
+  and release; change it with **Change application/releases…** in the Scenario Library.
+- **Shakeout** and **Resource baseline windows** — whether the run first proves the
+  scripts with a canary, and whether it captures an idle resource baseline before load
+  starts.
 
 ### Sizing From A Goal
 
@@ -669,9 +679,7 @@ From the Command Center you can also control the run while it is in flight:
 | **Resume** | `PAUSED` | Releases the hold |
 | **Stop** | `RUNNING`, `INITIALIZING`, or `PAUSED` | Graceful: finishes the action in flight, skips later actions and think time, runs teardown. The run stays `STOPPING` until generator teardown and archive finalization complete |
 | **Abort** | Any non-terminal state | Force-cancels active work immediately |
-| **Scale VUsers** | `RUNNING` | Raises or lowers a group's VUser count, instantly or over a ramp |
-| **Adjust goal target** | `RUNNING`, goal-oriented runs | Changes a group's throughput (TPS) target and lets the system converge on it |
-| **Change duration** | `RUNNING` | Adjusts the remaining execution time |
+| **Adjust run** | `RUNNING` | Changes the remaining duration and each group's load — its VUser count, or its throughput (TPS) target in goal-oriented runs — instantly or over a ramp |
 
 Pause and Stop become unavailable once a run enters `STOPPING` — from there only Abort
 remains.
@@ -940,7 +948,7 @@ can override and continue.
 **The launch was refused for capacity.**
 The scenario needs more generator capacity than is currently available. Run the
 capacity preview, lower the VUser count if that still meets your objective, or ask an administrator
-about the generator fleet and reservations under **Capacity Planning**.
+about the generator fleet and reservations under **Capacity planning**.
 
 **A PDF export was refused.**
 PDF is declared per report profile. Switch to a profile that offers it, or export HTML.

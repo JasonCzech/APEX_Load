@@ -153,7 +153,8 @@ test('Help is readable at narrow widths and exposes accessible navigation', asyn
   await page.goto('/#/docs?guide=user-guide&article=capabilities')
   // The article title is for screen readers; readers see the open article marked in the list and its contents in view.
   await expect(page.getByRole('heading', { name: 'Capabilities & limitations', exact: true })).toBeAttached()
-  await expect(page.getByRole('navigation', { name: 'Help articles' }).getByRole('link', { name: 'Capabilities & limitations', exact: true })).toHaveAttribute('aria-current', 'page')
+  // Capabilities is a More help utility, listed once, under Help utilities.
+  await expect(page.getByRole('navigation', { name: 'Help utilities' }).getByRole('link', { name: 'Capabilities & limitations', exact: true })).toHaveAttribute('aria-current', 'page')
   await expect(page.getByRole('navigation', { name: 'On this page' })).toBeInViewport()
   for (const link of await page.getByRole('navigation', { name: 'Help areas' }).getByRole('link').all()) {
     const box = await link.boundingBox()
@@ -161,7 +162,7 @@ test('Help is readable at narrow widths and exposes accessible navigation', asyn
   }
   // The article list is always shown (no collapsible "Browse articles" toggle), as on Settings and Access.
   await expect(page.getByRole('navigation', { name: 'Help articles' })).toBeVisible()
-  await page.getByRole('navigation', { name: 'Help articles' }).getByRole('link', { name: 'Capabilities & limitations', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Help utilities' }).getByRole('link', { name: 'Capabilities & limitations', exact: true }).click()
   expect(await page.locator('.help-workspace').evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
   const violations = await page.evaluate(async () => (await (window as typeof window & { axe: typeof axe }).axe.run('.help-workspace, .help-primary-nav', { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa'] } })).violations)
   expect(violations).toEqual([])

@@ -44,7 +44,9 @@ func TestParameterizedURLProvenanceGroupedFormReplay(t *testing.T) {
 		switch r.Method {
 		case "GET":
 			gets.Add(1)
-			io.WriteString(w, "token=[a b&c]")
+			// web_submit_form submits a form on this page.
+			w.Header().Set("Content-Type", "text/html")
+			io.WriteString(w, `<html>token=[a b&c]<form method="post" action="/flow/form.jsp"><input name="token"><input name="field"><input name="field"></form></html>`)
 		case "POST":
 			posts.Add(1)
 			body, _ := io.ReadAll(r.Body)
@@ -96,8 +98,11 @@ return 0;
 		}
 		count++
 		metadata := ref.Metadata()
-		if metadata["original_url"] != "http://{{param.server_url}}/flow/form.jsp" {
+		if count == 1 && metadata["original_url"] != "http://{{param.server_url}}/flow/form.jsp" {
 			t.Errorf("provenance URL = %v", metadata["original_url"])
+		}
+		if params, _ := ref.Request["params"].(map[string]any); count == 2 && params["html_step"] == nil {
+			t.Errorf("the web_submit_form child must be an HTML-mode step, got %v", ref.Request)
 		}
 		wantLine := 4
 		if count == 2 {

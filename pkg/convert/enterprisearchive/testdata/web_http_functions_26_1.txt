@@ -14,6 +14,9 @@
 # web_reg_save_param*, web_add_header, web_set_timeout, ...) are listed here too so the
 # coverage doc and completeness test see the full published library; the rich handler
 # owns their behavior and this row supplies classification metadata.
+# web_link and web_image click a hyperlink found on the page the previous step
+# loaded; VuGen never records a URL for them. They stay review_only (an
+# execution-gated review step) until page-context replay can resolve them.
 # web_concurrent_start/end are executable only for validated, same-scope explicit
 # HTTP groups with at most 256 safe independent requests (each optionally wrapped in its
 # own LR_AUTO transaction); all other spans require review.
@@ -28,7 +31,7 @@ web_cleanup_auto_headers,web,executable
 web_cleanup_cookies,web,executable
 web_concurrent_end,web,executable
 web_concurrent_start,web,executable
-web_convert_date_param,parameter,review_only
+web_convert_date_param,parameter,executable
 web_convert_from_formatted,parameter,review_only
 web_convert_param,parameter,executable
 web_convert_to_formatted,parameter,review_only
@@ -48,7 +51,7 @@ web_js_run,web,review_only
 web_link,web,executable
 web_load_cache,web,native_noop
 web_reg_add_cookie,web,executable
-web_reg_async_attributes,web,review_only
+web_reg_async_attributes,web,executable
 web_reg_find,web,executable
 web_reg_save_param,web,executable
 web_reg_save_param_attrib,web,executable
@@ -63,8 +66,8 @@ web_report_data_point,metric,executable
 web_rest,web,executable
 web_revert_auto_header,web,executable
 web_save_header,web,review_only
-web_save_param_length,parameter,review_only
-web_save_timestamp_param,parameter,review_only
+web_save_param_length,parameter,executable
+web_save_timestamp_param,parameter,executable
 web_set_certificate,web,review_only
 web_set_certificate_ex,web,executable
 web_set_max_html_param_len,web,native_noop
@@ -79,7 +82,7 @@ web_set_sockets_option,web,executable
 web_set_timeout,web,executable
 web_set_user,web,executable
 web_sjis_to_euc_param,parameter,review_only
-web_stop_async,web,review_only
+web_stop_async,web,executable
 web_stream_close,web,review_only
 web_stream_get_param_double,web,review_only
 web_stream_get_param_int,web,review_only
@@ -94,7 +97,10 @@ web_stream_stop,web,review_only
 web_stream_wait,web,review_only
 web_submit_data,web,executable
 web_submit_form,web,executable
-web_sync,web,review_only
+web_sync,web,executable
 web_url,web,executable
 web_util_set_request_body,parameter,review_only
 web_util_set_request_url,parameter,review_only
+web_websocket_close,websocket,executable
+web_websocket_connect,websocket,executable
+web_websocket_send,websocket,executable

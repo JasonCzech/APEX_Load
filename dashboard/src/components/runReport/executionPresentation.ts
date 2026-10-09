@@ -1,3 +1,4 @@
+import { formatTimeLong } from '../../utils/timeUtils'
 import type { MetricsHistoryPoint, RunArchiveReport, TestRunManifest, TestSummary } from '../../types'
 
 export function recordedTime(value?: string): number | undefined {
@@ -24,13 +25,7 @@ export function lifecycleElapsedSeconds(test: TestSummary): number | undefined {
 
 export function formatElapsedSeconds(seconds?: number): string {
   if (seconds === undefined || !Number.isFinite(seconds) || seconds < 0) return 'Not recorded'
-  const total = Math.round(seconds)
-  const hours = Math.floor(total / 3600)
-  const minutes = Math.floor((total % 3600) / 60)
-  const remainder = total % 60
-  if (hours) return `${hours}h ${minutes}m${remainder ? ` ${remainder}s` : ''}`
-  if (minutes) return `${minutes}m${remainder ? ` ${remainder}s` : ''}`
-  return `${remainder}s`
+  return formatTimeLong(seconds)
 }
 
 export function executionFacts(test: TestSummary, report?: RunArchiveReport | null, manifest?: TestRunManifest | null) {

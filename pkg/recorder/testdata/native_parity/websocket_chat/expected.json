@@ -1,0 +1,55 @@
+{
+  "description": "A chat socket recorded through the proxy alongside HTTP: the socket's steps are placed among the HTTP steps by time, the handshake sends the login's session cookie from the jar, the room id the server sends over the socket is extracted from the received frame (message extractor) and sent by the later HTTP request and the later socket message: the fixture assigns a different room than the recording did, so only the extracted value passes.",
+  "source": "VuGen web_websocket_connect/send/close generation for WebSocket traffic recorded with HTTP; correlation of values received over the socket.",
+  "outcome": "replay",
+  "responses": [
+    {
+      "method": "POST",
+      "path": "/login",
+      "headers": {
+        "Content-Type": "text/html",
+        "Set-Cookie": "SESSION=s-42; Path=/"
+      },
+      "body": "<html><title>Welcome</title></html>"
+    },
+    {
+      "method": "GET",
+      "path": "/chat",
+      "websocket": {
+        "reply": "{\"room\":\"r-99999\"}"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/history",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"messages\":[]}"
+    }
+  ],
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/login",
+      "body": "user=ada"
+    },
+    {
+      "method": "GET",
+      "path": "/chat",
+      "header_contains": {
+        "Cookie": "SESSION=s-42",
+        "Origin": "http://parity.test"
+      },
+      "messages": [
+        "{\"type\":\"join\"}",
+        "{\"type\":\"leave\",\"room\":\"r-99999\"}"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/history",
+      "query": "room=r-99999"
+    }
+  ]
+}

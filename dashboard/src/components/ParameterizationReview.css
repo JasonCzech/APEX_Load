@@ -33,7 +33,7 @@
   padding: 6px 10px;
   border-radius: 6px;
   background: color-mix(in srgb, var(--success) 12%, transparent);
-  color: var(--success);
+  color: var(--success-text);
   font-size: 12px;
   font-weight: 600;
 }
@@ -49,12 +49,12 @@
 
 .paramize-review-error {
   background: color-mix(in srgb, var(--danger) 10%, transparent);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .paramize-review-blocked {
   background: color-mix(in srgb, var(--warning) 10%, transparent);
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .paramize-pagination {
@@ -97,7 +97,7 @@
 }
 
 .paramize-group-secret summary {
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .paramize-list,
@@ -136,7 +136,7 @@
 }
 
 .paramize-preapplied-mark {
-  color: var(--success);
+  color: var(--success-text);
   font-weight: 700;
 }
 
@@ -170,7 +170,7 @@
 
 .paramize-after {
   background: color-mix(in srgb, var(--success) 10%, transparent);
-  color: var(--success);
+  color: var(--success-text);
 }
 
 .paramize-arrow {
@@ -188,12 +188,12 @@
 
 .paramize-confidence-high {
   background: color-mix(in srgb, var(--success) 12%, transparent);
-  color: var(--success);
+  color: var(--success-text);
 }
 
 .paramize-confidence-medium {
   background: color-mix(in srgb, var(--warning) 12%, transparent);
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .paramize-confidence-low {
@@ -205,7 +205,7 @@
   padding: 1px 8px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--danger) 12%, transparent);
-  color: var(--danger);
+  color: var(--danger-text);
   font-size: 11px;
   font-weight: 600;
   text-transform: var(--label-case, uppercase);
@@ -256,5 +256,5 @@
 }
 
 .paramize-aura-coverage .paramize-coverage-warning {
-  color: var(--warning);
+  color: var(--warning-text);
 }

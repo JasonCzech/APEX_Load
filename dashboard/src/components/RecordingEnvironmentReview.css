@@ -5,5 +5,5 @@
 .recording-environment-review dl > div { min-width: 0; }
 .recording-environment-review dt { color: var(--text-secondary); font-size: 12px; }
 .recording-environment-review dd { margin: 4px 0 0; font-weight: 600; }
-.recording-environment-warning { color: var(--warning, var(--text-primary)); }
+.recording-environment-warning { color: var(--warning-text); }
 .rec-browser-emulation-note { color: var(--text-secondary); font-size: 13px; }

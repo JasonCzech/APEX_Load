@@ -419,6 +419,24 @@ describe('CommandCenterPrototype', () => {
     expect(inputByLabel('Live Checkout target VUsers').value).toBe('65')
   })
 
+  it('reverts a rejected VUser target and says it was not applied', async () => {
+    const run = buildLiveVuserTest()
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
+      const url = requestUrl(input)
+      if (url.includes('/vusers')) return Promise.resolve(new Response(JSON.stringify({ error: 'capacity advisory recommends 13 load generators but only 12 are available' }), { status: 400, headers: { 'Content-Type': 'application/json' } }))
+      if (url.endsWith(`/tests/${run.id}`)) return Promise.resolve(jsonResponse(run))
+      return Promise.resolve(jsonResponse({}))
+    })
+    await act(async () => { root.render(<CommandCenterPrototype testId={run.id} initialTest={run} />) })
+    await flush()
+    await changeNumberInput(inputByLabel('Live Checkout target VUsers'), '99999')
+    const apply = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Apply' && button.classList.contains('btn-primary'))!
+    await click(apply)
+    await flush()
+    expect(inputByLabel('Live Checkout target VUsers').value).toBe('50')
+    expect(container.textContent).toContain('Not applied: Live Checkout keeps its current VUser target')
+  })
+
   it('keeps the selected run status consistent with acknowledged controls when the catalog is stale', async () => {
     const run = buildLiveVuserTest()
     const other = { ...run, id: 'other-run', name: 'Other run' }
@@ -627,7 +645,7 @@ describe('CommandCenterPrototype', () => {
     })
     await flush()
 
-    await click(buttonNamed('Test Notes'))
+    await click(buttonNamed('Test notes'))
     await flush()
 
     expect(container.querySelector('.test-notes-dialog')).not.toBeNull()
@@ -1041,7 +1059,7 @@ describe('CommandCenterPrototype', () => {
     expect(opsLoadModelPanel).not.toBeNull()
     expect(opsPrimaryColumn?.querySelector('[aria-label="Command center run tables"]')).not.toBeNull()
     expect(opsPrimaryColumn?.querySelector('.command-runtime-graphs')).toBeNull()
-    expect(opsPrimaryColumn?.textContent).toContain('Scenario Run')
+    expect(opsPrimaryColumn?.textContent).toContain('Run metrics')
     expect(opsPrimaryColumn?.textContent).toContain('Error Details')
     expect(opsPrimaryColumn?.textContent).toContain('Infrastructure')
     expect(opsLoadModelRow?.querySelector('.command-group-panel')).toBe(opsCentralGroupPanel)
@@ -1222,6 +1240,27 @@ describe('CommandCenterPrototype', () => {
     expect(checkoutTarget.value).toBe('1330')
     expect(container.textContent).toContain('Checkout API target staged at 1,330 VUsers.')
     expect(container.textContent).toContain('2,270 VU')
+  })
+
+  it('shows run controls read-only, with the reason, to a role that cannot control runs', async () => {
+    const run = buildLiveVuserTest()
+    await act(async () => root.render(<CommandCenterPrototype testId={run.id} initialTest={run} runControlsReadOnlyReason="Your role in this project can watch this run but not control it." />))
+    const actions = container.querySelector('.command-run-actions') as HTMLElement
+    const shelfButton = (name: string) => Array.from(actions.querySelectorAll('button')).find(candidate => candidate.textContent?.trim() === name) as HTMLButtonElement | undefined
+    for (const name of ['Pause', 'Stop', 'Abort']) {
+      expect(shelfButton(name)?.disabled).toBe(true)
+    }
+    const note = container.querySelector('.command-control-readonly')
+    expect(note?.textContent).toContain('can watch this run but not control it')
+    expect(shelfButton('Stop')?.getAttribute('aria-describedby')).toBe(note?.id)
+  })
+
+  it('says when the live stream is down, since live values may then be stale', async () => {
+    const run = buildLiveVuserTest()
+    await act(async () => root.render(<CommandCenterPrototype testId={run.id} initialTest={run} liveStreamState="disconnected" />))
+    expect(container.querySelector('.command-stream-note')?.textContent).toContain('Live stream: disconnected')
+    await act(async () => root.render(<CommandCenterPrototype testId={run.id} initialTest={run} liveStreamState="connected" />))
+    expect(container.querySelector('.command-stream-note')).toBeNull()
   })
 
   it('keeps Abort available and enabled while a graceful stop is in progress', async () => {
@@ -1564,7 +1603,7 @@ describe('CommandCenterPrototype', () => {
     const tableWorkspace = container.querySelector('[aria-label="Command center run tables"]')
     expect(tableWorkspace).not.toBeNull()
     expect(container.querySelector('.command-layout-ops .command-runtime-graphs')).toBeNull()
-    expect(tableWorkspace?.textContent).toContain('Scenario Run')
+    expect(tableWorkspace?.textContent).toContain('Run metrics')
     expect(tableWorkspace?.textContent).toContain('POST /orders')
     expect(tableWorkspace?.textContent).toContain('Target TPS')
 
@@ -1593,7 +1632,7 @@ describe('CommandCenterPrototype', () => {
     await click(buttonNamed('Graph Wall'))
 
     expect(container.textContent).toContain('Runtime Graphs')
-    expect(container.textContent).toContain('Virtual Users')
+    expect(container.textContent).toContain('VUsers')
     expect(container.textContent).toContain('Transactions Per Second')
     expect(container.querySelector('.charts-grid.command-center-graphs.command-center-compact')).not.toBeNull()
     expect(container.querySelector('.chart-card.command-center-chart-card')).not.toBeNull()
@@ -1623,7 +1662,7 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).toContain('Runtime graph expanded.')
     expect(container.querySelector('.chart-card.expanded')).not.toBeNull()
 
-    const vuserToggle = inputByLabel('Show Virtual Users')
+    const vuserToggle = inputByLabel('Show VUsers')
     expect(vuserToggle.checked).toBe(true)
     expect(container.querySelector('.charts-config-drawer')?.textContent).toContain('Graph Cards')
     expect(container.querySelector('[aria-label="Graph display options"]')?.textContent).toContain('Display Window')
@@ -1909,6 +1948,8 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).toContain('Live Checkout Ramp')
     expect(container.textContent).toContain('Live Checkout')
     expect(container.textContent).toContain('HTTP 500 checkout spike')
+    // One per-signature rate definition, named as such (not a windowed "Error rate").
+    expect(container.textContent).toContain('Share of errors')
     expect(container.textContent).not.toContain('In-flight Run Command Center')
   })
 
@@ -1916,11 +1957,13 @@ describe('CommandCenterPrototype', () => {
     const liveTest = buildLiveVuserTest()
     liveTest.live_metrics = {
       ...liveTest.live_metrics!,
-      // Deliberately differ from the cumulative rate to prove the hero does
-      // not display a point/window rate supplied by the stream.
-      error_pct: 1,
-      total_transactions: 100,
-      total_errors: 20,
+      // total_* and error_pct describe the last one-second window; the hero
+      // must show the run-to-date rate from the run_* counters instead.
+      error_pct: 0,
+      total_transactions: 18,
+      total_errors: 0,
+      run_total_transactions: 100,
+      run_total_errors: 20,
     }
 
     await act(async () => {
@@ -1931,9 +1974,9 @@ describe('CommandCenterPrototype', () => {
     expect(summaryMetrics[0].querySelector('span')?.textContent).toBe('Observed / Target Load')
     expect(summaryMetrics[0].querySelector('strong')?.textContent).toBe('42 / 50 VU')
     const errorRateMetric = summaryMetrics
-      .find(metric => metric.querySelector('span')?.textContent === 'Overall Error Rate')
+      .find(metric => metric.querySelector('span')?.textContent === 'Error Rate (run to date)')
     expect(errorRateMetric?.querySelector('strong')?.textContent).toBe('16.67%')
-    expect(summaryMetrics.some(metric => metric.querySelector('span')?.textContent === 'Highest Error Rate')).toBe(false)
+    expect(summaryMetrics.some(metric => metric.querySelector('span')?.textContent?.startsWith('Highest Error Rate'))).toBe(false)
     const tpsMetric = summaryMetrics.find(metric => metric.querySelector('span')?.textContent?.startsWith('TPS'))
     expect(tpsMetric?.querySelector('strong')?.textContent).toBe('75.4')
     expect(container.querySelector('.command-hero-strip')).toBeNull()
@@ -1947,23 +1990,29 @@ describe('CommandCenterPrototype', () => {
     ]
     liveTest.live_metrics = {
       ...liveTest.live_metrics!,
-      total_transactions: 180,
-      total_errors: 20,
-      // The latest streamed point deliberately differs from the cumulative
-      // rate used by the run-summary cards.
-      error_pct: 1,
+      // The last one-second window happens to hold no errors; the run-to-date
+      // counters carry the rate the run summary must show.
+      total_transactions: 20,
+      total_errors: 0,
+      error_pct: 0,
+      run_total_transactions: 180,
+      run_total_errors: 20,
       groups: {
         'Live Checkout': {
           ...liveTest.live_metrics!.groups!['Live Checkout'],
-          transactions: 90,
-          errors: 10,
+          transactions: 12,
+          errors: 0,
+          run_transactions: 90,
+          run_errors: 10,
         },
         Search: {
           ...liveTest.live_metrics!.groups!['Live Checkout'],
           name: 'Search',
           vusers: 25,
-          transactions: 40,
-          errors: 10,
+          transactions: 8,
+          errors: 0,
+          run_transactions: 40,
+          run_errors: 10,
         },
       },
     }
@@ -1975,8 +2024,8 @@ describe('CommandCenterPrototype', () => {
     const summaryMetrics = Array.from(container.querySelectorAll<HTMLElement>('.command-metric-pill'))
     expect(summaryMetrics[0].querySelector('span')?.textContent).toBe('Observed / Target Load')
     expect(summaryMetrics[0].querySelector('strong')?.textContent).toBe('67 / 75 VU')
-    const overall = summaryMetrics.find(metric => metric.querySelector('span')?.textContent === 'Overall Error Rate')
-    const highest = summaryMetrics.find(metric => metric.querySelector('span')?.textContent === 'Highest Error Rate')
+    const overall = summaryMetrics.find(metric => metric.querySelector('span')?.textContent === 'Error Rate (run to date)')
+    const highest = summaryMetrics.find(metric => metric.querySelector('span')?.textContent === 'Highest Error Rate (run to date)')
     expect(overall?.querySelector('strong')?.textContent).toBe('10.00%')
     expect(highest?.querySelector('strong')?.textContent).toBe('20.00% · Search')
   })
@@ -1995,7 +2044,8 @@ describe('CommandCenterPrototype', () => {
       groups: Object.fromEntries(['Live Checkout', 'Search'].map(name => [name, { ...groupMetrics, name, transactions, errors }])),
     }
     await act(async () => root.render(<CommandCenterPrototype testId={liveTest.id} initialTest={liveTest} />))
-    const highest = Array.from(container.querySelectorAll('.command-metric-pill')).find(metric => metric.querySelector('span')?.textContent === 'Highest Error Rate')!
+    // Runs recorded before run counters existed fall back to the window and say so.
+    const highest = Array.from(container.querySelectorAll('.command-metric-pill')).find(metric => metric.querySelector('span')?.textContent === 'Highest Error Rate (last sample)')!
     expect(highest.querySelector('strong')?.textContent).toBe(expected)
     expect(highest.classList.contains('danger')).toBe(danger)
     if (!errors) expect(highest.textContent).not.toMatch(/Live Checkout|Search/)
@@ -2005,9 +2055,9 @@ describe('CommandCenterPrototype', () => {
     await renderPrototype()
     const preset = container.querySelector<HTMLInputElement>('.command-column-preset input')!
     expect(container.querySelector('.command-scenario-table.essential-metrics')).not.toBeNull()
-    const p99 = Array.from(container.querySelectorAll<HTMLInputElement>('.command-column-picker input')).find(input => input.parentElement?.textContent === 'p99')!
+    const p99 = Array.from(container.querySelectorAll<HTMLInputElement>('.command-column-picker input')).find(input => input.parentElement?.textContent === 'P99')!
     await click(p99)
-    expect(container.querySelector<HTMLTableCellElement>('th[aria-label="p99 sort"]')?.hidden).toBe(false)
+    expect(container.querySelector<HTMLTableCellElement>('th[aria-label="P99 sort"]')?.hidden).toBe(false)
     expect(container.querySelectorAll('thead th:not([hidden])').length).toBe(8)
     await click(preset)
     await changeTextInput(inputByLabel('Filter command center table rows'), 'Checkout')
@@ -2020,7 +2070,7 @@ describe('CommandCenterPrototype', () => {
     await changeTextInput(inputByLabel('Filter command center table rows'), 'not-an-error')
     expect(container.textContent).toContain('No matching errors')
     expect(container.querySelector('.command-evidence-panel')).toBeNull()
-    await click(tabNamed('Scenario Run'))
+    await click(tabNamed('Run metrics'))
     expect(inputByLabel('Filter command center table rows').value).toBe('Checkout')
   })
 
@@ -2037,7 +2087,7 @@ describe('CommandCenterPrototype', () => {
     await act(async () => root.render(<CommandCenterPrototype testId={pending.id} initialTest={pending} />))
     expect(container.textContent).toContain('Errors recorded; signatures are not available yet.')
     await click(buttonNamed('Graph Wall'))
-    expect(buttonNamed('Change duration')).toBeDefined()
+    expect(buttonNamed('Adjust run')).toBeDefined()
     expect(container.querySelector('[aria-label="Run summary"]')?.textContent).toContain('TPS')
   })
 

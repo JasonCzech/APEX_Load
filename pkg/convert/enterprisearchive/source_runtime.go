@@ -5,9 +5,13 @@ package enterprisearchive
 import (
 	"fmt"
 	"math"
+	"net/url"
 	"strconv"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
+	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -61,17 +65,72 @@ func applySourceWebSetUserConfig(result *ConvertResult, fn ParsedFunction) map[s
 		"host":      host,
 		"mapped_to": "config.http.auth",
 	}
-	if username != "" {
-		result.Script.Config.HTTP.Auth = dsl.AuthConfig{
-			Type:     "basic",
-			Username: username,
-			Password: password,
-		}
+	if username == "" {
+		return details
 	}
-	if host != "" {
+	scope, scoped := normalizeSourceAuthHost(host)
+	if host != "" && !scoped {
+		// A parameterized or malformed host cannot be scoped statically; the
+		// credentials then apply to every host, as before, and the source host
+		// is kept for review.
+		details["host_unscoped"] = true
 		setSourceWebRuntimeAttribute(result.Script, "web_set_user.host", host)
 	}
+	existing := result.Script.Config.HTTP.Auth
+	switch {
+	case existing.Username == "" && existing.Token == "":
+		// negotiate_any answers whichever challenge the server sends (Basic,
+		// Digest, NTLM or Negotiate), as LoadRunner's web_set_user does, and
+		// sends nothing before a challenge.
+		auth := dsl.AuthConfig{Type: "negotiate_any", Username: username, Password: password}
+		if scoped {
+			auth.Hosts = []string{scope}
+		}
+		result.Script.Config.HTTP.Auth = auth
+	case existing.Username == username && existing.Password == password:
+		// The same credentials for another host widen the scope; a call
+		// without a host applies them everywhere.
+		if !scoped {
+			existing.Hosts = nil
+		} else if len(existing.Hosts) > 0 && !containsFoldString(existing.Hosts, scope) {
+			existing.Hosts = append(existing.Hosts, scope)
+		}
+		result.Script.Config.HTTP.Auth = existing
+	default:
+		details["conflict"] = true
+	}
 	return details
+}
+
+// normalizeSourceAuthHost turns web_set_user's host argument ("host",
+// "host:port", or a URL) into a config.http.auth.hosts entry. It reports
+// false when the host is parameterized or not a plain host.
+func normalizeSourceAuthHost(host string) (string, bool) {
+	value := strings.TrimSpace(host)
+	if value == "" || strings.Contains(value, "{") {
+		return "", false
+	}
+	if strings.Contains(value, "://") {
+		parsed, err := url.Parse(value)
+		if err != nil || parsed.Host == "" {
+			return "", false
+		}
+		value = parsed.Host
+	}
+	value = strings.ToLower(strings.TrimSuffix(value, "/"))
+	if strings.ContainsAny(value, "/?#*@ ") {
+		return "", false
+	}
+	return value, true
+}
+
+func containsFoldString(values []string, value string) bool {
+	for _, existing := range values {
+		if strings.EqualFold(existing, value) {
+			return true
+		}
+	}
+	return false
 }
 
 func convertLRErrorMessageAction(fn ParsedFunction) dsl.Action {
@@ -610,4 +669,63 @@ func parseSourceTimeoutMs(value string) (int, bool) {
 		return 0, false
 	}
 	return int(math.Round(seconds * 1000)), true
+}
+
+// webSetUserConflictReasonCode gates a web_set_user whose credentials differ
+// from the script-level credentials an earlier call already set.
+const webSetUserConflictReasonCode = "web_set_user_credentials_conflict"
+
+func webSetUserConflictGate(fn ParsedFunction, host string) dsl.Action {
+	action := dsl.Action{
+		Name:     sanitizeName("Review web_set_user " + convertutil.FirstNonEmpty(host, fn.Name)),
+		Type:     "source_review",
+		Params:   map[string]any{"function": fn.Name},
+		Metadata: sourceFunctionMetadata(fn),
+	}
+	importreview.ApplyToAction(&action, []importreview.Finding{{
+		Code: webSetUserConflictReasonCode, ReasonCode: webSetUserConflictReasonCode, Severity: diag.Blocker, Gate: importreview.GateExecution,
+		Source: "enterprise_script_archive", SourceRef: fmt.Sprintf("%s:%d", fn.Filename, fn.LineNumber), Resolution: "choose_credentials",
+		Detail: "This web_set_user sets different credentials than an earlier call. APEX Load keeps one script-level credential set, so execution is gated until the credentials are reconciled.",
+	}})
+	return action
+}
+
+// cookieSetAction builds the positional cookie_set action for an imported
+// web_add_cookie (or, with remove, for the web_remove_cookie that expires it).
+func cookieSetAction(fn ParsedFunction, cookie ParsedCookie, remove bool) dsl.Action {
+	params := map[string]any{"name": cookie.Name}
+	if !remove {
+		params["value"] = convertParamReferences(cookie.Value)
+	}
+	if domain := strings.TrimSpace(cookie.Domain); domain != "" {
+		params["domain"] = convertParamReferences(domain)
+	}
+	if path := strings.TrimSpace(cookie.Path); path != "" && path != "/" {
+		params["path"] = path
+	}
+	if sourceCookieIsSecure(cookie.Raw) {
+		params["secure"] = true
+	}
+	verb := "Set"
+	if remove {
+		params["remove"] = true
+		verb = "Remove"
+	}
+	return dsl.Action{
+		Name:     sanitizeName(verb + " cookie " + cookie.Name),
+		Type:     "cookie_set",
+		Params:   params,
+		Metadata: sourceFunctionMetadata(fn),
+	}
+}
+
+// sourceCookieIsSecure reports whether a LoadRunner cookie string carries the
+// bare SECURE attribute.
+func sourceCookieIsSecure(raw string) bool {
+	for index, segment := range strings.Split(raw, ";") {
+		if index > 0 && strings.EqualFold(strings.TrimSpace(segment), "secure") {
+			return true
+		}
+	}
+	return false
 }

@@ -129,7 +129,7 @@
 
 .source-map-status.contributor,
 .source-map-status.preserved {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
 }
 
@@ -506,7 +506,7 @@
 .mapping-review-details textarea { min-height: 72px; }
 .source-map-origin-list { display: flex; flex-wrap: wrap; gap: 8px; max-height: 180px; overflow: auto; }
 .source-map-source-cell button { color: inherit; background: transparent; border: 0; text-align: left; cursor: pointer; font: inherit; }
-.source-map-review button:focus-visible, .source-map-review summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.source-map-review button:focus-visible, .source-map-review summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .source-map-panel-header > div { flex-wrap: wrap; }
 .source-map-review-controls, .source-map-selected-details { flex-shrink: 0; font-size: 12px; }
 .source-map-review-controls select { font-size: 12px; padding: 5px 8px; min-height: 30px; }

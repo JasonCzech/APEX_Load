@@ -2510,7 +2510,8 @@ func TestUpdateLiveErrorPatternsTracksFirstLatestAndSnapshotQuery(t *testing.T) 
 	if pattern.Count != 3 || !pattern.FirstSeen.Equal(firstSeen) || !pattern.LatestSeen.Equal(latestSeen) {
 		t.Fatalf("pattern timeline/count = %#v", pattern)
 	}
-	if pattern.StatusCode != 503 || pattern.ErrorPct != 20 {
+	// One rate definition: the signature's share of all live errors.
+	if pattern.StatusCode != 503 || pattern.ShareOfErrorsPct != 100 || pattern.ErrorPct != 0 {
 		t.Fatalf("pattern status/error pct = %#v", pattern)
 	}
 	if strings.Join(pattern.Actions, ",") != "GET /orders/123,GET /orders/456" {
@@ -3120,11 +3121,13 @@ func TestPublishLiveMetricsUsesConfiguredTelemetryBudgets(t *testing.T) {
 	if diagnosticPayload.Data == nil || diagnosticPayload.Data.Severity != "warning" {
 		t.Fatalf("expected warning diagnostic, got %#v", diagnosticPayload.Data)
 	}
-	expectedConditions := []string{"stale_sample", "generator_lag", "transport_lag", "controller_fanout_lag", "browser_render_lag"}
+	// Browser render is advisory (C5): a viewer's tab over its budget is not
+	// a run-health condition.
+	expectedConditions := []string{"stale_sample", "generator_lag", "transport_lag", "controller_fanout_lag"}
 	if strings.Join(diagnosticPayload.Data.Conditions, ",") != strings.Join(expectedConditions, ",") {
 		t.Fatalf("conditions = %#v, want %#v", diagnosticPayload.Data.Conditions, expectedConditions)
 	}
-	if !strings.Contains(diagnosticPayload.Data.Summary, "sample age") || !strings.Contains(diagnosticPayload.Data.Summary, "browser render lag") {
+	if !strings.Contains(diagnosticPayload.Data.Summary, "sample age") || strings.Contains(diagnosticPayload.Data.Summary, "browser render lag") {
 		t.Fatalf("unexpected diagnostic summary: %s", diagnosticPayload.Data.Summary)
 	}
 	if testRun.TelemetryHealth == nil || testRun.TelemetryHealth.Status != "degraded" || !testRun.TelemetryHealth.BreachActive {

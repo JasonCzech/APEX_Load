@@ -427,6 +427,18 @@ export function settingsIssuesBySection(issues: SettingsValidationIssue[]): Part
   return bySection
 }
 
+/**
+ * The issues that belong to one Settings destination: same section and, when
+ * both say, the same subsection. Several destinations share a section, so
+ * section alone would mark every one of them for a single bad field.
+ * Browser-only destinations never hold deployment settings.
+ */
+export function settingsIssuesForDestination(issues: SettingsValidationIssue[], destination: { section: string; subsection?: string; scope?: string }): SettingsValidationIssue[] {
+  if (destination.scope === 'browser') return []
+  return issues.filter(issue => issue.section === destination.section
+    && (!issue.subsection || !destination.subsection || issue.subsection === destination.subsection))
+}
+
 export function settingsIssuesForField(issues: SettingsValidationIssue[], field: string): string[] {
   return issues.filter(issue => issue.field === field).map(issue => issue.message)
 }
@@ -706,15 +718,16 @@ export function validateSettingsDetailed(settings: DashboardSystemSettings): Set
     if (!settings.auth.scopes || settings.auth.scopes.length === 0) {
       push('general', 'authentication', 'auth.scopes', 'OIDC auth requires at least one scope.')
     }
-    const oidcURLFields: Array<[string, string | undefined, boolean]> = [
-      ['Issuer URL', settings.auth.issuer_url, false],
-      ['Redirect URL', settings.auth.redirect_url, false],
-      ['Post-Logout Redirect URL', settings.auth.logout_url, true],
+    // Each URL error names its field, so it is shown on (and announced for) that input.
+    const oidcURLFields: Array<[string, string, string | undefined, boolean]> = [
+      ['Issuer URL', 'auth.issuer_url', settings.auth.issuer_url, false],
+      ['Redirect URL', 'auth.redirect_url', settings.auth.redirect_url, false],
+      ['Post-Logout Redirect URL', 'auth.logout_url', settings.auth.logout_url, true],
     ]
-    oidcURLFields.forEach(([label, value, allowAbsolutePath]) => {
+    oidcURLFields.forEach(([label, field, value, allowAbsolutePath]) => {
       const error = validateAuthURL(label, value, allowAbsolutePath)
       if (error) {
-        push('general', 'authentication', undefined, error)
+        push('general', 'authentication', field, error)
       }
     })
   }

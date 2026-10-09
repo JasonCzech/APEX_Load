@@ -12,9 +12,12 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 )
 
 type ImportRequest struct {
@@ -32,6 +35,33 @@ type ConvertOptions struct {
 	InferExtractors     *bool  `json:"infer_extractors,omitempty"`
 	SanitizeSensitive   *bool  `json:"sanitize_sensitive,omitempty"`
 	IncludeStaticAssets *bool  `json:"include_static_assets,omitempty"`
+	// PageTitleChecks adds a body_contains check on each recorded HTML page's
+	// <title>, as VuGen does by default. Nil means on.
+	PageTitleChecks *bool `json:"page_title_checks,omitempty"`
+	// ResourceMode mirrors VuGen's resource recording choices for HAR input:
+	// "runtime" (default) drops static resources for discovery at replay,
+	// "in_step" attaches them to the page that requested them as explicit
+	// resources, and "separate" keeps them as their own steps.
+	ResourceMode string `json:"resource_mode,omitempty"`
+	// HTMLSteps turns the requests of the given 1-based HAR entries into
+	// HTML-mode steps (params.html_step) that resolve against the replayed
+	// page. The browser recorder supplies them for an HTML-level HTTP script.
+	HTMLSteps map[int]map[string]any `json:"-"`
+	// AsyncScan (HAR input; default on) collapses requests a page repeated in
+	// the background (poll, long-poll, push) into background conversations.
+	// Off keeps them as recorded steps.
+	AsyncScan *bool `json:"async_scan,omitempty"`
+	// Profile is the project recording profile (HAR input): its host and
+	// content-type filters, header drop list, think-time threshold and
+	// correlation settings apply.
+	Profile *recordingprofile.Profile `json:"-"`
+	// OmitSourceReview skips the source review, which embeds a scrubbed copy
+	// of the input. The proxy recorder sets it: it keeps the recording itself.
+	OmitSourceReview bool `json:"-"`
+	// HighConfidenceOnly rewrites only high-confidence correlations
+	// (correlate.HighConfidence); the rest stay review candidates. The proxy
+	// recorder sets it.
+	HighConfidenceOnly bool `json:"-"`
 }
 
 type ConvertStats struct {
@@ -61,6 +91,21 @@ type Correlation struct {
 	// of being mislabeled as already applied.
 	PreApplied   bool   `json:"pre_applied,omitempty"`
 	ReviewAction string `json:"review_action,omitempty"`
+
+	// FoundInEntry and UsedInEntries are the 1-based HAR entries of
+	// FoundInStep and UsedInSteps, and RuleID, Confidence and Reasons the
+	// detector's ranking. They are for adapters (the proxy recorder maps
+	// entries back to its request sequence) and are not serialized.
+	FoundInEntry  int      `json:"-"`
+	UsedInEntries []int    `json:"-"`
+	RuleID        string   `json:"-"`
+	Confidence    float64  `json:"-"`
+	Reasons       []string `json:"-"`
+
+	// reviewOnly keeps a correlation out of the automatic rewrite (see
+	// ConvertOptions.HighConfidenceOnly) while it still takes part in
+	// collision checks.
+	reviewOnly bool
 }
 
 type ConvertResult struct {
@@ -75,6 +120,12 @@ type ConvertResult struct {
 	// values needed to bind the generated {{secret.*}} references. It is never
 	// serialized with the conversion result.
 	ProtectedRequirements credentialpolicy.ProtectedRequirements `json:"-"`
+
+	// Baseline holds the raw recorded observation of each converted request
+	// (HAR input), with ID the index of its action in the final script.
+	// Requests folded into a background conversation are left out. It holds
+	// source values and is never serialized.
+	Baseline []correlate.Observation `json:"-"`
 }
 
 type exchange struct {
@@ -93,10 +144,19 @@ type exchange struct {
 	HasStartedAt  bool
 	DurationMs    float64
 	TimeoutMs     int
+	// ReviewFindings attach to the action generated from this exchange (for
+	// example the integrated-auth gate from normalizeRecordedExchanges).
+	ReviewFindings []importreview.Finding
 	// SourceSecrets retains source-only values that do not survive in a
 	// projected request surface (for example cURL -u input or arguments of an
 	// unsupported option). It is consumed only by source-review redaction.
 	SourceSecrets []string
+	// StepName names the generated action (the recorder's step name), and
+	// RecordedThinkTimeMs is the pause the recorder measured, or the tester
+	// edited, before this request (HasRecordedThinkTime).
+	StepName             string
+	RecordedThinkTimeMs  int64
+	HasRecordedThinkTime bool
 }
 
 type response struct {
@@ -133,6 +193,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		skipped     int
 	)
 
+	var pageResources map[int][]any
 	switch format {
 	case "raw_http":
 		exchanges, warnings, err = parseRawHTTP(req.Content, req.ResponseContent, req.Options.BaseURL)
@@ -141,7 +202,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	case "rest_json":
 		exchanges, warnings, err = parseRESTJSON(req.Content)
 	case "har":
-		exchanges, warnings, filtered, skipped, err = parseHAR(req.Content, convertutil.BoolOption(req.Options.IncludeStaticAssets, false), &diagnostics)
+		includeStatic := convertutil.BoolOption(req.Options.IncludeStaticAssets, false) || strings.EqualFold(req.Options.ResourceMode, "separate")
+		exchanges, warnings, filtered, skipped, err = parseHAR(req.Content, includeStatic, &diagnostics)
+		if err == nil && !includeStatic && strings.EqualFold(req.Options.ResourceMode, "in_step") {
+			pageResources = harInStepResources(req.Content)
+		}
 	default:
 		return nil, fmt.Errorf("unsupported format %q", req.Format)
 	}
@@ -151,9 +216,29 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if len(exchanges) == 0 {
 		return nil, errors.New("no requests found in sample input")
 	}
+	if format == "har" && req.Options.Profile != nil {
+		var profileFiltered int
+		exchanges, profileFiltered = applyRecordingProfileFilters(exchanges, req.Options.Profile)
+		filtered += profileFiltered
+		if profileFiltered > 0 {
+			warnings = append(warnings, fmt.Sprintf("recording profile %q left %d request(s) out by host or content type", req.Options.Profile.Name, profileFiltered))
+		}
+		if len(exchanges) == 0 {
+			return nil, errors.New("the recording profile filtered out every request")
+		}
+	}
+	exchanges, normalizationWarnings := normalizeRecordedExchanges(exchanges, format)
+	if format == "har" && len(req.Options.HTMLSteps) > 0 {
+		forgetHTMLStepRequestValues(exchanges, req.Options.HTMLSteps)
+	}
+	warnings = append(warnings, normalizationWarnings...)
+	if len(exchanges) == 0 {
+		return nil, errors.New("no requests found in sample input")
+	}
 
 	includeAssertions := convertutil.BoolOption(req.Options.IncludeAssertions, true)
 	inferExtractors := convertutil.BoolOption(req.Options.InferExtractors, true)
+	pageTitleChecks := includeAssertions && convertutil.BoolOption(req.Options.PageTitleChecks, true)
 	baseURL := strings.TrimSpace(req.Options.BaseURL)
 	if baseURL == "" {
 		baseURL = detectBaseURL(exchanges)
@@ -169,7 +254,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if inferExtractors {
 		var analysisWarnings []string
 		if format == "har" {
-			correlations, analysisWarnings, err = detectHARCorrelationsForReview(exchanges)
+			var settings *recordingprofile.CorrelationSettings
+			if req.Options.Profile != nil {
+				settings = &req.Options.Profile.Correlation
+			}
+			correlations, analysisWarnings, err = detectHARCorrelationsWithSettings(exchanges, settings)
 		} else {
 			correlations, err = detectCorrelationsChecked(exchanges)
 		}
@@ -181,6 +270,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			// converts, just without automatic correlation rewrites.
 			correlations = nil
 			warnings = append(warnings, fmt.Sprintf("correlation analysis was not completed and no automatic correlation rewrites were applied: %v", err))
+		}
+		if req.Options.HighConfidenceOnly {
+			for index := range correlations {
+				correlations[index].reviewOnly = !correlate.HighConfidence(correlate.Correlation{Confidence: correlations[index].Confidence})
+			}
 		}
 		if len(analysisWarnings) > 0 {
 			// Incomplete analysis misses correlations; it does not invalidate the
@@ -241,6 +335,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			SkippedRequests: skipped,
 		},
 	}
+	if warning := requestimport.ApplyIntegratedAuth(result.Script, integratedAuthHosts(exchanges)); warning != "" {
+		result.Warnings = append(result.Warnings, warning)
+	}
 	if format == "raw_http" && rawHTTP11Only(exchanges) {
 		// Raw HTTP/1.1 connection-specific headers are executable only when the
 		// script requires HTTP/1.1. Leaving the config in automatic negotiation
@@ -252,8 +349,12 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		result.Script.Config.JavaHTTP = javaHTTPConfig
 		result.Warnings = append(result.Warnings, "Java-over-HTTP serialized-object traffic was imported in byte-preserving embedded mode; request/object mappings are not applied without a governed java_vuser sidecar flow")
 	}
-	sourceFiles := sampleSourceFiles(format, req.Content, req.ResponseContent)
-	sourceLocations := sampleSourceLocations(format, req.Content, req.ResponseContent, exchanges)
+	var sourceFiles map[string]string
+	var sourceLocations []sampleSourceLocation
+	if !req.Options.OmitSourceReview {
+		sourceFiles = sampleSourceFiles(format, req.Content, req.ResponseContent)
+		sourceLocations = sampleSourceLocations(format, req.Content, req.ResponseContent, exchanges)
+	}
 	sourceMappings := make([]sourceview.Mapping, 0, len(exchanges))
 	finalizationReports := make([]requestimport.Report, 0, len(exchanges))
 	defer func() {
@@ -276,8 +377,13 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		headers = applyCorrelationVarsToHeaders(headers, stepVars)
 		headerList = applyCorrelationVarsToHeaderList(headerList, stepVars)
 
+		var actionParams map[string]any
+		if resources := pageResources[ex.SourceEntryID]; len(resources) > 0 {
+			actionParams = map[string]any{"resources": resources}
+		}
 		action := dsl.Action{
-			Name:         actionName(idx, ex.Method, ex.URL),
+			Params:       actionParams,
+			Name:         exchangeActionName(idx, ex),
 			Type:         "request",
 			Method:       strings.ToUpper(ex.Method),
 			Target:       target,
@@ -287,6 +393,23 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			BodyEncoding: ex.BodyEncoding,
 			Metadata:     cloneMetadata(ex.Metadata),
 		}
+		if htmlStep := req.Options.HTMLSteps[ex.SourceEntryID]; htmlStep != nil && format == "har" {
+			// The page decides the URL, body and encoding at replay.
+			if action.Params == nil {
+				action.Params = map[string]any{}
+			}
+			action.Params[httpprotocol.HTMLStepParam] = htmlStep
+			action.Target = "#html-step"
+			action.Body, action.BodyEncoding = "", ""
+			// The live page is the Referer, as for any HTML-mode step; the
+			// recorded one may carry the recorded page's values.
+			for name := range action.Headers {
+				if strings.EqualFold(name, "Content-Type") || strings.EqualFold(name, "Content-Length") || strings.EqualFold(name, "Referer") {
+					delete(action.Headers, name)
+				}
+			}
+			action.HeaderList = withoutHeaders(action.HeaderList, "Content-Type", "Content-Length", "Referer")
+		}
 		if ex.TimeoutMs > 0 {
 			action.TimeoutMs = ex.TimeoutMs
 		}
@@ -294,7 +417,8 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			zero := 0
 			action.MaxRedirects = &zero
 		}
-		if thinkTimeMs, ok := thinkTimeAfter(exchanges, idx); ok {
+		applyExchangeReviewFindings(&action, ex)
+		if thinkTimeMs, ok := thinkTimeAfterThreshold(exchanges, idx, thinkThreshold(req.Options.Profile)); ok {
 			action.ThinkTimeAfter = true
 			action.ThinkTime = dsl.ThinkTimeConfig{
 				Type:   "fixed",
@@ -324,6 +448,12 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 					})
 				}
 				result.Stats.Assertions++
+			}
+			if pageTitleChecks {
+				if title := requestimport.RecordedPageTitle(responseHeaderValue(ex.Response, "Content-Type"), ex.Response.Status, ex.Response.Body, correlationValues(correlations)); title != "" {
+					action.Assertions = append(action.Assertions, dsl.Assertion{Type: "body_contains", Value: title})
+					result.Stats.Assertions++
+				}
 			}
 			if inferExtractors {
 				for _, corr := range correlations {
@@ -410,14 +540,92 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	result.ProtectedRequirements.Store(finalized.Requirements)
 	clearSampleRequirements(finalized.Requirements)
 	result.Script = finalized.Script
+	if format == "har" {
+		structureMultipartBodies(result.Script)
+	}
 
 	if gap := result.Stats.TotalRequests - result.Stats.FilteredAssets - result.Stats.SkippedRequests - result.Stats.ConvertedActions; gap > 0 {
 		diagnostics.Add(diag.Warning, "Sample completeness guard", format, fmt.Sprintf("%d request(s) were parsed but not converted into actions", gap))
 	}
+	var timestampsNote string
+	if format == "har" {
+		if timestampsNote = applyRecordedClientTimestamps(result.Script, req.Content); timestampsNote != "" {
+			result.Warnings = append(result.Warnings, timestampsNote)
+		}
+		var shapeWarnings []string
+		var newIndex []int
+		sourceMappings, newIndex, shapeWarnings = shapeRecordedHAR(result.Script, exchanges, req.Content, convertutil.BoolOption(req.Options.AsyncScan, true), sourceMappings)
+		result.Warnings = append(result.Warnings, shapeWarnings...)
+		result.Baseline = recordedBaseline(exchanges, newIndex)
+	}
+	for index := range result.Correlations {
+		corr := &result.Correlations[index]
+		corr.FoundInEntry = exchangeEntry(exchanges, corr.FoundInStep)
+		corr.UsedInEntries = make([]int, 0, len(corr.UsedInSteps))
+		for _, step := range corr.UsedInSteps {
+			corr.UsedInEntries = append(corr.UsedInEntries, exchangeEntry(exchanges, step))
+		}
+	}
 	result.Unsupported = append(diagnostics.Items(), finalized.Diagnostics...)
+	if timestampsNote != "" {
+		result.Unsupported = append(result.Unsupported, diag.Diagnostic{Code: ClientTimestampsDiagnosticCode, Element: "Client-generated timestamps", Location: "HAR requests", Detail: timestampsNote, Severity: diag.Warning})
+	}
 	result.Stats.CorrelationsDetected = len(correlations)
-	result.SourceReview = sourceview.Build(sourceFiles, sourceMappings)
+	if !req.Options.OmitSourceReview {
+		result.SourceReview = sourceview.Build(sourceFiles, sourceMappings)
+	}
 	return result, nil
+}
+
+// ClientTimestampsDiagnosticCode marks the note that recorded client
+// timestamps get a fresh value at replay.
+const ClientTimestampsDiagnosticCode = "client_generated_timestamps"
+
+// exchangeEntry is the source entry of a 1-based step.
+func exchangeEntry(exchanges []exchange, step int) int {
+	if step < 1 || step > len(exchanges) {
+		return 0
+	}
+	return exchanges[step-1].SourceEntryID
+}
+
+// recordedBaseline is the raw observation of each converted exchange, with
+// ID its action index after shaping (newIndex, when the script was shaped);
+// exchanges folded into a conversation are left out.
+func recordedBaseline(exchanges []exchange, newIndex []int) []correlate.Observation {
+	baseline := make([]correlate.Observation, 0, len(exchanges))
+	for index, ex := range exchanges {
+		id := index
+		if newIndex != nil {
+			if index >= len(newIndex) || newIndex[index] < 0 {
+				continue
+			}
+			id = newIndex[index]
+		}
+		observation := correlate.Observation{
+			ID:                     id,
+			RequestURL:             ex.URL,
+			RequestBody:            ex.Body,
+			RequestBodyTransformed: ex.BodyEncoding != "",
+			RequestHeaders:         correlationObservationHeaders(ex.Headers, ex.HeaderList),
+		}
+		if ex.Response != nil {
+			observation.ResponseBody = ex.Response.Body
+			observation.ResponseHeaders = requestimport.ResponseContentBaselineHeaders(correlationObservationHeaders(ex.Response.Headers, ex.Response.HeaderList), ex.Response.ContentCapture)
+			observation.ResponseStatus = ex.Response.Status
+		}
+		baseline = append(baseline, observation)
+	}
+	return baseline
+}
+
+// exchangeActionName names an exchange's action: its recorded step name, or
+// its method and path.
+func exchangeActionName(index int, ex exchange) string {
+	if name := strings.TrimSpace(ex.StepName); name != "" {
+		return fmt.Sprintf("%02d - %s", index+1, name)
+	}
+	return actionName(index, ex.Method, ex.URL)
 }
 
 func isExplicitRedirectStep(ex exchange) bool {
@@ -471,14 +679,35 @@ func mergeFileAssets(script *dsl.Script, assets []dsl.DataSource) {
 }
 
 func thinkTimeAfter(exchanges []exchange, index int) (float64, bool) {
+	return thinkTimeAfterThreshold(exchanges, index, 500*time.Millisecond)
+}
+
+func thinkThreshold(profile *recordingprofile.Profile) time.Duration {
+	if profile == nil {
+		return recordingprofile.DefaultThinkTimeMs * time.Millisecond
+	}
+	return time.Duration(profile.ThinkTimeThreshold()) * time.Millisecond
+}
+
+// thinkTimeAfterThreshold is the recorded pause after an exchange, when it
+// exceeds threshold.
+func thinkTimeAfterThreshold(exchanges []exchange, index int, threshold time.Duration) (float64, bool) {
 	if index < 0 || index >= len(exchanges)-1 {
 		return 0, false
 	}
 	current := exchanges[index]
 	next := exchanges[index+1]
+	if next.HasRecordedThinkTime {
+		// The recorder measured the pause before the next request, or the
+		// tester edited it.
+		if time.Duration(next.RecordedThinkTimeMs)*time.Millisecond > threshold {
+			return float64(next.RecordedThinkTimeMs), true
+		}
+		return 0, false
+	}
 	if current.HasStartedAt && next.HasStartedAt {
 		gap := next.StartedAt.Sub(current.StartedAt) - time.Duration(current.DurationMs*float64(time.Millisecond))
-		if gap > 500*time.Millisecond {
+		if gap > threshold {
 			return float64(gap / time.Millisecond), true
 		}
 	}
@@ -576,4 +805,65 @@ func (result *ConvertResult) Accounting() convertresult.Accounting {
 		result.Stats.FilteredAssets+result.Stats.SkippedRequests,
 		result.SourceReview.ReviewOnlyActionCount(),
 	)
+}
+
+// responseHeaderValue returns a recorded response header, ignoring case.
+func responseHeaderValue(resp *response, name string) string {
+	if resp == nil {
+		return ""
+	}
+	for key, value := range resp.Headers {
+		if strings.EqualFold(key, name) {
+			return value
+		}
+	}
+	for _, header := range resp.HeaderList {
+		if strings.EqualFold(header.Name, name) {
+			return header.Value
+		}
+	}
+	return ""
+}
+
+// correlationValues lists the recorded values the correlation pass found.
+func correlationValues(correlations []Correlation) []string {
+	values := make([]string, 0, len(correlations))
+	for _, corr := range correlations {
+		values = append(values, corr.Value)
+	}
+	return values
+}
+
+func withoutHeaders(list dsl.HeaderList, names ...string) dsl.HeaderList {
+	if len(list) == 0 {
+		return list
+	}
+	kept := list[:0:0]
+	for _, header := range list {
+		drop := false
+		for _, name := range names {
+			drop = drop || strings.EqualFold(header.Name, name)
+		}
+		if !drop {
+			kept = append(kept, header)
+		}
+	}
+	return kept
+}
+
+// forgetHTMLStepRequestValues drops the recorded body and query of requests
+// that become HTML-mode steps. The page supplies them at replay, so they must
+// not make the correlation pass extract hidden fields or link parameters that
+// nothing sends any more.
+func forgetHTMLStepRequestValues(exchanges []exchange, steps map[int]map[string]any) {
+	for i := range exchanges {
+		if steps[exchanges[i].SourceEntryID] == nil {
+			continue
+		}
+		exchanges[i].Body, exchanges[i].BodyEncoding = "", ""
+		if parsed, err := url.Parse(exchanges[i].URL); err == nil {
+			parsed.RawQuery = ""
+			exchanges[i].URL = parsed.String()
+		}
+	}
 }

@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,7 +18,9 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/aurapayload"
+	"github.com/jasonczech/apexload/pkg/internal/bodyencoding"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
@@ -326,6 +329,9 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		resolved.MessageDetailMaxItemBytes = normalizedMessageDetailMaxItemBytes(detailPolicy.MaxItemBytes)
 		resolved.MessageDetailMaxTotalBytes = normalizedMessageDetailMaxTotalBytes(detailPolicy.MaxTotalBytes)
 	}
+	if action.BodyMultipart != nil {
+		vu.applyMultipartBody(action.BodyMultipart, resolved)
+	}
 	// The authored action is the only place the origin of these credentials can
 	// be read; by the time the execution path sees the resolved action,
 	// {{secret.NAME}} has already been replaced by its value. Both per-action
@@ -480,6 +486,9 @@ func (vu *VUser) interpolateActionBody(body, encoding, templateValueEncoding str
 		vu.bodyResolutionError = &aurapayload.Error{Code: aurapayload.InvalidTemplateContract}
 		return body, body
 	}
+	if bodyencoding.IsCEscaped(encoding) {
+		return vu.resolveCEscapedBody(body)
+	}
 	interpolate := vu.interpolateWithSecrets
 	if templateValueEncoding == dsl.ImportURLFormTemplateValueEncodingQueryComponent {
 		interpolate = vu.interpolateURLFormTemplateValuesWithSecrets
@@ -524,6 +533,24 @@ func (vu *VUser) interpolateActionBody(body, encoding, templateValueEncoding str
 	}
 	return base64.StdEncoding.EncodeToString([]byte(resolved)),
 		base64.StdEncoding.EncodeToString([]byte(redacted))
+}
+
+// resolveCEscapedBody resolves a c_escaped body (LoadRunner BodyBinary):
+// templates first, with each value escaped so it is sent verbatim, then the
+// authored escapes are decoded into the wire bytes.
+func (vu *VUser) resolveCEscapedBody(body string) (string, string) {
+	resolved, redacted := vu.interpolateWithSecretsTransform(body, bodyencoding.EscapeCText)
+	decoded, err := bodyencoding.DecodeCEscapes(resolved)
+	if err != nil {
+		vu.bodyResolutionError = err
+		return body, body
+	}
+	decodedRedacted, err := bodyencoding.DecodeCEscapes(redacted)
+	if err != nil {
+		// Never fall back to the resolved bytes: they carry secret values.
+		decodedRedacted = []byte(redacted)
+	}
+	return string(decoded), string(decodedRedacted)
 }
 
 // javaVuserSkipsParameterEvaluation reports the script-level "skip automatic
@@ -1263,9 +1290,24 @@ func toProtocolExtractors(exts []dsl.Extractor, vu *VUser) []protocol.Extractor 
 			SaveOffset:   e.SaveOffset,
 			SaveLength:   e.SaveLength,
 			Convert:      e.Convert,
+			Scope:        toProtocolExtractorScope(e.Scope),
+			DFEs:         append([]string(nil), e.DFEs...),
 		}
 	}
 	return out
+}
+
+func toProtocolExtractorScope(scope *dsl.ExtractorScope) *protocol.ExtractorScope {
+	if scope == nil {
+		return nil
+	}
+	return &protocol.ExtractorScope{
+		Redirects:   scope.Redirects,
+		Resources:   scope.Resources,
+		RequestURL:  scope.RequestURL,
+		ContentType: scope.ContentType,
+		HeaderNames: append([]string(nil), scope.HeaderNames...),
+	}
 }
 
 func toProtocolAssertions(asserts []dsl.Assertion, vu *VUser) []protocol.Assertion {
@@ -1275,7 +1317,12 @@ func toProtocolAssertions(asserts []dsl.Assertion, vu *VUser) []protocol.Asserti
 		value := a.Value
 		if vu != nil {
 			expected, _ = vu.interpolateAnyWithSecrets(expected)
-			value, _ = vu.interpolateWithSecrets(value)
+			if httpprotocol.IsRegexTextAssertion(a.Type) {
+				// A parameter inside a text_matches pattern is literal text.
+				value, _ = vu.interpolateWithSecretsTransform(value, regexp.QuoteMeta)
+			} else {
+				value, _ = vu.interpolateWithSecrets(value)
+			}
 		}
 		out[i] = protocol.Assertion{
 			Type:            a.Type,
@@ -1285,6 +1332,7 @@ func toProtocolAssertions(asserts []dsl.Assertion, vu *VUser) []protocol.Asserti
 			Min:             a.Min,
 			Max:             a.Max,
 			CaseInsensitive: a.CaseInsensitive,
+			Source:          a.Source,
 		}
 	}
 	return out

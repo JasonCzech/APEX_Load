@@ -52,3 +52,12 @@ describe('cronBuilder', () => {
     expect(exprToCronModel('0 9 * * MON')).toBeNull() // alias (raw input still handles it)
   })
 })
+
+describe('out-of-range expressions', () => {
+  it('leaves the builder alone instead of modelling an impossible time', () => {
+    expect(exprToCronModel('99 87 * * *')).toBeNull()
+    expect(exprToCronModel('0 9 32 * *')).toBeNull()
+    expect(exprToCronModel('*/0 * * * *')).toBeNull()
+    expect(exprToCronModel('5 */24 * * *')).toBeNull()
+  })
+})

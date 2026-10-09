@@ -37,7 +37,11 @@ export function filterDashboardRuns(tests: TestSummary[], filters: RunFilters, r
   const cutoff = filters.days === 'all' ? null : now - Number(filters.days) * 86_400_000
   return tests.filter(test => {
     if (search && !`${test.name} ${runReference(test)} ${test.script_name || ''}`.toLocaleLowerCase().includes(search)) return false
-    if (filters.status !== 'all' && test.status !== filters.status) return false
+    // "Stopped by operator" is a COMPLETE run with a stop actor, as on Results.
+    const stoppedByOperator = Boolean(test.stopped_by_subject)
+    if (filters.status === 'STOPPED') {
+      if (!stoppedByOperator) return false
+    } else if (filters.status !== 'all' && (test.status !== filters.status || (filters.status === 'COMPLETE' && stoppedByOperator))) return false
     if (filters.evidence !== 'all' && Boolean(test.archive) !== (filters.evidence === 'available')) return false
     if (filters.acceptance !== 'all' && dashboardAcceptance(test, reports) !== filters.acceptance) return false
     const completed = Date.parse(test.ended_at || test.start_time || test.created_at)

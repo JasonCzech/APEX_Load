@@ -119,6 +119,8 @@ func (c *secretCollector) collect(value any, ctx projectionContext, depth int) {
 				if text, ok := child.(string); ok {
 					c.collectBody(text, typed)
 				}
+			case normalized == "bodymultipart":
+				c.collectMultipartParts(child)
 			case ctx.headers && (credential.SensitiveHeader(key) || isSensitiveKey(key)):
 				c.addNamedNode(key, child)
 			case isSensitiveKey(key) && !isSecretReferenceKey(key):
@@ -900,6 +902,51 @@ func (c *secretCollector) collectMultipartBody(payload []byte, boundary string) 
 			}
 		}
 		c.collectStructuredBody(body, part.Header.Get("Content-Type"))
+	}
+}
+
+// collectMultipartParts collects from a body_multipart as from a recorded
+// multipart body: a sensitive field name or part header marks its value, and
+// structured part content is searched too.
+func (c *secretCollector) collectMultipartParts(raw any) {
+	body, _ := raw.(map[string]any)
+	parts, _ := body["parts"].([]any)
+	for index, item := range parts {
+		if index >= 1_000 || c.structuredBudget.incomplete {
+			return
+		}
+		part, _ := item.(map[string]any)
+		name, _ := part["name"].(string)
+		value, _ := part["value"].(string)
+		stored := value
+		if encoding, _ := part["value_encoding"].(string); strings.EqualFold(strings.TrimSpace(encoding), "base64") {
+			if !c.structuredBudget.reserveBytes(len(value)) {
+				return
+			}
+			decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(value))
+			if err != nil {
+				continue
+			}
+			value = string(decoded)
+		}
+		if credential.SensitiveName(name) && credential.MatchableNamedValue(name, value) {
+			c.add(value)
+			if stored != value {
+				// The script holds the base64 form.
+				c.add(stored)
+			}
+		}
+		headers, _ := part["headers"].(map[string]any)
+		for headerName, headerValue := range headers {
+			text, _ := headerValue.(string)
+			if (credential.SensitiveHeader(headerName) || credential.SensitiveName(headerName)) && credential.MatchableNamedValue(headerName, text) {
+				c.add(text)
+			}
+		}
+		if value != "" && !isPortableBinding(value) {
+			contentType, _ := part["content_type"].(string)
+			c.collectStructuredBody([]byte(value), contentType)
+		}
 	}
 }
 

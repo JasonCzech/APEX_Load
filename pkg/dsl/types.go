@@ -772,6 +772,9 @@ type RunLogicConfig struct {
 	AutoTransactions string   `json:"auto_transactions,omitempty"` // "none" (default), "per_action", "per_iteration"
 	BlockScheduling  string   `json:"block_scheduling,omitempty"`  // "sequential", "random", "percentage"
 	ActionSequence   []string `json:"action_sequence,omitempty"`   // e.g. ["init", "action", "teardown"]
+	// Blocks replaces the fixed order of script.actions with LoadRunner run
+	// logic (see run_logic_blocks.go).
+	Blocks []RunLogicBlock `json:"blocks,omitempty"`
 }
 
 // LogConfig controls per-VUser logging verbosity.
@@ -891,11 +894,15 @@ type ProxyConfig struct {
 
 // AuthConfig defines default authentication applied to all requests.
 type AuthConfig struct {
-	Type     string `json:"type,omitempty"`     // "basic", "bearer", or "digest"; imported "ntlm"/"kerberos"/"negotiate" are review-only and fail closed at HTTP runtime
+	Type     string `json:"type,omitempty"`     // "basic", "bearer", "digest"; challenge-driven "ntlm", "negotiate" (NTLM inside Negotiate) and "negotiate_any" (answers Basic, Digest, NTLM or Negotiate challenges); "kerberos" fails closed
 	Username string `json:"username,omitempty"` // for basic/ntlm/digest
 	Password string `json:"password,omitempty"`
 	Token    string `json:"token,omitempty"`  // for bearer
 	Domain   string `json:"domain,omitempty"` // for ntlm
+	// Hosts limits script-level auth to these hosts ("host" matches any
+	// port, "host:port" one port). Empty sends it to every host. Imported
+	// web_set_user calls fill it from their host argument.
+	Hosts []string `json:"hosts,omitempty"`
 }
 
 // ErrorHandlingConfig controls how execution errors are handled.
@@ -1113,6 +1120,9 @@ type Action struct {
 	TimeoutMs    int               `json:"timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"` // override global request timeout
 	MaxRedirects *int              `json:"max_redirects,omitempty" jsonschema:"minimum=-1,maximum=50"`  // override global redirect policy
 	SOAP         *SOAPActionConfig `json:"soap,omitempty"`
+	// BodyMultipart is a multipart/form-data body built at replay from its
+	// parts, with a fresh boundary. It replaces body.
+	BodyMultipart *MultipartBody `json:"body_multipart,omitempty"`
 }
 
 // AnalyticsAttribution assigns an action to a stable composition/page
@@ -1247,6 +1257,36 @@ type Extractor struct {
 	// it for safe reuse in URLs/bodies; "url_decode" decodes form/query
 	// escaping; "html_decode" decodes HTML entities.
 	Convert string `json:"convert,omitempty"`
+	// Scope widens or filters the HTTP responses searched. Without it only
+	// the final response of the request is searched.
+	Scope *ExtractorScope `json:"scope,omitempty"`
+	// DFEs transforms each searched HTTP response body, in order, before the
+	// expression runs (LoadRunner data-format extensions): base64, gzip,
+	// json_to_xml, xml_to_json, url_decode, url_encode, html_unescape,
+	// html_escape. Sources that do not read the body ignore it.
+	DFEs []string `json:"dfes,omitempty"`
+}
+
+// ExtractorScope is the set of a request's responses an HTTP extractor
+// searches, as LoadRunner registrations search every response of a step.
+// Responses are tried in order (redirect hops, the final response, then
+// resources in arrival order) and the first match wins.
+type ExtractorScope struct {
+	// Redirects "include" also searches each redirect hop's status and
+	// headers (Go does not keep a hop's body). "" or "exclude" does not.
+	Redirects string `json:"redirects,omitempty"`
+	// Resources "include" also searches the responses of the resources the
+	// request fetches (explicit resources or Browser Emulation downloads).
+	Resources string `json:"resources,omitempty"`
+	// RequestURL keeps only responses whose request URL matches this glob
+	// ("*" spans any text and "?" one character, every other character is
+	// literal, matched case-insensitively against the whole URL; a pattern
+	// without wildcards matches as a substring).
+	RequestURL string `json:"request_url,omitempty"`
+	// ContentType keeps only responses whose Content-Type matches this glob.
+	ContentType string `json:"content_type,omitempty"`
+	// HeaderNames limits header, all and cookies searches to these headers.
+	HeaderNames []string `json:"header_names,omitempty"`
 }
 
 type Assertion struct {
@@ -1257,7 +1297,10 @@ type Assertion struct {
 	Value    string `json:"value,omitempty"`
 	Min      int    `json:"min,omitempty"`
 	Max      int    `json:"max,omitempty"`
-	// CaseInsensitive makes HTTP body_contains and body_not_contains ignore
-	// case, as LoadRunner's Text/IC does.
+	// CaseInsensitive makes HTTP body_contains, body_not_contains and the
+	// text_* checks ignore case, as LoadRunner's Text/IC does.
 	CaseInsensitive bool `json:"case_insensitive,omitempty"`
+	// Source is the surface an HTTP text_* check reads: "body" (default),
+	// "headers" (the raw header block) or "all" (headers, then the body).
+	Source string `json:"source,omitempty"`
 }

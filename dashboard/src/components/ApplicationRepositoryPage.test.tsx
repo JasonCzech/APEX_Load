@@ -404,8 +404,15 @@ describe('ApplicationRepositoryPage', () => {
     await act(async () => {
       setSelectValue(filterSelects[4], 'custom')
     })
-    expect(container.textContent).toContain('Activity From')
-    expect(container.textContent).toContain('Activity To')
+    expect(container.textContent).toContain('Activity from')
+    expect(container.textContent).toContain('Activity to')
+    const [rangeFrom, rangeTo] = Array.from(container.querySelectorAll<HTMLInputElement>('.repository-custom-time-row input'))
+    await act(async () => {
+      setInputValue(rangeFrom, '2026-02-10')
+      setInputValue(rangeTo, '2026-02-01')
+    })
+    expect(container.querySelector('.repository-custom-time-row [role="alert"]')?.textContent).toContain('Activity from must be on or before Activity to')
+    expect(rangeFrom.getAttribute('aria-invalid')).toBe('true')
 
     const structureTab = findButton(container, 'Structure', false)
     await act(async () => {
@@ -496,7 +503,7 @@ describe('ApplicationRepositoryPage', () => {
     expect(container.querySelectorAll('.repository-asset-table tbody tr:not([aria-hidden="true"])').length).toBeLessThan(101)
   })
 
-  it('keeps repository test Open on archive navigation and adds Run Dashboard', async () => {
+  it('keeps repository test Open on archive navigation and adds Command Center', async () => {
     const onOpenTest = vi.fn()
     const onOpenCommandCenter = vi.fn()
 
@@ -527,7 +534,7 @@ describe('ApplicationRepositoryPage', () => {
     expect(row).toBeDefined()
     const buttons = Array.from(row?.querySelectorAll('button') ?? []) as HTMLButtonElement[]
     const openButton = buttons.find(button => button.textContent?.trim() === 'Open')
-    const runDashboardButton = buttons.find(button => button.textContent?.trim() === 'Run Dashboard')
+    const runDashboardButton = buttons.find(button => button.textContent?.trim() === 'Command Center')
     expect(openButton).toBeDefined()
     expect(runDashboardButton).toBeDefined()
 
@@ -740,7 +747,7 @@ describe('ApplicationRepositoryPage', () => {
     })
     await flushPromises()
 
-    expect(confirmSpy).toHaveBeenCalledWith('Archive 2 selected items?')
+    expect(confirmSpy).toHaveBeenCalledWith("Archive 2 selected items? Archived scripts and scenarios can be restored from their library's archived view.")
     expect(repositoryApiMock.archiveRelease).toHaveBeenCalledWith('release-1')
     expect(scriptApiMock.getDataPool).toHaveBeenCalledWith('pool-1')
     expect(scriptApiMock.updateDataPool).toHaveBeenCalledWith('pool-1', {

@@ -9,18 +9,19 @@ export interface TrafficProfileTpsStatistics {
   average: number
 }
 
+/**
+ * Axis ticks in the same notation as the phases table beneath the chart
+ * ("1m3s", "26s", "1h30m"), never fractional minutes (0.43m).
+ */
 export function formatTrafficProfileAxisTime(elapsedSeconds: number): string {
   const parsedSeconds = Number(elapsedSeconds)
-  const safeSeconds = Number.isFinite(parsedSeconds) ? Math.max(0, parsedSeconds) : 0
-  if (safeSeconds >= 3600) {
-    const totalMinutes = Math.round(safeSeconds / 60)
-    const hours = Math.floor(totalMinutes / 60)
-    const minutes = totalMinutes % 60
-    return minutes ? `${hours}h ${minutes}m` : `${hours}h`
-  }
-  const minutes = safeSeconds / 60
-  const digits = minutes < 1 ? 2 : minutes < 10 ? 1 : 0
-  return `${minutes.toLocaleString(undefined, { maximumFractionDigits: digits })}m`
+  const whole = Number.isFinite(parsedSeconds) ? Math.max(0, Math.round(parsedSeconds)) : 0
+  const hours = Math.floor(whole / 3600)
+  const minutes = Math.floor((whole % 3600) / 60)
+  const seconds = whole % 60
+  if (hours > 0) return `${hours}h${minutes ? `${minutes}m` : ''}`
+  if (minutes > 0) return `${minutes}m${seconds ? `${seconds}s` : ''}`
+  return `${seconds}s`
 }
 
 function normalizedGroupName(value?: string): string {
@@ -129,4 +130,19 @@ export function trafficProfileTimelineSeconds(profile: TrafficProfile | undefine
     result.add(candidates[candidateIndex])
   }
   return Array.from(result).sort((left, right) => left - right)
+}
+
+// Mirrors trafficprofile.ParseRelativeTimestamp: a Go duration ("60s",
+// "1m30s") or elapsed H:MM[:SS].
+const RELATIVE_TIME = /^(?:(?:\d+(?:\.\d+)?(?:ns|us|µs|ms|s|m|h))+|\d+:[0-5]\d(?::[0-5]\d(?:\.\d+)?)?)$/
+
+/** The time mode the sampled values imply, or undefined when they do not decide it. */
+export function inferTimestampMode(samples: string[][] | undefined, columns: string[], column: string): 'absolute' | 'relative' | undefined {
+  const index = columns.indexOf(column)
+  if (index < 0) return undefined
+  const values = (samples || []).map(row => (row[index] || '').trim()).filter(Boolean)
+  if (values.length === 0) return undefined
+  if (values.every(value => RELATIVE_TIME.test(value))) return 'relative'
+  if (values.every(value => !Number.isNaN(Date.parse(value)) && /\d{4}-\d{2}-\d{2}/.test(value))) return 'absolute'
+  return undefined
 }

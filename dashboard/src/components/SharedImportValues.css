@@ -33,7 +33,7 @@
   padding: 6px 10px;
   border-radius: 6px;
   background: color-mix(in srgb, var(--success) 12%, transparent);
-  color: var(--success);
+  color: var(--success-text);
   font-size: 12px;
   font-weight: 600;
 }
@@ -45,7 +45,7 @@
   font-size: 12px;
   line-height: 1.5;
   background: color-mix(in srgb, var(--danger) 10%, transparent);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .shared-values-warning {
@@ -55,7 +55,7 @@
   font-size: 12px;
   line-height: 1.5;
   background: color-mix(in srgb, var(--warning) 10%, transparent);
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .shared-values-list {
@@ -108,7 +108,7 @@
 
 .shared-values-kind-source_variable {
   background: color-mix(in srgb, var(--warning) 12%, transparent);
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .shared-values-rationale {
@@ -136,14 +136,14 @@
   padding: 6px 10px;
   border-radius: 6px;
   background: color-mix(in srgb, var(--warning) 10%, transparent);
-  color: var(--warning);
+  color: var(--warning-text);
   font-size: 11px;
   line-height: 1.5;
 }
 
 .shared-values-name-error {
   margin: 4px 0 0;
-  color: var(--danger);
+  color: var(--danger-text);
   font-size: 11px;
 }
 

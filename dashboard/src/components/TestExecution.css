@@ -116,7 +116,7 @@
 }
 
 .execution-archive-retry .execution-archive-retry-error {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 @media (max-width: 700px) {
@@ -139,6 +139,24 @@
 .telemetry-status-card {
   background: linear-gradient(135deg, var(--success-bg), var(--bg-card));
   border-color: var(--success-border);
+}
+
+.telemetry-acceptance-outcome {
+  font-weight: 600;
+  padding: 1px 8px;
+  border: 1px solid var(--warning-border);
+  border-radius: 999px;
+  color: var(--warning-text);
+}
+
+.telemetry-acceptance-pass {
+  border-color: var(--success-border);
+  color: var(--success-text);
+}
+
+.telemetry-acceptance-fail {
+  border-color: var(--danger);
+  color: var(--danger-text);
 }
 
 .throughput-status-card {
@@ -672,7 +690,7 @@
 }
 
 .scenario-script-status.error {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .scenario-script-rows {
@@ -742,7 +760,7 @@
 }
 
 .scenario-script-toggle {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 12px;
   font-weight: 700;
   text-transform: var(--label-case, uppercase);
@@ -1115,7 +1133,7 @@
 }
 
 .error-value {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .charts-grid {
@@ -1196,7 +1214,7 @@
 
 .graph-group-tab.active {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .graph-group-tab small {
@@ -1204,7 +1222,7 @@
   border-radius: 999px;
   background: color-mix(in srgb, var(--bg-primary) 76%, transparent);
   color: inherit;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 800;
   line-height: 1.5;
   text-align: center;
@@ -1591,7 +1609,7 @@
 }
 .stat-tile-error {
   font-size: 13px;
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .stat-tile-warning { border-color: var(--warning); background: color-mix(in srgb, var(--warning) 8%, var(--surface)); }
@@ -1607,7 +1625,7 @@
 .imported-panel-heatmap-row { display: flex; min-height: 10px; gap: 2px; }
 .imported-panel-heatmap-row span { flex: 1 1 0; min-width: 2px; border-radius: 1px; background: var(--chart-1); }
 .chart-error-state {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .chart-card .recharts-legend-wrapper {
@@ -1676,7 +1694,7 @@
 
 .chart-drag-handle:hover,
 .chart-drag-handle:focus-visible {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--accent);
   outline: none;
 }
@@ -1778,8 +1796,8 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--bg-primary) 72%, transparent);
-  max-height: 112px;
-  overflow: auto;
+  /* Not a scroll box: the item count is capped with a "+N more" note, and a
+     scrolling region would need its own keyboard focus. */
 }
 
 .chart-series-legend-group {
@@ -1796,7 +1814,7 @@
 
 .chart-series-legend-heading {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 800;
   letter-spacing: var(--label-tracking, 0);
   text-transform: var(--label-case, uppercase);
@@ -1935,13 +1953,13 @@
 }
 
 .route-latency-chip.ok {
-  color: var(--success);
+  color: var(--success-text);
   border-color: color-mix(in srgb, var(--success) 42%, var(--border));
   background: color-mix(in srgb, var(--success) 12%, var(--bg-card));
 }
 
 .route-latency-chip.alert {
-  color: var(--danger);
+  color: var(--danger-text);
   border-color: color-mix(in srgb, var(--danger) 42%, var(--border));
   background: color-mix(in srgb, var(--danger) 12%, var(--bg-card));
 }
@@ -2014,21 +2032,21 @@
 
 .generator-impact-chip.clear,
 .generator-impact-dot.clear {
-  color: var(--success);
+  color: var(--success-text);
   border-color: color-mix(in srgb, var(--success) 42%, var(--border));
   background: color-mix(in srgb, var(--success) 12%, var(--bg-card));
 }
 
 .generator-impact-chip.warning,
 .generator-impact-dot.warning {
-  color: var(--warning);
+  color: var(--warning-text);
   border-color: color-mix(in srgb, var(--warning) 42%, var(--border));
   background: color-mix(in srgb, var(--warning) 12%, var(--bg-card));
 }
 
 .generator-impact-chip.danger,
 .generator-impact-dot.danger {
-  color: var(--danger);
+  color: var(--danger-text);
   border-color: color-mix(in srgb, var(--danger) 42%, var(--border));
   background: color-mix(in srgb, var(--danger) 12%, var(--bg-card));
 }
@@ -2236,7 +2254,7 @@
 
 .btn-warning {
   background: var(--warning);
-  color: #1a1206;
+  color: var(--warning-fill-text);
   border: none;
 }
 
@@ -2342,7 +2360,7 @@
 
 /* The class sits on the focusable tick <text>, so the ring has to render on that node. */
 .chart-y-axis-click-target:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
   fill: var(--accent);
 }
@@ -2363,7 +2381,7 @@
 .chart-axis-label-popover-title {
   margin-bottom: 4px;
   color: #aeb7c8;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   line-height: 1.1;
   letter-spacing: var(--label-tracking, 0.04em);
@@ -2602,7 +2620,7 @@
 }
 
 .chart-metric-name:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 3px;
   border-radius: 3px;
 }
@@ -2651,7 +2669,7 @@
   padding: 8px 12px;
   border-radius: 999px;
   background: rgba(0, 163, 255, 0.12);
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
@@ -2662,7 +2680,7 @@
   padding: 2px 8px;
   border-radius: 999px;
   background: rgba(0, 163, 255, 0.12);
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 11px;
   font-weight: 600;
   vertical-align: middle;
@@ -2830,7 +2848,7 @@
 
 .dependency-map-status.danger {
   background: rgba(var(--danger-rgb), 0.16);
-  color: #fca5a5;
+  color: var(--danger-text);
 }
 
 .dependency-map-status.unknown {
@@ -2943,7 +2961,7 @@
 }
 
 .error-cell {
-  color: var(--danger);
+  color: var(--danger-text);
   font-weight: 600;
 }
 
@@ -3014,7 +3032,7 @@
 
 .group-count {
   font-weight: 600;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* Per-group live metric cards */
@@ -3219,12 +3237,12 @@
 }
 
 .archive-finding-severity.warning {
-  color: var(--warning, var(--warning));
+  color: var(--warning-text);
 }
 
 .archive-finding-severity.error,
 .archive-finding-severity.critical {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .archive-finding-severity.info {
@@ -3432,7 +3450,7 @@
 }
 
 .archive-drilldown-stat.danger {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .archive-drilldown-stat-sep {
@@ -3713,11 +3731,11 @@
 }
 
 .gm-throughput-status.healthy {
-  color: var(--success);
+  color: var(--success-text);
 }
 
 .gm-throughput-status.danger {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 }
 
@@ -3728,7 +3746,7 @@
 }
 
 .gm-label {
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   text-transform: var(--label-case, uppercase);
   letter-spacing: var(--label-tracking, 0.05em);
@@ -3741,7 +3759,7 @@
 }
 
 .error-msg {
-  color: var(--danger);
+  color: var(--danger-text);
   padding: 20px;
 }
 
@@ -3847,7 +3865,7 @@
   padding: 5px 9px;
   border-radius: 999px;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: var(--label-tracking, 0.04em);
@@ -4137,24 +4155,6 @@
   border-radius: 4px;
 }
 
-.execution .btn-accent {
-  background: var(--accent);
-  color: var(--accent-contrast);
-  border: none;
-  cursor: pointer;
-  font-weight: 600;
-  transition: opacity 0.15s;
-}
-
-.execution .btn-accent:hover:not(:disabled) {
-  opacity: 0.85;
-}
-
-.execution .btn-accent:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
 .control-feedback {
   font-size: 13px;
   padding: 8px 12px;
@@ -4198,13 +4198,13 @@
 
 .execution-load-levels th {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   letter-spacing: var(--label-tracking, 0.05em);
   text-transform: var(--label-case, uppercase);
 }
 
 .execution-load-levels td:nth-child(3) {
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 800;
 }
 
@@ -4245,9 +4245,9 @@
   padding: 5px 9px;
 }
 
-.advanced-state-badge.running { border-color: var(--success); color: var(--success); }
-.advanced-state-badge.paused { border-color: var(--warning); color: var(--warning); }
-.advanced-state-badge.stopping { border-color: var(--danger); color: var(--danger); }
+.advanced-state-badge.running { border-color: var(--success); color: var(--success-text); }
+.advanced-state-badge.paused { border-color: var(--warning); color: var(--warning-text); }
+.advanced-state-badge.stopping { border-color: var(--danger); color: var(--danger-text); }
 
 .advanced-fact-grid {
   display: grid;
@@ -4280,7 +4280,7 @@
 .advanced-group-table th,
 .advanced-group-table td { border-bottom: 1px solid var(--border); padding: 10px; text-align: left; white-space: nowrap; }
 .advanced-group-table thead th { color: var(--text-muted); font-size: 11px; text-transform: var(--label-case, uppercase); }
-.advanced-inline-warning { color: var(--warning); margin: 0; }
+.advanced-inline-warning { color: var(--warning-text); margin: 0; }
 
 @media (max-width: 900px) {
   .advanced-fact-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

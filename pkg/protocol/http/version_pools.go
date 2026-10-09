@@ -78,6 +78,7 @@ func (h *HTTP) initializeHTTPPolicyPools(ctx context.Context, config map[string]
 			oauthClient.Transport = protocol.NewTargetPolicyRoundTripper(oauthClient.Transport, h.allowedTargetHosts)
 		}
 		client.Transport = withoutImplicitUserAgent(client.Transport)
+		client.Transport = integratedAuthRoundTripper{base: client.Transport}
 		if h.runCorrelation.enabled() {
 			client.Transport = runCorrelationRoundTripper{base: client.Transport, policy: h.runCorrelation}
 		}

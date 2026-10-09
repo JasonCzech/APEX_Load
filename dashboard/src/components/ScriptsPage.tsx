@@ -60,7 +60,7 @@ interface Props {
   onNativeImportRequestHandled?: () => void
   onSelectScenario?: (id: string) => void
   onNavigate?: (page: NavPage) => void
-  onAuthoringStateChange?: (state: { subView: ScriptsAuthoringSubView; editingId: string | null }) => void
+  onAuthoringStateChange?: (state: { subView: ScriptsAuthoringSubView; editingId: string | null; importLauncher?: string | null }) => void
   featurePolicySignal?: number
 }
 
@@ -185,6 +185,8 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
   const [effectiveAccessLoaded, setEffectiveAccessLoaded] = useState(false)
   const [libraryNotice, setLibraryNotice] = useState('')
+  // Why a create/edit link opened the library instead (role without edit rights).
+  const [accessNotice, setAccessNotice] = useState('')
   const [scriptsLoadError, setScriptsLoadError] = useState('')
   const [secretDialogScript, setSecretDialogScript] = useState<StoredScript | null>(null)
   const [selectedScriptIds, setSelectedScriptIds] = useState<Set<string>>(new Set())
@@ -729,7 +731,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
         },
         {
           id: 'github-bulk-import',
-          label: githubBulkRunning ? 'Bulk Importing...' : 'Bulk Import',
+          label: githubBulkRunning ? 'Bulk importing…' : 'Bulk Import',
           compactLabel: 'Bulk',
           onClick: () => { void handleGithubBulkImport() },
           disabled: githubBulkRunning,
@@ -826,6 +828,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     // resolves would bounce a deep-linked create/edit view back to the library.
     if (effectiveAccessLoaded && !canManageScripts && authoringState.subView !== 'list') {
       openLibrary()
+      setAccessNotice('Your role in this project can view scripts but not create or edit them, so the Script Library is shown instead.')
     }
   }, [effectiveAccessLoaded, authoringState.subView, canManageScripts, openLibrary])
 
@@ -833,12 +836,14 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     onAuthoringStateChange?.({
       subView: authoringState.subView,
       editingId: authoringState.editingId,
+      importLauncher: authoringState.importLauncher,
     })
-  }, [authoringState.editingId, authoringState.subView, onAuthoringStateChange])
+  }, [authoringState.editingId, authoringState.importLauncher, authoringState.subView, onAuthoringStateChange])
 
   const handleDelete = async (id: string) => {
     if (!canManageScripts || movingScriptIds.has(id)) return
-    if (!(await confirmAction('Delete this script?'))) return
+    const scriptName = scripts.find(script => script.id === id)?.name
+    if (!(await confirmAction(scriptName ? `Delete the script “${scriptName}”? This cannot be undone; Archive keeps it restorable.` : 'Delete this script? This cannot be undone; Archive keeps it restorable.', { title: scriptName ? `Delete “${scriptName}”` : 'Delete script', confirmLabel: 'Delete', destructive: true }))) return
     const scope = { ...projectScopeRef.current }
     setDeletingScriptIds(current => new Set(current).add(id))
     try {
@@ -885,7 +890,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
 
   const deleteSelectedScripts = async () => {
     const ids = selectedVisibleScriptIds.filter(id => !deletingScriptIds.has(id) && !movingScriptIds.has(id))
-    if (!canManageScripts || ids.length === 0 || !(await confirmAction(`Delete ${ids.length} selected script${ids.length === 1 ? '' : 's'}?`))) return
+    if (!canManageScripts || ids.length === 0 || !(await confirmAction(`Delete ${ids.length} selected script${ids.length === 1 ? '' : 's'}? This cannot be undone; Archive keeps scripts restorable.`, { title: 'Delete scripts', confirmLabel: 'Delete', destructive: true }))) return
     const scope = { ...projectScopeRef.current }
     setDeletingScriptIds(current => new Set([...current, ...ids]))
     const outcomes = await boundedAllSettled(ids, id => api.deleteScript(id))
@@ -1068,6 +1073,12 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   return (
     <>
       {scriptsLoadError && <p className="settings-notice form-error" role="alert">{scriptsLoadError} <button type="button" className="btn btn-secondary btn-sm" disabled={scriptsLoading} onClick={() => void refresh()}>Retry loading scripts</button></p>}
+      {accessNotice && authoringState.subView === 'list' && (
+        <p className="settings-notice" role="status">
+          {accessNotice}{' '}
+          <button className="btn btn-ghost btn-sm" type="button" onClick={() => setAccessNotice('')}>Dismiss</button>
+        </p>
+      )}
       {libraryNotice && (
         <p className="settings-notice form-error" role="alert">
           {libraryNotice}{' '}
@@ -1235,6 +1246,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
               </BulkActions>
           )}
           <ScriptsLibraryTable
+            paginationScope={filterScope}
             onArchiveChanged={refresh}
             scripts={sortedScripts}
             sortField={sortField}

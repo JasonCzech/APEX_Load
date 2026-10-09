@@ -49,6 +49,8 @@ export interface RepositoryAssetRow {
   status?: string
   summary: string
   detail?: string
+  /** Labelled facts behind the row's info badge (detail is these, joined). */
+  facts?: Array<{ label: string; value: string }>
   createdAt?: string
   updatedAt?: string
   lastActivityAt?: string
@@ -162,8 +164,33 @@ function testMatchesApplication(test: TestSummary, activeApplicationId: string, 
   return releaseMatchesApplication(test.release_id ? releaseMap.get(test.release_id) : undefined, activeApplicationId)
 }
 
+// An asset belongs to the active application when it is assigned to it or ran
+// under one of its releases. Assets with no application at all (fresh imports,
+// API-created scripts) are project-wide and stay visible, so the Repository
+// reconciles with the Script Library instead of silently hiding them.
+function assetInApplicationScope(
+  assignedApplicationId: string | undefined,
+  refsForApplication: unknown[],
+  allRefs: unknown[],
+  activeApplicationId: string,
+) {
+  if (!activeApplicationId) return true
+  if (assignedApplicationId === activeApplicationId || refsForApplication.length > 0) return true
+  return !assignedApplicationId && allRefs.length === 0
+}
+
 function scenarioModeLabel(value?: StoredScenario['scenario_mode']) {
   return value === 'goal_oriented' ? 'Goal' : 'VUser'
+}
+
+/** Library assignment and run releases as labelled facts, plus their one-line form. */
+function libraryAssignmentFacts(asset: { library_assignment?: { application?: { name: string } | null; releases: Array<{ name: string }> }; associated_releases?: Array<{ name: string }> }) {
+  const facts = [
+    { label: 'Assignment', value: asset.library_assignment?.application?.name || 'Unassigned' },
+    { label: 'Assigned releases', value: (asset.library_assignment?.releases || []).map(release => release.name).join(', ') || 'None' },
+    { label: 'Run releases', value: (asset.associated_releases || []).map(release => release.name).join(', ') || 'None' },
+  ]
+  return { facts, detail: facts.map(fact => `${fact.label}: ${fact.value}`).join(' · ') }
 }
 
 export function repositoryKindLabel(kind: RepositoryAssetKind) {
@@ -251,12 +278,13 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
     if (!project) continue
     const category = project.category_id ? categoryMap.get(project.category_id) : undefined
     for (const script of scripts) {
-      const scriptReleaseRefs = releaseRefsForApplication([
+      const allScriptReleaseRefs = [
         ...(script.library_assignment?.releases || []),
         ...(script.associated_releases || []),
         ...(script.scenario_run_releases || []),
-      ], activeApplicationId, releaseMap)
-      if (activeApplicationId && script.library_assignment?.application?.id !== activeApplicationId && scriptReleaseRefs.length === 0) continue
+      ]
+      const scriptReleaseRefs = releaseRefsForApplication(allScriptReleaseRefs, activeApplicationId, releaseMap)
+      if (!assetInApplicationScope(script.library_assignment?.application?.id, scriptReleaseRefs, allScriptReleaseRefs, activeApplicationId)) continue
       const releaseNames = unique([
         ...releaseNamesFromRefs(scriptReleaseRefs),
       ])
@@ -279,10 +307,10 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
         protocol: script.protocol || 'http',
         status,
         summary: `${script.version || '1.0.0'} · ${plural(script.scenario_count || 0, 'scenario')}`,
-        detail: `Assignment: ${script.library_assignment?.application?.name || 'Unassigned'} · Assigned releases: ${(script.library_assignment?.releases || []).map(release => release.name).join(', ') || 'None'} · Run releases: ${(script.associated_releases || []).map(release => release.name).join(', ') || 'None'}`,
+        ...libraryAssignmentFacts(script),
         createdAt: script.created_at,
         lastActivityAt: newestTimestamp([script.last_run_at, script.created_at]),
-        searchText: buildSearchText([script.id, script.name, script.protocol, script.version, status, project.name, category?.name, releaseNames, 'script']),
+        searchText: buildSearchText([script.id, script.name, script.protocol, script.version, status, project.name, category?.name, releaseNames, 'script', script.library_assignment?.application ? '' : 'unassigned']),
       })
     }
   }
@@ -292,8 +320,9 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
     if (!project) continue
     const category = project.category_id ? categoryMap.get(project.category_id) : undefined
     for (const scenario of scenarios) {
-      const scenarioReleaseRefs = releaseRefsForApplication([...(scenario.library_assignment?.releases || []), ...(scenario.associated_releases || [])], activeApplicationId, releaseMap)
-      if (activeApplicationId && scenario.library_assignment?.application?.id !== activeApplicationId && scenarioReleaseRefs.length === 0) continue
+      const allScenarioReleaseRefs = [...(scenario.library_assignment?.releases || []), ...(scenario.associated_releases || [])]
+      const scenarioReleaseRefs = releaseRefsForApplication(allScenarioReleaseRefs, activeApplicationId, releaseMap)
+      if (!assetInApplicationScope(scenario.library_assignment?.application?.id, scenarioReleaseRefs, allScenarioReleaseRefs, activeApplicationId)) continue
       const releaseNames = releaseNamesFromRefs(scenarioReleaseRefs)
       const releaseIds = releaseIdsFromRefs(scenarioReleaseRefs)
       const protocols = protocolListFromScenario(scenario)
@@ -313,7 +342,7 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
         protocol: protocols,
         status,
         summary: `${scenarioModeLabel(scenario.scenario_mode)} · ${scenario.duration || 'No duration'} · ${plural(scenario.script_count || scenario.scripts.length, 'script')} · ${plural(scenario.result_count || 0, 'run')}`,
-        detail: `Assignment: ${scenario.library_assignment?.application?.name || 'Unassigned'} · Assigned releases: ${(scenario.library_assignment?.releases || []).map(release => release.name).join(', ') || 'None'} · Run releases: ${(scenario.associated_releases || []).map(release => release.name).join(', ') || 'None'}`,
+        ...libraryAssignmentFacts(scenario),
         createdAt: scenario.created_at,
         updatedAt: scenario.updated_at,
         lastActivityAt: newestTimestamp([scenario.last_run_at, scenario.updated_at, scenario.created_at]),
@@ -427,11 +456,19 @@ export function summarizeRepositoryRows(rows: RepositoryAssetRow[]) {
   })
 }
 
+/** True when both custom activity dates are set and From falls after To. */
+export function customRangeInverted(filters: Pick<RepositoryCatalogFilters, 'customStartDate' | 'customEndDate'>) {
+  return Boolean(filters.customStartDate && filters.customEndDate && filters.customStartDate > filters.customEndDate)
+}
+
 export function filterRepositoryRows(rows: RepositoryAssetRow[], tab: RepositoryCatalogTab, filters: RepositoryCatalogFilters) {
   const query = filters.query.trim().toLowerCase()
   const now = Date.now()
-  const customStart = filters.customStartDate ? Date.parse(`${filters.customStartDate}T00:00:00`) : Number.NaN
-  const customEnd = filters.customEndDate ? Date.parse(`${filters.customEndDate}T23:59:59.999`) : Number.NaN
+  // An inverted range is shown as a validation error; until it is corrected
+  // the rows stay filtered as if no custom dates were set.
+  const invertedRange = customRangeInverted(filters)
+  const customStart = filters.customStartDate && !invertedRange ? Date.parse(`${filters.customStartDate}T00:00:00`) : Number.NaN
+  const customEnd = filters.customEndDate && !invertedRange ? Date.parse(`${filters.customEndDate}T23:59:59.999`) : Number.NaN
   return rows.filter(row => {
     if (tab !== 'all' && tab !== 'structure' && row.kind !== tab) return false
     if (filters.projectId !== 'all' && row.projectId !== filters.projectId) return false

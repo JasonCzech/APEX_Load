@@ -37,6 +37,7 @@ import {
   TransactionEvent,
 } from '../../types'
 import type { ScriptParameterDefinition } from '../../types/scripts'
+import type { JourneyRiskReport } from '../../components/runReport/journeyRiskModel'
 import type { GoalConfig, GoalTargetStatus, ScenarioMode } from '../../types/goals'
 import type { GeneratorAssignmentSettings } from '../../types/testConfiguration'
 import type { RuntimeSettingsOverride } from '../../types/runtimeSettings'
@@ -664,6 +665,12 @@ export function useTestApi() {
     [],
   )
 
+  const getTestArchiveJourneys = useCallback(
+    (id: string, params?: { policy?: string; revision?: number }, options?: ApiCallOptions) =>
+      request<JourneyRiskReport>(`/tests/${encodeURIComponent(id)}/archive/journeys${buildQuery({ policy: params?.policy || undefined, revision: params?.revision || undefined })}`, withCallOptions(undefined, options)),
+    [],
+  )
+
   const getTestArchiveReport = useCallback((id: string, options?: ApiCallOptions & { includeReleaseTrend?: boolean; comparisonId?: string }) => request<RunArchiveReport>(`/tests/${id}/archive/report${buildQuery({ include_release_trend: options?.includeReleaseTrend, comparison_id: options?.comparisonId })}`, withCallOptions(undefined, options)), [])
 
   const getTestArchiveReports = useCallback(
@@ -910,6 +917,7 @@ export function useTestApi() {
       getTestArchiveTransactions,
       getTestArchiveResources,
       getTestArchiveSummaries,
+      getTestArchiveJourneys,
       getTestArchiveReport,
       getTestArchiveReports,
       getTestReportAnnotations,
@@ -1009,6 +1017,7 @@ export function useTestApi() {
       getTestArchiveTransactions,
       getTestArchiveResources,
       getTestArchiveSummaries,
+      getTestArchiveJourneys,
       getTestArchiveReport,
       getTestArchiveReports,
       getTestReportAnnotations,

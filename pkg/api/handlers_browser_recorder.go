@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"sort"
@@ -296,10 +297,16 @@ func (s *Server) handleStartBrowserRecording(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		if availability, ok := browserRecordingAvailabilityFromStartError(err); ok {
+			ref := logServerError(w, http.StatusServiceUnavailable, err, "code", availability.Code)
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 				"error":        availability.Reason,
 				"availability": availability,
+				"ref":          ref,
 			})
+			return
+		}
+		if reason, ok := browserRecordingNavigationFailure(err, req.StartURL); ok {
+			writeError(w, http.StatusUnprocessableEntity, reason)
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "failed to start browser recording: "+err.Error())
@@ -597,6 +604,17 @@ type browserRecordingConvertRequest struct {
 	// AlsoCreateHTTPScript additionally generates a protocol-level HTTP script
 	// from the recorded HAR (dual-script generation).
 	AlsoCreateHTTPScript bool `json:"also_create_http_script,omitempty"`
+	// HTTPScriptLevel is "url" (default) or "html": an HTML-level HTTP script
+	// turns recorded link, image and form clicks into HTML-mode steps.
+	HTTPScriptLevel string `json:"http_script_level,omitempty" enums:"url,html"`
+	// AsyncScan (default on) turns requests a page repeated in the
+	// background into background conversations in the HTTP script; false
+	// keeps them as recorded steps.
+	AsyncScan *bool `json:"async_scan,omitempty"`
+	// RecordingProfileID names a project recording profile the HTTP script
+	// applies (filters, headers, think-time threshold, correlation settings,
+	// and the options above when left unset).
+	RecordingProfileID string `json:"recording_profile_id,omitempty"`
 	// Parameterize applies safe auto-parameterization suggestions to the
 	// converted browser script(s) before preview/save.
 	Parameterize bool `json:"parameterize,omitempty"`
@@ -626,6 +644,9 @@ type browserRecordingPreviewRequest struct {
 	EndSeq               int    `json:"end_seq,omitempty"`
 	SplitAtTransactions  bool   `json:"split_at_transactions,omitempty"`
 	AlsoCreateHTTPScript bool   `json:"also_create_http_script,omitempty"`
+	HTTPScriptLevel      string `json:"http_script_level,omitempty" enums:"url,html"`
+	AsyncScan            *bool  `json:"async_scan,omitempty"`
+	RecordingProfileID   string `json:"recording_profile_id,omitempty"`
 	Parameterize         bool   `json:"parameterize,omitempty"`
 }
 
@@ -637,6 +658,9 @@ func (req browserRecordingPreviewRequest) convertRequest() browserRecordingConve
 		EndSeq:               req.EndSeq,
 		SplitAtTransactions:  req.SplitAtTransactions,
 		AlsoCreateHTTPScript: req.AlsoCreateHTTPScript,
+		HTTPScriptLevel:      req.HTTPScriptLevel,
+		AsyncScan:            req.AsyncScan,
+		RecordingProfileID:   req.RecordingProfileID,
 		Parameterize:         req.Parameterize,
 	}
 }
@@ -1981,18 +2005,49 @@ var browserRecordingImportWorkflow = importBatchWorkflow{
 }
 
 func (s *Server) createHTTPScriptFromHAR(artifact *recbrowser.Session, info *BrowserRecordingSession, name string) (*dsl.Script, []string, []scriptImportReviewSection, error) {
+	return s.createHTTPScriptFromHARAtLevel(artifact, info, name, recbrowser.HTTPScriptLevelURL, browserHTTPScriptOptions{})
+}
+
+// createHTTPScriptFromHARAtLevel builds the HTTP script at the requested
+// level: "url" replays recorded URLs; "html" resolves recorded link, image
+// and form clicks against the replayed page.
+// browserHTTPScriptOptions are the conversion options of a browser
+// recording's HTTP script.
+type browserHTTPScriptOptions struct {
+	AsyncScan          *bool
+	RecordingProfileID string
+}
+
+func (s *Server) createHTTPScriptFromHARAtLevel(artifact *recbrowser.Session, info *BrowserRecordingSession, name, level string, scriptOptions browserHTTPScriptOptions) (*dsl.Script, []string, []scriptImportReviewSection, error) {
 	if len(artifact.HAR) == 0 {
 		return nil, nil, nil, fmt.Errorf("no side-car HAR is available to build an HTTP script")
+	}
+	profile, err := s.projectRecordingProfile(normalizeProjectID(info.ProjectID), scriptOptions.RecordingProfileID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if strings.TrimSpace(level) == "" && profile != nil {
+		level = profile.HTTPScriptLevel
 	}
 	httpName := strings.TrimSpace(name)
 	if httpName == "" {
 		httpName = info.Name
 	}
 	httpName += " (HTTP)"
-	result, err := har.Convert(artifact.HAR, har.ConvertOptions{ScriptName: httpName})
+	options := har.ConvertOptions{ScriptName: httpName, AsyncScan: scriptOptions.AsyncScan, Profile: profile}
+	var levelNotes []string
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "", recbrowser.HTTPScriptLevelURL:
+	case recbrowser.HTTPScriptLevelHTML:
+		options.HTMLSteps, levelNotes = recbrowser.HTMLLevelSteps(artifact.Steps, artifact.HAR)
+	default:
+		return nil, nil, nil, fmt.Errorf("http_script_level must be url or html")
+	}
+	result, err := har.Convert(artifact.HAR, options)
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	result.Warnings = append(result.Warnings, levelNotes...)
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(info.ProjectID)
 		result.Script.GeneratedBy = "browser-recorder"
@@ -2004,6 +2059,7 @@ func (s *Server) createHTTPScriptFromHAR(artifact *recbrowser.Session, info *Bro
 		normalizeProjectID(info.ProjectID), httpName, "browser_recording_har", true, false, true)
 	result.Script = salesforceDraft.Script
 	applyClientGeneratedUUIDs(result.Script, artifact.HAR, result)
+	applyClientTimestamps(result.Script, artifact.HAR, result)
 
 	// Run the shared augmentation over the generated HTTP draft and hand its
 	// sections back. Before this the detectors ran here with their return value
@@ -2057,7 +2113,7 @@ func (s *Server) handlePreviewBrowserRecordingConversion(w http.ResponseWriter, 
 	if req.AlsoCreateHTTPScript {
 		var httpWarnings []string
 		var err error
-		httpScript, httpWarnings, httpSections, err = s.createHTTPScriptFromHAR(artifact, info, req.Name)
+		httpScript, httpWarnings, httpSections, err = s.createHTTPScriptFromHARAtLevel(artifact, info, req.Name, req.HTTPScriptLevel, browserHTTPScriptOptions{AsyncScan: req.AsyncScan, RecordingProfileID: req.RecordingProfileID})
 		if err != nil {
 			warnings = append(warnings, "HTTP script generation skipped: "+err.Error())
 		} else if httpScript != nil {
@@ -2177,7 +2233,7 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 		// The convert route persists the drafts and answers with StoredScripts,
 		// which carry no review sections; the preview route above is where the
 		// generated HTTP draft's sections are shown.
-		httpScript, httpWarnings, _, err = s.createHTTPScriptFromHAR(artifact, info, req.Name)
+		httpScript, httpWarnings, _, err = s.createHTTPScriptFromHARAtLevel(artifact, info, req.Name, req.HTTPScriptLevel, browserHTTPScriptOptions{AsyncScan: req.AsyncScan, RecordingProfileID: req.RecordingProfileID})
 		if err != nil {
 			warnings = append(warnings, "HTTP script generation skipped: "+err.Error())
 		} else if httpScript == nil {
@@ -3055,7 +3111,7 @@ func (s *Server) handleVerifyBrowserRecording(w http.ResponseWriter, r *http.Req
 	result := s.convertBrowserRecording(artifact, info, req.Conversion)
 	scripts := append([]*dsl.Script(nil), result.Scripts...)
 	if req.Conversion.AlsoCreateHTTPScript {
-		httpScript, warnings, _, err := s.createHTTPScriptFromHAR(artifact, info, req.Conversion.Name)
+		httpScript, warnings, _, err := s.createHTTPScriptFromHARAtLevel(artifact, info, req.Conversion.Name, req.Conversion.HTTPScriptLevel, browserHTTPScriptOptions{AsyncScan: req.Conversion.AsyncScan, RecordingProfileID: req.Conversion.RecordingProfileID})
 		if err != nil {
 			writeError(w, http.StatusUnprocessableEntity, "HTTP conversion failed: "+err.Error())
 			return
@@ -3191,4 +3247,33 @@ func (s *Server) handleExportBrowserRecording(w http.ResponseWriter, r *http.Req
 	w.Header().Set("X-APEXLoad-Sensitivity", sensitivity)
 	w.WriteHeader(http.StatusOK)
 	w.Write(data)
+}
+
+var browserNavigationErrorCode = regexp.MustCompile(`net::(ERR_[A-Z_]+)`)
+
+// browserRecordingNavigationFailure turns a start page that would not load
+// (net::ERR_* from the browser) into a reason the operator can act on,
+// instead of a 500 carrying the browser engine's call log.
+func browserRecordingNavigationFailure(err error, startURL string) (string, bool) {
+	match := browserNavigationErrorCode.FindStringSubmatch(err.Error())
+	if match == nil {
+		return "", false
+	}
+	code := match[1]
+	var why string
+	switch {
+	case code == "ERR_NAME_NOT_RESOLVED":
+		why = "its host name could not be resolved"
+	case code == "ERR_CONNECTION_REFUSED":
+		why = "the connection was refused"
+	case code == "ERR_SSL_PROTOCOL_ERROR" || strings.HasPrefix(code, "ERR_CERT_") || strings.HasPrefix(code, "ERR_SSL_"):
+		why = "the secure (TLS) connection failed"
+	case code == "ERR_CONNECTION_TIMED_OUT" || code == "ERR_TIMED_OUT":
+		why = "the connection timed out"
+	case code == "ERR_ADDRESS_UNREACHABLE" || code == "ERR_INTERNET_DISCONNECTED" || code == "ERR_NETWORK_CHANGED":
+		why = "the address is unreachable from the recording machine"
+	default:
+		why = "the page did not load"
+	}
+	return fmt.Sprintf("The recording browser could not open %s: %s (%s). Check the address and that the recording machine can reach it, then start again.", scrub.ValueURL(startURL, scrub.Policy{}), why, code), true
 }

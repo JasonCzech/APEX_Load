@@ -55,8 +55,8 @@ Action()
 	if len(request.Assertions) != 0 {
 		t.Fatalf("assertions = %#v, SaveCount without Fail must remain non-failing", request.Assertions)
 	}
-	if len(request.Extractors) != 1 || request.Extractors[0].Source != "body" {
-		t.Fatalf("extractors = %#v, want the supported body portion of Search=ALL", request.Extractors)
+	if len(request.Extractors) != 1 || request.Extractors[0].Source != "all" {
+		t.Fatalf("extractors = %#v, want the headers-and-body portion of Search=ALL", request.Extractors)
 	}
 	if !strings.Contains(strings.Join(result.Warnings, "\n"), "Search=ALL") {
 		t.Fatalf("warnings = %v, want Search=ALL scope warning", result.Warnings)

@@ -68,7 +68,7 @@ describe('MonitoringCollectorsCard', () => {
     })
     await flush()
 		expect(collectorsApiMock.listCollectors).toHaveBeenCalledWith({ project_id: 'proj-a', limit: 100, offset: 0 })
-    expect(container.textContent).toContain('No monitoring collectors registered')
+    expect(container.textContent).toContain('No monitoring collectors yet')
     expect(container.textContent).toContain('Register Collector')
   })
 
@@ -100,8 +100,8 @@ describe('MonitoringCollectorsCard', () => {
 
   it('renders collectors with health pills and hides management when not permitted', async () => {
     collectorsApiMock.listCollectors.mockResolvedValue({
-      collectors: [collector({ name: 'edge-eu', health: 'healthy' })],
-      count: 1,
+      collectors: [collector({ name: 'edge-eu', health: 'healthy', last_seen_at: '2026-10-08T10:00:00Z' }), collector({ id: 'new', name: 'fresh', health: 'unreachable' })],
+      count: 2,
     })
     await act(async () => {
       root.render(<MonitoringCollectorsCard projectId="proj-a" canManage={false} />)
@@ -109,6 +109,9 @@ describe('MonitoringCollectorsCard', () => {
     await flush()
     expect(container.textContent).toContain('edge-eu')
     expect(container.querySelector('.pp-pill-success')).toBeTruthy()
+    // Never heard from: new, not "unreachable".
+    expect(container.textContent).toContain('awaiting first heartbeat')
+    expect(container.textContent).not.toContain('unreachable')
     expect(container.textContent).not.toContain('Register Collector')
     expect(container.textContent).not.toContain('Rotate token')
   })

@@ -747,7 +747,7 @@ export default function RuntimeSettingsGroupEditor({
                 <th>Setting</th>
                 <th>Effective value</th>
                 <th>Source</th>
-              <th aria-label="Actions" />
+              <th><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
@@ -1256,6 +1256,8 @@ export default function RuntimeSettingsGroupEditor({
                       <option value="basic">Basic</option>
                       <option value="bearer">Bearer</option>
                       <option value="ntlm">NTLM</option>
+                      <option value="negotiate">Negotiate (NTLM)</option>
+                      <option value="negotiate_any">Any challenge (Basic, Digest, NTLM, Negotiate)</option>
                       <option value="digest">Digest</option>
                     </select>
                   </label>
@@ -1567,7 +1569,7 @@ export default function RuntimeSettingsGroupEditor({
       {fieldApplicable('websocket') && <label className="runtime-apply-row"><span>WebSocket callback interval (ms)</span><input className="settings-input" type="number" min={0} max={60000} value={draft.websocket?.callback_interval_ms ?? ''} placeholder={String(inheritedOverride?.websocket?.callback_interval_ms ?? 500)} onChange={event => patch({websocket: {...(draft.websocket ?? inheritedOverride?.websocket), callback_interval_ms: event.target.value === '' ? undefined : Number(event.target.value)}})} /></label>}
       {applyPanelAvailable && (
       <div className="runtime-apply-row">
-        <button type="button" className="secondary-button" onClick={() => setApplyOpen(open => !open)} disabled={groups.length < 2}>
+        <button type="button" className="btn btn-sm btn-secondary" onClick={() => setApplyOpen(open => !open)} disabled={groups.length < 2}>
           Apply to groups…
         </button>
         {applyOpen && (

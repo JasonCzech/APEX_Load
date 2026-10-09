@@ -84,7 +84,7 @@ describe('OracleEBusinessReviewImport', () => {
     expect(container.textContent).toContain('Confirm Oracle E-Business runtime settings before saving reusable assets.')
     expect(container.querySelector<HTMLDetailsElement>('.import-source-setup')?.open).toBe(false)
     expect(Array.from(container.querySelectorAll('[role="tab"]')).map(tab => tab.getAttribute('aria-label')))
-      .toEqual(['Review', 'Data & parameters', 'Runtime settings', 'Source Mapping'])
+      .toEqual(['Review, 1 review item', 'Data & parameters', 'Runtime settings', 'Source Mapping'])
 
     // Review-only surface: there must be no save / save-to-library control.
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => /save/i.test(button.textContent || ''))

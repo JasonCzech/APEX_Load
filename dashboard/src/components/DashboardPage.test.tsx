@@ -325,7 +325,7 @@ describe('DashboardPage', () => {
     expect(container.querySelector('.dash-release-panel.is-open')).toBeTruthy()
     expect(getButtonByText('Collapse').getAttribute('aria-expanded')).toBe('true')
     expect(container.textContent).toContain('Operations Activity')
-    expect(container.textContent).toContain('Generators Ready')
+    expect(container.textContent).toContain('Load generators ready')
     expect(container.querySelector('.dash-attention')).toBeNull()
     expect(container.querySelectorAll('.release-panel-stat-grid.shared .release-panel-stat')).toHaveLength(6)
     const releaseOptions = Array.from(container.querySelectorAll<HTMLButtonElement>('.dash-release-option'))
@@ -554,7 +554,7 @@ describe('DashboardPage', () => {
     const panelText = releasePanelText()
     expect(panelText).toContain('Operations Snapshot')
     expect(panelText).toContain('Operations Activity')
-    expect(panelText).toContain('Generators Ready')
+    expect(panelText).toContain('Load generators ready')
     expect(panelText).toContain('2/2')
     expect(panelText).toContain('WebSocket Clients')
     expect(panelText).toContain('Pending Runs')
@@ -781,7 +781,7 @@ describe('DashboardPage', () => {
     expect(panelText).toContain('Max Memory')
     expect(panelText).toContain('Latest Outcome')
     expect(panelText).not.toContain('Operations Activity')
-    expect(panelText).not.toContain('Generators Ready')
+    expect(panelText).not.toContain('Load generators ready')
   })
 
   it('uses theme-aware accent fills for dashboard controls', async () => {
@@ -1113,8 +1113,8 @@ describe('DashboardPage', () => {
       'Group',
       'VUsers',
       'TPS',
-      'ART',
-      'Errors %',
+      'ART (ms)',
+      'Error rate (%)',
       'Passed',
       'Failed',
     ])
@@ -1632,7 +1632,7 @@ describe('DashboardPage', () => {
     await flushDashboard()
     expect(container.textContent).toContain('1 active (running or paused)')
     expect(getButtonByText('Current TPS').textContent).toContain('—')
-    expect(getButtonByText('Mean Run Error Rate').textContent).toContain('—')
+    expect(getButtonByText('Live error rate (active runs)').textContent).toContain('—')
     await act(async () => { getTabByText('Active Tests').click() })
     expect(container.textContent).toContain('Paused checkout')
   })
@@ -1680,7 +1680,7 @@ describe('DashboardPage', () => {
     await flushDashboard()
     expect(container.textContent).toContain('System health is stale')
     expect(getButtonByText('API Health').textContent).toContain('Stale')
-    expect(getButtonByText('Generators Ready').textContent).toContain('—')
+    expect(getButtonByText('Load generators ready').textContent).toContain('—')
     await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
     await flushDashboard()
     expect(container.textContent).not.toContain('System health is stale')

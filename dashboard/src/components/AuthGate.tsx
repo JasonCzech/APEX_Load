@@ -2,25 +2,38 @@ import {
   ReactNode,
   FormEvent,
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
 import {
+  ApiError,
   apiFetch,
   openDesktopBrowserWithPreview,
   requestApiNavigation,
   resolveApiResourceUrl,
   type DevViewMode,
 } from "../hooks/apiClient";
-import { AuthStatusState } from "../hooks/useAuthStatus";
+import { AuthStatusState, requestAuthStatusRefresh } from "../hooks/useAuthStatus";
+import { SessionCheckFailedNotice, SessionExpiredDialog, SessionExpiryNotice } from "./SessionRecovery";
 import { getDesktopBridge, isDesktopSurface } from "../desktop/desktopBridge";
 import type { DesktopShellEventHandlers } from "../desktop/useDesktopShellEvents";
 import { useAuthApi } from "../hooks/api/useAuthApi";
 import ErrorDiagnostic from "./ErrorDiagnostic";
 import Logo from "./Logo";
 import "./AuthGate.css";
+
+// Server sign-in errors are terse machine strings; the card speaks in plain copy.
+function localLoginErrorMessage(cause: unknown): string {
+  if (cause instanceof ApiError) {
+    if (cause.status === 401) return "Incorrect username or password.";
+    if (cause.status === 429) return "Too many sign-in attempts. Wait a minute, then try again.";
+  }
+  return cause instanceof Error && cause.message ? cause.message : "Unable to sign in.";
+}
 
 function validatedTrustedHeaderLoginURL(loginURL: string | undefined): string {
   const trimmed = loginURL?.trim() || "";
@@ -69,14 +82,51 @@ export default function AuthGate({
   const [logoutPending, setLogoutPending] = useState(false);
   const [loginPending, setLoginPending] = useState(false);
   const [loginError, setLoginError] = useState("");
+  const loginErrorRef = useRef<HTMLParagraphElement | null>(null);
+  useEffect(() => {
+    if (loginError) loginErrorRef.current?.focus();
+  }, [loginError]);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [desktopOpenPending, setDesktopOpenPending] = useState(false);
   const [desktopOpenError, setDesktopOpenError] = useState("");
   const [desktopIntentError, setDesktopIntentError] = useState("");
   const desktopSurface = isDesktopSurface();
-  const { login } = useAuthApi();
+  const { login, getAuthStatus } = useAuthApi();
   const reloadAuthentication = onAuthenticationChanged ?? (() => window.location.reload());
+  // Once the app has loaded for a signed-in user, losing the session (expiry,
+  // revocation) or a failed re-check must not unmount it: unsaved work would be
+  // lost. Keep it mounted and recover in place instead.
+  const signedInSubjectRef = useRef<string | null>(null);
+  if (state.status === "ready" && state.auth.enabled && state.auth.authenticated) {
+    signedInSubjectRef.current = state.auth.user?.subject || "";
+  }
+  const appWasSignedIn = signedInSubjectRef.current !== null;
+  // Resume the kept page once signed in again, unless a different identity
+  // signed in: it must not inherit the previous user's page state.
+  const resumeSignedInSession = (current: { user?: { subject?: string } } | null) => {
+    if (current && (current.user?.subject || "") !== signedInSubjectRef.current) {
+      window.location.reload();
+      return;
+    }
+    requestAuthStatusRefresh();
+  };
+  const signInAgainLocally = async (nextUsername: string, nextPassword: string) => {
+    const response = await login(nextUsername, nextPassword).catch((cause: unknown) => {
+      throw new Error(localLoginErrorMessage(cause));
+    });
+    if (!response.authenticated) throw new Error("Authentication did not complete.");
+    // Signed in: from here on, never report failure. If the identity check
+    // fails, the in-place refresh re-checks and retries on its own.
+    resumeSignedInSession(await getAuthStatus().catch(() => null));
+  };
+  const checkSessionAgain = async () => {
+    const current = await getAuthStatus();
+    if (current.enabled && !current.authenticated) {
+      throw new Error("Still signed out. Finish signing in, then check again.");
+    }
+    resumeSignedInSession(current);
+  };
   const providerLabel =
     state.status === "ready" && state.auth.provider_name?.trim()
       ? state.auth.provider_name.trim()
@@ -267,7 +317,7 @@ export default function AuthGate({
               ? "user"
               : undefined;
         if (!previewMode) {
-          throw new Error("Invalid development persona credentials.");
+          throw new Error("Incorrect persona username or password. Use one of the test credentials below.");
         }
         onDevPersonaLogin?.(previewMode);
         return;
@@ -276,7 +326,9 @@ export default function AuthGate({
       if (!response.authenticated) throw new Error("Authentication did not complete.");
       reloadAuthentication();
     } catch (cause: unknown) {
-      setLoginError(cause instanceof Error ? cause.message : "Unable to sign in.");
+      // Clear the rejected password and take focus to the reason.
+      setPassword("");
+      setLoginError(localLoginErrorMessage(cause));
     } finally {
       setLoginPending(false);
     }
@@ -285,19 +337,23 @@ export default function AuthGate({
   if (state.status === "loading") {
     return (
       <div className="auth-gate-shell">
-        <section className="auth-gate-card auth-gate-card--loading">
+        <section className="auth-gate-card auth-gate-card--loading" aria-busy="true">
           <div className="auth-gate-brand">
             <Logo size={32} title="APEX Load" />
             <p className="auth-gate-kicker">APEX Load Access</p>
           </div>
           <h1>Checking access</h1>
-          <p>
+          <p role="status">
             Confirming your upstream authentication context before loading the
             dashboard.
           </p>
         </section>
       </div>
     );
+  }
+
+  if (state.status === "error" && appWasSignedIn) {
+    return <>{children}<SessionCheckFailedNotice message={state.message} onRetry={requestAuthStatusRefresh} /></>;
   }
 
   if (state.status === "error") {
@@ -310,6 +366,10 @@ export default function AuthGate({
           </div>
           <h1>Authentication check failed</h1>
           <ErrorDiagnostic diagnostic={state.diagnostic} compact />
+          <p>
+            <button className="auth-gate-action" type="button" onClick={requestAuthStatusRefresh}>Retry now</button>
+          </p>
+          <p className="auth-gate-note">APEX Load also retries automatically every minute.</p>
           {desktopSurface && (
             <p>
               <button
@@ -319,7 +379,7 @@ export default function AuthGate({
                 disabled={desktopOpenPending}
               >
                 {desktopOpenPending
-                  ? "Opening browser..."
+                  ? "Opening browser…"
                   : "Open dashboard in system browser"}
               </button>
             </p>
@@ -354,7 +414,7 @@ export default function AuthGate({
               {loginPending ? "Signing in…" : "Sign in"}
             </button>
           </form>
-          {loginError && <p className="auth-gate-error" role="alert">{loginError}</p>}
+          {loginError && <p ref={loginErrorRef} tabIndex={-1} className="auth-gate-error" role="alert">{loginError}</p>}
           <div className="auth-gate-personas" aria-label="Development test credentials">
             <strong>Test credentials</strong>
             <ul>
@@ -364,6 +424,21 @@ export default function AuthGate({
           </div>
         </section>
       </div>
+    );
+  }
+
+  if (state.auth.enabled && !state.auth.authenticated && appWasSignedIn && !desktopSurface) {
+    const auth = state.auth;
+    const continueToProvider = auth.mode === "oidc" && auth.login_url
+      ? () => { void beginOIDCLogin(); }
+      : auth.login_url
+        ? () => window.location.assign(resolveApiResourceUrl(auth.login_url!))
+        : undefined;
+    return (
+      <>
+        {children}
+        <SessionExpiredDialog mode={auth.mode} providerLabel={providerLabel} onLocalSignIn={signInAgainLocally} onContinueToProvider={continueToProvider} onCheckAgain={checkSessionAgain} providerPending={loginPending} providerError={loginError} />
+      </>
     );
   }
 
@@ -391,7 +466,7 @@ export default function AuthGate({
                 {loginPending ? "Signing in…" : "Sign in"}
               </button>
             </form>
-            {loginError && <p className="auth-gate-error" role="alert">{loginError}</p>}
+            {loginError && <p ref={loginErrorRef} tabIndex={-1} className="auth-gate-error" role="alert">{loginError}</p>}
             {desktopOpenError && <p className="auth-gate-error" role="alert">{desktopOpenError}</p>}
             {desktopIntentError && <p className="auth-gate-error" role="alert">{desktopIntentError}</p>}
             {state.auth.logout_url && state.auth.logout_csrf_token && (
@@ -437,7 +512,7 @@ export default function AuthGate({
                 disabled={desktopOpenPending}
               >
                 {desktopOpenPending
-                  ? "Opening browser..."
+                  ? "Opening browser…"
                   : "Open authenticated dashboard"}
               </button>
             </p>
@@ -486,7 +561,7 @@ export default function AuthGate({
               </a>
             </p>
           )}
-          {loginError && <p role="alert">{loginError}</p>}
+          {loginError && <p ref={loginErrorRef} tabIndex={-1} role="alert">{loginError}</p>}
           {desktopOpenError && <p role="alert">{desktopOpenError}</p>}
           {desktopIntentError && <p role="alert">{desktopIntentError}</p>}
           {state.auth.logout_url && state.auth.logout_csrf_token && (
@@ -497,7 +572,7 @@ export default function AuthGate({
                 onClick={signOutLocalSession}
                 disabled={logoutPending}
               >
-                {logoutPending ? "Signing out..." : "Sign out local session"}
+                {logoutPending ? "Signing out…" : "Sign out local session"}
               </button>
             </p>
           )}
@@ -509,5 +584,10 @@ export default function AuthGate({
     );
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      {state.auth.enabled && state.auth.authenticated && <SessionExpiryNotice expiresAt={state.auth.session_expires_at} />}
+    </>
+  );
 }

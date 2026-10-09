@@ -1,0 +1,6 @@
+{
+  "description": "An upload larger than the recorder's body capture limit. The recorded body is a truncated prefix, so the step must be gated rather than replayed with a partial body.",
+  "source": "Proxy recorder capture limit (BodyCaptureLimitBytes, 512 KB by default).",
+  "outcome": "gated",
+  "gate_reason_codes": ["recorded_body_truncated"]
+}

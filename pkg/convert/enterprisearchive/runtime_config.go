@@ -170,6 +170,9 @@ type RuntimeConfig struct {
 	// child key. Stock VuGen cfgs carry it unconditionally, so it is never
 	// applied on its own — new_user_each_iteration comes from SimulateNewUser.
 	BEClearCacheEachIterationRaw string
+	// RunLogicBlocks is the selected .usp run-logic tree when it runs more
+	// than one action or any block (see runLogicBlocksFromUSP).
+	RunLogicBlocks []dsl.RunLogicBlock
 }
 
 // ParseRuntimeCfg parses a source default.cfg / runtime settings .cfg file.
@@ -877,12 +880,13 @@ func (rc *RuntimeConfig) ToScriptConfig() *dsl.ScriptConfig {
 		config.HTTP = *httpCfg
 	}
 	config.BrowserEmulation = rc.ToBrowserEmulationConfig()
-	if rc.Iterations > 0 || rc.AutoTransactions != "" || rc.BlockScheduling != "" || len(rc.ActionSequence) > 0 {
+	if rc.Iterations > 0 || rc.AutoTransactions != "" || rc.BlockScheduling != "" || len(rc.ActionSequence) > 0 || len(rc.RunLogicBlocks) > 0 {
 		config.RunLogic = dsl.RunLogicConfig{
 			Iterations:       rc.Iterations,
 			AutoTransactions: rc.AutoTransactions,
 			BlockScheduling:  rc.BlockScheduling,
 			ActionSequence:   append([]string(nil), rc.ActionSequence...),
+			Blocks:           append([]dsl.RunLogicBlock(nil), rc.RunLogicBlocks...),
 		}
 	}
 	if rc.PacingType != "" {

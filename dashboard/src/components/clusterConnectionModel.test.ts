@@ -6,10 +6,12 @@ import {
   clusterDraftFrom,
   connectionBaseline,
   connectionDraftError,
+  connectionDraftErrors,
   connectionIsDirty,
   connectionPayload,
   describeProbe,
   emptyClusterDraft,
+  isLabelSelector,
 } from './clusterConnectionModel'
 
 const VALID_PEM = '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----'
@@ -202,5 +204,21 @@ describe('describeProbe', () => {
     })
     expect(result.tone).toBe('danger')
     expect(result.text).toMatch(/401/)
+  })
+})
+
+describe('per-field cluster validation', () => {
+  it('flags every invalid field at once, including namespace and selector syntax', () => {
+    const errors = connectionDraftErrors({ ...emptyClusterDraft(), namespace: 'Bad Namespace!', generatorSelector: 'not==valid==x' }, 'create')
+    expect(Object.keys(errors)).toEqual(expect.arrayContaining(['name', 'namespace', 'generatorSelector', 'apiServerUrl', 'caCertificatePem', 'azureTenantId', 'azureClientId', 'clientSecret']))
+    expect(errors.namespace).toMatch(/lowercase letters/)
+  })
+
+  it.each(['app=apexload-generator', 'app==gen,tier!=web', 'tier in (load, perf)', '!canary', 'example.com/role notin (a,b)', 'env'])('accepts the label selector %s', selector => {
+    expect(isLabelSelector(selector)).toBe(true)
+  })
+
+  it.each(['not==valid==x', 'a=b)', 'tier in (load', 'bad key=x', '=x'])('rejects the label selector %s', selector => {
+    expect(isLabelSelector(selector)).toBe(false)
   })
 })

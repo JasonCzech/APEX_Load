@@ -206,6 +206,19 @@ function legacyActionNeedsExplicitTarget(actionType: string): boolean {
     'rendezvous',
     'error_message',
     'review_required',
+    'cookie_clear',
+    'cookie_set',
+    'http_async_start',
+    'http_async_stop',
+    'http_sync',
+    'ws_send',
+    'ws_receive',
+    'ws_close',
+    'ws_ping',
+    'ws_on_message',
+    'ws_dispatch',
+    'cache_clear',
+    'http_connections_close',
   ].includes(actionType)
 }
 
@@ -406,6 +419,21 @@ export function requiresScriptBaseURL(protocol: string): boolean {
   return protocol !== '' && !['browser', 'bruno', 'database', 'network', 'jms', 'kafka', 'eventhubs', 'sap_gui', 'java_vuser'].includes(family)
 }
 
+const HTTP_BASE_URL_PROTOCOLS = new Set(['', 'http', 'https', 'web', 'rest', 'soap', 'graphql', 'openapi'])
+
+/** Why a set Base URL cannot be used, or '' when it is usable (or unset). */
+export function scriptBaseURLError(script: Pick<ScriptDefinition, 'protocol' | 'config'>): string {
+  const value = script.config?.base_url?.trim() || ''
+  if (!value || !HTTP_BASE_URL_PROTOCOLS.has((script.protocol || '').trim())) return ''
+  // Parameterized ({{host}}, {base_url}) and relative (/api) values resolve later.
+  if (value.includes('{') || (value.startsWith('/') && !/\s/.test(value))) return ''
+  try {
+    const url = new URL(value)
+    if (url.protocol === 'http:' || url.protocol === 'https:') return ''
+  } catch { /* reported below */ }
+  return 'Base URL must be an absolute http(s) URL, for example https://shop.example.com.'
+}
+
 export function collectAuthoringIssues(script: ScriptDefinition): AuthoringIssue[] {
   const issues: AuthoringIssue[] = []
   const parameterNames = new Set((script.parameters || []).map((parameter) => normalizeTokenName(parameter.name || '')).filter(Boolean))
@@ -422,10 +450,12 @@ export function collectAuthoringIssues(script: ScriptDefinition): AuthoringIssue
 
   if (requiresScriptBaseURL(script.protocol) && !script.config.base_url?.trim()) {
     pushIssue(issues, { id: 'script:base_url', severity: 'error', message: 'Base URL is required. Open Script Configuration to set the target.' })
+  } else if (scriptBaseURLError(script)) {
+    pushIssue(issues, { id: 'script:base_url', severity: 'error', message: scriptBaseURLError(script) })
   }
 
-  const authType = script.config.http?.auth?.type
-  if ((authType === 'basic' || authType === 'ntlm') && (!script.config.http?.auth?.username || !script.config.http?.auth?.password)) {
+  const authType = script.config.http?.auth?.type || ''
+  if (['basic', 'ntlm', 'negotiate', 'negotiate_any'].includes(authType) && (!script.config.http?.auth?.username || !script.config.http?.auth?.password)) {
     pushIssue(issues, {
       id: 'script:http-auth',
       severity: 'warning',

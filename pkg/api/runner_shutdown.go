@@ -147,6 +147,10 @@ func (tr *TestRunner) teardownActiveTestsAfterLeadershipLoss(ctx context.Context
 		if test == nil {
 			continue
 		}
+		// Joint batches held for a sidecar (B5) will not be carried or
+		// committed by this controller once it has lost leadership, whether
+		// the run is still active or awaits its archive's publication retry.
+		releaseHeldJointPublicationsLocked(test)
 		activeStatus := false
 		switch test.Status {
 		case "INITIALIZING", "RUNNING", "PAUSED", "STOPPING", "SHAKEOUT":
@@ -176,6 +180,8 @@ func (tr *TestRunner) teardownActiveTestsAfterLeadershipLoss(ctx context.Context
 		}
 		tr.cancelAllVUserScaleRampsLocked(test)
 		test.continuityHandoff = false
+		// Another controller may now hold the run's batches (B5).
+		test.jointHeldFromStart = false
 		test.cancel = nil
 		test.executionCtx = nil
 		test.multiEngine = nil

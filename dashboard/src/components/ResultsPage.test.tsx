@@ -3,6 +3,7 @@
 import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { resetSharedTestListStoreForTests } from '../hooks/useSharedTestList'
 
 import ResultsPage from './ResultsPage'
 import { buildComparisonSummarySeries, comparisonChartYAxisLabel } from './resultsComparisonChartModel'
@@ -323,6 +324,7 @@ describe('ResultsPage', () => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
     vi.clearAllMocks()
+    resetSharedTestListStoreForTests()
   })
 
   it('uses one line color per compared run across TPS and P95 series', () => {
@@ -361,6 +363,56 @@ describe('ResultsPage', () => {
     })).toBe('Error rate (%)')
   })
 
+  it('shows a load failure with Retry instead of the empty library', async () => {
+    apiMock.listTests.mockRejectedValue(new Error('Simulated failure'))
+    apiMock.getReleaseSLAGovernance.mockResolvedValue(null)
+    apiMock.listExternalResultImports.mockResolvedValue({ imports: [], count: 0, limit: 0, offset: 0 })
+    await act(async () => {
+      root.render(
+        <ResultsPage
+          onNavigate={vi.fn()}
+          testStatuses={{}}
+          onSelectTest={vi.fn()}
+          activeApplication={{ id: 'app-1', project_id: 'project-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+          activeRelease={{ id: 'rel-1', application_id: 'app-1', project_id: 'project-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
+        />,
+      )
+    })
+    for (let i = 0; i < 5; i++) await act(async () => { await Promise.resolve() })
+    const alert = container.querySelector('.results-load-error')
+    expect(alert?.getAttribute('role')).toBe('alert')
+    expect(alert?.textContent).toContain('Results could not be loaded.')
+    expect(container.textContent).not.toContain('No result sources yet.')
+    expect(container.textContent).not.toContain('0 matching runs')
+    apiMock.listTests.mockResolvedValue({ tests: [] })
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Retry')!.click())
+    for (let i = 0; i < 5; i++) await act(async () => { await Promise.resolve() })
+    expect(container.textContent).toContain('No result sources yet.')
+  })
+
+  it('keeps a local load failure visible with Retry when remote results are still listed', async () => {
+    apiMock.listTests.mockRejectedValue(new Error('Simulated failure'))
+    apiMock.getReleaseSLAGovernance.mockResolvedValue(null)
+    apiMock.listExternalResultImports.mockResolvedValue({ imports: [{ id: 'import-1', provider: 'k6', name: 'checkout-smoke.json', release_id: 'rel-1', created_at: '2026-05-12T20:10:00Z', summary: { transactions: 1200, error_pct: 0.25 } }], count: 1, limit: 50, offset: 0 })
+    await act(async () => {
+      root.render(
+        <ResultsPage
+          onNavigate={vi.fn()}
+          testStatuses={{}}
+          onSelectTest={vi.fn()}
+          activeApplication={{ id: 'app-1', project_id: 'project-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+          activeRelease={{ id: 'rel-1', application_id: 'app-1', project_id: 'project-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
+        />,
+      )
+    })
+    for (let i = 0; i < 5; i++) await act(async () => { await Promise.resolve() })
+    expect(container.querySelector('.results-load-error')).toBeNull()
+    expect(container.textContent).toContain('showing remote results only')
+    const banner = container.querySelector('.settings-error-inline[role="alert"]')
+    expect(banner?.textContent).toContain('Local results could not be loaded')
+    expect(Array.from(banner?.querySelectorAll('button') || []).some(button => button.textContent === 'Retry')).toBe(true)
+  })
+
   it('shows a loading state before rendering an empty release result list', async () => {
     const navigate = vi.fn()
     let resolveTests: (value: { tests: never[] }) => void = () => {}
@@ -382,8 +434,8 @@ describe('ResultsPage', () => {
       )
     })
 
-    expect(container.textContent).toContain('Loading result sources...')
-    expect(container.textContent).toContain('Loading results...')
+    expect(container.textContent).toContain('Loading result sources…')
+    expect(container.textContent).toContain('Loading results…')
     expect(container.textContent).not.toContain('No result sources yet.')
 
     await act(async () => {
@@ -392,7 +444,7 @@ describe('ResultsPage', () => {
       await Promise.resolve()
     })
 
-    expect(container.textContent).not.toContain('Loading result sources...')
+    expect(container.textContent).not.toContain('Loading result sources…')
     expect(container.textContent).toContain('No result sources yet.')
     await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Create a test')!.click())
     expect(navigate).toHaveBeenCalledWith('new-test')
@@ -1122,15 +1174,15 @@ describe('ResultsPage', () => {
     const cohort = (panel: Element, key: string) => cards(panel).find(card => card.dataset.cohortKey === key)!
     expect(cards(panels[0])).toHaveLength(6)
     expect(cohort(panels[0], '["device","broken"]').textContent).toContain('Malformed summary: expected an object')
-    expect(cohort(panels[0], '["device","primitive"]').textContent).toContain('LCP n/a')
+    expect(cohort(panels[0], '["device","primitive"]').textContent).toContain('LCP —')
     expect(cohort(panels[0], '["device","nested"]').textContent).toContain('unknown · browser · unknown tier')
     expect(cohort(panels[0], '["device","nested"]').textContent).toContain('LCP 0.0 ms')
-    expect(cohort(panels[1], '["device","nested"]').textContent).toContain('LCP n/a')
-    expect(cohort(panels[1], '["device","nested"]').textContent).toContain('INP n/a')
+    expect(cohort(panels[1], '["device","nested"]').textContent).toContain('LCP —')
+    expect(cohort(panels[1], '["device","nested"]').textContent).toContain('INP —')
     // Overall cards apply the same sample population admission as the chart.
     const overallLCP = Array.from(panels[0].querySelectorAll('.results-compare-metric')).find(metric => metric.querySelector('.results-compare-label')?.textContent === 'Avg LCP')
     expect(overallLCP).toBeDefined()
-    expect(overallLCP!.querySelector('.results-compare-value')!.textContent).toBe('n/a')
+    expect(overallLCP!.querySelector('.results-compare-value')!.textContent).toBe('—')
     for (const [mode, named, alias] of [['Engine', 'chromium', 'Chromium'], ['Platform', 'ios', 'iOS']] as const) {
       await act(async () => {
         buttonByText(container, mode)!.click()
@@ -1138,18 +1190,18 @@ describe('ResultsPage', () => {
       })
       const kind = mode.toLowerCase()
       const mixed = cohort(panels[0], JSON.stringify([kind, named]))
-      expect(mixed.textContent).toContain('LCP n/a')
+      expect(mixed.textContent).toContain('LCP —')
       expect(mixed.textContent).toContain('INP 0.0 ms')
       expect(mixed.textContent).toContain('CLS 0.000')
       expect(mixed.textContent).toContain('Unavailable members are retained')
       expect(mixed.textContent).not.toContain('400.0 ms')
-      expect(cohort(panels[0], JSON.stringify([kind, alias])).textContent).toContain('LCP 8000.0 ms')
+      expect(cohort(panels[0], JSON.stringify([kind, alias])).textContent).toContain('LCP 8,000.0 ms')
       expect(cards(panels[0])).toHaveLength(5)
       for (const profile of ['broken', 'primitive', 'nested']) {
-        expect(cohort(panels[0], JSON.stringify([kind, 'unavailable', profile])).textContent).toContain('LCP n/a')
+        expect(cohort(panels[0], JSON.stringify([kind, 'unavailable', profile])).textContent).toContain('LCP —')
       }
       expect(cohort(panels[1], JSON.stringify([kind, 'broken'])).textContent).toContain('Malformed summary: expected an object')
-      expect(cohort(panels[1], JSON.stringify([kind, 'nested'])).textContent).toContain('LCP n/a')
+      expect(cohort(panels[1], JSON.stringify([kind, 'nested'])).textContent).toContain('LCP —')
       expect(cohort(panels[1], JSON.stringify([kind, 'nested'])).textContent).toContain('INP 0.0 ms')
     }
   })
@@ -1189,7 +1241,7 @@ describe('ResultsPage', () => {
     expect(apiMock.getTestArchiveReport).toHaveBeenCalledTimes(2)
     expect(apiMock.getTestArchiveSummaries).toHaveBeenCalledTimes(2)
     expect(container.textContent).toContain('Comparison loaded')
-    expect(container.textContent).not.toContain('Loading comparison...')
+    expect(container.textContent).not.toContain('Loading comparison…')
 
     apiMock.getTestArchiveReport.mockClear()
     apiMock.getTestArchiveSummaries.mockClear()
@@ -1205,7 +1257,7 @@ describe('ResultsPage', () => {
     expect(apiMock.getTestArchiveReport).not.toHaveBeenCalled()
     expect(apiMock.getTestArchiveSummaries).not.toHaveBeenCalled()
     expect(container.textContent).toContain('Comparison loaded')
-    expect(container.textContent).not.toContain('Loading comparison...')
+    expect(container.textContent).not.toContain('Loading comparison…')
   })
 
   it('opens the completed-run workspace from both the row and its single results action', async () => {
@@ -1305,7 +1357,7 @@ describe('ResultsPage', () => {
     expect(Array.from(container.querySelectorAll('h3.section-title')).map(header => header.textContent)).toEqual(['Result runs'])
     const headerLabels = Array.from(container.querySelectorAll('.library-source-table thead th'))
       .map(header => (header.textContent || '').replace(/[↕↑↓]/g, '').trim())
-    expect(headerLabels).toEqual(['', 'Source', 'Scenario', 'Status', 'VUsers', 'Groups', 'Started', 'Lifecycle elapsed', 'Archive', 'Actions'])
+    expect(headerLabels).toEqual(['', 'Source', 'Run', 'Status', 'VUsers', 'Groups', 'Started', 'Elapsed', 'Archive', 'Actions'])
     const sourceSortButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.library-source-table thead th.sortable > button'))
       .find(button => button.textContent?.includes('Source'))
     const startedSortButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.library-source-table thead th.sortable > button'))
@@ -1376,7 +1428,7 @@ describe('ResultsPage', () => {
     expect(apiMock.deleteTest).toHaveBeenCalledTimes(2)
     expect(container.textContent).not.toContain('iPhone Checkout')
     expect(container.textContent).toContain('iPad Checkout')
-    expect(container.textContent).toContain('Deleted 1 of 2 selected results. run-b: result is locked')
+    expect(container.textContent).toContain('Deleted 1 of 2 selected runs. run-b: result is locked')
     expect(container.querySelector('.results-table-selection-toolbar')?.textContent).toContain('1 selected')
     expect(buttonByText(container, 'Delete Selected (1)')).toBeDefined()
   })
@@ -1465,7 +1517,10 @@ describe('ResultsPage', () => {
       deleteButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flushPromises()
-    expect(container.textContent).not.toContain('iPhone Checkout')
+    const tableText = () => Array.from(container.querySelectorAll('table')).map(table => table.textContent).join(' ')
+    expect(tableText()).not.toContain('iPhone Checkout')
+    // The delete is confirmed by name in the status line.
+    expect(container.querySelector('[role="status"].sr-only')?.textContent).toMatch(/^Deleted run “iPhone Checkout \(.+\)”\.$/)
 
     await act(async () => {
       resolveStaleTail?.({ tests: [runA], total: 3, count: 1, limit: 1000, offset: 2 })
@@ -1473,8 +1528,8 @@ describe('ResultsPage', () => {
     })
     await flushPromises()
 
-    expect(container.textContent).not.toContain('iPhone Checkout')
-    expect(container.textContent).toContain('iPad Checkout')
+    expect(tableText()).not.toContain('iPhone Checkout')
+    expect(tableText()).toContain('iPad Checkout')
   })
 
   it('prunes destructive selections when filters hide the selected row', async () => {

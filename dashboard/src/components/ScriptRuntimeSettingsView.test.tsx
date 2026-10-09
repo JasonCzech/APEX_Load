@@ -413,6 +413,24 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
     expect(script.config.http?.version).toBe(value)
   })
 
+  it('edits the NTLM domain only for the NTLM auth types', () => {
+    const onUpdateField = vi.fn()
+    const script = (type: string): ScriptDefinition => ({ name: 'Auth', version: '1', protocol: 'http', config: { base_url: '', http: { auth: { type, username: 'ada', password: 'pw' } } }, actions: [] })
+    const view = (type: string) => <ScriptRuntimeSettingsView activeHTTPTransportTab="authentication" activeSection="http" canEditProtocol={false}
+      onSave={vi.fn()} onSelectHTTPTransportTab={vi.fn()} onSelectSection={vi.fn()} onUpdateField={onUpdateField}
+      onUpdateProtocol={vi.fn()} saveDisabled saving={false} script={script(type)} />
+    act(() => root.render(view('ntlm')))
+    const domain = container.querySelector('input[aria-label="Auth domain"]') as HTMLInputElement
+    expect(domain).not.toBeNull()
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(domain, 'CORP')
+      domain.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenLastCalledWith('config.http', { auth: { type: 'ntlm', username: 'ada', password: 'pw', domain: 'CORP' } })
+    act(() => root.render(view('negotiate_any')))
+    expect(container.querySelector('input[aria-label="Auth domain"]')).toBeNull()
+  })
+
   it('stores auto-negotiated HTTP version as the DSL empty value', () => {
     const onUpdateField = vi.fn()
     const script: ScriptDefinition = {
@@ -905,6 +923,37 @@ describe('ScriptRuntimeSettingsView imported source runtime settings', () => {
     act(() => (Array.from(groups.querySelectorAll('button')).find(button => button.textContent === 'All') as HTMLButtonElement).click())
     expect(container.querySelectorAll('.imported-runtime-table')).toHaveLength(3)
     expect(web.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('shows imported run-logic blocks as driving execution', () => {
+    const script = importedScript()
+    script.config.run_logic = {
+      block_scheduling: 'sequential',
+      blocks: [{ name: 'Run', mode: 'percentage', children: [{ action: 'browse', weight: 70 }, { action: 'buy', weight: 30 }, { block: { name: 'Inner', mode: 'random', children: [{ action: 'search' }] } }] }],
+    }
+    act(() => root.render(
+      <ScriptRuntimeSettingsView activeHTTPTransportTab="timeouts" activeSection="imported_source" canEditProtocol={false}
+        onSave={vi.fn()} onSelectHTTPTransportTab={vi.fn()} onSelectSection={vi.fn()} onUpdateField={vi.fn()}
+        onUpdateProtocol={vi.fn()} saveDisabled={false} saving={false} script={script} />,
+    ))
+    const section = container.querySelector('[aria-label="Imported run logic"]')
+    expect(section?.textContent).toContain('Drives execution.')
+    expect(section?.textContent).toContain('browse — 70%')
+    expect(section?.textContent).toContain('Inner (random)')
+    expect(container.querySelector('[aria-label="Preserved run order"]')).toBeNull()
+  })
+
+  it('shows relative run-logic weights as shares', () => {
+    const script = importedScript()
+    script.config.run_logic = { blocks: [{ name: 'Run', mode: 'percentage', children: [{ action: 'browse', weight: 2 }, { action: 'buy', weight: 1 }] }] }
+    act(() => root.render(
+      <ScriptRuntimeSettingsView activeHTTPTransportTab="timeouts" activeSection="imported_source" canEditProtocol={false}
+        onSave={vi.fn()} onSelectHTTPTransportTab={vi.fn()} onSelectSection={vi.fn()} onUpdateField={vi.fn()}
+        onUpdateProtocol={vi.fn()} saveDisabled={false} saving={false} script={script} />,
+    ))
+    const section = container.querySelector('[aria-label="Imported run logic"]')
+    expect(section?.textContent).toContain('browse — 66.7%')
+    expect(section?.textContent).toContain('buy — 33.3%')
   })
 
   it('hides the section entirely when the script was not imported', () => {

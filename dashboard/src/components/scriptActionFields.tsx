@@ -16,6 +16,8 @@ import CodeLineWrapToggle from './CodeLineWrapToggle'
 import SourceCodeViewer from './SourceCodeViewer'
 import { useCodeLineWrapPreference } from './codeLineWrapPreference'
 import { formatXMLForDisplay } from './xmlDisplayFormat'
+import { BODY_ENCODING_OPTIONS, bodyEncodingLabel, knownBodyEncoding } from './bodyEncodings'
+import { describeExtractorDFEs, describeExtractorScope } from './extractorScope'
 
 type Action = ScriptActionDefinition
 type Assertion = ScriptAssertionDefinition
@@ -788,12 +790,12 @@ export function HttpActionFields({
     || action.body_encoding !== undefined
     || ['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(method)
   const bodyEncoding = action.body_encoding || ''
-  const normalizedBodyEncoding = bodyEncoding.trim().toLowerCase()
-  const bodyEncodingKnown = normalizedBodyEncoding === '' || normalizedBodyEncoding === 'base64'
-  const bodyEncodingSelection = normalizedBodyEncoding === 'base64' ? 'base64' : bodyEncoding
+  const knownEncoding = knownBodyEncoding(bodyEncoding)
+  const bodyEncodingKnown = Boolean(knownEncoding)
+  const bodyEncodingSelection = knownEncoding ? knownEncoding.value : bodyEncoding
   const formattedXmlBody = useMemo(
-    () => wrapLines || normalizedBodyEncoding === 'base64' ? null : formatXMLForDisplay(action.body || ''),
-    [action.body, normalizedBodyEncoding, wrapLines],
+    () => wrapLines || bodyEncodingSelection === 'base64' || bodyEncodingSelection === 'c_escaped' ? null : formatXMLForDisplay(action.body || ''),
+    [action.body, bodyEncodingSelection, wrapLines],
   )
   const showFormattedXmlBody = !wrapLines && Boolean(formattedXmlBody)
 
@@ -815,7 +817,7 @@ export function HttpActionFields({
         />
       )}
 
-      {!isBrowserScript && bodyVisible && openBody && <div className="sub-section"><h4>Request body</h4><p>{(action.body || '').length.toLocaleString()} characters · {action.body_encoding ? 'Base64 wire bytes' : bodyLanguage(action).toUpperCase()}</p><button type="button" className="btn btn-secondary" onClick={openBody}>Edit request body in center</button></div>}
+      {!isBrowserScript && bodyVisible && openBody && <div className="sub-section"><h4>Request body</h4><p>{(action.body || '').length.toLocaleString()} characters · {action.body_encoding ? bodyEncodingLabel(action.body_encoding) : bodyLanguage(action).toUpperCase()}</p><button type="button" className="btn btn-secondary" onClick={openBody}>Edit request body in center</button></div>}
       {!isBrowserScript && bodyVisible && !openBody && (
         <div className="sub-section">
           <div className="sub-header">
@@ -829,16 +831,13 @@ export function HttpActionFields({
                 value={bodyEncodingSelection}
                 onChange={event => onUpdate(index, 'body_encoding', event.target.value || undefined)}
               >
-                <option value="">Plain text</option>
-                <option value="base64">Base64-encoded wire bytes</option>
+                {BODY_ENCODING_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                 {!bodyEncodingKnown && <option value={bodyEncoding}>Legacy/unknown: {bodyEncoding}</option>}
               </select>
             </label>
           </div>
-          {normalizedBodyEncoding === 'base64' && (
-            <p className="sequence-summary-note">
-              This text is standard Base64. The HTTP runtime decodes it before sending the request body.
-            </p>
+          {knownEncoding?.note && (
+            <p className="sequence-summary-note">{knownEncoding.note}</p>
           )}
           {!bodyEncodingKnown && (
             <p className="sequence-summary-note">
@@ -1058,11 +1057,12 @@ function extractorSourceOptions(protocol: string): Array<[string, string]> {
     case 'websocket':
       return [['body', 'Message Body'], ['header', 'Handshake Header'], ['message', 'Message'], ['close_code', 'Close Code']]
     default:
-      return [['body', 'Body'], ['header', 'Header'], ['cookie', 'Cookie']]
+      return [['body', 'Body'], ['header', 'Header'], ['all', 'Headers and body'], ['cookies', 'Set-Cookie lines'], ['url', 'Final URL'], ['status', 'Status code']]
   }
 }
 
-function extractorTypeOptions(protocol: string): Array<[string, string]> {
+function extractorTypeOptions(protocol: string, source = ''): Array<[string, string]> {
+  if (HTTP_EXTRACTOR_TEXT_SOURCES[source] && !isNonHTTPExtractorProtocol(protocol)) return HTTP_EXTRACTOR_TEXT_SOURCES[source]
   if (protocol === 'database' || protocol === 'network' || protocol === 'grpc') {
     return [['jsonpath', 'JSONPath'], ['jmespath', 'JMESPath'], ['regex', 'Regex'], ['boundary', 'Boundary']]
   }
@@ -1071,7 +1071,40 @@ function extractorTypeOptions(protocol: string): Array<[string, string]> {
   }
   // HTTP family: include SSE modes for consuming text/event-stream responses
   // (Agentforce streaming) — sse_concat joins data: frames, sse_event picks a named event.
-  return [['jsonpath', 'JSONPath'], ['jmespath', 'JMESPath'], ['regex', 'Regex'], ['boundary', 'Boundary'], ['xpath', 'XPath'], ['css', 'CSS'], ['sse_concat', 'SSE concat'], ['sse_event', 'SSE event']]
+  return [['jsonpath', 'JSONPath'], ['jmespath', 'JMESPath'], ['regex', 'Regex'], ['boundary', 'Boundary'], ['regex_count', 'Regex count'], ['regex_ordinal', 'Regex ordinal'], ['xpath', 'XPath'], ['css', 'CSS'], ['sse_concat', 'SSE concat'], ['sse_event', 'SSE event']]
+}
+
+// displayedExtractorType shows a stored type under the option its runtime
+// spelling shares: json_path is jsonpath, and a header extractor's "header"
+// type is the named-header lookup ("").
+function displayedExtractorType(source: string | undefined, type: string | undefined): string {
+  if (type === 'json_path') return 'jsonpath'
+  if (type === 'header' && source === 'header') return ''
+  return type ?? ''
+}
+
+// HTTP extractor sources that are searched as text accept only the text
+// extractor types (the DSL validator enforces the same lists).
+const HTTP_TEXT_TYPES: Array<[string, string]> = [['regex', 'Regex'], ['boundary', 'Boundary'], ['regex_count', 'Regex count'], ['regex_ordinal', 'Regex ordinal']]
+const HTTP_EXTRACTOR_TEXT_SOURCES: Record<string, Array<[string, string]>> = {
+  header: [['', 'Named header'], ...HTTP_TEXT_TYPES],
+  all: HTTP_TEXT_TYPES,
+  cookies: HTTP_TEXT_TYPES,
+  url: [['', 'Whole value'], ...HTTP_TEXT_TYPES],
+  status: [['', 'Whole value'], ...HTTP_TEXT_TYPES],
+}
+
+function isNonHTTPExtractorProtocol(protocol: string) {
+  return protocol === 'database' || protocol === 'network' || protocol === 'grpc' || protocol === 'websocket' || protocol.startsWith('jms')
+}
+
+// withCurrentOption keeps a stored value visible when it is not one of the
+// offered options, instead of the select silently showing the first option.
+function withCurrentOption(options: Array<[string, string]>, current: string | undefined): Array<[string, string]> {
+  const value = current ?? ''
+  if (options.some(([option]) => option === value)) return options
+  if (value === '' && options.some(([option]) => option === 'body')) return options
+  return [...options, [value, value ? `Unsupported: ${value}` : 'Not set']]
 }
 
 function extractorExpressionPlaceholder(protocol: string, source: string) {
@@ -1080,13 +1113,16 @@ function extractorExpressionPlaceholder(protocol: string, source: string) {
   if (protocol === 'grpc') return '$.id'
   if (protocol === 'websocket') return '$.type'
   if (protocol.startsWith('jms')) return '$.orderId'
+  if (source === 'header') return 'Location'
+  if (source === 'cookies') return 'sid=|||;'
+  if (source === 'url') return 'code=([^&]+)'
+  if (source === 'status') return 'Leave empty for the status code'
   return '$.data.id'
 }
 
 export function ProtocolExtractorsSection({ action, index, protocol, onAddExtractor, onRemoveExtractor, onUpdateExtractor }: ProtocolExtractorsSectionProps) {
   const managed = useContext(ManagedActionChecks)
   const sourceOptions = extractorSourceOptions(protocol)
-  const typeOptions = extractorTypeOptions(protocol)
   if (managed) return null
   return (
     <div className="sub-section">
@@ -1095,13 +1131,15 @@ export function ProtocolExtractorsSection({ action, index, protocol, onAddExtrac
         <div key={extractorIndex} className="extractor-row">
           <input aria-label={`Extractor ${extractorIndex + 1} variable name`} value={extractor.name} onChange={e => onUpdateExtractor(index, extractorIndex, 'name', e.target.value)} placeholder="Variable name" />
           <select aria-label={`Extractor ${extractorIndex + 1} source`} value={extractor.source} onChange={e => onUpdateExtractor(index, extractorIndex, 'source', e.target.value)}>
-            {sourceOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            {withCurrentOption(sourceOptions, extractor.source).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
-          <select aria-label={`Extractor ${extractorIndex + 1} type`} value={extractor.type} onChange={e => onUpdateExtractor(index, extractorIndex, 'type', e.target.value)}>
-            {typeOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          <select aria-label={`Extractor ${extractorIndex + 1} type`} value={displayedExtractorType(extractor.source, extractor.type)} onChange={e => onUpdateExtractor(index, extractorIndex, 'type', e.target.value)}>
+            {withCurrentOption(extractorTypeOptions(protocol, extractor.source), displayedExtractorType(extractor.source, extractor.type)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
           <input aria-label={`Extractor ${extractorIndex + 1} expression`} value={extractor.expression} onChange={e => onUpdateExtractor(index, extractorIndex, 'expression', e.target.value)} placeholder={extractorExpressionPlaceholder(protocol, extractor.source)} className="ext-expr" />
           <button aria-label={`Remove extractor ${extractorIndex + 1}`} className="btn-icon danger" onClick={() => onRemoveExtractor(index, extractorIndex)}>✕</button>
+          {extractor.scope && <p className="sequence-summary-note" aria-label={`Extractor ${extractorIndex + 1} scope`}>{describeExtractorScope(extractor.scope)}</p>}
+          {extractor.dfes && extractor.dfes.length > 0 && <p className="sequence-summary-note" aria-label={`Extractor ${extractorIndex + 1} data formats`}>{describeExtractorDFEs(extractor.dfes)}</p>}
         </div>
       ))}
     </div>
@@ -1136,10 +1174,18 @@ function assertionOptions(protocol: string): Array<[string, string]> {
     case 'http':
     case 'http/1.1':
     case 'http/2':
-      return [['status_code', 'Status Code'], ['response_time_ms', 'Response Time (ms)'], ['body_contains', 'Body Contains'], ['header_contains', 'Header Contains'], ['body_regex_capture_equals', 'Body Regex Capture Equals'], ['aura_actions_success', 'Aura actions succeed']]
+      return [['status_code', 'Status Code'], ['response_time_ms', 'Response Time (ms)'], ['body_contains', 'Body Contains'], ['body_not_contains', 'Body Excludes'], ...HTTP_TEXT_ASSERTIONS, ['header_contains', 'Header Contains'], ['body_regex_capture_equals', 'Body Regex Capture Equals'], ['aura_actions_success', 'Aura actions succeed']]
     default:
-      return [['status_code', 'Status Code'], ['response_time_ms', 'Response Time (ms)'], ['body_contains', 'Body Contains'], ['header_contains', 'Header Contains'], ['body_regex_capture_equals', 'Body Regex Capture Equals']]
+      return [['status_code', 'Status Code'], ['response_time_ms', 'Response Time (ms)'], ['body_contains', 'Body Contains'], ['body_not_contains', 'Body Excludes'], ...HTTP_TEXT_ASSERTIONS, ['header_contains', 'Header Contains'], ['body_regex_capture_equals', 'Body Regex Capture Equals']]
   }
+}
+
+// HTTP text checks (LoadRunner web_reg_find) over a chosen response surface.
+const HTTP_TEXT_ASSERTIONS: Array<[string, string]> = [['text_contains', 'Text contains'], ['text_not_contains', 'Text excludes'], ['text_matches', 'Text matches pattern'], ['text_not_matches', 'Text does not match pattern']]
+const TEXT_ASSERTION_SOURCES: Array<[string, string]> = [['', 'Body'], ['headers', 'Headers'], ['all', 'Headers and body']]
+
+function isTextAssertion(type: string) {
+  return type.startsWith('text_') && HTTP_TEXT_ASSERTIONS.some(([value]) => value === type)
 }
 
 function assertionUsesNumericExpected(type: string) {
@@ -1147,7 +1193,7 @@ function assertionUsesNumericExpected(type: string) {
 }
 
 function assertionUsesTextValue(type: string) {
-  return ['body_contains', 'body_not_contains', 'metadata_contains', 'correlation_match', 'element_visible', 'url_contains'].includes(type)
+  return ['body_contains', 'body_not_contains', 'metadata_contains', 'correlation_match', 'element_visible', 'url_contains'].includes(type) || isTextAssertion(type)
 }
 
 function assertionUsesNamedExpected(type: string) {
@@ -1173,6 +1219,8 @@ export function ProtocolAssertionsSection({ action, index, protocol, onAddAssert
           <select aria-label={`Assertion ${assertionIndex + 1} type`} value={assertion.type} onChange={e => {
             const type = e.target.value
             onUpdateAssertion(index, assertionIndex, 'type', type)
+            // Only text checks take a source; validation rejects it elsewhere.
+            if (!isTextAssertion(type) && assertion.source !== undefined) onUpdateAssertion(index, assertionIndex, 'source', undefined)
             if (type === 'aura_actions_success') {
               for (const field of ['value', 'expected', 'min', 'max', 'legacy_html_check'] as const) {
                 if (assertion[field] !== undefined) onUpdateAssertion(index, assertionIndex, field, undefined)
@@ -1185,7 +1233,15 @@ export function ProtocolAssertionsSection({ action, index, protocol, onAddAssert
           {assertion.type === 'page_title' && <input aria-label={`Assertion ${assertionIndex + 1} expected title`} value={typeof assertion.value === 'string' ? assertion.value : String(assertion.expected ?? '')} onChange={e => onUpdateAssertion(index, assertionIndex, typeof assertion.value === 'string' ? 'value' : 'expected', e.target.value)} placeholder="Expected title" />}
           {assertionUsesNumericExpected(assertion.type) && <input aria-label={`Assertion ${assertionIndex + 1} expected number`} type="number" value={typeof assertion.expected === 'number' ? assertion.expected : 0} onChange={e => onUpdateAssertion(index, assertionIndex, 'expected', Number(e.target.value))} />}
           {assertion.type === 'response_time_ms' && <input aria-label={`Assertion ${assertionIndex + 1} maximum milliseconds`} type="number" min="1" value={assertion.max ?? 5000} onChange={e => onUpdateAssertion(index, assertionIndex, 'max', Number(e.target.value))} placeholder="Max ms" />}
-          {assertionUsesTextValue(assertion.type) && <input aria-label={`Assertion ${assertionIndex + 1} ${assertion.type.startsWith('element_') ? 'selector' : 'value'}`} value={assertion.value ?? ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'value', e.target.value)} placeholder={assertion.type === 'element_visible' ? 'Element selector' : 'Expected text'} />}
+          {assertionUsesTextValue(assertion.type) && <input aria-label={`Assertion ${assertionIndex + 1} ${assertion.type.startsWith('element_') ? 'selector' : 'value'}`} value={assertion.value ?? ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'value', e.target.value)} placeholder={assertion.type === 'element_visible' ? 'Element selector' : assertion.type.endsWith('matches') ? 'RE2 pattern' : 'Expected text'} />}
+          {isTextAssertion(assertion.type) && (
+            <select aria-label={`Assertion ${assertionIndex + 1} source`} value={assertion.source === 'body' ? '' : assertion.source ?? ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'source', e.target.value || undefined)}>
+              {TEXT_ASSERTION_SOURCES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          )}
+          {(isTextAssertion(assertion.type) || assertion.type === 'body_contains' || assertion.type === 'body_not_contains') && protocol.startsWith('http') && (
+            <label className="checkbox-inline"><input type="checkbox" aria-label={`Assertion ${assertionIndex + 1} ignore case`} checked={Boolean(assertion.case_insensitive)} onChange={e => onUpdateAssertion(index, assertionIndex, 'case_insensitive', e.target.checked || undefined)} /> Ignore case</label>
+          )}
           {assertionUsesNamedExpected(assertion.type) && assertion.type !== 'scalar_equals' && <input aria-label={`Assertion ${assertionIndex + 1} ${assertion.type.startsWith('element_') ? 'selector' : 'value'}`} value={assertion.value ?? ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'value', e.target.value)} placeholder={assertionValuePlaceholder(assertion.type)} />}
           {assertionUsesNamedExpected(assertion.type) && <input aria-label={`Assertion ${assertionIndex + 1} expected value`} value={typeof assertion.expected === 'string' || typeof assertion.expected === 'number' ? String(assertion.expected) : ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'expected', e.target.value)} placeholder="Expected value" />}
           <button aria-label={`Remove assertion ${assertionIndex + 1}`} className="btn-icon danger" onClick={() => onRemoveAssertion(index, assertionIndex)}>✕</button>

@@ -115,10 +115,10 @@
 
 .client-downloads-status.success {
   background: rgba(var(--success-rgb), 0.12);
-  color: var(--success, var(--success));
+  color: var(--success-text);
 }
 
 .client-downloads-status.error {
   background: rgba(var(--danger-rgb), 0.12);
-  color: var(--danger, var(--danger));
+  color: var(--danger-text);
 }

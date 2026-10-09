@@ -315,6 +315,26 @@ func TestBaselineComparisonHTTPPersistenceScopeAndExports(t *testing.T) {
 	if saved.Code != 200 || !bytes.Equal(bytes.TrimSpace(saved.Body.Bytes()), bytes.TrimSpace(response.Body.Bytes())) {
 		t.Fatalf("snapshot changed: %d", saved.Code)
 	}
+	// The report lists saved comparisons so they can be reopened.
+	listed := call("GET", "/api/v1/tests/current/baseline-comparisons", nil)
+	var list baselineComparisonListResponse
+	if listed.Code != 200 || json.Unmarshal(listed.Body.Bytes(), &list) != nil || len(list.Comparisons) != 1 || list.Comparisons[0].ID != snapshot.ID || len(list.Comparisons[0].Baselines) != 1 || list.Comparisons[0].Baselines[0].ID != baseline.ID {
+		t.Fatalf("list=%d %s", listed.Code, listed.Body.String())
+	}
+	// A comparison whose baseline left this application cannot be opened, so
+	// it is not listed (and the moved run's name is not disclosed).
+	server.runner.mu.Lock()
+	originalApplication := baseline.ApplicationID
+	baseline.ApplicationID = "another-application"
+	server.runner.mu.Unlock()
+	hidden := call("GET", "/api/v1/tests/current/baseline-comparisons", nil)
+	var hiddenList baselineComparisonListResponse
+	if hidden.Code != 200 || json.Unmarshal(hidden.Body.Bytes(), &hiddenList) != nil || len(hiddenList.Comparisons) != 0 {
+		t.Fatalf("out-of-scope comparison listed: %d %s", hidden.Code, hidden.Body.String())
+	}
+	server.runner.mu.Lock()
+	baseline.ApplicationID = originalApplication
+	server.runner.mu.Unlock()
 	for _, path := range []string{"/api/v1/tests/current/report?profile=engineer&comparison_id=", "/api/v1/tests/current/archive/report?profile=engineer&format=csv&comparison_id=", "/api/v1/tests/current/archive/report?profile=engineer&comparison_id="} {
 		resp := call("GET", path+snapshot.ID, nil)
 		if resp.Code != 200 || !strings.Contains(resp.Body.String(), snapshot.ID) {

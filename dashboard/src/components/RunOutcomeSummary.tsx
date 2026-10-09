@@ -1,6 +1,7 @@
 import { reportEvidenceWarnings } from './reportEvidenceWarnings'
 import { runOutcomeLabels } from './runOutcomeLabels'
 import type { RunArchiveReport } from '../types'
+import { formatMs } from './runReport/runReportModel'
 
 export default function RunOutcomeSummary({ report, showPopulations = true }: { report: RunArchiveReport; showPopulations?: boolean }) {
   const manifest = report.manifest
@@ -25,7 +26,7 @@ export function RunMetricPopulations({ report }: { report: RunArchiveReport }) {
   return <dl aria-label="Metric populations">
       {(['action', 'transaction', 'unknown'] as const).map(key => {
         const metrics = report.metric_populations?.[key]
-        return <div key={key}><dt>{key === 'action' ? 'Requests / actions' : key === 'transaction' ? 'Named transactions' : 'Unclassified legacy records'}</dt><dd>{metrics?.transactions === 0 ? '0 records · no samples to evaluate' : metrics ? `${metrics.transactions} · ${metrics.errors} errors · p95 ${metrics.p95_ms?.toFixed(1) ?? 'Unknown'} ms · ${!Number.isFinite(metrics.average_rate_per_second) ? 'Elapsed-run average unavailable' : `${metrics.average_rate_per_second?.toFixed(3)}/s elapsed-run average`}` : 'Unknown'}</dd></div>
+        return <div key={key}><dt>{key === 'action' ? 'Requests / actions' : key === 'transaction' ? 'Named transactions' : 'Unclassified legacy records'}</dt><dd>{metrics?.transactions === 0 ? '0 records · no samples to evaluate' : metrics ? `${metrics.transactions} · ${metrics.errors} errors · P95 ${formatMs(metrics.p95_ms)} · ${!Number.isFinite(metrics.average_rate_per_second) ? 'Elapsed-run average unavailable' : `${metrics.average_rate_per_second?.toFixed(3)}/s elapsed-run average`}` : 'Unknown'}</dd></div>
       })}
       <div><dt>Archive records</dt><dd>{report.overview?.transactions ?? 'Unavailable'}</dd></div>
     </dl>

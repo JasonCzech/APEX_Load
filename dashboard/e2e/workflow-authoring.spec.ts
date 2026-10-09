@@ -93,12 +93,10 @@ for (const code of [500, 409, 401]) {
       let reviewedTag = initialTag
       let expectedName = (initialDocument.script as Record<string, unknown>).name
       if (code === 500) {
-        // A nondefinitive outcome revokes retry authority, even though this
-        // injected response did not reach storage. A real other writer proves
-        // that explicit review is needed before another conditional save.
-        await expect(saveButton).toBeDisabled()
-        const conflict = page.getByRole('region', { name: 'Script save reconciliation' })
-        await expect(conflict).toBeVisible()
+        // A plain server error stays retryable (UXH-103). Revision protection
+        // still guards the retry: once another writer has changed the script,
+        // the retry is refused and explicit review starts then.
+        await expect(saveButton).toBeEnabled()
         expectedName = 'Changed by another author during recovery'
         await json(await request.put(`/api/v1/scripts/${id}`, { headers: { 'If-Match': initialTag }, data: {
           project_id: workspace.projectId, script: { ...(initialDocument.script as Record<string, unknown>), name: expectedName },
@@ -108,6 +106,14 @@ for (const code of [500, 409, 401]) {
         reviewedTag = reviewed.headers().etag
         expect(reviewedTag).not.toBe(initialTag)
         expect(reviewedDocument.script).toMatchObject({ name: expectedName, config: { base_url: 'http://127.0.0.1:1' } })
+        const retried = mutation(page, 'PUT', `/api/v1/scripts/${id}`)
+        await saveButton.click()
+        const retriedResponse = await retried
+        expect(retriedResponse.ok()).toBe(false)
+        expect(retriedResponse.request().headers()['if-match']).toBe(initialTag)
+        const conflict = page.getByRole('region', { name: 'Script save reconciliation' })
+        await expect(conflict).toBeVisible()
+        await expect(saveButton).toBeDisabled()
         await conflict.getByRole('button', { name: 'Load current baseline', exact: true }).click()
         await expect(conflict.getByRole('button', { name: 'Reapply draft', exact: true })).toBeEnabled()
         await conflict.getByRole('button', { name: 'Diff', exact: true }).click()
@@ -115,13 +121,13 @@ for (const code of [500, 409, 401]) {
         await expect(conflict.getByLabel('Script revision field diff')).not.toContainText('http://127.0.0.1:12345')
         await expect(input).toHaveValue('http://127.0.0.1:12345')
         await expect(saveButton).toBeDisabled()
-        expect(writes).toEqual([initialTag])
+        expect(writes).toEqual([initialTag, initialTag])
         await conflict.getByRole('button', { name: 'Reapply draft', exact: true }).click()
         await expect(conflict).toHaveCount(0)
         await workbench.getByRole('tab', { name: 'Runtime Settings' }).click()
         await expect(input).toHaveValue('http://127.0.0.1:12345')
         await expect(saveButton).toBeEnabled()
-        expect(writes).toEqual([initialTag])
+        expect(writes).toEqual([initialTag, initialTag])
         expect(((await json(await request.get(`/api/v1/scripts/${id}`))).script as Record<string, unknown>).config).toMatchObject({ base_url: 'http://127.0.0.1:1' })
       }
       const saved = mutation(page, 'PUT', `/api/v1/scripts/${id}`)
@@ -129,7 +135,7 @@ for (const code of [500, 409, 401]) {
       const savedResponse = await saved
       await json(savedResponse)
       expect(savedResponse.request().headers()['if-match']).toBe(reviewedTag)
-      expect(writes).toEqual([initialTag, reviewedTag])
+      expect(writes).toEqual(code === 500 ? [initialTag, initialTag, reviewedTag] : [initialTag, reviewedTag])
       expect((await json(await request.get(`/api/v1/scripts/${id}`))).script).toMatchObject({ name: expectedName, config: { base_url: 'http://127.0.0.1:12345' } })
     } finally { await page.unrouteAll({ behavior: 'wait' }) }
   })

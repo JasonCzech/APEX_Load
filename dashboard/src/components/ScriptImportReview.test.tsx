@@ -225,7 +225,7 @@ describe('ScriptImportReview', () => {
     expect(container.querySelector<HTMLElement>('.shared-import-issue-workspace')?.parentElement?.hidden).toBe(false)
     act(() => container.querySelector<HTMLButtonElement>('[aria-label="Runtime settings"]')!.click())
     expect(container.querySelector<HTMLElement>('.shared-import-issue-workspace')?.parentElement?.hidden).toBe(true)
-    act(() => container.querySelector<HTMLButtonElement>('[aria-label="Review"]')!.click())
+    act(() => container.querySelector<HTMLButtonElement>('[aria-label^="Review"]')!.click())
     expect(container.querySelector<HTMLElement>('.shared-import-issue-workspace')?.parentElement?.hidden).toBe(false)
   })
 
@@ -816,7 +816,7 @@ describe('ScriptImportReview', () => {
       .find(button => button.textContent === 'Save with 1 secret to configure')
     expect(saveButton?.disabled).toBe(false)
     const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent === 'Open In Visual Editor with 1 secret to configure')
+      .find(button => button.textContent === 'Open in Visual Editor with 1 secret to configure')
     expect(editButton?.disabled).toBe(false)
     expect(container.textContent).toContain('Credential groups (1)')
     await act(async () => {
@@ -927,7 +927,7 @@ describe('ScriptImportReview', () => {
     expect(container.textContent).toContain('0 bindings need setup')
     const saveButton = container.querySelector<HTMLButtonElement>('.script-import-review-actions .btn-primary')!
     const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent === 'Open In Visual Editor')!
+      .find(button => button.textContent === 'Open in Visual Editor')!
 
     await act(async () => {
       saveButton.click()
@@ -1123,7 +1123,7 @@ describe('ScriptImportReview', () => {
     const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent?.includes('Save with'))
     const edit = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Open In Visual Editor'))
+      .find(button => button.textContent?.includes('Open in Visual Editor'))
     expect(save?.disabled).toBe(true)
     expect(edit?.disabled).toBe(true)
     expect(container.querySelector<HTMLInputElement>('.secret-binding-review input[type="text"]')?.disabled).toBe(true)

@@ -244,6 +244,13 @@ func correlationLocations(action *dsl.Action, index int, value string, requestBo
 	if !requestBodyTransformed && strings.TrimSpace(action.BodyEncoding) == "" {
 		appendLocation("body", action.Body)
 	}
+	if multipart := action.BodyMultipart; multipart != nil {
+		for index, part := range multipart.Parts {
+			if !strings.EqualFold(strings.TrimSpace(part.ValueEncoding), "base64") {
+				appendLocation(fmt.Sprintf("%s%d", multipartFieldPrefix, index), part.Value)
+			}
+		}
+	}
 	appendLocation("value", action.Value)
 	for _, headerKey := range sortedKeys(action.Headers) {
 		appendLocation("headers."+headerKey, action.Headers[headerKey])

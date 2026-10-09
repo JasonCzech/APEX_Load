@@ -1199,7 +1199,7 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     const edit = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.trim() === 'Save and Open in Visual Editor')
+      .find(button => button.textContent?.trim() === 'Save and open in Visual Editor')
     expect(edit).toBeDefined()
     await act(async () => edit?.click())
     await flushPromises()
@@ -1650,7 +1650,7 @@ describe('ProtocolAssetImport', () => {
     })
     await flushPromises()
 
-    const coverage = container.querySelector('[aria-label="Import DevWeb Script coverage"]') as HTMLElement | null
+    const coverage = container.querySelector('[aria-label="DevWeb Source coverage"]') as HTMLElement | null
     expect(coverage).not.toBeNull()
     const coverageButton = coverage?.querySelector('button') as HTMLButtonElement | null
     expect(coverageButton).not.toBeNull()
@@ -1682,7 +1682,7 @@ describe('ProtocolAssetImport', () => {
     })
     await flushPromises()
 
-    const coverage = container.querySelector('[aria-label="Import Postman Collection coverage"]') as HTMLElement | null
+    const coverage = container.querySelector('[aria-label="Postman Collection coverage"]') as HTMLElement | null
     expect(coverage).not.toBeNull()
     const coverageButton = coverage?.querySelector('button') as HTMLButtonElement | null
     expect(coverageButton).not.toBeNull()
@@ -1998,7 +1998,7 @@ describe('ProtocolAssetImport', () => {
       zone.dispatchEvent(drop)
     })
 
-    expect(container.textContent).toContain('notes.txt is not a supported har file')
+    expect(container.textContent).toContain('notes.txt is not a supported HAR Traffic file')
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     expect((convertButton as HTMLButtonElement | undefined)?.disabled).toBe(true)
@@ -2018,7 +2018,7 @@ describe('ProtocolAssetImport', () => {
 	      root.render(<ProtocolAssetImport kind="har" projectId="project-1" />)
 	    })
 
-	    expect(container.textContent).toContain('Import HAR')
+	    expect(container.textContent).toContain('HAR Traffic')
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
     expect(fileInput).not.toBeNull()
@@ -2091,7 +2091,7 @@ describe('ProtocolAssetImport', () => {
     })
     await flushPromises()
 
-    expect(container.textContent).toContain('Import RAML')
+    expect(container.textContent).toContain('RAML / Anypoint')
     // RAML support-matrix panel (G2)
     expect(container.textContent).toContain('Import Coverage')
     await openImportCoverage(container)
@@ -2145,7 +2145,7 @@ describe('ProtocolAssetImport', () => {
     })
     await flushPromises()
 
-    expect(container.textContent).toContain('Import AsyncAPI')
+    expect(container.textContent).toContain('AsyncAPI / Kafka')
     expect(container.textContent).toContain('Import Coverage')
     await openImportCoverage(container)
     expect(container.textContent).toContain('Kafka')
@@ -2665,7 +2665,7 @@ describe('ProtocolAssetImport', () => {
     const tabsAfterFirstSave = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
     expect(tabsAfterFirstSave[0].textContent).toContain('Saved')
     expect(tabsAfterFirstSave[1].getAttribute('aria-selected')).toBe('true')
-    expect(container.textContent).toContain('Save Remaining 1 Script')
+    expect(container.textContent).toContain('Save remaining 1 script')
     expect(container.textContent).toContain('Open Orders Kafka in Visual Editor')
 
     await act(async () => tabsAfterFirstSave[0].click())
@@ -2675,7 +2675,7 @@ describe('ProtocolAssetImport', () => {
     expect(apiMock.commitAsyncAPIImport).toHaveBeenCalledTimes(1)
 
     const saveRemaining = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Save Remaining 1 Script'))
+      .find(button => button.textContent?.includes('Save remaining 1 script'))
     expect(saveRemaining?.disabled).toBe(false)
     await act(async () => saveRemaining?.click())
     await flushPromises()
@@ -3033,7 +3033,7 @@ describe('ProtocolAssetImport', () => {
     })
     await flushPromises()
     expect(apiMock.commitAsyncAPIImportBatch).toHaveBeenCalledTimes(1)
-    expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Saving...')?.disabled).toBe(true)
+    expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Saving…')?.disabled).toBe(true)
     const firstOperationID = apiMock.commitAsyncAPIImportBatch.mock.calls[0][0].operation_id
     expect(firstOperationID).toMatch(/^asyncapi-batch-/)
 
@@ -3047,7 +3047,7 @@ describe('ProtocolAssetImport', () => {
 
     expect(apiMock.commitAsyncAPIImportBatch).toHaveBeenCalledTimes(1)
     expect(apiMock.deleteScript).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('Retrying Save Remaining safely reuses the same save operation')
+    expect(container.textContent).toContain('Retrying Save remaining safely reuses the same save operation')
 
     const retry = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent?.includes('Save All 2 Scripts'))!
@@ -3495,7 +3495,7 @@ describe('ProtocolAssetImport', () => {
       root.render(<ProtocolAssetImport kind="recorder-export" projectId="project-1" />)
     })
 
-    expect(container.textContent).toContain('Import Browser Recording')
+    expect(container.textContent).toContain('Recorder Export / Playwright Codegen')
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
     expect(fileInput).not.toBeNull()
@@ -3530,7 +3530,7 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('1 degraded')
     expect(container.textContent).toContain('1 unsupported')
     expect(container.textContent).toContain('Chrome customStep requires manual review')
-    await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label="Review"]')?.click() })
+    await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label^="Review"]')?.click() })
     expect(container.querySelector('.shared-import-issue-detail')?.textContent).toContain('chrome_recorder_step:customStep')
   })
 
@@ -4015,7 +4015,7 @@ describe('ProtocolAssetImport', () => {
     await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label="Source Mapping"]')?.click() })
     const useFallback = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Use')!
     await act(async () => useFallback.click())
-    const edit = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Open Draft in Visual Editor'))!
+    const edit = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Open draft in Visual Editor'))!
     await act(async () => edit.click())
 
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
@@ -4101,7 +4101,7 @@ describe('ProtocolAssetImport', () => {
       root.render(<ProtocolAssetImport kind="wsdl" projectId="project-1" />)
     })
 
-    expect(container.textContent).toContain('Import WSDL')
+    expect(container.textContent).toContain('WSDL / SOAP')
     expect(container.textContent).toContain('SOAP Version')
 
     const soapVersionSelect = container.querySelector('select') as HTMLSelectElement | null

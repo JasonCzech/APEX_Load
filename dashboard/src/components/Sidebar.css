@@ -19,6 +19,8 @@
 .sidebar.collapsed {
   width: 64px;
   flex-basis: 64px;
+  /* Empty space on the collapsed rail opens the sidebar (see Sidebar.tsx). */
+  cursor: pointer;
 }
 
 /* The shell reserves the 64px icon rail in the page layout. The sidebar itself
@@ -125,7 +127,7 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
   width: 24px;
   height: 24px;
   flex: 0 0 auto;
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 18px;
 }
 
@@ -196,7 +198,7 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
 }
 
 .project-icon {
-  color: var(--accent);
+  color: var(--accent-text);
   flex-shrink: 0;
 }
 
@@ -263,13 +265,13 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
 
 .project-menu-item.active {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .project-menu-action {
   border-top: 1px solid var(--border);
   border-radius: 0;
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
 }
 
@@ -323,7 +325,7 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
 .nav-item-primary {
   background: transparent;
   box-shadow: inset 0 0 0 2px var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 700;
 }
 
@@ -341,7 +343,7 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
 .nav-item-primary.active:hover {
   background: var(--accent-soft);
   box-shadow: inset 0 0 0 2px var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .sidebar.collapsed .nav-item {
@@ -516,29 +518,37 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
   box-shadow: 0 0 0 2px var(--danger-bg);
 }
 
+/* An "!" glyph, not colour alone, marks the session warning. */
 .sidebar-rail-avatar-alert {
   position: absolute;
-  top: -3px;
-  right: -3px;
-  width: 11px;
-  height: 11px;
+  top: -5px;
+  right: -5px;
+  width: 15px;
+  height: 15px;
+  display: grid;
+  place-items: center;
   border: 2px solid var(--bg-secondary);
   border-radius: 50%;
   background: var(--warning);
+  color: var(--warning-fill-text);
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .sidebar-rail-avatar.session-expired .sidebar-rail-avatar-alert {
-  background: var(--danger);
+  background: var(--danger-fill);
+  color: var(--danger-fill-text);
 }
 
 .sidebar-identity-session {
-  color: var(--warning);
+  color: var(--warning-text);
   font-size: 12px;
   font-weight: 600;
 }
 
 .sidebar-identity-action {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 12px;
   font-weight: 600;
   text-decoration: none;
@@ -622,7 +632,7 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--warning);
+  color: var(--warning-text);
   text-transform: none;
 }
 
@@ -690,7 +700,12 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
 }
 
 .sidebar.collapsed .status-text {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 .sidebar.collapsed .build-badge-pill {
@@ -712,7 +727,7 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
 }
 
 .sidebar-status.connected {
-  color: var(--success);
+  color: var(--success-text);
 }
 
 .sidebar-status.connecting {
@@ -720,7 +735,7 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
 }
 
 .sidebar-status.disconnected {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .status-dot {
@@ -729,6 +744,20 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
   border-radius: 50%;
   background: currentColor;
   animation: pulse 2s infinite;
+}
+
+/* State is told by shape as well as colour: a filled dot when live, a ring
+   while connecting, a square when disconnected. */
+.sidebar-status.connecting .status-dot {
+  width: 7px;
+  height: 7px;
+  background: transparent;
+  border: 2px solid currentColor;
+}
+
+.sidebar-status.disconnected .status-dot {
+  border-radius: 1px;
+  animation: none;
 }
 
 @keyframes pulse {

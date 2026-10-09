@@ -295,6 +295,27 @@ type CookieController interface {
 	ClearCookies(ctx context.Context) error
 }
 
+// ScriptCookie is a cookie the script sets or removes in the VUser's cookie
+// store (imported web_add_cookie / web_remove_cookie). An empty Domain means
+// the script's base host; an empty Path means "/".
+type ScriptCookie struct {
+	Name   string
+	Value  string
+	Domain string
+	Path   string
+	Secure bool
+	// Remove expires the cookie instead of setting it.
+	Remove bool
+}
+
+// CookieSetter is an optional capability for protocols whose per-VUser cookie
+// store accepts cookies from the script, so a server that later sets the same
+// cookie replaces it as a browser would. Protocols without a cookie store
+// treat cookie_set as a no-op.
+type CookieSetter interface {
+	SetCookie(ctx context.Context, cookie ScriptCookie) error
+}
+
 // CacheController is an optional capability for protocols that maintain a
 // per-VUser response cache. The engine invokes ClearCache at the start of an
 // iteration when browser emulation's "simulate a new user on each iteration"
@@ -612,6 +633,21 @@ type Extractor struct {
 	SaveOffset   int     `json:"save_offset,omitempty"` // skip leading bytes of each matched value
 	SaveLength   int     `json:"save_length,omitempty"` // truncate each value to at most N bytes (0 = entire)
 	Convert      string  `json:"convert,omitempty"`     // "url_encode" | "url_decode" | "html_decode"
+	// Scope widens or filters the HTTP responses searched (see
+	// dsl.ExtractorScope); nil searches the final response only.
+	Scope *ExtractorScope `json:"scope,omitempty"`
+	// DFEs transforms each searched response body before extraction (see
+	// dsl.Extractor.DFEs).
+	DFEs []string `json:"dfes,omitempty"`
+}
+
+// ExtractorScope mirrors dsl.ExtractorScope for the protocol layer.
+type ExtractorScope struct {
+	Redirects   string   `json:"redirects,omitempty"`
+	Resources   string   `json:"resources,omitempty"`
+	RequestURL  string   `json:"request_url,omitempty"`
+	ContentType string   `json:"content_type,omitempty"`
+	HeaderNames []string `json:"header_names,omitempty"`
 }
 
 // Assertion validates a response matches expected conditions.
@@ -625,8 +661,11 @@ type Assertion struct {
 	Value    string `json:"value,omitempty"`    // Field to check (JSONPath, header name, etc.)
 	Min      int    `json:"min,omitempty"`      // Min threshold for numeric assertions
 	Max      int    `json:"max,omitempty"`      // Max threshold for numeric assertions
-	// CaseInsensitive makes body_contains and body_not_contains ignore case.
+	// CaseInsensitive makes body_contains, body_not_contains and the text_*
+	// checks ignore case.
 	CaseInsensitive bool `json:"case_insensitive,omitempty"`
+	// Source is the surface a text_* check reads: body, headers or all.
+	Source string `json:"source,omitempty"`
 }
 
 // ThinkTimeConfig defines think time (delay) after an action.
@@ -675,6 +714,26 @@ type Result struct {
 	ContentCheckInfoMatches  int      `json:"content_check_info_matches,omitempty"`
 	WarningCodes             []string `json:"warning_codes,omitempty"` // bounded protocol policy warnings
 
+	// VUserID and Iteration identify the VUser iteration that produced the
+	// result: the run-wide VUser ID and the 1-based iteration (0 during init
+	// and teardown). Journey accounting (E5) groups archived rows by them.
+	// Interrupted marks a failure the target may not have caused: recorded once
+	// the VUser was stopping (its in-flight action cancelled, or a stop or goal
+	// boundary abandoning the iteration), or the generator's own resource limit
+	// closing or refusing a browser context.
+	// VUserLifetime is a random identity of the VUser's lifetime: a VUser ID
+	// is reused by later VUsers (open-workload arrivals, scale-up), a
+	// lifetime never is. WallElapsed is a transaction's wall-clock span when
+	// its Duration excludes time (think time inside it). EndsIteration marks
+	// a row the engine recorded because the iteration ended on its own (the
+	// iteration transaction, or a transaction the VUser left open when it
+	// ended on its own), so the iteration was not cut by a stop.
+	VUserID             int           `json:"vuser_id,omitempty"`
+	Iteration           int64         `json:"iteration,omitempty"`
+	Interrupted         bool          `json:"interrupted,omitempty"`
+	VUserLifetime       uint64        `json:"vuser_lifetime,omitempty"`
+	WallElapsed         time.Duration `json:"wall_elapsed,omitempty"`
+	EndsIteration       bool          `json:"ends_iteration,omitempty"`
 	ActionName          string        // Name of the executed action
 	BusinessTransaction bool          // True when this sample represents a completed business transaction
 	SampleKind          string        // "child" or "aggregate" for StreamingProtocol results

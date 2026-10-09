@@ -10,6 +10,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/agentforce"
 	"github.com/jasonczech/apexload/pkg/convert/clientids"
+	"github.com/jasonczech/apexload/pkg/convert/clienttimestamps"
 	"github.com/jasonczech/apexload/pkg/convert/devweb"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
@@ -64,6 +65,9 @@ type harImportRequest struct {
 	SecondaryData []byte
 	ProjectID     string
 	Opts          har.ConvertOptions
+	// RecordingProfileID names a project recording profile the import
+	// applies.
+	RecordingProfileID string
 	// Salvage describes the truncated capture whose complete entries Data
 	// holds, when the import opted in to salvage_truncated.
 	Salvage *har.TruncationSalvage
@@ -91,6 +95,25 @@ func applyClientGeneratedUUIDs(script *dsl.Script, harData []byte, result *har.C
 	}
 	result.Warnings = append(result.Warnings, note)
 	result.Unsupported = append(result.Unsupported, diag.Diagnostic{Code: "client_generated_uuids", Element: "Client-generated UUIDs", Location: "HAR requests", Detail: note, Severity: diag.Warning})
+}
+
+// applyClientTimestamps gives epoch timestamps the recorded client made up
+// (cache-busters, poll times) a fresh value at replay; see package
+// clienttimestamps.
+func applyClientTimestamps(script *dsl.Script, harData []byte, result *har.ConvertResult) {
+	if script == nil || result == nil {
+		return
+	}
+	evidence, err := clienttimestamps.FromHAR(harData)
+	if err != nil {
+		return
+	}
+	note := clienttimestamps.Apply(script, evidence).Warning()
+	if note == "" {
+		return
+	}
+	result.Warnings = append(result.Warnings, note)
+	result.Unsupported = append(result.Unsupported, diag.Diagnostic{Code: sample.ClientTimestampsDiagnosticCode, Element: "Client-generated timestamps", Location: "HAR requests", Detail: note, Severity: diag.Warning})
 }
 
 // noteSalvage records on a converted import that its HAR was truncated.

@@ -5,6 +5,8 @@ package api
 import (
 	"fmt"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -305,9 +307,47 @@ func archiveErrorPatternSource(tx TransactionEvent) string {
 	return "request failed"
 }
 
+// Received status codes in failure messages: "got 404", "returned 503",
+// "received status 500", "failed with status 429". An "expected status 200"
+// clause names the wanted code, not the received one, so it never matches.
+var archiveErrorReceivedStatusPattern = regexp.MustCompile(`(?i)\b(?:got|returned|received|failed with)\s+(?:http\s+|status(?:\s+code)?\s+)?([1-5]\d\d)\b`)
+
+// errorStatusCode is the HTTP status a failure ended with: the recorded status,
+// or the received code named in the message (enclosing named transactions
+// often carry only the message of the request that failed).
+func errorStatusCode(recorded int, source string) int {
+	if recorded > 0 {
+		return recorded
+	}
+	matches := archiveErrorReceivedStatusPattern.FindAllStringSubmatch(source, -1)
+	if len(matches) == 0 {
+		return 0
+	}
+	code, _ := strconv.Atoi(matches[len(matches)-1][1])
+	return code
+}
+
+// archiveErrorPatternSignature normalizes the message (numbers become "#")
+// but keeps the status code, so "got 404" and "got 503" stay separate rows
+// and each row's sample describes every failure counted in it.
+func archiveErrorPatternSignature(tx TransactionEvent) string {
+	return errorPatternSignature(archiveErrorPatternSource(tx), tx.StatusCode)
+}
+
+func errorPatternSignature(source string, statusCode int) string {
+	signature := normalizeArchiveErrorSignature(source)
+	if code := errorStatusCode(statusCode, source); code > 0 {
+		signature += fmt.Sprintf(" · http %d", code)
+	}
+	return signature
+}
+
+// mergeArchiveErrorPattern counts one failed record. A request failure and its
+// enclosing named transaction are both archived, so counts are kept per
+// metric population; finalizeArchiveErrorPatterns reports one population.
 func mergeArchiveErrorPattern(patterns map[string]*RunArchiveErrorPattern, actions map[string]map[string]struct{}, tx TransactionEvent) {
 	source := archiveErrorPatternSource(tx)
-	signature := normalizeArchiveErrorSignature(source)
+	signature := archiveErrorPatternSignature(tx)
 	pattern, ok := patterns[signature]
 	if !ok {
 		pattern = &RunArchiveErrorPattern{
@@ -321,7 +361,10 @@ func mergeArchiveErrorPattern(patterns map[string]*RunArchiveErrorPattern, actio
 		}
 		patterns[signature] = pattern
 	}
-	pattern.Count++
+	if pattern.CountsByPopulation == nil {
+		pattern.CountsByPopulation = map[string]int64{}
+	}
+	pattern.CountsByPopulation[archiveEventPopulation(tx)]++
 	if pattern.FirstSeen.IsZero() || (!tx.Timestamp.IsZero() && tx.Timestamp.Before(pattern.FirstSeen)) {
 		pattern.FirstSeen = tx.Timestamp
 	}
@@ -638,4 +681,32 @@ func finalizeReportBrowserDeviceMetrics(summary *BrowserDeviceLiveMetrics) {
 	summary.AvgJSHeapUsedMB /= divisor
 	summary.AvgBrowserProcessCPU /= divisor
 	summary.AvgBrowserProcessMem /= divisor
+}
+
+// finalizeArchiveErrorPatterns sets each pattern's Count to the failures of a
+// single metric population (the largest), so a failed request and the named
+// transaction that wraps it are counted once, not twice.
+func finalizeArchiveErrorPatterns(pattern *RunArchiveErrorPattern) {
+	var count int64
+	for _, populationCount := range pattern.CountsByPopulation {
+		count = max(count, populationCount)
+	}
+	pattern.Count = count
+}
+
+// archiveErrorPatternFailureRate is the pattern's failures as a fraction of
+// the records in the same metric population (the highest such fraction), so a
+// single-population count is never divided by the mixed overview total.
+// Reports without per-population counts fall back to the overview.
+func archiveErrorPatternFailureRate(report *RunArchiveReport, pattern RunArchiveErrorPattern) float64 {
+	var rate float64
+	for population, count := range pattern.CountsByPopulation {
+		if total := report.MetricPopulations[population].Transactions; total > 0 {
+			rate = max(rate, float64(count)/float64(total))
+		}
+	}
+	if rate == 0 && len(pattern.CountsByPopulation) == 0 && report.Overview.Transactions > 0 {
+		rate = float64(pattern.Count) / float64(report.Overview.Transactions)
+	}
+	return rate
 }

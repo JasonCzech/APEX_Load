@@ -19,6 +19,7 @@ import { getErrorMessage } from '../utils/errorUtils'
 import ImportDropzone from './ImportDropzone'
 import type { ScenarioUpsertPayload } from './scenarioPayloadUtils'
 import { formatTrafficProfileAxisTime, trafficProfileTargetAt, trafficProfileTpsStatistics } from './trafficProfilePreviewModel'
+import TimezoneSelect from './ux/TimezoneSelect'
 
 interface Props {
   projectId?: string
@@ -30,25 +31,7 @@ interface Props {
 
 const previewLimit = 1000
 const allGroupsMapping = '__all_groups__'
-const profileLineColors = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2', '#db2777', '#65a30d']
-const fallbackTimezones = ['UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Europe/London', 'Europe/Paris', 'Asia/Tokyo', 'Asia/Kolkata', 'Australia/Sydney']
-
-const browserTimezones = (() => {
-  const extendedIntl = Intl as typeof Intl & { supportedValuesOf?: (key: 'timeZone') => string[] }
-  try {
-    return extendedIntl.supportedValuesOf?.('timeZone') || fallbackTimezones
-  } catch {
-    return fallbackTimezones
-  }
-})()
-
-function timezoneOptions(current: string): string[] {
-  return Array.from(new Set(['UTC', current, ...browserTimezones].filter(Boolean)))
-}
-
-function TimezoneSelect({ value, onChange, ariaLabel }: { value: string; onChange: (value: string) => void; ariaLabel?: string }) {
-  return <select aria-label={ariaLabel} value={value} onChange={event => onChange(event.target.value)}>{timezoneOptions(value).map(zone => <option key={zone} value={zone}>{zone}</option>)}</select>
-}
+const profileLineColors = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)', 'var(--chart-7)', 'var(--chart-8)']
 
 interface GroupUploadSelection {
   analysis: TrafficProfileAnalyzeResponse
@@ -307,7 +290,7 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
     if (new Set(selectedMappings.map(item => item.group_name)).size !== selectedMappings.length) { setError('Each scenario group can be mapped from only one series.'); return }
     const mappedGroups = new Set(selectedMappings.map(item => item.group_name))
     const conflicts = scenarioDraft.groups.filter((group, position) => mappedGroups.has(group.name || groupNames[position] || '') && ((group.stages?.length || 0) > 0 || Boolean(group.start_offset) || Boolean(group.ramp_up) || Boolean(group.ramp_down)))
-    if (conflicts.length && !(await confirmAction('Applying this profile will clear manual stages, simple ramps, and start offsets for mapped groups. Continue?'))) return
+    if (conflicts.length && !(await confirmAction('Applying this profile will clear manual stages, simple ramps, and start offsets for mapped groups. Continue?', { title: 'Replace manual load settings', confirmLabel: 'Apply profile', destructive: true }))) return
     const draft: ScenarioUpsertPayload = structuredClone(scenarioDraft)
     draft.groups.forEach((group, position) => {
       if (!group.name) group.name = groupNames[position]
@@ -472,7 +455,7 @@ export default function TrafficProfileSourcePanel({ projectId, groupNames, scena
       const currentMin = scenarioDraft.goal_config?.min_vusers
       const currentMax = scenarioDraft.goal_config?.max_vusers
       const message = `Apply this profile and replace goal guardrails${currentMin !== undefined || currentMax !== undefined ? ` (${currentMin ?? 'unset'}-${currentMax ?? 'unset'})` : ''} with the ART-based recommendation ${sizing.suggested_min_vusers}-${sizing.suggested_max_vusers} VUsers?`
-      if (!(await confirmAction(message))) return
+      if (!(await confirmAction(message, { title: 'Replace goal guardrails', confirmLabel: 'Apply profile' }))) return
     }
     onApply(derived)
   }

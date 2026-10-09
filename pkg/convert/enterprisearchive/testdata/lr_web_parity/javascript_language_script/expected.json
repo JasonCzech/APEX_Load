@@ -1,0 +1,37 @@
+{
+  "description": "A Web HTTP/HTML script written in JavaScript (WP4.3): each web.* call is translated into its C form and imported through the C pipeline, so it replays exactly as its C twin would: the home page, then the login form post, checked for the registered text.",
+  "source": "VuGen 26.1 JavaScript function reference: web.url, web.regFind, web.submitData.",
+  "outcome": "replay",
+  "warnings_contain": [
+    "Imported from VuGen JavaScript"
+  ],
+  "responses": [
+    {
+      "method": "GET",
+      "path": "/app/home",
+      "headers": {
+        "Content-Type": "text/html"
+      },
+      "body": "<html>home</html>"
+    },
+    {
+      "method": "POST",
+      "path": "/app/login",
+      "headers": {
+        "Content-Type": "text/html"
+      },
+      "body": "<html>Welcome, jojo</html>"
+    }
+  ],
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/app/home"
+    },
+    {
+      "method": "POST",
+      "path": "/app/login",
+      "body": "user=jojo&password=bean"
+    }
+  ]
+}

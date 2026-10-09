@@ -1,6 +1,7 @@
 import { useId, useMemo } from 'react'
 
 import type { TransactionEvent, TransactionResponseTimeSLAResult } from '../types'
+import { formatFixed } from '../utils/numberFormat'
 
 interface Props {
   rows: TransactionResponseTimeSLAResult[]
@@ -81,7 +82,7 @@ export default function TransactionResponseTimeSLATable({
                   <td>{row.eligible_success_count.toLocaleString()}</td>
                   <td>{row.excluded_error_count.toLocaleString()}</td>
                   <td>{row.missed_count.toLocaleString()}</td>
-                  <td>{row.missed_pct.toFixed(2)}%</td>
+                  <td>{formatFixed(row.missed_pct, 2)}%</td>
                   <td><span className={`transaction-sla-status transaction-sla-status-${row.status}`} aria-label={`SLA status: ${statusLabel(row.status)}`}>{statusLabel(row.status)}</span></td>
                 </tr>
               )
@@ -93,7 +94,7 @@ export default function TransactionResponseTimeSLATable({
         <div className="run-report-drilldown">
           <h3>{selectedGroup} / {selectedTransaction || 'No named transaction observed'}</h3>
           {loadingTransactions ? (
-            <p role="status">Loading drill-down...</p>
+            <p role="status">Loading drill-down…</p>
           ) : selectedTransaction && drilldownTransactions.length > 0 ? (
             <ul>
               {drilldownTransactions.slice(0, 5).map((event, index) => (

@@ -329,3 +329,32 @@ func TestWalkPersistsMetadataMutationForEverySequenceRepresentation(t *testing.T
 		t.Fatalf("pointer metadata = %#v", got)
 	}
 }
+
+func TestWalkVisitsAsyncConversationRequest(t *testing.T) {
+	script := &dsl.Script{Actions: []dsl.Action{{
+		Name: "start", Type: "http_async_start",
+		Params:  map[string]any{"id": "poll", "request": map[string]any{"name": "poll", "type": "GET", "target": "/poll"}},
+		Control: &dsl.ControlFlow{Branches: []dsl.ParallelBranch{{Name: "on_response", Steps: []dsl.Action{{Name: "seen", Type: "GET", Target: "/seen"}}}}},
+	}}}
+	var paths []string
+	err := Walk(script, func(ref SurfaceRef) error {
+		paths = append(paths, ref.Path)
+		if ref.Kind == HTTPAsyncRequestSurface {
+			if !ref.IsNestedRequest() || ref.Request["target"] != "/poll" || ref.OwnerPath != "actions[0]" {
+				t.Fatalf("async request surface = %+v", ref)
+			}
+			ref.Request["target"] = "/poll?v=2"
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"actions[0]", "actions[0].params.request", "actions[0].control.branches[0].steps[0]"}
+	if strings.Join(paths, ",") != strings.Join(want, ",") {
+		t.Fatalf("paths = %v, want %v", paths, want)
+	}
+	if request := script.Actions[0].Params["request"].(map[string]any); request["target"] != "/poll?v=2" {
+		t.Fatalf("visitors must be able to rewrite the request: %v", request)
+	}
+}

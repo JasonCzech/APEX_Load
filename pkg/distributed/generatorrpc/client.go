@@ -36,16 +36,19 @@ type Assignment struct {
 	PrepareOnly          bool
 	JavaHost             *pb.JavaHostSelection
 	// AdoptionGrace > 0 opts the run into HA continuity (WorkAssignment.adoption_grace).
-	AdoptionGrace                time.Duration
-	ArchiveSourceTarget          string
-	SourcePlan                   *pb.SourcePlanManifest
-	TerminationMode              string
-	TestID                       string
-	ExecutionGeneration          uint64
-	ScenarioID                   string
-	RunCorrelationOrigins        []string
-	CorrelationCarriers          []string
-	CorrelationTestName          string
+	AdoptionGrace         time.Duration
+	ArchiveSourceTarget   string
+	SourcePlan            *pb.SourcePlanManifest
+	TerminationMode       string
+	TestID                string
+	ExecutionGeneration   uint64
+	ScenarioID            string
+	RunCorrelationOrigins []string
+	CorrelationCarriers   []string
+	CorrelationTestName   string
+	// JointEvidenceProjection is the run's frozen joint evidence v4
+	// projection; send only to FeatureJointEvidenceV4 peers.
+	JointEvidenceProjection      *engine.JointProjection
 	RequireTestExecutionLease    bool
 	GroupName                    string
 	TargetDuration               time.Duration
@@ -178,19 +181,24 @@ type MetricsBatch struct {
 	SourceEpochStartedUnixMs int64
 	// SequencePrefixStateOnly marks a registration snapshot whose earlier
 	// sequences were all state-only: nothing before it was lost.
-	SequencePrefixStateOnly    bool
-	GeneratorID                string
-	TimestampUnixMs            int64
-	WindowMs                   int64
-	Stats                      GeneratorStats
-	Transactions               []TransactionMetric
-	FleetMetrics               *MetricAggregate
-	TransactionMetrics         []MetricAggregate
-	DependencyMetrics          []MetricAggregate
-	SOAPMetrics                []MetricAggregate
-	NetworkProfileMetrics      []MetricAggregate
-	ActionMetrics              []MetricAggregate
-	ActionDimensionMetrics     []MetricAggregate
+	SequencePrefixStateOnly bool
+	GeneratorID             string
+	TimestampUnixMs         int64
+	WindowMs                int64
+	Stats                   GeneratorStats
+	Transactions            []TransactionMetric
+	FleetMetrics            *MetricAggregate
+	TransactionMetrics      []MetricAggregate
+	DependencyMetrics       []MetricAggregate
+	SOAPMetrics             []MetricAggregate
+	NetworkProfileMetrics   []MetricAggregate
+	ActionMetrics           []MetricAggregate
+	ActionDimensionMetrics  []MetricAggregate
+	// JointMetrics are the tuple-keyed joint evidence v4 aggregates (each
+	// named by the JSON array of its values) described by JointInfo; both
+	// are empty from older peers.
+	JointMetrics               []MetricAggregate
+	JointInfo                  *JointMetricsInfo
 	ActionPropertyMetrics      []MetricAggregate
 	ActionMetricsVersion       uint32
 	PropertyMetrics            []MetricAggregate
@@ -1701,6 +1709,8 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		NetworkProfileMetrics:      metricAggregatesFromProto(batch.GetNetworkProfileMetrics()),
 		ActionMetrics:              metricAggregatesFromProto(batch.GetActionMetrics()),
 		ActionDimensionMetrics:     metricAggregatesFromProto(batch.GetActionDimensionMetrics()),
+		JointMetrics:               metricAggregatesFromProto(batch.GetJointMetricsV4()),
+		JointInfo:                  jointInfoFromProto(batch.GetJointMetricsInfo()),
 		ActionPropertyMetrics:      metricAggregatesFromProto(batch.GetActionPropertyMetrics()),
 		ActionMetricsVersion:       batch.GetActionMetricsVersion(),
 		PropertyMetrics:            metricAggregatesFromProto(batch.GetPropertyMetrics()),
@@ -1747,6 +1757,7 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 		ExecutionGeneration:       assignment.ExecutionGeneration,
 		ScenarioId:                assignment.ScenarioID,
 		RunCorrelationOrigins:     append([]string(nil), assignment.RunCorrelationOrigins...),
+		JointEvidenceProjection:   jointProjectionToProto(assignment.JointEvidenceProjection),
 		CorrelationCarriers:       append([]string(nil), assignment.CorrelationCarriers...),
 		CorrelationTestName:       assignment.CorrelationTestName,
 		RequireTestExecutionLease: assignment.RequireTestExecutionLease,

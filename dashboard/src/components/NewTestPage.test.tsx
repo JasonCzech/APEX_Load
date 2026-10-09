@@ -308,6 +308,18 @@ describe('NewTestPage', () => {
     expect(release.value).toBe('')
   })
 
+  it('says why the launch buttons are disabled until a release is chosen', async () => {
+    const initial = await apiMock.listScenarios()
+    await act(async () => root.render(<NewTestPage activeApplication={{ id: 'app-1', name: 'App', project_id: 'project-1', created_at: '', updated_at: '' }} activeRelease={null} releases={[{ id: 'release-1', name: 'Release', application_id: 'app-1', created_at: '', updated_at: '' }]} initialScenarioId={initial.scenarios[0].id} onSelectTest={vi.fn()} onCreateRelease={vi.fn()} />))
+    await flushPromises()
+    const blockers = container.querySelector('#new-test-launch-blockers')
+    expect(blockers?.textContent).toContain('Select or create a release')
+    const start = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Start Now')!
+    expect(start.getAttribute('aria-describedby')).toBe('new-test-launch-blockers')
+    await selectLaunchRelease()
+    expect(container.querySelector('#new-test-launch-blockers')?.textContent ?? '').not.toContain('release')
+  })
+
   it('keeps an explicit release through transient workspace application hydration', async () => {
     const props = { activeApplication: { id: 'app-1', name: 'App', project_id: 'project-1', created_at: '', updated_at: '' }, activeRelease: null, releases: [{ id: 'release-1', name: 'Release', application_id: 'app-1', created_at: '', updated_at: '' }], onSelectTest: vi.fn(), onCreateRelease: vi.fn() }
     await act(async () => root.render(<NewTestPage {...props} />))
@@ -778,10 +790,10 @@ describe('NewTestPage', () => {
     const durationCard = Array.from(container.querySelectorAll<HTMLButtonElement>('button.new-test-default-card'))
       .find(button => button.textContent?.includes('Duration'))
     await act(async () => durationCard?.click())
-    const durationInput = findControlByLabel<HTMLInputElement>(document.querySelector('.run-default-modal') as HTMLElement, 'Run duration', 'input')
+    const durationInput = document.querySelector<HTMLInputElement>('.run-default-modal input[aria-label="Run duration"]')
     expect(durationInput).toBeTruthy()
     await act(async () => {
-      if (durationInput) setInputValue(durationInput, '45m')
+      if (durationInput) setInputValue(durationInput, '45')
     })
 
     const schedulesButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
@@ -811,9 +823,10 @@ describe('NewTestPage', () => {
       .find(button => button.textContent?.includes('Duration'))
     await act(async () => durationCard?.click())
     const durationModal = document.querySelector('.run-default-modal') as HTMLElement
-    const durationInput = findControlByLabel<HTMLInputElement>(durationModal, 'Run duration', 'input')
+    // The shared number + unit duration control: a non-positive amount is invalid.
+    const durationInput = durationModal.querySelector<HTMLInputElement>('input[aria-label="Run duration"]')
     await act(async () => {
-      if (durationInput) setInputValue(durationInput, '30')
+      if (durationInput) setInputValue(durationInput, '0')
     })
     expect(durationInput?.getAttribute('aria-invalid')).toBe('true')
     await act(async () => {
@@ -829,9 +842,9 @@ describe('NewTestPage', () => {
     await act(async () => selectedScenario?.click())
     await act(async () => container.querySelector<HTMLTableRowElement>('.new-test-script-row')?.click())
     const groupModal = document.querySelector('.run-group-modal') as HTMLElement
-    const rampUp = findControlByLabel<HTMLInputElement>(groupModal, 'Ramp up', 'input')
+    const rampUp = groupModal.querySelector<HTMLInputElement>('input[aria-label="Ramp up"]')
     await act(async () => {
-      if (rampUp) setInputValue(rampUp, '30')
+      if (rampUp) setInputValue(rampUp, '-5')
     })
     expect(rampUp?.getAttribute('aria-invalid')).toBe('true')
     await act(async () => {
@@ -840,8 +853,9 @@ describe('NewTestPage', () => {
     expect(document.querySelector('.run-group-modal')).toBe(groupModal)
     expect(container.textContent).toContain('Ramp up must be a non-negative Go duration')
 
+    // Zero is a valid ramp (start the group at once).
     await act(async () => {
-      if (rampUp) setInputValue(rampUp, '0s')
+      if (rampUp) setInputValue(rampUp, '0')
     })
     expect(rampUp?.getAttribute('aria-invalid')).toBe('false')
     await act(async () => {
@@ -981,7 +995,7 @@ describe('NewTestPage', () => {
 
     const scheduleRelease = container.querySelector<HTMLSelectElement>('[aria-labelledby="schedule-release-label"]')!
     await act(async () => setSelectValue(scheduleRelease, 'release-1'))
-    const saveButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Save Schedule')
+    const saveButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create schedule')
     expect(saveButton).toBeTruthy()
     expect(saveButton?.closest('.new-test-step-header')).toBeTruthy()
     expect(container.textContent).not.toContain('Calendar Windows')
@@ -1028,7 +1042,7 @@ describe('NewTestPage', () => {
 
     const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit')
     await act(async () => editButton?.click())
-    const updateButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Update Schedule')
+    const updateButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Save schedule')
     await flushDebouncedPreflight()
     await act(async () => updateButton?.click())
     await flushPromises()
@@ -1040,6 +1054,40 @@ describe('NewTestPage', () => {
       maintenance_windows: [expect.objectContaining({ name: 'Berlin maintenance', timezone: 'Europe/Berlin' })],
       availability_windows: [expect.objectContaining({ name: 'Tokyo business hours', timezone: 'Asia/Tokyo' })],
     }))
+  })
+
+  it('confirms a schedule delete with the shared destructive confirmation', async () => {
+    apiMock.listScenarioSchedules.mockResolvedValue({ schedules: [scheduleWithDistinctWindowTimezones()], count: 1 })
+    apiMock.deleteScenarioSchedule.mockResolvedValue(undefined)
+    const confirm = vi.fn(() => false)
+    vi.stubGlobal('confirm', confirm)
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Schedules')?.click())
+    await flushPromises()
+
+    const deleteButton = () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Delete')
+    await act(async () => deleteButton()?.click())
+    await flushPromises()
+    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/^Permanently delete schedule “.+”\? Future runs managed by this schedule will no longer fire\. This cannot be undone\.$/))
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(apiMock.deleteScenarioSchedule).not.toHaveBeenCalled()
+
+    confirm.mockReturnValue(true)
+    await act(async () => deleteButton()?.click())
+    await flushPromises()
+    expect(apiMock.deleteScenarioSchedule).toHaveBeenCalledWith('scenario-1', 'schedule-1')
   })
 
   it('shows and edits a per-window timezone independently of the cron timezone', async () => {
@@ -1064,15 +1112,15 @@ describe('NewTestPage', () => {
 
     const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit')
     await act(async () => editButton?.click())
-    const maintenanceStart = container.querySelector<HTMLInputElement>('[aria-label="Maintenance windows window 1 start time"]')
-    const maintenanceTimezone = container.querySelector<HTMLSelectElement>('[aria-label="Maintenance windows window 1 timezone"]')
+    const maintenanceStart = container.querySelector<HTMLInputElement>('[aria-label="Maintenance window 1 start time"]')
+    const maintenanceTimezone = container.querySelector<HTMLSelectElement>('[aria-label="Maintenance window 1 timezone"]')
     expect(maintenanceStart).toBeTruthy()
     expect(maintenanceTimezone?.value).toBe('Europe/Berlin')
     await act(async () => {
       if (maintenanceStart) setInputValue(maintenanceStart, '02:30')
       if (maintenanceTimezone) setSelectValue(maintenanceTimezone, 'Asia/Tokyo')
     })
-    const updateButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Update Schedule')
+    const updateButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Save schedule')
     await flushDebouncedPreflight()
     await act(async () => updateButton?.click())
     await flushPromises()
@@ -1460,7 +1508,7 @@ describe('NewTestPage', () => {
     expect(readinessCard.querySelector('.readiness-list')).toBeNull()
     expect(readinessCard.querySelector('.new-test-summary-grid')).toBeNull()
     expect(readinessCard.textContent).not.toContain('Hold for Manual Start')
-    expect(readinessCard.textContent).not.toContain('Schedule Run')
+    expect(readinessCard.textContent).not.toContain('Schedule run')
     const summaryList = readinessCard.querySelector('.new-test-summary-list')
     expect(summaryList).toBeTruthy()
     expect(summaryList?.textContent).toContain('Run Name')
@@ -1482,7 +1530,7 @@ describe('NewTestPage', () => {
     expect(profileCard.querySelector('[data-testid="mock-y-axis"]')?.getAttribute('data-label')).toBe('VUsers')
     expect(launchCard.textContent).toContain('Run timing')
     expect(launchCard.textContent).toContain('Hold for Manual Start')
-    expect(launchCard.textContent).toContain('Schedule Run')
+    expect(launchCard.textContent).toContain('Schedule run')
     expect(profileCard.compareDocumentPosition(launchCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(launchCard.compareDocumentPosition(readinessCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(container.textContent).toContain('Apply runtime defaults to all script groups')
@@ -1507,14 +1555,14 @@ describe('NewTestPage', () => {
     await act(async () => {
       runtimeDefaultsToggle?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    const logLevelCard = Array.from(container.querySelectorAll('button.new-test-default-card')).find(button => button.textContent?.includes('Log Level'))
+    const logLevelCard = Array.from(container.querySelectorAll('button.new-test-default-card')).find(button => button.textContent?.includes('Log level'))
     expect(logLevelCard).toBeTruthy()
 
     await act(async () => {
       logLevelCard?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.textContent).toContain('Edit Log Level')
+    expect(container.textContent).toContain('Edit Log level')
     expect(container.textContent).toContain('Saved changes apply only to the run created from this page')
     expect(container.textContent).toContain('Scenario default')
     expect(container.textContent).toContain('standard')
@@ -1532,8 +1580,8 @@ describe('NewTestPage', () => {
       saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.textContent).toContain('Saved Log Level for this run only. Scenario defaults were not changed.')
-    const overriddenLogLevelCard = Array.from(container.querySelectorAll('button.new-test-default-card')).find(button => button.textContent?.includes('Log Level'))
+    expect(container.textContent).toContain('Saved log level for this run only. Scenario defaults were not changed.')
+    const overriddenLogLevelCard = Array.from(container.querySelectorAll('button.new-test-default-card')).find(button => button.textContent?.includes('Log level'))
     expect(overriddenLogLevelCard?.textContent).toContain('extended')
     expect(overriddenLogLevelCard?.textContent).toContain('Run override')
 
@@ -3876,9 +3924,9 @@ describe('NewTestPage', () => {
     await vi.waitFor(() => expect(queuedButton?.disabled).toBe(false))
     await act(async () => queuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await flushPromises()
+    await vi.waitFor(() => expect(container.textContent).toContain('queued run was preserved for recovery'))
 
     const requestedTestId = apiMock.createTest.mock.calls[0][0].requested_test_id as string
-    expect(container.textContent).toContain('queued run was preserved for recovery')
     expect(apiMock.createTest).toHaveBeenCalledTimes(1)
     expect(apiMock.startTest).toHaveBeenLastCalledWith(requestedTestId)
     expect(window.localStorage.length).toBe(1)
@@ -4146,7 +4194,8 @@ describe('NewTestPage', () => {
 
   it('sends scheduled_start_at when one-time scheduled preflight is allowed', async () => {
     const selectTest = vi.fn()
-    const scheduledLocal = '2026-06-02T13:30'
+    // Always a future start: a past one is rejected before preflight.
+    const scheduledLocal = `${new Date().getFullYear() + 1}-06-02T13:30`
     const scheduledISO = new Date(scheduledLocal).toISOString()
     apiMock.preflightTest.mockImplementation((payload: { intent?: string }) => Promise.resolve(payload.intent === 'scheduled'
       ? {
@@ -4156,7 +4205,7 @@ describe('NewTestPage', () => {
           queue_allowed: false,
           candidate_window: {
             start_at: scheduledISO,
-            end_at: '2026-06-02T14:00:00Z',
+            end_at: new Date(Date.parse(scheduledISO) + 30 * 60_000).toISOString(),
             duration_seconds: 1800,
           },
           blocking_conflicts: [],
@@ -4199,7 +4248,7 @@ describe('NewTestPage', () => {
     await flushDebouncedPreflight()
 
     expect(container.textContent).toContain('Scheduled window clear')
-    const scheduleButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Schedule Run')
+    const scheduleButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Schedule run')
     expect((scheduleButton as HTMLButtonElement | undefined)?.disabled).toBe(false)
 
     await act(async () => {
@@ -4217,6 +4266,31 @@ describe('NewTestPage', () => {
     }))
     expect(apiMock.startTest).not.toHaveBeenCalled()
     expect(selectTest).toHaveBeenCalledWith('test-1')
+  })
+
+  it('reports a scheduled start in the past instead of checking it', async () => {
+    apiMock.preflightTest.mockResolvedValue({ decision: 'start_now', start_now_allowed: true, schedule_allowed: true, queue_allowed: false, candidate_window: { start_at: '2026-01-01T10:00:00Z', end_at: '2026-01-01T10:06:00Z', duration_seconds: 360 }, blocking_conflicts: [], warnings: [] })
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+    await flushDebouncedPreflight()
+    apiMock.preflightTest.mockClear()
+    const scheduledInput = container.querySelector('input[type="datetime-local"]') as HTMLInputElement
+    await act(async () => setInputValue(scheduledInput, '2020-01-01T10:00'))
+    await flushDebouncedPreflight()
+    expect(container.querySelector('#new-test-scheduled-start-error')?.textContent).toContain('already passed')
+    expect(scheduledInput.getAttribute('aria-invalid')).toBe('true')
+    expect(container.textContent).not.toContain('Scheduled window clear')
+    expect(apiMock.preflightTest).not.toHaveBeenCalledWith(expect.objectContaining({ intent: 'scheduled' }))
   })
 
   it('disables run and schedule mutations when effective RBAC denies test management', async () => {
@@ -4253,7 +4327,7 @@ describe('NewTestPage', () => {
 
     await flushDebouncedPreflight()
     const startNowButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start') as HTMLButtonElement | undefined
-    const scheduleButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Schedule Run') as HTMLButtonElement | undefined
+    const scheduleButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Schedule run') as HTMLButtonElement | undefined
     expect(startNowButton?.disabled).toBe(true)
     expect(scheduleButton?.disabled).toBe(true)
     expect(container.textContent).toContain('Current session can view scenarios but cannot create runs or schedules for this project.')
@@ -4265,7 +4339,7 @@ describe('NewTestPage', () => {
       schedulesButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const saveScheduleButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Save Schedule') as HTMLButtonElement | undefined
+    const saveScheduleButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create schedule') as HTMLButtonElement | undefined
     expect(saveScheduleButton?.disabled).toBe(true)
     expect(apiMock.createTest).not.toHaveBeenCalled()
     expect(apiMock.createScenarioSchedule).not.toHaveBeenCalled()
@@ -4431,7 +4505,7 @@ describe('NewTestPage', () => {
     const runtimeDefaultsToggle = container.querySelector<HTMLElement>('.new-test-runtime-defaults summary')
     await act(async () => runtimeDefaultsToggle?.click())
     const opener = Array.from(container.querySelectorAll<HTMLButtonElement>('button.new-test-default-card'))
-      .find(button => button.textContent?.includes('Log Level'))
+      .find(button => button.textContent?.includes('Log level'))
     expect(opener).toBeDefined()
     opener?.focus()
     await act(async () => {
@@ -4474,8 +4548,12 @@ describe('NewTestPage', () => {
 
     expect(container.querySelector('[aria-labelledby="new-test-run-name-label"]')).toBeInstanceOf(HTMLInputElement)
     expect(container.querySelector('[aria-labelledby="new-test-release-label"]')).toBeInstanceOf(HTMLSelectElement)
-    const scenarioRow = container.querySelector<HTMLTableRowElement>('.new-test-scenario-table-row')
-    expect(scenarioRow?.tabIndex).toBe(0)
+    // Each scenario row is reached by a real button that carries its expanded and current state.
+    const scenarioRow = container.querySelector<HTMLTableRowElement>('.new-test-scenario-table-row')!
+    const rowToggle = scenarioRow.querySelector<HTMLButtonElement>('button.new-test-row-toggle')!
+    expect(scenarioRow.hasAttribute('aria-expanded')).toBe(false)
+    expect(rowToggle.getAttribute('aria-expanded')).not.toBeNull()
+    expect(rowToggle.getAttribute('aria-controls') === null || document.getElementById(rowToggle.getAttribute('aria-controls')!) !== null).toBe(true)
 
     const schedulesButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Schedules')
     await act(async () => schedulesButton?.click())
@@ -4487,10 +4565,13 @@ describe('NewTestPage', () => {
 
     const addWindowButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === '+ Add window')
     await act(async () => addWindowButton?.click())
-    expect(container.querySelector('[aria-label="Blackout windows window 1 name"]')).toBeInstanceOf(HTMLInputElement)
-    expect(container.querySelector('[aria-label="Blackout windows window 1 start time"]')).toBeInstanceOf(HTMLInputElement)
-    expect(container.querySelector('[aria-label="Blackout windows window 1 end time"]')).toBeInstanceOf(HTMLInputElement)
-    expect(container.querySelector('[aria-label="Blackout windows window 1 days of week"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Blackout window 1 name"]')).toBeInstanceOf(HTMLInputElement)
+    expect(container.querySelector('[aria-label="Blackout window 1 start time"]')).toBeInstanceOf(HTMLInputElement)
+    expect(container.querySelector('[aria-label="Blackout window 1 end time"]')).toBeInstanceOf(HTMLInputElement)
+    expect(container.querySelector('[aria-label="Blackout window 1 days of week"]')).not.toBeNull()
+    // Each entry is "a blackout window", never "blackout windows window".
+    expect(container.querySelector('[aria-label="Add blackout window"]')).toBeInstanceOf(HTMLButtonElement)
+    expect(container.innerHTML).not.toContain('windows window')
   })
   async function renderAuditPage(extra?: ReactNode) {
     await act(async () => root.render(<NavigationGuardProvider><NewTestPage
@@ -4588,7 +4669,7 @@ describe('NewTestPage', () => {
       setInputValue(container.querySelector<HTMLInputElement>('[aria-labelledby="schedule-name-label"]')!, '')
       setInputValue(container.querySelector<HTMLInputElement>('[aria-label="Raw cron expression"]')!, '')
     })
-    expect(auditButton('Save Schedule')?.disabled).toBe(true)
+    expect(auditButton('Create schedule')?.disabled).toBe(true)
     expect(container.querySelector('#new-test-schedule-name-error')?.textContent).toBe('Enter a schedule name.')
     expect(container.querySelector('#new-test-cron-error')?.textContent).toContain('Enter a schedule frequency')
     expect(container.querySelector('[aria-labelledby="schedule-name-label"]')?.getAttribute('aria-invalid')).toBe('true')
@@ -4600,16 +4681,16 @@ describe('NewTestPage', () => {
     await act(async () => auditButton('Schedules')?.click())
     await flushDebouncedPreflight()
     await act(async () => setSelectValue(container.querySelector<HTMLSelectElement>('[aria-labelledby="schedule-release-label"]')!, 'release-1'))
-    expect(auditButton('Save Schedule')?.disabled).toBe(false)
+    expect(auditButton('Create schedule')?.disabled).toBe(false)
     apiMock.previewScenarioSchedule.mockRejectedValueOnce(new Error('Invalid cron expression'))
     await act(async () => setInputValue(container.querySelector<HTMLInputElement>('[aria-label="Raw cron expression"]')!, 'invalid'))
-    expect(auditButton('Save Schedule')?.disabled).toBe(true)
+    expect(auditButton('Create schedule')?.disabled).toBe(true)
     expect(container.querySelector('.cron-next-runs')).toBeNull()
     expect(container.textContent).toContain('Refreshing next runs')
     await flushDebouncedPreflight()
     expect(container.querySelector('[aria-label="Raw cron expression"]')?.getAttribute('aria-invalid')).toBe('true')
-    expect(auditButton('Save Schedule')?.disabled).toBe(true)
-    await act(async () => auditButton('Save Schedule')?.click())
+    expect(auditButton('Create schedule')?.disabled).toBe(true)
+    await act(async () => auditButton('Create schedule')?.click())
     expect(apiMock.createScenarioSchedule).not.toHaveBeenCalled()
   })
 
@@ -4618,14 +4699,14 @@ describe('NewTestPage', () => {
     await renderAuditPage()
     await act(async () => auditButton('Schedules')?.click())
     await flushDebouncedPreflight()
-    expect(auditButton('Save Schedule')?.disabled).toBe(true)
+    expect(auditButton('Create schedule')?.disabled).toBe(true)
     expect(container.textContent).toContain('Scheduling defaults could not be loaded')
     apiMock.getSystemSettings.mockResolvedValue({ schedule_defaults: { approval_policy: 'manual_review', missed_run_policy: 'skip' } })
     await act(async () => auditButton('Retry scheduling defaults')?.click())
     await flushPromises()
     expect(container.querySelector('[aria-label="Effective schedule policies"]')?.textContent).toContain('manual review')
     await act(async () => setSelectValue(container.querySelector<HTMLSelectElement>('[aria-labelledby="schedule-release-label"]')!, 'release-1'))
-    expect(auditButton('Save Schedule')?.disabled).toBe(false)
+    expect(auditButton('Create schedule')?.disabled).toBe(false)
   })
 
   it('reviews nested assertions, safe target origins, missing SLAs and unknown monitoring coverage', async () => {

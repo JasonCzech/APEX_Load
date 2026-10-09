@@ -36,9 +36,9 @@ export function pageTitleForView(view: AppView, options: TopbarPageTitleOptions 
     case 'new-test':
       return 'New Test'
     case 'scripts':
-      if (view.mode === 'create') return 'Create Script'
-      if (view.mode === 'edit') return 'Edit Script'
-      if (view.mode === 'import') return 'Import Script'
+      if (view.mode === 'create') return 'Create script'
+      if (view.mode === 'edit') return 'Edit script'
+      if (view.mode === 'import') return 'Import script'
       return 'Scripts'
     case 'activity':
       return 'Activity'
@@ -53,8 +53,6 @@ export function pageTitleForView(view: AppView, options: TopbarPageTitleOptions 
       return 'Help & documentation'
     case 'swagger':
       return 'Help & documentation'
-    case 'repository-guide':
-      return 'Help & documentation'
     case 'recorder-panel':
       return 'Browser Recorder'
     case 'access':
@@ -68,53 +66,77 @@ export function pageTitleForView(view: AppView, options: TopbarPageTitleOptions 
   }
 }
 
-export function pageTitleForScriptSubView(subView?: string): string {
+// Source names match the import catalog's card titles. The page is titled
+// "Import <source>"; the importer's own heading names the source alone.
+const IMPORT_SOURCE_NAMES: Record<string, string> = {
+  enterprise_archive: 'LoadRunner Script Archive',
+  jmeter: 'JMeter Test Plan',
+  bruno: 'Bruno Collection',
+  sample: 'Request / Response Sample',
+  oracle_ebusiness_review: 'Oracle E-Business / Siebel Review',
+  openapi: 'OpenAPI / Swagger',
+  postman: 'Postman Collection',
+  wsdl: 'WSDL / SOAP',
+  asyncapi: 'AsyncAPI / Kafka',
+  raml: 'RAML / Anypoint',
+  traffic_har: 'HAR Traffic',
+  recorder_export: 'Recorder Export / Playwright Codegen',
+  devweb: 'DevWeb Source',
+  k6: 'k6 Script',
+  cloudtest: 'Akamai CloudTest Export',
+  eventhubs_capture: 'Event Hubs Capture',
+  broker_config: 'Broker Config',
+}
+
+/** The source an import surface reads, as its catalog card names it. */
+export function importSourceName(launcher: string): string {
+  return IMPORT_SOURCE_NAMES[launcher] || 'Source'
+}
+
+/** The page title for an import surface. The Oracle surface reviews rather than imports. */
+export function importSurfaceTitle(launcher: string): string {
+  const name = IMPORT_SOURCE_NAMES[launcher]
+  if (!name) return 'Import from source'
+  return launcher === 'oracle_ebusiness_review' ? name : `Import ${name}`
+}
+
+const IMPORT_SUBVIEW_LAUNCHERS: Record<string, string> = {
+  import: 'enterprise_archive',
+  'jmeter-import': 'jmeter',
+  'bruno-import': 'bruno',
+  sample: 'sample',
+  'oracle-review': 'oracle_ebusiness_review',
+  'devweb-import': 'devweb',
+  'har-import': 'traffic_har',
+  'recorder-import': 'recorder_export',
+  'openapi-import': 'openapi',
+  'raml-import': 'raml',
+  'postman-import': 'postman',
+  'wsdl-import': 'wsdl',
+  'asyncapi-import': 'asyncapi',
+}
+
+export function pageTitleForScriptSubView(subView?: string, importLauncher?: string | null): string {
   switch (subView) {
     // Library and Builder are tabs of the Scripts page.
     case 'list':
     case 'create-options':
       return 'Scripts'
     case 'create':
-      return 'Create Script'
+      return 'Create script'
     case 'edit':
-      return 'Edit Script'
-    case 'import':
-      return 'Import Loadrunner Script Archive'
-    case 'jmeter-import':
-      return 'Import JMeter'
-    case 'bruno-import':
-      return 'Import Bruno'
+      return 'Edit script'
     case 'recorder':
-      return 'Record Browser'
-    case 'sample':
-      return 'Import Sample'
+      return 'Record browser'
     case 'protocol-import':
-      return 'Import From Source'
-    case 'oracle-review':
-      return 'Oracle E-Business Review'
-    case 'devweb-import':
-      return 'Import DevWeb'
-    case 'har-import':
-      return 'Import HAR'
-    case 'recorder-import':
-      return 'Import Browser Recording'
-    case 'openapi-import':
-      return 'Import OpenAPI'
-    case 'raml-import':
-      return 'Import RAML'
-    case 'postman-import':
-      return 'Import Postman'
-    case 'wsdl-import':
-      return 'Import WSDL'
-    case 'asyncapi-import':
-      return 'Import AsyncAPI'
-    default:
-      return 'Scripts'
+      return importLauncher ? importSurfaceTitle(importLauncher) : 'Import from source'
   }
+  const launcher = subView ? IMPORT_SUBVIEW_LAUNCHERS[subView] : undefined
+  return launcher ? importSurfaceTitle(launcher) : 'Scripts'
 }
 
 export function shouldShowTopbarClientDownloads(view: AppView): boolean {
-  return view.page === 'docs' || view.page === 'swagger' || view.page === 'repository-guide'
+  return view.page === 'docs' || view.page === 'swagger'
 }
 
 export function isTopbarActiveRunStatus(status?: string): status is TestStatus {

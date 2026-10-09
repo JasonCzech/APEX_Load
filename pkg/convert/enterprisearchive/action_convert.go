@@ -65,10 +65,6 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 		action.Metadata["review_required"] = true
 		warnings = append(warnings, fmt.Sprintf("line %d: web_service_call '%s' has no inline endpoint; using %s until WSDL/service settings are mapped", fn.LineNumber, fn.StepName, rawURL))
 	}
-	if fn.URL == "" && fn.Name == "web_submit_form" {
-		action.Metadata["inferred_url_from"] = "source_form_context"
-		action.Metadata["inferred_url_source"] = convertutil.FirstNonEmpty(firstNonEmptyArg(fn, "Referer"), previousRequestURL)
-	}
 
 	target := makeRelative(rawURL, baseURL)
 	action.Target = target
@@ -96,6 +92,8 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 		}
 		action.Headers[k] = convertParamReferences(v)
 	}
+	applySourceRefererHeader(action, fn)
+	applySourceStepMode(action, fn)
 	if contentType := requestContentTypeFromFunction(fn); contentType != "" {
 		if _, exists := headerValueCaseInsensitive(action.Headers, "Content-Type"); !exists {
 			value := convertParamReferences(contentType)
@@ -149,7 +147,15 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 		action.Metadata["body_gated_by_secret"] = true
 		importreview.ApplyToAction(action, []importreview.Finding{{Code: "restored_body_required", ReasonCode: "restored_body_required", Severity: diag.Blocker, Gate: importreview.GateExecution, Source: "enterprise_script_archive", SourceRef: fmt.Sprintf("%s:%d", fn.Filename, fn.LineNumber), Resolution: "restore_body", Detail: "Supply the restored body or a project secret containing it."}})
 	}
-	if reason := strings.TrimSpace(fn.itemDataReviewReason); reason != "" {
+	multipartRebuilt, multipartReason, multipartFindings := rebuildSourceMultipart(action, fn, opts)
+	if len(multipartFindings) > 0 {
+		action.Body = ""
+		action.BodyEncoding = ""
+		deleteHeaderCaseInsensitive(action.Headers, "Content-Type")
+		action.HeaderList = filterHeaderListCaseInsensitive(action.HeaderList, "Content-Type")
+		action.Metadata["source_itemdata_encoding"] = "review_required"
+		importreview.ApplyToAction(action, multipartFindings)
+	} else if reason := strings.TrimSpace(fn.itemDataReviewReason); reason != "" && !multipartRebuilt {
 		// The source review retains the original ITEMDATA call. Do not fabricate a
 		// raw, JSON, or multipart body from only the Name/Value subset and do not
 		// advertise its EncType on an empty/differently serialized payload.
@@ -161,11 +167,15 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 		if fn.LineNumber > 0 {
 			location = fmt.Sprintf("%s:%d", location, fn.LineNumber)
 		}
+		detail := "The source ITEMDATA encoding or field shape cannot be serialized faithfully as an APEX URL-encoded body; rebuild the request body before execution."
+		if multipartReason != "" {
+			detail = "The multipart ITEMDATA cannot be serialized exactly: " + multipartReason + "; rebuild the request body before execution."
+		}
 		importreview.ApplyToAction(action, []importreview.Finding{{
 			Code:       "import_review_required",
 			Severity:   diag.Blocker,
 			Element:    "web_submit_data ITEMDATA serialization",
-			Detail:     "The source ITEMDATA encoding or field shape cannot be serialized faithfully as an APEX URL-encoded body; rebuild the request body before execution.",
+			Detail:     detail,
 			Location:   location,
 			Source:     "enterprise_script_archive",
 			ReasonCode: reason,
@@ -181,6 +191,59 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 	action.Target = convertParamReferences(action.Target)
 
 	return action, warnings
+}
+
+// applySourceStepMode carries a step's Mode= and Resource= attributes:
+// Mode=HTTP replays it without parsing its page (no resource discovery, no
+// page context) and Mode=HTML with them; Resource=1 marks a resource step,
+// whose failures follow the non-critical resource policy. A step without
+// Mode= follows the runtime default, which is HTML.
+func applySourceStepMode(action *dsl.Action, fn ParsedFunction) {
+	if action == nil {
+		return
+	}
+	set := func(key string, value bool) {
+		if action.Params == nil {
+			action.Params = map[string]any{}
+		}
+		action.Params[key] = value
+	}
+	if mode, ok := sourceNamedArg(fn.Args, "Mode"); ok {
+		switch strings.ToUpper(strings.TrimSpace(cleanConfigValue(mode))) {
+		case "HTTP":
+			set("html_mode", false)
+		case "HTML":
+			set("html_mode", true)
+		}
+	}
+	if resource, ok := sourceNamedArg(fn.Args, "Resource"); ok && strings.TrimSpace(cleanConfigValue(resource)) == "1" {
+		set("resource_step", true)
+	}
+}
+
+// applySourceRefererHeader sends a step's Referer= argument as the Referer
+// header, as LoadRunner does. An empty Referer= sends none, and a Referer the
+// step already sets explicitly (HEADERS or the header list) is kept.
+func applySourceRefererHeader(action *dsl.Action, fn ParsedFunction) {
+	if action == nil {
+		return
+	}
+	referer, ok := sourceNamedArg(fn.Args, "Referer")
+	referer = strings.TrimSpace(referer)
+	if !ok || referer == "" {
+		return
+	}
+	if _, exists := headerValueCaseInsensitive(action.Headers, "Referer"); exists {
+		return
+	}
+	value := convertParamReferences(referer)
+	if action.Headers == nil {
+		action.Headers = make(map[string]string)
+	}
+	action.Headers["Referer"] = value
+	if len(action.HeaderList) > 0 {
+		action.HeaderList = append(action.HeaderList, dsl.HeaderEntry{Name: "Referer", Value: value})
+	}
 }
 
 func filterHeaderListCaseInsensitive(headers dsl.HeaderList, name string) dsl.HeaderList {
@@ -335,7 +398,7 @@ func applyPersistentCookies(action *dsl.Action, cookies []ParsedCookie, rawURL s
 // resolved from page context rather than carried inline.
 func isHTMLModeNavigationFunction(name string) bool {
 	switch name {
-	case "web_link", "web_image", "web_image_check":
+	case "web_link", "web_image", "web_image_check", "web_submit_form":
 		return true
 	default:
 		return false
@@ -355,6 +418,19 @@ func sourceCookieRemovalName(fn ParsedFunction) string {
 		return strings.TrimSpace(name)
 	}
 	return strings.TrimSpace(first)
+}
+
+// sourceCookieRemoval is the cookie a web_remove_cookie names, with the
+// domain and path its cookie string carries. It reports false for "ALL" or
+// no name.
+func sourceCookieRemoval(fn ParsedFunction) (ParsedCookie, bool) {
+	name := sourceCookieRemovalName(fn)
+	if name == "" || strings.EqualFold(name, "ALL") {
+		return ParsedCookie{}, false
+	}
+	cookie := parseSourceCookie(cleanConfigValue(sourceControlArgs(fn)[0]))
+	cookie.Name, cookie.Value = name, ""
+	return cookie, true
 }
 
 // removePersistentCookie drops the cookie named by web_remove_cookie (or every

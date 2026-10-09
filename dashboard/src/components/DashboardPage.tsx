@@ -1,11 +1,13 @@
+import { compareRunsChronologically } from '../utils/runChronology'
 import SeriesChartExport from "./SeriesChartExport"
+import { errorRateBasisLabel, liveRunCounts, liveRunErrorPercent } from '../utils/liveErrorRate'
 import type { AnalysisReportContext } from './dashboardAnalysisModel'
 import TabList from './ux/TabList'
 import DashboardLandingSummary from './DashboardLandingSummary'
 import { buildDashboardAttention, dashboardAcceptance, emptyRunFilters, filterDashboardRuns, pendingRunDetail, runReference, type RunFilters } from './dashboardLandingModel'
 import PanelToggle from "./ux/PanelToggle"
 import { handleTabKey } from './tabKeyboard'
-import { reportAcceptance, formatReportPercent } from './runReport/reportPresentation'
+import { MISSING_VALUE, reportAcceptance, formatReportPercent } from './runReport/reportPresentation'
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, type CSSProperties } from 'react'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
@@ -29,6 +31,9 @@ import { useSharedTestList } from '../hooks/useSharedTestList'
 import { DEFAULT_TEST_CATALOG_PAGE_SIZE, loadTestSummaryTail } from './testCatalogPagination'
 import './DashboardPage.css'
 import { aggregateDashboardTpsHistory } from './dashboardAggregateHistory'
+import { recentMetricAverages } from './testExecutionMetricsModel'
+import { formatFixed } from '../utils/numberFormat'
+import { metricHeader } from '../metricLabels'
 
 interface Props {
   testStatuses: Record<string, string>
@@ -154,8 +159,8 @@ const tableMinimumViewportHeightPx = 80
 
 const graphMetricOptions: { key: CardMetricKey; label: string; color: string; digits: number }[] = [
   { key: 'tps', label: 'TPS', color: 'var(--accent)', digits: 1 },
-  { key: 'avg_response_ms', label: 'Avg ms', color: 'var(--chart-2)', digits: 0 },
-  { key: 'error_pct', label: 'Error %', color: 'var(--danger)', digits: 2 },
+  { key: 'avg_response_ms', label: metricHeader('avg'), color: 'var(--chart-2)', digits: 0 },
+  { key: 'error_pct', label: metricHeader('errorRate'), color: 'var(--danger)', digits: 2 },
   { key: 'active_vusers', label: 'Active VUsers', color: 'var(--chart-3)', digits: 0 },
 ]
 
@@ -382,7 +387,8 @@ function SnapshotStat({ label, value, tone = 'neutral', onClick }: SnapshotStatP
   const className = `release-panel-stat tone-${tone}${onClick ? ' is-actionable' : ''}`
   const content = (
     <>
-      <span className="release-panel-stat-value">{value}</span>
+      {/* Values are ellipsized in the narrow grid; the title keeps the full text reachable. */}
+      <span className="release-panel-stat-value" title={typeof value === 'string' || typeof value === 'number' ? String(value) : undefined}>{value}</span>
       <span className="release-panel-stat-label">{label}</span>
     </>
   )
@@ -507,6 +513,7 @@ function ReleaseSnapshotPanel({
               type="button"
               className={`dash-release-option ${activeRelease?.id === release.id ? 'active' : ''}`}
               aria-current={activeRelease?.id === release.id ? 'true' : undefined}
+              title={release.name}
               onClick={() => onReleaseChange(release)}
             >
               {release.name}
@@ -521,7 +528,8 @@ function ReleaseSnapshotPanel({
             <SnapshotStat label="Archives Ready" value={archivesReady} onClick={onResults} />
             <SnapshotStat label="Archive records" value={releaseStats.totalTx.toLocaleString()} onClick={onResults} />
             <SnapshotStat label="Current TPS" value={dashboardStats.active ? formatOptionalNumber(dashboardStats.activeTps, 1) : 'Idle'} onClick={onPrimaryActiveRun} />
-            <SnapshotStat label="Mean Run Error Rate" value={dashboardStats.active ? formatOptionalPercent(dashboardStats.avgError, 2) : 'Idle'} tone={(dashboardStats.avgError ?? 0) > 0 ? 'danger' : 'neutral'} onClick={onPrimaryActiveRun} />
+            {/* A rate, not a status: with nothing running there is no value to show. */}
+            <SnapshotStat label="Live error rate (active runs)" value={dashboardStats.active ? formatOptionalPercent(dashboardStats.avgError, 2) : MISSING_VALUE} tone={(dashboardStats.avgError ?? 0) > 0 ? 'danger' : 'neutral'} onClick={onPrimaryActiveRun} />
           </div>
         )}
 
@@ -543,7 +551,7 @@ function ReleaseSnapshotPanel({
               <p className="dashboard-context-note">System-wide health · last successful check: {healthUpdatedAt ? new Date(healthUpdatedAt).toLocaleTimeString() : 'Not available'}</p>
               <div className="release-panel-detail-grid">
                 <SnapshotStat label="API Health" value={statusLabel} tone={statusColor === 'healthy' ? 'success' : statusColor === 'offline' ? 'danger' : 'warning'} onClick={onMonitoring} />
-                <SnapshotStat label="Generators Ready" value={generatorAvailability} onClick={onMonitoring} />
+                <SnapshotStat label="Load generators ready" value={generatorAvailability} onClick={onMonitoring} />
                 <SnapshotStat label="WebSocket Clients" value={health?.ws_clients ?? '—'} />
                 <SnapshotStat label="Pending Runs" value={pendingTests.length} tone={pendingTests.length > 0 ? 'warning' : 'neutral'} onClick={() => onPendingRun(pendingTests[0]?.id)} />
               </div>
@@ -865,7 +873,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const recentTests = useMemo(() =>
     resolvedTests
       .filter(t => isCompletedTestStatus(t.status))
-      .sort((a, b) => completionTime(b) - completionTime(a)),
+      .sort((a, b) => compareRunsChronologically(b, a)),
     [resolvedTests],
   )
 
@@ -896,7 +904,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const releaseCompleted = useMemo(() =>
     releaseTests
       .filter(t => isCompletedTestStatus(t.status))
-      .sort((a, b) => completionTime(b) - completionTime(a)),
+      .sort((a, b) => compareRunsChronologically(b, a)),
     [releaseTests],
   )
 
@@ -1364,7 +1372,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         </div>
         {releasesLoading ? (
           <div className="empty-card" role="status">
-            <p>Loading release scope...</p>
+            <p>Loading release scope…</p>
             <p className="empty-hint">Dashboard data will appear after the selected release is confirmed.</p>
           </div>
         ) : (
@@ -1508,6 +1516,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                             <button
                               type="button"
                               className="dash-source-link"
+                              title={test.name}
                               onClick={event => {
                                 event.stopPropagation();
                                 (onOpenTestArchive ?? onSelectTest)(test.id)
@@ -1580,6 +1589,11 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                 {activeTests.map(test => {
                   const history = metricsHistory[test.id] || []
                   const latest = test.live_metrics
+                  // Same trailing 10-second window as the Command Center hero, so
+                  // both read the same throughput; 1-second samples jump around.
+                  const recent = recentMetricAverages(history)
+                  const cardTps = recent.tps ?? latest?.tps
+                  const cardArt = recent.art ?? latest?.avg_response_ms
                   const runtimeSummary = formatBrowserRuntimeSummary(test.runtime_settings?.browser)
                   const metricOption = graphMetricOptions[0]
                   const chartData = history.slice(-60).map(point => ({
@@ -1594,7 +1608,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                     >
                       <div className="dac-header">
                         <div className="dac-title-wrap">
-                          <button type="button" className="btn btn-ghost dac-name" aria-label={`Open live test ${test.name}`} onClick={() => onSelectTest(test.id)}>{test.name}</button>
+                          <button type="button" className="btn btn-ghost dac-name" aria-label={`Open live test ${test.name}`} title={test.name} onClick={() => onSelectTest(test.id)}>{test.name}</button>
                         </div>
                         <StatusBadge status={test.status} />
                       </div>
@@ -1604,18 +1618,18 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                           <span className="dac-metric-label">VUsers</span>
                         </div>
                         <div className="dac-metric">
-                          <span className="dac-metric-value">{latest?.tps?.toFixed(1) ?? '—'}</span>
-                          <span className="dac-metric-label">TPS</span>
+                          <span className="dac-metric-value">{cardTps === undefined ? MISSING_VALUE : formatFixed(cardTps, 1)}</span>
+                          <span className="dac-metric-label">{recent.tps !== undefined ? 'TPS (10s avg)' : 'TPS'}</span>
                         </div>
                         <div className="dac-metric">
-                          <span className="dac-metric-value">{latest?.avg_response_ms?.toFixed(0) ?? '—'}</span>
-                          <span className="dac-metric-label">Avg ms</span>
+                          <span className="dac-metric-value">{cardArt === undefined ? MISSING_VALUE : formatFixed(cardArt, 0)}</span>
+                          <span className="dac-metric-label">{recent.art !== undefined ? 'ART ms (10s avg)' : 'ART ms'}</span>
                         </div>
                         <div className="dac-metric">
-                          <span className={`dac-metric-value ${(latest?.error_pct ?? 0) > 0 ? 'text-danger' : ''}`}>
-                            {latest?.error_pct?.toFixed(2) ?? '0'}%
+                          <span className={`dac-metric-value ${(liveRunErrorPercent(latest) ?? 0) > 0 ? 'text-danger' : ''}`}>
+                            {formatFixed(liveRunErrorPercent(latest) ?? 0, 2)}%
                           </span>
-                          <span className="dac-metric-label">Errors</span>
+                          <span className="dac-metric-label" title={liveRunCounts(latest)?.basis === 'window' ? 'Error rate of the last sample window' : 'Error rate since the run started'}>Errors ({errorRateBasisLabel(liveRunCounts(latest)?.basis)})</span>
                         </div>
                       </div>
                       {chartData.length > 1 && (
@@ -1649,8 +1663,8 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                                 <th>Group</th>
                                 <th className="num">VUsers</th>
                                 <th className="num">TPS</th>
-                                <th className="num">ART</th>
-                                <th className="num">Errors %</th>
+                                <th className="num">{metricHeader('art')}</th>
+                                <th className="num">{metricHeader('errorRate')}</th>
                                 <th className="num">Passed</th>
                                 <th className="num">Failed</th>
                               </tr>
@@ -1659,7 +1673,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                               {groupRows.map(row => (
                                 <tr key={row.name} className={row.hasLiveMetrics ? undefined : 'is-pending'}>
                                   <td>
-                                    <span className="dac-group-name">{row.name}</span>
+                                    <span className="dac-group-name" title={row.name}>{row.name}</span>
                                   </td>
                                   <td className="num strong">{formatOptionalCount(row.vusers)}</td>
                                   <td className="num">{formatOptionalNumber(row.tps, 1)}</td>
@@ -1708,7 +1722,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
             {recentTests.length > 0 && <div className="dashboard-run-filters" role="search" aria-label="Filter completed runs">
               <label>Find a run<input type="search" value={runFilters.search} placeholder="Name or run reference" onChange={event => setRunFilters(current => ({ ...current, search: event.target.value }))} /></label>
               <label>Period<select value={runFilters.days} onChange={event => setRunFilters(current => ({ ...current, days: event.target.value }))}><option value="all">All time</option><option value="1">Last 24 hours</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option></select></label>
-              <label>Execution<select value={runFilters.status} onChange={event => setRunFilters(current => ({ ...current, status: event.target.value }))}><option value="all">All states</option><option value="COMPLETE">Complete</option><option value="FAILED">Failed</option><option value="ABORTED">Aborted</option></select></label>
+              <label>Execution<select value={runFilters.status} onChange={event => setRunFilters(current => ({ ...current, status: event.target.value }))}><option value="all">All states</option><option value="COMPLETE">Complete</option><option value="STOPPED">Stopped by operator</option><option value="FAILED">Failed</option><option value="ABORTED">Aborted</option></select></label>
               <label>Evidence<select value={runFilters.evidence} onChange={event => setRunFilters(current => ({ ...current, evidence: event.target.value }))}><option value="all">All evidence</option><option value="available">Archive available</option><option value="unavailable">Archive unavailable</option></select></label>
               <label>Acceptance<select value={runFilters.acceptance} onChange={event => setRunFilters(current => ({ ...current, acceptance: event.target.value }))}><option value="all">All outcomes</option>{['Pass', 'Fail', 'Inconclusive', 'Not assessed', 'Unavailable', 'Loading'].map(value => <option key={value} value={value}>{value}</option>)}</select></label>
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => setRunFilters(emptyRunFilters)}>Clear filters</button>
@@ -1729,7 +1743,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                       {renderActivitySortHeader('run', 'Run')}
                       {renderActivitySortHeader('status', 'Status')}
                       {renderActivitySortHeader('vusers', 'VUsers', 'num')}
-                      {renderActivitySortHeader('duration', 'Duration', 'num')}
+                      {renderActivitySortHeader('duration', 'Configured duration', 'num')}
                       {renderActivitySortHeader('transactions', 'Archive records', 'num')}
                       {renderActivitySortHeader('date', 'Date / Time')}
                       {onOpenCommandCenter && <th>Actions</th>}
@@ -1744,6 +1758,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                             <button
                               type="button"
                               className="dash-source-link"
+                              title={test.name}
                               onClick={event => {
                                 event.stopPropagation()
                                 onSelectTest(test.id)
@@ -1761,7 +1776,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                               <span className="trend-run-meta">{[test.script_name, runtimeSummary].filter(Boolean).join(' · ')}</span>
                             )}
                           </td>
-                          <td><StatusBadge status={test.status} /></td>
+                          <td><StatusBadge status={test.status} stoppedByOperator={Boolean(test.stopped_by_subject)} /></td>
                           <td className="num">{test.total_vusers}</td>
                           <td className="num">{test.duration}</td>
                           <td className="num">{test.archive ? test.archive.transaction_count.toLocaleString() : '—'}</td>

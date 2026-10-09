@@ -1,0 +1,38 @@
+{
+  "description": "web_submit_form finds the form whose controls include every scripted field, takes its action URL, method and live hidden fields from the page (a rotating __VIEWSTATE and CSRF token win over the recorded STARTHIDDENS values), overrides the scripted fields, and appends the image-button coordinates.",
+  "source": "VuGen 26.1 Function Reference: web_submit_form (form identified by data fields, then Action, then Ordinal; hidden fields).",
+  "outcome": "replay",
+  "responses": [
+    {
+      "method": "GET",
+      "path": "/WebTours/",
+      "headers": {
+        "Content-Type": "text/html"
+      },
+      "body": "<html><body><form name=\"search\" action=\"search.pl\"><input name=\"q\"></form><form method=\"post\" action=\"login.pl\"><input type=\"hidden\" name=\"__VIEWSTATE\" value=\"VS-LIVE-7\"><input type=\"hidden\" name=\"csrf\" value=\"CSRF-LIVE-7\"><input name=\"username\"><input type=\"password\" name=\"password\"><input type=\"image\" name=\"login\" src=\"login.gif\"></form></body></html>"
+    },
+    {
+      "method": "POST",
+      "path": "/WebTours/login.pl",
+      "headers": {
+        "Content-Type": "text/html"
+      },
+      "body": "<html>Welcome jojo</html>"
+    }
+  ],
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/WebTours/"
+    },
+    {
+      "method": "POST",
+      "path": "/WebTours/login.pl",
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Referer": "http://parity.test/WebTours/"
+      },
+      "body": "__VIEWSTATE=VS-LIVE-7&csrf=CSRF-LIVE-7&username=jojo&password=bean&login.x=57&login.y=10"
+    }
+  ]
+}

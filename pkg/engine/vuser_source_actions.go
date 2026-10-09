@@ -16,7 +16,10 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/text/encoding/charmap"
+
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/strftime"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	protocolhttp "github.com/jasonczech/apexload/pkg/protocol/http"
 	"go.opentelemetry.io/otel/trace"
@@ -36,6 +39,14 @@ func (vu *VUser) handleEngineAction(ctx context.Context, action dsl.Action) (boo
 		return true, vu.handleSourceRuntimeAction(ctx, action)
 	case "cookie_clear":
 		return true, vu.clearProtocolCookies(ctx)
+	case "cookie_set":
+		return true, vu.setProtocolCookie(ctx, action)
+	case "http_async_start":
+		return true, vu.startAsyncConversation(ctx, action)
+	case "http_async_stop":
+		return true, vu.stopAsyncConversation(ctx, vu.interpolate(asyncParamString(action, "id")))
+	case "http_sync":
+		return true, vu.waitForAsyncCondition(ctx, action)
 	case "cache_clear":
 		return true, vu.clearProtocolCache(ctx)
 	case "http_connections_close":
@@ -99,6 +110,32 @@ func (vu *VUser) clearProtocolCookies(ctx context.Context) error {
 		return nil
 	}
 	return controller.ClearCookies(ctx)
+}
+
+// setProtocolCookie dispatches a cookie_set action (imported web_add_cookie /
+// web_remove_cookie) to the protocol's cookie store, resolving templates in
+// its parameters first. Protocols without a cookie store treat it as a no-op.
+func (vu *VUser) setProtocolCookie(ctx context.Context, action dsl.Action) error {
+	if vu == nil || vu.Proto == nil {
+		return nil
+	}
+	setter, ok := vu.Proto.(protocol.CookieSetter)
+	if !ok {
+		return nil
+	}
+	params := vu.interpolateAnyMap(action.Params)
+	text := func(key string) string {
+		value, _ := params[key].(string)
+		return value
+	}
+	flag := func(key string) bool {
+		value, _ := params[key].(bool)
+		return value
+	}
+	return setter.SetCookie(ctx, protocol.ScriptCookie{
+		Name: text("name"), Value: text("value"), Domain: text("domain"), Path: text("path"),
+		Secure: flag("secure"), Remove: flag("remove"),
+	})
 }
 
 // browserEmulationNewUserEachIteration reports whether browser emulation's
@@ -315,8 +352,12 @@ func sourceMainIterationExit(action dsl.Action) (bool, bool) {
 }
 
 type sourceTransactionRuntimeState struct {
-	name             string
-	startedAt        time.Time
+	name      string
+	startedAt time.Time
+	// iteration is the last iteration it was open in (the one that opened
+	// it, carried forward while it stays open): a transaction left open is
+	// recorded in that iteration even when it is closed after teardown.
+	iteration        int64
 	thinkTime        time.Duration
 	status           string
 	stoppedAt        time.Time
@@ -416,6 +457,10 @@ func (vu *VUser) finalizeSourceTransaction(key, reason string) *protocol.Result 
 	}
 	delete(vu.sourceTransactions, key)
 	state.endTrace()
+	if current := vu.currentIteration.Load(); current != state.iteration {
+		vu.currentIteration.Store(state.iteration)
+		defer vu.currentIteration.Store(current)
+	}
 	if state.goalReserved && vu.ExecutionGoals != nil {
 		vu.ExecutionGoals.CommitTransactionReservation()
 		state.goalReserved = false
@@ -433,15 +478,32 @@ func (vu *VUser) finalizeSourceTransaction(key, reason string) *protocol.Result 
 	// later orphan end marker can reuse the stale start and synthesize a second
 	// long-running transaction.
 	delete(vu.Variables, sourceTransactionStartKey(name))
+	vu.Variables[sourceTransactionStatusKey(name)] = strconv.FormatBool(false)
+	if vu.interruptedByStop() {
+		// The run stopped before the end marker could run: the transaction is
+		// incomplete, not failed, so it is left out of the results.
+		return nil
+	}
 	source := &protocol.Result{
 		ActionName:   name,
 		StartTime:    state.startedAt,
 		Success:      false,
 		ErrorMessage: reason,
 	}
-	result := vu.recordTransaction(name, duration, false, source)
-	vu.Variables[sourceTransactionStatusKey(name)] = strconv.FormatBool(false)
-	return result
+	// The wall-clock span keeps think time inside the transaction in its
+	// interval (journey accounting reads it).
+	return vu.recordTransactionSpan(name, duration, false, source, state.startedAt)
+}
+
+// carryOpenSourceTransactions moves the transactions still open when a new
+// iteration starts into that iteration (an lr_exit that continues with the
+// next iteration leaves them open).
+func (vu *VUser) carryOpenSourceTransactions(iteration int64) {
+	for _, state := range vu.sourceTransactions {
+		if state != nil && state.iteration > 0 && state.iteration < iteration {
+			state.iteration = iteration
+		}
+	}
 }
 
 func (vu *VUser) finalizeOpenSourceTransactions(reason string) []*protocol.Result {
@@ -794,6 +856,7 @@ func (vu *VUser) handleSourceTransactionActionContext(ctx context.Context, actio
 			startedAt: startedAt,
 			status:    sourceTransactionPass,
 			parent:    parentKey,
+			iteration: vu.currentIteration.Load(),
 		}
 		vu.startSourceTransactionTraceRoot(ctx, vu.sourceTransactions[key])
 		return nil
@@ -829,7 +892,7 @@ func (vu *VUser) handleSourceTransactionActionContext(ctx context.Context, actio
 		delete(vu.Variables, sourceTransactionStartKey(endName))
 		duration := sourceTransactionDuration(state, time.Now())
 		success := sourceTransactionStatusSuccess(status)
-		vu.recordTransaction(endName, duration, success, sourceTransactionFailureResult(endName, status, state.startedAt))
+		vu.recordTransactionSpan(endName, duration, success, sourceTransactionFailureResult(endName, status, state.startedAt), state.startedAt)
 		vu.Variables[sourceTransactionStatusKey(endName)] = strconv.FormatBool(success)
 		return nil
 	case "lr_set_transaction_status":
@@ -1094,6 +1157,27 @@ func (vu *VUser) handleSourceParameterAction(function string, action dsl.Action)
 		vu.setSourceVariable(firstEngineValue("vuser_ip", args...), "127.0.0.1")
 	case "web_convert_param":
 		vu.handleWebConvertParamAction(action, args)
+	case "web_save_timestamp_param":
+		// Milliseconds since the Unix epoch, as LoadRunner saves it.
+		if len(args) >= 1 {
+			vu.setSourceVariable(args[0], strconv.FormatInt(time.Now().UnixMilli(), 10))
+		}
+	case "web_save_param_length":
+		// The length of an existing parameter's value, in decimal, saved as
+		// <Param>_Length. The importer keeps Base=Hexadecimal for review.
+		if len(args) >= 1 {
+			value := vu.Variables[strings.ToLower(strings.TrimSpace(args[0]))]
+			length := len(value)
+			if codePage, _ := actionParamString(action.Params, "code_page"); strings.EqualFold(strings.TrimSpace(codePage), "windows-1252") {
+				// A code-page script counts the value's Windows-1252 bytes.
+				if encoded, err := charmap.Windows1252.NewEncoder().String(value); err == nil {
+					length = len(encoded)
+				}
+			}
+			vu.setSourceVariable(strings.TrimSpace(args[0])+"_Length", strconv.Itoa(length))
+		}
+	case "web_convert_date_param":
+		vu.handleWebConvertDateParamAction(args)
 	default:
 		if saveName := saveParamNameFromAction(action); saveName != "" {
 			vu.setSourceVariable(saveName, firstEngineValue("", args...))
@@ -1135,6 +1219,41 @@ func sourceTimestampValue(now time.Time, args []string) string {
 		value = value[:digits]
 	}
 	return value
+}
+
+// handleWebConvertDateParamAction rewrites a date parameter in place from
+// SourceFormat= to TargetFormat= (strftime specifiers). A value that does not
+// match the source format is left unchanged and logged.
+func (vu *VUser) handleWebConvertDateParamAction(args []string) {
+	if len(args) < 1 {
+		return
+	}
+	name := strings.TrimSpace(args[0])
+	sourceFormat, targetFormat := "", ""
+	for _, arg := range args[1:] {
+		key, value, ok := strings.Cut(arg, "=")
+		if !ok {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(key)) {
+		case "sourceformat":
+			sourceFormat = value
+		case "targetformat":
+			targetFormat = value
+		}
+	}
+	current := vu.Variables[strings.ToLower(name)]
+	// The conversion is field for field, so parse in UTC: a local time zone
+	// would move a time inside a daylight-saving gap.
+	parsed, err := strftime.Parse(current, sourceFormat, time.UTC)
+	if err == nil {
+		var converted string
+		if converted, err = strftime.Format(parsed, targetFormat); err == nil {
+			vu.setSourceVariable(name, converted)
+			return
+		}
+	}
+	vu.runtimeLogger().Warn("web_convert_date_param left the parameter unchanged", "vuser", vu.ID, "parameter", name, "error", err)
 }
 
 func (vu *VUser) handleWebConvertParamAction(action dsl.Action, args []string) {

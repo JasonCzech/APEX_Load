@@ -243,8 +243,9 @@ test('current paused values and parameter receipts survive inspection without co
     await expect(frames.locator('ol > li')).toHaveCount(snapshot.frames.length)
     await narrowReceipts(page, frames, testInfo, 'active-frames')
   } finally {
+    // The rail stays collapsed: an open overlay would take the next click
+    // (Continue) to close itself rather than pass it through.
     await page.setViewportSize({ width: 1800, height: 1100 })
-    await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
   }
   await stableInspections(request, afterRequest)
   await page.getByRole('button', { name: 'Continue', exact: true }).click()
@@ -252,6 +253,10 @@ test('current paused values and parameter receipts survive inspection without co
   const terminal = await getSession(request, initial.id)
   expectEnvelope(terminal)
   expect(terminal.runtime_state).toMatchObject({ state: 'unavailable', reason: 'session_terminal', snapshot: null })
+  // The ended session opens on recorded values; asking for the current state says it is gone.
+  await expect(watches.getByRole('combobox', { name: 'Values at', exact: true })).not.toHaveValue('current')
+  await expect(watches).toContainText('This is historical evidence, not current engine state.')
+  await watches.getByRole('combobox', { name: 'Values at', exact: true }).selectOption('current')
   await expect(watches).toContainText('Current state unavailable: the session has ended.')
   await expect(watches.getByRole('button', { name: 'Pin assigned_number', exact: true })).toHaveCount(0)
   await watches.getByRole('combobox', { name: 'Values at', exact: true }).selectOption('retained')

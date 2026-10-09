@@ -42,6 +42,7 @@ type deploymentLeaseResponse struct {
 	Lease       *storage.DeploymentLease `json:"lease,omitempty"`
 	ActiveTests int                      `json:"active_tests,omitempty"`
 	Error       string                   `json:"error,omitempty"`
+	Ref         string                   `json:"ref,omitempty"`
 }
 
 func (s *Server) handleGetDeploymentLease(w http.ResponseWriter, _ *http.Request) {
@@ -118,14 +119,16 @@ func (s *Server) handleRenewDeploymentLease(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		status := http.StatusConflict
 		message := "deployment lease is not held by this owner"
+		ref := ""
 		if errors.Is(err, storage.ErrDeploymentLeaseExpired) {
 			message = "deployment lease ownership has expired"
 		} else if !errors.Is(err, storage.ErrDeploymentLeaseNotHeld) {
 			status = http.StatusServiceUnavailable
 			message = "could not renew deployment lease"
+			ref = logServerError(w, status, err, "owner_id", req.OwnerID)
 		}
 		s.recordAuditEvent(r, "system.deployment_lease.renew", "failure", "deployment_lease", req.OwnerID, "", details)
-		writeJSON(w, status, deploymentLeaseResponse{Status: "failed", Error: message})
+		writeJSON(w, status, deploymentLeaseResponse{Status: "failed", Error: message, Ref: ref})
 		return
 	}
 	s.recordAuditEvent(r, "system.deployment_lease.renew", "success", "deployment_lease", req.OwnerID, "", details)
@@ -147,14 +150,16 @@ func (s *Server) handleReleaseDeploymentLease(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		status := http.StatusConflict
 		message := "deployment lease is not held by this owner"
+		ref := ""
 		if errors.Is(err, storage.ErrDeploymentLeaseExpired) {
 			message = "deployment lease ownership has expired"
 		} else if !errors.Is(err, storage.ErrDeploymentLeaseNotHeld) {
 			status = http.StatusServiceUnavailable
 			message = "could not release deployment lease"
+			ref = logServerError(w, status, err, "owner_id", req.OwnerID)
 		}
 		s.recordAuditEvent(r, "system.deployment_lease.release", "failure", "deployment_lease", req.OwnerID, "", details)
-		writeJSON(w, status, deploymentLeaseResponse{Status: "failed", Error: message})
+		writeJSON(w, status, deploymentLeaseResponse{Status: "failed", Error: message, Ref: ref})
 		return
 	}
 	s.recordAuditEvent(r, "system.deployment_lease.release", "success", "deployment_lease", req.OwnerID, "", details)

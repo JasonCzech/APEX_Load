@@ -1,6 +1,6 @@
 import { scriptSecretReferenceSummaries } from './scriptSecretReferenceModel'
 import type { ScriptAuthoringBaseline, ScriptSaveOptions } from '../types/storedContent'
-import { admitScriptAuthoringBaseline, baselineFromSavedScript, reapplyScriptDraft, scriptSaveNeedsReconciliation } from '../utils/scriptAuthoringRevision'
+import { admitScriptAuthoringBaseline, baselineFromSavedScript, reapplyScriptDraft, scriptSaveFailedOnServer, scriptSaveNeedsReconciliation } from '../utils/scriptAuthoringRevision'
 import ScriptRevisionConflict from './ScriptRevisionConflict'
 import TooltipButton from './ux/TooltipButton'
 import { AuthorInsertDialog } from './AuthorInsertDialog'
@@ -82,6 +82,7 @@ import {
   buildScriptRepairSuggestions,
   collectAuthoringIssues,
   groupIssuesByPhaseAction,
+  scriptBaseURLError,
   summarizeDataSources,
   summarizeParameters,
   type MigrationAssistantSuggestion,
@@ -413,6 +414,13 @@ function CenterTabbedPane({
 
   const handleTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
     if (tabs.length === 0) return
+    if (event.key === 'Delete' && tabs[index]?.closeable) {
+      // The visible × is mouse-only; keyboard and screen-reader users close
+      // the focused tab with Delete (advertised via aria-keyshortcuts).
+      event.preventDefault()
+      onCloseTab(tabs[index].id)
+      return
+    }
     let nextIndex = index
     if (event.key === 'ArrowRight') {
       nextIndex = (index + 1) % tabs.length
@@ -437,13 +445,14 @@ function CenterTabbedPane({
           const tabButtonId = `center-tab-${tab.id}`
           const panelId = `center-tab-panel-${tab.id}`
           return (
-            <div key={tab.id} className={`center-tab-item ${selected ? 'active' : ''} ${!tab.closeable ? 'pinned' : ''}`}>
+            <div key={tab.id} role="presentation" className={`center-tab-item ${selected ? 'active' : ''} ${!tab.closeable ? 'pinned' : ''}`}>
               <TooltipButton
                 type="button"
                 id={tabButtonId}
                 role="tab"
                 aria-controls={panelId}
                 aria-selected={selected}
+                aria-keyshortcuts={tab.closeable ? 'Delete' : undefined}
                 className="center-tab-button"
                 tabIndex={selected ? 0 : -1}
                 title={tab.title}
@@ -454,15 +463,16 @@ function CenterTabbedPane({
                 <span className="center-tab-label">{tab.label}</span>
               </TooltipButton>
               {tab.closeable && (
-                <TooltipButton
+                <button
                   type="button"
                   className="center-tab-close"
-                  aria-label={`Close ${tab.label}`}
+                  aria-hidden="true"
+                  tabIndex={-1}
                   title={`Close ${tab.label}`}
                   onClick={() => onCloseTab(tab.id)}
                 >
                   ×
-                </TooltipButton>
+                </button>
               )}
             </div>
           )
@@ -665,6 +675,8 @@ interface Props {
   initialFocusedRuntimeArea?: string | null
   projectId?: string
   folderId?: string | null
+  /** Names of the other scripts in this script's folder; a repeat gets a hint, not a block. */
+  takenScriptNames?: string[]
   onSave?: (script: StoredScript, options?: ScriptSaveOptions) => void
   onClose?: () => void
 }
@@ -674,7 +686,7 @@ function scriptHasAuthoredActions(script: ScriptData): boolean {
 }
 
 
-export default function ScriptEditor({ scriptId, initialScript, initialAuthoring, initialRetainedDraft, initialRetainedNeedsReview = false, initialRetainedJsonText, initialRetainedCreatedSecretNames, initiallyDirty = false, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, initialFocusedRuntimeArea, projectId, folderId, onSave, onClose }: Props) {
+export default function ScriptEditor({ scriptId, initialScript, initialAuthoring, initialRetainedDraft, initialRetainedNeedsReview = false, initialRetainedJsonText, initialRetainedCreatedSecretNames, initiallyDirty = false, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, initialFocusedRuntimeArea, projectId, folderId, takenScriptNames, onSave, onClose }: Props) {
   const [authoringBaseline, setAuthoringBaseline] = useState<ScriptAuthoringBaseline | null>(null)
   const [authoringRevisionState, setAuthoringRevisionState] = useState<'loading' | 'ready' | 'blocked'>('loading')
   const [authoringRevisionReason, setAuthoringRevisionReason] = useState('')
@@ -975,6 +987,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   // context-aware sidebar emphasis: scaffolding aids lead for new scripts, review/parameter
   // aids lead when editing.
   const isEditingExisting = Boolean(scriptId)
+  const duplicateScriptName = Boolean(script.name?.trim()) && (takenScriptNames || []).some(name => name.trim().toLowerCase() === script.name.trim().toLowerCase())
   const scriptPhaseActionRows = useMemo(() => buildScriptPhaseActionRows(script), [script])
   const replayDebuggerController = useScriptReplayDebuggerController({
     browserReplaySession,
@@ -2844,7 +2857,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     }
   }, [api, currentDraftScript.name, exportGeneratedTextFile, jsonText, script, scriptEditorDirty, scriptId, setError])
 
-  const saveScriptDisabled = (Boolean(scriptId) && (authoringRevisionState !== 'ready' || !authoringBaseline)) || saving || secretBindingsOpen || validating || !scriptEditorDirty || !currentDraftScript.name || Boolean(jsonParseMessage)
+  const draftBaseURLError = scriptBaseURLError(currentDraftScript)
+  const saveScriptDisabled = (Boolean(scriptId) && (authoringRevisionState !== 'ready' || !authoringBaseline)) || saving || secretBindingsOpen || validating || !scriptEditorDirty || !currentDraftScript.name || Boolean(jsonParseMessage) || Boolean(draftBaseURLError)
   const saveScriptTitle = scriptId && authoringRevisionState !== 'ready'
     ? 'Load and review a protected authoring baseline before saving'
     : saving
@@ -2857,7 +2871,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           ? 'No unsaved changes to save'
           : !currentDraftScript.name
             ? 'Enter a script name before saving'
-            : 'Save script'
+            : draftBaseURLError
+              ? draftBaseURLError
+              : 'Save script'
   const validateScriptDisabled = saving || replaying || validating || !currentDraftScript.name
   const validateScriptTitle = validating
     ? 'Checking script readiness'
@@ -2971,9 +2987,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         setReviewedAuthoringBaseline(null)
         setAuthoringRevisionReason(e instanceof ApiError && e.status === 412
           ? 'The authored script or its placement changed since this editor loaded. Your draft was not saved. Load the current baseline, inspect the diff, and explicitly reapply or reload.'
-          : 'The save outcome or revision protection could not be verified. Your draft is retained. Load the current baseline before reviewing and reapplying it; do not retry automatically.')
+          : 'We could not confirm whether this save reached the server. Your draft is kept here. Load the current version to compare it with your draft, then reapply your changes.')
       }
-      const baseMessage = getErrorMessage(e, 'Failed to save script')
+      const baseMessage = scriptSaveFailedOnServer(e)
+        ? `Saving failed on the server; your draft is kept here. Choose Save to try again. Server detail: ${getErrorMessage(e, 'none given')}`
+        : getErrorMessage(e, 'Failed to save script')
       const createdNames = pendingCreatedSecretNamesRef.current
       setError(createdNames.length > 0
         ? `${baseMessage} ${createdNames.join(', ')} ${createdNames.length === 1 ? 'was' : 'were'} already created and remain in the project vault as unused entries until this draft is saved or the entries are removed administratively.`
@@ -2992,7 +3010,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   handleSaveRef.current = handleSave
   const scriptEditorGuard = useMemo<NavigationGuard>(() => ({
     id: `script-editor-${scriptId || 'new'}`,
-    label: scriptId ? 'Edit Script' : 'Create Script',
+    label: scriptId ? 'Edit script' : 'Create script',
     isDirty: () => scriptEditorDirtyRef.current,
     save: () => handleSaveRef.current(),
     discard: () => undefined,
@@ -3632,20 +3650,21 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     )
   }
 
+  // Method labels are text: every colour here is a text-safe token.
   const methodColor = (m: string) => {
     switch (m) {
-      case 'GET': return 'var(--success)'
-      case 'POST': return 'var(--info)'
-      case 'PUT': return 'var(--warning)'
-      case 'DELETE': return 'var(--danger)'
-      case 'PATCH': return 'var(--chart-6)'
-      case 'http_sequence': return 'var(--accent)'
-      case 'jms_publish': return 'var(--info)'
-      case 'jms_consume': return 'var(--success)'
-      case 'jms_request_reply': return 'var(--chart-6)'
+      case 'GET': return 'var(--success-text)'
+      case 'POST': return 'var(--info-text)'
+      case 'PUT': return 'var(--warning-text)'
+      case 'DELETE': return 'var(--danger-text)'
+      case 'PATCH': return 'var(--accent-text)'
+      case 'http_sequence': return 'var(--accent-text)'
+      case 'jms_publish': return 'var(--info-text)'
+      case 'jms_consume': return 'var(--success-text)'
+      case 'jms_request_reply': return 'var(--accent-text)'
       case 'jms_ack':
       case 'jms_commit':
-      case 'jms_rollback': return 'var(--warning)'
+      case 'jms_rollback': return 'var(--warning-text)'
       default: return 'var(--text-secondary)'
     }
   }
@@ -4130,7 +4149,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       } catch (e: unknown) {
         if (cancelled || !runtimeRequestIsCurrent(runtimeAdmissionRef.current, request)) return
         invalidateRuntimeAuthority('Current state unavailable: the controller could not confirm this session.')
-        if (e instanceof ApiError && e.status === 404) {
+        const unconfirmedStart = replayStartAttemptRef.current?.sessionId === activeReplaySessionId && Boolean(replayStartAttemptRef.current?.awaitingReconciliation)
+        // While a start is unconfirmed every failed check counts toward the
+        // bounded window, not just 404s: otherwise a controller that keeps
+        // failing leaves the debugger "Starting" with live controls forever.
+        if ((e instanceof ApiError && e.status === 404) || unconfirmedStart) {
           const pendingAttempt = replayStartAttemptRef.current
           if (
             pendingAttempt?.sessionId === activeReplaySessionId &&
@@ -4148,12 +4171,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           setActiveReplaySessionId(null)
           setBrowserReplaySession(prev => prev ? { ...prev, status: 'stopped' } : null)
           setReplaying(false)
-          setError('Debugger session expired. Start a new debug run to continue.')
+          const notStarted = unconfirmedStart && !(e instanceof ApiError && e.status === 404)
+          setError(notStarted
+            ? `The debugger could not be started: ${getErrorMessage(e, 'the controller did not respond')}. Start a new debug run to try again.`
+            : 'Debugger session expired. Start a new debug run to continue.')
+          if (notStarted) setDebuggerBottomTab('problems')
           setReplayActivity(prev => upsertReplayActivity(prev, {
             id: 'expired',
             kind: 'error',
-            title: 'Debugger session expired',
-            detail: 'The backend no longer has this debug session. Start a new run to continue.',
+            title: notStarted ? 'Debugger did not start' : 'Debugger session expired',
+            detail: notStarted ? 'The controller could not confirm the debug session.' : 'The backend no longer has this debug session. Start a new run to continue.',
             timestamp: new Date().toISOString(),
             success: false,
           }))
@@ -4165,7 +4192,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     void reconcile()
     const timer = window.setInterval(reconcile, 1200)
     return () => { cancelled = true; window.clearInterval(timer) }
-  }, [activeReplaySessionId, replaying, replayStartPending, api, admitRuntimeSession, invalidateRuntimeAuthority, runtimeRequest, setActiveReplaySessionId, setBrowserReplaySession, setError, setExpandedReplayEvent, setReplayActivity, setReplayReport, setReplaying])
+  }, [activeReplaySessionId, replaying, replayStartPending, api, admitRuntimeSession, invalidateRuntimeAuthority, runtimeRequest, setActiveReplaySessionId, setBrowserReplaySession, setDebuggerBottomTab, setError, setExpandedReplayEvent, setReplayActivity, setReplayReport, setReplaying])
 
   const addParameter = (type = 'list') => {
     const parameters = script.parameters || []
@@ -5322,7 +5349,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const scriptTopbarContribution = useMemo<TopbarContribution>(() => ({
     id: 'script-editor',
     priority: 80,
-    title: currentDraftScript.name || (scriptId ? 'Edit Script' : 'Create Script'),
+    title: currentDraftScript.name || (scriptId ? 'Edit script' : 'Create script'),
     meta: [
       {
         id: 'problems',
@@ -5348,7 +5375,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       />
     ),
     secondaryActions: [
-      { id: 'save-script', label: saving ? 'Saving...' : 'Save', title: saveScriptTitle, ariaLabel: 'Save script', disabled: saveScriptDisabled, tone: 'primary', onClick: () => { void topbarActionHandlersRef.current.handleSave() } },
+      { id: 'save-script', label: saving ? 'Saving…' : 'Save', title: saveScriptTitle, ariaLabel: 'Save script', disabled: saveScriptDisabled, tone: 'primary', onClick: () => { void topbarActionHandlersRef.current.handleSave() } },
       {
         id: 'run-debug',
         label: replayReport ? 'Debug again' : 'Debug one iteration',
@@ -5649,7 +5676,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                             onChange={e => setTxnWrapDraft(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') applyWrapSelectionInTransaction(); else if (e.key === 'Escape') setTxnWrapDraft(null) }}
                           />
-                          <button className="btn btn-sm btn-accent" onClick={applyWrapSelectionInTransaction} disabled={!txnWrapDraft.trim()}>Wrap</button>
+                          <button className="btn btn-sm btn-primary" onClick={applyWrapSelectionInTransaction} disabled={!txnWrapDraft.trim()}>Wrap</button>
                           <button className="btn btn-sm btn-ghost" onClick={() => setTxnWrapDraft(null)}>Cancel</button>
                           {txnWrapMode === 'span' && (
                             <span className="txn-wrap-hint" title="Timed span brackets every action between the first and last selected row">
@@ -5660,7 +5687,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                         </span>
                         )
                       })()}
-                      <button className="btn btn-sm btn-accent" onClick={() => addAction('action')}>+ Add</button>
+                      <button className="btn btn-sm btn-primary" onClick={() => addAction('action')}>+ Add</button>
                     </div>
                   </div>
                   {!outlineActionListCollapsed && (
@@ -5948,7 +5975,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       <div className="author-edit-toolbar">
         <button type="button" className="btn btn-sm btn-secondary" aria-pressed={!authorOverview} onClick={() => setAuthorOverview(false)}>Edit selected action</button>
         <button type="button" className="btn btn-sm btn-secondary" aria-pressed={authorOverview} onClick={() => setAuthorOverview(true)}>Overview & bulk</button>
-        <button type="button" className="btn btn-sm btn-accent" onClick={() => addAction(authorCodeFocus?.phase || 'action')}>+ Add Action</button>
+        <button type="button" className="btn btn-sm btn-primary" onClick={() => addAction(authorCodeFocus?.phase || 'action')}>+ Add Action</button>
       </div>
       {<div hidden={!authorOverview}>{renderBulkActionTools()}</div>}
       <div hidden={authorOverview}>{activeInspectorScope ? renderActionInspectorContent() : <div className="action-list-center-empty"><h3>Select an action to start editing</h3><p>Use the outline to navigate init, actions, teardown, and nested blocks, or add an action.</p></div>}</div>
@@ -6133,7 +6160,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             disabled={validateScriptDisabled}
             title={validateScriptTitle}
           >
-            {validating ? 'Checking...' : 'Recheck'}
+            {validating ? 'Checking…' : 'Recheck'}
           </TooltipButton>
         </div>
       </div>
@@ -6289,7 +6316,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
               </div>
               <div className="utility-stack">
                 <button type="button" className="btn btn-sm btn-primary" onClick={handleGenerateBrowserHTTPPreview} disabled={httpConversionGenerating || !httpConversionReview.networkEvidence}>
-                  {httpConversionGenerating ? 'Generating...' : 'Generate HTTP Draft Preview'}
+                  {httpConversionGenerating ? 'Generating…' : 'Generate HTTP Draft Preview'}
                 </button>
                 <button type="button" className="btn btn-sm btn-secondary" onClick={() => activateWorkspaceTab('debug')}>Debug</button>
                 <button type="button" className="btn btn-sm btn-secondary" onClick={() => openEditorSection('parameter-data')}>Review Parameter Data</button>
@@ -6509,7 +6536,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
               )}
               <div className="save-block-actions">
                 <button type="button" className="btn btn-sm btn-ghost" disabled={savingBlock} onClick={closeSaveBlockDialog}>Cancel</button>
-                <button type="button" className="btn btn-sm btn-accent" disabled={savingBlock || !saveBlockName.trim() || !projectId} onClick={saveSelectedAsBlock}>
+                <button type="button" className="btn btn-sm btn-primary" disabled={savingBlock || !saveBlockName.trim() || !projectId} onClick={saveSelectedAsBlock}>
                   {savingBlock ? 'Saving…' : 'Save block'}
                 </button>
               </div>
@@ -6547,7 +6574,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           <div className="editor-title-row">
             <div className="editor-actions">
               <TooltipButton className="btn btn-primary" onClick={handleSave} disabled={saveScriptDisabled} title={saveScriptTitle}>
-                {saving ? 'Saving...' : 'Save Script'}
+                {saving ? 'Saving…' : 'Save Script'}
               </TooltipButton>
               {onClose && <button className="btn btn-ghost" onClick={handleCloseEditor}>Close</button>}
             </div>
@@ -6571,7 +6598,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             <div className="script-ide-quick-actions" role="group" aria-label="Quick actions">
               <TooltipButton type="button" className="debugger-icon-btn" title={replayRunButtonTitle} onClick={() => void handleReplay()} disabled={replaying || saving || replayBlockedByMissingSecrets || !currentDraftScript.name || (currentDraftScript.actions || []).length === 0}>
                 <span className="debugger-icon" aria-hidden="true">&#9654;</span>
-                <span>{replaying ? 'Running...' : replayReport ? 'Debug again' : 'Debug one iteration'}</span>
+                <span>{replaying ? 'Running…' : replayReport ? 'Debug again' : 'Debug one iteration'}</span>
               </TooltipButton>
               {workspaceTab === 'debug' && (
                 <>
@@ -6905,7 +6932,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                     onClick={handleGenerateBrowserHTTPPreview}
                     disabled={httpConversionGenerating || !httpConversionReview.networkEvidence}
                   >
-                    {httpConversionGenerating ? 'Generating...' : 'Generate HTTP Draft Preview'}
+                    {httpConversionGenerating ? 'Generating…' : 'Generate HTTP Draft Preview'}
                   </button>
                   <button type="button" className="btn btn-secondary" onClick={() => activateWorkspaceTab('debug')}>
                     Debug
@@ -6982,8 +7009,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                 <div className="script-name-panel side-panel-script-name" aria-label="Script identity">
                   <label className="script-name-field">
                     <span>Script Name</span>
-                    <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" />
+                    <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" aria-describedby={duplicateScriptName ? 'script-name-duplicate' : undefined} />
                   </label>
+                  {duplicateScriptName && <small id="script-name-duplicate" className="script-name-duplicate">Another script in this folder is already named “{script.name.trim()}”. Both are kept; rename this one to tell them apart.</small>}
                 </div>
                 <nav className="script-action-navigator" aria-label="Script outline" onKeyDown={handleOutlineKeys}>
                   <label>Find action<input type="search" value={outlineActionFilter} onChange={event => setOutlineActionFilter(event.target.value)} /></label>

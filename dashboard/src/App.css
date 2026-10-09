@@ -54,6 +54,14 @@
     inset 0 -1px 0 color-mix(in srgb, var(--accent-border) 30%, transparent);
 }
 
+/* On narrow or short viewports (phones, 200% zoom) the wrapped bar would
+   permanently cover close to half the screen, so it scrolls away with the page. */
+@media (max-width: 720px), (max-height: 560px) {
+  .main-topbar {
+    position: static;
+  }
+}
+
 .main-content.page-dashboard > .main-topbar,
 .main-content.page-new-test > .main-topbar,
 .main-content.page-command-center > .main-topbar,
@@ -438,6 +446,14 @@
   white-space: nowrap;
 }
 
+.topbar-active-runs.compact {
+  flex: 0 1 auto;
+}
+
+.topbar-run-chip.compact {
+  max-width: 150px;
+}
+
 .topbar-run-more {
   flex: 0 0 auto;
   border-color: var(--accent-border);
@@ -471,26 +487,48 @@
   display: none;
 }
 
-.desktop-status-strip {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 6px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: linear-gradient(145deg, var(--bg-card), var(--bg-secondary));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+.desktop-status-menu {
+  position: relative;
 }
 
-.desktop-status-address {
-  max-width: 260px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.desktop-status-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  width: min(320px, calc(100vw - 32px));
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: linear-gradient(var(--bg-elevated), var(--bg-elevated)), var(--bg-primary);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+}
+
+.desktop-status-popover dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.desktop-status-popover dt {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
+}
+
+.desktop-status-popover dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.desktop-status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 /* The theme picker is one pill-shaped select; the wrapper only positions it.
@@ -618,11 +656,6 @@
     flex-direction: row;
     align-items: center;
   }
-
-  .desktop-status-strip {
-    width: 100%;
-    flex-wrap: wrap;
-  }
 }
 
 @media (max-width: 520px) {
@@ -666,3 +699,10 @@
 
 /* Dashboard analysis must stay legible when charts scroll beneath the toolbar. */
 .main-content.page-dashboard > .main-topbar { background: var(--bg-primary); }
+
+.route-scope-recovery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}

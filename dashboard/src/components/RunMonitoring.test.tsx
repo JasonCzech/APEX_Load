@@ -65,6 +65,21 @@ it('exposes credential enrollment only for remote adapters', async () => {
 })
 
 
+it('says why a source cannot be saved and points to Collectors when none is registered', async () => {
+  request.mockImplementation(async (path: string) => path.includes('capabilities') ? { monitoring_enabled: true } : path.includes('collectors?') ? { collectors: [] } : [])
+  await act(async () => root.render(<RunMonitorSources projectId="p" canManage />))
+  const save = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save monitor source') as HTMLButtonElement
+  expect(save.disabled).toBe(true)
+  expect(document.getElementById(save.getAttribute('aria-describedby') || '')?.textContent).toBe('Enter a name for the source.')
+  const name = container.querySelector('input') as HTMLInputElement
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(name, 'Hosts')
+    name.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  expect(document.getElementById(save.getAttribute('aria-describedby') || '')?.textContent).toBe('Register a collector for this project first.')
+  expect(container.querySelector('.run-monitor-empty-collector')?.textContent).toContain('No collector is registered')
+})
+
 it('preserves an existing management pack and clears its identity when creating a new source or switching projects', async () => {
   const scope = { version: 1, kind: 'kafka_offsets', provider: 'broker', isolation: 'read_uncommitted', entities: [{ kafka: { topic: 'orders', partition: 0, group: 'workers' } }] }
   const source = { id: 'managed', project_id: 'a', name: 'Approved offsets', revision: 4, collector_id: 'collector', pack: 'kafka-offsets', interval_seconds: 10, enabled: true, destination: 'management://broker', management_scope: scope, management_identity: { mode: 'anonymous', principal: 'approved', policy_revision: 'v1' } }

@@ -5,6 +5,8 @@ package engine
 import (
 	"bytes"
 	"context"
+	cryptorand "crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"runtime/debug"
@@ -20,8 +22,53 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// interruptedByStop reports whether the run is stopping under this VUser: a
+// graceful or hard stop, an abort, the end of the run, or ramp-down shedding
+// the VUser. Replay keeps its own record of a stop.
+func (vu *VUser) interruptedByStop() bool {
+	if vu == nil || vu.replayRuntime != nil {
+		return false
+	}
+	return (vu.HardStopCtx != nil && vu.HardStopCtx.Err() != nil) ||
+		(vu.ActionBoundaryCtx != nil && vu.ActionBoundaryCtx.Err() != nil)
+}
+
+// hardStopped reports whether the run's hard-stop context has ended: an
+// abort, a hard stop or the end of the run, which cut in-flight work off.
+// A graceful stop or scale-down only ends the action boundary; the current
+// action keeps running under HardStopCtx and its outcome is real.
+func (vu *VUser) hardStopped() bool {
+	return vu != nil && vu.HardStopCtx != nil && vu.HardStopCtx.Err() != nil
+}
+
+// cutOffByStop reports whether a failure is only the stop ending the request
+// in flight. Timeouts are failures of the system under test, and a deadline
+// counts as the stop only when the run's own hard-stop context ran out.
+func (vu *VUser) cutOffByStop(message string) bool {
+	if !vu.interruptedByStop() {
+		return false
+	}
+	message = strings.ToLower(message)
+	if strings.Contains(message, "timeout") {
+		return false
+	}
+	if strings.Contains(message, "context canceled") ||
+		strings.Contains(message, "request canceled") ||
+		strings.Contains(message, "operation was canceled") {
+		return true
+	}
+	return strings.Contains(message, "context deadline exceeded") && vu.hardStopped()
+}
+
 func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingConfig, logCfg dsl.LogConfig) {
 	if result == nil {
+		return
+	}
+	// A request cut off by the run stopping is not an error of the system
+	// under test; counting it put a burst of errors (often 100% of a final,
+	// otherwise empty sample) at the end of every stopped run. LoadRunner
+	// likewise leaves work caught in progress at stop out of the results.
+	if !result.Success && vu.cutOffByStop(result.ErrorMessage) {
 		return
 	}
 	if vu.Script != nil && len(vu.Script.Config.Results.CSVExports) > 0 {
@@ -40,6 +87,7 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	// ResultSink implementation may retain it, even accidentally in-process.
 	result.CorrelationEvidence = nil
 	result.Group = vu.Group
+	result.VUserID, result.Iteration, result.VUserLifetime = vu.ID, vu.currentIteration.Load(), vu.lifetime
 	if result.Region == "" {
 		result.Region = vu.Region
 	}
@@ -79,6 +127,10 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	scrubSensitiveResultWithOptions(result, publicationConfig, retainResponseBody)
 	boundResultEvidence(result)
 	result.PropertyDimensions = promotedPropertyDimensions(vu.Script, result.Extractions)
+	// A failure the target did not cause is interrupted: one recorded once the
+	// VUser was stopping, or the generator's own resource limit closing or
+	// refusing a browser context to protect itself.
+	result.Interrupted = !result.Success && (vu.interruptedFailure() || ClassifyError(result.StatusCode, result.ErrorMessage, false) == ErrorClassResourceLimit)
 	metricResult := vu.metricResultWithDeclaredIdentity(result, declaredTransactionName)
 	if result.BusinessTransaction {
 		// Streamed adapters (notably java_vuser) emit completed business
@@ -146,7 +198,46 @@ func logConfigRetainsSuccessfulResponseBody(logCfg dsl.LogConfig) bool {
 	return false
 }
 
+// newVUserLifetime is a random, non-zero identity for one VUser lifetime
+// (63 bits, so it survives signed storage).
+func newVUserLifetime() uint64 {
+	var raw [8]byte
+	for {
+		if _, err := cryptorand.Read(raw[:]); err != nil {
+			return uint64(time.Now().UnixNano()) >> 1
+		}
+		if value := binary.BigEndian.Uint64(raw[:]) >> 1; value != 0 {
+			return value
+		}
+	}
+}
+
+// recordTransactionSpan is recordTransaction for a transaction whose
+// duration excludes time (think time inside it): the row starts at its real
+// start and carries its wall-clock span.
+func (vu *VUser) recordTransactionSpan(name string, duration time.Duration, success bool, source *protocol.Result, startedAt time.Time) *protocol.Result {
+	if startedAt.IsZero() {
+		return vu.recordTransaction(name, duration, success, source)
+	}
+	vu.transactionSpanStart = startedAt
+	defer func() { vu.transactionSpanStart = time.Time{} }()
+	return vu.recordTransaction(name, duration, success, source)
+}
+
 func (vu *VUser) recordTransaction(name string, duration time.Duration, success bool, source *protocol.Result) *protocol.Result {
+	// A transaction the stop cut off is incomplete, not failed (its requests up
+	// to the stop are still recorded). Without a failure message, only a hard
+	// stop explains it: during a graceful stop the action runs to completion,
+	// so its failure is real and still counts.
+	if !success && vu.interruptedByStop() {
+		if source != nil && source.ErrorMessage != "" {
+			if vu.cutOffByStop(source.ErrorMessage) {
+				return nil
+			}
+		} else if vu.hardStopped() {
+			return nil
+		}
+	}
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = "transaction"
@@ -163,6 +254,9 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 		StartTime:           time.Now().Add(-duration),
 		Duration:            duration,
 		Success:             success,
+		VUserID:             vu.ID,
+		Iteration:           vu.currentIteration.Load(),
+		VUserLifetime:       vu.lifetime,
 	}
 	if source != nil {
 		tx.WorkerDuration = source.WorkerDuration
@@ -203,6 +297,12 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 	if !success && tx.ErrorMessage == "" {
 		tx.ErrorMessage = "transaction failed"
 	}
+	if start := vu.transactionSpanStart; !start.IsZero() {
+		tx.StartTime = start
+		if elapsed := time.Since(start); elapsed > duration {
+			tx.WallElapsed = elapsed
+		}
+	}
 	// Transaction-only execution paths (notably http_sequence aggregates) do
 	// not pass through recordResult. Apply the same detach, exact-secret
 	// redaction, and evidence bounds before either metrics or archive sinks can
@@ -214,6 +314,8 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 	scrubSensitiveResultWithOptions(tx, vu.RedactionConfig, false)
 	boundResultEvidence(tx)
 	tx.PropertyDimensions = promotedPropertyDimensions(vu.Script, tx.Extractions)
+	tx.Interrupted = !tx.Success && vu.interruptedFailure()
+	tx.EndsIteration = vu.endingIteration && !tx.Interrupted
 	if vu.Metrics != nil {
 		vu.Metrics.RecordTransactionResult(vu.metricResultWithDeclaredIdentity(tx, name))
 	}
@@ -221,6 +323,29 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 		_ = sink.RecordTransaction(tx)
 	}
 	return tx
+}
+
+// interruptedFailure reports whether a failure being recorded may be the
+// stop's rather than the target's: the in-flight action's context was
+// cancelled (a hard stop, or Run's context when there is no hard-stop
+// context), or a stop or goal boundary is abandoning the iteration.
+func (vu *VUser) interruptedFailure() bool {
+	if vu.abandoning {
+		return true
+	}
+	ctx := vu.HardStopCtx
+	if ctx == nil {
+		ctx = vu.runCtx
+	}
+	return ctx != nil && ctx.Err() != nil
+}
+
+// recordAbandonedTransaction records the failed transaction a stop or goal
+// boundary leaves behind; it is marked interrupted.
+func (vu *VUser) recordAbandonedTransaction(name string, duration time.Duration, source *protocol.Result) *protocol.Result {
+	vu.abandoning = true
+	defer func() { vu.abandoning = false }()
+	return vu.recordTransaction(name, duration, false, source)
 }
 
 func (vu *VUser) iterationTransactionName() string {

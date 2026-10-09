@@ -1,4 +1,6 @@
 import ImportReviewSectionHeader from './ImportReviewSectionHeader'
+import { importSourceName } from '../appTopbar'
+import { useUnsavedWorkGuard } from '../hooks/NavigationGuardProvider'
 import ImportRuntimeSettingsTable from './ImportRuntimeSettingsTable'
 import { ImportConversionDetails, ImportEvidenceFacts } from './ImportConversionDetails'
 import { ImportGuidedRepair, type RepairResult } from './ImportGuidedRepair'
@@ -1236,6 +1238,12 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     .filter(index => reviewSessionIsSaved(item, index)).length, 0)
   const pendingReviewScriptCount = importItems.reduce((count, item) => count + pendingItemReviewCount(item), 0)
   const validatedAwaitingSaveCount = validatedItems.filter(item => pendingItemReviewCount(item) > 0).length
+  // Validated drafts and review decisions live only in this page until saved.
+  useUnsavedWorkGuard('enterprise-archive-import', 'LoadRunner import review', pendingReviewScriptCount > 0, () => {
+    invalidateOperationScopes()
+    setImportItems([])
+    setSelectedItemId('')
+  })
   const pendingValidationFileCount = Math.max(queuedFileCount - validatedFileCount - convertedFileCount, 0)
   const allValidatedReviewsMatchOptions = validatedItems.every(item => item.reviewOptionsIdentity === importOptionsIdentity(options))
   const selectedItemValidated = selectedItem?.status === 'validated'
@@ -1464,7 +1472,14 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     if (needsExecutionRepair && !canonical.some(f => f.gate === 'execution') && !extra.some(f => f.gate === 'execution')) extra.push({ code: 'diagnostic:execution', detail: 'Additional protocol or execution checks need attention. Inspect conversion details and the related review sections before replay.', gate: 'execution' })
     return extra
   }, [currentRepairReview, importedScript, fidelityReport, reviewSections, sourceReview, replayPreflight, needsExecutionRepair, result?.warnings])
-  const tabIssues = useMemo(() => importedScript ? groupImportFindings([...(currentRepairReview?.findings || draftImportFindings(importedScript)), ...additionalRepairFindings], importedScript) : [], [currentRepairReview, importedScript, additionalRepairFindings])
+  const allTabIssues = useMemo(() => importedScript ? groupImportFindings([...(currentRepairReview?.findings || draftImportFindings(importedScript)), ...additionalRepairFindings], importedScript) : [], [currentRepairReview, importedScript, additionalRepairFindings])
+  // Review marks live in the guided repair panel; notes marked reviewed there
+  // stop counting as open review work in the tab badges and readiness line.
+  const guidedRepairScope = `${selectedItem?.id}:${selectedResultScriptIndex}:${projectId}`
+  const [reviewedRepairIssues, setReviewedRepairIssues] = useState<{ scope: string; ids: string[] }>({ scope: '', ids: [] })
+  const reviewedRepairIssueIds = useMemo(() => new Set(reviewedRepairIssues.scope === guidedRepairScope ? reviewedRepairIssues.ids : []), [reviewedRepairIssues, guidedRepairScope])
+  const tabIssues = useMemo(() => allTabIssues.filter(issue => issue.blocking || !reviewedRepairIssueIds.has(issue.id)), [allTabIssues, reviewedRepairIssueIds])
+  const reviewedTabIssueCount = allTabIssues.length - tabIssues.length
   const selectReviewSection = (tab: ValidationReviewTab) => {
     setValidationReviewTab(tab)
     document.getElementById(`lr-validation-review-tab-${tab}`)?.focus()
@@ -1499,7 +1514,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     setCategoryFocus(previous => ({ category: reviewCategory, revision: previous.revision + 1 }))
     selectReviewSection('overview')
   }
-  const tlsRepairIssue = tabIssues.find(issue => issue.findings.some(finding => finding.code === 'legacy_tls_replacement'))
+  const tlsRepairIssue = allTabIssues.find(issue => issue.findings.some(finding => finding.code === 'legacy_tls_replacement'))
   const supportMatrixSections = summarizeEnterpriseArchiveSupportMatrix(supportMatrix)
   const hasRuntimeCoverage = supportMatrix.length > 0
   useModalDialog({
@@ -1644,6 +1659,9 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   const reviewSaveDisabled = classpathUploadInProgress || (reviewMode === 'validation'
     ? (!selectedItemValidated || !reviewMatchesCurrentOptions || workingMode !== null || (saveBlockedByProtocolGate && (!reviewArtifact || reviewArtifactSaving)))
     : (primarySaveDisabled || workingMode !== null))
+  const savedReviewScript = reviewMode !== 'validation' && !saveBlockedByProtocolGate && selectedResultScriptSaved && selectedItem
+    ? selectedItem.savedResultScripts[activeResultScriptIndex]
+    : undefined
   const reviewSaveDisabledReason = !reviewSaveDisabled
     ? undefined
     : classpathUploadInProgress
@@ -1667,8 +1685,8 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                     : 'Complete the required archive review choices before saving.'
   const saveActionLabel = saveBlockedByProtocolGate
     ? (reviewArtifactSaving
-      ? (combinedJavaVuserApprovalReady ? 'Saving Combined Java Draft...' : 'Saving Review Artifact...')
-      : (combinedJavaVuserApprovalReady ? 'Save Combined Java Draft for Approval' : 'Save Review Artifact Instead'))
+      ? (combinedJavaVuserApprovalReady ? 'Saving combined Java draft…' : 'Saving review artifact…')
+      : (combinedJavaVuserApprovalReady ? 'Save combined Java draft for approval' : 'Save review artifact instead'))
     : (reviewMode === 'validation'
       ? (queuedFileCount > 1 ? 'Save reviewed drafts' : browserImport ? 'Continue to browser replay' : 'Save draft')
       : (selectedResultScriptSaved
@@ -1678,14 +1696,14 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             ? `Prepare Credentials for Script ${activeResultScriptIndex + 1} of ${resultScripts.length}`
             : 'Review Required Credentials Before Atomic Save')
       : enterpriseCredentialBatchFlow
-        ? `Save Remaining ${pendingResultScriptIndices.length} Scripts Atomically`
+        ? `Save remaining ${pendingResultScriptIndices.length} scripts atomically`
       : (browserReplayInProgress
       ? 'Draft Browser Replay In Progress'
       : (saveRequiresBrowserReplay
           ? (browserReplayWasStarted ? 'Rerun Draft Browser Replay Before Saving' : 'Start Draft Browser Replay Before Saving')
           : needsExecutionRepair ? 'Save draft — execution blocked' : 'Save to Script Library'))))
   const replayActionLabel = replayValidationLoading
-    ? 'Starting Draft Browser Replay...'
+    ? 'Starting Draft Browser Replay…'
     : (browserReplayInProgress
         ? 'Draft Browser Replay In Progress'
       : (browserReplayWasStarted ? 'Rerun Draft Browser Replay' : 'Start Draft Browser Replay'))
@@ -1979,7 +1997,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             onClick={button.onClick}
             disabled={editorActionPreparing || scriptSaveInProgress}
           >
-            {editorActionPreparing ? 'Preparing credentials...' : button.label}
+            {editorActionPreparing ? 'Preparing credentials…' : button.label}
           </button>
         ))}
       </div>
@@ -4024,7 +4042,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     <div className={`lr-import ${result ? 'lr-import-reviewed' : ''}`}>
       <div className="lr-import-header">
         <div>
-          <h2>Import Loadrunner Script Archive</h2>
+          <h2>{importSourceName('enterprise_archive')}</h2>
           <p className="lr-subtitle">Choose an uncompressed VuGen script folder or a LoadRunner ZIP or USZ archive, including source, runtime settings, parameter files, and dependencies. We detect the protocol and show what can be saved, what needs repair, and whether a runner is required. Import checks do not execute your script.</p>
         </div>
         {onClose && <button type="button" className="btn btn-secondary" onClick={() => {
@@ -4348,10 +4366,10 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
           )}
           <div className="lr-import-action-buttons">
             <button className="btn btn-secondary btn-lg" onClick={() => runReview('validate')} disabled={queuedFileCount === 0 || operationBusy}>
-              {workingMode === 'validate' ? <><span className="spinner" /> Validating...</> : validateButtonLabel}
+              {workingMode === 'validate' ? <><span className="spinner" /> Validating…</> : validateButtonLabel}
             </button>
             {(queuedFileCount > 1 || reviewMode !== 'conversion') && <button className="btn btn-primary btn-lg" onClick={() => convertValidatedItems()} disabled={validatedFileCount === 0 || !allValidatedReviewsMatchOptions || operationBusy}>
-              {workingMode === 'convert' ? <><span className="spinner" /> Converting And Saving...</> : convertButtonLabel}
+              {workingMode === 'convert' ? <><span className="spinner" /> Converting and saving…</> : convertButtonLabel}
             </button>}
           </div>
           <p className="lr-subtitle">{conversionGateMessage}</p>
@@ -4520,7 +4538,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                 : 'This archive was classified without creating an executable APEX Load script.'}</p>
             </div>
             <button className="btn btn-primary" onClick={handleSaveReviewArtifact} disabled={reviewArtifactSaving || classpathUploadInProgress}>
-              {reviewArtifactSaving ? <><span className="spinner" /> Saving Review Artifact...</> : dependencyBundle ? 'Save Dependency Review' : 'Save Review Artifact'}
+              {reviewArtifactSaving ? <><span className="spinner" /> Saving review artifact...</> : dependencyBundle ? 'Save dependency review' : 'Save review artifact'}
             </button>
           </div>
 
@@ -4612,19 +4630,23 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
               </div>
             </div>
           )}
-          <div className="lr-tab-readiness" role="status">{importedScript && (() => { const issues = tabIssues; return `${issues.filter(i => i.blocking).length} grouped issues block replay · ${issues.filter(i => !i.blocking).length} need review`; })()}</div>
+          <div className="lr-tab-readiness" role="status">{importedScript && (() => { const issues = tabIssues; return `${issues.filter(i => i.blocking).length} grouped issues block replay · ${issues.filter(i => !i.blocking).length} need review${reviewedTabIssueCount ? ` · ${reviewedTabIssueCount} reviewed` : ''}`; })()}</div>
           <div className="lr-validation-review-navigation">
           {reviewProjectPicker}
           <TabList className="lr-validation-review-tabs"
  role="tablist" aria-label="Script archive review sections" onKeyDown={handleTabKey}>
-              {validationReviewTabs.map((tab) => (
+              {validationReviewTabs.map((tab) => {
+                // Unresolved grouped issues for this tab, named once in the tab's accessible name.
+                const issueCount = importedScript && ['overview', 'credentials', 'data', 'preserved'].includes(tab.id)
+                  ? tabIssues.filter(i => tab.id === 'overview' || (tab.id === 'credentials' && i.category === 'credentials') || (tab.id === 'data' && i.category === 'values') || (tab.id === 'preserved' && i.category === 'runtime')).length
+                  : 0
+                return (
                 <button
                   key={tab.id}
                   id={`lr-validation-review-tab-${tab.id}`}
                   type="button"
                   role="tab"
-                  aria-label={tab.label}
-                  aria-describedby={['overview', 'credentials', 'data', 'preserved'].includes(tab.id) ? `lr-review-count-${tab.id}` : undefined}
+                  aria-label={issueCount > 0 ? `${tab.label}, ${issueCount} unresolved grouped issue${issueCount === 1 ? '' : 's'}` : tab.label}
                   aria-selected={validationReviewTab === tab.id}
                   aria-controls="lr-validation-review-panel"
                   tabIndex={validationReviewTab === tab.id ? 0 : -1}
@@ -4648,9 +4670,10 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                       ?.focus()
                   }}
                 >
-                  {tab.label}{importedScript && ['overview', 'credentials', 'data', 'preserved'].includes(tab.id) && (() => { const issues = tabIssues; const count = issues.filter(i => tab.id === 'overview' || (tab.id === 'credentials' && i.category === 'credentials') || (tab.id === 'data' && i.category === 'values') || (tab.id === 'preserved' && i.category === 'runtime')).length; return <><span id={`lr-review-count-${tab.id}`} className="import-review-count-description">{count} unresolved grouped replay issues</span>{count > 0 && <span className="lr-tab-count" aria-hidden="true">{count}</span>}</> })()}
+                  {tab.label}{issueCount > 0 && <span className="lr-tab-count" aria-hidden="true">{issueCount}</span>}
                 </button>
-              ))}
+                )
+              })}
           </TabList>
           </div>
           <div
@@ -4723,6 +4746,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             saveDisabled={reviewSaveDisabled}
             saveDisabledReason={reviewSaveDisabledReason}
             saveLabel={saveActionLabel}
+            savedAction={savedReviewScript && onImported ? { label: 'Open saved script in Visual Editor', onClick: () => onImported({ scripts: [savedReviewScript] }) } : undefined}
             onSave={saveBlockedByProtocolGate && reviewArtifact
               ? handleSaveReviewArtifact
               : reviewMode === 'validation' && selectedItem
@@ -4733,17 +4757,17 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                     ? handleSaveCredentialBatch
                     : handleSaveConverted}
             onEdit={importedEditorAvailable && !selectedResultScriptSaved && (!editRequiresCredentialPreservingSave || (queuedFileCount === 1 && resultScripts.length === 1)) ? () => { openImportedScriptInEditor() } : undefined}
-            editLabel={editRequiresCredentialPreservingSave ? 'Save Draft and Open in Visual Editor' : 'Open Draft in Visual Editor'}
+            editLabel={editRequiresCredentialPreservingSave ? 'Save draft and open in Visual Editor' : 'Open draft in Visual Editor'}
             previewTitle="DSL Preview"
             previewData={importedScript}
             previewInitiallyOpen
             previewAside={sourceReview
-              ? <SourceMappingReview sourceReview={sourceReview} script={importedScript} repairPaths={tabIssues.flatMap(issue => issue.findings.flatMap(f => f.action_path ? [f.action_path] : []))} onRepairTarget={path => { setIssueFocus(previous => ({ path, revision: previous.revision + 1 })); setValidationReviewTab('overview') }} focusedSourceFile={repairSourceFocus.file} focusedMappingId={repairSourceFocus.id} focusRequestId={repairSourceFocus.revision} />
+              ? <SourceMappingReview sourceReview={sourceReview} script={importedScript} repairPaths={allTabIssues.flatMap(issue => issue.findings.flatMap(f => f.action_path ? [f.action_path] : []))} onRepairTarget={path => { setIssueFocus(previous => ({ path, revision: previous.revision + 1 })); setValidationReviewTab('overview') }} focusedSourceFile={repairSourceFocus.file} focusedMappingId={repairSourceFocus.id} focusRequestId={repairSourceFocus.revision} />
               : <div className="lr-review-tab-empty">No source mapping was generated for this archive.</div>}
             showPreview={validationReviewTab === 'dsl'}
             showPreviewAside={validationReviewTab === 'source'}
           >
-            {importedScript && <ImportGuidedRepair onCredentialTarget={setCredentialTarget} onReimport={() => { if (archiveSetupRef.current) { archiveSetupRef.current.open = true; archiveSetupRef.current.querySelector('summary')?.focus(); archiveSetupRef.current.scrollIntoView({ block: 'start' }) } }} categoryFocus={categoryFocus} onBusyChange={setGuidedRepairBusy} focusPath={issueFocus.path} focusRequest={issueFocus.revision} key={`${selectedItem?.id}:${selectedResultScriptIndex}:${projectId}`} view={validationReviewTab === 'overview' ? 'overview' : validationReviewTab === 'data' ? 'data' : 'hidden'} additionalFindings={additionalRepairFindings} onSection={tab => { setReturnToIssue(true); selectReviewSection(tab) }} onReview={review => setProtectedReview({ project: projectId || '', result: review })} script={importedScript} projectId={projectId || ''} disabled={internalReviewBusy || scriptSaveInProgress || selectedResultScriptSaved || !reviewMatchesCurrentOptions} disabledReason={selectedResultScriptSaved ? 'This draft has already been saved. Re-import the archive to preview allocation for a new draft.' : !reviewMatchesCurrentOptions ? 'Import options have changed. Validate the archive again before previewing allocation.' : 'Finish pending edits or wait for the current import operation to complete before previewing allocation.'} onViewSource={(path, finding) => {
+            {importedScript && <ImportGuidedRepair onCredentialTarget={setCredentialTarget} onReimport={() => { if (archiveSetupRef.current) { archiveSetupRef.current.open = true; archiveSetupRef.current.querySelector('summary')?.focus(); archiveSetupRef.current.scrollIntoView({ block: 'start' }) } }} categoryFocus={categoryFocus} onBusyChange={setGuidedRepairBusy} focusPath={issueFocus.path} focusRequest={issueFocus.revision} key={guidedRepairScope} onReviewedChange={ids => setReviewedRepairIssues({ scope: guidedRepairScope, ids })} view={validationReviewTab === 'overview' ? 'overview' : validationReviewTab === 'data' ? 'data' : 'hidden'} additionalFindings={additionalRepairFindings} onSection={tab => { setReturnToIssue(true); selectReviewSection(tab) }} onReview={review => setProtectedReview({ project: projectId || '', result: review })} script={importedScript} projectId={projectId || ''} disabled={internalReviewBusy || scriptSaveInProgress || selectedResultScriptSaved || !reviewMatchesCurrentOptions} disabledReason={selectedResultScriptSaved ? 'This draft has already been saved. Re-import the archive to preview allocation for a new draft.' : !reviewMatchesCurrentOptions ? 'Import options have changed. Validate the archive again before previewing allocation.' : 'Finish pending edits or wait for the current import operation to complete before previewing allocation.'} onViewSource={(path, finding) => {
               const mapping = sourceReview?.mappings?.find(entry => finding?.source_mapping_id ? entry.id === finding.source_mapping_id : path && entry.target_path === path)
               setReturnToIssue(true)
               setRepairSourceFocus(previous => ({ id: mapping?.id || '', file: finding?.source_file || '', revision: previous.revision + 1 }))

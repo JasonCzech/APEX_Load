@@ -24,12 +24,16 @@
                 "type": "string"
               },
               "body_encoding": {
-                "description": "Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail.",
+                "description": "Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\\xNN`, octal, `\\\\`, `\\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary).",
                 "type": "string"
               },
               "body_file": {
                 "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
+              },
+              "body_multipart": {
+                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children).",
+                "type": "object"
               },
               "header_list": {
                 "description": "Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate.",
@@ -54,6 +58,18 @@
               },
               "params": {
                 "properties": {
+                  "html_mode": {
+                    "description": "LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both.",
+                    "type": "boolean"
+                  },
+                  "html_step": {
+                    "description": "HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet.",
+                    "type": "object"
+                  },
+                  "resource_step": {
+                    "description": "LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context.",
+                    "type": "boolean"
+                  },
                   "resources": {
                     "description": "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification.",
                     "type": "array"
@@ -66,7 +82,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "Request path or absolute URL; relative paths resolve against config.base_url.",
+                "description": "Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step).",
                 "type": "string"
               }
             },
@@ -96,12 +112,16 @@
                 "type": "string"
               },
               "body_encoding": {
-                "description": "Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail.",
+                "description": "Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\\xNN`, octal, `\\\\`, `\\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary).",
                 "type": "string"
               },
               "body_file": {
                 "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
+              },
+              "body_multipart": {
+                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children).",
+                "type": "object"
               },
               "header_list": {
                 "description": "Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate.",
@@ -126,6 +146,18 @@
               },
               "params": {
                 "properties": {
+                  "html_mode": {
+                    "description": "LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both.",
+                    "type": "boolean"
+                  },
+                  "html_step": {
+                    "description": "HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet.",
+                    "type": "object"
+                  },
+                  "resource_step": {
+                    "description": "LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context.",
+                    "type": "boolean"
+                  },
                   "resources": {
                     "description": "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification.",
                     "type": "array"
@@ -138,7 +170,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "Request path or absolute URL; relative paths resolve against config.base_url.",
+                "description": "Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step).",
                 "type": "string"
               }
             },
@@ -168,12 +200,16 @@
                 "type": "string"
               },
               "body_encoding": {
-                "description": "Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail.",
+                "description": "Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\\xNN`, octal, `\\\\`, `\\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary).",
                 "type": "string"
               },
               "body_file": {
                 "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
+              },
+              "body_multipart": {
+                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children).",
+                "type": "object"
               },
               "header_list": {
                 "description": "Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate.",
@@ -198,6 +234,18 @@
               },
               "params": {
                 "properties": {
+                  "html_mode": {
+                    "description": "LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both.",
+                    "type": "boolean"
+                  },
+                  "html_step": {
+                    "description": "HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet.",
+                    "type": "object"
+                  },
+                  "resource_step": {
+                    "description": "LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context.",
+                    "type": "boolean"
+                  },
                   "resources": {
                     "description": "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification.",
                     "type": "array"
@@ -210,7 +258,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "Request path or absolute URL; relative paths resolve against config.base_url.",
+                "description": "Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step).",
                 "type": "string"
               }
             },
@@ -240,12 +288,16 @@
                 "type": "string"
               },
               "body_encoding": {
-                "description": "Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail.",
+                "description": "Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\\xNN`, octal, `\\\\`, `\\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary).",
                 "type": "string"
               },
               "body_file": {
                 "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
+              },
+              "body_multipart": {
+                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children).",
+                "type": "object"
               },
               "header_list": {
                 "description": "Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate.",
@@ -270,6 +322,18 @@
               },
               "params": {
                 "properties": {
+                  "html_mode": {
+                    "description": "LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both.",
+                    "type": "boolean"
+                  },
+                  "html_step": {
+                    "description": "HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet.",
+                    "type": "object"
+                  },
+                  "resource_step": {
+                    "description": "LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context.",
+                    "type": "boolean"
+                  },
                   "resources": {
                     "description": "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification.",
                     "type": "array"
@@ -282,7 +346,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "Request path or absolute URL; relative paths resolve against config.base_url.",
+                "description": "Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step).",
                 "type": "string"
               }
             },
@@ -312,12 +376,16 @@
                 "type": "string"
               },
               "body_encoding": {
-                "description": "Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail.",
+                "description": "Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\\xNN`, octal, `\\\\`, `\\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary).",
                 "type": "string"
               },
               "body_file": {
                 "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
+              },
+              "body_multipart": {
+                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children).",
+                "type": "object"
               },
               "header_list": {
                 "description": "Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate.",
@@ -342,6 +410,18 @@
               },
               "params": {
                 "properties": {
+                  "html_mode": {
+                    "description": "LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both.",
+                    "type": "boolean"
+                  },
+                  "html_step": {
+                    "description": "HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet.",
+                    "type": "object"
+                  },
+                  "resource_step": {
+                    "description": "LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context.",
+                    "type": "boolean"
+                  },
                   "resources": {
                     "description": "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification.",
                     "type": "array"
@@ -354,7 +434,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "Request path or absolute URL; relative paths resolve against config.base_url.",
+                "description": "Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step).",
                 "type": "string"
               }
             },
@@ -384,12 +464,16 @@
                 "type": "string"
               },
               "body_encoding": {
-                "description": "Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail.",
+                "description": "Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\\xNN`, octal, `\\\\`, `\\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary).",
                 "type": "string"
               },
               "body_file": {
                 "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
+              },
+              "body_multipart": {
+                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children).",
+                "type": "object"
               },
               "header_list": {
                 "description": "Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate.",
@@ -414,6 +498,18 @@
               },
               "params": {
                 "properties": {
+                  "html_mode": {
+                    "description": "LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both.",
+                    "type": "boolean"
+                  },
+                  "html_step": {
+                    "description": "HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet.",
+                    "type": "object"
+                  },
+                  "resource_step": {
+                    "description": "LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context.",
+                    "type": "boolean"
+                  },
                   "resources": {
                     "description": "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification.",
                     "type": "array"
@@ -426,7 +522,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "Request path or absolute URL; relative paths resolve against config.base_url.",
+                "description": "Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step).",
                 "type": "string"
               }
             },
@@ -456,12 +552,16 @@
                 "type": "string"
               },
               "body_encoding": {
-                "description": "Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail.",
+                "description": "Body wire encoding: base64 for binary payloads; windows-1252 or utf-16le (no byte-order mark) for strict text encoding after interpolation, where unrepresentable characters fail; or c_escaped for text whose C escapes (`\\xNN`, octal, `\\\\`, `\\n`) name raw bytes, decoded after interpolation with template values sent verbatim (LoadRunner BodyBinary).",
                 "type": "string"
               },
               "body_file": {
                 "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
+              },
+              "body_multipart": {
+                "description": "multipart/form-data body built at replay with a fresh boundary, replacing body: {parts: [{name, value?, value_encoding? (base64 for a literal binary value; windows-1252 to send the expanded text as Windows-1252 bytes, where unrepresentable characters fail), filename? (makes the part a file upload), content_type?, headers?}]}. Names, values, filenames and headers expand templates; a file part's value is usually {{file.NAME}}, the content of a file data source. Replay sets the request's Content-Type to multipart/form-data with the new boundary; a file part without content_type is sent as application/octet-stream. HTTP request steps only (not http_sequence children).",
+                "type": "object"
               },
               "header_list": {
                 "description": "Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate.",
@@ -486,6 +586,18 @@
               },
               "params": {
                 "properties": {
+                  "html_mode": {
+                    "description": "LoadRunner Mode=: false (Mode=HTTP) replays the step without parsing its page, so no resources are discovered from it and it does not become the page context for HTML-mode steps; absent or true (Mode=HTML) does both.",
+                    "type": "boolean"
+                  },
+                  "html_step": {
+                    "description": "HTML-mode step (LoadRunner web_link, web_image, web_submit_form, web_image_check) resolved against the page this virtual user last loaded, instead of target: {kind: link (text), image (alt and/or src; follows the enclosing link, the single area of its image map, or submits the form of an input image), image_check (passes when the page has the image; no request), or form (fields and hidden [{name, value}], optional action and submit [{name, value}]); ordinal (1-based), case_insensitive}. Forms are chosen by VuGen's order: every scripted field present, then action, then ordinal; the submission is the page's successful controls in document order with scripted values overriding by name, hidden values filling names the page lacks, and the form's method and encoding. The page URL becomes the Referer. A step that matches nothing fails with html_link_not_found, html_image_not_found or html_form_not_found. Steps inside frames are not supported yet.",
+                    "type": "object"
+                  },
+                  "resource_step": {
+                    "description": "LoadRunner Resource=1: the step is a resource. An HTTP error or transport failure becomes the warning resource_step_failed unless config.http.fail_noncritical_resources is on (a timeout also fails when resource_timeout_as_warning is explicitly off), and the step never becomes the page context.",
+                    "type": "boolean"
+                  },
                   "resources": {
                     "description": "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 256; relative URLs use the final response URL. Included in parent timing, cache, and verification.",
                     "type": "array"
@@ -498,7 +610,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "Request path or absolute URL; relative paths resolve against config.base_url.",
+                "description": "Request path or absolute URL; relative paths resolve against config.base_url. Not used by an HTML-mode step (params.html_step).",
                 "type": "string"
               }
             },
@@ -2598,6 +2710,60 @@
             "properties": {
               "type": {
                 "enum": [
+                  "cookie_set"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Sets (or, with params.remove, expires) one cookie in the VUser's HTTP cookie store at this point (imported from web_add_cookie and web_remove_cookie). A later Set-Cookie from the server replaces it. Protocols without a cookie store treat it as a no-op.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "domain": {
+                    "description": "Domain the cookie is sent to, including subdomains; empty means host-only for the script's base URL host.",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "Cookie name.",
+                    "type": "string"
+                  },
+                  "path": {
+                    "description": "Cookie path; defaults to /.",
+                    "type": "string"
+                  },
+                  "remove": {
+                    "description": "Expire the cookie instead of setting it.",
+                    "type": "boolean"
+                  },
+                  "secure": {
+                    "description": "Send only over HTTPS.",
+                    "type": "boolean"
+                  },
+                  "value": {
+                    "description": "Cookie value; templates are resolved at run time.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "params"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
                   "custom_call"
                 ]
               }
@@ -3483,6 +3649,96 @@
             "properties": {
               "type": {
                 "enum": [
+                  "http_async_start"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Starts a background HTTP conversation (imported from web_reg_async_attributes): params.request is sent repeatedly while the script continues, until http_async_stop or the end of the iteration. Responses are recorded as \"async \u003cid\u003e\" and their extractors and callbacks run on the virtual user between actions. HTTP scripts only.",
+            "properties": {
+              "control.branches": {
+                "description": "Callback branches {name, steps} run on the virtual user, at most 64 steps each: on_request before the request is resolved again (at start and after each dispatch of responses), on_response after each response (var.async_response_status, var.async_response_success, var.async_response_body), on_body_chunk for each chunk of a streamed response (var.async_chunk: one server-sent event's data, or the whole body of a response that is not an event stream). var.async_conversation_id names the conversation; http_async_stop inside a callback ends the conversation after the callback.",
+                "type": "array"
+              },
+              "params": {
+                "properties": {
+                  "id": {
+                    "description": "Conversation ID used by http_async_stop; at most 8 conversations run per virtual user.",
+                    "type": "string"
+                  },
+                  "interval_ms": {
+                    "description": "Poll interval in milliseconds; at least 100. Ignored by long_poll and push, which wait at least 100 ms between requests.",
+                    "type": "integer"
+                  },
+                  "pattern": {
+                    "description": "poll sends the request every interval_ms, the first one as part of this step (its response is applied before the script continues); long_poll re-sends it as soon as a response arrives; push re-opens a streaming response (read as server-sent events, see params.stream on HTTP requests) when it ends. Defaults to poll.",
+                    "examples": [
+                      "poll",
+                      "long_poll",
+                      "push"
+                    ],
+                    "type": "string"
+                  },
+                  "request": {
+                    "description": "The HTTP request action to repeat. Templates are resolved again after each response, so a value one response extracts is sent by the next request.",
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "id",
+                  "request"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "params"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "http_async_stop"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Stops a background HTTP conversation and applies its last responses (imported from web_stop_async).",
+            "properties": {
+              "params": {
+                "properties": {
+                  "id": {
+                    "description": "Conversation ID given to http_async_start.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "params"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
                   "http_connections_close"
                 ]
               }
@@ -3617,6 +3873,48 @@
                 },
                 "required": [
                   "requests"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "params"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "http_sync"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Waits until a background conversation or a WebSocket message callback sets a variable (imported from web_sync), applying conversation responses and dispatching ws_on_message callbacks while it waits.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "timeout_ms": {
+                    "description": "Maximum wait in milliseconds; defaults to 10000. The step fails when it passes.",
+                    "type": "integer"
+                  },
+                  "value": {
+                    "description": "Value to wait for; without it any non-empty value ends the wait.",
+                    "type": "string"
+                  },
+                  "variable": {
+                    "description": "Variable to wait for (without the var. prefix).",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "variable"
                 ],
                 "type": "object"
               }
@@ -6216,7 +6514,7 @@
                 "type": "object"
               },
               "target": {
-                "description": "WebSocket URL (ws:// or wss://); relative paths resolve against config.base_url.",
+                "description": "WebSocket URL (ws:// or wss://); relative paths resolve against config.base_url. In an HTTP script the handshake shares the script's cookie jar and TLS settings, so a socket opened after an HTTP login carries the session cookie.",
                 "type": "string"
               }
             },
@@ -6390,6 +6688,9 @@
         "body_file": {
           "type": "string"
         },
+        "body_multipart": {
+          "$ref": "#/$defs/MultipartBody"
+        },
         "capture": {
           "$ref": "#/$defs/BrowserCaptureOptions"
         },
@@ -6517,6 +6818,7 @@
             "control_parallel",
             "control_switch",
             "cookie_clear",
+            "cookie_set",
             "custom_call",
             "database_begin",
             "database_commit",
@@ -6546,9 +6848,12 @@
             "grpc_client_stream",
             "grpc_server_stream",
             "grpc_unary",
+            "http_async_start",
+            "http_async_stop",
             "http_connections_close",
             "http_oauth2_token",
             "http_sequence",
+            "http_sync",
             "imap_command",
             "insert",
             "java_vuser_run",
@@ -6682,6 +6987,9 @@
         "min": {
           "type": "integer"
         },
+        "source": {
+          "type": "string"
+        },
         "type": {
           "type": "string"
         },
@@ -6696,6 +7004,12 @@
       "properties": {
         "domain": {
           "type": "string"
+        },
+        "hosts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "password": {
           "type": "string"
@@ -7444,6 +7758,12 @@
         "default_value": {
           "type": "string"
         },
+        "dfes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "expression": {
           "type": "string"
         },
@@ -7462,10 +7782,37 @@
         "save_offset": {
           "type": "integer"
         },
+        "scope": {
+          "$ref": "#/$defs/ExtractorScope"
+        },
         "source": {
           "type": "string"
         },
         "type": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ExtractorScope": {
+      "additionalProperties": false,
+      "properties": {
+        "content_type": {
+          "type": "string"
+        },
+        "header_names": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "redirects": {
+          "type": "string"
+        },
+        "request_url": {
+          "type": "string"
+        },
+        "resources": {
           "type": "string"
         }
       },
@@ -8283,6 +8630,45 @@
       },
       "type": "object"
     },
+    "MultipartBody": {
+      "additionalProperties": false,
+      "properties": {
+        "parts": {
+          "items": {
+            "$ref": "#/$defs/MultipartPart"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "MultipartPart": {
+      "additionalProperties": false,
+      "properties": {
+        "content_type": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "value_encoding": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "NetworkConfig": {
       "additionalProperties": false,
       "properties": {
@@ -8634,6 +9020,50 @@
       },
       "type": "object"
     },
+    "RunLogicBlock": {
+      "additionalProperties": false,
+      "properties": {
+        "children": {
+          "items": {
+            "$ref": "#/$defs/RunLogicChild"
+          },
+          "type": "array"
+        },
+        "iterations": {
+          "maximum": 100000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mode": {
+          "enum": [
+            "sequential",
+            "random",
+            "percentage"
+          ],
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "RunLogicChild": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "block": {
+          "$ref": "#/$defs/RunLogicBlock"
+        },
+        "weight": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "RunLogicConfig": {
       "additionalProperties": false,
       "properties": {
@@ -8648,6 +9078,12 @@
         },
         "block_scheduling": {
           "type": "string"
+        },
+        "blocks": {
+          "items": {
+            "$ref": "#/$defs/RunLogicBlock"
+          },
+          "type": "array"
         },
         "global_iterations": {
           "type": "integer"

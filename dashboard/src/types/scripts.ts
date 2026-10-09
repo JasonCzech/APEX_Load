@@ -35,6 +35,18 @@ export interface ScriptExtractorDefinition {
   save_length?: number
   /** Post-process each value: "url_encode" | "url_decode" | "html_decode" | "html_url_encode". */
   convert?: string
+  /** HTTP response set to search: redirect hops, resources, URL/Content-Type filters. Absent = final response only. */
+  scope?: ScriptExtractorScope
+  /** Data-format transforms applied to each searched response body first (LoadRunner DFEs). */
+  dfes?: string[]
+}
+
+export interface ScriptExtractorScope {
+  redirects?: string
+  resources?: string
+  request_url?: string
+  content_type?: string
+  header_names?: string[]
 }
 
 export interface ScriptAssertionDefinition {
@@ -44,8 +56,10 @@ export interface ScriptAssertionDefinition {
   value?: string
   min?: number
   max?: number
-  // HTTP body_contains / body_not_contains ignore case (LoadRunner Text/IC).
+  // HTTP body_contains / body_not_contains and text_* checks ignore case (LoadRunner Text/IC).
   case_insensitive?: boolean
+  /** HTTP text_* checks: "body" (default), "headers" (raw header block) or "all" (headers, then body). */
+  source?: string
 }
 
 export interface ScriptAuthConfig {
@@ -54,6 +68,8 @@ export interface ScriptAuthConfig {
   password?: string
   token?: string
   domain?: string
+  /** Hosts (host or host:port) that receive these credentials; empty means every host. */
+  hosts?: string[]
 }
 
 export interface ScriptHeaderEntry {
@@ -156,6 +172,8 @@ export interface ScriptActionDefinition {
   body?: string
   body_file?: string
   body_encoding?: string
+  /** multipart/form-data body built at replay with a fresh boundary; replaces body. */
+  body_multipart?: ScriptMultipartBody
   params?: Record<string, unknown>
   metadata?: Record<string, unknown>
   wait_for?: ScriptWaitCondition
@@ -175,6 +193,21 @@ export interface ScriptActionDefinition {
     operation?: string
     body_mode?: string
   }
+}
+
+export interface ScriptMultipartBody {
+  parts: ScriptMultipartPart[]
+}
+
+/** One form field. A file field has a filename; its value is usually {{file.NAME}}. */
+export interface ScriptMultipartPart {
+  name: string
+  value?: string
+  /** "base64" marks a literal binary value; "windows-1252" sends the expanded text as Windows-1252 bytes. */
+  value_encoding?: string
+  filename?: string
+  content_type?: string
+  headers?: Record<string, string>
 }
 
 export interface ScriptAnalyticsAttribution {
@@ -267,6 +300,22 @@ export interface RunLogicConfig {
   auto_transactions?: string
   block_scheduling?: string
   action_sequence?: string[]
+  // VuGen run-logic blocks imported from a .usp: the iteration order replaces
+  // action_sequence when set.
+  blocks?: RunLogicBlock[]
+}
+
+export interface RunLogicBlock {
+  name?: string
+  mode?: "sequential" | "random" | "percentage"
+  iterations?: number
+  children: RunLogicChild[]
+}
+
+export interface RunLogicChild {
+  action?: string
+  block?: RunLogicBlock
+  weight?: number
 }
 
 export interface ErrorHandlingConfig {
@@ -352,6 +401,7 @@ export interface HTTPConfig {
     password?: string
     token?: string
     domain?: string
+    hosts?: string[]
   }
 }
 

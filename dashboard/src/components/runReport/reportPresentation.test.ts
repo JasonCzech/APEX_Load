@@ -33,7 +33,7 @@ describe('report presentation', () => {
   expect(reportAcceptance(null).status).toBe('Not available')
   expect(effectiveReportVerdict(report, { verdict_override: 'Pass' } as never).status).toBe('Not assessed')
  })
- it.each([[0, '0.00%'], [0.0001, '<0.01%'], [0.01, '0.01%'], [undefined, 'Not available']])('formats %s without hiding nonzero errors', (value, expected) => {
+ it.each([[0, '0.00%'], [0.0001, '<0.01%'], [0.01, '0.01%'], [undefined, '—']])('formats %s without hiding nonzero errors', (value, expected) => {
   expect(formatReportPercent(value as number | undefined)).toBe(expected)
  })
  it('aligns separate dates by elapsed time and stops at the end of baseline coverage', () => {

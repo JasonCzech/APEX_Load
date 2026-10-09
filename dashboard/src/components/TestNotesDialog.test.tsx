@@ -98,7 +98,7 @@ describe('TestNotesDialog', () => {
 
     const dialog = container.querySelector<HTMLElement>('[role="dialog"]')
     expect(dialog?.getAttribute('aria-modal')).toBe('true')
-    expect(document.getElementById(dialog?.getAttribute('aria-labelledby') || '')?.textContent).toBe('Test Notes')
+    expect(document.getElementById(dialog?.getAttribute('aria-labelledby') || '')?.textContent).toBe('Test notes')
     expect(document.getElementById(dialog?.getAttribute('aria-describedby') || '')?.textContent).toBe('Checkout Run')
     expect(document.activeElement).toBe(button('Close'))
   })

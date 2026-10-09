@@ -55,6 +55,8 @@ import {
   type ArchiveTransactionSort,
   type ArchiveTransactionSortKey,
 } from './useExecutionArchiveModel'
+import { formatFixed, formatPercentValue } from '../utils/numberFormat'
+import { MISSING_VALUE } from './runReport/reportPresentation'
 
 type ArchiveView =
   | 'all'
@@ -122,40 +124,39 @@ interface Props {
 }
 
 function formatArchiveTimestamp(value?: string): string {
-  if (!value) return 'n/a'
+  if (!value) return MISSING_VALUE
   return new Date(value).toLocaleString()
 }
 
 function formatArchiveTime(value?: string): string {
-  if (!value) return 'n/a'
+  if (!value) return MISSING_VALUE
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'n/a'
+  if (Number.isNaN(date.getTime())) return MISSING_VALUE
   return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 } as Intl.DateTimeFormatOptions)
 }
 
 function formatBrowserMetric(value: number | undefined, suffix = '', digits = 1): string {
   const observed = finiteBrowserMetric(value)
-  return observed === undefined ? 'n/a' : `${observed.toFixed(digits)}${suffix}`
+  return observed === undefined ? MISSING_VALUE : `${observed.toFixed(digits)}${suffix}`
 }
 
 function formatBrowserScore(value: number | undefined): string {
   const observed = finiteBrowserMetric(value)
-  return observed === undefined ? 'n/a' : observed.toFixed(3)
+  return observed === undefined ? MISSING_VALUE : observed.toFixed(3)
 }
 
 function formatArchiveNumber(value: number | undefined, digits = 1): string {
-  if (value === undefined || Number.isNaN(value)) return 'n/a'
-  return value.toFixed(digits)
+  if (value === undefined || Number.isNaN(value)) return MISSING_VALUE
+  return formatFixed(value, digits)
 }
 
 function formatArchivePercent(value: number | undefined, digits = 2): string {
-  if (value !== undefined && value > 0 && value < 10 ** -digits) return `<${(10 ** -digits).toFixed(digits)}%`
-  const formatted = formatArchiveNumber(value, digits)
-  return formatted === 'n/a' ? formatted : `${formatted}%`
+  if (value === undefined || Number.isNaN(value)) return MISSING_VALUE
+  return formatPercentValue(value, digits)
 }
 
 function formatArchiveCount(value: number | undefined): string {
-  if (value === undefined || Number.isNaN(value)) return 'n/a'
+  if (value === undefined || Number.isNaN(value)) return MISSING_VALUE
   return value.toLocaleString()
 }
 
@@ -290,9 +291,9 @@ function buildArchiveCountEntries(counts?: Record<string, number>) {
 }
 
 function formatArchiveBucketTimestamp(value?: string): string {
-  if (!value) return 'n/a'
+  if (!value) return MISSING_VALUE
   const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return 'n/a'
+  if (Number.isNaN(parsed.getTime())) return MISSING_VALUE
   return parsed.toLocaleString(undefined, {
     year: 'numeric',
     month: '2-digit',
@@ -304,7 +305,7 @@ function formatArchiveBucketTimestamp(value?: string): string {
 
 function formatArchiveCountSummary(counts?: Record<string, number>) {
   const entries = buildArchiveCountEntries(counts)
-  if (entries.length === 0) return 'n/a'
+  if (entries.length === 0) return MISSING_VALUE
   return entries.map(([name, count]) => `${name} (${count})`).join(', ')
 }
 
@@ -342,7 +343,7 @@ function archiveAnalysisBaselineStats(runs: RunArchiveAnalysisStats[] = [], test
 }
 
 function formatArchiveAnalysisStats(stats?: RunArchiveAnalysisStats): string {
-  if (!stats) return 'n/a'
+  if (!stats) return MISSING_VALUE
   return `${formatArchiveCount(stats.transactions)} tx · ${formatArchivePercent(stats.error_pct)} err · avg ${formatArchiveNumber(stats.avg_response_ms)} ms`
 }
 
@@ -372,12 +373,12 @@ function sortArchiveAnalysisEdges(edges: RunArchiveAnalysisEdge[], testID: strin
 
 function formatArchiveAnalysisPath(row: RunArchiveTransactionDrilldown): string {
   if (row.path && row.path.length > 0) return row.path.join(' / ')
-  return [row.region, row.group, row.source_transaction, row.action_name, row.dependency_target].filter(Boolean).join(' / ') || 'n/a'
+  return [row.region, row.group, row.source_transaction, row.action_name, row.dependency_target].filter(Boolean).join(' / ') || MISSING_VALUE
 }
 
 function formatArchiveAnalysisDependency(row: RunArchiveTransactionDrilldown): string {
   if (row.dependency_type && row.dependency_target) return `${row.dependency_type}: ${row.dependency_target}`
-  return row.dependency_target || row.dependency_type || 'n/a'
+  return row.dependency_target || row.dependency_type || MISSING_VALUE
 }
 
 function formatGeneratorInventoryLabel(target?: string) {
@@ -401,7 +402,7 @@ interface ArchiveCompactPanel {
 }
 
 function compactValue(value?: string | number | null): string {
-  if (value === undefined || value === null || value === '') return 'n/a'
+  if (value === undefined || value === null || value === '') return MISSING_VALUE
   return String(value)
 }
 
@@ -411,17 +412,17 @@ function compactStatus(value?: string): string {
 
 function compactList(values: Array<string | undefined>, limit = 3): string {
   const present = values.filter((value): value is string => Boolean(value))
-  if (present.length === 0) return 'n/a'
+  if (present.length === 0) return MISSING_VALUE
   const visible = present.slice(0, limit).join(', ')
   return present.length > limit ? `${visible}, +${present.length - limit} more` : visible
 }
 
 function compactTimestamp(value?: string): string {
-  return value ? formatArchiveTimestamp(value) : 'n/a'
+  return value ? formatArchiveTimestamp(value) : MISSING_VALUE
 }
 
 function compactDurationMs(value?: number): string {
-  if (value === undefined || !Number.isFinite(value)) return 'n/a'
+  if (value === undefined || !Number.isFinite(value)) return MISSING_VALUE
   if (value >= 1000) return `${(value / 1000).toFixed(2)}s`
   return `${value.toFixed(0)}ms`
 }
@@ -477,12 +478,12 @@ function buildArchiveCompactPanels(
           label: 'Intervals',
           value: telemetry
             ? `${compactValue(telemetry.healthy_intervals)} healthy · ${compactValue(telemetry.degraded_intervals)} degraded · ${compactValue(telemetry.breached_intervals)} breached${telemetry.unscored_intervals ? ` · ${compactValue(telemetry.unscored_intervals)} unscored` : ''}`
-            : 'n/a',
+            : MISSING_VALUE,
         },
         { label: 'Max Sample Age', value: compactDurationMs(telemetry?.max_sample_age_ms) },
         { label: 'Generator Lag', value: compactDurationMs(telemetry?.max_generator_processing_lag_ms) },
         { label: 'Transport Lag', value: compactDurationMs(telemetry?.max_transport_lag_ms) },
-        { label: 'Breach Window', value: telemetry?.first_breach_at || telemetry?.last_breach_at ? `${compactTimestamp(telemetry?.first_breach_at)} - ${compactTimestamp(telemetry?.last_breach_at)}` : 'n/a' },
+        { label: 'Breach Window', value: telemetry?.first_breach_at || telemetry?.last_breach_at ? `${compactTimestamp(telemetry?.first_breach_at)} - ${compactTimestamp(telemetry?.last_breach_at)}` : MISSING_VALUE },
       ],
     },
     {
@@ -522,11 +523,11 @@ function buildArchiveCompactPanels(
       status: provenance ? 'captured' : 'not captured',
       tone: provenance ? 'healthy' : 'warning',
       items: [
-        { label: 'Execution Profile', value: provenance ? `${provenance.scenario_mode || 'vuser_driven'} · ${provenance.total_vusers || test.total_vusers} VUsers · ${provenance.duration || test.duration}` : 'n/a' },
-        { label: 'Scope', value: provenance ? `${provenance.project_id || 'unassigned'}${provenance.release_id ? ` / ${provenance.release_id}` : ''}${provenance.scenario_id ? ` / ${provenance.scenario_id}` : ''}` : 'n/a' },
-        { label: 'Runtime Flags', value: provenance ? `Shakeout ${formatArchiveFlag(provenance.script_shakeout)} · Baseline ${formatArchiveFlag(provenance.resource_baseline)}` : 'n/a' },
+        { label: 'Execution Profile', value: provenance ? `${provenance.scenario_mode || 'vuser_driven'} · ${provenance.total_vusers || test.total_vusers} VUsers · ${provenance.duration || test.duration}` : MISSING_VALUE },
+        { label: 'Scope', value: provenance ? `${provenance.project_id || 'unassigned'}${provenance.release_id ? ` / ${provenance.release_id}` : ''}${provenance.scenario_id ? ` / ${provenance.scenario_id}` : ''}` : MISSING_VALUE },
+        { label: 'Runtime Flags', value: provenance ? `Shakeout ${formatArchiveFlag(provenance.script_shakeout)} · Baseline ${formatArchiveFlag(provenance.resource_baseline)}` : MISSING_VALUE },
         { label: 'Browser Runtime', value: compactValue(runtimeBrowserSummary) },
-        { label: 'Metrics Interval', value: provenance?.execution_settings?.general?.metrics_interval_seconds !== undefined ? `${provenance.execution_settings.general.metrics_interval_seconds}s` : 'n/a' },
+        { label: 'Metrics Interval', value: provenance?.execution_settings?.general?.metrics_interval_seconds !== undefined ? `${provenance.execution_settings.general.metrics_interval_seconds}s` : MISSING_VALUE },
         { label: 'Pinned Baseline', value: provenance?.baseline_pinned ? 'Pinned' : 'Not pinned' },
         { label: 'Scenario Groups', value: compactList((provenance?.groups || []).map(formatCompactGroup), 3) },
         { label: 'Controller Environment', value: compactList(Object.entries(provenance?.controller_env || {}).map(([key, value]) => `${key}=${value}`), 2) },
@@ -605,6 +606,7 @@ function formatReportSectionLabel(section: string): string {
     artifact_integrity: 'Artifact integrity',
     report_authorship: 'Report authorship',
     official_outcome: 'Official outcome',
+    telemetry_acceptance: 'Telemetry acceptance',
   }
   return labels[section] || section.replace(/_/g, ' ')
 }
@@ -834,6 +836,8 @@ export default function TestExecutionArchive({
   const [expandedSnapshotSections, setExpandedSnapshotSections] = useState<Record<string, boolean>>({})
   const [browserBreakdown, setBrowserBreakdown] = useState<BrowserBreakdown>('device')
   const [summaryTimelineExpanded, setSummaryTimelineExpanded] = useState(false)
+  // Runs with hundreds of transactions need a search in front of the picker.
+  const [archiveActionQuery, setArchiveActionQuery] = useState('')
   const [summaryTimelineErrorsOnly, setSummaryTimelineErrorsOnly] = useState(false)
   const archiveDerived = useMemo(() => ({
     soapOperationEntries: buildArchiveStatsEntries(archiveReport?.by_soap_operation),
@@ -1031,14 +1035,14 @@ export default function TestExecutionArchive({
                   {archiveReport.overview.max_throughput_gap_pct !== undefined && (
                     <div className="scenario-script-detail-card">
                       <span className="scenario-script-detail-label">Throughput Gap</span>
-                      <span className="scenario-script-detail-value">{archiveReport.overview.max_throughput_gap_pct.toFixed(1)}%</span>
+                      <span className="scenario-script-detail-value">{formatFixed(archiveReport.overview.max_throughput_gap_pct, 1)}%</span>
                       <span className="capacity-advisory-detail">{archiveReport.overview.throughput_missed_intervals || 0} missed target interval{archiveReport.overview.throughput_missed_intervals === 1 ? '' : 's'}</span>
                     </div>
                   )}
                   {archiveReport.overview.goal_completion && (
                     <div className="scenario-script-detail-card">
                       <span className="scenario-script-detail-label">Named transaction volume</span>
-                      <span className="scenario-script-detail-value">{archiveReport.overview.goal_completion.transaction_completion_pct !== undefined ? `${archiveReport.overview.goal_completion.transaction_completion_pct.toFixed(1)}%` : archiveReport.metric_populations?.transaction?.transactions.toLocaleString() ?? 'Unknown'}</span>
+                      <span className="scenario-script-detail-value">{archiveReport.overview.goal_completion.transaction_completion_pct !== undefined ? `${formatFixed(archiveReport.overview.goal_completion.transaction_completion_pct, 1)}%` : archiveReport.metric_populations?.transaction?.transactions.toLocaleString() ?? 'Unknown'}</span>
                       <span className="capacity-advisory-detail">
                         {archiveReport.overview.goal_completion.configured_max_transactions
                           ? `${archiveReport.overview.goal_completion.achieved_transactions.toLocaleString()} / ${archiveReport.overview.goal_completion.configured_max_transactions.toLocaleString()} transactions`
@@ -1065,7 +1069,7 @@ export default function TestExecutionArchive({
                   </div>
                   <div className="scenario-script-detail-card">
                     <span className="scenario-script-detail-label">CPU Peak</span>
-                    <span className="scenario-script-detail-value">{archiveReport.resource_peaks.cpu_process_pct.toFixed(1)}%</span>
+                    <span className="scenario-script-detail-value">{formatFixed(archiveReport.resource_peaks.cpu_process_pct, 1)}%</span>
                   </div>
                   <div className="scenario-script-detail-card">
                     <span className="scenario-script-detail-label">Memory Peak</span>
@@ -1082,7 +1086,7 @@ export default function TestExecutionArchive({
 							<div><h3 className="chart-title">Performance by Load Level</h3><p className="archive-section-copy">Retained interval evidence for each stepped-ramp group and aggregate load level.</p></div>
 						</div>
 						<div className="scenario-table-scroll"><table className="tx-table"><thead><tr><th>Group</th><th>Level</th><th>VUsers</th><th>Observed</th><th>Requests</th><th>Errors</th><th>Error Rate</th><th>TPS</th><th>P50</th><th>P90</th><th>P95</th><th>P99</th></tr></thead><tbody>
-							{archiveReport.load_level_summaries.map(level => <tr key={`${level.group}-${level.stage_index}-${level.target_vusers}`}><td>{level.group === '__total__' ? 'Total' : level.group}</td><td>{level.name}{level.partial ? ' (partial)' : ''}</td><td>{level.target_vusers}</td><td>{formatTimeCompact(level.observed_duration_seconds)}</td><td>{level.requests.toLocaleString()}</td><td>{level.errors.toLocaleString()}</td><td>{level.error_rate_pct.toFixed(2)}%</td><td>{level.throughput.toFixed(1)}</td><td>{level.p50_ms.toFixed(1)}</td><td>{level.p90_ms.toFixed(1)}</td><td>{level.p95_ms.toFixed(1)}</td><td>{level.p99_ms.toFixed(1)}</td></tr>)}
+							{archiveReport.load_level_summaries.map(level => <tr key={`${level.group}-${level.stage_index}-${level.target_vusers}`}><td>{level.group === '__total__' ? 'Total' : level.group}</td><td>{level.name}{level.partial ? ' (partial)' : ''}</td><td>{level.target_vusers}</td><td>{formatTimeCompact(level.observed_duration_seconds)}</td><td>{level.requests.toLocaleString()}</td><td>{level.errors.toLocaleString()}</td><td>{formatFixed(level.error_rate_pct, 2)}%</td><td>{formatFixed(level.throughput, 1)}</td><td>{formatFixed(level.p50_ms, 1)}</td><td>{formatFixed(level.p90_ms, 1)}</td><td>{formatFixed(level.p95_ms, 1)}</td><td>{formatFixed(level.p99_ms, 1)}</td></tr>)}
 						</tbody></table></div>
 					</div>
 				)}
@@ -1215,8 +1219,8 @@ export default function TestExecutionArchive({
                             <td>{pattern.count}</td>
                             <td>{formatArchiveTimestamp(pattern.first_seen)}</td>
                             <td>{formatArchiveTimestamp(pattern.latest_seen)}</td>
-                            <td>{pattern.actions && pattern.actions.length > 0 ? pattern.actions.join(', ') : 'n/a'}</td>
-                            <td>{pattern.snapshot ? 'retained' : 'n/a'}</td>
+                            <td>{pattern.actions && pattern.actions.length > 0 ? pattern.actions.join(', ') : MISSING_VALUE}</td>
+                            <td>{pattern.snapshot ? 'retained' : MISSING_VALUE}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1364,7 +1368,7 @@ export default function TestExecutionArchive({
                           <th>Active VUsers</th>
                           <th>TPS</th>
                           <th>P95</th>
-                          <th>Error %</th>
+                          <th>Error rate</th>
                           <th>Total Tx</th>
                           <th>Total Errors</th>
                         </tr>
@@ -1376,7 +1380,7 @@ export default function TestExecutionArchive({
                             <td>{point.active_vusers}</td>
                             <td>{point.tps.toFixed(1)}</td>
                             <td>{point.p95_ms.toFixed(1)} ms</td>
-                            <td className={point.error_pct > 0 ? 'error-cell' : ''}>{point.error_pct.toFixed(2)}%</td>
+                            <td className={point.error_pct > 0 ? 'error-cell' : ''}>{formatFixed(point.error_pct, 2)}%</td>
                             <td>{point.total_transactions}</td>
                             <td className={point.total_errors > 0 ? 'error-cell' : ''}>{point.total_errors}</td>
                           </tr>
@@ -1522,7 +1526,7 @@ export default function TestExecutionArchive({
                             {archiveAnalysis.transactions.map(row => (
                               <tr key={`${row.run_id}-${row.index}-${row.timestamp}`} className={!row.success ? 'archive-error-row' : ''}>
                                 <td className="archive-time-cell">{formatArchiveTime(row.timestamp)}</td>
-                                <td className="tx-name">{row.action_name || row.source_action || 'n/a'}</td>
+                                <td className="tx-name">{row.action_name || row.source_action || MISSING_VALUE}</td>
                                 <td>{formatArchiveAnalysisDependency(row)}</td>
                                 <td className="archive-analysis-path">{formatArchiveAnalysisPath(row)}</td>
                                 <td className={row.success ? '' : 'error-cell'}>{row.status_code || (row.success ? 'OK' : 'ERR')}</td>
@@ -1558,8 +1562,12 @@ export default function TestExecutionArchive({
                     <th>Action</th>
                     <th>Count</th>
                     <th>Errors</th>
-                    <th>Error %</th>
+                    <th>Error rate</th>
                     <th>Avg (ms)</th>
+                    <th>P50 (ms)</th>
+                    <th>P90 (ms)</th>
+                    <th>P95 (ms)</th>
+                    <th>P99 (ms)</th>
                     <th>Max (ms)</th>
                   </tr>
                 </thead>
@@ -1571,6 +1579,10 @@ export default function TestExecutionArchive({
                       <td className={(stats.errors || 0) > 0 ? 'error-cell' : ''}>{formatArchiveCount(stats.errors)}</td>
                       <td>{formatArchivePercent(stats.error_pct)}</td>
                       <td>{formatArchiveNumber(stats.avg_response_ms)}</td>
+                      <td>{formatArchiveNumber(stats.p50_ms)}</td>
+                      <td>{formatArchiveNumber(stats.p90_ms)}</td>
+                      <td>{formatArchiveNumber(stats.p95_ms)}</td>
+                      <td>{formatArchiveNumber(stats.p99_ms)}</td>
                       <td>{formatArchiveNumber(stats.max_response_ms)}</td>
                     </tr>
                   ))}
@@ -1591,7 +1603,7 @@ export default function TestExecutionArchive({
                         <th>Operation</th>
                         <th>Count</th>
                         <th>Errors</th>
-                        <th>Error %</th>
+                        <th>Error rate</th>
                         <th>Avg (ms)</th>
                         <th>Max (ms)</th>
                       </tr>
@@ -1626,7 +1638,7 @@ export default function TestExecutionArchive({
                         <th>Region</th>
                         <th>Count</th>
                         <th>Errors</th>
-                        <th>Error %</th>
+                        <th>Error rate</th>
                         <th>Avg (ms)</th>
                         <th>Max (ms)</th>
                       </tr>
@@ -1661,7 +1673,7 @@ export default function TestExecutionArchive({
                         <th>Profile</th>
                         <th>Count</th>
                         <th>Errors</th>
-                        <th>Error %</th>
+                        <th>Error rate</th>
                         <th>Avg (ms)</th>
                         <th>Max (ms)</th>
                       </tr>
@@ -1813,15 +1825,36 @@ export default function TestExecutionArchive({
                   <p className="archive-section-copy">Sample archived events for the selected {archivePopulation === 'transaction' ? 'named transaction' : archivePopulation === 'unknown' ? 'unclassified legacy record' : 'request / action'}.</p>
                 </div>
                 <div className="archive-filter-bar">
+                  {archiveActionEntries.length > 20 && (
+                    <input
+                      className="archive-column-filter-input"
+                      type="search"
+                      placeholder={`Find among ${archiveActionEntries.length}`}
+                      aria-label={archivePopulation === 'transaction' ? 'Find a named transaction' : 'Find an action'}
+                      value={archiveActionQuery}
+                      onChange={(event) => setArchiveActionQuery(event.target.value)}
+                      onKeyDown={(event) => {
+                        // Typing narrows the list; Enter opens the first match. Selecting per
+                        // keystroke would load a different drill-down on every letter.
+                        if (event.key !== 'Enter') return
+                        event.preventDefault()
+                        const query = archiveActionQuery.trim().toLowerCase()
+                        const first = archiveActionEntries.find(([name]) => name.toLowerCase().includes(query))
+                        if (query && first && first[0] !== selectedArchiveAction) onSelectedArchiveActionChange(first[0])
+                      }}
+                    />
+                  )}
                   <select
                     className="archive-action-select"
                     aria-label={archivePopulation === 'transaction' ? 'Archived named transaction' : 'Archived action'}
                     value={selectedArchiveAction}
                     onChange={(event) => onSelectedArchiveActionChange(event.target.value)}
                   >
-                    {archiveActionEntries.map(([name]) => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
+                    {archiveActionEntries
+                      .filter(([name]) => name === selectedArchiveAction || !archiveActionQuery.trim() || name.toLowerCase().includes(archiveActionQuery.trim().toLowerCase()))
+                      .map(([name]) => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
                   </select>
                   {archivePopulation !== 'transaction' && soapOperationEntries.length > 0 && (
                     <select
@@ -1925,7 +1958,7 @@ export default function TestExecutionArchive({
                         <th>{renderArchiveSortButton('duration', 'Duration')}</th>
                         <th>{renderArchiveSortButton('bytes', 'Bytes')}</th>
                         <th>{renderArchiveSortButton('error', 'Error')}</th>
-                    <th aria-label="Actions"></th>
+                    <th><span className="sr-only">Actions</span></th>
                       </tr>
                       <tr className="archive-column-filter-row">
                         <th>

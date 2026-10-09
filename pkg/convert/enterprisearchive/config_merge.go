@@ -180,7 +180,7 @@ func isEmptyPacingConfig(cfg dsl.PacingConfig) bool {
 }
 
 func isEmptyRunLogicConfig(cfg dsl.RunLogicConfig) bool {
-	return cfg.Iterations == 0 && cfg.AutoTransactions == "" && cfg.BlockScheduling == "" && len(cfg.ActionSequence) == 0
+	return cfg.Iterations == 0 && cfg.AutoTransactions == "" && cfg.BlockScheduling == "" && len(cfg.ActionSequence) == 0 && len(cfg.Blocks) == 0
 }
 
 func isEmptyLogConfig(cfg dsl.LogConfig) bool {
@@ -188,7 +188,7 @@ func isEmptyLogConfig(cfg dsl.LogConfig) bool {
 }
 
 func isEmptyHTTPConfig(cfg dsl.HTTPConfig) bool {
-	return cfg.ReceiveBufferBytes == 0 && cfg.MaxMetaRefresh == 0 && cfg.ContentCheckErrorLimit == 0 && cfg.HTTPErrorsAsWarnings == nil && cfg.FailNonCriticalResources == nil && cfg.ResourceTimeoutAsWarning == nil && cfg.LegacyHTMLChecks == nil && cfg.DNSCache == nil && cfg.AuthDelayMs == 0 && cfg.PageTimeoutMs == 0 && cfg.IPVersion == "" && cfg.CacheMaxUnusedIterations == 0 && len(cfg.CacheExcludedMIMETypes) == 0 && cfg.HTMLParseMode == "" && len(cfg.HTMLExcludedMIMETypes) == 0 && cfg.AuraRecordedFailures == "" && cfg.ConnectTimeoutMs == 0 && cfg.RequestTimeoutMs == 0 && cfg.TLSTimeoutMs == 0 && cfg.IdleTimeoutMs == 0 && cfg.Version == "" && cfg.MaxConnsPerHost == 0 && cfg.MaxIdleConns == 0 && cfg.KeepAlive == nil && cfg.ProxyMode == "" && cfg.UserAgent == "" && cfg.AcceptEncoding == "" && cfg.AcceptLanguage == "" && cfg.MaxRedirects == nil && len(cfg.DefaultHeaders) == 0 && cfg.Proxy.PACURL == "" && cfg.Proxy.URL == "" && cfg.Proxy.Username == "" && cfg.Proxy.Password == "" && len(cfg.Proxy.NoProxy) == 0 && cfg.Auth.Type == "" && cfg.Auth.Username == "" && cfg.Auth.Password == "" && cfg.Auth.Token == "" && cfg.Auth.Domain == "" && cfg.TLS.MinVersion == "" && cfg.TLS.MaxVersion == "" && !cfg.TLS.InsecureSkipVerify && cfg.TLS.ClientCertFile == "" && cfg.TLS.ClientKeyFile == "" && cfg.TLS.CACertFile == ""
+	return cfg.ReceiveBufferBytes == 0 && cfg.MaxMetaRefresh == 0 && cfg.ContentCheckErrorLimit == 0 && cfg.HTTPErrorsAsWarnings == nil && cfg.FailNonCriticalResources == nil && cfg.ResourceTimeoutAsWarning == nil && cfg.LegacyHTMLChecks == nil && cfg.DNSCache == nil && cfg.AuthDelayMs == 0 && cfg.PageTimeoutMs == 0 && cfg.IPVersion == "" && cfg.CacheMaxUnusedIterations == 0 && len(cfg.CacheExcludedMIMETypes) == 0 && cfg.HTMLParseMode == "" && len(cfg.HTMLExcludedMIMETypes) == 0 && cfg.AuraRecordedFailures == "" && cfg.ConnectTimeoutMs == 0 && cfg.RequestTimeoutMs == 0 && cfg.TLSTimeoutMs == 0 && cfg.IdleTimeoutMs == 0 && cfg.Version == "" && cfg.MaxConnsPerHost == 0 && cfg.MaxIdleConns == 0 && cfg.KeepAlive == nil && cfg.ProxyMode == "" && cfg.UserAgent == "" && cfg.AcceptEncoding == "" && cfg.AcceptLanguage == "" && cfg.MaxRedirects == nil && len(cfg.DefaultHeaders) == 0 && cfg.Proxy.PACURL == "" && cfg.Proxy.URL == "" && cfg.Proxy.Username == "" && cfg.Proxy.Password == "" && len(cfg.Proxy.NoProxy) == 0 && cfg.Auth.Type == "" && cfg.Auth.Username == "" && cfg.Auth.Password == "" && cfg.Auth.Token == "" && cfg.Auth.Domain == "" && len(cfg.Auth.Hosts) == 0 && cfg.TLS.MinVersion == "" && cfg.TLS.MaxVersion == "" && !cfg.TLS.InsecureSkipVerify && cfg.TLS.ClientCertFile == "" && cfg.TLS.ClientKeyFile == "" && cfg.TLS.CACertFile == ""
 }
 
 func isEmptyBrowserConfig(cfg dsl.BrowserConfig) bool {

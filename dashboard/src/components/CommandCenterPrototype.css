@@ -137,7 +137,7 @@
 }
 
 .command-history-banner .command-history-retry-error {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .command-history-actions {
@@ -189,20 +189,9 @@
 .command-run-stats {
   min-width: 0;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* Pills wrap to a new row before a value would be clipped. */
+  grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
   gap: 8px;
-}
-
-.command-run-stats.with-tps {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.command-run-stats.with-highest-error {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.command-run-stats.with-tps.with-highest-error {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .command-metric-pill {
@@ -219,7 +208,7 @@
 
 .command-metric-pill span {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 800;
   letter-spacing: var(--label-tracking, 0.05em);
   text-transform: var(--label-case, uppercase);
@@ -427,7 +416,7 @@
 }
 
 .command-group-select-toggle:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -465,7 +454,7 @@
   padding: 3px 8px;
   background: color-mix(in srgb, var(--bg-primary) 82%, transparent);
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 800;
   line-height: 1;
   text-transform: var(--label-case, uppercase);
@@ -559,7 +548,7 @@
 
 .command-segmented-control button.active {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   box-shadow: inset 0 0 0 1px var(--accent-border);
 }
 
@@ -572,7 +561,7 @@
 
 .command-ramp-duration-control span {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 800;
   letter-spacing: var(--label-tracking, 0.05em);
   text-transform: var(--label-case, uppercase);
@@ -624,7 +613,7 @@
   border: 0;
   background: transparent;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 800;
   letter-spacing: var(--label-tracking, 0.05em);
   text-transform: var(--label-case, uppercase);
@@ -654,7 +643,7 @@ button.command-group-name {
 
 button.command-group-name:focus-visible {
   border-radius: 5px;
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 3px;
 }
 
@@ -686,7 +675,7 @@ button.command-group-name:focus-visible {
 
 .command-group-name small {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
 }
 
 .command-target-cell {
@@ -780,7 +769,7 @@ button.command-group-name:focus-visible {
   flex-wrap: wrap;
   gap: 3px 9px;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: var(--font-size-xs);
   line-height: 1.15;
 }
 
@@ -817,7 +806,7 @@ button.command-group-name:focus-visible {
 .command-target-readout small {
   flex: 0 0 auto;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   text-transform: var(--label-case, uppercase);
 }
 
@@ -835,7 +824,7 @@ button.command-group-name:focus-visible {
 .command-tps-stack small {
   min-width: 0;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   line-height: 1.2;
 }
 
@@ -920,7 +909,7 @@ button.command-group-name:focus-visible {
   border-radius: 999px;
   background: var(--warning-soft);
   color: var(--warning-text);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 800;
   text-transform: var(--label-case, uppercase);
   white-space: nowrap;
@@ -938,7 +927,7 @@ button.command-group-name:focus-visible {
 }
 
 .command-load-model-panel .command-metric-pill span {
-  font-size: 9px;
+  font-size: var(--font-size-xs);
 }
 
 .command-load-model-panel .command-metric-pill strong {
@@ -982,7 +971,7 @@ button.command-group-name:focus-visible {
 
 .command-graph-toolbar > span {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 800;
   letter-spacing: var(--label-tracking, 0.06em);
   text-transform: var(--label-case, uppercase);
@@ -1016,7 +1005,7 @@ button.command-group-name:focus-visible {
 .command-preset-chip.active {
   border-color: var(--accent-border);
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .command-graph-grid {
@@ -1044,11 +1033,11 @@ button.command-group-name:focus-visible {
   border: 1px solid var(--accent-border);
   border-radius: var(--radius);
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .command-focused-panel strong {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 12px;
   letter-spacing: var(--label-tracking, 0.06em);
   text-transform: var(--label-case, uppercase);
@@ -1170,7 +1159,7 @@ button.command-group-name:focus-visible {
 
 .command-runtime-graphs-grafana .graph-group-tab.active {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   box-shadow: var(--glow-sm);
 }
 
@@ -1181,7 +1170,7 @@ button.command-group-name:focus-visible {
   min-width: 20px;
   min-height: 18px;
   padding: 1px 6px;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   line-height: 1;
 }
 
@@ -1196,7 +1185,7 @@ button.command-group-name:focus-visible {
 .command-runtime-graphs .archive-chip {
   min-height: 24px;
   padding: 3px 8px;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
 }
 
 .command-runtime-graphs .charts-grid.command-center-graphs {
@@ -1378,7 +1367,7 @@ button.command-group-name:focus-visible {
 
 .command-error-detail dt {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
 }
 
 .command-error-detail dd {
@@ -1458,7 +1447,7 @@ button.command-group-name:focus-visible {
 .command-table-tab-buttons button.active {
   border-color: var(--accent-border);
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .command-table-filter {
@@ -1468,7 +1457,7 @@ button.command-group-name:focus-visible {
   align-items: center;
   gap: 8px;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 800;
   letter-spacing: var(--label-tracking, 0.05em);
   text-transform: var(--label-case, uppercase);
@@ -1553,7 +1542,7 @@ button.command-group-name:focus-visible {
   color: inherit;
   cursor: pointer;
   font: inherit;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 900;
   letter-spacing: var(--label-tracking, 0.05em);
   padding: 0;
@@ -1566,8 +1555,8 @@ button.command-group-name:focus-visible {
 }
 
 .command-data-table th button small {
-  color: var(--accent);
-  font-size: 9px;
+  color: var(--accent-text);
+  font-size: var(--font-size-xs);
 }
 
 .command-data-table tbody tr {
@@ -1587,7 +1576,7 @@ button.command-group-name:focus-visible {
 
 .command-table-group-row td:first-child,
 .command-table-group-row strong {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .command-table-subtext {
@@ -1596,7 +1585,7 @@ button.command-group-name:focus-visible {
   margin-top: 3px;
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1683,7 +1672,7 @@ button.command-group-name:focus-visible {
 .command-evidence-header span {
   display: block;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 800;
   letter-spacing: var(--label-tracking, 0.05em);
   text-transform: var(--label-case, uppercase);
@@ -1769,7 +1758,7 @@ button.command-group-name:focus-visible {
   border: 1px solid var(--border);
   border-radius: 999px;
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 800;
   padding: 2px 7px;
   text-transform: var(--label-case, uppercase);
@@ -1829,7 +1818,7 @@ button.command-group-name:focus-visible {
 }
 
 .command-center-experience-switch button:nth-of-type(-n + 2) {
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   letter-spacing: 0;
   text-transform: none;
@@ -1837,7 +1826,7 @@ button.command-group-name:focus-visible {
 
 .command-center-experience-switch button:nth-of-type(2).active {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .command-center-experience-switch button,
@@ -1942,7 +1931,7 @@ button.command-group-name:focus-visible {
   display: grid;
   gap: 2px;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: var(--font-size-xs);
   letter-spacing: var(--label-tracking, 0.04em);
   text-transform: var(--label-case, uppercase);
 }
@@ -1965,7 +1954,7 @@ button.command-group-name:focus-visible {
   gap: 10px;
   padding: 0 16px 12px;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
 }
 
 .command-v2-capacity > div {
@@ -1983,8 +1972,8 @@ button.command-group-name:focus-visible {
 }
 
 .command-v2-capacity strong {
-  color: var(--success);
-  font-size: 10px;
+  color: var(--success-text);
+  font-size: var(--font-size-xs);
 }
 
 .command-v2-group-list {
@@ -2009,7 +1998,7 @@ button.command-group-name:focus-visible {
 .command-v2-group-row.header {
   min-height: 30px;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   letter-spacing: var(--label-tracking, 0.04em);
   text-transform: var(--label-case, uppercase);
@@ -2023,7 +2012,7 @@ button.command-group-name:focus-visible {
   display: block;
   margin-top: 2px;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: var(--font-size-xs);
   font-style: normal;
 }
 
@@ -2052,7 +2041,7 @@ button.command-group-name:focus-visible {
 
 .command-v2-group-name small {
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: var(--font-size-xs);
 }
 
 .command-v2-group-name strong,
@@ -2063,11 +2052,11 @@ button.command-group-name:focus-visible {
 }
 
 .command-v2-group-row .healthy {
-  color: var(--success);
+  color: var(--success-text);
 }
 
 .command-v2-group-row .danger {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .command-v2-target-stepper {
@@ -2093,8 +2082,8 @@ button.command-group-name:focus-visible {
   width: auto;
   padding: 0 8px;
   border-color: var(--accent);
-  color: var(--accent);
-  font-size: 10px;
+  color: var(--accent-text);
+  font-size: var(--font-size-xs);
   font-weight: 700;
 }
 
@@ -2132,7 +2121,7 @@ button.command-group-name:focus-visible {
 
 .command-v2-inspector-title > span {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
 }
 
 .command-v2-inspector dl {
@@ -2149,7 +2138,7 @@ button.command-group-name:focus-visible {
 
 .command-v2-inspector dt {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
 }
 
 .command-v2-inspector dd {
@@ -2164,7 +2153,7 @@ button.command-group-name:focus-visible {
   display: grid;
   gap: 7px;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   letter-spacing: var(--label-tracking, 0.035em);
   text-transform: var(--label-case, uppercase);
@@ -2220,8 +2209,8 @@ button.command-group-name:focus-visible {
 
 .command-v2-saved {
   margin: 10px 0 0;
-  color: var(--success);
-  font-size: 10px;
+  color: var(--success-text);
+  font-size: var(--font-size-xs);
 }
 
 .command-v2-radio-row {
@@ -2456,7 +2445,6 @@ button.command-group-name:focus-visible {
 .command-runtime-graphs .chart-title { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
 .command-runtime-graphs .chart-card-actions { flex-wrap: wrap; margin-left: auto; }
 .command-runtime-graphs .chart-series-legend-item { white-space: normal; overflow-wrap: anywhere; }
-.command-runtime-graphs .chart-series-legend { max-height: 112px; }
 .command-runtime-graphs { container-type: inline-size; }
 @container (max-width: 1050px) {
   .command-layout-grafana .charts-grid.command-center-graphs.command-center-compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -2466,7 +2454,7 @@ button.command-group-name:focus-visible {
   .command-layout-grafana .charts-grid.command-center-graphs { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 1024px) {
-  .command-group-row [data-label]::before { content: attr(data-label); display: block; font-size: 10px; color: var(--text-muted); font-weight: 600; }
+  .command-group-row [data-label]::before { content: attr(data-label); display: block; font-size: var(--font-size-xs); color: var(--text-muted); font-weight: 600; }
   .command-group-row [data-label] { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
   .command-group-row .command-target-cell { flex-direction: row; flex-wrap: wrap; }
   .command-group-row .command-target-cell::before { flex-basis: 100%; }
@@ -2489,4 +2477,23 @@ button.command-group-name:focus-visible {
   .command-group-panel.paired .command-group-row > :nth-child(1) { grid-column: 1 / 3; }
   .command-group-panel.paired .command-group-row > :nth-child(3) { grid-column: 1 / -1; display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; }
   .command-group-panel.paired .command-target-cell::before { grid-column: 1 / -1; }
+}
+
+.command-table-caption {
+  margin: 0 0 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.command-control-readonly {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.command-stream-note {
+  margin: 0 0 10px;
+  color: var(--warning-text);
+  font-size: 13px;
+  font-weight: 600;
 }

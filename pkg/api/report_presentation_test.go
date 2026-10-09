@@ -38,7 +38,7 @@ func TestReportHTMLProvidesReviewSummaryAndSectionNavigation(t *testing.T) {
 					t.Errorf("section %q has no linked destination", section.ID)
 				}
 			}
-			if profileID == "audit" && strings.Contains(body, `<b>Archive error rate</b>`) {
+			if profileID == "audit" && strings.Contains(body, `<b>Error rate</b><span>`) {
 				t.Error("audit opening summary disclosed performance metrics")
 			}
 		})

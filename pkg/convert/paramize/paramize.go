@@ -47,7 +47,7 @@ type Location struct {
 	Section           string                `json:"section"`      // "init", "actions", or "teardown"
 	ActionIndex       int                   `json:"action_index"` // 0-based index within the section
 	ActionName        string                `json:"action_name,omitempty"`
-	Field             string                `json:"field"` // "target", "body", "value", or "headers.<Name>"
+	Field             string                `json:"field"` // "target", "body", "value", "headers.<Name>", or "body_multipart.<index>"
 	SearchText        string                `json:"search_text,omitempty"`
 	ReplaceText       string                `json:"replace_text"`
 	ActionPath        string                `json:"action_path,omitempty"`

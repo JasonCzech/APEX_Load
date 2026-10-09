@@ -273,7 +273,7 @@
   border: 1px solid var(--accent-border);
   border-radius: 999px;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 10px;
   font-weight: 600;
   text-transform: var(--label-case, uppercase);
@@ -377,7 +377,7 @@
 .credentials-location-details summary {
   width: fit-content;
   cursor: pointer;
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 11px;
   font-weight: 600;
 }
@@ -415,7 +415,7 @@
 }
 
 .credentials-location-scroll-region:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
   border-radius: 4px;
 }
@@ -541,7 +541,7 @@
 }
 
 .script-import-review-unsupported h4 {
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .script-import-review-section-list {
@@ -590,7 +590,7 @@
 
 .script-import-review-section.severity-warning summary,
 .script-import-review-section.severity-blocker summary {
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .script-import-review-preview,

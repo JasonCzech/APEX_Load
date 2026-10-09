@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from 'react'
+import { act, useState } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -166,6 +166,49 @@ describe('DurationField', () => {
     await act(async () => setInputValue(input, ''))
     await act(async () => root.render(<DurationField label="Duration" value={value} onChange={onChange} />))
     expect(container.querySelector<HTMLSelectElement>('select')?.value).toBe('s')
+  })
+  it('keeps the unit and text the user typed instead of re-splitting them', async () => {
+    const values: string[] = []
+    function Harness() {
+      const [value, setValue] = useState('')
+      return <DurationField label="Ramp" value={value} onChange={next => { values.push(next); setValue(next) }} />
+    }
+    await act(async () => root.render(<Harness />))
+    const input = container.querySelector<HTMLInputElement>('input')!
+    const unit = container.querySelector<HTMLSelectElement>('select')!
+    const type = async (text: string) => act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, text)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => { unit.value = 's'; unit.dispatchEvent(new Event('change', { bubbles: true })) })
+    await type('60')
+    // 60 s stays "60 Seconds"; it does not become "1 Minutes" under the cursor.
+    expect(input.value).toBe('60')
+    expect(unit.value).toBe('s')
+    await type('600')
+    expect(values[values.length - 1]).toBe('600s')
+    await act(async () => { unit.value = 'm'; unit.dispatchEvent(new Event('change', { bubbles: true })) })
+    await type('0.5')
+    expect(input.value).toBe('0.5')
+    expect(unit.value).toBe('m')
+    expect(values[values.length - 1]).toBe('0.5m')
+  })
+
+  it('rejects exponent notation instead of reading 1e2 as 100', async () => {
+    const onChange = vi.fn()
+    function Harness() {
+      const [value, setValue] = useState('5m')
+      return <DurationField label="Duration" value={value} onChange={next => { onChange(next); setValue(next) }} />
+    }
+    await act(async () => root.render(<Harness />))
+    const input = container.querySelector<HTMLInputElement>('input')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, '1e2')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(onChange).toHaveBeenLastCalledWith('')
+    expect(input.getAttribute('aria-invalid')).toBe('true')
+    expect(container.textContent).toContain('Enter a positive duration.')
   })
 })
 

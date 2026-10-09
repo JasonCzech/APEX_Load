@@ -107,22 +107,22 @@
   background: currentColor;
 }
 .pp-pill-success {
-  color: var(--success);
+  color: var(--success-text);
   background: rgba(var(--success-rgb), 0.14);
   border-color: rgba(var(--success-rgb), 0.3);
 }
 .pp-pill-warning {
-  color: var(--warning);
+  color: var(--warning-text);
   background: rgba(var(--warning-rgb), 0.14);
   border-color: rgba(var(--warning-rgb), 0.3);
 }
 .pp-pill-danger {
-  color: var(--danger);
+  color: var(--danger-text);
   background: rgba(var(--danger-rgb), 0.14);
   border-color: rgba(var(--danger-rgb), 0.3);
 }
 .pp-pill-info {
-  color: var(--info);
+  color: var(--info-text);
   background: rgba(var(--info-rgb), 0.14);
   border-color: rgba(var(--info-rgb), 0.3);
 }
@@ -141,13 +141,32 @@
   border-radius: var(--radius, 8px);
 }
 
+.ux-empty-state p {
+  margin: 0;
+}
+.ux-empty-state p + p,
+.ux-empty-state p + .btn {
+  margin-top: 4px;
+}
+.ux-empty-state .ux-empty-title {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* Loading is not empty: no dashed "nothing here" frame while data is on its way. */
+.pp-loading {
+  padding: 16px;
+  color: var(--text-muted, var(--text-secondary));
+  font-size: 13px;
+}
+
 .pp-empty-compact {
   padding: 10px 12px;
   text-align: left;
 }
 
 .pp-error {
-  color: var(--danger);
+  color: var(--danger-text);
   background: rgba(var(--danger-rgb), 0.1);
   border: 1px solid rgba(var(--danger-rgb), 0.3);
   border-radius: var(--radius, 8px);
@@ -243,6 +262,13 @@
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-soft, rgba(var(--accent-rgb), 0.25));
 }
+.pp-field :is(input, select, textarea)[aria-invalid='true'] {
+  border-color: var(--danger-text);
+}
+.pp-field-error {
+  color: var(--danger-text);
+  font-size: var(--font-size-xs);
+}
 .pp-field-row {
   display: flex;
   gap: 12px;
@@ -334,7 +360,7 @@
   justify-content: center;
   border-radius: 50%;
   background: var(--accent-soft, rgba(var(--accent-rgb), 0.18));
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 11px;
   font-weight: 700;
 }
@@ -397,7 +423,7 @@
 }
 .pp-token-warning {
   font-size: 12px;
-  color: var(--warning);
+  color: var(--warning-text);
 }
 .pp-token-value {
   display: flex;
@@ -486,7 +512,7 @@
   text-transform: lowercase;
 }
 .pp-pill-heal {
-  color: var(--success);
+  color: var(--success-text);
   background: rgba(var(--success-rgb), 0.14);
   border-color: rgba(var(--success-rgb), 0.3);
 }

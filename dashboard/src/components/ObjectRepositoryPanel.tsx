@@ -5,6 +5,7 @@ import { ApiError } from '../hooks/apiClient'
 import { useNavigationGuard, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { ObjectRepository, RepositoryObject } from '../types'
 import './parityPanels.css'
+import { formatDateTime } from '../utils/dateTime'
 
 const ConfirmDestructiveModal = lazy(() => import('./ConfirmDestructiveModal'))
 
@@ -25,10 +26,9 @@ function snapshotCaughtUp(listed: ObjectRepository, committed: ObjectRepository)
     && listedTimestamp > committedTimestamp
 }
 
+// Shared formatter: dates read the same, zone included, as the rest of the app.
 function formatTimestamp(value?: string): string {
-  if (!value) return '—'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+  return formatDateTime(value, { seconds: true, fallback: '—' })
 }
 
 // Project-scoped catalog of reusable named UI element descriptors (the

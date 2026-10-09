@@ -529,11 +529,11 @@ export default function TestExecutionScenarioPreview({
               <span className="scenario-setting-value">{test.runtime_settings?.iterations ?? 'Script-level value not exposed'}</span>
             </div>
             <div className="scenario-setting-card">
-              <span className="scenario-setting-label">Log Level</span>
+              <span className="scenario-setting-label">Log level</span>
               <span className="scenario-setting-value">{test.runtime_settings?.log_level || 'Script-level value not exposed'}</span>
             </div>
             <div className="scenario-setting-card">
-              <span className="scenario-setting-label">Auto Transactions</span>
+              <span className="scenario-setting-label">Auto transactions</span>
               <span className="scenario-setting-value">{test.runtime_settings?.auto_transactions || 'Script-level value not exposed'}</span>
             </div>
             <div className="scenario-setting-card">
@@ -541,7 +541,7 @@ export default function TestExecutionScenarioPreview({
               <span className="scenario-setting-value">{formatOverridePacing(test)}</span>
             </div>
             <div className="scenario-setting-card">
-              <span className="scenario-setting-label">Think Time</span>
+              <span className="scenario-setting-label">Think time</span>
               <span className="scenario-setting-value">{formatOverrideThinkTime(test)}</span>
             </div>
             <div className="scenario-setting-card">
@@ -549,19 +549,19 @@ export default function TestExecutionScenarioPreview({
               <span className="scenario-setting-value">{browserRuntimeSummary || 'Script-level value not exposed'}</span>
             </div>
             <div className="scenario-setting-card">
-              <span className="scenario-setting-label">Continue On Error</span>
+              <span className="scenario-setting-label">Continue on error</span>
               <span className="scenario-setting-value">{formatContinueOnError(test)}</span>
             </div>
             <div className="scenario-setting-card">
-              <span className="scenario-setting-label">Snapshot On Error</span>
+              <span className="scenario-setting-label">Snapshot on error</span>
               <span className="scenario-setting-value">{formatRunSnapshotOnError(test)}</span>
             </div>
             <div className="scenario-setting-card">
-              <span className="scenario-setting-label">Script Shakeout</span>
+              <span className="scenario-setting-label">Script shakeout</span>
               <span className="scenario-setting-value">{test.script_shakeout ? 'Enabled' : 'Disabled'}</span>
             </div>
             <div className="scenario-setting-card">
-              <span className="scenario-setting-label">Resource Baseline</span>
+              <span className="scenario-setting-label">Resource baseline</span>
               <span className="scenario-setting-value">{test.resource_baseline ? '5m before and after' : 'Disabled'}</span>
             </div>
             {test.scenario_mode === 'goal_oriented' && test.goal_config?.target_average_tps !== undefined && (
@@ -634,7 +634,7 @@ export default function TestExecutionScenarioPreview({
               </div>
             </div>
 
-            {snapshotLoading && <p className="scenario-script-status">Loading run configuration provenance...</p>}
+            {snapshotLoading && <p className="scenario-script-status">Loading run configuration provenance…</p>}
             {snapshotError && <p className="scenario-script-status error">Immutable run snapshot unavailable: {snapshotError}</p>}
 
             <div className="scenario-script-rows">
@@ -688,7 +688,7 @@ export default function TestExecutionScenarioPreview({
                             <span className="scenario-script-detail-value">{detail ? detail.script?.config?.base_url || 'Not configured' : 'Not exposed by run snapshot'}</span>
                           </div>
                           <div className="scenario-script-detail-card">
-                            <span className="scenario-script-detail-label">Think Time</span>
+                            <span className="scenario-script-detail-label">Think time</span>
                             <span className="scenario-script-detail-value">{formatEffectiveThinkTime(group, detail, test)}</span>
                           </div>
                           <div className="scenario-script-detail-card">
@@ -700,15 +700,15 @@ export default function TestExecutionScenarioPreview({
                             <span className="scenario-script-detail-value">{formatEffectiveIterations(group, detail, test)}</span>
                           </div>
                           <div className="scenario-script-detail-card">
-                            <span className="scenario-script-detail-label">Auto Transactions</span>
+                            <span className="scenario-script-detail-label">Auto transactions</span>
                             <span className="scenario-script-detail-value">{formatEffectiveAutoTransactions(group, detail, test)}</span>
                           </div>
                           <div className="scenario-script-detail-card">
-                            <span className="scenario-script-detail-label">Log Level</span>
+                            <span className="scenario-script-detail-label">Log level</span>
                             <span className="scenario-script-detail-value">{formatEffectiveLogLevel(group, detail, test)}</span>
                           </div>
                           <div className="scenario-script-detail-card">
-                            <span className="scenario-script-detail-label">Snapshot On Error</span>
+                            <span className="scenario-script-detail-label">Snapshot on error</span>
                             <span className="scenario-script-detail-value">{formatSnapshotOnError(group, detail, test)}</span>
                           </div>
                           <div className="scenario-script-detail-card">

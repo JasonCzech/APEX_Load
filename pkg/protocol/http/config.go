@@ -672,6 +672,8 @@ func optionalConfigBool(config map[string]any, key string) (bool, bool) {
 // idiomatic reset. When cookies are disabled the client has no jar and this is
 // a no-op.
 func (h *HTTP) ClearCookies(ctx context.Context) error {
+	// A cleared session also forgets the page it was on.
+	h.page.set(nil)
 	if h.client == nil || h.client.Jar == nil {
 		return nil
 	}
@@ -683,6 +685,50 @@ func (h *HTTP) ClearCookies(ctx context.Context) error {
 		return err
 	}
 	h.client.Jar = jar
+	return nil
+}
+
+// SetCookie satisfies protocol.CookieSetter: it stores (or expires) a
+// script-provided cookie in the VUser's jar. A Domain makes it a domain
+// cookie (sent to subdomains too, like LoadRunner's DOMAIN=); without one it
+// is host-only for the base URL's host.
+func (h *HTTP) SetCookie(ctx context.Context, cookie protocol.ScriptCookie) error {
+	if h.client == nil || h.client.Jar == nil {
+		return nil
+	}
+	name := strings.TrimSpace(cookie.Name)
+	if name == "" {
+		return fmt.Errorf("cookie_set requires a cookie name")
+	}
+	host := strings.TrimPrefix(strings.TrimSpace(cookie.Domain), ".")
+	scheme := "http"
+	if base, err := url.Parse(strings.TrimSpace(h.baseURL)); err == nil && base.Host != "" {
+		if host == "" {
+			host = base.Hostname()
+		}
+		if base.Scheme != "" {
+			scheme = base.Scheme
+		}
+	}
+	if host == "" {
+		return fmt.Errorf("cookie_set %q needs a domain because the script has no base URL", name)
+	}
+	if cookie.Secure {
+		scheme = "https"
+	}
+	path := strings.TrimSpace(cookie.Path)
+	if path == "" {
+		path = "/"
+	}
+	value := &http.Cookie{Name: name, Value: cookie.Value, Path: path, Secure: cookie.Secure}
+	if strings.TrimSpace(cookie.Domain) != "" {
+		value.Domain = host
+	}
+	if cookie.Remove {
+		value.Value = ""
+		value.MaxAge = -1
+	}
+	h.client.Jar.SetCookies(&url.URL{Scheme: scheme, Host: host, Path: path}, []*http.Cookie{value})
 	return nil
 }
 
@@ -803,10 +849,10 @@ func buildAuthConfig(config map[string]any) *protocol.AuthConfig {
 
 func validateAuthType(authType string) error {
 	switch strings.ToLower(strings.TrimSpace(authType)) {
-	case "", "none", "noauth", "inherit", "basic", "bearer", "digest":
+	case "", "none", "noauth", "inherit", "basic", "bearer", "digest", "ntlm", "negotiate", "negotiate_any":
 		return nil
-	case "ntlm", "kerberos", "negotiate":
-		return fmt.Errorf("unsupported HTTP auth type %q: configure an external auth flow or remove the auth setting", authType)
+	case "kerberos":
+		return fmt.Errorf("unsupported HTTP auth type %q: Kerberos tickets are not supported; use negotiate (Negotiate with NTLM) or an external auth flow", authType)
 	default:
 		return fmt.Errorf("unsupported HTTP auth type %q", authType)
 	}
@@ -840,7 +886,7 @@ func buildRedactedActionAuthHeader(auth *protocol.AuthConfig) string {
 		return ""
 	}
 	switch strings.ToLower(strings.TrimSpace(auth.Type)) {
-	case "basic", "ntlm":
+	case "basic", "ntlm", "negotiate", "negotiate_any":
 		return "Basic [REDACTED]"
 	case "bearer":
 		return "Bearer [REDACTED]"

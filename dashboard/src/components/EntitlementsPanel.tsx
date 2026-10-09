@@ -4,6 +4,7 @@ import { useEntitlementsApi } from '../hooks/api/useEntitlementsApi'
 import { ApiError } from '../hooks/apiClient'
 import { EntitlementLimitView, EntitlementsResponse, EntitlementsUsageResponse } from '../types'
 import './parityPanels.css'
+import LoadingState from './ux/LoadingState'
 
 function headroomTone(used: number, limit: number): { pct: number; cls: string } {
   if (!limit || limit <= 0) return { pct: 0, cls: 'pp-bar-fill-success' }
@@ -82,7 +83,7 @@ export default function EntitlementsPanel() {
       {error && <div className="pp-error">{error}</div>}
 
       {loading && !entitlements ? (
-        <div className="pp-empty">Loading entitlements…</div>
+        <LoadingState what="entitlements" className="pp-loading" />
       ) : (
         <>
           <div className="pp-stat-grid">

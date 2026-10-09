@@ -42,13 +42,13 @@
 
 .bruno-import-header code,
 .bruno-card code {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .bruno-kicker {
   display: block;
   margin-bottom: 5px;
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: var(--label-tracking, 0.08em);
@@ -72,7 +72,7 @@
   padding: 5px 9px;
   border-radius: 999px;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 12px;
   font-weight: 700;
 }
@@ -292,7 +292,7 @@
 
 .bruno-sort-button:hover,
 .bruno-sort-button:focus-visible {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .bruno-native-table td > strong,
@@ -344,12 +344,12 @@
 
 .bruno-native-review-button {
   min-width: 84px;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .bruno-native-inspect-button {
   min-width: 84px;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .bruno-native-review-dialog {
@@ -549,19 +549,19 @@
 
 .bruno-native-status.ready {
   background: color-mix(in srgb, var(--success) 14%, transparent);
-  color: var(--success);
+  color: var(--success-text);
 }
 
 .bruno-native-status.warning,
 .bruno-native-status.configure,
 .bruno-native-status.review {
   background: color-mix(in srgb, var(--warning) 14%, transparent);
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .bruno-native-status.blocked {
   background: color-mix(in srgb, var(--danger) 14%, transparent);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .bruno-native-acknowledgements {
@@ -702,7 +702,7 @@
 .bruno-preflight.warning {
   border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
   background: color-mix(in srgb, var(--warning) 8%, transparent);
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .bruno-summary-grid {
@@ -784,7 +784,7 @@
   padding: 2px 5px;
   border-radius: 4px;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 700;
@@ -1004,7 +1004,7 @@
   min-height: 40px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
   color: var(--text-primary); background: var(--bg-input, var(--bg-card)); max-width: 100%; box-sizing: border-box;
 }
-.bruno-import :is(button, input, select, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.bruno-import :is(button, input, select, summary):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
 .bruno-import summary { cursor: pointer; padding: 8px 0; }
 .bruno-import .bruno-finding { display: flex; flex-direction: column; align-items: stretch; overflow-wrap: anywhere; }
 .bruno-native-table code { display: block; white-space: normal; overflow-wrap: anywhere; max-width: 40ch; }
@@ -1029,4 +1029,4 @@
 .bruno-native-table th:nth-child(6) { width: 100px; }
 .bruno-native-table td { overflow-wrap: anywhere; }
 .bruno-native-table td > small { white-space: normal; overflow: visible; }
-.bruno-native-table-wrap:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.bruno-native-table-wrap:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }

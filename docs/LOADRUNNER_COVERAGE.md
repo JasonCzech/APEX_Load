@@ -8,13 +8,13 @@ Generated evaluation of LoadRunner import coverage against the APEX Load convers
 
 Evaluation of the complete published OpenText/Micro Focus VuGen 26.1 **Web (HTTP/HTML)** protocol function library against the APEX Load conversion engine (`pkg/convert/enterprisearchive`). Source: VuGen Function Reference, "Alphabetical Listing of Web Functions".
 
-**Total published functions:** 81
+**Total published functions:** 84
 
 | Disposition | Count | Meaning |
 |---|---|---|
-| `executable` | 46 | Translated to an executable DSL action or config mapping. |
+| `executable` | 55 | Translated to an executable DSL action or config mapping. |
 | `native_noop` | 6 | Preserved as a runtime-compatibility attribute; a guaranteed no-op in APEX Load (no client cache / no auto-resource fetch). |
-| `review_only` | 29 | Preserved in the import-review artifact; no APEX runtime equivalent, so it is not executed (never fabricated). |
+| `review_only` | 23 | Preserved in the import-review artifact; no APEX runtime equivalent, so it is not executed (never fabricated). |
 
 Every published function resolves to one of the dispositions above — none falls through to a `custom_call` review stub. This is enforced by `TestWebHTTPFunctionRegistryResolvesEveryPublishedFunction`.
 
@@ -22,8 +22,8 @@ Every published function resolves to one of the dispositions above — none fall
 |---|---|---|---|---|
 | `web_add_auto_filter` | web | `native_noop` | config.web_runtime attribute | No auto-resource fetch; native no-op. |
 | `web_add_auto_header` | web | `executable` | Request headers | Persistent until reverted. |
-| `web_add_cookie` | web | `executable` | Cookie headers | Attached to matching downstream requests. |
-| `web_add_cookie_ex` | web | `executable` | Cookie headers | Attached to matching downstream requests. |
+| `web_add_cookie` | web | `executable` | cookie_set action | Positional write to the VUser's cookie jar; a later Set-Cookie from the server replaces it. |
+| `web_add_cookie_ex` | web | `executable` | cookie_set action | Positional write to the VUser's cookie jar; a later Set-Cookie from the server replaces it. |
 | `web_add_filter` | web | `native_noop` | config.web_runtime attribute | No auto-resource fetch; native no-op. |
 | `web_add_header` | web | `executable` | Request headers | Applied to the next request. |
 | `web_cache_cleanup` | web | `executable` | source_runtime action | Executable positional clear of the simulated HTTP response cache. |
@@ -31,7 +31,7 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_cleanup_cookies` | web | `executable` | cookie_clear action | Executable positional cookie clear. |
 | `web_concurrent_end` | web | `executable` | Concurrent http_sequence boundary | Closes a validated explicit source group; unsupported spans remain execution-gated review cases. |
 | `web_concurrent_start` | web | `executable` | Concurrent http_sequence boundary | Only matched same-scope groups of 1–256 independent HTTP requests; a request wrapped in its own LR_AUTO transaction records that transaction, timed by the request; barriers, conflicts, waits and malformed boundaries require review. |
-| `web_convert_date_param` | parameter | `review_only` | Import review | Date conversion is preserved for review; no APEX runtime equivalent yet. |
+| `web_convert_date_param` | parameter | `executable` | source_parameter action | Rewrites the date parameter in place from SourceFormat to TargetFormat (strftime specifiers); unsupported specifiers keep review. |
 | `web_convert_from_formatted` | parameter | `review_only` | Import review | Formatted-string parse is preserved for review; no APEX runtime equivalent yet. |
 | `web_convert_param` | parameter | `executable` | source_parameter action | Encoding/format conversion. |
 | `web_convert_to_formatted` | parameter | `review_only` | Import review | Formatted-string build is preserved for review; no APEX runtime equivalent yet. |
@@ -44,14 +44,14 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_global_verification` | web | `executable` | source_verification action | Positional per-VUser registration with LR scope, case, failure mode and ID. |
 | `web_global_verification_pause` | web | `executable` | source_verification action | Positional pause/resume of named per-VUser verification checks. |
 | `web_global_verification_resume` | web | `executable` | source_verification action | Positional pause/resume of named per-VUser verification checks. |
-| `web_image` | web | `executable` | HTTP GET request action | From Src=/URL=; review_only fallback when no Src. |
-| `web_image_check` | web | `executable` | HTTP GET request action | Image presence check mapped to a GET of Src=. |
+| `web_image` | web | `executable` | HTTP image step (page context) | Clicks the image on the current page matching Alt=/Src= (Ordinal=): follows its anchor, its single image-map area, or submits the form of an input image. Image-map areas (MapName/AreaAlt) and frames keep the navigation gate. |
+| `web_image_check` | web | `executable` | HTTP page check (page context) | Passes when the current page has an image matching Alt=/Src=; no request is sent. Honors the legacy image-and-text-check setting. |
 | `web_js_reset` | web | `review_only` | Import review | TruClient JavaScript step is not executed. |
 | `web_js_run` | web | `review_only` | Import review | TruClient JavaScript step is not executed. |
-| `web_link` | web | `executable` | HTTP GET request action | From URL=; review_only fallback + warning when the target is resolved from page context. |
+| `web_link` | web | `executable` | HTTP link step (page context) | Follows the link on the current page whose visible text matches Text= (Ordinal=, /IC). A non-VuGen explicit URL= becomes a GET. Frame-targeted links keep the navigation gate. |
 | `web_load_cache` | web | `native_noop` | config.web_runtime attribute | No client cache; native no-op. |
 | `web_reg_add_cookie` | web | `executable` | Cookie headers | Registered cookie attached downstream. |
-| `web_reg_async_attributes` | web | `review_only` | Import review | Async polling/push has no APEX runtime equivalent. |
+| `web_reg_async_attributes` | web | `executable` | http_async_start | The next step runs as a background Poll/LongPoll/Push conversation; C callbacks are not executed (promotion finding); a URL naming a resource inside the step keeps review. |
 | `web_reg_find` | web | `executable` | Assertion / count extractor | Text= + optional SaveCount extractor; SaveCount without Fail is non-failing. |
 | `web_reg_save_param` | web | `executable` | Extractor (boundary/regex) | LB=/RB= + ORD= on the next request. |
 | `web_reg_save_param_attrib` | web | `executable` | Extractor (xpath) | TagName=+Extract= (or Tag=/Attribute=) → //tag/@attr; element attributes before SEARCH_FILTERS become [@name='value'] predicates. |
@@ -61,13 +61,13 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_reg_save_param_xpath` | web | `executable` | Extractor (xpath) | QueryString=/XPath=. |
 | `web_remove_auto_filter` | web | `native_noop` | config.web_runtime attribute | No auto-resource fetch; native no-op. |
 | `web_remove_auto_header` | web | `executable` | Request headers | Removes one persistent auto header. |
-| `web_remove_cookie` | web | `executable` | Cookie headers | Stops a named cookie (or ALL) attaching downstream. |
+| `web_remove_cookie` | web | `executable` | cookie_set action (remove) | Expires the named cookie in the VUser's jar, whether web_add_cookie or the server set it, and stops a registered cookie attaching downstream; ALL stops every registered cookie. |
 | `web_report_data_point` | metric | `executable` | source_metric action | Custom data point, like lr_user_data_point. |
 | `web_rest` | web | `executable` | HTTP request action | REST method/body/HEADERS block. |
 | `web_revert_auto_header` | web | `executable` | Request headers | Removes one persistent auto header. |
 | `web_save_header` | web | `review_only` | Import review | Saving response headers to a parameter has no extractor equivalent. |
-| `web_save_param_length` | parameter | `review_only` | Import review | Parameter length capture is preserved for review; no APEX runtime equivalent yet. |
-| `web_save_timestamp_param` | parameter | `review_only` | Import review | Timestamp capture is preserved for review; no APEX runtime equivalent yet. |
+| `web_save_param_length` | parameter | `executable` | source_parameter action | Saves the decimal length of a parameter as <Param>_Length (Windows-1252 bytes in a code-page script); Base=Hexadecimal keeps review. |
+| `web_save_timestamp_param` | parameter | `executable` | source_parameter action | Saves the current time in milliseconds since the Unix epoch. |
 | `web_set_certificate` | web | `review_only` | Import review | Selects a cert by store index; no file path to map. |
 | `web_set_certificate_ex` | web | `executable` | config.http.tls client cert | CertFilePath=/KeyFilePath=. |
 | `web_set_max_html_param_len` | web | `native_noop` | config.web_runtime attribute | Native no-op compatibility attribute. |
@@ -80,9 +80,9 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_set_secure_proxy` | web | `executable` | config.http.proxy | Custom HTTPS proxy URL. |
 | `web_set_sockets_option` | web | `executable` | config.http (TLS/conns) | SSL version, keep-alive, max connections. |
 | `web_set_timeout` | web | `executable` | config.http timeouts | Connect/receive/SSL timeouts. |
-| `web_set_user` | web | `executable` | config.http.auth | Basic auth credentials. |
+| `web_set_user` | web | `executable` | config.http.auth (hosts-scoped) | negotiate_any credentials answer the Basic, Digest, NTLM or Negotiate challenge of the host:port it names (config.http.auth.hosts) and are never sent before a challenge; a second, different credential set is execution-gated. |
 | `web_sjis_to_euc_param` | parameter | `review_only` | Import review | SJIS to EUC conversion is preserved for review; no APEX runtime equivalent yet. |
-| `web_stop_async` | web | `review_only` | Import review | Async polling/push has no APEX runtime equivalent. |
+| `web_stop_async` | web | `executable` | http_async_stop | Ends a converted conversation; an ID that was not converted keeps review. |
 | `web_stream_close` | web | `review_only` | Import review | Media streaming has no APEX runtime equivalent. |
 | `web_stream_get_param_double` | web | `review_only` | Import review | Media streaming has no APEX runtime equivalent. |
 | `web_stream_get_param_int` | web | `review_only` | Import review | Media streaming has no APEX runtime equivalent. |
@@ -96,11 +96,14 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_stream_stop` | web | `review_only` | Import review | Media streaming has no APEX runtime equivalent. |
 | `web_stream_wait` | web | `review_only` | Import review | Media streaming has no APEX runtime equivalent. |
 | `web_submit_data` | web | `executable` | HTTP request action | Method= + ITEMDATA form body. |
-| `web_submit_form` | web | `executable` | HTTP request action | URL inferred from form context/Referer. |
-| `web_sync` | web | `review_only` | Import review | Async page-sync has no APEX runtime equivalent. |
+| `web_submit_form` | web | `executable` | HTTP form step (page context) | Submits the form on the current page that has every scripted field (then Action=, then Ordinal=): the page's live hidden fields, action URL, method and encoding, with scripted values overriding and STARTHIDDENS values filling names the page lacks. Frame-targeted forms keep the navigation gate. |
+| `web_sync` | web | `executable` | http_sync | ParamExists= and ParamValueEquals= (with Timeout=, default 120 s) wait for a conversation to set the parameter; other forms keep review. |
 | `web_url` | web | `executable` | HTTP request action | GET/POST request from URL=. |
 | `web_util_set_request_body` | parameter | `review_only` | Import review | Next-request body overrides are preserved for review; no APEX runtime equivalent yet. |
 | `web_util_set_request_url` | parameter | `review_only` | Import review | Next-request URL overrides are preserved for review; no APEX runtime equivalent yet. |
+| `web_websocket_close` | websocket | `executable` | ws_close | Code and Reason are sent in the close frame. |
+| `web_websocket_connect` | websocket | `executable` | ws_connect | Opens the script's WebSocket with URI and Origin, sharing the HTTP session; OnMessageCB becomes ws_on_message steps, other callbacks and attributes carry promotion findings; a second concurrent connection ID keeps review. |
+| `web_websocket_send` | websocket | `executable` | ws_send | Buffer is sent as text with parameters; IsBinary=1 or Buffer/Binary send a binary frame. |
 
 ## Java LR function coverage
 
@@ -119,67 +122,67 @@ A Java Vuser script is arbitrary Java, not a closed library — so this matrix c
 
 Every published lr method resolves to one of the dispositions above — none falls through to a `custom_call` review stub. These are Java-runner dispositions, including explicit overrides where the shared native-conversion registry would overstate sidecar behavior. A reachable `review_only` call is a fidelity blocker, while an unused helper remains review evidence only.
 
-| Java method | Function | Family | Support mode | Target | Notes |
-|---|---|---|---|---|---|
-| `lr.abort` | `lr_abort` | runtime | `review_only` | source_runtime action | The shim can fail and unwind the current Java invocation, but the engine does not yet prove LoadRunner's abort-VUser and teardown semantics; reachable calls block promotion. |
-| `lr.advance_param` | `lr_advance_param` | parameter | `review_only` | import review | Parameter cursor advancement is preserved for review; the native replay engine does not advance VuGen parameter tables. |
-| `lr.aws_get_secret` | `lr_aws_get_secret` | secret | `review_only` | source_external action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
-| `lr.cyberark_get_vault` | `lr_cyberark_get_vault` | secret | `review_only` | source_external action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
-| `lr.debug_message` | `lr_debug_message` | message | `executable` | source_message action | Conditional debug log message. |
-| `lr.decrypt` | `lr_decrypt` | parameter | `review_only` | import review | Machine-key-bound ciphertext; not recoverable at import. |
-| `lr.decrypt_ex` | `lr_decrypt_ex` | parameter | `review_only` | import review | Machine-key-bound ciphertext; not recoverable at import. |
-| `lr.deserialize` | `lr_deserialize` | parameter | `review_only` | import review | Java object deserialization has no DSL equivalent. |
-| `lr.enable_redirection` | `lr_enable_redirection` | runtime | `review_only` | native no-op | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
-| `lr.encrypt_ex` | `lr_encrypt_ex` | parameter | `review_only` | import review | Encryption helper; preserved for review. |
-| `lr.end_sub_trans` | `lr_end_sub_trans` | transaction | `executable` | source_transaction action | Closes a Java sub-transaction alias. |
-| `lr.end_sub_transaction` | `lr_end_sub_transaction` | transaction | `executable` | source_transaction action | Closes a sub-transaction; feeds transaction markers. |
-| `lr.end_timer` | `lr_end_timer` | timer | `review_only` | source_timer action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
-| `lr.end_transaction` | `lr_end_transaction` | transaction | `executable` | source_transaction action | Closes a transaction; feeds Stats.Transactions. |
-| `lr.error_message` | `lr_error_message` | message | `executable` | error_message action | Native error-message action. |
-| `lr.eval_data` | `lr_eval_data` | parameter | `review_only` | import review | Returns byte[]; no DSL equivalent. |
-| `lr.eval_int` | `lr_eval_int` | parameter | `review_only` | import review | Java typed parameter evaluation returns a value to user code; native replay does not model that return channel. |
-| `lr.eval_string` | `lr_eval_string` | parameter | `executable` | source_parameter action | Evaluates {param} → {{var.*}}. |
-| `lr.exit` | `lr_exit` | runtime | `review_only` | source_runtime action | The shim can report and unwind an lr.exit call, but the runner/engine contract does not yet faithfully implement every LoadRunner action, iteration, and VUser continuation option; reachable calls block promotion. |
-| `lr.get_attrib_double` | `lr_get_attrib_double` | attribute | `review_only` | import review | Command-line attribute read; RTS-specific. |
-| `lr.get_attrib_long` | `lr_get_attrib_long` | attribute | `review_only` | import review | Command-line attribute read; RTS-specific. |
-| `lr.get_attrib_string` | `lr_get_attrib_string` | attribute | `review_only` | import review | Command-line attribute read; RTS-specific. |
-| `lr.get_debug_message` | `lr_get_debug_message` | message | `review_only` | source_message action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
-| `lr.get_group_name` | `lr_get_group_name` | info | `review_only` | import review | Java informational getter returns a value to user code; native replay does not model that return channel. |
-| `lr.get_host_name` | `lr_get_host_name` | info | `review_only` | source_parameter action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
-| `lr.get_master_host_name` | `lr_get_master_host_name` | info | `review_only` | source_parameter action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
-| `lr.get_object` | `lr_get_object` | parameter | `review_only` | import review | Returns a Java runtime object; no DSL equivalent. |
-| `lr.get_scenario_id` | `lr_get_scenario_id` | info | `review_only` | import review | Java informational getter returns a value to user code; native replay does not model that return channel. |
-| `lr.get_transaction_duration` | `lr_get_transaction_duration` | transaction | `executable` | source_transaction action | The combined Java runner returns the tracked transaction duration through the verified lrapi descriptor. |
-| `lr.get_transaction_status` | `lr_get_transaction_status` | transaction | `executable` | source_transaction action | The combined Java runner returns the tracked transaction status through the verified lrapi descriptor. |
-| `lr.get_transaction_think_time` | `lr_get_transaction_think_time` | transaction | `executable` | source_transaction action | The combined Java runner returns the tracked transaction think time through the verified lrapi descriptor. |
-| `lr.get_transaction_wasted_time` | `lr_get_transaction_wasted_time` | transaction | `executable` | source_transaction action | The combined Java runner returns tracked transaction wasted time through the verified lrapi descriptor. |
-| `lr.get_vuser_id` | `lr_get_vuser_id` | info | `review_only` | import review | Java informational getter returns a value to user code; native replay does not model that return channel. |
-| `lr.log` | `lr_log` | message | `review_only` | source_message action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
-| `lr.log_message` | `lr_log_message` | message | `executable` | source_message action | Log-only message. |
-| `lr.message` | `lr_message` | message | `executable` | source_message action | Output-window message. |
-| `lr.next_row` | `lr_next_row` | parameter | `review_only` | import review | Data-file row advancement is preserved for review; the native replay engine does not advance VuGen data cursors. |
-| `lr.output_message` | `lr_output_message` | message | `executable` | source_message action | Output message with location. |
-| `lr.peek_events` | `lr_peek_events` | runtime | `review_only` | native no-op | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
-| `lr.read_file` | `lr_read_file` | parameter | `review_only` | import review | Local file read; preserved for review. |
-| `lr.read_xml` | `lr_read_xml` | xml | `review_only` | import review | XML file read; preserved for review. |
-| `lr.redirect` | `lr_redirect` | runtime | `review_only` | native no-op | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
-| `lr.rendezvous` | `lr_rendezvous` | runtime | `review_only` | rendezvous action | The shim records bounded rendezvous evidence after the Java invocation; it does not synchronously join the engine's cross-VUser rendezvous barrier. |
-| `lr.save_data` | `lr_save_data` | parameter | `review_only` | import review | Saves byte[]; no DSL equivalent. |
-| `lr.save_int` | `lr_save_int` | parameter | `executable` | source_parameter action | Saves an int to a parameter. |
-| `lr.save_string` | `lr_save_string` | parameter | `executable` | source_parameter action | Saves a string to a parameter. |
-| `lr.set_debug_message` | `lr_set_debug_message` | message | `review_only` | source_message action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
-| `lr.set_transaction` | `lr_set_transaction` | transaction | `executable` | source_transaction action | Programmatic transaction with duration/status. |
-| `lr.set_transaction_status` | `lr_set_transaction_status` | transaction | `executable` | source_transaction action | Sets the current transaction status. |
-| `lr.sleep` | `lr_sleep` | runtime | `review_only` | source_runtime action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
-| `lr.start_sub_transaction` | `lr_start_sub_transaction` | transaction | `executable` | source_transaction action | Opens a sub-transaction. |
-| `lr.start_timer` | `lr_start_timer` | timer | `review_only` | source_timer action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
-| `lr.start_transaction` | `lr_start_transaction` | transaction | `executable` | source_transaction action | Opens a transaction; feeds Stats.Transactions + grouping. |
-| `lr.think_time` | `lr_think_time` | runtime | `executable` | config.think_time distribution | Feeds the generated think-time distribution. |
-| `lr.unmask` | `lr_unmask` | parameter | `review_only` | import review | Machine-key-bound masked value; not recoverable at import. |
-| `lr.user_data_point` | `lr_user_data_point` | metric | `review_only` | source_metric action | The shim records a bounded metric event in protocol evidence, but the runner does not yet publish it as an engine or telemetry metric sample. |
-| `lr.value_check` | `lr_value_check` | parameter | `review_only` | import review | Value verification has no positional DSL assertion target. |
-| `lr.vuser_status_message` | `lr_vuser_status_message` | message | `executable` | source_message action | Vuser status-area message. |
-| `lr.wasted_time` | `lr_wasted_time` | transaction | `executable` | source_transaction action | The combined Java runner records wasted time on open transactions through the verified lrapi descriptor. |
+| Java method / C function | Family | Support mode | Target | Notes |
+|---|---|---|---|---|
+| `lr.abort` / `lr_abort` | runtime | `review_only` | source_runtime action | The shim can fail and unwind the current Java invocation, but the engine does not yet prove LoadRunner's abort-VUser and teardown semantics; reachable calls block promotion. |
+| `lr.advance_param` / `lr_advance_param` | parameter | `review_only` | import review | Parameter cursor advancement is preserved for review; the native replay engine does not advance VuGen parameter tables. |
+| `lr.aws_get_secret` / `lr_aws_get_secret` | secret | `review_only` | source_external action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
+| `lr.cyberark_get_vault` / `lr_cyberark_get_vault` | secret | `review_only` | source_external action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
+| `lr.debug_message` / `lr_debug_message` | message | `executable` | source_message action | Conditional debug log message. |
+| `lr.decrypt` / `lr_decrypt` | parameter | `review_only` | import review | Machine-key-bound ciphertext; not recoverable at import. |
+| `lr.decrypt_ex` / `lr_decrypt_ex` | parameter | `review_only` | import review | Machine-key-bound ciphertext; not recoverable at import. |
+| `lr.deserialize` / `lr_deserialize` | parameter | `review_only` | import review | Java object deserialization has no DSL equivalent. |
+| `lr.enable_redirection` / `lr_enable_redirection` | runtime | `review_only` | native no-op | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
+| `lr.encrypt_ex` / `lr_encrypt_ex` | parameter | `review_only` | import review | Encryption helper; preserved for review. |
+| `lr.end_sub_trans` / `lr_end_sub_trans` | transaction | `executable` | source_transaction action | Closes a Java sub-transaction alias. |
+| `lr.end_sub_transaction` / `lr_end_sub_transaction` | transaction | `executable` | source_transaction action | Closes a sub-transaction; feeds transaction markers. |
+| `lr.end_timer` / `lr_end_timer` | timer | `review_only` | source_timer action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
+| `lr.end_transaction` / `lr_end_transaction` | transaction | `executable` | source_transaction action | Closes a transaction; feeds Stats.Transactions. |
+| `lr.error_message` / `lr_error_message` | message | `executable` | error_message action | Native error-message action. |
+| `lr.eval_data` / `lr_eval_data` | parameter | `review_only` | import review | Returns byte[]; no DSL equivalent. |
+| `lr.eval_int` / `lr_eval_int` | parameter | `review_only` | import review | Java typed parameter evaluation returns a value to user code; native replay does not model that return channel. |
+| `lr.eval_string` / `lr_eval_string` | parameter | `executable` | source_parameter action | Evaluates {param} → {{var.*}}. |
+| `lr.exit` / `lr_exit` | runtime | `review_only` | source_runtime action | The shim can report and unwind an lr.exit call, but the runner/engine contract does not yet faithfully implement every LoadRunner action, iteration, and VUser continuation option; reachable calls block promotion. |
+| `lr.get_attrib_double` / `lr_get_attrib_double` | attribute | `review_only` | import review | Command-line attribute read; RTS-specific. |
+| `lr.get_attrib_long` / `lr_get_attrib_long` | attribute | `review_only` | import review | Command-line attribute read; RTS-specific. |
+| `lr.get_attrib_string` / `lr_get_attrib_string` | attribute | `review_only` | import review | Command-line attribute read; RTS-specific. |
+| `lr.get_debug_message` / `lr_get_debug_message` | message | `review_only` | source_message action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
+| `lr.get_group_name` / `lr_get_group_name` | info | `review_only` | import review | Java informational getter returns a value to user code; native replay does not model that return channel. |
+| `lr.get_host_name` / `lr_get_host_name` | info | `review_only` | source_parameter action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
+| `lr.get_master_host_name` / `lr_get_master_host_name` | info | `review_only` | source_parameter action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
+| `lr.get_object` / `lr_get_object` | parameter | `review_only` | import review | Returns a Java runtime object; no DSL equivalent. |
+| `lr.get_scenario_id` / `lr_get_scenario_id` | info | `review_only` | import review | Java informational getter returns a value to user code; native replay does not model that return channel. |
+| `lr.get_transaction_duration` / `lr_get_transaction_duration` | transaction | `executable` | source_transaction action | The combined Java runner returns the tracked transaction duration through the verified lrapi descriptor. |
+| `lr.get_transaction_status` / `lr_get_transaction_status` | transaction | `executable` | source_transaction action | The combined Java runner returns the tracked transaction status through the verified lrapi descriptor. |
+| `lr.get_transaction_think_time` / `lr_get_transaction_think_time` | transaction | `executable` | source_transaction action | The combined Java runner returns the tracked transaction think time through the verified lrapi descriptor. |
+| `lr.get_transaction_wasted_time` / `lr_get_transaction_wasted_time` | transaction | `executable` | source_transaction action | The combined Java runner returns tracked transaction wasted time through the verified lrapi descriptor. |
+| `lr.get_vuser_id` / `lr_get_vuser_id` | info | `review_only` | import review | Java informational getter returns a value to user code; native replay does not model that return channel. |
+| `lr.log` / `lr_log` | message | `review_only` | source_message action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
+| `lr.log_message` / `lr_log_message` | message | `executable` | source_message action | Log-only message. |
+| `lr.message` / `lr_message` | message | `executable` | source_message action | Output-window message. |
+| `lr.next_row` / `lr_next_row` | parameter | `review_only` | import review | Data-file row advancement is preserved for review; the native replay engine does not advance VuGen data cursors. |
+| `lr.output_message` / `lr_output_message` | message | `executable` | source_message action | Output message with location. |
+| `lr.peek_events` / `lr_peek_events` | runtime | `review_only` | native no-op | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
+| `lr.read_file` / `lr_read_file` | parameter | `review_only` | import review | Local file read; preserved for review. |
+| `lr.read_xml` / `lr_read_xml` | xml | `review_only` | import review | XML file read; preserved for review. |
+| `lr.redirect` / `lr_redirect` | runtime | `review_only` | native no-op | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
+| `lr.rendezvous` / `lr_rendezvous` | runtime | `review_only` | rendezvous action | The shim records bounded rendezvous evidence after the Java invocation; it does not synchronously join the engine's cross-VUser rendezvous barrier. |
+| `lr.save_data` / `lr_save_data` | parameter | `review_only` | import review | Saves byte[]; no DSL equivalent. |
+| `lr.save_int` / `lr_save_int` | parameter | `executable` | source_parameter action | Saves an int to a parameter. |
+| `lr.save_string` / `lr_save_string` | parameter | `executable` | source_parameter action | Saves a string to a parameter. |
+| `lr.set_debug_message` / `lr_set_debug_message` | message | `review_only` | source_message action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
+| `lr.set_transaction` / `lr_set_transaction` | transaction | `executable` | source_transaction action | Programmatic transaction with duration/status. |
+| `lr.set_transaction_status` / `lr_set_transaction_status` | transaction | `executable` | source_transaction action | Sets the current transaction status. |
+| `lr.sleep` / `lr_sleep` | runtime | `review_only` | source_runtime action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
+| `lr.start_sub_transaction` / `lr_start_sub_transaction` | transaction | `executable` | source_transaction action | Opens a sub-transaction. |
+| `lr.start_timer` / `lr_start_timer` | timer | `review_only` | source_timer action | The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError. |
+| `lr.start_transaction` / `lr_start_transaction` | transaction | `executable` | source_transaction action | Opens a transaction; feeds Stats.Transactions + grouping. |
+| `lr.think_time` / `lr_think_time` | runtime | `executable` | config.think_time distribution | Feeds the generated think-time distribution. |
+| `lr.unmask` / `lr_unmask` | parameter | `review_only` | import review | Machine-key-bound masked value; not recoverable at import. |
+| `lr.user_data_point` / `lr_user_data_point` | metric | `review_only` | source_metric action | The shim records a bounded metric event in protocol evidence, but the runner does not yet publish it as an engine or telemetry metric sample. |
+| `lr.value_check` / `lr_value_check` | parameter | `review_only` | import review | Value verification has no positional DSL assertion target. |
+| `lr.vuser_status_message` / `lr_vuser_status_message` | message | `executable` | source_message action | Vuser status-area message. |
+| `lr.wasted_time` / `lr_wasted_time` | transaction | `executable` | source_transaction action | The combined Java runner records wasted time on open transactions through the verified lrapi descriptor. |
 
 ## TruClient step coverage
 

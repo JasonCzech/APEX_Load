@@ -181,11 +181,11 @@ describe('TestExecutionScenarioPreview', () => {
     expect(container.textContent).toContain('Stop On Max Errors')
     expect(container.textContent).toContain('Pacing')
     expect(container.textContent).toContain('Fixed delay · 1.2 seconds')
-    expect(container.textContent).toContain('Think Time')
+    expect(container.textContent).toContain('Think time')
     expect(container.textContent).toContain('fixed · 900ms')
     expect(container.textContent).toContain('Browser Runtime')
     expect(container.textContent).toContain('iphone_se · Portrait · Touch enabled · Headed')
-    expect(container.textContent).toContain('Continue On Error')
+    expect(container.textContent).toContain('Continue on error')
     expect(container.textContent).toContain('Enabled')
     expect(container.textContent).toContain('immutable queued snapshot')
     expect(container.textContent).toContain('Full script bodies are not included')
@@ -322,12 +322,12 @@ describe('TestExecutionScenarioPreview', () => {
 
     // The group's section wins whole, so the omitted snapshot half executes false. Reporting the
     // run-level 'Enabled (scenario override)' here would claim snapshots the run never takes.
-    expect(cardValue('.scenario-script-detail-card', 'Snapshot On Error')).toBe('Disabled (group override)')
+    expect(cardValue('.scenario-script-detail-card', 'Snapshot on error')).toBe('Disabled (group override)')
 
     // Same rule one level up: the run-level section is pinned but omits continue_on_error, so the
     // script's own value is discarded and continue executes false — not 'not exposed'.
-    expect(cardValue('.scenario-setting-card', 'Continue On Error')).toBe('Disabled')
-    expect(cardValue('.scenario-setting-card', 'Snapshot On Error')).toBe('Enabled')
+    expect(cardValue('.scenario-setting-card', 'Continue on error')).toBe('Disabled')
+    expect(cardValue('.scenario-setting-card', 'Snapshot on error')).toBe('Enabled')
   })
 
   it('discloses when the manifest preview was synthesized from retained run state', async () => {

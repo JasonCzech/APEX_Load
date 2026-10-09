@@ -32,16 +32,27 @@
 .help-reading-pane .guide-markdown-article { min-width: 0; }
 .help-article-toc { border: 1px solid var(--border); border-radius: var(--radius, 8px); padding: 14px 18px; }
 .help-article-toc > span { font-weight: 600; font-size: 13px; }
-.help-article-toc ul { display: flex; flex-wrap: wrap; gap: 8px 20px; list-style: none; padding: 0; margin: 10px 0 0; }
-.help-article-toc a { display: inline-block; padding: 4px 0; font-size: 13px; }
-.help-article-toc .help-toc-nested { font-size: 12px; }
+/* An index, not a sentence: entries flow down balanced columns. */
+.help-article-toc ul { columns: 15rem auto; column-gap: 32px; list-style: none; padding: 0; margin: 10px 0 0; }
+.help-article-toc li { break-inside: avoid; padding: 3px 0; }
+.help-article-toc a { font-size: 13px; overflow-wrap: anywhere; }
+.help-article-toc .help-toc-nested { padding-left: 14px; font-size: 12px; }
+.help-article-toc .help-toc-nested a { font-size: 12px; }
 .help-article-toc a[aria-current="location"] { font-weight: 700; }
+.help-toc-count { margin-left: 2px; padding: 0 6px; border-radius: 999px; background: var(--bg-elevated); color: var(--text-secondary); font-size: 11px; font-variant-numeric: tabular-nums; }
+.help-workspace :is(.help-article-toc, .help-section-index) code { padding: 0 4px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 12%, transparent); font-size: 0.92em; }
+/* Long articles open each section with an index of its own subsections. */
+.help-section-index { margin: 0 0 20px; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius, 8px); }
+.help-section-index ul { display: flex; flex-wrap: wrap; gap: 6px 18px; list-style: none; padding: 0; margin: 0; }
+.help-section-index a { font-size: 13px; }
 .help-page .markdown-body :is(h2,h3,h4,h5,h6) { scroll-margin-top: var(--help-scroll-offset, 150px); }
 .help-workspace .markdown-table-wrap { max-width: 100%; overflow-x: auto; }
 .help-workspace table { width: 100%; min-width: 0; table-layout: auto; }
-.help-workspace :is(th,td) { white-space: normal; overflow-wrap: anywhere; }
+/* break-word, not anywhere: `anywhere` lets the table squeeze every column to
+ * one character wide, splitting words like "Required" down the cell. */
+.help-workspace :is(th,td) { white-space: normal; overflow-wrap: break-word; }
 .help-workspace .markdown-code-block { max-width: 100%; margin: 0; overflow-x: auto; }
-.help-workspace .markdown-code-block:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
+.help-workspace :is(.markdown-code-block, .markdown-table-wrap):focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
 .help-code-example { min-width: 0; margin: 18px 0; }
 .help-code-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
 .help-code-toolbar > span { font-size: 12px; }

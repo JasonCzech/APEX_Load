@@ -153,6 +153,35 @@ describe('dashboard theme tokens', () => {
     }
   })
 
+  // The status fills are tuned for dots, bars and badges; as text the
+  // Solarized accents fall to ~2.6–3:1. Text uses the per-theme *-text tokens.
+  it('never colours text with a bare status fill token', () => {
+    const offenders = Object.entries(cssFiles).flatMap(([file, css]) =>
+      [...css.matchAll(/(?:^|[;{\s])color:\s*var\(--(warning|danger|success|info)[,)]/gm)].map(match => `${file}: --${match[1]}`),
+    )
+    expect(offenders).toEqual([])
+  })
+
+  // Toasts, popovers and dialogs sit on --bg-elevated; every text tone must stay AA there.
+  it.each([':root', ":root[data-theme='light']", ":root[data-theme='solarized-dark']", ":root[data-theme='solarized-light']", ":root[data-theme='monokai-dimmed']"])('%s keeps text readable on the elevated surface', selector => {
+    const block = themeBlock(selector)
+    // The default theme's elevated surface is translucent: composite it over the page.
+    const translucent = /--bg-elevated:\s*rgba\(/.test(block)
+    const elevated = translucent
+      ? (({ color, alpha }) => composite(color, rgb(token(block, 'bg-primary')), alpha))(rgbaToken(block, 'bg-elevated'))
+      : rgb(token(block, 'bg-elevated'))
+    // --accent-text is an alias of --accent in most themes.
+    const textToken = (name: string) => block.match(new RegExp(`--${name}:\\s*var\\(--([\\w-]+)\\)`))?.[1] || name
+    for (const name of ['text-primary', 'text-muted', 'accent-text', 'warning-text', 'danger-text', 'success-text', 'info-text']) {
+      expect(rgbContrast(rgb(token(block, textToken(name))), elevated), name).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
+  it.each([':root', ":root[data-theme='light']", ":root[data-theme='solarized-dark']", ":root[data-theme='solarized-light']", ":root[data-theme='monokai-dimmed']"])('%s keeps text on a solid warning fill readable', selector => {
+    const block = themeBlock(selector)
+    expect(contrast(token(block, 'warning-fill-text'), token(block, 'warning'))).toBeGreaterThanOrEqual(4.5)
+  })
+
   it('uses the accessible secondary text token for infrastructure readiness summaries', () => {
     const rule = pagesCss.match(/\.monitor-infrastructure-summary\s*\{([\s\S]*?)\}/)?.[1] || ''
     expect(rule).toContain('color: var(--text-secondary)')
@@ -174,5 +203,79 @@ describe('dashboard theme tokens', () => {
     const summaryText = rgb(token(block, 'text-secondary'))
 
     expect(rgbContrast(summaryText, rowBackground)).toBeGreaterThanOrEqual(4.5)
+  })
+
+  // Error and blocked-status text once hard-coded the dark theme's red-300
+  // (#fca5a5), which reads ~1.9:1 on the default light theme. It must come
+  // from the per-theme --danger-text token and stay legible on cards.
+  it('renders error text from the danger-text token, never a fixed dark-theme red', () => {
+    const offenders = Object.entries(cssFiles)
+      .filter(([name]) => !/json-viewer|snapshotbodypreview/i.test(name))
+      .flatMap(([name, source]) => [...source.matchAll(/^\s*color:\s*#fca5a5\s*;/gim)].map(() => name))
+    expect(offenders).toEqual([])
+    for (const rule of ['.settings-error-inline', '.settings-errors p', '.authoring-correlation-error', '.authoring-session-status.blocked']) {
+      const start = pagesCss.indexOf(`${rule} {`)
+      expect(start, rule).toBeGreaterThanOrEqual(0)
+      expect(pagesCss.slice(start, pagesCss.indexOf('}', start)), rule).toContain('color: var(--danger-text)')
+    }
+  })
+
+  it.each([
+    [':root'],
+    [":root[data-theme='light']"],
+    [":root[data-theme='solarized-dark']"],
+    [":root[data-theme='solarized-light']"],
+    [":root[data-theme='monokai-dimmed']"],
+  ])('%s danger-text meets AA on the composited card background', (selector) => {
+    const block = themeBlock(selector)
+    const card = rgbaToken(block, 'bg-card')
+    const cardBackground = composite(card.color, rgb(token(block, 'bg-primary')), card.alpha)
+    expect(rgbContrast(rgb(token(block, 'danger-text')), cardBackground)).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it.each([
+    [':root'],
+    [":root[data-theme='light']"],
+    [":root[data-theme='solarized-dark']"],
+    [":root[data-theme='solarized-light']"],
+    [":root[data-theme='monokai-dimmed']"],
+  ])('%s defines eight distinct chart slots that are visible on cards', (selector) => {
+    const block = themeBlock(selector)
+    const card = rgbaToken(block, 'bg-card')
+    const cardBackground = composite(card.color, rgb(token(block, 'bg-primary')), card.alpha)
+    const slots = Array.from({ length: 8 }, (_, index) => token(block, `chart-${index + 1}`).toLowerCase())
+    expect(new Set(slots).size).toBe(slots.length)
+    for (const slot of slots.slice(6)) {
+      expect(rgbContrast(rgb(slot), cardBackground), slot).toBeGreaterThanOrEqual(3)
+    }
+  })
+
+  it.each([
+    [':root'],
+    [":root[data-theme='light']"],
+    [":root[data-theme='solarized-dark']"],
+    [":root[data-theme='solarized-light']"],
+    [":root[data-theme='monokai-dimmed']"],
+  ])('%s keeps accent text and filled danger buttons at AA contrast', (selector) => {
+    const block = themeBlock(selector)
+    const card = rgbaToken(block, 'bg-card')
+    const cardBackground = composite(card.color, rgb(token(block, 'bg-primary')), card.alpha)
+    const accentText = block.match(/--accent-text:\s*(#[0-9a-fA-F]{6}|var\(--accent\))/)?.[1]
+    expect(accentText).toBeDefined()
+    const accentHex = accentText === 'var(--accent)' ? token(block, 'accent') : accentText!
+    expect(rgbContrast(rgb(accentHex), cardBackground)).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(token(block, 'danger-fill-text'), token(block, 'danger-fill'))).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('never colors text with the raw accent token in stylesheets', () => {
+    const offenders = Object.entries(cssFiles).filter(([, css]) => /(?<![-\w])color:\s*var\(--accent\)\s*[;}!]/.test(css)).map(([file]) => file)
+    expect(offenders).toEqual([])
+  })
+
+  it('styles every filled danger button from the contrast-checked danger-fill tokens', () => {
+    const offenders = Object.entries(cssFiles).flatMap(([file, css]) => Array.from(css.matchAll(/\.btn-danger(?::hover)?\s*\{([^}]*)\}/g))
+      .filter(match => /background:\s*var\(--danger\)|color:\s*(?:white|#fff\b|var\(--accent-contrast\))/.test(match[1]))
+      .map(() => file))
+    expect(offenders).toEqual([])
   })
 })

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ApiError } from '../hooks/apiClient'
 import { authoringFixture, savedAuthoringFixture } from '../test/scriptAuthoringFixtures'
-import { admitScriptAuthoringBaseline, authoringChangedPaths, baselineFromSavedScript, reapplyScriptDraft, scriptSaveNeedsReconciliation, withoutScriptAuthoringReadContext } from './scriptAuthoringRevision'
+import { admitScriptAuthoringBaseline, authoringChangedPaths, baselineFromSavedScript, reapplyScriptDraft, scriptSaveFailedOnServer, scriptSaveNeedsReconciliation, withoutScriptAuthoringReadContext } from './scriptAuthoringRevision'
 
 describe('paired script authoring revisions', () => {
   it('admits one cloned document and exact strong tag', () => {
@@ -120,5 +120,10 @@ describe('paired script authoring revisions', () => {
   })
   it('retains retry authority after a definitive validation rejection', () => {
     expect(scriptSaveNeedsReconciliation(new ApiError('invalid', 422))).toBe(false)
+  })
+  it('keeps a plain server error retryable: revision protection catches a save that did commit', () => {
+    expect(scriptSaveNeedsReconciliation(new ApiError('Simulated failure', 500))).toBe(false)
+    expect(scriptSaveFailedOnServer(new ApiError('Simulated failure', 500))).toBe(true)
+    expect(scriptSaveFailedOnServer(new ApiError('unknown', 503, { code: 'script_save_outcome_unknown' }))).toBe(false)
   })
 })

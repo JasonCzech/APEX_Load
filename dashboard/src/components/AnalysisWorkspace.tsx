@@ -19,11 +19,20 @@ import { analysisBucketSeconds, analysisHistogramDeclaration, analysisHistogramM
 const importPath = (id: string) => `/analysis/imports/${encodeURIComponent(id)}`
 const initialMapping: AnalysisMapping = { version: 1, timestamp: [], timestamp_encoding: 'timestamp', timezone: 'UTC', measures: [] }
 
-export default function AnalysisWorkspace({ projectId, canEdit = false }: { projectId?: string; canEdit?: boolean }) {
+export default function AnalysisWorkspace({ projectId, canEdit = false, showEnableHint = false }: { projectId?: string; canEdit?: boolean; /** Tell an administrator how the project gate is enabled. */ showEnableHint?: boolean }) {
   const [capabilities, setCapabilities] = useState<AnalysisCapabilities>()
   const [imports, setImports] = useState<AnalysisImport[]>([])
   const [selected, setSelected] = useState<AnalysisImport>()
   const [files, setFiles] = useState<File[]>([])
+  const [fileError, setFileError] = useState('')
+  // accept=".parquet" is only a hint to the picker; reject anything else here,
+  // before a request, and say which files were left out.
+  const chooseFiles = (picked: File[]) => {
+    const parquet = picked.filter(file => file.name.toLowerCase().endsWith('.parquet'))
+    const others = picked.filter(file => !parquet.includes(file))
+    setFiles(parquet)
+    setFileError(others.length ? `${others.map(file => file.name).join(', ')} ${others.length === 1 ? 'is not a Parquet file' : 'are not Parquet files'}. Choose .parquet files.` : '')
+  }
   const [name, setName] = useState('')
   const [preview, setPreview] = useState<AnalysisPreview>()
   const [mapping, updateMapping] = useState<AnalysisMapping>(initialMapping)
@@ -50,7 +59,7 @@ export default function AnalysisWorkspace({ projectId, canEdit = false }: { proj
 
   useEffect(() => {
     const controller = new AbortController()
-    setSelected(undefined); setPreview(undefined); setPoints([]); setImports([]); setFiles([]); setName(''); setProgress(''); setBusy(false); setAcceptRejected(false); updateMapping(initialMapping); setMappingTemplate(undefined); setCapabilities(undefined); setError(''); setIdentityFilters(emptyAnalysisIdentityFilters())
+    setSelected(undefined); setPreview(undefined); setPoints([]); setImports([]); setFiles([]); setFileError(''); setName(''); setProgress(''); setBusy(false); setAcceptRejected(false); updateMapping(initialMapping); setMappingTemplate(undefined); setCapabilities(undefined); setError(''); setIdentityFilters(emptyAnalysisIdentityFilters())
     if (projectId) request<AnalysisCapabilities>(`/analysis/capabilities?project_id=${encodeURIComponent(projectId)}`, { signal: controller.signal })
       .then(async caps => { if (controller.signal.aborted) return; setCapabilities(caps); if (caps.enabled && caps.native_parquet) await reload(controller.signal) })
       .catch(e => { if (!controller.signal.aborted) setError(String(e)) })
@@ -136,7 +145,7 @@ export default function AnalysisWorkspace({ projectId, canEdit = false }: { proj
     <h2>Parquet analysis</h2>
     <p>Import metric observations, inspect their schema, and compare measurements on a UTC timeline.</p>
     {error && <p role="alert">{error}</p>}
-    {!capabilities ? <p>Checking analysis availability…</p> : !capabilities.enabled || !capabilities.native_parquet ? <p>Native Parquet analysis is not enabled for this project.</p> : <>
+    {!capabilities ? <p>Checking analysis availability…</p> : !capabilities.enabled || !capabilities.native_parquet ? <p className="monitor-hint">Native Parquet analysis is not enabled for this project.{showEnableHint && <> It is enabled per project in the controller configuration (<code>APEXLOAD_ANALYSIS_PROJECTS</code>).</>}</p> : <>
       <div className="analysis-columns">
         <aside aria-label="Datasets">
           <h3>Datasets and imports</h3>
@@ -147,9 +156,11 @@ export default function AnalysisWorkspace({ projectId, canEdit = false }: { proj
           {canEdit && (!selected || selected.state === 'uploading') && <fieldset disabled={busy}>
             <legend>{selected ? 'Resume upload' : 'Upload Parquet files'}</legend>
             <label>Dataset name<input value={name} onChange={e => setName(e.target.value)} /></label>
-            <label>Files<input type="file" multiple accept=".parquet" onChange={e => setFiles(Array.from(e.target.files ?? []))} /></label>
+            <label>Files<input type="file" multiple accept=".parquet" onChange={e => chooseFiles(Array.from(e.target.files ?? []))} /></label>
             <label>Directory<input type="file" multiple accept=".parquet" ref={input => input?.setAttribute('webkitdirectory', '')} onChange={e => setFiles(Array.from(e.target.files ?? []).filter(f => f.name.toLowerCase().endsWith('.parquet')))} /></label>
-            <button type="button" disabled={!files.length} onClick={() => void upload()}>{selected ? 'Resume and verify upload' : 'Upload files'}</button>
+            {fileError && <p role="alert">{fileError}</p>}
+            <button type="button" disabled={!files.length} aria-describedby={files.length ? undefined : 'analysis-upload-requirement'} onClick={() => void upload()}>{selected ? 'Resume and verify upload' : 'Upload files'}</button>
+            {!files.length && <small id="analysis-upload-requirement">Choose at least one .parquet file to upload.</small>}
           </fieldset>}
           {progress && <p role="status">{progress}</p>}
           {busy && <button type="button" onClick={() => { const current = operation.current; operation.current = undefined; current?.abort(); setBusy(false) }}>Pause operation</button>}

@@ -43,7 +43,7 @@ export default function TestNotesDialog({ testId, testName, onClose }: Props) {
 
   const confirmDiscard = useCallback(async () => {
     if (!isDirty) return true
-    return (await confirmAction('Discard unsaved note?'))
+    return (await confirmAction('Discard unsaved note?', { title: 'Discard note', confirmLabel: 'Discard', destructive: true }))
   }, [isDirty])
 
   const requestClose = useCallback(async () => {
@@ -192,7 +192,7 @@ export default function TestNotesDialog({ testId, testName, onClose }: Props) {
       >
         <div className="modal-header test-notes-header">
           <div>
-            <h3 id={titleId}>Test Notes</h3>
+            <h3 id={titleId}>Test notes</h3>
             <p id={descriptionId} className="page-subtitle">{testName || testId}</p>
           </div>
           <button ref={closeButtonRef} type="button" className="btn btn-secondary btn-sm" onClick={requestClose} disabled={saving}>Close</button>
@@ -210,7 +210,7 @@ export default function TestNotesDialog({ testId, testName, onClose }: Props) {
               </button>
             </div>
             <div className="test-notes-list">
-              {loading && <p className="test-notes-empty">Loading...</p>}
+              {loading && <p className="test-notes-empty">Loading…</p>}
               {!loading && notes.length === 0 && (
                 <p className="test-notes-empty">No notes yet. Add the first observation.</p>
               )}
@@ -273,7 +273,7 @@ export default function TestNotesDialog({ testId, testName, onClose }: Props) {
                       Cancel
                     </button>
                     <button type="button" className="btn btn-primary" onClick={() => { void saveNote() }} disabled={!canSave}>
-                      {saving ? 'Saving...' : 'Save'}
+                      {saving ? 'Saving…' : 'Save'}
                     </button>
                   </div>
                 </div>

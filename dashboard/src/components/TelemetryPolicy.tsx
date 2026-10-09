@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { telemetryPolicyView, telemetryStageLabels, type TelemetryPolicyView } from './telemetryPolicyModel'
+import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
 
 export default function TelemetryPolicy({ evidence }: { evidence?: unknown }) {
   const [verified, setVerified] = useState<{ evidence: unknown; view: TelemetryPolicyView }>()
@@ -18,7 +19,7 @@ export default function TelemetryPolicy({ evidence }: { evidence?: unknown }) {
       <dl className="manifest-definition-grid">
         <div><dt>Policy</dt><dd>{policy.policy_id} · revision {policy.revision}</dd></div>
         <div><dt>Policy hash</dt><dd style={{ overflowWrap: 'anywhere' }}><code>{policy.hash}</code></dd></div>
-        <div><dt>Captured at</dt><dd>{policy.captured_at}</dd></div>
+        <div><dt>Captured at</dt><dd>{formatDisplayDateTime(policy.captured_at, { seconds: true })}</dd></div>
         <div><dt>Controller publication interval</dt><dd>{policy.expected_controller_publication_interval_ms.toLocaleString()} ms · {policy.cadence_scope === 'local-controller-ticker' ? 'local controller ticker' : 'distributed controller coalescing gate'}</dd></div>
         <div><dt>Sustained warning window</dt><dd>{policy.sustained_breach_window_ms.toLocaleString()} ms</dd></div>
         <div><dt>Classification algorithm</dt><dd>{policy.classification_algorithm}</dd></div>

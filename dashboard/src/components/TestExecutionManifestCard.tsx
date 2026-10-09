@@ -97,8 +97,8 @@ function configurationEntries(config: TestRunManifestConfiguration): DefinitionE
     ['Active VUsers', config.active_vusers],
     ['Start Delay', config.start_delay],
     ['Scenario Mode', config.scenario_mode],
-    ['Script Shakeout', formatBoolean(config.script_shakeout)],
-    ['Resource Baseline', formatBoolean(config.resource_baseline)],
+    ['Script shakeout', formatBoolean(config.script_shakeout)],
+    ['Resource baseline', formatBoolean(config.resource_baseline)],
     ['Baseline Pinned', formatBoolean(config.baseline_pinned)],
   ]
 }
@@ -147,7 +147,7 @@ export default function TestExecutionManifestCard({ manifest, error, loading, on
     : []
 
   const copyManifest = async () => {
-    setCopyStatus('Copying...')
+    setCopyStatus('Copying…')
     const copied = await copyWithTimeout(jsonText)
     setCopyStatus(copied ? 'Copied' : 'Copy unavailable')
   }
@@ -166,7 +166,7 @@ export default function TestExecutionManifestCard({ manifest, error, loading, on
   if (loading && !manifest) {
     return (
       <section className="manifest-card" aria-label="Test manifest">
-        <p className="loading">Loading test manifest...</p>
+        <p className="loading">Loading test manifest…</p>
       </section>
     )
   }
@@ -233,7 +233,7 @@ export default function TestExecutionManifestCard({ manifest, error, loading, on
           <strong>{manifest.scripts?.length || 0}</strong>
         </div>
         <div>
-          <span>Load Generators</span>
+          <span>Load generators</span>
           <strong>{shardSummary(manifest.load_generators.generator_shards)}</strong>
         </div>
       </div>
@@ -405,7 +405,7 @@ export default function TestExecutionManifestCard({ manifest, error, loading, on
 
       {manifest.continue_on_error && (
         <div className="manifest-section">
-          <h4>Continue On Error</h4>
+          <h4>Continue on error</h4>
           <p>
             Scenario policy: <strong>{manifest.continue_on_error.scenario_value ? 'Enabled' : 'Disabled'}</strong>
             {' '}({manifest.continue_on_error.scenario_explicit ? 'set in the scenario settings' : 'scenario default'})

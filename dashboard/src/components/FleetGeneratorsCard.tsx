@@ -2,13 +2,15 @@ import DialogLayer from './ux/DialogLayer'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useFleetApi, GeneratorMetadataPatch } from '../hooks/api/useFleetApi'
-import { ApiError } from '../hooks/apiClient'
+import { ApiError, request } from '../hooks/apiClient'
+import { confirmAction } from './ux/confirmAction'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { dialogBackdropProps } from './dialogBackdropProps'
 import { FleetGeneratorMetadata, FleetPool } from '../types'
 import { listAllGeneratorMetadata, listAllFleetPools } from './fleetCatalogModel'
 import './parityPanels.css'
+import LoadingState from './ux/LoadingState'
 
 interface Props {
   canManage?: boolean
@@ -115,8 +117,38 @@ function snapshotCaughtUp(
     && listedTimestamp > committedTimestamp
 }
 
+function runtimeTargetError(target: string): string {
+  if (!target) return ''
+  if (target.includes('://')) return 'Use host or host:port, without http:// or another scheme.'
+  if (/[\s/?#]/.test(target)) return 'Use host or host:port, without spaces or a path.'
+  const ipv6 = /^\[([0-9a-fA-F:.]+)\]:(\d+)$/.exec(target)
+  const hostPort = ipv6 ? ['', ipv6[1], ipv6[2]] : /^([^:]+)(?::(\d+))?$/.exec(target)
+  if (!hostPort) return 'Use host or host:port.'
+  const port = hostPort[2]
+  if (port !== undefined && (Number(port) < 1 || Number(port) > 65535)) return 'The port must be between 1 and 65535.'
+  if (!ipv6 && !/^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$/.test(hostPort[1])) return 'The host name is not valid.'
+  return ''
+}
+
 export default function FleetGeneratorsCard({ canManage = false }: Props) {
   const api = useFleetApi()
+  // Which generators are actually connected: a metadata row alone does not make
+  // a generator schedulable. null when the live inventory cannot be read.
+  const [liveGenerators, setLiveGenerators] = useState<Set<string> | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    void request<{ execution_mode?: string; generators?: { generator_id?: string; target?: string }[] }>('/system/inventory')
+      .then(inventory => {
+        if (cancelled) return
+        // The in-process engine has no generator inventory to enroll into, so
+        // enrollment cannot be judged there.
+        setLiveGenerators(inventory?.execution_mode === 'distributed'
+          ? new Set((inventory.generators || []).flatMap(entry => [entry.generator_id, entry.target]).filter((value): value is string => Boolean(value)))
+          : null)
+      })
+      .catch(() => { if (!cancelled) setLiveGenerators(null) })
+    return () => { cancelled = true }
+  }, [])
   const [pools, setPools] = useState<FleetPool[]>([])
   const [poolError, setPoolError] = useState('')
   useEffect(() => {
@@ -261,6 +293,22 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
     return saved
   }, [draft, patch])
 
+  // Same rule as the server: host or host:port (IPv6 in brackets), not a URL.
+  const draftTargetError = draft ? runtimeTargetError(draft.target.trim()) : ''
+  const removeMetadata = useCallback(async (generatorId: string) => {
+    if (!(await confirmAction(`Remove the metadata for generator “${generatorId}”? Use this for a mistyped or decommissioned generator; a connected or pooled generator cannot be removed.`, { title: 'Remove generator metadata', confirmLabel: 'Remove', destructive: true }))) return
+    setBusy(true)
+    setError(null)
+    try {
+      await api.deleteGeneratorMetadata(generatorId)
+      committedGeneratorsRef.current.delete(generatorId)
+      setGenerators(current => current.filter(generator => generator.generator_id !== generatorId))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to remove generator metadata.')
+    } finally {
+      setBusy(false)
+    }
+  }, [api])
   const draftDirty = draftIsDirty(draft)
   const draftDirtyRef = useRef(false)
   draftDirtyRef.current = draftDirty
@@ -305,7 +353,7 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
       )}
 
       {loading ? (
-        <div className="pp-empty">Loading generator metadata…</div>
+        <LoadingState what="generator metadata" className="pp-loading" />
       ) : generators.length === 0 ? (
         <div className="pp-empty">No generator metadata yet. Label generators with a region, pool, or cordon state.</div>
       ) : (
@@ -315,7 +363,11 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
               <div className="pp-row-main">
                 <div className="pp-row-title">
                   {gen.generator_id}
-                  {gen.cordoned ? <span className="pp-pill pp-pill-warning">cordoned</span> : <span className="pp-pill pp-pill-success">schedulable</span>}
+                  {gen.cordoned
+                    ? <span className="pp-pill pp-pill-warning">cordoned</span>
+                    : liveGenerators && !liveGenerators.has(gen.generator_id) && !(gen.target && liveGenerators.has(gen.target))
+                      ? <span className="pp-pill pp-pill-muted" title="No connected generator reports this ID or target yet.">awaiting enrollment</span>
+                      : <span className="pp-pill pp-pill-success">schedulable</span>}
                 </div>
                 <div className="pp-row-meta">
                   {gen.region ? <span>region: {gen.region}</span> : null}
@@ -329,6 +381,9 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
                 <div className="pp-row-actions">
                   <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void toggleCordon(gen.generator_id, Boolean(gen.cordoned))}>
                     {gen.cordoned ? 'Uncordon' : 'Cordon'}
+                  </button>
+                  <button type="button" className="btn btn-ghost btn-sm" disabled={busy} aria-label={`Remove metadata for ${gen.generator_id}`} onClick={() => void removeMetadata(gen.generator_id)}>
+                    Remove
                   </button>
                   <button
                     type="button"
@@ -365,7 +420,7 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
       )}
 
       {draft && (
-        <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closeDraft, 'Close generator editor')}>
+        <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(closeDraft)}>
           <div
             ref={dialogRef}
             className="pp-modal"
@@ -387,9 +442,12 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
                 <input
                   value={draft.target}
                   disabled={busy}
+                  aria-invalid={Boolean(draftTargetError) || undefined}
+                  aria-describedby={draftTargetError ? 'generator-target-error' : undefined}
                   onChange={e => setDraft(d => (d ? { ...d, target: e.target.value } : d))}
                   placeholder={draft.generator_id.trim() || 'host:port or pod DNS name'}
                 />
+                {draftTargetError && <small id="generator-target-error" className="field-error" role="alert">{draftTargetError}</small>}
                 <small className="pp-muted">Required for pool placement. Blank defaults to the generator ID.</small>
               </label>
               <div className="pp-field-row">
@@ -429,7 +487,7 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled={busy || !draft.generator_id.trim() || Boolean(draft.fleet_pool_id.trim() && !(draft.target.trim() || (draft.isNew && draft.generator_id.trim())))}
+                disabled={busy || !draft.generator_id.trim() || Boolean(draftTargetError) || Boolean(draft.fleet_pool_id.trim() && !(draft.target.trim() || (draft.isNew && draft.generator_id.trim())))}
                 onClick={() => void submitDraft()}
               >
                 {busy ? 'Saving…' : 'Save'}

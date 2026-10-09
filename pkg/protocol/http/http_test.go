@@ -278,7 +278,7 @@ func TestHTTP_Init_DigestAuth(t *testing.T) {
 }
 
 func TestHTTP_Init_UnsupportedAuthFailsClosed(t *testing.T) {
-	for _, authType := range []string{"ntlm", "kerberos", "negotiate"} {
+	for _, authType := range []string{"kerberos", "aws", "hawk"} {
 		t.Run(authType, func(t *testing.T) {
 			h := &HTTP{}
 			err := h.Init(context.Background(), map[string]any{"auth_type": authType})
@@ -1083,7 +1083,7 @@ func TestHTTP_Execute_UnsupportedActionAuthFailsBeforeSend(t *testing.T) {
 		Name:   "bad-auth",
 		Method: "GET",
 		Target: "/",
-		Auth:   &protocol.AuthConfig{Type: "ntlm", Username: "alice", Password: "secret"},
+		Auth:   &protocol.AuthConfig{Type: "kerberos", Username: "alice", Password: "secret"},
 	})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
