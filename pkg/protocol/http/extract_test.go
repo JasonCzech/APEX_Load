@@ -1666,3 +1666,70 @@ func BenchmarkExtractRegex(b *testing.B) {
 		}
 	}
 }
+
+func TestExtract_AllSourceSearchesHeadersThenBody(t *testing.T) {
+	headers := http.Header{}
+	headers.Set("X-Session-Ref", "hdr-42")
+	headers.Set("Content-Type", "text/html")
+	body := []byte(`<input name="ref" value="body-7">`)
+
+	tests := []struct {
+		name string
+		ext  protocol.Extractor
+		want string
+	}{
+		{
+			// LoadRunner header boundaries end in CRLF; the "all" surface keeps
+			// that shape.
+			name: "header boundary recorded with CRLF",
+			ext:  protocol.Extractor{Name: "ref", Source: "all", Type: "boundary", Expression: "X-Session-Ref: |||\r\n"},
+			want: "hdr-42",
+		},
+		{
+			name: "body boundary",
+			ext:  protocol.Extractor{Name: "ref", Source: "all", Type: "boundary", Expression: `value="|||"`},
+			want: "body-7",
+		},
+		{
+			name: "regex spans both surfaces in order",
+			ext:  protocol.Extractor{Name: "ref", Source: "all", Type: "regex_ordinal", Expression: `__apexload_regex_ordinal__:{"expression":"(?:Ref: |value=\")([a-z]+-\\d+)","ordinal":2}`},
+			want: "body-7",
+		},
+		{
+			name: "count covers headers and body",
+			ext:  protocol.Extractor{Name: "n", Source: "all", Type: "regex_count", Expression: `-\d+`},
+			want: "2",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := extract(tt.ext, headers, body)
+			if err != nil {
+				t.Fatalf("extract: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+
+	values, err := extractAll(protocol.Extractor{Name: "all", Source: "all", Type: "regex", Expression: `([a-z]+-\d+)`, Mode: "all"}, headers, body)
+	if err != nil {
+		t.Fatalf("extractAll: %v", err)
+	}
+	if len(values) != 2 || values[0] != "hdr-42" || values[1] != "body-7" {
+		t.Fatalf("save-all over headers and body = %v", values)
+	}
+}
+
+func TestExtract_AllSourceStructuredTypesReadTheBodyOnly(t *testing.T) {
+	headers := http.Header{}
+	headers.Set("X-Id", "header")
+	got, err := extract(protocol.Extractor{Name: "id", Source: "all", Type: "jsonpath", Expression: "$.id"}, headers, []byte(`{"id":"body"}`))
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if got != "body" {
+		t.Fatalf("got %q, want body", got)
+	}
+}

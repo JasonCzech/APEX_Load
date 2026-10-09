@@ -1,0 +1,12 @@
+{
+  "description": "Search=Headers with a CRLF right boundary, the default ALL scope finding a header value, and Scope=Body with filters that match the main request all reproduce LoadRunner.",
+  "source": "VuGen 26.1 Function Reference: web_reg_save_param (Search, default ALL), web_reg_save_param_ex SEARCH_FILTERS (Scope, IgnoreRedirections, RequestUrl).",
+  "outcome": "replay",
+  "responses": [
+    {"method": "GET", "path": "/app/orders", "headers": {"Content-Type": "text/html", "X-Session-Ref": "HDR-9001", "Order-Ref": "ORD-77"}, "body": "<script>var tok=BODY-55;</script>"}
+  ],
+  "requests": [
+    {"method": "GET", "path": "/app/orders", "query": ""},
+    {"method": "GET", "path": "/app/confirm", "query": "h=HDR-9001&d=ORD-77&b=BODY-55"}
+  ]
+}

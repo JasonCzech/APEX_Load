@@ -10,16 +10,49 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
+
+// registrationConversion is a converted save-parameter registration: the
+// extractor plus everything the importer must say about the parts of the
+// registration APEX does not reproduce.
+type registrationConversion struct {
+	extractor *dsl.Extractor
+	warnings  []string
+	// findings attach to the request the registration applies to.
+	findings []importreview.Finding
+	// filter is judged once that request is known.
+	filter *pendingRegistrationFilter
+}
+
+// convertRegistration converts a save-parameter registration and reviews its
+// search scope, filters and data-format extensions.
+func convertRegistration(fn ParsedFunction) registrationConversion {
+	ext, warnings, scope := convertExtractorWithScope(fn)
+	conversion := registrationConversion{extractor: ext, warnings: warnings}
+	if ext == nil {
+		return conversion
+	}
+	conversion.findings = append(conversion.findings, scope.findings...)
+	filterFindings, filter := sourceRegistrationFilters(fn, ext.Name)
+	conversion.findings = append(conversion.findings, filterFindings...)
+	conversion.filter = filter
+	return conversion
+}
 
 // convertExtractor converts a dynamic-value registration function
 // (web_reg_save_param and variants) to a DSL Extractor, plus warnings for
 // modifiers that cannot be reproduced exactly.
 func convertExtractor(fn ParsedFunction) (*dsl.Extractor, []string) {
+	ext, warnings, _ := convertExtractorWithScope(fn)
+	return ext, warnings
+}
+
+func convertExtractorWithScope(fn ParsedFunction) (*dsl.Extractor, []string, registrationScope) {
 	paramName := canonicalSourceParameterName(convertutil.FirstNonEmpty(firstNonEmptyArg(fn, "ParamName"), fn.StepName))
 	if paramName == "" {
-		return nil, nil
+		return nil, nil, registrationScope{}
 	}
 
 	warnings := extractorModifierWarnings(fn, paramName)
@@ -39,7 +72,7 @@ func convertExtractor(fn ParsedFunction) (*dsl.Extractor, []string) {
 		expression, attribWarnings, ok := sourceAttribSelector(fn, paramName, mode, ordinal)
 		warnings = append(warnings, attribWarnings...)
 		if !ok {
-			return nil, warnings
+			return nil, warnings, registrationScope{}
 		}
 		return &dsl.Extractor{
 			Name:       paramName,
@@ -51,17 +84,22 @@ func convertExtractor(fn ParsedFunction) (*dsl.Extractor, []string) {
 			SaveOffset: saveOffset,
 			SaveLength: saveLength,
 			Convert:    convert,
-		}, warnings
+		}, warnings, registrationScope{source: "body"}
 	}
 
 	if fn.Name == "web_reg_save_param_regexp" {
 		expression := firstNonEmptyArg(fn, "RegExp")
-		if expression == "" {
-			return nil, warnings
+		if untrimmed, _, ok := untrimmedSourceArgument(fn, "RegExp"); ok {
+			// Whitespace in a regular expression is part of the pattern.
+			expression = untrimmed
 		}
+		if expression == "" {
+			return nil, warnings, registrationScope{}
+		}
+		scope := sourceRegistrationScope(fn, paramName, true)
 		ext := &dsl.Extractor{
 			Name:       paramName,
-			Source:     sourceExtractorSource(firstNonEmptyArg(fn, "Scope")),
+			Source:     scope.source,
 			Type:       "regex",
 			Expression: expression,
 			OnMiss:     onMiss,
@@ -74,17 +112,18 @@ func convertExtractor(fn ParsedFunction) (*dsl.Extractor, []string) {
 			ext.Type = "regex_ordinal"
 			ext.Expression = encodeRegexOrdinalExpression(ext.Expression, ordinal)
 		}
-		return ext, warnings
+		return ext, warnings, scope
 	}
 
 	if fn.Name == "web_reg_save_param_json" {
 		expression := convertutil.FirstNonEmpty(firstNonEmptyArg(fn, "QueryString"), firstNonEmptyArg(fn, "JSONPath"), firstNonEmptyArg(fn, "Query"))
 		if expression == "" {
-			return nil, warnings
+			return nil, warnings, registrationScope{}
 		}
+		scope := sourceRegistrationScope(fn, paramName, false)
 		return &dsl.Extractor{
 			Name:       paramName,
-			Source:     sourceExtractorSource(firstNonEmptyArg(fn, "Scope")),
+			Source:     scope.source,
 			Type:       "jsonpath",
 			Expression: expression,
 			OnMiss:     onMiss,
@@ -92,17 +131,18 @@ func convertExtractor(fn ParsedFunction) (*dsl.Extractor, []string) {
 			SaveOffset: saveOffset,
 			SaveLength: saveLength,
 			Convert:    convert,
-		}, warnings
+		}, warnings, scope
 	}
 
 	if fn.Name == "web_reg_save_param_xpath" {
 		expression := convertutil.FirstNonEmpty(firstNonEmptyArg(fn, "QueryString"), firstNonEmptyArg(fn, "XPath"), firstNonEmptyArg(fn, "Query"))
 		if expression == "" {
-			return nil, warnings
+			return nil, warnings, registrationScope{}
 		}
+		scope := sourceRegistrationScope(fn, paramName, false)
 		return &dsl.Extractor{
 			Name:       paramName,
-			Source:     sourceExtractorSource(firstNonEmptyArg(fn, "Scope")),
+			Source:     scope.source,
 			Type:       "xpath",
 			Expression: expression,
 			OnMiss:     onMiss,
@@ -110,15 +150,22 @@ func convertExtractor(fn ParsedFunction) (*dsl.Extractor, []string) {
 			SaveOffset: saveOffset,
 			SaveLength: saveLength,
 			Convert:    convert,
-		}, warnings
+		}, warnings, scope
 	}
 
 	lb, rb, caseInsensitive, flagWarnings := sourceBoundaryArguments(fn)
 	warnings = append(warnings, flagWarnings...)
+	scope := sourceRegistrationScope(fn, paramName, true)
+	if scope.source == "header" {
+		// LoadRunner's header buffer ends each line with CRLF; APEX's header
+		// surface uses LF, so a recorded RB=\r\n would never match.
+		lb = strings.ReplaceAll(lb, "\r\n", "\n")
+		rb = strings.ReplaceAll(rb, "\r\n", "\n")
+	}
 
 	ext := &dsl.Extractor{
 		Name:       paramName,
-		Source:     sourceExtractorSource(firstNonEmptyArg(fn, "Scope")),
+		Source:     scope.source,
 		OnMiss:     onMiss,
 		Mode:       mode,
 		SaveOffset: saveOffset,
@@ -155,7 +202,7 @@ func convertExtractor(fn ParsedFunction) (*dsl.Extractor, []string) {
 		warnings = append(warnings, fmt.Sprintf("line %d: Salesforce login handoff extractor %q was normalized from strict boundary match (%s ... %s) to a cshc query/form regex; validate it against a current Salesforce capture or prefer HAR-backed salesforce_native import", fn.LineNumber, paramName, cleanConfigValue(lb), cleanConfigValue(rb)))
 	}
 
-	return ext, warnings
+	return ext, warnings, scope
 }
 
 func isSalesforceCSHCHandoffExtractor(paramName, lb, rb string) bool {
@@ -218,11 +265,46 @@ func sourceExtractorOrdinal(fn ParsedFunction) (ordinal int, saveAll bool) {
 	return parsePositiveInt(value), false
 }
 
+// untrimmedSourceArgument decodes a "Key=value" (or "Key/FLAGS=value") C
+// string argument without trimming the value, returning the modifier flags.
+// It reports false when the argument is absent, empty, or not a plain string
+// literal.
+func untrimmedSourceArgument(fn ParsedFunction, key string) (string, []string, bool) {
+	for _, arg := range fn.CallArgs {
+		if arg.Kind != "key_value" {
+			continue
+		}
+		base, _, _ := strings.Cut(strings.TrimSpace(arg.Name), "/")
+		if !strings.EqualFold(base, key) {
+			continue
+		}
+		decoded, ok := decodeAdjacentCStringLiterals(arg.Raw)
+		if !ok {
+			return "", nil, false
+		}
+		name, value, found := strings.Cut(decoded, "=")
+		if !found || value == "" {
+			return "", nil, false
+		}
+		var flags []string
+		if _, flagText, hasFlags := strings.Cut(strings.TrimSpace(name), "/"); hasFlags {
+			flags = strings.Split(flagText, "/")
+		}
+		return value, flags, true
+	}
+	return "", nil, false
+}
+
 // sourceBoundaryArguments resolves LB=/RB= boundary values, including
 // modifier-flag forms such as LB/IC= (case-insensitive). Unsupported modifier
 // flags produce warnings instead of being dropped silently.
 func sourceBoundaryArguments(fn ParsedFunction) (lb, rb string, caseInsensitive bool, warnings []string) {
 	resolve := func(base string) (string, []string) {
+		// Boundary whitespace is significant ("LB=Ref: ", "RB=\r\n"), but the
+		// generic argument values are trimmed, so read the C literal itself.
+		if value, flags, ok := untrimmedSourceArgument(fn, base); ok {
+			return value, flags
+		}
 		if value := fn.Args[base]; value != "" {
 			return value, nil
 		}
@@ -349,10 +431,20 @@ func normalizeSourceContentCheckScope(value string) string {
 }
 
 func convertFindAssertion(fn ParsedFunction) (*dsl.Assertion, *dsl.Extractor, SourceFunctionSupportMode, string) {
+	assertion, extractor, mode, warning, _ := convertFindAssertionWithFindings(fn)
+	return assertion, extractor, mode, warning
+}
+
+// convertFindAssertionWithFindings converts a text check and returns the
+// review findings for the parts APEX cannot check, which attach to the request
+// the check applies to.
+func convertFindAssertionWithFindings(fn ParsedFunction) (*dsl.Assertion, *dsl.Extractor, SourceFunctionSupportMode, string, []importreview.Finding) {
 	// Text may carry modifier flags (Text/IC= is case-insensitive).
 	text, flags := sourceFlaggedArgument(fn, "Text")
 	if text == "" {
-		return nil, nil, SourceFunctionSupportReviewOnly, fmt.Sprintf("line %d: web_reg_find '%s' — manual review recommended because no Text argument was found", fn.LineNumber, fn.StepName)
+		finding := promotionFinding(fn, textCheckUnsupportedReasonCode,
+			fmt.Sprintf("%s %q has no Text argument (prefix/suffix checks are not expressible yet), so the check is not executed.", fn.Name, fn.StepName))
+		return nil, nil, SourceFunctionSupportReviewOnly, fmt.Sprintf("line %d: web_reg_find '%s' — manual review recommended because no Text argument was found", fn.LineNumber, fn.StepName), []importreview.Finding{finding}
 	}
 
 	mode := SourceFunctionSupportExecutable
@@ -367,8 +459,12 @@ func convertFindAssertion(fn ParsedFunction) (*dsl.Assertion, *dsl.Extractor, So
 		// DIG, ALNUM and BIN change what the text matches (wildcards or
 		// binary escapes); checking it literally would fail where
 		// LoadRunner passes, so no check is emitted.
-		return nil, nil, SourceFunctionSupportReviewOnly, fmt.Sprintf("line %d: web_reg_find Text/%s has no DSL equivalent; the check was not imported and requires review", fn.LineNumber, strings.TrimSpace(flag))
+		finding := promotionFinding(fn, textCheckUnsupportedReasonCode,
+			fmt.Sprintf("%s %q uses Text/%s, which is not expressible yet, so the check is not executed.", fn.Name, fn.StepName, strings.TrimSpace(flag)))
+		return nil, nil, SourceFunctionSupportReviewOnly, fmt.Sprintf("line %d: web_reg_find Text/%s has no DSL equivalent; the check was not imported and requires review", fn.LineNumber, strings.TrimSpace(flag)), []importreview.Finding{finding}
 	}
+	var findings []importreview.Finding
+	headersOnly := searchScope == "headers" || searchScope == "header"
 	if searchScope == "all" {
 		// LoadRunner's ALL scope spans the main response body, response headers,
 		// and downloaded resources. APEX extractors can scan one response surface
@@ -377,6 +473,8 @@ func convertFindAssertion(fn ParsedFunction) (*dsl.Assertion, *dsl.Extractor, So
 		// explicit review gate instead of claiming exact execution.
 		mode = SourceFunctionSupportReviewOnly
 		warnings = append(warnings, fmt.Sprintf("line %d: web_reg_find Search=ALL is replayed against the main response body only; response headers and downloaded resources require review", fn.LineNumber))
+		findings = append(findings, promotionFinding(fn, textCheckNarrowedReasonCode,
+			fmt.Sprintf("%s %q searches headers, body and resources (Search=ALL); APEX checks the main response body only.", fn.Name, fn.StepName)))
 	}
 
 	var assertion *dsl.Assertion
@@ -386,7 +484,14 @@ func convertFindAssertion(fn ParsedFunction) (*dsl.Assertion, *dsl.Extractor, So
 	// makes this a non-failing count operation. Adding the default
 	// body_contains assertion here caused the request to fail before imported C
 	// code could inspect a zero count.
-	if saveCount == "" || failMode != "" {
+	if headersOnly && (saveCount == "" || failMode != "") {
+		// A body assertion would check the wrong surface; skip it until a
+		// headers assertion exists, and say so.
+		mode = SourceFunctionSupportReviewOnly
+		warnings = append(warnings, fmt.Sprintf("line %d: web_reg_find Search=Headers is not checked yet; the check was not imported and requires review", fn.LineNumber))
+		findings = append(findings, promotionFinding(fn, textCheckScopeReasonCode,
+			fmt.Sprintf("%s %q checks the response headers (Search=Headers); APEX cannot check headers for text yet, so the check is not executed.", fn.Name, fn.StepName)))
+	} else if saveCount == "" || failMode != "" {
 		assertionType := "body_contains"
 		if failMode == "found" {
 			assertionType = "body_not_contains"
@@ -410,7 +515,7 @@ func convertFindAssertion(fn ParsedFunction) (*dsl.Assertion, *dsl.Extractor, So
 		}
 	}
 
-	return assertion, saveCountExtractor, mode, strings.Join(warnings, "; ")
+	return assertion, saveCountExtractor, mode, strings.Join(warnings, "; "), findings
 }
 
 func sourceExtractorSource(scope string) string {
@@ -479,6 +584,10 @@ func firstNonEmptyArg(fn ParsedFunction, key string) string {
 }
 
 func sourceFlaggedArgument(fn ParsedFunction, key string) (string, []string) {
+	// Leading and trailing whitespace in check text is significant.
+	if value, flags, ok := untrimmedSourceArgument(fn, key); ok && strings.TrimSpace(value) != "" {
+		return value, flags
+	}
 	if value := firstNonEmptyArg(fn, key); value != "" {
 		return value, nil
 	}

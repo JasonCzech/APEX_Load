@@ -238,6 +238,8 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 
 	actionNameCounts := make(map[string]int)
 	unmodelledRequestArgs := make(map[string]int)
+	var pendingFindings []importreview.Finding
+	var pendingFilters []*pendingRegistrationFilter
 	trackLastExecutable := func(fn ParsedFunction) {
 		lastExecutablePhase = fn.Phase
 		lastExecutableIndex = actionCountForPhase(result.Script, fn.Phase) - 1
@@ -274,9 +276,15 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 		}
 		switch fn.Name {
 		case "web_reg_save_param", "web_reg_save_param_regexp", "web_reg_save_param_json", "web_reg_save_param_xpath", "web_reg_save_param_ex", "web_reg_save_param_attrib":
-			ext, extractorWarnings := convertExtractor(fn)
-			result.Warnings = append(result.Warnings, extractorWarnings...)
+			registration := convertRegistration(fn)
+			ext := registration.extractor
+			result.Warnings = append(result.Warnings, registration.warnings...)
 			if ext != nil {
+				pendingFindings = append(pendingFindings, registration.findings...)
+				if registration.filter != nil {
+					pendingFilters = append(pendingFilters, registration.filter)
+				}
+
 				pendingExtractors = append(pendingExtractors, *ext)
 				pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", ext.Name, "extractor", "contributor", "Applied to the next converted request action.", SourceFunctionSupportExecutable))
 				result.Stats.Extractors++
@@ -285,7 +293,8 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			}
 
 		case "web_reg_find":
-			assertion, saveCountExtractor, supportMode, warning := convertFindAssertion(fn)
+			assertion, saveCountExtractor, supportMode, warning, findFindings := convertFindAssertionWithFindings(fn)
+			pendingFindings = append(pendingFindings, findFindings...)
 			mapped := false
 			if assertion != nil {
 				pendingAssertions = append(pendingAssertions, *assertion)
@@ -314,9 +323,16 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			if fn.Args != nil && fn.Args["Text"] == "" && fn.Args["What"] != "" {
 				fn.Args["Text"] = fn.Args["What"]
 			}
-			assertion, saveCountExtractor, supportMode, warning := convertFindAssertion(fn)
+			assertion, saveCountExtractor, supportMode, warning, findFindings := convertFindAssertionWithFindings(fn)
 			if assertion != nil {
 				assertion.LegacyHTMLCheck = true
+			}
+			if len(findFindings) > 0 {
+				if prev := actionAtPhaseIndex(result.Script, lastRequestPhase, lastRequestIndex); prev != nil {
+					importreview.ApplyToAction(prev, findFindings)
+				} else {
+					pendingFindings = append(pendingFindings, findFindings...)
+				}
 			}
 			// web_find validates the previous response, so attach to the LAST emitted
 			// request action. pendingAssertions/pendingExtractors would flush forward
@@ -700,6 +716,18 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 					action.Extractors = append(action.Extractors, pendingExtractors...)
 					pendingExtractors = nil
 				}
+				// Review findings and search filters of the registrations that
+				// apply to this request.
+				if fn.Name != "web_image_check" {
+					for _, filter := range pendingFilters {
+						pendingFindings = append(pendingFindings, filter.findingsForAttachedRequest(action, firstNonEmptyArg(fn, "RecContentType"))...)
+					}
+					pendingFilters = nil
+					if len(pendingFindings) > 0 {
+						importreview.ApplyToAction(action, pendingFindings)
+						pendingFindings = nil
+					}
+				}
 
 				// Attach pending headers
 				if len(pendingHeaders) > 0 && fn.Name != "web_image_check" {
@@ -857,6 +885,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	if warning := unmodelledRequestArgumentsWarning(unmodelledRequestArgs); warning != "" {
 		result.Warnings = append(result.Warnings, warning)
 	}
+
 	preserveTrailingRequestContributors(
 		result,
 		pendingExtractors,

@@ -219,6 +219,13 @@ func (budget *extractorInputWorkBudget) charge(ext protocol.Extractor) error {
 			}
 			cost *= 4
 		}
+	case "all":
+		// Text extractors scan the flattened headers and the body as one
+		// surface; structured types read the body only.
+		cost = budget.bodyBytes
+		if extractorTypeScansText(ext.Type) {
+			cost += budget.headerBytes
+		}
 	case "header":
 		// Direct MIME-header lookup is bounded by the map implementation. Regex,
 		// and boundary paths flatten and scan the whole header surface
@@ -293,6 +300,8 @@ func extractRaw(ext protocol.Extractor, headers http.Header, body []byte) (strin
 	switch ext.Source {
 	case "", "body":
 		return extractFromBody(ext, body)
+	case "all":
+		return extractFromBody(ext, headersAndBodySurface(ext, headers, body))
 	case "header":
 		return extractFromHeaders(ext, headers)
 	default:
@@ -309,6 +318,8 @@ func extractAll(ext protocol.Extractor, headers http.Header, body []byte) ([]str
 	directHeaderLookup := false
 	switch ext.Source {
 	case "", "body":
+	case "all":
+		content = headersAndBodySurface(ext, headers, body)
 	case "header":
 		if ext.Type == "" || ext.Type == "header" {
 			directHeaderLookup = true
@@ -430,6 +441,46 @@ func extractFromHeaders(ext protocol.Extractor, headers http.Header) (string, er
 	default:
 		return "", fmt.Errorf("unsupported header extraction type: %s", ext.Type)
 	}
+}
+
+// extractorTypeScansText reports whether an extractor type searches raw text
+// (and so can search headers and body together) rather than parsing a
+// structured document.
+func extractorTypeScansText(extractorType string) bool {
+	switch extractorType {
+	case "regex", "regex_count", "regex_ordinal", "boundary":
+		return true
+	}
+	return false
+}
+
+// headersAndBodySurface is the "all" extraction surface, shaped like
+// LoadRunner's raw response buffer: "Name: value" header lines ending in CRLF,
+// a blank CRLF line, then the body. Boundaries recorded against that buffer
+// (for example RB=\r\n) therefore match. Structured extractor types read the
+// body only.
+func headersAndBodySurface(ext protocol.Extractor, headers http.Header, body []byte) []byte {
+	if !extractorTypeScansText(ext.Type) {
+		return body
+	}
+	keys := make([]string, 0, len(headers))
+	for key := range headers {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var builder strings.Builder
+	for _, key := range keys {
+		for _, value := range headers.Values(key) {
+			builder.WriteString(key)
+			builder.WriteString(": ")
+			builder.WriteString(value)
+			builder.WriteString("\r\n")
+		}
+	}
+	builder.WriteString("\r\n")
+	surface := make([]byte, 0, builder.Len()+len(body))
+	surface = append(surface, builder.String()...)
+	return append(surface, body...)
 }
 
 func flattenHeaders(headers http.Header) string {

@@ -1233,8 +1233,12 @@ func validateExtractorIssues(protocol string, path string, action Action) []stri
 				if !isAllowedValue(strings.TrimSpace(ext.Type), "", "header", "regex", "boundary") {
 					issues = append(issues, fmt.Sprintf("%s: extractors[%d] type %q is not supported for header extraction", label, i, ext.Type))
 				}
+			case "all":
+				if !isAllowedValue(strings.TrimSpace(ext.Type), "regex", "regex_count", "regex_ordinal", "boundary") {
+					issues = append(issues, fmt.Sprintf("%s: extractors[%d] type %q is not supported for headers-and-body extraction (use regex, regex_count, regex_ordinal or boundary)", label, i, ext.Type))
+				}
 			default:
-				issues = append(issues, fmt.Sprintf("%s: extractors[%d] source must be \"\", \"body\", or \"header\" (got %q)", label, i, ext.Source))
+				issues = append(issues, fmt.Sprintf("%s: extractors[%d] source must be \"\", \"body\", \"header\", or \"all\" (got %q)", label, i, ext.Source))
 			}
 		}
 		if ext.SaveOffset < 0 {
