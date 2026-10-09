@@ -35,7 +35,7 @@ test('script sidebars preserve selection, source scope, body editing and Debug o
   await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
   await page.getByRole('button', { name: 'Debug options (0)', exact: true }).click()
   const options = page.getByRole('region', { name: 'Session Overrides' })
-  await options.getByRole('combobox', { name: 'Log Level' }).selectOption('debug')
+  await options.getByRole('combobox', { name: 'Log level' }).selectOption('debug')
   await options.getByRole('checkbox', { name: 'Step through (start paused)' }).check()
   await expect(page.getByRole('button', { name: 'Debug options (2)', exact: true })).toBeVisible()
   await options.getByRole('button', { name: 'Done', exact: true }).click()

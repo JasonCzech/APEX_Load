@@ -5,6 +5,7 @@ import { ApiError } from '../hooks/apiClient'
 import { useNavigationGuard, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { CorrelationRuleset, CorrelationRulesetApplyResponse } from '../types'
 import './parityPanels.css'
+import { formatDateTime } from '../utils/dateTime'
 
 const ConfirmDestructiveModal = lazy(() => import('./ConfirmDestructiveModal'))
 
@@ -16,10 +17,9 @@ interface Props {
 const CATALOG_PAGE_SIZE = 100
 const MAX_CATALOG_PAGES = 1_000
 
+// Shared formatter: dates read the same, zone included, as the rest of the app.
 function formatTimestamp(value?: string): string {
-  if (!value) return '—'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+  return formatDateTime(value, { seconds: true, fallback: '—' })
 }
 
 function snapshotCaughtUp(

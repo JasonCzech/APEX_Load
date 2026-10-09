@@ -518,7 +518,7 @@ describe('JMeterImport', () => {
 
     await flushPromises()
 
-    const editButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Draft in Visual Editor'))
+    const editButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open draft in Visual Editor'))
     expect(editButton).toBeDefined()
     if (!editButton) {
       return
@@ -622,7 +622,7 @@ describe('JMeterImport', () => {
     await flushPromises()
 
     const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.trim() === 'Save and Open in Visual Editor')
+      .find(button => button.textContent?.trim() === 'Save and open in Visual Editor')
     expect(editButton).toBeDefined()
     await act(async () => editButton?.click())
     await flushPromises()

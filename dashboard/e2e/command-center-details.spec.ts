@@ -106,8 +106,8 @@ test('runtime workspace keeps essential metrics readable and settings in an opaq
       inset: parseFloat(style.getPropertyValue('--command-scroll-inset')) - parseFloat(getComputedStyle(scroller).paddingTop),
     }
   }), { timeout: 15_000, message: 'Command Center scroll offsets match the narrow viewport layout' }).toEqual({ header: 0, shelf: 0, inset: 0 })
-  const currentLoad = cockpit.locator('.command-group-row [data-label="Current VU"]').first()
-  expect(await currentLoad.evaluate(element => getComputedStyle(element, '::before').content)).toBe('"Current VU"')
+  const currentLoad = cockpit.locator('.command-group-row [data-label="Current VUsers"]').first()
+  expect(await currentLoad.evaluate(element => getComputedStyle(element, '::before').content)).toBe('"Current VUsers"')
   const groupActions = cockpit.getByRole('button', { name: 'smoke group actions', exact: true })
   await groupActions.evaluate(element => element.scrollIntoView({ block: 'start' }))
   await groupActions.focus()

@@ -1,4 +1,5 @@
 import { type SecretBindingRequirement } from '../types/scriptImports'
+import { formatDateTime } from '../utils/dateTime'
 import { type ScriptDefinition } from '../types/scripts'
 
 export interface ProtectedImportCandidate {
@@ -63,12 +64,22 @@ export function mergeProtectedParameterizationSelectionIds(
   )).sort()
 }
 
+/**
+ * One sentence for every importer's review window: the wall-clock time with its
+ * zone, and how long is left.
+ */
+export function importReviewExpiresText(expiry: number, now = Date.now()): string {
+  const minutes = Math.max(1, Math.round((expiry - now) / 60_000))
+  const left = minutes >= 120 ? `in ${Math.round(minutes / 60)} h` : `in ${minutes} min`
+  return `This import review expires at ${formatDateTime(expiry)} (${left}).`
+}
+
 export function protectedImportExpiryLabel(raw: string | undefined, now = Date.now()): string {
   if (!raw?.trim()) return ''
   const expiry = Date.parse(raw)
   if (!Number.isFinite(expiry)) return ''
   if (expiry <= now) return 'The protected server candidate has expired.'
-  return `Protected server candidate available until ${new Date(expiry).toLocaleString()}.`
+  return importReviewExpiresText(expiry, now)
 }
 
 export interface ImportDraftExpiryStatus {
@@ -97,6 +108,6 @@ export function importDraftExpiryStatus(
   }
   return {
     expired: false,
-    label: `Credential-preserving import draft available until ${new Date(expiry).toLocaleString()}.`,
+    label: importReviewExpiresText(expiry, now),
   }
 }

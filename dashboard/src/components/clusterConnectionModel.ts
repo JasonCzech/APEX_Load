@@ -140,85 +140,131 @@ export function isRemoteKind(kind: ClusterKind): boolean {
   return kind !== 'in_cluster'
 }
 
-/** The single validator called during render. */
-export function connectionDraftError(draft: ClusterDraft, mode: 'create' | 'edit'): string | null {
-  if (draft.name.trim() === '') return 'A cluster name is required.'
-  if (draft.namespace.trim() === '') return 'A namespace is required.'
+/** Draft fields a validation message can belong to. */
+export type ClusterDraftField = keyof ClusterDraft
+
+/** Field labels as the dialog shows them, for the "fix these fields" summary. */
+export const CLUSTER_FIELD_LABELS: Partial<Record<ClusterDraftField, string>> = {
+  name: 'Name', kind: 'Provider', namespace: 'Namespace', apiServerUrl: 'API server URL', caCertificatePem: 'CA certificate',
+  azureTenantId: 'Azure tenant ID', azureClientId: 'Azure client ID', clientSecret: 'Azure client secret', staticToken: 'Service-account token',
+  awsRegion: 'AWS region', awsClusterName: 'EKS cluster name', awsCredentialMode: 'AWS credentials', awsAccessKeyId: 'Access key ID',
+  awsSecretAccessKey: 'Secret access key', awsRoleArn: 'Role ARN', awsStsEndpoint: 'STS endpoint', generatorSelector: 'Generator selector',
+}
+
+// A Kubernetes namespace is an RFC 1123 DNS label.
+const DNS_LABEL = /^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/
+// Label keys are an optional DNS-subdomain prefix plus a name; values are names or empty.
+const LABEL_NAME = '[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?'
+const LABEL_KEY = `([a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?/)?${LABEL_NAME}`
+const LABEL_VALUE = `(${LABEL_NAME})?`
+const SELECTOR_REQUIREMENT = new RegExp(`^(!?${LABEL_KEY}|${LABEL_KEY}\\s*(==?|!=)\\s*${LABEL_VALUE}|${LABEL_KEY}\\s+(in|notin)\\s*\\(\\s*${LABEL_VALUE}(\\s*,\\s*${LABEL_VALUE})*\\s*\\))$`)
+
+/** True when the selector parses as Kubernetes label-selector syntax. */
+export function isLabelSelector(selector: string): boolean {
+  const requirements: string[] = []
+  let depth = 0
+  let current = ''
+  for (const char of selector) {
+    if (char === '(') depth++
+    if (char === ')') depth--
+    if (depth < 0) return false
+    if (char === ',' && depth === 0) { requirements.push(current); current = '' } else current += char
+  }
+  if (depth !== 0) return false
+  requirements.push(current)
+  return requirements.every(requirement => SELECTOR_REQUIREMENT.test(requirement.trim()))
+}
+
+/**
+ * Every problem with the draft, keyed by the field to fix, so the dialog can
+ * flag all of them at once. Cross-field conflicts attach to the field the
+ * engineer is most likely to change.
+ */
+export function connectionDraftErrors(draft: ClusterDraft, mode: 'create' | 'edit'): Partial<Record<ClusterDraftField, string>> {
+  const errors: Partial<Record<ClusterDraftField, string>> = {}
+  const add = (field: ClusterDraftField, message: string) => { if (!errors[field]) errors[field] = message }
+  if (draft.name.trim() === '') add('name', 'A cluster name is required.')
+  const namespace = draft.namespace.trim()
+  if (namespace === '') add('namespace', 'A namespace is required.')
+  else if (!DNS_LABEL.test(namespace)) add('namespace', 'A namespace uses lowercase letters, numbers and hyphens, starts and ends with a letter or number, and is at most 63 characters.')
+  const selector = draft.generatorSelector.trim()
+  if (selector !== '' && !isLabelSelector(selector)) add('generatorSelector', 'Use Kubernetes label-selector syntax, such as app=apexload-generator or tier in (load,perf).')
 
   if (!isRemoteKind(draft.kind)) {
     // The in-cluster connection derives its endpoint and credential from the
     // controller's own environment, so nothing else is required.
-    return null
+    return errors
   }
 
   const url = draft.apiServerUrl.trim()
-  if (url === '') return 'An API server URL is required.'
-  if (!url.startsWith('https://')) return 'The API server URL must start with https://.'
+  if (url === '') add('apiServerUrl', 'An API server URL is required.')
+  else if (!url.startsWith('https://')) add('apiServerUrl', 'The API server URL must start with https://.')
 
   const pem = draft.caCertificatePem.trim()
   if (draft.tlsMode === 'custom_ca' && pem === '') {
-    return 'A CA certificate is required unless the TLS mode is set to system roots.'
+    add('caCertificatePem', 'A CA certificate is required unless the TLS mode is set to system roots.')
   }
   // Only check for the PEM marker; parsing X.509 in the browser buys nothing.
   if (pem !== '' && !pem.includes('-----BEGIN CERTIFICATE-----')) {
-    return 'The CA certificate must be PEM-encoded (it should contain a BEGIN CERTIFICATE block).'
+    add('caCertificatePem', 'The CA certificate must be PEM-encoded (it should contain a BEGIN CERTIFICATE block).')
   }
 
   const usesEnvVar = draft.clientSecretEnvVar.trim() !== ''
 
   if (draft.authMode === 'azure_service_principal') {
-    if (draft.azureTenantId.trim() === '') return 'An Azure tenant ID is required.'
-    if (draft.azureClientId.trim() === '') return 'An Azure client ID is required.'
+    if (draft.azureTenantId.trim() === '') add('azureTenantId', 'An Azure tenant ID is required.')
+    if (draft.azureClientId.trim() === '') add('azureClientId', 'An Azure client ID is required.')
     if (mode === 'create' && draft.clientSecret.trim() === '' && !usesEnvVar) {
-      return 'An Azure client secret is required.'
+      add('clientSecret', 'An Azure client secret is required.')
     }
     if (usesEnvVar && draft.clientSecret.trim() !== '') {
-      return 'Provide either a client secret or an environment variable name, not both.'
+      add('clientSecret', 'Provide either a client secret or an environment variable name, not both.')
     }
   }
 
   if (draft.authMode === 'static_token') {
     if (mode === 'create' && draft.staticToken.trim() === '' && !usesEnvVar) {
-      return 'A service-account token is required.'
+      add('staticToken', 'A service-account token is required.')
     }
     if (usesEnvVar && draft.staticToken.trim() !== '') {
-      return 'Provide either a token or an environment variable name, not both.'
+      add('staticToken', 'Provide either a token or an environment variable name, not both.')
     }
   }
 
   if (draft.authMode === 'aws_iam') {
     if (draft.kind !== 'eks') {
-      return 'AWS IAM authentication is only valid for an Amazon EKS connection.'
+      add('kind', 'AWS IAM authentication is only valid for an Amazon EKS connection.')
     }
-    if (draft.awsRegion.trim() === '') return 'An AWS region is required.'
-    if (draft.awsClusterName.trim() === '') return 'An EKS cluster name is required.'
+    if (draft.awsRegion.trim() === '') add('awsRegion', 'An AWS region is required.')
+    if (draft.awsClusterName.trim() === '') add('awsClusterName', 'An EKS cluster name is required.')
     // The cluster name is written into a SIGNED HTTP header, so its charset is
     // a header-injection control rather than cosmetics. Mirrors the server.
-    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(draft.awsClusterName.trim())) {
-      return 'The EKS cluster name may only contain letters, numbers, hyphens, and underscores.'
+    else if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(draft.awsClusterName.trim())) {
+      add('awsClusterName', 'The EKS cluster name may only contain letters, numbers, hyphens, and underscores.')
     }
     if (draft.awsCredentialMode === 'static_keys') {
-      if (draft.awsAccessKeyId.trim() === '') return 'An AWS access key ID is required.'
+      if (draft.awsAccessKeyId.trim() === '') add('awsAccessKeyId', 'An AWS access key ID is required.')
       if (mode === 'create' && draft.awsSecretAccessKey.trim() === '' && !usesEnvVar) {
-        return 'An AWS secret access key is required.'
+        add('awsSecretAccessKey', 'An AWS secret access key is required.')
       }
       if (usesEnvVar && draft.awsSecretAccessKey.trim() !== '') {
-        return 'Provide either a secret access key or an environment variable name, not both.'
+        add('awsSecretAccessKey', 'Provide either a secret access key or an environment variable name, not both.')
       }
     }
     if (draft.awsCredentialMode === 'assume_role') {
       if (!/^arn:aws[a-z-]*:iam::\d{12}:role\/.+$/.test(draft.awsRoleArn.trim())) {
-        return 'A role ARN of the form arn:aws:iam::123456789012:role/name is required.'
+        add('awsRoleArn', 'A role ARN of the form arn:aws:iam::123456789012:role/name is required.')
       }
     }
     if (draft.awsCredentialMode === 'ambient') {
       // An ambiguous configuration must fail loudly rather than silently
-      // preferring one credential over the other.
+      // preferring one credential over the other. The conflicting fields are
+      // hidden in this mode, so the credential choice carries the message.
       if (draft.awsAccessKeyId.trim() !== '' || draft.awsSecretAccessKey.trim() !== '') {
-        return 'Workload identity cannot be combined with a static AWS access key.'
+        add('awsCredentialMode', 'Workload identity cannot be combined with a static AWS access key.')
       }
       if (draft.awsExternalId.trim() !== '') {
-        return 'An external ID only applies when assuming a role.'
+        add('awsCredentialMode', 'An external ID only applies when assuming a role.')
       }
     }
     const endpoint = draft.awsStsEndpoint.trim()
@@ -226,12 +272,17 @@ export function connectionDraftError(draft: ClusterDraft, mode: 'create' | 'edit
       // A presigned STS URL is a replayable bearer credential, so an endpoint
       // that is not real STS would exfiltrate it. Mirrors the server allow-list.
       if (!/^https:\/\/sts(-fips)?(\.[a-z0-9-]{1,32})?\.amazonaws\.com(\.cn)?\/?$/.test(endpoint)) {
-        return 'The STS endpoint must be an AWS STS host such as https://sts.us-east-1.amazonaws.com.'
+        add('awsStsEndpoint', 'The STS endpoint must be an AWS STS host such as https://sts.us-east-1.amazonaws.com.')
       }
     }
   }
 
-  return null
+  return errors
+}
+
+/** The first problem with the draft, or null when it can be saved. */
+export function connectionDraftError(draft: ClusterDraft, mode: 'create' | 'edit'): string | null {
+  return Object.values(connectionDraftErrors(draft, mode))[0] ?? null
 }
 
 /**

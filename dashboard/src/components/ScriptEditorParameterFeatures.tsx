@@ -264,7 +264,7 @@ export function ParameterDataDialog(props: ParameterDataDialogProps) {
             <button type="button" className="btn btn-sm btn-secondary" aria-pressed={workspaceView === 'datasets'} onClick={() => setWorkspaceView('datasets')}>Datasets</button>
             <button type="button" className="btn btn-sm btn-secondary" disabled={!props.canUndoStructure} onClick={props.onUndoStructure}>Undo structural edit</button>
             <label>New parameter type<select aria-label="New parameter type" value={newParameterType} onChange={event => setNewParameterType(event.target.value)}>{PARAMETER_CHOICE_DEFINITIONS.type.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-            <button type="button" className="btn btn-sm btn-accent" onClick={() => { setWorkspaceView('parameters'); onAddParameter(newParameterType) }}>+ Add Parameter</button>
+            <button type="button" className="btn btn-sm btn-primary" onClick={() => { setWorkspaceView('parameters'); onAddParameter(newParameterType) }}>+ Add Parameter</button>
           </div>
         </div>
         {workspaceView === 'datasets' ? <ParameterDatasetWorkspace {...props} onShowParameter={index => { onSelectParameter(index); setWorkspaceView('parameters') }} /> : <div className="parameter-workspace-layout">
@@ -414,7 +414,7 @@ function ParameterDataDetail({
         <div className="parameter-empty-state">
           Select a parameter from the Parameters sidebar, or add one to start configuring runtime data.
         </div>
-        <button type="button" className="btn btn-sm btn-accent" onClick={onAddParameter}>+ Add Parameter</button>
+        <button type="button" className="btn btn-sm btn-primary" onClick={onAddParameter}>+ Add Parameter</button>
       </div>
     )
   }
@@ -959,7 +959,7 @@ export function ParameterSidebar({
         <strong>Parameters</strong>
       </div>
       <div className="parameter-sidebar-actions">
-        <button type="button" className="btn btn-sm btn-accent" onClick={onAddParameter}>+ Add Parameter</button>
+        <button type="button" className="btn btn-sm btn-primary" onClick={onAddParameter}>+ Add Parameter</button>
         <button
           className="btn btn-sm btn-ghost"
           disabled={!mergeSummary.canMerge}
@@ -1182,7 +1182,7 @@ export function AutoParameterizationSidebar({
         </label>
         <button
           type="button"
-          className="btn btn-sm btn-accent auto-parameter-apply"
+          className="btn btn-sm btn-primary auto-parameter-apply"
           onClick={onApplyAutoParameterization}
           disabled={selectedCount === 0}
         >
@@ -1673,7 +1673,7 @@ export function ParameterDefinitionsSection({
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Define parameters with source-style update cadence and generated values.</span>
           </span>
         </button>
-        <button type="button" className="btn btn-sm btn-accent" onClick={handleAddParameter}>+ Add Parameter</button>
+        <button type="button" className="btn btn-sm btn-primary" onClick={handleAddParameter}>+ Add Parameter</button>
       </div>
 
       {isOpen && ((script.parameters?.length || 0) === 0 ? (

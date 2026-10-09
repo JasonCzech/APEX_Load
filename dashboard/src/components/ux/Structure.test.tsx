@@ -58,8 +58,8 @@ it('keeps the shared heading and route actions together', async () => {
 it('shows bulk actions only for a selection and keeps secondary row actions behind More', async () => {
   await act(async () => root.render(<><BulkActions count={0}><button>Delete selected</button></BulkActions><RowActions><button>Duplicate</button></RowActions></>))
   expect(container.querySelector('[aria-label="Selected library items"]')).toBeNull()
-  expect(container.querySelector('summary')!.textContent).toBe('More')
-  expect(container.querySelector('details')!.open).toBe(false)
+  expect(container.querySelector('.ux-row-actions-toggle')!.textContent).toBe('More')
+  expect(container.querySelector<HTMLElement>('.ux-row-actions-menu')!.hidden).toBe(true)
   await act(async () => root.render(<BulkActions count={2}><button>Delete selected</button></BulkActions>))
   expect(container.querySelector('[role="status"]')!.textContent).toBe('2 selected')
 })

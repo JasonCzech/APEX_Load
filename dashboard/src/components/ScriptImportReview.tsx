@@ -558,8 +558,8 @@ export default function ScriptImportReview({
   reviewBusy = false,
   onReviewBusyChange,
   onCredentialActionStart,
-  saveLabel = 'Save To Script Library',
-  editLabel = 'Open In Visual Editor',
+  saveLabel = 'Save to Script Library',
+  editLabel = 'Open in Visual Editor',
   previewTitle = 'Generated Script Preview',
   previewAside,
   sourceFocusRequest,
@@ -1021,7 +1021,7 @@ export default function ScriptImportReview({
                   ? 'Enter valid secret reference names before editing this draft.'
                   : undefined}
             >
-              {credentialAction === 'edit' ? 'Preparing editor...' : compactReview ? editLabel : resolvedEditLabel}
+              {credentialAction === 'edit' ? 'Preparing editor…' : compactReview ? editLabel : resolvedEditLabel}
             </button>
           )}
           {savedAction ? (
@@ -1036,7 +1036,7 @@ export default function ScriptImportReview({
                 ? 'Re-run the import to obtain a fresh credential-preserving draft before saving.'
                 : visibleSaveDisabledReason || undefined}
             >
-              {saving ? 'Saving...' : credentialAction === 'save' ? 'Preparing credentials...' : (compactReview || tabbed) ? saveLabel : resolvedSaveLabel}
+              {saving ? 'Saving…' : credentialAction === 'save' ? 'Preparing credentials…' : (compactReview || tabbed) ? saveLabel : resolvedSaveLabel}
             </button>
           )}
         </div>

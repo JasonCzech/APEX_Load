@@ -12,7 +12,7 @@ import { useApi } from '../hooks/useApi'
 import { getErrorMessage } from '../utils/errorUtils'
 import ImportDropzone from './ImportDropzone'
 import type { ScenarioUpsertPayload } from './scenarioPayloadUtils'
-import { formatTrafficProfileAxisTime, trafficProfileTargetAt } from './trafficProfilePreviewModel'
+import { formatTrafficProfileAxisTime, inferTimestampMode, trafficProfileTargetAt } from './trafficProfilePreviewModel'
 
 interface Props {
   projectId?: string
@@ -114,7 +114,10 @@ export default function CSVDrivenSourcePanel({ projectId, groupNames, scenarioDr
         setMappings({})
         const columns = result.sheets?.[0]?.columns || []
         const time = columns.find(column => /^(elapsed|time|timestamp|datetime)$/i.test(column))
-        if (!timestampColumn && time) { setTimestampColumn(time); if (/elapsed/i.test(time)) setTimestampMode('relative') }
+        if (!timestampColumn && time) {
+          setTimestampColumn(time)
+          setTimestampMode(inferTimestampMode(result.sheets?.[0]?.samples, columns, time) || (/elapsed/i.test(time) ? 'relative' : timestampMode))
+        }
         if (!valueColumns.length && layout === 'wide') setValueColumns(columns.filter(column => groupNames.some(group => group.toLowerCase() === column.toLowerCase())))
       } else {
         setMappings(Object.fromEntries(result.series.map(item => [item.series.key, groupNames.find(group => group.toLowerCase() === item.series.name.toLowerCase() || group.toLowerCase() === item.series.key.toLowerCase()) || ''])))
@@ -126,6 +129,11 @@ export default function CSVDrivenSourcePanel({ projectId, groupNames, scenarioDr
     }
   }
 
+  // Analyze needs these columns; say which one is missing instead of only disabling it.
+  const analyzeBlocker = !timestampColumn ? 'Choose the time column to analyze the schedule.'
+    : layout === 'long' && !seriesColumn ? 'Choose the group / series column to analyze the schedule.'
+      : valueColumns.length === 0 ? `Choose ${layout === 'wide' ? 'at least one target column' : 'the target column'} to analyze the schedule.`
+        : ''
   const mappingRows = analysis?.series || []
   const mappedGroups = Object.values(mappings).filter(Boolean)
   const mappingsReady = groupNames.length > 0
@@ -245,7 +253,7 @@ export default function CSVDrivenSourcePanel({ projectId, groupNames, scenarioDr
             {!!selectedSheet.samples?.length && <details><summary>Preview uploaded rows</summary><div className="data-table"><table><thead><tr>{selectedSheet.columns.map(column => <th key={column}>{column}</th>)}</tr></thead><tbody>{selectedSheet.samples.slice(0, 5).map((row, index) => <tr key={index}>{row.map((value, col) => <td key={col}>{value}</td>)}</tr>)}</tbody></table></div></details>}
             <p>Suggested columns are editable. Confirm time values and target columns, then analyze the schedule.</p>
             <div className="settings-grid compact-grid">
-              <label><span>Time column</span><select value={timestampColumn} onChange={event => { setTimestampColumn(event.target.value); invalidateColumnMapping() }}><option value="">Select…</option>{selectedSheet.columns.map(column => <option key={column}>{column}</option>)}</select></label>
+              <label><span>Time column</span><select value={timestampColumn} onChange={event => { const next = event.target.value; setTimestampColumn(next); const inferred = inferTimestampMode(selectedSheet.samples, selectedSheet.columns, next); if (inferred) setTimestampMode(inferred); invalidateColumnMapping() }}><option value="">Select…</option>{selectedSheet.columns.map(column => <option key={column}>{column}</option>)}</select></label>
               <label><span>Time values</span><select value={timestampMode} onChange={event => { setTimestampMode(event.target.value as typeof timestampMode); invalidateColumnMapping() }}><option value="absolute">Absolute timestamps</option><option value="relative">Relative elapsed time</option></select></label>
               {timestampMode === 'relative' && <label><span>Elapsed zero</span><input type="time" step={1} value={relativeStartTime} onChange={event => { setRelativeStartTime(event.target.value); invalidateColumnMapping() }} /></label>}
               {layout === 'long' && <label><span>Group / series column</span><select value={seriesColumn} onChange={event => { setSeriesColumn(event.target.value); invalidateColumnMapping() }}><option value="">Select…</option>{selectedSheet.columns.map(column => <option key={column}>{column}</option>)}</select></label>}
@@ -253,7 +261,8 @@ export default function CSVDrivenSourcePanel({ projectId, groupNames, scenarioDr
               {mode === 'goal_oriented' && <label><span>Optional ART columns</span><select multiple size={Math.min(6, Math.max(2, selectedSheet.columns.length))} value={artColumns} onChange={event => { setARTColumns(Array.from(event.currentTarget.selectedOptions, option => option.value)); invalidateColumnMapping() }}>{selectedSheet.columns.map(column => <option key={column}>{column}</option>)}</select></label>}
               {timestampMode === 'absolute' && <label><span>Timezone</span><input value={timezone} onChange={event => { setTimezone(event.target.value); invalidateColumnMapping() }} /></label>}
             </div>
-            <button type="button" className="btn btn-secondary" disabled={busy || !timestampColumn || valueColumns.length === 0 || (layout === 'long' && !seriesColumn)} onClick={() => void analyze()}>{busy ? 'Analyzing…' : analyzed ? 'Re-analyze schedule' : 'Analyze schedule'}</button>
+            <button type="button" className="btn btn-secondary" disabled={busy || Boolean(analyzeBlocker)} aria-describedby={analyzeBlocker ? 'csv-analyze-blocker' : undefined} onClick={() => void analyze()}>{busy ? 'Analyzing…' : analyzed ? 'Re-analyze schedule' : 'Analyze schedule'}</button>
+            {analyzeBlocker && <p id="csv-analyze-blocker" className="setting-desc">{analyzeBlocker}</p>}
           </>}
         </div>
       </section>

@@ -149,7 +149,10 @@ export default function BusinessKeyLookup({ testId, projectId, canLookup, canApp
     }
   }, [mappingId, testId, values])
 
-  if (!enabled) return null
+  // Someone who could use it learns the capability exists; others see nothing.
+  if (!enabled) return canLookup
+    ? <p className="run-report-muted" role="note">Business key lookup is not enabled for this project. A system administrator enables it per project.</p>
+    : null
   return (
     <section className="run-report-panel business-key-lookup" aria-label="Business key lookup">
       <div className="run-report-section-heading">

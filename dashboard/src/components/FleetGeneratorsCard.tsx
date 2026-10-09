@@ -10,6 +10,7 @@ import { dialogBackdropProps } from './dialogBackdropProps'
 import { FleetGeneratorMetadata, FleetPool } from '../types'
 import { listAllGeneratorMetadata, listAllFleetPools } from './fleetCatalogModel'
 import './parityPanels.css'
+import LoadingState from './ux/LoadingState'
 
 interface Props {
   canManage?: boolean
@@ -352,7 +353,7 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
       )}
 
       {loading ? (
-        <div className="pp-empty">Loading generator metadata…</div>
+        <LoadingState what="generator metadata" className="pp-loading" />
       ) : generators.length === 0 ? (
         <div className="pp-empty">No generator metadata yet. Label generators with a region, pool, or cordon state.</div>
       ) : (

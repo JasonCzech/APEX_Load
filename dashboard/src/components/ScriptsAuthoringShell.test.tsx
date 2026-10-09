@@ -266,7 +266,7 @@ describe('ScriptsAuthoringShell', () => {
     })
     await flushPromises()
 
-    expect(container.textContent).toContain('Create Script')
+    expect(container.textContent).toContain('Create script')
     expect(container.textContent).toContain('Start New Script')
     await clickButton('Use existing')
     expect(container.textContent).toContain('Copy an Existing Script')

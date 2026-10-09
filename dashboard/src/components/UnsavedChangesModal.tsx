@@ -71,7 +71,7 @@ export default function UnsavedChangesModal({
             Discard changes
           </button>
           {canSave && <button type="button" className="btn btn-primary" onClick={onSave} disabled={saving}>
-            {saving ? 'Saving...' : 'Save changes'}
+            {saving ? 'Saving…' : 'Save changes'}
           </button>}
         </div>
       </div>

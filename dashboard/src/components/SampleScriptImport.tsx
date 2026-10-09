@@ -1,4 +1,5 @@
 import { ImportConversionDetails } from './ImportConversionDetails'
+import { importSourceName } from '../appTopbar'
 import ImportWorkflowGuide from './ImportWorkflowGuide'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
 import { useImportSaveOutcome, type ImportSaveDestination } from './useImportSaveOutcome'
@@ -412,6 +413,20 @@ function sampleImportOptionsReducer(state: SampleImportOptions, action: SampleIm
   }
 }
 
+// The first non-blank line names most pasted samples; used to pick the format
+// instead of parsing raw HTTP or cURL as JSON.
+function sniffSampleFormat(text: string): SampleFormat | null {
+  const trimmed = text.trimStart()
+  const firstLine = trimmed.split(/\r?\n/, 1)[0]?.trim() || ''
+  if (/^curl\s/i.test(firstLine)) return 'curl'
+  if (/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+\S+(\s+HTTP\/\d(\.\d)?)?$/.test(firstLine)) return 'raw_http'
+  if (trimmed.startsWith('{') && /"log"\s*:/.test(trimmed) && /"entries"\s*:/.test(trimmed)) return 'har'
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) return 'rest_json'
+  return null
+}
+
+const SAMPLE_FORMAT_LABELS: Record<SampleFormat, string> = { rest_json: 'REST JSON', raw_http: 'Raw HTTP', curl: 'cURL', har: 'HAR / HAR Entry' }
+
 function inferSampleFormatFromFile(file: File | undefined, fallback: SampleFormat): SampleFormat {
   const name = file?.name.toLowerCase() || ''
   if (name.endsWith('.curl') || name.endsWith('.sh')) return 'curl'
@@ -447,6 +462,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
   const { begin: beginPrimaryIngest, succeed: succeedPrimaryIngest, fail: failPrimaryIngest } = primaryIngest
   const { begin: beginSecondaryIngest, succeed: succeedSecondaryIngest, fail: failSecondaryIngest } = secondaryIngest
   const [messageError, setMessageError] = useState('')
+  const [formatNotice, setFormatNotice] = useState('')
   const convertTask = useAsyncTask<SampleImportResult>()
   const saveTask = useAsyncTask<StoredScript>()
   const [options, dispatchOptions] = useReducer(sampleImportOptionsReducer, initialOptions)
@@ -832,7 +848,13 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
       )
       if (requestIsCurrent()) setAssetUploads({})
     } catch (error: unknown) {
-      if (requestIsCurrent()) setMessageError(getErrorMessage(error, 'Sample conversion failed'))
+      if (requestIsCurrent()) {
+        const message = getErrorMessage(error, 'Sample conversion failed')
+        // Parser output is for engineers; say what to change instead.
+        setMessageError(/failed to parse JSON sample/i.test(message)
+          ? `This sample is not valid JSON for the ${SAMPLE_FORMAT_LABELS[format]} format. Choose the Sample format that matches what you pasted, or fix the JSON.`
+          : message)
+      }
     }
   }
 
@@ -1022,7 +1044,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
       <ImportSaveConfirmation result={savedResult} onImportMore={() => handleBrowseSample('primary')} onOpen={openSaved} disabled={operationBusy} />
       <div className="sample-import-header">
         <div>
-          <h2>{isJavaHttpPreset ? 'Import Java over HTTP Samples' : 'Build Script From Sample'}</h2>
+          <h2>{isJavaHttpPreset ? 'Import Java over HTTP samples' : importSourceName('sample')}</h2>
           <p className="sample-import-subtitle">
             {isJavaHttpPreset
               ? 'Create a Java-over-HTTP draft from raw HTTP or cURL samples that already preserve base64-encoded serialized Java payloads.'
@@ -1047,13 +1069,14 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
             <p>{getFormatHelp(preset, format)}</p>
           </div>
           <div className="sample-import-format-controls">
-            <select aria-label="Sample format" value={format} onChange={e => handleFormatChange(e.target.value as SampleFormat)}>
+            <select aria-label="Sample format" value={format} onChange={e => { setFormatNotice(''); handleFormatChange(e.target.value as SampleFormat) }}>
               {availableFormats.map((option) => (
                 <option key={option} value={option}>
-                  {option === 'rest_json' ? 'REST JSON' : option === 'raw_http' ? 'Raw HTTP' : option === 'curl' ? 'cURL' : 'HAR / HAR Entry'}
+                  {SAMPLE_FORMAT_LABELS[option]}
                 </option>
               ))}
             </select>
+            {formatNotice && <span className="sample-import-format-notice" role="status">{formatNotice}</span>}
             <select aria-label="Payload profile" value={preset} onChange={e => handlePresetChange(e.target.value as SampleImportPreset)}>
               <option value="default">Standard API</option>
               <option value="java-http">Java over HTTP</option>
@@ -1105,7 +1128,19 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
                 </div>
               </div>
             )}
-            <textarea aria-label="Primary Sample" value={primaryContent} onChange={e => { invalidateSampleSource(); setPrimaryContent(e.target.value) }} rows={format === 'curl' ? 8 : 14} spellCheck={false} />
+            <textarea aria-label="Primary Sample" value={primaryContent} onChange={e => {
+              invalidateSampleSource()
+              const next = e.target.value
+              setPrimaryContent(next)
+              // Follow what was pasted when it is plainly another supported format.
+              const detected = sniffSampleFormat(next)
+              // A single HAR entry is a JSON object too; only a full HAR file moves away from it.
+              const ambiguousJson = detected === 'rest_json' && format === 'har'
+              if (detected && !ambiguousJson && detected !== format && availableFormats.includes(detected)) {
+                setFormat(detected)
+                setFormatNotice(`This looks like ${SAMPLE_FORMAT_LABELS[detected]}; Sample format switched to match.`)
+              }
+            }} rows={format === 'curl' ? 8 : 14} spellCheck={false} />
           </label>
 
           {(format === 'raw_http' || format === 'curl') && (
@@ -1291,7 +1326,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
                           <span className={`sample-import-asset-status ${ready ? 'ready' : 'missing'}`}>{ready ? 'Ready' : 'Missing asset'}</span>
                           {!ready && (
                             <label className="btn btn-secondary btn-sm">
-                              {uploadState?.pending ? 'Uploading...' : 'Upload Asset'}
+                              {uploadState?.pending ? 'Uploading…' : 'Upload Asset'}
                               <input
                                 type="file"
                                 aria-label={`Upload asset for ${source.name}`}
@@ -1348,7 +1383,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
               : undefined}
             onSave={handleSave}
             onEdit={onEdit && !savedResult ? handleEdit : undefined}
-            editLabel={editRequiresCredentialPreservingSave ? 'Save and Open in Visual Editor' : 'Open Draft in Visual Editor'}
+            editLabel={editRequiresCredentialPreservingSave ? 'Save and open in Visual Editor' : 'Open draft in Visual Editor'}
             previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={reviewedScript} title="Source Comparison" /> : undefined}
           >
             {replayPreflight && (

@@ -156,6 +156,15 @@ export function actionExecutionBlockers(action: Action): string[] {
   return [...blockers].sort()
 }
 
+/**
+ * Imported LoadRunner calls (transaction markers, rendezvous, timers and other
+ * lr_* utilities) replayed at their source position. They carry the source
+ * function and arguments, never a request target, headers or body.
+ */
+export function isSourceFunctionAction(action: Action) {
+  return action.type.startsWith('source_') || action.type.startsWith('loadrunner_') || action.type === 'rendezvous'
+}
+
 export function isControlAction(action: Action) {
 	return action.type === 'control_if' || action.type === 'control_switch' || action.type === 'control_loop' || action.type === 'control_parallel'
 }

@@ -504,7 +504,7 @@ export function LoadComparisonPanel({
             onChange={(event) => setKey(event.target.value)}
           >
             {!comparison?.options.length && (
-              <option value="">No matching evidence</option>
+              <option value="">{loading ? 'Loading evidence…' : 'No matching evidence'}</option>
             )}
             {comparison?.options.map((option) => (
               <option value={option.key} key={option.key}>
@@ -708,7 +708,8 @@ export function LoadComparisonPanel({
         {window.endSeconds !== undefined
           ? `${window.startSeconds}–${window.endSeconds}s after run start`
           : 'Entire recorded run'}{' '}
-        · {selectedOption?.sample_count ?? 0} source records
+        {/* A count is only stated once the comparison has loaded. */}
+        {!loading && <>· {selectedOption?.sample_count ?? 0} source records</>}
       </p>
       {!!comparison?.warnings?.length && (
         <div className="analysis-warning" role="status">

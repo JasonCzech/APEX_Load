@@ -675,6 +675,8 @@ interface Props {
   initialFocusedRuntimeArea?: string | null
   projectId?: string
   folderId?: string | null
+  /** Names of the other scripts in this script's folder; a repeat gets a hint, not a block. */
+  takenScriptNames?: string[]
   onSave?: (script: StoredScript, options?: ScriptSaveOptions) => void
   onClose?: () => void
 }
@@ -684,7 +686,7 @@ function scriptHasAuthoredActions(script: ScriptData): boolean {
 }
 
 
-export default function ScriptEditor({ scriptId, initialScript, initialAuthoring, initialRetainedDraft, initialRetainedNeedsReview = false, initialRetainedJsonText, initialRetainedCreatedSecretNames, initiallyDirty = false, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, initialFocusedRuntimeArea, projectId, folderId, onSave, onClose }: Props) {
+export default function ScriptEditor({ scriptId, initialScript, initialAuthoring, initialRetainedDraft, initialRetainedNeedsReview = false, initialRetainedJsonText, initialRetainedCreatedSecretNames, initiallyDirty = false, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, initialFocusedRuntimeArea, projectId, folderId, takenScriptNames, onSave, onClose }: Props) {
   const [authoringBaseline, setAuthoringBaseline] = useState<ScriptAuthoringBaseline | null>(null)
   const [authoringRevisionState, setAuthoringRevisionState] = useState<'loading' | 'ready' | 'blocked'>('loading')
   const [authoringRevisionReason, setAuthoringRevisionReason] = useState('')
@@ -985,6 +987,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   // context-aware sidebar emphasis: scaffolding aids lead for new scripts, review/parameter
   // aids lead when editing.
   const isEditingExisting = Boolean(scriptId)
+  const duplicateScriptName = Boolean(script.name?.trim()) && (takenScriptNames || []).some(name => name.trim().toLowerCase() === script.name.trim().toLowerCase())
   const scriptPhaseActionRows = useMemo(() => buildScriptPhaseActionRows(script), [script])
   const replayDebuggerController = useScriptReplayDebuggerController({
     browserReplaySession,
@@ -3007,7 +3010,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   handleSaveRef.current = handleSave
   const scriptEditorGuard = useMemo<NavigationGuard>(() => ({
     id: `script-editor-${scriptId || 'new'}`,
-    label: scriptId ? 'Edit Script' : 'Create Script',
+    label: scriptId ? 'Edit script' : 'Create script',
     isDirty: () => scriptEditorDirtyRef.current,
     save: () => handleSaveRef.current(),
     discard: () => undefined,
@@ -5346,7 +5349,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const scriptTopbarContribution = useMemo<TopbarContribution>(() => ({
     id: 'script-editor',
     priority: 80,
-    title: currentDraftScript.name || (scriptId ? 'Edit Script' : 'Create Script'),
+    title: currentDraftScript.name || (scriptId ? 'Edit script' : 'Create script'),
     meta: [
       {
         id: 'problems',
@@ -5372,7 +5375,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       />
     ),
     secondaryActions: [
-      { id: 'save-script', label: saving ? 'Saving...' : 'Save', title: saveScriptTitle, ariaLabel: 'Save script', disabled: saveScriptDisabled, tone: 'primary', onClick: () => { void topbarActionHandlersRef.current.handleSave() } },
+      { id: 'save-script', label: saving ? 'Saving…' : 'Save', title: saveScriptTitle, ariaLabel: 'Save script', disabled: saveScriptDisabled, tone: 'primary', onClick: () => { void topbarActionHandlersRef.current.handleSave() } },
       {
         id: 'run-debug',
         label: replayReport ? 'Debug again' : 'Debug one iteration',
@@ -5673,7 +5676,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                             onChange={e => setTxnWrapDraft(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') applyWrapSelectionInTransaction(); else if (e.key === 'Escape') setTxnWrapDraft(null) }}
                           />
-                          <button className="btn btn-sm btn-accent" onClick={applyWrapSelectionInTransaction} disabled={!txnWrapDraft.trim()}>Wrap</button>
+                          <button className="btn btn-sm btn-primary" onClick={applyWrapSelectionInTransaction} disabled={!txnWrapDraft.trim()}>Wrap</button>
                           <button className="btn btn-sm btn-ghost" onClick={() => setTxnWrapDraft(null)}>Cancel</button>
                           {txnWrapMode === 'span' && (
                             <span className="txn-wrap-hint" title="Timed span brackets every action between the first and last selected row">
@@ -5684,7 +5687,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                         </span>
                         )
                       })()}
-                      <button className="btn btn-sm btn-accent" onClick={() => addAction('action')}>+ Add</button>
+                      <button className="btn btn-sm btn-primary" onClick={() => addAction('action')}>+ Add</button>
                     </div>
                   </div>
                   {!outlineActionListCollapsed && (
@@ -5972,7 +5975,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       <div className="author-edit-toolbar">
         <button type="button" className="btn btn-sm btn-secondary" aria-pressed={!authorOverview} onClick={() => setAuthorOverview(false)}>Edit selected action</button>
         <button type="button" className="btn btn-sm btn-secondary" aria-pressed={authorOverview} onClick={() => setAuthorOverview(true)}>Overview & bulk</button>
-        <button type="button" className="btn btn-sm btn-accent" onClick={() => addAction(authorCodeFocus?.phase || 'action')}>+ Add Action</button>
+        <button type="button" className="btn btn-sm btn-primary" onClick={() => addAction(authorCodeFocus?.phase || 'action')}>+ Add Action</button>
       </div>
       {<div hidden={!authorOverview}>{renderBulkActionTools()}</div>}
       <div hidden={authorOverview}>{activeInspectorScope ? renderActionInspectorContent() : <div className="action-list-center-empty"><h3>Select an action to start editing</h3><p>Use the outline to navigate init, actions, teardown, and nested blocks, or add an action.</p></div>}</div>
@@ -6157,7 +6160,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             disabled={validateScriptDisabled}
             title={validateScriptTitle}
           >
-            {validating ? 'Checking...' : 'Recheck'}
+            {validating ? 'Checking…' : 'Recheck'}
           </TooltipButton>
         </div>
       </div>
@@ -6313,7 +6316,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
               </div>
               <div className="utility-stack">
                 <button type="button" className="btn btn-sm btn-primary" onClick={handleGenerateBrowserHTTPPreview} disabled={httpConversionGenerating || !httpConversionReview.networkEvidence}>
-                  {httpConversionGenerating ? 'Generating...' : 'Generate HTTP Draft Preview'}
+                  {httpConversionGenerating ? 'Generating…' : 'Generate HTTP Draft Preview'}
                 </button>
                 <button type="button" className="btn btn-sm btn-secondary" onClick={() => activateWorkspaceTab('debug')}>Debug</button>
                 <button type="button" className="btn btn-sm btn-secondary" onClick={() => openEditorSection('parameter-data')}>Review Parameter Data</button>
@@ -6533,7 +6536,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
               )}
               <div className="save-block-actions">
                 <button type="button" className="btn btn-sm btn-ghost" disabled={savingBlock} onClick={closeSaveBlockDialog}>Cancel</button>
-                <button type="button" className="btn btn-sm btn-accent" disabled={savingBlock || !saveBlockName.trim() || !projectId} onClick={saveSelectedAsBlock}>
+                <button type="button" className="btn btn-sm btn-primary" disabled={savingBlock || !saveBlockName.trim() || !projectId} onClick={saveSelectedAsBlock}>
                   {savingBlock ? 'Saving…' : 'Save block'}
                 </button>
               </div>
@@ -6571,7 +6574,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           <div className="editor-title-row">
             <div className="editor-actions">
               <TooltipButton className="btn btn-primary" onClick={handleSave} disabled={saveScriptDisabled} title={saveScriptTitle}>
-                {saving ? 'Saving...' : 'Save Script'}
+                {saving ? 'Saving…' : 'Save Script'}
               </TooltipButton>
               {onClose && <button className="btn btn-ghost" onClick={handleCloseEditor}>Close</button>}
             </div>
@@ -6595,7 +6598,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             <div className="script-ide-quick-actions" role="group" aria-label="Quick actions">
               <TooltipButton type="button" className="debugger-icon-btn" title={replayRunButtonTitle} onClick={() => void handleReplay()} disabled={replaying || saving || replayBlockedByMissingSecrets || !currentDraftScript.name || (currentDraftScript.actions || []).length === 0}>
                 <span className="debugger-icon" aria-hidden="true">&#9654;</span>
-                <span>{replaying ? 'Running...' : replayReport ? 'Debug again' : 'Debug one iteration'}</span>
+                <span>{replaying ? 'Running…' : replayReport ? 'Debug again' : 'Debug one iteration'}</span>
               </TooltipButton>
               {workspaceTab === 'debug' && (
                 <>
@@ -6929,7 +6932,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                     onClick={handleGenerateBrowserHTTPPreview}
                     disabled={httpConversionGenerating || !httpConversionReview.networkEvidence}
                   >
-                    {httpConversionGenerating ? 'Generating...' : 'Generate HTTP Draft Preview'}
+                    {httpConversionGenerating ? 'Generating…' : 'Generate HTTP Draft Preview'}
                   </button>
                   <button type="button" className="btn btn-secondary" onClick={() => activateWorkspaceTab('debug')}>
                     Debug
@@ -7006,8 +7009,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                 <div className="script-name-panel side-panel-script-name" aria-label="Script identity">
                   <label className="script-name-field">
                     <span>Script Name</span>
-                    <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" />
+                    <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" aria-describedby={duplicateScriptName ? 'script-name-duplicate' : undefined} />
                   </label>
+                  {duplicateScriptName && <small id="script-name-duplicate" className="script-name-duplicate">Another script in this folder is already named “{script.name.trim()}”. Both are kept; rename this one to tell them apart.</small>}
                 </div>
                 <nav className="script-action-navigator" aria-label="Script outline" onKeyDown={handleOutlineKeys}>
                   <label>Find action<input type="search" value={outlineActionFilter} onChange={event => setOutlineActionFilter(event.target.value)} /></label>

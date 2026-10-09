@@ -294,7 +294,7 @@ export default function SynchronizedTimeline({ data, annotations, goalConfig, lo
   if (loading)
     return (
       <section className="run-report-panel run-report-timeline">
-        <p role="status">Loading timeline...</p>
+        <p role="status">Loading timeline…</p>
       </section>
     )
   if (error)

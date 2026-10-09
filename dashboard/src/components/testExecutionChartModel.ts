@@ -272,7 +272,7 @@ export function isResponsePercentileChart(chart: ChartConfig): chart is ChartCon
 }
 
 export const chartConfigs: ChartConfig[] = [
-  { id: 'vusers', title: 'Virtual Users', type: 'area', dataKey: 'vusers', color: 'var(--chart-1)' },
+  { id: 'vusers', title: 'VUsers', type: 'area', dataKey: 'vusers', color: 'var(--chart-1)' },
   { id: 'tps', title: 'Transactions Per Second', type: 'line-multi', totalKey: 'tps' },
   { id: 'latency', title: 'Response Time (ms)', type: 'line-latency' },
   ...responsePercentileCharts,

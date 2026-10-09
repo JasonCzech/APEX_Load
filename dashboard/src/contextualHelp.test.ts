@@ -33,5 +33,4 @@ it('sends an importer opened from Script Builder to the import help', () => {
 it('offers no page help link on the help pages themselves', () => {
   expect(contextualHelpHash({ page: 'docs' })).toBeUndefined()
   expect(contextualHelpHash({ page: 'swagger' })).toBeUndefined()
-  expect(contextualHelpHash({ page: 'repository-guide' })).toBeUndefined()
 })

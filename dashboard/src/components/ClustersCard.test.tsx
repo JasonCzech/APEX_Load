@@ -134,6 +134,27 @@ describe('ClustersCard', () => {
     expect(container.textContent).toContain('Leave blank to keep the stored credential')
   })
 
+  it('flags each invalid field it was given and lists the rest before Connect', async () => {
+    await render(true)
+    await act(async () => { buttonByText('Connect Cluster')?.click() })
+    await flush()
+    const field = (label: string) => Array.from(container.querySelectorAll('label.pp-field')).find(item => item.querySelector('span')?.textContent === label)!.querySelector('input') as HTMLInputElement
+    // Nothing is flagged before the engineer types; the summary names what is missing.
+    expect(container.querySelector('[aria-invalid="true"]')).toBeNull()
+    expect(container.textContent).toContain('To connect, complete or correct: Name, Namespace, API server URL')
+    await act(async () => {
+      setInputValue(field('Namespace'), 'Bad Namespace!')
+      setInputValue(field('Generator selector'), 'not==valid==x')
+    })
+    for (const label of ['Namespace', 'Generator selector']) {
+      const input = field(label)
+      expect(input.getAttribute('aria-invalid')).toBe('true')
+      expect(document.getElementById(input.getAttribute('aria-describedby')!)?.textContent).toBeTruthy()
+    }
+    expect(field('Name').getAttribute('aria-invalid')).toBeNull()
+    expect(buttonByText('Connect')?.disabled).toBe(true)
+  })
+
   it('shows a test result and clears it when any field is edited', async () => {
     clustersApiMock.testCluster.mockResolvedValue(okTest)
     await render(true)

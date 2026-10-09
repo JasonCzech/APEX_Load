@@ -280,7 +280,7 @@ test('LoadRunner concurrent markers import exact child mappings and replay on th
     await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
     if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
     await page.getByRole('button', { name: 'Import', exact: true }).click()
-    await page.getByRole('button', { name: /Import Loadrunner Script Archive/ }).click()
+    await page.getByRole('button', { name: /LoadRunner Script Archive/ }).click()
     const source = `Action() {\nweb_url("Login", "URL=${target.url}/login", LAST);\nweb_concurrent_start(NULL);\nweb_reg_save_param_json("ParamName=first", "QueryString=$.value", LAST);\nweb_url("First sibling", "URL=${target.url}/group/1", LAST);\nweb_reg_save_param_json("ParamName=second", "QueryString=$.value", LAST);\nweb_url("Second sibling", "URL=${target.url}/group/2", LAST);\nweb_concurrent_end(NULL);\nweb_url("Consume joined values", "URL=${target.url}/consume?first={first}&second={second}", LAST);\nreturn 0;\n}`
     await page.locator('input[type=file][accept=".zip,.usz"]').setInputFiles({ name: 'concurrent-http.zip', mimeType: 'application/zip', buffer: sourceArchive(source) })
     const converted = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/validate')
@@ -300,7 +300,7 @@ test('LoadRunner concurrent markers import exact child mappings and replay on th
     expect(childMappings.map(mapping => mapping.target_name)).toEqual(children.map(child => child.name))
     await page.getByRole('tab', { name: 'Source Mapping', exact: true }).click()
     for (const mapping of childMappings) await expect(page.locator(`tr[data-mapping-id="${mapping.id}"]`)).toContainText(mapping.target_path!)
-    await page.getByRole('tab', { name: 'Review', exact: true }).click()
+    await page.getByRole('tab', { name: /^Review(,|$)/ }).click()
     const save = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/save')
     const setup = page.locator('.lr-completed-setup')
     if (await setup.getAttribute('open') === null) await setup.locator(':scope > summary').click()
@@ -407,7 +407,8 @@ test('runtime evidence unavailability hides stale DTO detail, history and export
   // Recent runs exclude the current run. A clean second run exposes the
   // first run as history and proves the unavailable flag remains run-scoped.
   await page.locator('.topbar-debug-action-run').click()
-  await expect(watches.getByRole('combobox', { name: 'Values at', exact: true })).toHaveValue('current')
+  await expect(watches).toContainText('This is historical evidence, not current engine state.')
+  await watches.getByRole('combobox', { name: 'Values at', exact: true }).selectOption('current')
   await expect(watches).toContainText('Current state unavailable: the session has ended.')
   await expect(watches).not.toContainText('new-run-current-value')
   await watches.getByRole('combobox', { name: 'Values at', exact: true }).selectOption('retained')

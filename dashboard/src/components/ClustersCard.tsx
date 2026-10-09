@@ -13,7 +13,9 @@ import {
   ClusterDraft,
   clusterDraftFrom,
   connectionBaseline,
-  connectionDraftError,
+  CLUSTER_FIELD_LABELS,
+  type ClusterDraftField,
+  connectionDraftErrors,
   connectionIsDirty,
   connectionPayload,
   describeCredentialSource,
@@ -22,6 +24,8 @@ import {
   isRemoteKind,
 } from './clusterConnectionModel'
 import './parityPanels.css'
+import LoadingState from './ux/LoadingState'
+import EmptyState from './ux/EmptyState'
 
 interface Props {
   resourceId?: string
@@ -66,6 +70,8 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
   const [draft, setDraft] = useState<ClusterDraft | null>(null)
   const [draftBaseline, setDraftBaseline] = useState('')
   const [draftMode, setDraftMode] = useState<'create' | 'edit'>('create')
+  // Fields the engineer has edited; a new connection's empty fields are not flagged until touched.
+  const [touched, setTouched] = useState<Set<ClusterDraftField>>(new Set())
   const [deleteTarget, setDeleteTarget] = useState<ClusterConnection | null>(null)
 
   const [testingId, setTestingId] = useState<string | null>(null)
@@ -95,7 +101,14 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
     void load()
   }, [load])
 
-  const draftError = draft ? connectionDraftError(draft, draftMode) : null
+  const draftErrors = draft ? connectionDraftErrors(draft, draftMode) : {}
+  const invalidFields = Object.keys(draftErrors) as ClusterDraftField[]
+  const draftError = invalidFields.length > 0
+  // Each problem sits under its own field and describes it. The note stays
+  // inside the field's label for layout, hidden from the label's name.
+  const shownError = (field: ClusterDraftField) => (draftMode === 'edit' || touched.has(field)) ? draftErrors[field] : undefined
+  const errorProps = (field: ClusterDraftField) => shownError(field) ? { 'aria-invalid': true as const, 'aria-describedby': `${dialogTitleId}-${field}-error` } : {}
+  const errorNote = (field: ClusterDraftField) => shownError(field) ? <small id={`${dialogTitleId}-${field}-error`} className="pp-field-error" aria-hidden="true">{shownError(field)}</small> : null
   const draftDirty = draft ? connectionIsDirty(draft, draftBaseline) : false
 
   const closeDialog = useCallback(() => {
@@ -112,6 +125,7 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
    */
   const updateDraft = useCallback((patch: Partial<ClusterDraft>) => {
     setDraft(current => (current ? { ...current, ...patch } : current))
+    setTouched(current => new Set([...current, ...(Object.keys(patch) as ClusterDraftField[])]))
     setTestResult(null)
     setTestError(null)
   }, [])
@@ -121,6 +135,7 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
     setDraft(next)
     setDraftBaseline(connectionBaseline(next))
     setDraftMode('create')
+    setTouched(new Set())
     setTestResult(null)
     setTestError(null)
   }, [])
@@ -130,6 +145,7 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
     setDraft(next)
     setDraftBaseline(connectionBaseline(next))
     setDraftMode('edit')
+    setTouched(new Set())
     setTestResult(null)
     setTestError(null)
   }, [])
@@ -245,11 +261,9 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
       {testError && <div className="pp-error" role="alert">{testError}</div>}
 
       {loading ? (
-        <div className="pp-empty">Loading cluster connections…</div>
+        <LoadingState what="cluster connections" className="pp-loading" />
       ) : clusters.length === 0 ? (
-        <div className="pp-empty">
-          No clusters connected. Register a Kubernetes or AKS cluster to run generators there and allocate host resources.
-        </div>
+        <EmptyState title="No clusters connected yet." hint="Connect a Kubernetes, AKS or EKS cluster to run load generators there and allocate their resources." />
       ) : (
         <div className="pp-list">
           {resourceId && <p role="status">Selected resource: {resourceId}. {!clusters.some(item => item.id === resourceId) && 'This resource was not found or is no longer accessible.'} <a href={window.location.hash.replace(/([?&])resourceId=[^&]*&?/, '$1').replace(/[?&]$/, '')}>Show all resources</a></p>}
@@ -314,14 +328,14 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
 
             <label className="pp-field">
               <span>Name</span>
-              <input ref={initialFocusRef} value={draft.name} onChange={e => updateDraft({ name: e.target.value })} />
+              <input ref={initialFocusRef} value={draft.name} {...errorProps('name')} onChange={e => updateDraft({ name: e.target.value })} />{errorNote('name')}
             </label>
 
             <div className="pp-field-row">
               <label className="pp-field">
                 <span>Provider</span>
                 <select
-                  value={draft.kind}
+                  {...errorProps('kind')} value={draft.kind}
                   onChange={e => {
                     const kind = e.target.value as ClusterKind
                     updateDraft({
@@ -338,11 +352,11 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
                   <option value="eks">Amazon EKS</option>
                   <option value="generic">Kubernetes</option>
                   <option value="in_cluster">In-cluster (this controller)</option>
-                </select>
+                </select>{errorNote('kind')}
               </label>
               <label className="pp-field">
                 <span>Namespace</span>
-                <input value={draft.namespace} onChange={e => updateDraft({ namespace: e.target.value })} />
+                <input value={draft.namespace} {...errorProps('namespace')} onChange={e => updateDraft({ namespace: e.target.value })} />{errorNote('namespace')}
               </label>
             </div>
 
@@ -353,8 +367,8 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
                   <input
                     value={draft.apiServerUrl}
                     placeholder="https://my-cluster.hcp.eastus.azmk8s.io"
-                    onChange={e => updateDraft({ apiServerUrl: e.target.value })}
-                  />
+                    {...errorProps('apiServerUrl')} onChange={e => updateDraft({ apiServerUrl: e.target.value })}
+                  />{errorNote('apiServerUrl')}
                 </label>
 
                 <label className="pp-field">
@@ -372,8 +386,8 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
                       rows={4}
                       value={draft.caCertificatePem}
                       placeholder="-----BEGIN CERTIFICATE-----"
-                      onChange={e => updateDraft({ caCertificatePem: e.target.value })}
-                    />
+                      {...errorProps('caCertificatePem')} onChange={e => updateDraft({ caCertificatePem: e.target.value })}
+                    />{errorNote('caCertificatePem')}
                   </label>
                 )}
 
@@ -381,11 +395,11 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
                   <div className="pp-field-row">
                     <label className="pp-field">
                       <span>Azure tenant ID</span>
-                      <input value={draft.azureTenantId} onChange={e => updateDraft({ azureTenantId: e.target.value })} />
+                      <input value={draft.azureTenantId} {...errorProps('azureTenantId')} onChange={e => updateDraft({ azureTenantId: e.target.value })} />{errorNote('azureTenantId')}
                     </label>
                     <label className="pp-field">
                       <span>Azure client ID</span>
-                      <input value={draft.azureClientId} onChange={e => updateDraft({ azureClientId: e.target.value })} />
+                      <input value={draft.azureClientId} {...errorProps('azureClientId')} onChange={e => updateDraft({ azureClientId: e.target.value })} />{errorNote('azureClientId')}
                     </label>
                   </div>
                 )}
@@ -398,22 +412,22 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
                         <input
                           value={draft.awsRegion}
                           placeholder="us-east-1"
-                          onChange={e => updateDraft({ awsRegion: e.target.value })}
-                        />
+                          {...errorProps('awsRegion')} onChange={e => updateDraft({ awsRegion: e.target.value })}
+                        />{errorNote('awsRegion')}
                       </label>
                       <label className="pp-field">
                         <span>EKS cluster name</span>
                         <input
                           value={draft.awsClusterName}
                           placeholder="prod-perf"
-                          onChange={e => updateDraft({ awsClusterName: e.target.value })}
-                        />
+                          {...errorProps('awsClusterName')} onChange={e => updateDraft({ awsClusterName: e.target.value })}
+                        />{errorNote('awsClusterName')}
                       </label>
                     </div>
                     <label className="pp-field">
                       <span>AWS credentials</span>
                       <select
-                        value={draft.awsCredentialMode}
+                        {...errorProps('awsCredentialMode')} value={draft.awsCredentialMode}
                         onChange={e =>
                           updateDraft({ awsCredentialMode: e.target.value as ClusterDraft['awsCredentialMode'] })
                         }
@@ -421,7 +435,7 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
                         <option value="ambient">Workload identity (IRSA / EKS Pod Identity)</option>
                         <option value="assume_role">Assume an IAM role</option>
                         <option value="static_keys">Static access key</option>
-                      </select>
+                      </select>{errorNote('awsCredentialMode')}
                     </label>
                     {draft.awsCredentialMode === 'ambient' && (
                       <div className="pp-muted">
@@ -435,8 +449,8 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
                           <input
                             value={draft.awsRoleArn}
                             placeholder="arn:aws:iam::123456789012:role/apexload-eks"
-                            onChange={e => updateDraft({ awsRoleArn: e.target.value })}
-                          />
+                            {...errorProps('awsRoleArn')} onChange={e => updateDraft({ awsRoleArn: e.target.value })}
+                          />{errorNote('awsRoleArn')}
                         </label>
                         <label className="pp-field">
                           <span>
@@ -457,8 +471,8 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
                           <span>Access key ID</span>
                           <input
                             value={draft.awsAccessKeyId}
-                            onChange={e => updateDraft({ awsAccessKeyId: e.target.value })}
-                          />
+                            {...errorProps('awsAccessKeyId')} onChange={e => updateDraft({ awsAccessKeyId: e.target.value })}
+                          />{errorNote('awsAccessKeyId')}
                         </label>
                         <label className="pp-field">
                           <span>
@@ -468,8 +482,8 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
                             type="password"
                             autoComplete="new-password"
                             value={draft.awsSecretAccessKey}
-                            onChange={e => updateDraft({ awsSecretAccessKey: e.target.value })}
-                          />
+                            {...errorProps('awsSecretAccessKey')} onChange={e => updateDraft({ awsSecretAccessKey: e.target.value })}
+                          />{errorNote('awsSecretAccessKey')}
                         </label>
                       </div>
                     )}
@@ -478,8 +492,8 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
                       <input
                         value={draft.awsStsEndpoint}
                         placeholder="https://sts.us-east-1.amazonaws.com"
-                        onChange={e => updateDraft({ awsStsEndpoint: e.target.value })}
-                      />
+                        {...errorProps('awsStsEndpoint')} onChange={e => updateDraft({ awsStsEndpoint: e.target.value })}
+                      />{errorNote('awsStsEndpoint')}
                     </label>
                   </>
                 )}
@@ -491,8 +505,8 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
                       type="password"
                       autoComplete="new-password"
                       value={draft.clientSecret}
-                      onChange={e => updateDraft({ clientSecret: e.target.value })}
-                    />
+                      {...errorProps('clientSecret')} onChange={e => updateDraft({ clientSecret: e.target.value })}
+                    />{errorNote('clientSecret')}
                   </label>
                 ) : (
                   <label className="pp-field">
@@ -501,8 +515,8 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
                       type="password"
                       autoComplete="new-password"
                       value={draft.staticToken}
-                      onChange={e => updateDraft({ staticToken: e.target.value })}
-                    />
+                      {...errorProps('staticToken')} onChange={e => updateDraft({ staticToken: e.target.value })}
+                    />{errorNote('staticToken')}
                   </label>
                 )}
                 {draftMode === 'edit' && draft.hasStoredCredential && (
@@ -543,11 +557,11 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
               <input
                 value={draft.generatorSelector}
                 placeholder="app=apexload-generator"
-                onChange={e => updateDraft({ generatorSelector: e.target.value })}
-              />
+                {...errorProps('generatorSelector')} onChange={e => updateDraft({ generatorSelector: e.target.value })}
+              />{errorNote('generatorSelector')}
             </label>
 
-            {draftError && <div className="pp-error" role="alert">{draftError}</div>}
+            {draftError && <div className="pp-muted" aria-live="polite">To {draftMode === 'create' ? 'connect' : 'save'}, complete or correct: {invalidFields.map(field => CLUSTER_FIELD_LABELS[field] || field).join(', ')}.</div>}
             <div className="pp-muted">Save the connection first — the connection test uses the stored configuration.</div>
 
             <div className="pp-modal-actions">

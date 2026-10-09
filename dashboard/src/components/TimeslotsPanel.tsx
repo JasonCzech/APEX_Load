@@ -16,6 +16,8 @@ import { zonedLocalToISO } from './timeslotTimezoneModel'
 import './parityPanels.css'
 import TimezoneSelect from './ux/TimezoneSelect'
 import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
+import LoadingState from './ux/LoadingState'
+import EmptyState from './ux/EmptyState'
 
 interface Props {
   projectId?: string
@@ -391,11 +393,11 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
       {error && <div className="pp-error" role="alert">{error}</div>}
 
       {!projectId ? (
-        <div className="pp-empty">Select a project to view its capacity reservations.</div>
+        <EmptyState title="No project selected." hint="Select a project to view its capacity reservations." />
       ) : loading ? (
-        <div className="pp-empty">Loading reservations…</div>
+        <LoadingState what="reservations" className="pp-loading" />
       ) : timeslots.length === 0 ? (
-        <div className="pp-empty">No capacity reservations. Reserve a future window of generator capacity for a planned run.</div>
+        <EmptyState title="No capacity reservations yet." hint="Reserve a future window of generator capacity for a planned run." />
       ) : (
         <div className="pp-list">
           {timeslots.map(slot => (

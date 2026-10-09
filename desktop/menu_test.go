@@ -207,5 +207,11 @@ func TestBuildAppMenuHelpHasAbout(t *testing.T) {
 		if openBrowser == nil || openBrowser.Click == nil {
 			t.Errorf("%s: Help browser entry must emit a renderer-owned context action", goos)
 		}
+		// In-app help and the shortcut list are reachable from the native menu.
+		for _, label := range []string{"APEX Load Help", "Keyboard Shortcuts…"} {
+			if item := labeledItem(help, label); item == nil || item.Click == nil {
+				t.Errorf("%s: Help missing %q", goos, label)
+			}
+		}
 	}
 }

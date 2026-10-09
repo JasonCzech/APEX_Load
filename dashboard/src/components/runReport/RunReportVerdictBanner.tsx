@@ -92,7 +92,7 @@ export default function RunReportVerdictBanner({
           <p className="run-report-muted run-report-override-provenance">{verdictProvenance(annotations)}</p>
           <div className="run-report-override-actions">
             <button className="btn btn-sm btn-primary" type="button" onClick={() => void save()} disabled={controlsDisabled}>
-              {saving ? 'Saving...' : 'Save'}
+              {saving ? 'Saving…' : 'Save'}
             </button>
             {disabled && !saving && <span role="status">Annotations unavailable</span>}
             {message && <span role="status">{message}</span>}

@@ -420,7 +420,7 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
               <Metric label="Archive records" value={formatInt(overview?.transactions)} />
               <Metric label="Avg latency" value={formatMs(headline?.avg_response_ms)} />
               <Metric label="Error rate" value={formatReportPercent(headline?.error_pct)} tone={(headline?.error_pct ?? 0) > 0 ? 'warn' : 'ok'} />
-              <Metric label="Peak attempts/s" value={formatNumber(headline?.peak_tps, 1)} />
+              <Metric label="Peak TPS (attempts/s)" value={formatNumber(headline?.peak_tps, 1)} />
               <Metric label="Peak VUsers" value={formatInt(overview?.peak_active_vusers)} />
             </section>
             <p className="report-hint">Headline metrics: {populationLabels[headlinePopulation]} · whole run</p>
@@ -604,7 +604,7 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
                     <tr><th>Created By</th><td>{formatActor(report.manifest.provenance?.created_by_display_name, report.manifest.provenance?.created_by_subject)}</td></tr>
                     <tr><th>Started By</th><td>{formatActor(report.manifest.provenance?.started_by_display_name, report.manifest.provenance?.started_by_subject)}</td></tr>
                     <tr><th>Stopped By</th><td>{formatActor(report.manifest.provenance?.stopped_by_display_name, report.manifest.provenance?.stopped_by_subject)}</td></tr>
-                    <tr><th>Execution-plan Approval</th><td>{executionPlanApprovalSummary}</td></tr>
+                    <tr><th>Execution-plan approval</th><td>{executionPlanApprovalSummary}</td></tr>
                     <tr><th>Runtime Overrides</th><td>{report.change_attribution?.runtime_overrides ? (report.change_attribution.runtime_override_fields || []).join(', ') || 'Yes' : 'No'}</td></tr>
                   </tbody>
                 </table>

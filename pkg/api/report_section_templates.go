@@ -277,7 +277,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 <h2>Executive Summary</h2>
 {{with headline .Report}}<p class="kpi-basis">Headline metrics: {{.Label}}</p>
 <div class="kpis">
-  <div class="kpi"><b>Peak attempts/s</b><div class="v">{{formatFloat .PeakTPS}}</div></div>
+  <div class="kpi"><b>Peak TPS (attempts/s)</b><div class="v">{{formatFloat .PeakTPS}}</div></div>
   <div class="kpi"><b>P95 latency</b><div class="v">{{fms .P95Ms}}</div></div>
   <div class="kpi {{if gt .ErrorPct 0.0}}warn{{end}}"><b>Error rate</b><div class="v">{{formatPercent .ErrorPct}}</div></div>
   <div class="kpi"><b>Peak VUsers</b><div class="v">{{$.Report.Overview.PeakActiveVUsers}}</div></div>
@@ -298,7 +298,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 <h3>Run at a glance</h3>
 {{with headline .Report}}<p class="kpi-basis">Headline metrics: {{.Label}}</p>
 <div class="kpis">
-  <div class="kpi"><b>Peak attempts/s</b><div class="v">{{formatFloat .PeakTPS}}</div><div class="d">{{if gt $.Report.Overview.PeakTargetTPS 0.0}}target {{formatFloat $.Report.Overview.PeakTargetTPS}} TPS{{else}}observed peak{{end}}</div></div>
+  <div class="kpi"><b>Peak TPS (attempts/s)</b><div class="v">{{formatFloat .PeakTPS}}</div><div class="d">{{if gt $.Report.Overview.PeakTargetTPS 0.0}}target {{formatFloat $.Report.Overview.PeakTargetTPS}} TPS{{else}}observed peak{{end}}</div></div>
   <div class="kpi"><b>P95 latency</b><div class="v">{{fms .P95Ms}}</div><div class="d">avg {{fms .AvgResponseMs}}</div></div>
   <div class="kpi {{if gt .ErrorPct 0.0}}warn{{end}}"><b>Error rate</b><div class="v">{{formatPercent .ErrorPct}}</div><div class="d">{{hint .Errors}} of {{hint .Transactions}}</div></div>
   <div class="kpi"><b>Archive records</b><div class="v">{{hint $.Report.Overview.Transactions}}</div><div class="d">peak {{$.Report.Overview.PeakActiveVUsers}} VUsers</div></div>
@@ -308,7 +308,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 <thead><tr><th>Metric</th><th class="num">Value</th><th>Metric</th><th class="num">Value</th></tr></thead>
 <tbody>
 <tr><td>p50 / p90 / p99</td><td class="num">{{f0 .P50Ms}} / {{f0 .P90Ms}} / {{f0 .P99Ms}} ms</td><td>Peak concurrent VUsers</td><td class="num">{{$.Report.Overview.PeakActiveVUsers}}</td></tr>
-<tr><td>Peak attempts/s</td><td class="num">{{formatFloat .PeakTPS}}</td><td>Load generators</td><td class="num">{{if gt $.GeneratorCount 0}}{{$.GeneratorCount}}{{else}}n/a{{end}}</td></tr>
+<tr><td>Peak TPS (attempts/s)</td><td class="num">{{formatFloat .PeakTPS}}</td><td>Load generators</td><td class="num">{{if gt $.GeneratorCount 0}}{{$.GeneratorCount}}{{else}}n/a{{end}}</td></tr>
 <tr><td>Response range</td><td class="num">{{f0 .MinResponseMs}}–{{f0 .MaxResponseMs}} ms</td><td>Data completeness</td><td class="num">{{formatFloat $.Report.Completeness.ScorePct}}%</td></tr>
 <tr><td>Interval summaries</td><td class="num">{{$.Report.Overview.IntervalSummaries}}</td><td>Resource samples</td><td class="num">{{$.Report.Overview.ResourceSamples}}</td></tr>
 </tbody></table>{{end}}

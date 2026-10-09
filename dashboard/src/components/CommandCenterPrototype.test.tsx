@@ -430,7 +430,7 @@ describe('CommandCenterPrototype', () => {
     await act(async () => { root.render(<CommandCenterPrototype testId={run.id} initialTest={run} />) })
     await flush()
     await changeNumberInput(inputByLabel('Live Checkout target VUsers'), '99999')
-    const apply = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Apply' && button.classList.contains('btn-accent'))!
+    const apply = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Apply' && button.classList.contains('btn-primary'))!
     await click(apply)
     await flush()
     expect(inputByLabel('Live Checkout target VUsers').value).toBe('50')
@@ -645,7 +645,7 @@ describe('CommandCenterPrototype', () => {
     })
     await flush()
 
-    await click(buttonNamed('Test Notes'))
+    await click(buttonNamed('Test notes'))
     await flush()
 
     expect(container.querySelector('.test-notes-dialog')).not.toBeNull()
@@ -1632,7 +1632,7 @@ describe('CommandCenterPrototype', () => {
     await click(buttonNamed('Graph Wall'))
 
     expect(container.textContent).toContain('Runtime Graphs')
-    expect(container.textContent).toContain('Virtual Users')
+    expect(container.textContent).toContain('VUsers')
     expect(container.textContent).toContain('Transactions Per Second')
     expect(container.querySelector('.charts-grid.command-center-graphs.command-center-compact')).not.toBeNull()
     expect(container.querySelector('.chart-card.command-center-chart-card')).not.toBeNull()
@@ -1662,7 +1662,7 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).toContain('Runtime graph expanded.')
     expect(container.querySelector('.chart-card.expanded')).not.toBeNull()
 
-    const vuserToggle = inputByLabel('Show Virtual Users')
+    const vuserToggle = inputByLabel('Show VUsers')
     expect(vuserToggle.checked).toBe(true)
     expect(container.querySelector('.charts-config-drawer')?.textContent).toContain('Graph Cards')
     expect(container.querySelector('[aria-label="Graph display options"]')?.textContent).toContain('Display Window')

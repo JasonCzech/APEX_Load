@@ -1,4 +1,5 @@
 import { ImportConversionDetails } from './ImportConversionDetails'
+import { importSourceName } from '../appTopbar'
 import ImportReviewTabs, { type ImportReviewTab } from './ImportReviewTabs'
 import ImportWorkflowGuide from './ImportWorkflowGuide'
 import ImportIssueWorkspace from './ImportIssueWorkspace'
@@ -131,7 +132,7 @@ export default function OracleEBusinessReviewImport({ projectId, onClose, onOper
     <div className="sample-import">
       <div className="sample-import-header">
         <div>
-          <h2>Oracle E-Business / Siebel Review</h2>
+          <h2>{importSourceName('oracle_ebusiness_review')}</h2>
           <p className="sample-import-subtitle">Review packaged enterprise app sources for package signals, correlation candidates, execution posture, and evidence requirements.</p>
         </div>
         {onClose && <button className="btn btn-secondary" type="button" disabled={operationBusy} onClick={onClose}>Back</button>}

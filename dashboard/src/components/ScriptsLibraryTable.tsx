@@ -42,6 +42,8 @@ export interface ScriptLibraryGitHub {
 }
 
 interface Props {
+  /** Keeps the rows-per-page choice with the library's filters. */
+  paginationScope?: string
   onArchiveChanged?: () => void | Promise<void>
   scripts: StoredScript[]
   folders?: Folder[]
@@ -218,6 +220,7 @@ function prioritizeHealthInputs(inputs: AuthoringHealthInput[]) {
 }
 
 export default function ScriptsLibraryTable({
+  paginationScope,
   onArchiveChanged,
   scripts,
   folders = [],
@@ -338,8 +341,13 @@ export default function ScriptsLibraryTable({
   const showLocal = !federation || federation.sourceFilter !== 'host'
   const allLocalScripts = showLocal ? scripts : []
   const allRemoteRows = federation && federation.sourceFilter !== 'local' ? federation.remoteRows : []
-  const pagination = useLibraryPagination(allLocalScripts.length + allRemoteRows.length, JSON.stringify([allLocalScripts.map(script => script.id), allRemoteRows.map(item => item.id)]))
+  const pagination = useLibraryPagination(allLocalScripts.length + allRemoteRows.length, JSON.stringify([allLocalScripts.map(script => script.id), allRemoteRows.map(item => item.id)]), paginationScope ?? null)
   const localScripts = allLocalScripts.slice(pagination.start, pagination.end)
+  // Script names are not unique, but two scripts with one name in one folder
+  // are told apart only by reference key; flag them like VuGen/LRE would.
+  const duplicateNameKey = (script: StoredScript) => `${script.folder_id || ''}\u001f${(script.name || '').trim().toLowerCase()}`
+  const nameCounts = new Map<string, number>()
+  for (const script of allLocalScripts) nameCounts.set(duplicateNameKey(script), (nameCounts.get(duplicateNameKey(script)) || 0) + 1)
   const remoteRows = allRemoteRows.slice(Math.max(0, pagination.start - allLocalScripts.length), Math.max(0, pagination.end - allLocalScripts.length))
   const selectableScriptCount = localScripts.filter(script => isAddressableScriptId(script.id)).length
   const selectedVisibleScriptCount = localScripts.filter(script => isAddressableScriptId(script.id) && selectedScriptIds.has(script.id!)).length
@@ -442,6 +450,7 @@ export default function ScriptsLibraryTable({
                       <span className="protocol-badge">{script.protocol}</span>
                       <span className="script-health-token">v{script.version || '—'}</span>
                       <ReferenceKeyBadge value={script.ref_key} />
+                      {(nameCounts.get(duplicateNameKey(script)) || 0) > 1 && <span className="script-health-token warning">Duplicate name in this folder</span>}
                       {scriptAddressable && githubStatusLabel(github?.statusByScript?.[scriptId]) && (
                         <span
                           className={`script-health-token ${githubStatusClass(github?.statusByScript?.[scriptId])}`}
@@ -597,8 +606,9 @@ export default function ScriptsLibraryTable({
                               className="btn btn-sm btn-secondary"
                               onClick={(event) => { event.stopPropagation(); federation.onPushScript(script) }}
                               disabled={federation.actionBlocked || conflict}
-                              title={conflict ? 'Compare this conflict before transferring.' : federation.actionBlockedReason}
+                              aria-describedby={conflict || (federation.actionBlocked && federation.actionBlockedReason) ? `push-blocked-${scriptId}` : undefined}
                             >Push</button>
+                            {(conflict || (federation.actionBlocked && federation.actionBlockedReason)) && <p id={`push-blocked-${scriptId}`} className="ux-row-actions-note">{conflict ? 'Compare this conflict before transferring.' : federation.actionBlockedReason}</p>}
                             {hostItem?.local_item_id && (
                               <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); federation.onCompare(scriptId, hostItem) }}>Compare</button>
                             )}

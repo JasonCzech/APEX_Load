@@ -60,7 +60,7 @@ interface Props {
   onNativeImportRequestHandled?: () => void
   onSelectScenario?: (id: string) => void
   onNavigate?: (page: NavPage) => void
-  onAuthoringStateChange?: (state: { subView: ScriptsAuthoringSubView; editingId: string | null }) => void
+  onAuthoringStateChange?: (state: { subView: ScriptsAuthoringSubView; editingId: string | null; importLauncher?: string | null }) => void
   featurePolicySignal?: number
 }
 
@@ -731,7 +731,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
         },
         {
           id: 'github-bulk-import',
-          label: githubBulkRunning ? 'Bulk Importing...' : 'Bulk Import',
+          label: githubBulkRunning ? 'Bulk importing…' : 'Bulk Import',
           compactLabel: 'Bulk',
           onClick: () => { void handleGithubBulkImport() },
           disabled: githubBulkRunning,
@@ -836,8 +836,9 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     onAuthoringStateChange?.({
       subView: authoringState.subView,
       editingId: authoringState.editingId,
+      importLauncher: authoringState.importLauncher,
     })
-  }, [authoringState.editingId, authoringState.subView, onAuthoringStateChange])
+  }, [authoringState.editingId, authoringState.importLauncher, authoringState.subView, onAuthoringStateChange])
 
   const handleDelete = async (id: string) => {
     if (!canManageScripts || movingScriptIds.has(id)) return
@@ -1245,6 +1246,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
               </BulkActions>
           )}
           <ScriptsLibraryTable
+            paginationScope={filterScope}
             onArchiveChanged={refresh}
             scripts={sortedScripts}
             sortField={sortField}

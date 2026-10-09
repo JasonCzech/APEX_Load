@@ -2012,7 +2012,7 @@ export default function BrowserRecorderControlPanel({
             <button className="btn btn-primary" onClick={handleSave} disabled={previewImportDraftExpiry?.expired || busy || previewParameterizationApplying || previewPreparedSecrets?.valid === false}>{previewSaveLabel}</button>
             {onEdit && (
               <button className="btn btn-secondary" onClick={() => { void handleOpenEditor() }} disabled={previewImportDraftExpiry?.expired || busy || previewParameterizationApplying || !editableScript || previewPreparedSecrets?.valid === false}>
-                {previewRequiresCredentialPreservingSave ? 'Save And Open In Visual Editor' : 'Open in Visual Editor'}
+                {previewRequiresCredentialPreservingSave ? 'Save and open in Visual Editor' : 'Open in Visual Editor'}
               </button>
             )}
           </div>

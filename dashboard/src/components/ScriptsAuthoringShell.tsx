@@ -5,6 +5,7 @@ import ScriptCreateOptions, { type CreateWorkflow } from './ScriptCreateOptions'
 import type { ScriptsAuthoringSurfaceProps } from './ScriptsAuthoringSurface'
 import { type AuthoringState, type ImportedSaveResult, type ScriptsCreateOptionActions } from './useScriptsAuthoringState'
 import LazyLoadBoundary from './LazyLoadBoundary'
+import LoadingState from './ux/LoadingState'
 
 const ScriptsAuthoringSurface = lazy(() => import('./ScriptsAuthoringSurface'))
 
@@ -99,7 +100,7 @@ export default function ScriptsAuthoringShell({
   if (authoringState.subView !== 'list') {
     return (
       <LazyLoadBoundary title="Authoring tools could not be loaded.">
-        <Suspense fallback={<div className="page-loading" role="status">Loading authoring tools…</div>}>
+        <Suspense fallback={<LoadingState what="authoring tools" />}>
           <ScriptsAuthoringSurface
             subView={authoringState.subView}
             importLauncher={authoringState.importLauncher}
@@ -120,6 +121,7 @@ export default function ScriptsAuthoringShell({
             editingActivity={authoringState.editingActivity}
             projectId={projectId}
             activeProject={activeProject}
+            libraryScripts={scripts}
             onSaved={onSaved}
             onOpenLibrary={onOpenLibrary}
             onOpenCreateOptions={onOpenCreateOptions}

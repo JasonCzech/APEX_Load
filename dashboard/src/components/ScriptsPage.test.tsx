@@ -767,7 +767,7 @@ describe('ScriptsPage', () => {
 
     await clickButton('Script Builder')
 
-    expect(container.textContent).toContain('Create Script')
+    expect(container.textContent).toContain('Create script')
     expect(container.textContent).toContain('Start New Script')
 
     await clickButton('Create')
@@ -840,7 +840,10 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Run release')
     expect(container.textContent).toContain('Search scripts')
     expect(container.textContent).not.toContain('Asset Type')
-    expect(container.textContent).not.toContain('Select a Remote Workspace first.')
+    // Only a row's closed "More" menu explains its disabled Push; the page itself does not.
+    const visible = container.cloneNode(true) as HTMLElement
+    visible.querySelectorAll('[hidden]').forEach(element => element.remove())
+    expect(visible.textContent).not.toContain('Select a Remote Workspace first.')
 
     await clickButton('Script Builder')
 
@@ -1678,7 +1681,7 @@ describe('ScriptsPage', () => {
 
     expect(apiMock.getScript).toHaveBeenCalledWith('script-1')
     expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
-    expect(onAuthoringStateChange).toHaveBeenCalledWith({ subView: 'edit', editingId: 'script-1' })
+    expect(onAuthoringStateChange).toHaveBeenCalledWith({ subView: 'edit', editingId: 'script-1', importLauncher: null })
   })
 
   it('filters the script library by authoring health categories', async () => {
@@ -1973,7 +1976,7 @@ describe('ScriptsPage', () => {
     })
 
     expect(container.querySelector('[data-testid="enterprise-archive-import"]')).toBeNull()
-    expect(container.textContent).toContain('Create Script')
+    expect(container.textContent).toContain('Create script')
     await clickButton('Import')
     expect(container.textContent).toContain('Import JMeter')
   })
@@ -2053,7 +2056,7 @@ describe('ScriptsPage', () => {
     })
 
     expect(container.querySelector('[data-testid="jmeter-import"]')).toBeNull()
-    expect(container.textContent).toContain('Create Script')
+    expect(container.textContent).toContain('Create script')
     expect(container.textContent).toContain('Source-driven authoring')
     expect(container.textContent).not.toContain('Start New Script')
     expect(container.textContent).toContain('Import Loadrunner Script Archive')

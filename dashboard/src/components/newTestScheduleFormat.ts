@@ -249,6 +249,9 @@ export function describeCron(expr: string): string {
   const parts = expanded.split(/\s+/)
   if (parts.length !== 5) return ''
   const [minute, hour, dom, month, dow] = parts
+  // An invalid field means no description; the form reports the error itself.
+  const outOfRange = (field: string, min: number, max: number) => /^\d+$/.test(field) && (Number(field) < min || Number(field) > max)
+  if (outOfRange(minute, 0, 59) || outOfRange(hour, 0, 23) || outOfRange(dom, 1, 31) || outOfRange(month, 1, 12) || outOfRange(dow, 0, 7)) return ''
 
   const minuteStep = /^\*\/(\d+)$/.exec(minute)
   if (minuteStep && Number(minuteStep[1]) > 0 && hour === '*' && dom === '*' && month === '*' && dow === '*') {
@@ -265,7 +268,8 @@ export function describeCron(expr: string): string {
   const formatTime = (h: string, m: string) => {
     const hNum = parseInt(h, 10)
     const mNum = parseInt(m, 10)
-    if (isNaN(hNum) || isNaN(mNum)) return null
+    // An out-of-range field is an invalid expression, never "87:99 PM".
+    if (isNaN(hNum) || isNaN(mNum) || hNum < 0 || hNum > 23 || mNum < 0 || mNum > 59) return null
     const suffix = hNum >= 12 ? 'PM' : 'AM'
     const displayH = hNum === 0 ? 12 : hNum > 12 ? hNum - 12 : hNum
     return `${displayH}:${String(mNum).padStart(2, '0')} ${suffix}`

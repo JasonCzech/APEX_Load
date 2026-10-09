@@ -177,7 +177,7 @@ describe("AuthGate", () => {
       container.querySelector("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     });
 
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Invalid development persona credentials");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Incorrect persona username or password");
   });
 
   it("blocks the dashboard when trusted-header auth is enabled without a user", async () => {
@@ -313,8 +313,38 @@ describe("AuthGate", () => {
     await act(async () => {
       container.querySelector("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     });
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("invalid username or password");
+    // Plain copy instead of the server string, the rejected password cleared,
+    // and focus on the reason.
+    const alert = container.querySelector<HTMLElement>('[role="alert"]');
+    expect(alert?.textContent).toBe("Incorrect username or password.");
+    expect(container.querySelectorAll<HTMLInputElement>("input")[1]?.value).toBe("");
+    expect(document.activeElement).toBe(alert);
     expect(container.querySelector("form")).not.toBeNull();
+  });
+
+  it("explains the local sign-in rate limit", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: "local login rate limit exceeded" }), {
+        status: 429,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await act(async () => {
+      root.render(
+        <AuthGate state={readyState({ enabled: true, mode: "local", authenticated: false })}>
+          <div>Protected content</div>
+        </AuthGate>,
+      );
+    });
+    const inputs = container.querySelectorAll<HTMLInputElement>("input");
+    await act(async () => {
+      setInputValue(inputs[0], "admin");
+      setInputValue(inputs[1], "wrong");
+    });
+    await act(async () => {
+      container.querySelector("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("Too many sign-in attempts. Wait a minute, then try again.");
   });
 
   it("keeps a blocked local session visible when clearing it fails", async () => {

@@ -111,7 +111,7 @@ http:
     mimeType: 'application/zip',
     buffer: archive,
   })
-  await expect(controls.getByRole('heading', { level: 2, name: 'Import Bruno Collection' })).toBeVisible()
+  await expect(controls.getByRole('heading', { level: 2, name: 'Bruno Collection' })).toBeVisible()
   await expect(controls.getByRole('radio')).toHaveCount(0)
   await expect(controls.getByText('Canonical Bruno execution', { exact: true })).toHaveCount(0)
   await expect(controls.getByRole('button', { name: /sandbox|synchronize|native projection/i })).toHaveCount(0)
@@ -127,7 +127,7 @@ http:
   await expect(controls.getByText(/2 API requests found.*2 native scripts/).first()).toBeVisible()
 
   await expect(controls.getByRole('button', { name: 'Inputs: 1 unresolved', exact: true })).toBeVisible()
-  await controls.getByRole('tab', { name: 'Data & parameters', exact: true }).click()
+  await controls.getByRole('tab', { name: /^Data & parameters(,|$)/ }).click()
   await controls.getByRole('textbox', { name: 'Literal value for env', exact: true }).fill('qa')
   await expect(controls.getByRole('button', { name: /Inputs: .* unresolved/ })).toHaveCount(0)
   await controls.getByRole('button', { name: /^APIs .*change selection/ }).click()
@@ -137,7 +137,7 @@ http:
   await controls.getByRole('searchbox', { name: 'Find API', exact: true }).fill('')
   await expect(controls.locator('.bruno-native-table tbody tr')).toHaveCount(2)
 
-  await controls.getByRole('tab', { name: 'Review', exact: true }).click()
+  await controls.getByRole('tab', { name: /^Review(,|$)/ }).click()
   const findingQueue = controls.getByRole('navigation', { name: 'Import issue queue' })
   await expect(findingQueue.getByRole('button')).toHaveCount(2)
   await controls.locator('.bruno-native-acknowledgements').scrollIntoViewIfNeeded()

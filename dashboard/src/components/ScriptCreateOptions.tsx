@@ -210,7 +210,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
   },
   {
     id: 'enterprise_archive',
-    title: 'Import Loadrunner Script Archive',
+    title: 'LoadRunner Script Archive',
     description: 'Import VuGen ZIP or USZ projects, including a package of several projects, and review each script, its settings, and migration requirements.',
     badge: 'ESA',
     category: 'Legacy & Tool Exports',
@@ -220,7 +220,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
   },
   {
     id: 'jmeter',
-    title: 'Import JMeter',
+    title: 'JMeter Test Plan',
     description: 'Convert a JMeter .jmx plan into HTTP scripts with warnings, unsupported elements, and scenario draft context.',
     badge: 'JMX',
     category: 'Legacy & Tool Exports',
@@ -705,7 +705,7 @@ export default function ScriptCreateOptions({
     <div className="page">
       <div className="page-header">
         <div>
-          <h2>Create Script</h2>
+          <h2>Create script</h2>
           <p className="page-subtitle">Model from saved work, start a new script, record a browser flow, or import from a source asset.</p>
         </div>
         {!hasTopbarContributionProvider && (
@@ -1047,7 +1047,7 @@ export default function ScriptCreateOptions({
           <section className="script-create-lane import full">
             <div className="script-create-lane-header">
               <span className="script-create-kicker">Source-driven authoring</span>
-              <h3>Import From Source</h3>
+              <h3>Import from source</h3>
               <p>Choose a source asset, then review generated actions, source comparisons, data fit, validation notes, and approval evidence in one draft workflow.</p>
             </div>
             <div className="import-source-search">
@@ -1059,7 +1059,7 @@ export default function ScriptCreateOptions({
               {!importSurfacesLoading && !importSurfacesError && <span role="status">{filteredImportSurfaces.length} of {visibleImportSurfaces.length} sources</span>}
             </div>
             <div className="script-create-import-groups">
-              {importSurfacesLoading && <div className="script-create-empty">Loading import sources...</div>}
+              {importSurfacesLoading && <div className="script-create-empty">Loading import sources…</div>}
               {importSurfacesError && (
                 <div className="script-create-empty" role="alert">
                   <p>{importSurfacesError}</p>

@@ -260,6 +260,15 @@ describe('RunReportPage', () => {
     expect(mocks.archiveModel.onSelectedArchiveGroupChange).toHaveBeenCalledWith('')
   })
 
+  it('opens and focuses the archive section a legacy test-tab link points at', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, metric_populations: { action: { transactions: 10 } } } as unknown as RunArchiveReport
+    await act(async () => root.render(<RunReportPage testId="run-1" initialSection="performance" initialFocus="load-impact" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    const loadImpact = container.querySelector<HTMLDetailsElement>('details[data-report-focus="load-impact"]')!
+    expect(loadImpact.open).toBe(true)
+    expect(document.activeElement).toBe(loadImpact.querySelector('summary'))
+  })
+
   it('offers empty populations with their count, disabled, and keeps a chosen population in the URL', async () => {
     mocks.polling.test = buildTest('COMPLETE')
     mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, metric_populations: { action: { transactions: 10 }, transaction: { transactions: 5 }, unknown: { transactions: 0 } } } as unknown as RunArchiveReport
@@ -325,7 +334,7 @@ describe('RunReportPage', () => {
     mocks.polling.test = { ...buildTest(status, false), error: status === 'FAILED' ? 'Controller restarted before completion' : undefined }
     const render = (section: 'summary' | 'performance' | 'execution' | 'evidence') => <RunReportPage testId="run-1" initialSection={section} onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />
     await act(async () => root.render(render('summary')))
-    expect(container.querySelector('h1')?.textContent).toBe('Checkout Run')
+    expect(container.querySelector('.run-report-title')?.textContent).toBe('Checkout Run')
     expect(container.querySelectorAll('[role="tab"]')).toHaveLength(6)
     expect(container.textContent).toContain('Saved archive unavailable')
     if (status === 'FAILED') expect(container.textContent).toContain('Controller restarted before completion')
@@ -429,7 +438,8 @@ describe('RunReportPage', () => {
     mocks.archiveModel.archiveError = ''
     await act(async () => root.render(<RunReportPage testId="run-1" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
     expect(container.textContent).toContain('Lifecycle elapsed 5m')
-    expect(container.textContent).toContain('Archived evidence elapsed Not recorded')
+    // Without the archive report the fact is unknown: omitted, not "Not recorded".
+    expect(container.textContent).not.toContain('Archived evidence elapsed')
   })
 
   it('preserves legacy baseline links beyond the first catalog page', async () => {
@@ -461,7 +471,7 @@ describe('RunReportPage', () => {
     await act(async () => root.render(render()))
     expect(container.querySelector('[aria-selected="true"]')?.textContent).toBe('Execution')
     expect(container.textContent).not.toContain('Saved archive unavailable')
-    expect(container.querySelector('h1')?.textContent).toBe('Checkout Run')
+    expect(container.querySelector('.run-report-title')?.textContent).toBe('Checkout Run')
   })
 
   it('includes Execution in keyboard navigation without navigating away', async () => {
@@ -482,6 +492,8 @@ describe('RunReportPage', () => {
     expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Diagnostics')
     await act(async () => { root.render(render('evidence')) })
     expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Evidence')
+    // The population selector drives analysis sections only.
+    expect(container.querySelector('[aria-label="Analysis context"]')).toBeNull()
   })
 
   it('keeps the current section until guarded navigation commits', async () => {
@@ -494,6 +506,8 @@ describe('RunReportPage', () => {
     expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Summary')
     await act(async () => { root.render(render('evidence')) })
     expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Evidence')
+    // The population selector drives analysis sections only.
+    expect(container.querySelector('[aria-label="Analysis context"]')).toBeNull()
   })
 
   it('bounces live runs to the command center', async () => {

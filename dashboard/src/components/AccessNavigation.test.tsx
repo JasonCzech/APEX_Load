@@ -8,7 +8,7 @@ import AccessNavigation from './AccessNavigation'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-const EXPECTED = ['Users', 'Service accounts', 'Activity', 'Authentication', 'Feature policy', 'Import policy', 'Redaction', 'Project secrets', 'Governance audit']
+const EXPECTED = ['Users', 'Service accounts', 'Activity', 'Authentication', 'Domain feature policy', 'Import credential policy', 'Project redaction rules', 'Project secrets', 'Governance audit']
 
 describe('AccessNavigation', () => {
   let container: HTMLDivElement

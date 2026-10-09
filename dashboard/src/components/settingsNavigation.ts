@@ -35,7 +35,7 @@ export const SETTINGS_DESTINATIONS: readonly SettingsDestination[] = [
   { id: 'cloud', group: 'Infrastructure', title: 'Cloud connections & targets', section: 'capacity', scope: 'deployment', resource: 'cloud' },
   { id: 'clusters', group: 'Infrastructure', title: 'Kubernetes clusters', section: 'capacity', scope: 'deployment', resource: 'clusters' },
   { id: 'pools', group: 'Infrastructure', title: 'Generator pools', section: 'capacity', scope: 'deployment', resource: 'pools' },
-  { id: 'allocation', group: 'Infrastructure', title: 'Host resource allocation', section: 'capacity', scope: 'deployment', resource: 'allocation' },
+  { id: 'allocation', group: 'Infrastructure', title: 'Load generator allocation', section: 'capacity', scope: 'deployment', resource: 'allocation' },
   { id: 'generators', group: 'Infrastructure', title: 'Generator metadata', section: 'capacity', scope: 'deployment', resource: 'generators' },
   { id: 'capacity', group: 'Infrastructure', title: 'Capacity source', section: 'capacity', subsection: 'availability', scope: 'deployment' },
   { id: 'planning', group: 'Infrastructure', title: 'Planning profile', section: 'capacity', subsection: 'generator', scope: 'deployment' },
@@ -55,6 +55,11 @@ export const SETTINGS_DESTINATIONS: readonly SettingsDestination[] = [
 
 export function settingsDestination(id?: string): SettingsDestination | undefined {
   return SETTINGS_DESTINATIONS.find(item => item.id === id)
+}
+
+/** A destination's one name, reused by both section lists and its page card. */
+export function destinationTitle(id: string): string {
+  return settingsDestination(id)?.title ?? id
 }
 
 export function settingsOwner(id: string): 'settings' | 'access' | 'repository' {

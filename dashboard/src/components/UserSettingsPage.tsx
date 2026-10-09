@@ -1,7 +1,7 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef } from 'react'
 import PersonalSettings, { type PersonalSection, type PersonalSettingsProps } from './PersonalSettings'
-import PanelToggle from './ux/PanelToggle'
 import { useTopbarContribution } from '../hooks/TopbarContributionProvider'
+import { useSectionListKeys } from './ux/useSectionListKeys'
 
 const PERSONAL_SECTIONS: { id: PersonalSection; title: string }[] = [
   { id: 'appearance', title: 'Appearance' },
@@ -16,8 +16,8 @@ type Props = PersonalSettingsProps & {
 }
 
 export default function UserSettingsPage({ destinationId, onDestinationChange, ...props }: Props) {
-  const [navigationOpen, setNavigationOpen] = useState(() => window.innerWidth > 1100)
   const headingRef = useRef<HTMLHeadingElement>(null)
+  const navRef = useSectionListKeys()
   const requested = destinationId?.replace(/^personal-/, '')
   const administrativeDestination = !!destinationId && !destinationId.startsWith('personal-') && destinationId !== 'preferences'
   const requestedReturn = new URLSearchParams(window.location.hash.split('?')[1] || '').get('returnTo') || ''
@@ -33,15 +33,9 @@ export default function UserSettingsPage({ destinationId, onDestinationChange, .
 
   return <div className="page settings-page personal-settings-page">
     {administrativeDestination && <section className="settings-subsection" role="note"><h2>Administrator settings</h2><p>Your account can manage personal preferences here. The requested setting requires administrator access.</p>{returnTo && <a className="btn btn-secondary" href={returnTo}>Return to previous page</a>}</section>}
-    <div className={`settings-tabbed-layout ${navigationOpen ? '' : 'navigation-collapsed'}`}>
-      <PanelToggle
-        expanded={navigationOpen}
-        panelName="Settings navigation"
-        controls="personal-settings-navigation"
-        onToggle={() => setNavigationOpen(value => !value)}
-        className="settings-browse-button"
-      />
-      <nav id="personal-settings-navigation" className={`settings-task-navigation ${navigationOpen ? 'is-open' : ''}`} aria-label="Personal settings sections">
+    {/* The same always-visible section list as administrator Settings. */}
+    <div className="settings-tabbed-layout">
+      <nav ref={navRef} id="personal-settings-navigation" className="settings-task-navigation is-open" aria-label="Personal settings sections">
         <h3>Personal</h3>
         {PERSONAL_SECTIONS.map(item => <button
           key={item.id}
@@ -50,10 +44,8 @@ export default function UserSettingsPage({ destinationId, onDestinationChange, .
           aria-current={destination.id === item.id ? 'page' : undefined}
           onClick={() => {
             onDestinationChange('personal-' + item.id)
-            if (window.innerWidth <= 1100) {
-              setNavigationOpen(false)
-              headingRef.current?.focus()
-            }
+            // Stacked layouts put the section below the list; move focus to it.
+            if (window.innerWidth <= 1100) headingRef.current?.focus()
           }}
         >{item.title}</button>)}
       </nav>

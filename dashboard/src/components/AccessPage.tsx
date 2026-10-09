@@ -1100,18 +1100,18 @@ export default function AccessPage({
 
   const setUserActive = async (user: DashboardUser, active: boolean) => {
     if (!canManageUserLifecycle || accessMutationInFlightRef.current) return
-    if (typeof window !== 'undefined' && !(await confirmAction(`${active ? 'Restore' : 'Remove'} access for ${user.display_name || user.subject}?`, { title: active ? 'Restore user access' : 'Remove user access', confirmLabel: active ? 'Restore access' : 'Remove access', destructive: !active }))) {
+    if (typeof window !== 'undefined' && !(await confirmAction(`${active ? 'Enable' : 'Disable'} access for ${user.display_name || user.subject}?${active ? '' : ' They are signed out and cannot sign in until access is enabled again.'}`, { title: active ? 'Enable user access' : 'Disable user access', confirmLabel: active ? 'Enable access' : 'Disable access', destructive: !active }))) {
       return
     }
     await runAccessMutation(async () => {
       try {
         const updated = await (active ? api.enableAuthUser(user.id) : api.disableAuthUser(user.id))
         publishAuthoritativeUser(updated)
-        setUserActionMessage(`${active ? 'Restored access for' : 'Removed access from'} ${user.display_name || user.subject}.`)
+        setUserActionMessage(`${active ? 'Enabled' : 'Disabled'} access for ${user.display_name || user.subject}.`)
         setUserActionError('')
         await loadCurrentUsers()
       } catch (error: unknown) {
-        setUserActionError(getErrorMessage(error, `Unable to ${active ? 'restore' : 'remove'} user access`))
+        setUserActionError(getErrorMessage(error, `Unable to ${active ? 'enable' : 'disable'} user access`))
         setUserActionMessage('')
       }
     })
@@ -1138,7 +1138,7 @@ export default function AccessPage({
 
   const deleteUser = async (user: DashboardUser) => {
     if (!canManageUserLifecycle || accessMutationInFlightRef.current) return
-    if (typeof window !== 'undefined' && !(await confirmAction(`Permanently delete ${user.display_name || user.subject} and all of their role bindings? This cannot be undone. To preserve the audit trail, use Remove Access instead.`, { title: 'Delete user', confirmLabel: 'Delete user', destructive: true }))) {
+    if (typeof window !== 'undefined' && !(await confirmAction(`Permanently delete ${user.display_name || user.subject} and all of their role bindings? This cannot be undone. To preserve the audit trail, use Disable access instead.`, { title: 'Delete user', confirmLabel: 'Delete user', destructive: true }))) {
       return
     }
     await runAccessMutation(async () => {
@@ -1255,14 +1255,14 @@ export default function AccessPage({
 
   const setAccountActive = async (account: DashboardServiceAccount, active: boolean) => {
     if (!canManageServiceAccounts || accessMutationInFlightRef.current) return
-    if (typeof window !== 'undefined' && !(await confirmAction(`${active ? 'Enable' : 'Disable'} ${account.name}?${active ? '' : ' Its key stops working until the account is enabled again.'}`, { title: active ? 'Enable service account' : 'Disable service account', confirmLabel: active ? 'Enable' : 'Disable', destructive: !active }))) {
+    if (typeof window !== 'undefined' && !(await confirmAction(`${active ? 'Enable' : 'Disable'} access for ${account.name}?${active ? '' : ' Its key stops working until access is enabled again.'}`, { title: active ? 'Enable service account access' : 'Disable service account access', confirmLabel: active ? 'Enable access' : 'Disable access', destructive: !active }))) {
       return
     }
     await runAccessMutation(async () => {
       try {
         const updated = await api.updateAuthServiceAccount(account.id, { active }) as DashboardServiceAccount
         publishAuthoritativeAccount(updated)
-        setActionMessage(`${active ? 'Enabled' : 'Disabled'} ${account.name}.`)
+        setActionMessage(`${active ? 'Enabled' : 'Disabled'} access for ${account.name}.`)
         setActionError('')
         await loadAccounts()
       } catch (error: unknown) {
@@ -1312,11 +1312,11 @@ export default function AccessPage({
     // The backend rejects empty role/scope sets on a PATCH (disable a key with the
     // Disable action instead of stripping its permissions).
     if (editAccountForm.globalRoles.length === 0) {
-      setActionError('Keep at least one global role (use Disable to deactivate the key).')
+      setActionError('Keep at least one global role (use Disable access to deactivate the key).')
       return false
     }
     if (editAccountForm.scopes.length === 0) {
-      setActionError('Keep at least one token scope (use Disable to deactivate the key).')
+      setActionError('Keep at least one token scope (use Disable access to deactivate the key).')
       return false
     }
     if (editAccountContactInvalid) {
@@ -1719,15 +1719,15 @@ export default function AccessPage({
             <FormField label="Display Name" htmlFor="edit-user-displayName"><input value={editUserForm.displayName} onChange={event => setEditUserForm(prev => ({ ...prev, displayName: event.target.value }))} disabled={!canManageUserLifecycle} /></FormField>
           </div>
           <div className="access-account-actions">
-            <button className="btn btn-primary btn-sm" type="button" onClick={updateSelectedUser} disabled={accessMutationBusy || !canManageUserBindings || (canManageUserLifecycle && editUserEmailInvalid)}>Save Changes</button>
+            <button className="btn btn-primary btn-sm" type="button" onClick={updateSelectedUser} disabled={accessMutationBusy || !canManageUserBindings || (canManageUserLifecycle && editUserEmailInvalid)}>Save changes</button>
             <button className="btn btn-secondary btn-sm" type="button" onClick={cancelSelectedUserEdit} disabled={accessMutationBusy}>Cancel</button>
             <button className="btn btn-secondary btn-sm" type="button" onClick={() => setUserActive(selectedUser, !selectedUser.active)} disabled={accessMutationBusy || !canManageUserLifecycle}>
-              {selectedUser.active ? 'Remove Access' : 'Restore Access'}
+              {selectedUser.active ? 'Disable access' : 'Enable access'}
             </button>
             <button className="btn btn-secondary btn-sm" type="button" onClick={() => revokeSessions(selectedUser)} disabled={accessMutationBusy || !canManageUserLifecycle} title="Sign the user out of all active sessions without disabling the account">
               Revoke Sessions
             </button>
-            <button className="btn btn-danger btn-sm" type="button" onClick={() => deleteUser(selectedUser)} disabled={accessMutationBusy || !canManageUserLifecycle} title="Permanently delete the user and their role bindings (prefer Remove Access to keep the audit trail)">
+            <button className="btn btn-danger btn-sm" type="button" onClick={() => deleteUser(selectedUser)} disabled={accessMutationBusy || !canManageUserLifecycle} title="Permanently delete the user and their role bindings (prefer Disable access to keep the audit trail)">
               Delete User
             </button>
           </div>
@@ -1964,7 +1964,7 @@ export default function AccessPage({
         </div>
       )}
       <div className="access-account-actions">
-        <button className="btn btn-primary btn-sm" type="button" onClick={() => updateAccount(account)} disabled={accessMutationBusy || !canManageServiceAccounts || editAccountContactInvalid || Boolean(editAccountRotationError)}>Save Changes</button>
+        <button className="btn btn-primary btn-sm" type="button" onClick={() => updateAccount(account)} disabled={accessMutationBusy || !canManageServiceAccounts || editAccountContactInvalid || Boolean(editAccountRotationError)}>Save changes</button>
         <button className="btn btn-ghost btn-sm" type="button" onClick={cancelEditAccount} disabled={accessMutationBusy}>Cancel</button>
       </div>
     </aside>
@@ -2006,9 +2006,9 @@ export default function AccessPage({
         </dl>
         <div className="access-account-actions">
           <button className="btn btn-primary btn-sm" type="button" onClick={() => beginEditAccount(selectedAccount)} disabled={accessMutationBusy || !canManageServiceAccounts}>Edit</button>
-          <button className="btn btn-secondary btn-sm" type="button" onClick={() => rotateAccount(selectedAccount)} disabled={accessMutationBusy || !canManageServiceAccounts}>Rotate Key</button>
+          <button className="btn btn-secondary btn-sm" type="button" onClick={() => rotateAccount(selectedAccount)} disabled={accessMutationBusy || !canManageServiceAccounts}>Rotate key</button>
           <button className="btn btn-secondary btn-sm" type="button" onClick={() => setAccountActive(selectedAccount, !selectedAccount.active)} disabled={accessMutationBusy || !canManageServiceAccounts}>
-            {selectedAccount.active ? 'Disable' : 'Enable'}
+            {selectedAccount.active ? 'Disable access' : 'Enable access'}
           </button>
           <button className="btn btn-ghost btn-sm access-danger-action" type="button" onClick={() => deleteAccount(selectedAccount)} disabled={accessMutationBusy || !canManageServiceAccounts}>Delete</button>
         </div>
@@ -2235,7 +2235,7 @@ export default function AccessPage({
             <div className="access-panel-header">
               <div>
                 <h3>Users</h3>
-                <p>{usersLoading ? 'Loading users...' : `${filteredUsers.length} of ${usersTotal} users`}</p>
+                <p>{usersLoading ? 'Loading users…' : `${filteredUsers.length} of ${usersTotal} users`}</p>
               </div>
               {userSubTab === 'existing' && selectedUser && userInspectorCollapsed && (
                 <PanelToggle expanded={false} panelName="user details" controls="access-user-details" onToggle={() => setUserInspectorCollapsed(false)} />
@@ -2347,8 +2347,8 @@ export default function AccessPage({
                               <div className="access-table-actions">
                                 <button className="btn btn-secondary btn-sm" type="button" aria-label={`Inspect ${user.display_name || user.email || user.subject}`} onClick={event => { event.stopPropagation(); selectUser(user) }}>Inspect</button>
                                 <button className="btn btn-secondary btn-sm" type="button" aria-label={`Edit ${user.display_name || user.email || user.subject}`} onClick={event => { event.stopPropagation(); editUser(user) }} disabled={accessMutationBusy || !canManageUserBindings}>Edit</button>
-                                <button className="btn btn-ghost btn-sm" type="button" onClick={event => { event.stopPropagation(); setUserActive(user, !user.active) }} disabled={accessMutationBusy || !canManageUserLifecycle}>
-                                  {user.active ? 'Remove Access' : 'Restore Access'}
+                                <button className="btn btn-ghost btn-sm" type="button" aria-label={`${user.active ? 'Disable' : 'Enable'} access for ${user.display_name || user.email || user.subject}`} onClick={event => { event.stopPropagation(); setUserActive(user, !user.active) }} disabled={accessMutationBusy || !canManageUserLifecycle}>
+                                  {user.active ? 'Disable access' : 'Enable access'}
                                 </button>
                               </div>
                             </td>
@@ -2365,7 +2365,7 @@ export default function AccessPage({
                   )}
                 </div>
                 <div className="access-pagination-toolbar" aria-label="User pagination">
-                  <span>{usersLoading ? 'Loading users...' : `Showing ${userRangeStart}-${userRangeEnd} of ${usersTotal}`}</span>
+                  <span>{usersLoading ? 'Loading users…' : `Showing ${userRangeStart}-${userRangeEnd} of ${usersTotal}`}</span>
                   <label>
                     <span>Rows</span>
                     <select value={userPageSize} onChange={event => { setUserPageSize(Number(event.target.value)); setUserPage(0) }}>
@@ -2426,8 +2426,8 @@ export default function AccessPage({
           <article className="access-panel access-table-panel">
             <div className="access-panel-header">
               <div>
-                <h3>Service Accounts</h3>
-                <p>{loading ? 'Loading service accounts...' : `${filteredAccounts.length} of ${accounts.length} automation principals`}</p>
+                <h3>Service accounts</h3>
+                <p>{loading ? 'Loading service accounts…' : `${filteredAccounts.length} of ${accounts.length} automation principals`}</p>
               </div>
               {serviceAccountSubTab === 'existing' && selectedAccount && accountInspectorCollapsed && (
                 <PanelToggle expanded={false} panelName="service account details" controls="access-account-details" onToggle={() => setAccountInspectorCollapsed(false)} />
@@ -2557,9 +2557,9 @@ export default function AccessPage({
                             <td aria-label="Service account actions">
                               <div className="access-table-actions">
                                 <button className="btn btn-secondary btn-sm" type="button" aria-label={`Inspect ${account.name}`} onClick={event => { event.stopPropagation(); selectAccount(account) }}>Inspect</button>
-                                <button className="btn btn-secondary btn-sm" type="button" onClick={event => { event.stopPropagation(); rotateAccount(account) }} disabled={accessMutationBusy}>Rotate Key</button>
-                                <button className="btn btn-ghost btn-sm" type="button" onClick={event => { event.stopPropagation(); setAccountActive(account, !account.active) }} disabled={accessMutationBusy}>
-                                  {account.active ? 'Disable' : 'Enable'}
+                                <button className="btn btn-secondary btn-sm" type="button" onClick={event => { event.stopPropagation(); rotateAccount(account) }} disabled={accessMutationBusy}>Rotate key</button>
+                                <button className="btn btn-ghost btn-sm" type="button" aria-label={`${account.active ? 'Disable' : 'Enable'} access for ${account.name}`} onClick={event => { event.stopPropagation(); setAccountActive(account, !account.active) }} disabled={accessMutationBusy}>
+                                  {account.active ? 'Disable access' : 'Enable access'}
                                 </button>
                                 <button className="btn btn-ghost btn-sm access-danger-action" type="button" onClick={event => { event.stopPropagation(); deleteAccount(account) }} disabled={accessMutationBusy}>Delete</button>
                               </div>
@@ -2639,7 +2639,7 @@ export default function AccessPage({
 
                 <div className="access-form-actions">
                   <button className="btn btn-primary" type="button" onClick={createAccount} disabled={accessMutationBusy || !canManageServiceAccounts || !form.name.trim() || accountContactInvalid || Boolean(accountRotationError)}>
-                    Create Service Account
+                    Create account
                   </button>
                 </div>
               </>
@@ -2654,7 +2654,7 @@ export default function AccessPage({
           <article className="access-panel access-table-panel">
             <div className="access-panel-header">
               <div>
-                <h3>{activitySubTab === 'events' ? 'Audit events' : activitySubTab === 'usage' ? 'Usage By User' : 'Access Review'}</h3>
+                <h3>{activitySubTab === 'events' ? 'Audit events' : activitySubTab === 'usage' ? 'Usage by user' : 'Access review'}</h3>
                 <p>{activitySubTab === 'events' ? activityLoading ? 'Loading events…' : `${activityEvents.length} events loaded${activityHasMore ? ' · older events available' : ''}` : activitySubTab === 'usage' ? 'Usage by user and matching runs' : 'Review flagged identities and their assigned roles'}</p>
               </div>
               <div className="access-account-actions">
@@ -2662,15 +2662,15 @@ export default function AccessPage({
                   <PanelToggle expanded={false} panelName="activity event details" controls="access-activity-details" onToggle={() => setActivityInspectorCollapsed(false)} />
                 )}
                 {activitySubTab === 'events' && <button className="btn btn-secondary btn-sm" type="button" onClick={exportActivity} disabled={!canViewUserActivity || activityExporting}>
-                  {activityExporting ? 'Exporting...' : 'Export all matching events CSV'}
+                  {activityExporting ? 'Exporting…' : 'Export all matching events CSV'}
                 </button>}
               </div>
             </div>
             <TabList className="access-subtab-row" role="tablist" aria-label="Activity workspace views" onKeyDown={handleTabKey}>
               <button type="button" role="tab" aria-selected={activitySubTab === 'events'} className={`access-subtab ${activitySubTab === 'events' ? 'active' : ''}`} onClick={() => setActivitySubTab('events')} tabIndex={(activitySubTab === 'events') ? 0 : -1}>Events</button>
-              <button type="button" role="tab" aria-selected={activitySubTab === 'usage'} className={`access-subtab ${activitySubTab === 'usage' ? 'active' : ''}`} onClick={() => setActivitySubTab('usage')} tabIndex={(activitySubTab === 'usage') ? 0 : -1}>Usage By User</button>
+              <button type="button" role="tab" aria-selected={activitySubTab === 'usage'} className={`access-subtab ${activitySubTab === 'usage' ? 'active' : ''}`} onClick={() => setActivitySubTab('usage')} tabIndex={(activitySubTab === 'usage') ? 0 : -1}>Usage by user</button>
               {canManageUserLifecycle && (
-                <button type="button" role="tab" aria-selected={activitySubTab === 'review'} className={`access-subtab ${activitySubTab === 'review' ? 'active' : ''}`} onClick={() => setActivitySubTab('review')} tabIndex={(activitySubTab === 'review') ? 0 : -1}>Access Review</button>
+                <button type="button" role="tab" aria-selected={activitySubTab === 'review'} className={`access-subtab ${activitySubTab === 'review' ? 'active' : ''}`} onClick={() => setActivitySubTab('review')} tabIndex={(activitySubTab === 'review') ? 0 : -1}>Access review</button>
               )}
             </TabList>
 
@@ -2723,7 +2723,7 @@ export default function AccessPage({
                     <input type="datetime-local" value={activityFilter.createdBefore} onChange={event => setActivityFilter(prev => ({ ...prev, createdBefore: event.target.value }))} />
                   </label>
                   <button className="btn btn-primary btn-sm" type="button" onClick={() => { setAppliedActivityFilter(activityFilter); setActivitySnapshot(new Date().toISOString()) }} disabled={!canViewUserActivity || activityLoading || !!activityValidation}>
-                    {activityLoading ? 'Applying...' : 'Apply Filters'}
+                    {activityLoading ? 'Applying…' : 'Apply filters'}
                   </button>
                 </div>
 

@@ -433,7 +433,7 @@ export default function TestExecution({
       { id: 'groups', label: `${groupCount} ${groupCount === 1 ? 'group' : 'groups'}`, tone: isMultiGroup ? 'accent' : 'default' },
       { id: 'started', label: `Started ${formatRunStartTime(test.started_at || test.start_time)}`, tone: 'default', hidden: !showLiveControls },
       { id: 'remaining', label: test.termination_mode === 'iterations' ? `Iterations ${test.live_metrics?.completed_iterations ?? 0} / ${(test.groups || []).reduce((n,g) => n + g.vusers * (g.iterations || 0), 0)}` : `Remaining ${formatRunClock(remainingSeconds)}`, tone: remainingSeconds <= 60 ? 'warning' : 'default', hidden: !showLiveControls },
-      { id: 'stopping', label: 'Stopping...', tone: 'danger', hidden: !isStopping },
+      { id: 'stopping', label: 'Stopping…', tone: 'danger', hidden: !isStopping },
     ],
     secondaryActions: [
       {
@@ -445,7 +445,7 @@ export default function TestExecution({
       },
       {
         id: 'test-notes',
-        label: 'Test Notes',
+        label: 'Test notes',
         compactLabel: 'Notes',
         tone: 'secondary',
         onClick: () => setShowTestNotes(true),
@@ -478,7 +478,7 @@ export default function TestExecution({
 
   if (!test) {
     return <div className="execution">
-      <OrchestrationReturn testId={testId} /><p className="loading">Loading...</p></div>
+      <OrchestrationReturn testId={testId} /><p className="loading">Loading…</p></div>
   }
 
   const {
@@ -1047,7 +1047,6 @@ export default function TestExecution({
   return (
     <div className="execution">
       <OrchestrationReturn testId={testId} />
-      <RunMonitorTimeline key={`monitor-${testId}`} projectId={test.project_id} testId={testId} history={filteredData} />
       {Boolean(test.monitor_warnings?.length) && <section className="tx-section" aria-label="Run monitoring warnings"><h3>Run monitoring warnings</h3><ul>{test.monitor_warnings?.map((warning, index) => <li key={index}>{warning}</li>)}</ul></section>}
       <PreparationControls canEdit={canManageTests} key={`preparation-${testId}`} testId={testId} projectId={test.project_id} status={test.status} />
 
@@ -1108,14 +1107,6 @@ export default function TestExecution({
       )}
 
       {archiveReport && <RunOutcomeSummary report={archiveReport} />}
-      {canManageTests && api && test.project_id && <NativePanelAuthoring properties={[...new Set([...Object.keys(archiveReport?.by_property || {}), ...Object.keys(test.live_metrics?.properties || {})])].sort()} key={`panels-${testId}`} onSave={async definition => {
-        const created = await api.createDashboardDefinition({ ...definition, project_id: test.project_id!, visibility: 'project' })
-        setProjectDashboardDefinitions(current => [...current, created])
-      }} />}
-      <MessagingProgressDiagnostics snapshot={test.live_metrics?.messaging_progress} />
-      <MessagingDiagnostics series={Object.entries(test.live_metrics?.messaging || {}).map(([name, messaging]) => ({ name, messaging }))} />
-      <RunAnnotations key={`annotations-${testId}`} testId={testId} startedAt={test.started_at} canEdit={canManageTests} />
-      <NativeProjectPanels testId={testId} key={`project-panels-${testId}`} definitions={projectDashboardDefinitions} history={filteredData} />
       <DashboardWorkspace
         key={testId}
         ariaLabel="Test execution workspace"
@@ -1132,6 +1123,17 @@ export default function TestExecution({
         initialActiveTabId={initialWorkspaceTabId}
         onActiveTabChange={handleWorkspaceActiveTabChange}
       />
+      {/* The selected tab's own content leads; run-wide supplementary evidence
+          and the project panel builder follow it. */}
+      <NativeProjectPanels testId={testId} key={`project-panels-${testId}`} definitions={projectDashboardDefinitions} history={filteredData} />
+      <RunMonitorTimeline key={`monitor-${testId}`} projectId={test.project_id} testId={testId} history={filteredData} />
+      <MessagingProgressDiagnostics snapshot={test.live_metrics?.messaging_progress} />
+      <MessagingDiagnostics series={Object.entries(test.live_metrics?.messaging || {}).map(([name, messaging]) => ({ name, messaging }))} />
+      <RunAnnotations key={`annotations-${testId}`} testId={testId} startedAt={test.started_at} canEdit={canManageTests} />
+      {canManageTests && api && test.project_id && <NativePanelAuthoring properties={[...new Set([...Object.keys(archiveReport?.by_property || {}), ...Object.keys(test.live_metrics?.properties || {})])].sort()} key={`panels-${testId}`} onSave={async definition => {
+        const created = await api.createDashboardDefinition({ ...definition, project_id: test.project_id!, visibility: 'project' })
+        setProjectDashboardDefinitions(current => [...current, created])
+      }} />}
     </div>
   )
 }

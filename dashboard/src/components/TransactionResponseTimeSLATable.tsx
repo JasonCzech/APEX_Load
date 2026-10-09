@@ -94,7 +94,7 @@ export default function TransactionResponseTimeSLATable({
         <div className="run-report-drilldown">
           <h3>{selectedGroup} / {selectedTransaction || 'No named transaction observed'}</h3>
           {loadingTransactions ? (
-            <p role="status">Loading drill-down...</p>
+            <p role="status">Loading drill-down…</p>
           ) : selectedTransaction && drilldownTransactions.length > 0 ? (
             <ul>
               {drilldownTransactions.slice(0, 5).map((event, index) => (

@@ -5,6 +5,7 @@ import ResourceSnapshotList from './ResourceSnapshotList'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
 import { createContext, lazy, Suspense, useContext, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import type { CommandCenterRouteView } from '../appRouting'
 import { createPortal } from 'react-dom'
 import {
   Area,
@@ -69,6 +70,7 @@ import { formatPercentValue } from '../utils/numberFormat'
 import './TestExecution.css'
 import './CommandCenterPrototype.css'
 import { MISSING_VALUE } from './runReport/reportPresentation'
+import LoadingState from './ux/LoadingState'
 
 const TestExecutionScenarioEditor = lazy(() => import('./TestExecutionScenarioEditor'))
 
@@ -87,6 +89,9 @@ export function historicalGroupSummaryQuery(groups: string[]) {
 
 interface CommandCenterPrototypeProps {
   testId?: string
+  /** Analysis view held in the route (`?view=`); absent is the operations view. */
+  routeView?: CommandCenterRouteView
+  onRouteViewChange?: (view: CommandCenterRouteView | undefined) => void
   history?: MetricsHistoryPoint[]
   statusOverride?: string
   initialTest?: TestSummary
@@ -464,6 +469,8 @@ function CommandLoadObservation({ test }: { test: TestSummary }) {
 
 export default function CommandCenterPrototype({
   testId: testIdProp,
+  routeView,
+  onRouteViewChange,
   history = [],
   statusOverride,
   initialTest,
@@ -486,7 +493,7 @@ export default function CommandCenterPrototype({
   prototypeMode = false,
   active = true,
 }: CommandCenterPrototypeProps = {}) {
-  const [experienceVersion, setExperienceVersion] = useState<'original' | 'v2'>('original')
+  const [experienceVersion, setExperienceVersion] = useState<'original' | 'v2'>(routeView ? 'v2' : 'original')
   const api = useTestApi()
   const pageRef = useRef<HTMLDivElement>(null)
   const wasActive = useRef(active)
@@ -550,7 +557,34 @@ export default function CommandCenterPrototype({
   }, [discoveryScopeKey, runMemories, testId])
   const currentRunRef = useRef(testId)
   currentRunRef.current = testId
-  const [variant, setVariant] = useState<VariantId>('ops')
+  const [variant, setVariant] = useState<VariantId>(routeView === 'wall' ? 'grafana' : 'ops')
+  // Follow the route (Back/Forward, a pasted link) when it names another view.
+  // While kept mounted behind a run's details page the route is not ours.
+  // Only a change of the route's view is applied: coming back from a run's
+  // details page (same route view) keeps the cockpit exactly as it was.
+  const appliedRouteViewRef = useRef(routeView)
+  const wasActiveRef = useRef(active)
+  useEffect(() => {
+    const reactivated = active && !wasActiveRef.current
+    wasActiveRef.current = active
+    if (!active || routeView === appliedRouteViewRef.current) return
+    // Coming back through a link without a view ("Back to Command Center")
+    // keeps the cockpit as it was left and restores its view in the address.
+    if (reactivated && routeView === undefined) {
+      if (testIdProp) onRouteViewChange?.(appliedRouteViewRef.current)
+      return
+    }
+    appliedRouteViewRef.current = routeView
+    setExperienceVersion(routeView ? 'v2' : 'original')
+    setVariant(routeView === 'wall' ? 'grafana' : 'ops')
+  }, [active, onRouteViewChange, routeView, testIdProp])
+  const showView = (version: 'original' | 'v2', nextVariant: VariantId) => {
+    setExperienceVersion(version)
+    setVariant(nextVariant)
+    const nextRouteView = version === 'v2' ? (nextVariant === 'grafana' ? 'wall' : 'analysis') : undefined
+    appliedRouteViewRef.current = nextRouteView
+    onRouteViewChange?.(nextRouteView)
+  }
   const [liveTest, setLiveTest] = useState<TestSummary | null>(() => initialTest || null)
   const [loadError, setLoadError] = useState('')
   const [expandedCharts, setExpandedCharts] = useState<Record<VariantId, string | null>>({ ops: null, grafana: null })
@@ -847,7 +881,7 @@ export default function CommandCenterPrototype({
     ...EMPTY_COMMAND_CENTER_TEST,
     id: testId || '',
     ref_key: testId || '',
-    name: 'Loading command-center run...',
+    name: 'Loading command-center run…',
     status: 'INITIALIZING',
     groups: [],
     total_vusers: 0,
@@ -1150,7 +1184,7 @@ export default function CommandCenterPrototype({
   ])
   const feedback = loadError
     || prototypeFixturesError
-    || (hasLiveRoute && !activeLiveTest ? 'Loading live run data for the command center...' : '')
+    || (hasLiveRoute && !activeLiveTest ? 'Loading live run data for the command center…' : '')
     || (emptyMode ? 'No active run is selected for the command center.' : '')
     || (historicalRun ? DEFAULT_HISTORICAL_FEEDBACK : '')
     || (liveMode && state.feedback === DEFAULT_PROTOTYPE_FEEDBACK ? DEFAULT_LIVE_FEEDBACK : state.feedback)
@@ -1401,7 +1435,7 @@ export default function CommandCenterPrototype({
   }
 
   const changeVariant = (nextVariant: VariantId) => {
-    setVariant(nextVariant)
+    showView(experienceVersion, nextVariant)
     setActiveGraphCursor(null)
   }
 
@@ -1414,9 +1448,9 @@ export default function CommandCenterPrototype({
 
   const experienceSwitch = (
     <div className="command-center-experience-switch" role="group" aria-label="Command Center tools">
-      {experienceVersion === 'v2' ? <button type="button" onClick={() => { setExperienceVersion('original'); setVariant('ops') }}>Back to operations</button>
-        : <button type="button" onClick={() => { setExperienceVersion('v2'); setVariant('ops') }}>Open analysis</button>}
-      {experienceVersion === 'v2' && <><button type="button" aria-pressed={variant === 'ops'} onClick={() => setVariant('ops')}>OPS VIEW</button><button type="button" aria-pressed={variant === 'grafana'} onClick={() => setVariant('grafana')}>GRAPH WALL</button></>}
+      {experienceVersion === 'v2' ? <button type="button" onClick={() => showView('original', 'ops')}>Back to operations</button>
+        : <button type="button" onClick={() => showView('v2', 'ops')}>Open analysis</button>}
+      {experienceVersion === 'v2' && <><button type="button" aria-pressed={variant === 'ops'} onClick={() => showView('v2', 'ops')}>OPS VIEW</button><button type="button" aria-pressed={variant === 'grafana'} onClick={() => showView('v2', 'grafana')}>GRAPH WALL</button></>}
     </div>
   )
   const commandCenterTopbarTarget = typeof document === 'undefined'
@@ -1467,6 +1501,9 @@ export default function CommandCenterPrototype({
         highestErrorGroup={noRequestSamples ? undefined : highestGroupErrorRate(groups)}
         tps={runSummaryTps}
         tpsHint={runSummaryAverages.tps !== undefined ? '10s avg' : undefined}
+        // Average and P95 from the same metrics window, so P95 never reads below the average.
+        responseAvgMs={displayTest.live_metrics?.avg_response_ms}
+        responseP95Ms={displayTest.live_metrics?.p95_ms}
         feedback={feedback}
         historicalRun={historicalRun || (hasLiveRoute && !liveMode)}
         onStart={confirmRunAction('start', startRun)}
@@ -1484,7 +1521,7 @@ export default function CommandCenterPrototype({
       />
       {queuedRevision.error && <div className="settings-inline-error" role="alert">{queuedRevision.error}</div>}
       {queuedRevision.snapshot && (
-        <Suspense fallback={<div role="status">Loading queued-run editor…</div>}>
+        <Suspense fallback={<LoadingState what="queued-run editor" className="" />}>
           <TestExecutionScenarioEditor key={queuedRevision.incarnation} open test={queuedRevision.snapshot} onClose={queuedRevision.close} onSelectTest={queuedRevision.created} />
         </Suspense>
       )}
@@ -1700,6 +1737,9 @@ interface RunControlShelfProps {
   highestErrorGroup?: { name: string; errorPct: number }
   tps?: number
   tpsHint?: string
+  /** Average and P95 response time (ms) from the latest metrics window. */
+  responseAvgMs?: number
+  responseP95Ms?: number
   feedback: string
   historicalRun?: boolean
   onStart: () => void
@@ -1728,6 +1768,8 @@ function RunControlShelf({
   highestErrorGroup,
   tps,
   tpsHint,
+  responseAvgMs,
+  responseP95Ms,
   feedback,
   historicalRun = false,
   onStart,
@@ -1749,6 +1791,10 @@ function RunControlShelf({
   // Abort must stay available during STOPPING so a wedged graceful stop can still be escalated.
   const fullyTerminal = status === 'ABORTED' || status === 'COMPLETE' || status === 'FAILED'
   const canStart = status === 'QUEUED' || status === 'RESERVED'
+  const startedMs = test.started_at ? Date.parse(test.started_at) : Number.NaN
+  const endMs = test.ended_at ? Date.parse(test.ended_at) : Date.now()
+  // An unreadable timestamp shows 0:00 rather than NaN.
+  const elapsedSeconds = Number.isFinite(startedMs) && Number.isFinite(endMs) ? Math.max(0, (endMs - startedMs) / 1000) : 0
   const canPauseResume = status === 'RUNNING' || status === 'PAUSED'
   const canStop = status === 'RUNNING' || status === 'INITIALIZING' || status === 'PAUSED'
   return (
@@ -1761,7 +1807,7 @@ function RunControlShelf({
         </div>
       </div>
 
-      <div className={`command-run-stats${tps !== undefined ? ' with-tps' : ''}${test.groups.length > 1 ? ' with-highest-error' : ''}`} aria-label="Run summary">
+      <div className="command-run-stats" aria-label="Run summary">
         <MetricPill
           label={canStart ? "Planned load" : "Observed / Target Load"}
           value={canStart ? `${formatNumber(totalTarget)} ${targetMode === 'tps' ? 'TPS' : 'VU'} · Not started` : noRequestSamples && !test.live_metrics ? `No samples / ${formatNumber(totalTarget)} ${targetMode === 'tps' ? 'TPS' : 'VU'}` : targetMode === 'tps'
@@ -1769,8 +1815,9 @@ function RunControlShelf({
             : `${formatNumber(totalCurrent)} / ${formatNumber(totalTarget)} VU`}
           tone="info"
         />
-        {test.termination_mode === 'iterations' ? <><MetricPill label="Completed / expected iterations" value={`${test.live_metrics?.completed_iterations ?? 0} / ${test.groups.reduce((n,g) => n + g.vusers * (g.iterations || 0), 0)}`} /><MetricPill label="Elapsed" value={formatRunClock(test.started_at ? Math.max(0, ((test.ended_at ? Date.parse(test.ended_at) : Date.now()) - Date.parse(test.started_at)) / 1000) : 0)} /></> : <MetricPill label="Remaining" value={formatRunClock(remainingSeconds)} tone={remainingSeconds <= 60 ? 'warning' : 'default'} />}
+        {test.termination_mode === 'iterations' ? <><MetricPill label="Completed / expected iterations" value={`${test.live_metrics?.completed_iterations ?? 0} / ${test.groups.reduce((n,g) => n + g.vusers * (g.iterations || 0), 0)}`} /><MetricPill label="Elapsed" value={formatRunClock(elapsedSeconds)} /></> : <MetricPill label="Elapsed · remaining" value={`${formatRunClock(elapsedSeconds)} · ${formatRunClock(remainingSeconds)}`} tone={!canStart && remainingSeconds <= 60 ? 'warning' : 'default'} />}
         {tps !== undefined && <MetricPill label={tpsHint ? `TPS (${tpsHint})` : 'TPS'} value={canStart ? "Not started" : noRequestSamples ? "No samples" : formatNumber(tps, 1)} tone="accent" />}
+        <MetricPill label="Response time (latest avg · P95)" value={canStart ? 'Not started' : noRequestSamples ? 'No samples' : `${formatOptionalMs(responseAvgMs)} · ${formatOptionalMs(responseP95Ms)}`} />
         <MetricPill label={`Error Rate (${errorRateBasisLabel(errorRateBasis)})`} value={canStart || noRequestSamples ? "No samples" : formatOptionalPercent(errorPct)} tone={errorPct && errorPct > 0 ? "danger" : "default"} />
         {test.groups.length > 1 && (
           <MetricPill
@@ -1790,7 +1837,7 @@ function RunControlShelf({
         {onOpenTestNotes && (
           <button type="button" className="btn btn-sm btn-ghost" onClick={onOpenTestNotes}>
             <NotesIcon />
-            Test Notes
+            Test notes
           </button>
         )}
         {onCreateQueuedCopy && (
@@ -1799,7 +1846,7 @@ function RunControlShelf({
           </button>
         )}
         {onChangeDuration && (
-          <button type="button" className="btn btn-sm btn-accent" data-command-action="change-duration" onClick={onChangeDuration} disabled={changeDurationDisabled || readOnly} aria-describedby={readOnlyNoteId}>
+          <button type="button" className="btn btn-sm btn-primary" data-command-action="change-duration" onClick={onChangeDuration} disabled={changeDurationDisabled || readOnly} aria-describedby={readOnlyNoteId}>
             Adjust run
           </button>
         )}
@@ -2272,7 +2319,7 @@ function OpsCockpitV2View({
 
         <aside className="command-v2-inspector" aria-label="Adjust run: duration and target transition">
           <section>
-            <div className="command-v2-inspector-title"><h3>Change Duration</h3><span>{formatRunClock(remainingSeconds)} left</span></div>
+            <div className="command-v2-inspector-title"><h3>Change duration</h3><span>{formatRunClock(remainingSeconds)} left</span></div>
             <dl>
               <div><dt>Current duration</dt><dd>{formatRunClock(totalDurationSeconds)}</dd></div>
               <div><dt>Elapsed</dt><dd>{formatNumber(progressPct, 0)}%</dd></div>
@@ -2661,7 +2708,7 @@ function ScenarioRunTable({
   onSort: (key: string) => void
 }) {
   const essentialColumns = [0, 1, 4, 5, 6, 11, 15]
-  const labels = ['Name', 'Group', 'Type', 'Protocol', 'Current VU', 'Target VU', 'TPS', 'Target TPS', 'Gap', 'Attempts', 'Errors', 'Error rate', 'ART', 'P50', 'P90', 'P95', 'P99']
+  const labels = ['Name', 'Group', 'Type', 'Protocol', 'Current VUsers', 'Target VUsers', 'TPS', 'Target TPS', 'Gap', 'Attempts', 'Errors', 'Error rate', 'ART', 'P50', 'P90', 'P95', 'P99']
   const [columns, setColumns] = useCommandViewState('scenarioColumns', essentialColumns)
   const fullMetrics = columns.length === labels.length
   return (
@@ -2678,8 +2725,8 @@ function ScenarioRunTable({
             <SortableHeader hidden={!columns.includes(1)} label="Group" sortKey="group" sort={sort} onSort={onSort} />
             <SortableHeader hidden={!columns.includes(2)} label="Type" sortKey="type" sort={sort} onSort={onSort} />
             <SortableHeader hidden={!columns.includes(3)} label="Protocol" sortKey="protocol" sort={sort} onSort={onSort} />
-            <SortableHeader hidden={!columns.includes(4)} label="Current VU" sortKey="currentVusers" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader hidden={!columns.includes(5)} label="Target VU" sortKey="targetVusers" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(4)} label="Current VUsers" sortKey="currentVusers" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(5)} label="Target VUsers" sortKey="targetVusers" sort={sort} onSort={onSort} align="right" />
             <SortableHeader hidden={!columns.includes(6)} label="TPS" sortKey="tps" sort={sort} onSort={onSort} align="right" />
             <SortableHeader hidden={!columns.includes(7)} label="Target TPS" sortKey="targetTps" sort={sort} onSort={onSort} align="right" />
             <SortableHeader hidden={!columns.includes(8)} label="Gap" sortKey="throughputGap" sort={sort} onSort={onSort} align="right" />
@@ -3904,7 +3951,7 @@ function GroupLoadTable({
       <div className="command-group-table" role="table">
         <div className="command-group-row header" role="row">
           <span role="columnheader">Group</span>
-          <span role="columnheader">Current VU</span>
+          <span role="columnheader">Current VUsers</span>
           <span role="columnheader">{targetHeader}</span>
           <span role="columnheader">TPS</span>
           <span role="columnheader">ART</span>
@@ -3979,8 +4026,8 @@ function GroupLoadTable({
                   </span>
                 )}
               </span>
-              <span role="cell" data-label="Current VU">{formatNumber(group.current)}</span>
-              <span role="cell" className="command-target-cell" data-label={isGoalTarget ? "Target TPS" : "Target VU"}>
+              <span role="cell" data-label="Current VUsers">{formatNumber(group.current)}</span>
+              <span role="cell" className="command-target-cell" data-label={isGoalTarget ? "Target TPS" : "Target VUsers"}>
                 {readOnly ? (
                   <span className="command-target-readout">
                     <strong>{formatTargetValue(group.target, group.targetMode)}</strong>
@@ -4017,7 +4064,7 @@ function GroupLoadTable({
                         activeRamp={group.activeVuserRamp}
                       />
                     </div>
-                    <button type="button" className="btn btn-sm btn-accent" disabled={applyDisabled} onClick={() => onApplyTarget(group.name, group.target)}>
+                    <button type="button" className="btn btn-sm btn-primary" disabled={applyDisabled} onClick={() => onApplyTarget(group.name, group.target)}>
                       Apply
                     </button>
                   </>

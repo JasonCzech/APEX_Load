@@ -142,6 +142,13 @@ async function reopenSavedScript(page: Page, workspace: Workspace, id: string) {
   await expect(page.getByRole('group', { name: 'Script workspace' })).toBeVisible()
 }
 
+// Protocol provenance sits in a closed "Protocol evidence" disclosure under the response.
+async function openProtocolEvidence(page: Page) {
+  const disclosure = page.locator('details.replay-protocol-evidence')
+  await expect(disclosure).toBeVisible()
+  if (!await disclosure.evaluate(element => (element as HTMLDetailsElement).open)) await disclosure.locator('summary').click()
+}
+
 async function selectReplayAction(page: Page, name: string) {
   const panes = page.getByRole('group', { name: 'Debug panes', exact: true })
   if (await panes.isVisible()) await panes.getByRole('button', { name: 'Outline', exact: true }).click()
@@ -324,6 +331,7 @@ test('HAR decoded base64 content retains its correlations and real gzip replay e
     expect(report.report.events.every(event => event.success && !event.error_message)).toBe(true)
     expect(report.report.events[0].protocol_evidence).toMatchObject({ response_content_state: 'complete', response_content_basis: 'decoded', response_content_source: 'wire' })
     await selectReplayAction(page, script.actions[0].name)
+    await openProtocolEvidence(page)
     const evidence = page.getByRole('region', { name: 'HTTP response content evidence', exact: true })
     await expect(evidence).toContainText('Complete response')
     await expect(evidence).toContainText('Decoded response content')
@@ -416,6 +424,7 @@ test('gzip SSE collection extracts sampled events and visibly qualifies the part
     await expect(page.getByLabel('Script evidence states')).toContainText('Debugged: passed')
     expect(target.stats).toMatchObject({ streamCalls: 1, streamConsumerCalls: 1, acceptedStreamConsumers: 1, streamEndCalls: 0 })
     await selectReplayAction(page, 'Collect compressed events')
+    await openProtocolEvidence(page)
     const evidence = page.getByRole('region', { name: 'HTTP response content evidence', exact: true })
     await expect(evidence).toContainText('Collection window (partial response)')
     await expect(evidence).toContainText('Decoded response content')

@@ -2513,59 +2513,30 @@ describe('TestHub', () => {
     expect(apiMock.updateScenario).not.toHaveBeenCalled()
   })
 
-  it('gives the delete confirmation dialog a trapped, dismissible focus lifecycle', async () => {
-    const onSelectTest = vi.fn()
+  it('confirms a row delete with the same named confirmation as bulk delete', async () => {
+    const confirm = vi.fn(() => false)
+    vi.stubGlobal('confirm', confirm)
     apiMock.listScenarios.mockResolvedValue({
       scenarios: [scenarioFixture('scenario-delete', 'Delete Me')],
       count: 1,
     })
 
     await act(async () => {
-      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+      root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />)
     })
     await flushPromises()
 
     const deleteTrigger = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Delete')
     expect(deleteTrigger).toBeDefined()
-    if (!deleteTrigger) return
-    deleteTrigger.focus()
-
     await act(async () => {
-      deleteTrigger.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    await flushTimeouts()
-
-    const dialog = container.querySelector('[role="dialog"]') as HTMLDivElement | null
-    expect(dialog).not.toBeNull()
-    expect(dialog?.getAttribute('aria-modal')).toBe('true')
-    expect(dialog?.getAttribute('aria-labelledby')).toBe('delete-scenario-dialog-title')
-    expect(dialog?.getAttribute('aria-describedby')).toBe('delete-scenario-dialog-description')
-    expect(dialog?.getAttribute('tabindex')).toBe('-1')
-    expect(document.activeElement?.textContent).toBe('Cancel')
-
-    const dialogButtons = Array.from(dialog?.querySelectorAll('button') || [])
-    const firstButton = dialogButtons[0]
-    const lastButton = dialogButtons[dialogButtons.length - 1]
-    expect(firstButton?.textContent).toBe('Cancel')
-    expect(lastButton?.textContent).toBe('Delete Scenario')
-
-    await act(async () => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }))
-    })
-    expect(document.activeElement).toBe(lastButton)
-
-    await act(async () => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
-    })
-    expect(document.activeElement).toBe(firstButton)
-
-    await act(async () => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      deleteTrigger?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flushPromises()
 
+    expect(confirm).toHaveBeenCalledWith('Permanently delete “Delete Me”? Scenarios with linked results cannot be deleted. This cannot be undone.')
+    // The bespoke dialog with its second Cancel button is gone.
     expect(container.querySelector('[role="dialog"]')).toBeNull()
-    expect(document.activeElement).toBe(deleteTrigger)
+    expect(apiMock.deleteScenario).not.toHaveBeenCalled()
   })
 
   it('limits header selection to the current page and offers explicit selection of all matches', async () => {
@@ -4152,12 +4123,9 @@ describe('TestHub', () => {
       apiMock.listScenarios.mockResolvedValue({ scenarios: [conflictScenario], count: 1 })
       await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />))
       await flushPromises()
+      vi.stubGlobal('confirm', vi.fn(() => true))
       await act(async () => {
         Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Delete')?.click()
-      })
-      await flushTimeouts()
-      await act(async () => {
-        Array.from(container.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(button => button.textContent === 'Delete Scenario')?.click()
       })
       await flushPromises()
       expect(apiMock.deleteScenario).toHaveBeenCalledWith('scenario-conflict', '2026-05-12T00:00:00Z')

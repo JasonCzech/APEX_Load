@@ -434,8 +434,8 @@ describe('ResultsPage', () => {
       )
     })
 
-    expect(container.textContent).toContain('Loading result sources...')
-    expect(container.textContent).toContain('Loading results...')
+    expect(container.textContent).toContain('Loading result sources…')
+    expect(container.textContent).toContain('Loading results…')
     expect(container.textContent).not.toContain('No result sources yet.')
 
     await act(async () => {
@@ -444,7 +444,7 @@ describe('ResultsPage', () => {
       await Promise.resolve()
     })
 
-    expect(container.textContent).not.toContain('Loading result sources...')
+    expect(container.textContent).not.toContain('Loading result sources…')
     expect(container.textContent).toContain('No result sources yet.')
     await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Create a test')!.click())
     expect(navigate).toHaveBeenCalledWith('new-test')
@@ -1241,7 +1241,7 @@ describe('ResultsPage', () => {
     expect(apiMock.getTestArchiveReport).toHaveBeenCalledTimes(2)
     expect(apiMock.getTestArchiveSummaries).toHaveBeenCalledTimes(2)
     expect(container.textContent).toContain('Comparison loaded')
-    expect(container.textContent).not.toContain('Loading comparison...')
+    expect(container.textContent).not.toContain('Loading comparison…')
 
     apiMock.getTestArchiveReport.mockClear()
     apiMock.getTestArchiveSummaries.mockClear()
@@ -1257,7 +1257,7 @@ describe('ResultsPage', () => {
     expect(apiMock.getTestArchiveReport).not.toHaveBeenCalled()
     expect(apiMock.getTestArchiveSummaries).not.toHaveBeenCalled()
     expect(container.textContent).toContain('Comparison loaded')
-    expect(container.textContent).not.toContain('Loading comparison...')
+    expect(container.textContent).not.toContain('Loading comparison…')
   })
 
   it('opens the completed-run workspace from both the row and its single results action', async () => {
@@ -1428,7 +1428,7 @@ describe('ResultsPage', () => {
     expect(apiMock.deleteTest).toHaveBeenCalledTimes(2)
     expect(container.textContent).not.toContain('iPhone Checkout')
     expect(container.textContent).toContain('iPad Checkout')
-    expect(container.textContent).toContain('Deleted 1 of 2 selected results. run-b: result is locked')
+    expect(container.textContent).toContain('Deleted 1 of 2 selected runs. run-b: result is locked')
     expect(container.querySelector('.results-table-selection-toolbar')?.textContent).toContain('1 selected')
     expect(buttonByText(container, 'Delete Selected (1)')).toBeDefined()
   })
@@ -1517,7 +1517,10 @@ describe('ResultsPage', () => {
       deleteButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flushPromises()
-    expect(container.textContent).not.toContain('iPhone Checkout')
+    const tableText = () => Array.from(container.querySelectorAll('table')).map(table => table.textContent).join(' ')
+    expect(tableText()).not.toContain('iPhone Checkout')
+    // The delete is confirmed by name in the status line.
+    expect(container.querySelector('[role="status"].sr-only')?.textContent).toMatch(/^Deleted run “iPhone Checkout \(.+\)”\.$/)
 
     await act(async () => {
       resolveStaleTail?.({ tests: [runA], total: 3, count: 1, limit: 1000, offset: 2 })
@@ -1525,8 +1528,8 @@ describe('ResultsPage', () => {
     })
     await flushPromises()
 
-    expect(container.textContent).not.toContain('iPhone Checkout')
-    expect(container.textContent).toContain('iPad Checkout')
+    expect(tableText()).not.toContain('iPhone Checkout')
+    expect(tableText()).toContain('iPad Checkout')
   })
 
   it('prunes destructive selections when filters hide the selected row', async () => {

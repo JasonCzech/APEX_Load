@@ -85,7 +85,6 @@ export default function ConfirmDestructiveModal({
             <h3 id={titleId}>{title}</h3>
             <p id={descriptionId} className="page-subtitle">{description}</p>
           </div>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={requestCancel} disabled={loading}>Close</button>
         </div>
 
         <form
@@ -143,8 +142,8 @@ export default function ConfirmDestructiveModal({
 
           <div className="modal-actions">
             <button type="button" className="btn btn-secondary" onClick={requestCancel} disabled={loading}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={!canSubmit}>
-              {loading ? 'Working...' : confirmLabel}
+            <button type="submit" className="btn btn-danger" disabled={!canSubmit}>
+              {loading ? 'Working…' : confirmLabel}
             </button>
           </div>
         </form>

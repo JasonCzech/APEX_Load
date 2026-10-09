@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   RepositoryCatalogFilters,
   buildRepositoryCatalogRows,
+  customRangeInverted,
   filterRepositoryRows,
   sortRepositoryRows,
   summarizeRepositoryRows,
@@ -283,6 +284,11 @@ describe('repositoryCatalogUtils', () => {
       customStartDate: '2026-01-09',
       customEndDate: '2026-01-10',
     }).map(row => row.id)).toEqual(['test-1'])
+    // An inverted range is reported to the user, not applied as "nothing matches".
+    const inverted = { ...defaultFilters, timeframe: 'custom', customStartDate: '2026-01-10', customEndDate: '2026-01-09' } as const
+    expect(customRangeInverted(inverted)).toBe(true)
+    expect(filterRepositoryRows(rows, 'all', inverted)).toHaveLength(filterRepositoryRows(rows, 'all', { ...defaultFilters, timeframe: 'custom' }).length)
+    expect(customRangeInverted({ customStartDate: '2026-01-09', customEndDate: '2026-01-09' })).toBe(false)
   })
 
   it('sorts rows by name and last activity', () => {

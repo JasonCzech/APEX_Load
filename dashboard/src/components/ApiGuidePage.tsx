@@ -33,13 +33,24 @@ export default function ApiGuidePage({ activePage = API_GUIDE_DEFAULT_PAGE, defa
   const denied = (match?.area || helpAreaForPage(routedPage)) === 'admin-guide' && !isAdmin
   const area = denied ? 'getting-started' : match?.area || helpAreaForPage(routedPage)
   const article = (!denied && match) || helpArticles.find(article => article.area === area)!
+  // A denied admin article falls back to public help; the address says so too.
+  // The notice stays while the address is that fallback, even after a later
+  // hash read no longer sees the denied request.
+  const [deniedFallbackHash, setDeniedFallbackHash] = useState('')
+  useEffect(() => {
+    if (!denied) return
+    const fallback = helpArticleHash(article)
+    setDeniedFallbackHash(fallback)
+    window.history.replaceState(window.history.state, '', fallback)
+  }, [article, denied, hash])
+  const showDeniedNotice = denied || (deniedFallbackHash !== '' && hash === deniedFallbackHash)
   const section = params.get('section') || undefined
   const hasTopbar = useHasTopbarContributionProvider()
   useApiGuideTopbarContribution(area, 'Help & documentation', undefined, isAdmin)
   return <div className="page api-guide-page help-page">
     {!hasTopbar && <ApiGuideTopbarToggle active={area} includeAdminGuide={isAdmin} />}
     <HelpWorkspace area={area} activeArticle={article.id} isAdmin={isAdmin}>
-      {denied && <p role="status">Administration requires administrative access. Start with the public help articles or contact your administrator.</p>}
+      {showDeniedNotice && <p role="status">Administration requires administrative access. Start with the public help articles or contact your administrator.</p>}
       {requested && !match && <p role="status">That article is not in this build. Choose an article below.</p>}
       <HelpArticleContent key={article.id} article={article} section={section} isAdmin={isAdmin} />
       {article.id === 'administration' && <details><summary>CloudTest compatibility and delivery reference</summary><Suspense fallback={<p role="status">Loading compatibility reference…</p>}><CloudTestParityDashboard /></Suspense></details>}
@@ -50,14 +61,13 @@ export default function ApiGuidePage({ activePage = API_GUIDE_DEFAULT_PAGE, defa
 
 function HelpArticleContent({ article, section, isAdmin }: { article: HelpArticle; section?: string; isAdmin: boolean }) {
   const [state, setState] = useState<{ source?: string; error?: string }>({})
-  const [attempt, setAttempt] = useState(0)
   const [copied, setCopied] = useState('')
   const [controllerURL, setControllerURL] = useState('http://localhost:8080/api/v1')
   useEffect(() => {
     let cancelled = false
-    loadHelpSource(article).then(source => { if (!cancelled) setState({ source }) }, () => { if (!cancelled) setState({ error: 'This article could not be loaded. Retry or choose another article.' }) })
+    loadHelpSource(article).then(source => { if (!cancelled) setState({ source }) }, () => { if (!cancelled) setState({ error: 'This article could not be loaded. Reload the page to retry, or choose another article.' }) })
     return () => { cancelled = true }
-  }, [article, attempt])
+  }, [article])
   const resolvedArticle = state.source && section ? articleForSection(article.path, section, state.source) : undefined
   const displayArticle = resolvedArticle && (isAdmin || resolvedArticle.area !== 'admin-guide') ? resolvedArticle : article
   useEffect(() => {
@@ -90,7 +100,7 @@ function HelpArticleContent({ article, section, isAdmin }: { article: HelpArticl
       <span>{validURL ? 'Examples below use this URL. No request is sent.' : 'Enter an HTTP(S) URL without credentials, query parameters or shell characters.'}</span>
     </label>}
     {state.source && section && !resolvedArticle && <p role="status">That section is not available in this build. Choose a section from On this page.</p>}
-    {state.error ? <div role="alert"><p>{state.error}</p><button type="button" onClick={() => { setState({}); setAttempt(value => value + 1) }}>Retry article</button></div> : state.source === undefined ? <p role="status">Loading article…</p> : <GuideMarkdownArticle
+    {state.error ? <div role="alert"><p>{state.error}</p><button type="button" onClick={() => window.location.reload()}>Reload to retry</button></div> : state.source === undefined ? <p role="status">Loading article…</p> : <GuideMarkdownArticle
       source={source} blocks={blocks} section={section}
       sectionHref={id => helpArticleHash(displayArticle, id)}
       resolveLink={href => resolveHelpLink(href, displayArticle, state.source!)}
