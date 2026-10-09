@@ -88,6 +88,21 @@ Wave 2 landed eleven more work packages on the same branch: dashboard scenario c
 
 Wave 3 landed nine work packages on the same branch: synthetic HARs from retained network evidence, HAR downloads and the HAR-inclusive archive export, and native recording of browser replays on request (BE-3); per-stage telemetry distributions with opt-in, advisory client render evidence, and policy-compatible telemetry comparison and re-evaluation (TEL); correlation semantics with exclusions by reason, and joint evidence v4 over a run's configured projection (NA-3); journey accounting from archived VUser iterations and policy-scored browser findings (BI); and one scenario assembly owner across the scenario surfaces (AUTH-1). Each package passed independent review rounds until no finding stayed open without a fix, a documented limit or a recorded acceptance, then a cross-cutting review; schema releases 52 (`tests.joint_evidence_json`) and 53 (`feature_evaluation_jobs.subject_id`) are additive. [The Wave 3 record](qa/reviews/feature-completion-wave3-2026-10-08/README.md) lists commits, reviews, gates and what stays open. This does not close any AUTH, NA, TEL, BE or BI requirement.
 
+## Feature completion Wave 4 — 2026-10-09
+
+Wave 4 landed six work packages on the same branch:
+- **Telemetry (TEL-3):** acceptance verdicts judged against the policy frozen at Start, kept separate from the application outcome in CI, and reported live, in the run report, in saved comparisons and through a once-per-run webhook.
+- **Browser intelligence:**
+  - BI-2: RCA baseline anomalies for browser document metrics, per exact cohort and steady load level.
+  - BI-3: interaction patterns and per-layout heatmaps from captured interaction evidence.
+- **Native analytics (NA-4):** saved panel revisions, query versions, dataset artifact pins, and the `apexctl analysis` catalog, panel and query commands.
+- **Authoring (AUTH-2):** a generated lifecycle parity matrix, which found and fixed two parity gaps.
+- **Browser evidence (BE-4):** a generated browser acceptance inventory, new Chromium and WebKit fixtures, and an opt-in benchmark.
+
+Each package passed independent review rounds until no finding stayed open without a fix or a documented limit. A cross-cutting review followed. Schema release 54 (`dashboard_definition_revisions`) is additive.
+
+[The Wave 4 record](qa/reviews/feature-completion-wave4-2026-10-09/README.md) lists commits, reviews, gates and what stays open. This does not close any AUTH, NA, TEL, BE or BI requirement.
+
 ## Track status
 
 | Track | Status | Open work |
@@ -499,7 +514,7 @@ HAR is evidence for debugging, migration review and browser-to-HTTP conversion, 
 | 3 Client metrics collection | `ClientMetrics` on `protocol.Result`, `browser.client_metrics` | Complete for the current contract |
 | 4 Aggregation and dashboard | Device-segmented aggregation, comparison and waterfall views | Complete for the current contract |
 | 5 TrueClient import | `pkg/convert/trueclient`, device profile extraction, replay validation | Partial; sample-backed hardening open |
-| 6 UX intelligence | Legacy-summary availability correction verified; since Wave 3 (above), policy-scored document findings and configured journey accounting are implemented (not qualified on real runs) | Baseline anomalies and interaction maps remain open |
+| 6 UX intelligence | Legacy-summary availability correction verified; since Wave 3 (above), policy-scored document findings and configured journey accounting are implemented, and since Wave 4 (above), RCA baseline anomalies for document metrics and interaction patterns and heatmaps (none qualified on real runs) | Qualification on real runs; screenshot overlays, child-frame maps, and browser findings that cite baseline anomalies remain open |
 
 | Risk | Mitigation |
 |:---|:---|
