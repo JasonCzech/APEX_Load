@@ -44,6 +44,20 @@ describe('request HTTP version fields', () => {
     expect(container.textContent).not.toContain('runs need HTTP/3 execution enabled')
   })
 
+  it('reports exact HTTP/3 conflicts with the request URL and script settings at the field', () => {
+    const issues = () => Array.from(container.querySelectorAll('.http3-policy-issue')).map(issue => issue.textContent)
+    act(() => root.render(<HTTPActionVersionFields action={action({ http_version: '3' })} index={0} protocol="http" scriptVersion=""
+      scriptContext={{ base_url: 'http://shop.example', http: { tls: { max_version: '1.2' } } }} onUpdate={noop} />))
+    expect(issues()).toEqual([expect.stringContaining('only https origins'), expect.stringContaining('requires TLS 1.3')])
+    // An absolute https target overrides the base URL; auto+h3 keeps http:// on TCP.
+    act(() => root.render(<HTTPActionVersionFields action={action({ http_version: '3', target: 'https://api.example/read' })} index={0} protocol="http" scriptVersion=""
+      scriptContext={{ base_url: 'http://shop.example' }} onUpdate={noop} />))
+    expect(issues()).toEqual([])
+    act(() => root.render(<HTTPActionVersionFields action={action({ http_version: 'auto+h3' })} index={0} protocol="http" scriptVersion=""
+      scriptContext={{ base_url: 'http://shop.example' }} onUpdate={noop} />))
+    expect(issues()).toEqual([])
+  })
+
   it.each(['http', 'http/1.1', 'http/2', 'soap', 'java_http'])('shows accessible leaf controls in %s and inherits the passed script default', protocol => {
     renderEditor(action(), protocol, '2')
     const region = container.querySelector('[aria-label="Request HTTP version policy"]')!

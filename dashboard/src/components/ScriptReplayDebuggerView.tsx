@@ -2,7 +2,7 @@ import TooltipButton from './ux/TooltipButton'
 import ResourceSnapshotList from './ResourceSnapshotList'
 import { executionLabel, eventLocation, type DebugRunRecord } from './debuggerExperience'
 import { DebugProfiles, DebugVariableWatches, DebugTimeline, DebugRunHistory, DebugBreakpointControls } from './DebuggerSessionTools'
-import { HTTPVersionReplayEvidence } from './HTTPVersionReplayEvidence'
+import { HTTPVersionReplayEvidence, type HTTP3UpgradeScope } from './HTTPVersionReplayEvidence'
 import { HTTPResponseContentEvidence } from './HTTPResponseContentEvidence'
 import { httpReplayVersionEvidence } from './httpActionVersionModel'
 import { httpResponseContentEvidence } from './httpResponseContentEvidenceModel'
@@ -186,6 +186,9 @@ export interface ScriptReplayDebuggerViewProps {
   runtimeVariablesUnavailable?: boolean
   replayVariableTimeline: ReplayVariableTimelineEntry[]
   saving: boolean
+  /** Which policies an event's request can switch to auto+h3: its own, the script default, or both. */
+  http3UpgradeScopes?: (event: BrowserReplayEvent) => HTTP3UpgradeScope[]
+  onSwitchToHTTP3Upgrade?: (event: BrowserReplayEvent, scope: HTTP3UpgradeScope) => void
   script: ScriptDefinition
   scriptId?: string | null
   scriptLevelIssues: AuthoringIssue[]
@@ -236,6 +239,8 @@ export function ScriptReplayDebuggerView({
   isBrowserScript,
   jsonParseMessage,
   onEditReplayAction,
+  http3UpgradeScopes,
+  onSwitchToHTTP3Upgrade,
   onActivateDebug,
   onEditParameterDefinition,
   onSelectProblemAction,
@@ -1066,7 +1071,9 @@ export function ScriptReplayDebuggerView({
                                     if (!version && !content) return null
                                     return <details className="replay-protocol-evidence">
                                       <summary>Protocol evidence{[version?.actual, content?.state].filter(Boolean).map(part => ` · ${part}`).join('')}</summary>
-                                      <HTTPVersionReplayEvidence evidence={event.protocol_evidence} />
+                                      <HTTPVersionReplayEvidence evidence={event.protocol_evidence}
+                                        upgrade={!replaying && replayMatchesCurrentScript && onSwitchToHTTP3Upgrade && http3UpgradeScopes
+                                          ? { scopes: http3UpgradeScopes(event), onSwitch: scope => onSwitchToHTTP3Upgrade(event, scope) } : undefined} />
                                       <HTTPResponseContentEvidence evidence={event.protocol_evidence} bodyState={bodyState} />
                                     </details>
                                   })()}

@@ -159,6 +159,7 @@ import { actionRequestCount, actionExtractorCount, isControlAction, isReviewGate
 import { authoringSessionIdempotencyKey, scriptRequiresJavaVuserAuthoringApproval } from './javaVuserApprovalGate'
 import { ActionEditor, ValidationEvidencePanel } from './ScriptEditorActionEditor'
 import { setHTTPActionVersion } from './httpActionVersionModel'
+import type { HTTP3UpgradeScope } from './HTTPVersionReplayEvidence'
 import { isBuiltinParameterType, applyParameterTypeDefaults } from './scriptParameterFormat'
 import {
   createScriptEditorDispatchers,
@@ -3123,6 +3124,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     }
   }
 
+  // A replay-evidence edit (switching a request to auto+h3) validates the
+  // edited draft once it has rendered, so the check sees the new policy.
+  const latestValidateScript = useRef(handleValidateScript)
+  useEffect(() => { latestValidateScript.current = handleValidateScript })
+  const [revalidateAfterEdit, setRevalidateAfterEdit] = useState(0)
+  useEffect(() => {
+    if (revalidateAfterEdit > 0) void latestValidateScript.current()
+  }, [revalidateAfterEdit])
+
   const handleGenerateBrowserHTTPPreview = async () => {
 	const requestID = ++httpConversionRequestRef.current
     setHttpConversionError('')
@@ -5512,6 +5522,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           methodColor={methodColor}
           protocol={script.protocol}
           scriptHTTPVersion={script.config.http?.version}
+          scriptHTTPContext={script.config}
           isBrowserScript={isBrowserScript}
           isJmsScript={isJmsScript}
           isSoapScript={isSoapScript}
@@ -6005,6 +6016,34 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         || assertions?.querySelector<HTMLElement>('input')
         || panel.querySelector<HTMLElement>('.action-editor-panel input')
     }, script, true)
+  }
+  const replayEventRequestScope = (event: BrowserReplayEvent) => {
+    if (!['init', 'action', 'teardown'].includes(event.phase)) return null
+    const actionIndex = event.action_index ?? 0
+    const phase = event.phase as ScriptActionPhase
+    const stepPath = event.step_path?.length ? event.step_path : event.request_index != null ? [`requests[${event.request_index}]`] : []
+    const scope = resolveAuthorJsonScopeByKey(script, `${phase}:${actionIndex}${stepPath.length ? `#${stepPath.join('/')}` : ''}`)
+    return scope ? { scope, phase, actionIndex, stepPath } : null
+  }
+  const http3UpgradeScopes = (event: BrowserReplayEvent): HTTP3UpgradeScope[] => {
+    const resolved = replayEventRequestScope(event)
+    if (!resolved) return []
+    // A request with its own policy ignores the script default.
+    return resolved.scope.action.http_version ? ['request'] : ['request', 'script']
+  }
+  const switchReplayEventToHTTP3Upgrade = (event: BrowserReplayEvent, scope: HTTP3UpgradeScope) => {
+    const resolved = replayEventRequestScope(event)
+    if (!resolved) return
+    let nextScript: ScriptData
+    if (scope === 'script') {
+      nextScript = { ...script, config: { ...script.config, http: { ...script.config.http, version: 'auto+h3' } } }
+    } else {
+      const collection = resolved.phase === 'action' ? 'actions' : resolved.phase
+      nextScript = { ...script, [collection]: phaseActionsForScript(script, resolved.phase).map((action, index) => index === resolved.actionIndex
+        ? updateNestedAction(action, resolved.stepPath, leaf => setHTTPActionVersion(leaf, 'auto+h3')) : action) }
+    }
+    replaceScriptWithHistory(nextScript)
+    setRevalidateAfterEdit(count => count + 1)
   }
   const renderCenterTabPanel = (tabId: CenterWorkbenchTabId) => {
     if (tabId === BROWSER_REPLAY_TAB_ID && isBrowserScript) {
@@ -6704,6 +6743,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             isBrowserScript={isBrowserScript}
             jsonParseMessage={jsonParseMessage}
             onEditReplayAction={editReplayAction}
+            http3UpgradeScopes={http3UpgradeScopes}
+            onSwitchToHTTP3Upgrade={switchReplayEventToHTTP3Upgrade}
             onActivateDebug={() => activateWorkspaceTab('debug')}
             onSelectProblemAction={row => {
               activateWorkspaceTab('author')

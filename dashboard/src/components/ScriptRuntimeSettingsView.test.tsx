@@ -413,6 +413,27 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
     expect(script.config.http?.version).toBe(value)
   })
 
+  it('edits config.http.quic in the Connection tab and reports HTTP/3 conflicts at the version field', () => {
+    const onUpdateField = vi.fn()
+    const view = (script: ScriptDefinition) => <ScriptRuntimeSettingsView activeHTTPTransportTab="connection" activeSection="http" canEditProtocol={false}
+      onSave={vi.fn()} onSelectHTTPTransportTab={vi.fn()} onSelectSection={vi.fn()} onUpdateField={onUpdateField}
+      onUpdateProtocol={vi.fn()} saveDisabled saving={false} script={script} />
+    const http = { version: '3', max_conns_per_host: 4, quic: { alt_svc_cache: 'per_iteration' as const } }
+    act(() => root.render(view({ name: 'QUIC', version: '1', protocol: 'http', config: { base_url: 'http://shop.example', http }, actions: [] })))
+    expect(container.querySelector('.http3-policy-issue')?.textContent).toContain('only https origins')
+    expect(container.querySelector('.http3-execution-note')?.textContent).toContain('runs need HTTP/3 execution enabled')
+    const handshake = Array.from(container.querySelectorAll('label')).find(label => label.querySelector('span')?.textContent === 'Handshake timeout (ms)')!.querySelector('input')!
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(handshake, '4000')
+      handshake.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenLastCalledWith('config.http', { ...http, quic: { alt_svc_cache: 'per_iteration', handshake_timeout_ms: 4000 } })
+    // Shaping applies to TCP only: the panel is disabled and both policies are refused.
+    act(() => root.render(view({ name: 'QUIC', version: '1', protocol: 'http', config: { base_url: 'https://shop.example', http: { version: 'auto+h3' }, web_runtime: { network_simulation: { mode: 'preset', preset: 'dsl' } } }, actions: [] })))
+    expect(container.querySelector<HTMLFieldSetElement>('fieldset.http-quic-settings')?.disabled).toBe(true)
+    expect(container.querySelector('.http3-policy-issue')?.textContent).toContain('Network shaping')
+  })
+
   it('edits the NTLM domain only for the NTLM auth types', () => {
     const onUpdateField = vi.fn()
     const script = (type: string): ScriptDefinition => ({ name: 'Auth', version: '1', protocol: 'http', config: { base_url: '', http: { auth: { type, username: 'ada', password: 'pw' } } }, actions: [] })

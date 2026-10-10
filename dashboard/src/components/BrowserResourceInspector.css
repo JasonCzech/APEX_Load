@@ -22,7 +22,15 @@
 .browser-resource-phase-bar { position: absolute; top: 0; bottom: 0; background: var(--accent-primary, #58a6ff); }
 .browser-resource-phase-bar.measured-point { border-left: 1px solid var(--accent-primary, #58a6ff); }
 .browser-document-waterfall ul { padding: 0; list-style: none; }
-.browser-document-waterfall li { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(0, 3fr); gap: 0.5rem; align-items: center; margin: 0.35rem 0; }
+.browser-document-waterfall li { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(5.5rem, auto) minmax(0, 3fr); gap: 0.5rem; align-items: center; margin: 0.35rem 0; }
+.browser-document-waterfall-protocol { font-size: 0.8rem; font-weight: 600; color: var(--text-primary); white-space: nowrap; }
+.browser-document-waterfall-protocol.protocol-unknown { color: var(--text-muted); font-weight: 400; }
+/* Each bar's left edge carries the protocol colour; the column names it. */
+.browser-document-waterfall-track[data-protocol] { border-left: 4px solid var(--border); }
+.browser-document-waterfall-track[data-protocol='h1'] { border-left-color: var(--chart-6); }
+.browser-document-waterfall-track[data-protocol='h2'] { border-left-color: var(--chart-1); }
+.browser-document-waterfall-track[data-protocol='h3'] { border-left-color: var(--chart-4); }
+@media (max-width: 640px) { .browser-document-waterfall li { grid-template-columns: minmax(0, 1fr) auto; } .browser-document-waterfall-track { grid-column: 1 / -1; } }
 .browser-document-waterfall-track { position: relative; display: block; height: 0.75rem; background: var(--bg-tertiary, #263447); }
 .browser-document-waterfall-phase { position: absolute; top: 0; bottom: 0; min-width: 1px; background: var(--accent-primary, #58a6ff); }
 .browser-document-waterfall-phase.phase-dns { background: var(--chart-2, #22c55e); }

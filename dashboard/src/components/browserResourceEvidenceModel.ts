@@ -113,6 +113,9 @@ export function browserResourceRowKey(locator: string, evidence?: BrowserResourc
 export interface BrowserDocumentWaterfallRow {
   key: string
   label: string
+  /** The negotiated protocol (h1, h2, h3), or null with protocolLabel saying why. */
+  protocol: 'h1' | 'h2' | 'h3' | null
+  protocolLabel: string
   /** Request start relative to the document's time origin. */
   start: number
   segments: Array<{ name: string; start: number; end: number }>
@@ -140,7 +143,8 @@ export function browserDocumentWaterfall(rows: Array<{ key: string; label: strin
       if (segment.start > cursor) gaps.push({ start: cursor, end: segment.start })
       cursor = Math.max(cursor, segment.end)
     }
-    out.push({ key: row.key, label: row.label, start, segments, gaps, end: Math.max(start, cursor) })
+    const protocol = evidence.protocol === 'h1' || evidence.protocol === 'h2' || evidence.protocol === 'h3' ? evidence.protocol : null
+    out.push({ key: row.key, label: row.label, protocol, protocolLabel: browserResourceProtocolShortLabel(evidence), start, segments, gaps, end: Math.max(start, cursor) })
   }
   return out.sort((a, b) => a.start - b.start || a.key.localeCompare(b.key))
 }
@@ -156,6 +160,12 @@ const protocolReasonLabels: Record<string, string> = {
   no_response: 'no response',
   unsupported: 'unrecognized protocol',
 }
+/** A short protocol label for a column: the version, or Unknown (the full
+ * label says why). */
+export function browserResourceProtocolShortLabel(evidence: BrowserResourceEvidenceV2): string {
+  return evidence.protocol ? protocolLabels[evidence.protocol] ?? 'Unknown' : 'Unknown'
+}
+
 /** The negotiated protocol of one request, or why it is unknown. Protocol is
  * recorded only with document evidence capture: a version 2 record was not
  * associated with document evidence (capture off, or past its limits), and a

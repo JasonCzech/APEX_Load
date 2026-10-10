@@ -232762,6 +232762,31 @@ paths:
                     type: array
                     items:
                       type: string
+                  http_runtime:
+                    type: object
+                    properties:
+                      http3:
+                        type: object
+                        properties:
+                          exact:
+                            type: boolean
+                          reason:
+                            type: string
+                          scope:
+                            type: string
+                          upgrade:
+                            type: boolean
+                        required:
+                          - exact
+                          - scope
+                          - upgrade
+                      versions:
+                        type: array
+                        items:
+                          type: string
+                    required:
+                      - http3
+                      - versions
                   import_surfaces:
                     type: array
                     items:
@@ -232921,6 +232946,7 @@ paths:
                   - contract_version
                   - draft_lifecycle
                   - health_inputs
+                  - http_runtime
                   - import_surfaces
                   - source_map
                   - sources

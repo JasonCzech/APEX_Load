@@ -25056,6 +25056,15 @@ export interface operations {
               "updated_at"?: (string) | null;
             }) | null;
             "health_inputs": Array<string>;
+            "http_runtime": {
+              "http3": {
+                "exact": boolean;
+                "reason"?: string;
+                "scope": string;
+                "upgrade": boolean;
+              };
+              "versions": Array<string>;
+            };
             "import_surfaces": Array<{
               "badge": string;
               "category": string;

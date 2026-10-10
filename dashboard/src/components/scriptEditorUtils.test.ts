@@ -16,6 +16,7 @@ import {
   detectInlineDataDelimiter,
   downloadTextFile,
   findJsonStringOccurrences,
+  formatNetworkEntries,
   inferDelimiter,
   isDefiniteReplayStartRejection,
   parseInlineData,
@@ -400,5 +401,16 @@ describe('stringifyInlineData multi-row seeding', () => {
     expect(reparsed.columns).toEqual(columns)
     expect(reparsed.rows[0]).toEqual(['12345', 'jane@example.test'])
     expect(reparsed.rows).toHaveLength(3)
+  })
+})
+
+describe('formatNetworkEntries', () => {
+  it('appends the negotiated protocol when browser evidence recorded one', () => {
+    const evidence = { version: 4, protocol: 'h3' } as never
+    expect(formatNetworkEntries([
+      { method: 'GET', status_code: 200, url: 'https://cdn.example/app.js', duration_ms: 12, browser_evidence: evidence },
+      { method: 'GET', status_code: 200, url: 'https://cdn.example/app.css', duration_ms: 8, browser_evidence: { version: 4, protocol_unavailable_reason: 'cached' } as never },
+      { url: 'https://cdn.example/legacy.png' },
+    ])).toBe('GET 200 https://cdn.example/app.js 12.0 ms · HTTP/3 (QUIC)\nGET 200 https://cdn.example/app.css 8.0 ms · Unknown\nGET https://cdn.example/legacy.png')
   })
 })

@@ -22,7 +22,9 @@ import {
   type RuntimeFieldKey,
 } from './runtimeSettingsModel'
 import { editReplacementSection, materializeRuntimeSettingsForApply } from './runtimeSettingsApply'
-import { HTTP3_EXECUTION_NOTE, isHTTP3Policy } from './httpVersionModel'
+import { HTTP3ExecutionNote } from './HTTP3ExecutionNote'
+import { HTTPQUICSettingsFields } from './HTTPQUICSettingsFields'
+import { http3PolicyIssues, patchQUICConfig, quicPanelDisabledReason } from './httpQUICModel'
 import { useBrowserEmulationCatalog } from '../hooks/useBrowserEmulationCatalog'
 import WebHttpTab from './runtimeTabs/WebHttpTab'
 import { JavaEnvSettingsFields, type JavaEnvSettingsValue } from './JavaEnvSettingsFields'
@@ -253,6 +255,12 @@ export default function RuntimeSettingsGroupEditor({
     },
   )
   const inheritedWeb = structuredClone(inheritedOverride?.web_runtime ?? {})
+  // web_runtime overlays populated top-level units on the lower layer, so the
+  // shaping a group runs with is its own unit where set, else the inherited one.
+  const effectiveWebRuntimeForHTTP3: typeof inheritedWeb = { ...inheritedWeb }
+  for (const [key, value] of Object.entries(draft.web_runtime ?? {})) {
+    if (value !== undefined) (effectiveWebRuntimeForHTTP3 as Record<string, unknown>)[key] = value
+  }
   const inheritedIterations = inheritedRunLogic.iterations ?? inheritedOverride?.iterations
 
   const flatCurrentError: ErrorHandlingSettings = {
@@ -326,6 +334,7 @@ export default function RuntimeSettingsGroupEditor({
     delete topLevelNext.tls
     delete topLevelNext.proxy
     delete topLevelNext.auth
+    delete topLevelNext.quic
     const edited = editReplacementSection<HTTPSettings>(current, topLevelNext, inheritedHttp) as HTTPSettings
 
     if (Object.prototype.hasOwnProperty.call(next, 'tls')) {
@@ -345,6 +354,11 @@ export default function RuntimeSettingsGroupEditor({
       )
       if (Object.keys(proxy).length > 0) edited.proxy = proxy
       else delete edited.proxy
+    }
+    if (Object.prototype.hasOwnProperty.call(next, 'quic')) {
+      // The QUIC block layers like tls: an emptied block removes the key.
+      if (next.quic && Object.keys(next.quic).length > 0) edited.quic = structuredClone(next.quic)
+      else delete edited.quic
     }
     if (Object.prototype.hasOwnProperty.call(next, 'auth')) {
       const auth = editReplacementSection(
@@ -1171,10 +1185,14 @@ export default function RuntimeSettingsGroupEditor({
                       ))}
                     </select>
                   </label>
+                  {http3PolicyIssues(effectiveHttp.version, { http: effectiveHttp, web: effectiveWebRuntimeForHTTP3, target: focusGroup.scriptConfig?.base_url }).map(issue => <p key={issue} className="http3-policy-issue" role="alert">{issue}</p>)}
                   <div className="form-hint">
                     Inherit uses the next configured layer; an effective empty value auto-negotiates. Explicit versions are exact, and required HTTP/2 never falls back to HTTP/1.1.
-                    {isHTTP3Policy(draft.http?.version) && <> {HTTP3_EXECUTION_NOTE}</>}
+                    <HTTP3ExecutionNote policy={effectiveHttp.version} />
                   </div>
+                  <HTTPQUICSettingsFields value={draft.http?.quic} inherited={inheritedHttp.quic}
+                    disabledReason={quicPanelDisabledReason(effectiveHttp, effectiveWebRuntimeForHTTP3)}
+                    onChange={patch => patchHttp({ quic: patchQUICConfig(draft.http ? draft.http.quic : inheritedHttp.quic, patch) ?? {} })} />
                   <label><span>Max connections / host</span><input className="settings-input" type="number" min={0} value={draft.http?.max_conns_per_host ?? ''} onChange={event => patchHttp({ max_conns_per_host: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.max_conns_per_host)} /></label>
                   <label><span>Max idle connections</span><input className="settings-input" type="number" min={0} value={draft.http?.max_idle_conns ?? ''} onChange={event => patchHttp({ max_idle_conns: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.max_idle_conns)} /></label>
                   <label><span>Max redirects</span><input className="settings-input" type="number" min={0} value={draft.http?.max_redirects ?? ''} onChange={event => patchHttp({ max_redirects: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.max_redirects)} /></label>

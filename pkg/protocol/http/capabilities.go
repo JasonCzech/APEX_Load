@@ -205,11 +205,19 @@ func NormalizeVersion(raw string) string {
 	}
 }
 
-// SupportedVersions returns the exact, executable explicit version modes.
-// Empty/omitted remains a supported automatic negotiation mode. HTTP/3
-// policies are absent until the runtime can execute them.
+// SupportedVersions returns the explicit version modes this process can
+// execute. Empty/omitted remains a supported automatic negotiation mode. The
+// HTTP/3 policies appear only where HTTP/3 execution is enabled (APEXLOAD_HTTP3)
+// and built: 3 with the exact transport, auto+h3 with the upgrade router.
 func SupportedVersions() []string {
-	return append([]string(nil), supportedVersions[:]...)
+	versions := append([]string(nil), supportedVersions[:]...)
+	if HTTP3ExecutionError() == nil {
+		versions = append(versions, VersionHTTP3)
+	}
+	if HTTP3UpgradeExecutionError() == nil {
+		versions = append(versions, VersionAutoH3)
+	}
+	return versions
 }
 
 // VersionExecutable reports whether raw is a policy the runtime can select

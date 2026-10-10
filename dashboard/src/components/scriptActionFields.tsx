@@ -1,5 +1,6 @@
 import { bodyLanguage } from './actionBodyModel'
 import { HTTPActionVersionFields } from './HTTPActionVersionFields'
+import type { HTTP3ScriptContext } from './httpQUICModel'
 import { ManagedActionChecks, OpenActionBody } from './actionInspectorContext'
 // Per-protocol action field editors and the shared header/extractor/assertion
 // section editors used by the ScriptEditor ActionEditor. Extracted from
@@ -747,6 +748,7 @@ export function JmsActionFields({
 export interface HttpActionFieldsProps {
   protocol: string
   scriptHTTPVersion?: string
+  scriptHTTPContext?: HTTP3ScriptContext
   action: Action
   index: number
   isBrowserScript: boolean
@@ -767,6 +769,7 @@ export interface HttpActionFieldsProps {
 export function HttpActionFields({
   protocol,
   scriptHTTPVersion,
+  scriptHTTPContext,
   action,
   index,
   isBrowserScript,
@@ -801,7 +804,7 @@ export function HttpActionFields({
 
   return (
     <>
-      <HTTPActionVersionFields action={action} index={index} protocol={protocol} scriptVersion={scriptHTTPVersion} onUpdate={onUpdate} />
+      <HTTPActionVersionFields action={action} index={index} protocol={protocol} scriptVersion={scriptHTTPVersion} scriptContext={scriptHTTPContext} onUpdate={onUpdate} />
       {isSoapScript && (
         <SoapActionFields action={action} index={index} onUpdate={onUpdate} />
       )}

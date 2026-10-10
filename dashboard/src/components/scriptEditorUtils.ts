@@ -18,6 +18,7 @@ import {
   type SampleCorrelation,
 } from '../types/scriptImports'
 import type { ImportCorrelationSuggestion } from './scriptEditorImportModel'
+import { browserResourceProtocolShortLabel } from './browserResourceEvidenceModel'
 
 type Action = ScriptActionDefinition
 type DataSourceConfig = ScriptDataSource
@@ -674,7 +675,8 @@ export function formatNetworkEntries(entries?: NetworkEntry[]): string {
     .map(entry => {
       const status = entry.status_code ? ` ${entry.status_code}` : ''
       const duration = typeof entry.duration_ms === 'number' ? ` ${entry.duration_ms.toFixed(1)} ms` : ''
-      return `${entry.method || 'GET'}${status} ${entry.url || ''}${duration}`
+      const protocol = entry.browser_evidence ? ` · ${browserResourceProtocolShortLabel(entry.browser_evidence)}` : ''
+      return `${entry.method || 'GET'}${status} ${entry.url || ''}${duration}${protocol}`
     })
     .join('\n')
 }

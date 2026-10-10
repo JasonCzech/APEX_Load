@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BrowserResourceEvidenceV2 } from '../types/browserResourceEvidence'
-import { browserDocumentWaterfall, browserResourceEvidenceView, browserResourcePhaseRows, browserResourceProtocolLabel, browserResourceRowKey } from './browserResourceEvidenceModel'
+import { browserDocumentWaterfall, browserResourceEvidenceView, browserResourcePhaseRows, browserResourceProtocolLabel, browserResourceProtocolShortLabel, browserResourceRowKey } from './browserResourceEvidenceModel'
 
 const generation = '0123456789abcdef0123456789abcdef'
 function fixture(): BrowserResourceEvidenceV2 {
@@ -134,6 +134,16 @@ describe('typed retained browser request evidence', () => {
     expect(rows.map(row => row.key)).toEqual(['early', 'late'])
     expect(rows[0]).toMatchObject({ start: 2, end: 11, segments: [{ name: 'dns', start: 2, end: 3 }, { name: 'response', start: 6, end: 11 }], gaps: [{ start: 3, end: 6 }] })
     expect(rows[1].gaps).toEqual([{ start: 40, end: 45 }])
+    // Version 2 records carry no protocol: the column says Unknown.
+    expect(rows.map(row => [row.protocol, row.protocolLabel])).toEqual([[null, 'Unknown'], [null, 'Unknown']])
+  })
+
+  it('names the negotiated protocol of each waterfall row', () => {
+    const document = `${generation}-d1`
+    const row = (key: string, patch: Record<string, unknown>) => ({ key, label: key, evidence: { ...fixture(), version: 4, identity_unavailable_reason: 'cdp_unobserved', document_id: document, document_offset_ms: 1, phases: [], ...patch } as BrowserResourceEvidenceV2 })
+    const rows = browserDocumentWaterfall([row('a', { protocol: 'h3' }), row('b', { protocol: 'h2' }), row('c', { protocol_unavailable_reason: 'cached' })], document)
+    expect(rows.map(entry => [entry.key, entry.protocol, entry.protocolLabel])).toEqual([['a', 'h3', 'HTTP/3 (QUIC)'], ['b', 'h2', 'HTTP/2'], ['c', null, 'Unknown']])
+    expect(browserResourceProtocolShortLabel(row('d', { protocol: 'h1' }).evidence)).toBe('HTTP/1.x')
   })
 })
 

@@ -871,8 +871,10 @@ func TestHTTP11DoesNotInjectCompressionOrUserAgentDefaults(t *testing.T) {
 func TestHTTPVersionCapabilityAndHTTP10PreTransportRejection(t *testing.T) {
 	t.Parallel()
 
-	if got, want := SupportedVersions(), []string{VersionHTTP11, VersionHTTP2}; !slices.Equal(got, want) {
-		t.Fatalf("SupportedVersions() = %#v, want %#v", got, want)
+	// The HTTP/3 policies follow APEXLOAD_HTTP3 (TestHTTP3VersionVocabulary);
+	// the TCP versions always lead the list.
+	if got, want := SupportedVersions(), []string{VersionHTTP11, VersionHTTP2}; len(got) < 2 || !slices.Equal(got[:2], want) {
+		t.Fatalf("SupportedVersions() = %#v, want it to start with %#v", got, want)
 	}
 	for _, version := range []string{"", " 1.1 ", "HTTP/1.1", "2", "HTTP/2", "HTTP/2.0"} {
 		if !VersionExecutable(version) {

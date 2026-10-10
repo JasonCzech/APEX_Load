@@ -1,0 +1,49 @@
+.http-quic-settings {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin: 0.5rem 0 0;
+  padding: 0.75rem 1rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.http-quic-settings legend {
+  padding: 0 0.35rem;
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.http-quic-settings[disabled] .http-quic-grid {
+  opacity: 0.65;
+}
+
+.http-quic-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 0.75rem 1rem;
+}
+
+.http-quic-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.http-quic-field small {
+  color: var(--text-muted);
+  overflow-wrap: break-word;
+}
+
+.http-quic-settings .http-quic-error {
+  color: var(--danger-text);
+  font-weight: 600;
+}
+
+.http-quic-disabled {
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--warning);
+  background: var(--subtle-fill);
+  color: var(--text-primary);
+}

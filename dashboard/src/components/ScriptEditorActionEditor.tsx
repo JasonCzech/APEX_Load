@@ -1,6 +1,7 @@
 import { humanActionType } from './authorExperience'
 import { useActionParameterMenu } from './useActionParameterMenu'
 import { ManagedActionChecks, OpenActionBody } from './actionInspectorContext'
+import type { HTTP3ScriptContext } from './httpQUICModel'
 import { useState, useEffect, createContext, useContext } from 'react'
 import type { ScriptActionDefinition, ScriptAssertionDefinition, ScriptParameterDefinition, ScriptValidationResponse } from '../types/scripts'
 import type { ActionEditorParameterDraft } from './scriptEditorState'
@@ -37,7 +38,7 @@ function SourceFunctionSummary({ action }: { action: Action }) {
   </div>
 }
 
-export function ActionEditor({ inspector = false, initialSection = 'request', onOpenBody, action, index, parameters, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, onBeginParameterEdit, methodColor, protocol, scriptHTTPVersion, isBrowserScript, isJmsScript, isSoapScript, issues }: {
+export function ActionEditor({ inspector = false, initialSection = 'request', onOpenBody, action, index, parameters, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, onBeginParameterEdit, methodColor, protocol, scriptHTTPVersion, scriptHTTPContext, isBrowserScript, isJmsScript, isSoapScript, issues }: {
   inspector?: boolean
   initialSection?: string
   onOpenBody?: () => void
@@ -60,6 +61,8 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
   methodColor: (m: string) => string
   protocol: string
   scriptHTTPVersion?: string
+  /** Script settings an HTTP/3 policy must agree with (base URL, TLS, proxy, auth, shaping). */
+  scriptHTTPContext?: HTTP3ScriptContext
   isBrowserScript: boolean
   isJmsScript: boolean
   isSoapScript: boolean
@@ -206,6 +209,7 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
             <HttpActionFields
               protocol={protocol}
               scriptHTTPVersion={scriptHTTPVersion}
+              scriptHTTPContext={scriptHTTPContext}
               action={action}
               index={index}
               isBrowserScript={isBrowserScript}

@@ -5,6 +5,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 type AuthoringCapabilityResponse struct {
@@ -15,6 +16,37 @@ type AuthoringCapabilityResponse struct {
 	SourceMap       map[string]AuthoringFeatures `json:"source_map"`
 	ImportSurfaces  []AuthoringImportSurface     `json:"import_surfaces"`
 	FeaturePolicy   *domainFeaturePolicyResponse `json:"feature_policy,omitempty"`
+	HTTPRuntime     AuthoringHTTPRuntime         `json:"http_runtime"`
+}
+
+// AuthoringHTTPRuntime says which HTTP versions this controller can execute.
+// Editors use it for capability messages that never block saving; a run's
+// generators are checked again when it is admitted.
+type AuthoringHTTPRuntime struct {
+	// Versions are the explicit versions; empty (automatic) always runs.
+	Versions []string                 `json:"versions"`
+	HTTP3    AuthoringHTTP3Capability `json:"http3"`
+}
+
+type AuthoringHTTP3Capability struct {
+	Exact   bool   `json:"exact"`   // policy 3
+	Upgrade bool   `json:"upgrade"` // policy auto+h3
+	Reason  string `json:"reason,omitempty"`
+	// Scope is "controller": generators advertise their own capability.
+	Scope string `json:"scope"`
+}
+
+func authoringHTTPRuntime() AuthoringHTTPRuntime {
+	runtime := AuthoringHTTPRuntime{Versions: httpprotocol.SupportedVersions(), HTTP3: AuthoringHTTP3Capability{Scope: "controller"}}
+	exactErr, upgradeErr := httpprotocol.HTTP3ExecutionError(), httpprotocol.HTTP3UpgradeExecutionError()
+	runtime.HTTP3.Exact, runtime.HTTP3.Upgrade = exactErr == nil, upgradeErr == nil
+	switch {
+	case exactErr != nil:
+		runtime.HTTP3.Reason = exactErr.Error()
+	case upgradeErr != nil:
+		runtime.HTTP3.Reason = upgradeErr.Error()
+	}
+	return runtime
 }
 
 type AuthoringSourceCapability struct {
@@ -604,5 +636,6 @@ func authoringCapabilityResponse(projectIDs ...string) AuthoringCapabilityRespon
 		Sources:         sources,
 		SourceMap:       sourceMap,
 		ImportSurfaces:  authoringImportSurfaces(),
+		HTTPRuntime:     authoringHTTPRuntime(),
 	}
 }

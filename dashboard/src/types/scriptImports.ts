@@ -42,7 +42,14 @@ export interface AuthoringCapabilitiesResponse {
     domain_id: string
     revision: string
     features: Array<{ id: string; configured_enabled: boolean; effective_enabled: boolean }>
-  }
+  }  /** What this controller can execute; generators are checked when a run is admitted. */
+  http_runtime?: AuthoringHTTPRuntime
+}
+
+export interface AuthoringHTTPRuntime {
+  /** Explicit HTTP versions this controller can execute; empty (automatic) always can. */
+  versions: string[]
+  http3: { exact: boolean; upgrade: boolean; reason?: string; scope: string }
 }
 
 export interface ImportReviewSection {

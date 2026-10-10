@@ -1228,6 +1228,40 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(last.iterations).toBeUndefined()
   })
 
+  it('edits the QUIC block with inherited values, field validation and a disabled reason', () => {
+    const onChange = vi.fn()
+    const groups: RuntimeEditorGroup[] = [{
+      name: 'Checkout', scriptId: 's1', protocol: 'http',
+      scriptConfig: { base_url: 'http://shop.example', http: { version: '3', quic: { broken_ttl_ms: 60000 } } },
+    }]
+    const render = (override?: ScenarioRuntimeSettingsDraft) => act(() => {
+      root.render(<RuntimeSettingsGroupEditor groups={groups} focusedIndex={0} onFocusChange={() => {}} engineDefaults={{ base_url: '', http: {} }}
+        overrides={[override]} onChange={onChange} onApplyToGroups={() => {}} />)
+    })
+    render()
+    clickTab('HTTP Transport')
+    clickTab('Connection')
+    expect(container.querySelector('legend')?.textContent).toBe('QUIC (HTTP/3)')
+    expect(findLabeledControl<HTMLInputElement>('Broken origin TTL (ms)', 'input').placeholder).toBe('Inherited: 60,000')
+    // Exact HTTP/3 against the inherited http:// base URL is reported at the version field.
+    expect(Array.from(container.querySelectorAll('.http3-policy-issue')).map(issue => issue.textContent)).toEqual([expect.stringContaining('only https origins')])
+    act(() => setInputValue(findLabeledControl<HTMLInputElement>('Handshake timeout (ms)', 'input'), '500'))
+    const edited = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1] as ScenarioRuntimeSettingsDraft
+    // The first edit materializes the inherited section, QUIC block included.
+    expect(edited.http).toEqual({ version: '3', quic: { broken_ttl_ms: 60000, handshake_timeout_ms: 500 } })
+    render(edited)
+    const handshake = findLabeledControl<HTMLInputElement>('Handshake timeout (ms)', 'input')
+    expect(handshake.getAttribute('aria-invalid')).toBe('true')
+    // Clearing the last QUIC field removes the block.
+    render({ log_level: '', auto_transactions: '', http: { version: '3', quic: { handshake_timeout_ms: 2000 } } })
+    act(() => setInputValue(findLabeledControl<HTMLInputElement>('Handshake timeout (ms)', 'input'), ''))
+    expect((onChange.mock.calls[onChange.mock.calls.length - 1]?.[1] as ScenarioRuntimeSettingsDraft).http).toEqual({ version: '3' })
+    // A custom proxy keeps requests on TCP, so the block is disabled with the reason.
+    render({ log_level: '', auto_transactions: '', http: { version: 'auto+h3', proxy: { url: 'http://proxy.example:3128' } } })
+    expect(container.querySelector<HTMLFieldSetElement>('fieldset.http-quic-settings')?.disabled).toBe(true)
+    expect(container.querySelector('.http-quic-disabled')?.textContent).toContain('custom proxy')
+  })
+
   it('materializes only the highest-precedence HTTP replacement on the first edit', () => {
     const onChange = vi.fn()
     const groups: RuntimeEditorGroup[] = [{

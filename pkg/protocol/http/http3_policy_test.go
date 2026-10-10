@@ -42,8 +42,15 @@ func TestHTTP3VersionVocabulary(t *testing.T) {
 	if VersionExecutable("h3-29") {
 		t.Error("VersionExecutable(h3-29) = true")
 	}
+	// The executable list follows the operator flag: TCP versions always,
+	// the HTTP/3 policies only where execution is enabled.
+	t.Setenv(EnvHTTP3, "false")
 	if got := SupportedVersions(); !slices.Equal(got, []string{VersionHTTP11, VersionHTTP2}) {
-		t.Errorf("SupportedVersions() = %v", got)
+		t.Errorf("SupportedVersions() without %s = %v", EnvHTTP3, got)
+	}
+	t.Setenv(EnvHTTP3, "true")
+	if got := SupportedVersions(); !slices.Equal(got, []string{VersionHTTP11, VersionHTTP2, VersionHTTP3, VersionAutoH3}) {
+		t.Errorf("SupportedVersions() with %s = %v", EnvHTTP3, got)
 	}
 	if !VersionUsesQUIC(VersionHTTP3) || !VersionUsesQUIC(VersionAutoH3) || VersionUsesQUIC(VersionHTTP2) || VersionUsesQUIC("") {
 		t.Error("VersionUsesQUIC misclassified a policy")

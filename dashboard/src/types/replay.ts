@@ -12,6 +12,8 @@ export interface BrowserReplayConsoleEntry {
 }
 
 export interface BrowserReplayNetworkEntry {
+  /** Per-request browser evidence; carries the negotiated protocol when document evidence capture is on. */
+  browser_evidence?: import('./browserResourceEvidence').BrowserResourceEvidenceV2 | null
   url?: string
   method?: string
   status_code?: number

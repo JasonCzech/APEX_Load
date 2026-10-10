@@ -106,10 +106,11 @@ function ResourceInspectorBody({ testID, projectID, sourceIdentity, loadPage = r
         <details><summary>Archive source identity</summary><p className="browser-resource-source-revision">{page.source_revision}</p></details>
         {query.document_id && <section className="browser-document-waterfall" aria-label="Document request waterfall">
           <h4>Requests of document {query.document_id} on this page</h4>
-          <p>Bars start at each request's native start relative to the document's time origin. Hatched spans are time the browser attributed to no phase.</p>
+          <p>Bars start at each request's native start relative to the document's time origin. Hatched spans are time the browser attributed to no phase. The protocol column and each bar's left edge show the negotiated HTTP version.</p>
           {waterfall.length ? <ul>{waterfall.map(row => <li key={row.key}>
             <span className="browser-resource-url">{row.label}</span>
-            <span className="browser-document-waterfall-track" aria-label={`${row.label}: starts ${row.start.toFixed(1)} ms, ends ${row.end.toFixed(1)} ms after the document origin`}>
+            <span className={`browser-document-waterfall-protocol protocol-${row.protocol ?? 'unknown'}`}>{row.protocolLabel}</span>
+            <span className="browser-document-waterfall-track" data-protocol={row.protocol ?? 'unknown'} aria-label={`${row.label}: ${row.protocolLabel}, starts ${row.start.toFixed(1)} ms, ends ${row.end.toFixed(1)} ms after the document origin`}>
               {row.gaps.map((gap, index) => <span key={`gap-${index}`} className="browser-document-waterfall-gap" style={{ left: percent(gap.start), width: `calc(${percent(gap.end)} - ${percent(gap.start)})` }} />)}
               {row.segments.map(segment => <span key={segment.name} className={`browser-document-waterfall-phase phase-${segment.name}`} title={segment.name.replace('_', ' ')} style={{ left: percent(segment.start), width: `calc(${percent(segment.end)} - ${percent(segment.start)})` }} />)}
             </span>

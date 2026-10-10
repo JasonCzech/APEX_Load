@@ -92,6 +92,26 @@ describe('retained browser resource inspector', () => {
       expect(waterfall.textContent).toContain(documentID)
       expect(waterfall.querySelectorAll('.browser-document-waterfall-phase').length).toBe(3)
       expect(waterfall.querySelector('[aria-label*="starts 12.0 ms"]')).not.toBeNull()
+      // Version 3 evidence predates protocol capture: the column says Unknown.
+      expect(waterfall.querySelector('.browser-document-waterfall-protocol')?.textContent).toBe('Unknown')
+      expect(waterfall.querySelector('.browser-document-waterfall-track')?.getAttribute('data-protocol')).toBe('unknown')
+    } finally { await act(async () => root.unmount()) }
+  })
+  it('shows the negotiated protocol of each waterfall request', async () => {
+    const node = document.createElement('div'); const root = createRoot(node)
+    const documentID = `${RESOURCE_GENERATION}-d1`
+    const loader = vi.fn(async () => {
+      const page = resourcePageFixture()
+      page.items[0].browser_evidence = { ...page.items[0].browser_evidence!, version: 4, identity_unavailable_reason: 'cdp_unobserved', protocol: 'h3', document_id: documentID, document_association: 'cdp_loader_join', document_offset_ms: 12, initiator_type: 'parser', initiator_origin: 'https://example.test' } as never
+      return page
+    }) as BrowserResourcePageLoader
+    try {
+      await act(async () => root.render(<BrowserResourceInspector {...props} loadPage={loader} />))
+      await act(async () => button(node, "Show this document's resources").click())
+      const waterfall = node.querySelector('[aria-label="Document request waterfall"]')!
+      expect(waterfall.querySelector('.browser-document-waterfall-protocol')?.textContent).toBe('HTTP/3 (QUIC)')
+      expect(waterfall.querySelector('.browser-document-waterfall-track')?.getAttribute('data-protocol')).toBe('h3')
+      expect(waterfall.querySelector('[aria-label*="HTTP/3 (QUIC), starts 12.0 ms"]')).not.toBeNull()
     } finally { await act(async () => root.unmount()) }
   })
   it('clears request-scoped filters when drilling into a document', async () => {

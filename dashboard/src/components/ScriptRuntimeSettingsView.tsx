@@ -55,7 +55,10 @@ import {
   type HTTPTransportTabId,
   type RuntimeSettingsSectionId,
 } from './scriptEditorRuntimeSettingsModel'
-import { HTTP3_EXECUTION_NOTE, HTTP_VERSION_OPTIONS, formatScriptHTTPVersion, isHTTP3Policy, scriptHTTPVersionSettings } from './httpVersionModel'
+import { HTTP_VERSION_OPTIONS, formatScriptHTTPVersion, scriptHTTPVersionSettings } from './httpVersionModel'
+import { HTTP3ExecutionNote } from './HTTP3ExecutionNote'
+import { HTTPQUICSettingsFields } from './HTTPQUICSettingsFields'
+import { http3PolicyIssues, patchQUICConfig, quicPanelDisabledReason } from './httpQUICModel'
 import { formatPacingTiming } from './runtimeTiming'
 import SecondsFromMillisecondsInput from './SecondsFromMillisecondsInput'
 import HttpRequestDefaultsEditor, {
@@ -1193,10 +1196,14 @@ export function ScriptRuntimeSettingsView({
                 {httpVersionSettings.selection === 'existing-auto' && <option value="existing-auto" disabled>Existing automatic setting (preserved)</option>}
               </select></label>
             {!httpVersionSettings.valid && <p role="alert">This script HTTP version is unsupported. Its original value is preserved until you choose a supported setting or edit the source JSON.</p>}
+            {http3PolicyIssues(httpVersionSettings.selection, { http: script.config.http, web: script.config.web_runtime, target: script.config.base_url }).map(issue => <p key={issue} className="full-width http3-policy-issue" role="alert">{issue}</p>)}
             <div className="form-hint full-width">
               Effective script policy: {httpVersionSettings.effectiveLabel}. Explicit versions are exact; required HTTP/2 never falls back to HTTP/1.1. Each request can inherit this policy or select its own policy, including Auto.
-              {isHTTP3Policy(httpVersionSettings.selection) && <> {HTTP3_EXECUTION_NOTE}</>}
+              <HTTP3ExecutionNote policy={httpVersionSettings.selection} />
             </div>
+            <HTTPQUICSettingsFields value={script.config.http?.quic}
+              disabledReason={quicPanelDisabledReason(script.config.http, script.config.web_runtime)}
+              onChange={patch => updateField('config.http', { ...script.config.http, quic: patchQUICConfig(script.config.http?.quic, patch) })} />
             <label><span>Max Conns/Host</span>
               <input type="number" value={script.config.http?.max_conns_per_host || 100}
                 onChange={e => updateField('config.http', { ...script.config.http, max_conns_per_host: Number(e.target.value) })} /></label>
