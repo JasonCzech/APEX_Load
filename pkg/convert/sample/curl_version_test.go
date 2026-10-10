@@ -14,7 +14,7 @@ func TestCurlHTTPVersionFlags(t *testing.T) {
 	}{
 		{name: "http1.1", command: `curl --http1.1 https://api.example.test/orders`, wantVersion: "1.1"},
 		{name: "prior knowledge cleartext", command: `curl --http2-prior-knowledge http://api.example.test/orders`, wantVersion: "2"},
-		{name: "prior knowledge tls", command: `curl --http2-prior-knowledge https://api.example.test/orders`, wantVersion: "2"},
+		{name: "prior knowledge over tls still negotiates", command: `curl --http2-prior-knowledge https://api.example.test/orders`, wantNoLeafValue: true},
 		{name: "http2 over tls is automatic", command: `curl --http2 https://api.example.test/orders`, wantNoLeafValue: true},
 		{name: "http2 cleartext upgrade gated", command: `curl --http2 http://api.example.test/orders`, wantBlocker: "curl_http2_upgrade_not_modeled"},
 		{name: "http1.0 gated", command: `curl --http1.0 https://api.example.test/orders`, wantBlocker: "curl_http10_not_supported"},

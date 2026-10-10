@@ -156,10 +156,13 @@ const protocolReasonLabels: Record<string, string> = {
   no_response: 'no response',
   unsupported: 'unrecognized protocol',
 }
-/** The negotiated protocol of one request, or why it is unknown. Records
- * older than version 4 never carried it. */
+/** The negotiated protocol of one request, or why it is unknown. Protocol is
+ * recorded only with document evidence capture: a version 2 record was not
+ * associated with document evidence (capture off, or past its limits), and a
+ * version 3 record predates protocol capture. */
 export function browserResourceProtocolLabel(evidence: BrowserResourceEvidenceV2): string {
   if (evidence.protocol) return protocolLabels[evidence.protocol] ?? 'Unavailable'
+  if (evidence.version < 3) return 'Not recorded (no document evidence for this request)'
   if (evidence.version < 4) return 'Not recorded (older evidence)'
   const reason = evidence.protocol_unavailable_reason
   return reason ? `Unavailable: ${protocolReasonLabels[reason] ?? reason}` : 'Unavailable'

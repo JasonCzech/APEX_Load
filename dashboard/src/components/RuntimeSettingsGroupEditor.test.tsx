@@ -651,6 +651,24 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(onChange.mock.calls[onChange.mock.calls.length - 1][1].browser_config?.quic).toBeUndefined()
   })
 
+  it('warns when a group override pairs WebKit with QUIC off', () => {
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={1}
+          onFocusChange={() => {}}
+          overrides={[undefined, { log_level: '', auto_transactions: '', browser_config: { engine: 'webkit', quic: 'off' } }]}
+          onChange={vi.fn()}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    clickTab('HTTP Transport')
+    clickTab('Browser (Playwright)')
+    expect(container.textContent).toContain('WebKit cannot launch with QUIC disabled')
+  })
+
   it('falls back to the Summary tab when switching focus to a group that hides the active tab', () => {
     const groups: RuntimeEditorGroup[] = [
       { name: 'Api', scriptId: 's1', protocol: 'http' },

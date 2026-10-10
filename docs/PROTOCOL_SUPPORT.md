@@ -51,7 +51,7 @@ Compressed responses (gzip, deflate, Brotli, Zstandard) decode through a process
 
 Supported HAR request observations (HTTP/1.1, HTTP/2) become exact leaf policies. A missing or unknown observation, and a version the native runtime cannot select exactly (HTTP/3, HTTP/1.0), is a capture-quality warning: the request keeps the script's inherited policy and is not gated. Malformed values and contradictory recorder provenance retain durable review gates. Recorder exports identify client-to-proxy and proxy-to-origin observations separately; differing or unavailable legs require review, and legacy fabricated HTTP/1.1 values do not establish an observation. HTTP/1.0 and HTTP/3 remain unsupported for native replay. Original source artifacts remain available under their existing disclosure policy.
 
-HTTP/3 observations: native replay records `alt_svc_h3_advertised` when a wire response advertises final HTTP/3 in `Alt-Svc`, without changing routing. HAR imports and both recorders raise one `origin_advertises_h3` info finding per HTTPS origin that advertised HTTP/3, saying whether any captured request used it. cURL's `--http1.1` maps to exact HTTP/1.1, `--http2-prior-knowledge` to exact HTTP/2 and `--http2` on HTTPS to automatic negotiation; `--http2` on `http://` (curl's `Upgrade: h2c`), `--http1.0`, `-0`, `--http3` and `--http3-only` keep execution gates. DevWeb `rts.yml` settings that enable HTTP/3 replay raise a `devweb_http3_enabled` disclosure and are not mapped. See [HTTP3_IMPLEMENTATION.md](HTTP3_IMPLEMENTATION.md) for the delivery plan.
+HTTP/3 observations: native replay records `alt_svc_h3_advertised` when a wire response advertises final HTTP/3 in `Alt-Svc`, without changing routing. HAR imports and both recorders raise one `origin_advertises_h3` info finding per HTTPS origin that advertised HTTP/3, saying whether any captured request used it. cURL's `--http1.1` maps to exact HTTP/1.1 and `--http2-prior-knowledge` on `http://` to exact HTTP/2 (h2c); `--http2` and `--http2-prior-knowledge` on HTTPS map to automatic negotiation, because curl still negotiates TLS requests through ALPN; `--http2` on `http://` (curl's `Upgrade: h2c`), `--http1.0`, `-0`, `--http3` and `--http3-only` keep execution gates. DevWeb `rts.yml` settings that enable HTTP/3 replay raise a `devweb_http3_enabled` disclosure and are not mapped. See [HTTP3_IMPLEMENTATION.md](HTTP3_IMPLEMENTATION.md) for the delivery plan.
 
 Credential projection covers URL components, every ordered header occurrence, typed auth, JSON, XML, form-urlencoded, multipart, and GraphQL. Exact governed runtime values remain dynamic; source literals become whole `{{secret.NAME}}` references only when encoding and wire shape can be preserved. Raw migration values are confined to protected in-memory/session handoff and are excluded from scripts, diagnostics, IDs, source review, logs, and receipts. `sanitize_sensitive=false` remains a converter compatibility option, but detected literals add the durable `import_credentials_unmanaged` execution gate.
 
@@ -261,12 +261,16 @@ Protocol `browser`; a mobile example sets `config.browser` to
 - Config keys: `config.browser.engine`, `device_profile`, `touch_mode`,
   `orientation` (`portrait`/`landscape`), `client_metrics`, `quic`
   (`auto`, the default, lets the engine use HTTP/3 when a site advertises it;
-  `off` launches Chromium with QUIC disabled; WebKit supports only `auto`).
-- Native request evidence (version 4) records each resource's negotiated
-  protocol (`h1`, `h2`, `h3`) or why it is unknown: Chromium from CDP, WebKit
-  from Resource Timing `nextHopProtocol` (same-origin or Timing-Allow-Origin
-  only); Firefox reports it as not exposed. Cached and service-worker
-  responses never claim a protocol.
+  `off` launches Chromium or Firefox with HTTP/3 disabled; WebKit supports
+  only `auto`).
+- With document evidence capture on (`config.browser.capture_document_metrics:
+  true`), native request evidence (version 4) records each resource's
+  negotiated protocol (`h1`, `h2`, `h3`) or why it is unknown: Chromium from
+  CDP, WebKit from Resource Timing `nextHopProtocol` (same-origin or
+  Timing-Allow-Origin only). Cached and service-worker responses never claim
+  a protocol. Without that opt-in, and on Firefox, whose requests document
+  evidence does not associate, resources keep version 2 evidence and no
+  protocol is recorded.
 - Summary metrics: `avg_fcp_ms`, `avg_lcp_ms`, `avg_cls_score`, `avg_inp_ms`,
   `avg_blocking_resources`, `avg_long_task_count`, `avg_js_heap_used_mb`; Chromium
   with `client_metrics` also reports `browser_process_cpu_pct` /

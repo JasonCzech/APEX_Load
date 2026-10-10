@@ -263,5 +263,15 @@ describe('ScriptRuntimeSettingsView browser QUIC', () => {
     script.config.browser = { engine: 'webkit' }
     const { select } = renderBrowser(script)
     expect(select?.querySelector<HTMLOptionElement>('option[value="off"]')?.disabled).toBe(true)
+    expect(container.textContent).not.toContain('WebKit cannot launch with QUIC disabled')
+  })
+
+  it('keeps a conflicting off visible and explains it after switching to WebKit', () => {
+    const script = browserScript()
+    script.config.browser = { engine: 'webkit', quic: 'off' }
+    const { select } = renderBrowser(script)
+    expect(select?.value).toBe('off')
+    expect(select?.querySelector<HTMLOptionElement>('option[value="off"]')?.disabled).toBe(false)
+    expect(container.textContent).toContain('WebKit cannot launch with QUIC disabled')
   })
 })

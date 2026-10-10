@@ -116,3 +116,19 @@ func TestBrowserQUICConfigValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestCDPRedirectHopKeepsItsProtocol(t *testing.T) {
+	b, state, _, _, _ := associationBrowser(t)
+	cdpRequest(b, state, "R1", "L1", "F", "GET", "https://a.test/old", 1_800_000_000_000, nil)
+	b.observeCDPRequest(state, map[string]any{"requestId": "R1", "loaderId": "L1", "frameId": "F", "wallTime": 1_800_000_000.010,
+		"request": map[string]any{"url": "https://a.test/new", "method": "GET"}, "redirectResponse": map[string]any{"protocol": "h3"}}, b.evidence.generation)
+	b.observeCDPResponse(state, map[string]any{"requestId": "R1", "response": map[string]any{"protocol": "h2"}}, b.evidence.generation)
+	hop := state.records[resourceKey("GET", "https://a.test/old")][0]
+	final := state.records[resourceKey("GET", "https://a.test/new")][0]
+	if got, reason := browserResourceProtocol(hop.protocol, hop.responded, hop.cached, nil); got != "h3" || reason != "" {
+		t.Fatalf("redirect hop protocol %q reason %q, want h3", got, reason)
+	}
+	if got, _ := browserResourceProtocol(final.protocol, final.responded, final.cached, nil); got != "h2" {
+		t.Fatalf("final hop protocol %q, want h2", got)
+	}
+}

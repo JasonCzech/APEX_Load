@@ -1522,6 +1522,8 @@ func TestDevWebDisclosesHTTP3ReplayToggle(t *testing.T) {
 		{"disabled", "ssl:\n  enableHttp3: false\n", nil},
 		{"quic flag", "client:\n  useQuic: 1\n", []string{"client.useQuic"}},
 		{"unrelated section ignored", "replay:\n  enableHttp3: true\n", nil},
+		{"snake case h3", "http:\n  enable_h3: true\n", []string{"http.enable_h3"}},
+		{"words merely ending in h3 ignored", "httpConnection:\n  maxDepth3: true\n  width3: 1\n", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
@@ -1553,5 +1555,17 @@ func TestDevWebDisclosesHTTP3ReplayToggle(t *testing.T) {
 				t.Fatalf("disclosed %v, want %v; unsupported=%+v", got, tc.want, result.Unsupported)
 			}
 		})
+	}
+}
+
+func TestDevWebKeyWordsSplitsCamelSnakeAndAcronyms(t *testing.T) {
+	for key, want := range map[string]bool{
+		"enableHttp3": true, "enableHTTP3": true, "HTTP3Enabled": true, "QUICEnabled": true, "useQuic": true,
+		"enable_h3": true, "enable-h3": true, "h3": true, "enableH3": true,
+		"maxDepth3": false, "width3": false, "h30": false, "quickRetry": false, "http": false,
+	} {
+		if got := devWebNamesHTTP3(key); got != want {
+			t.Errorf("devWebNamesHTTP3(%q) = %v, want %v (words %v)", key, got, want, devWebKeyWords(key))
+		}
 	}
 }

@@ -567,7 +567,8 @@ var curlHTTPVersionFlags = map[string]bool{
 // or keeps a review gate when the runtime cannot reproduce it:
 //
 //	--http1.1                 exact HTTP/1.1
-//	--http2-prior-knowledge   exact HTTP/2 (h2, or prior-knowledge h2c)
+//	--http2-prior-knowledge   exact HTTP/2 (prior-knowledge h2c) on http://;
+//	                          automatic on https://, where curl still negotiates
 //	--http2 on https://       automatic negotiation, as curl's ALPN offer
 //	--http2 on http://        gated: curl sends Upgrade: h2c, which is not modeled
 //	--http1.0, -0             gated: HTTP/1.0 is not a native replay version
@@ -582,8 +583,14 @@ func applyCurlHTTPVersion(ex *exchange, flag string, diagnostics *diag.Collector
 		ex.HTTPVersion = httpprotocol.VersionHTTP11
 		diagnostics.Add(diag.Info, "cURL HTTP version", location, "--http1.1 maps to the exact HTTP/1.1 replay policy")
 	case "--http2-prior-knowledge":
+		if !cleartext {
+			// curl applies prior knowledge only to non-TLS requests; HTTPS
+			// still negotiates through ALPN and can fall back to HTTP/1.1.
+			diagnostics.Add(diag.Info, "cURL HTTP version", location, "--http2-prior-knowledge on an https:// URL maps to automatic negotiation, as curl still negotiates TLS requests through ALPN")
+			return
+		}
 		ex.HTTPVersion = httpprotocol.VersionHTTP2
-		diagnostics.Add(diag.Info, "cURL HTTP version", location, "--http2-prior-knowledge maps to the exact HTTP/2 replay policy")
+		diagnostics.Add(diag.Info, "cURL HTTP version", location, "--http2-prior-knowledge maps to the exact HTTP/2 replay policy (prior-knowledge h2c)")
 	case "--http2":
 		if cleartext {
 			diagnostics.Add(diag.Warning, "cURL HTTP version", location, "--http2 on an http:// URL makes curl attempt an Upgrade: h2c, which native replay does not model; choose HTTP/1.1 or prior-knowledge HTTP/2 before replay")

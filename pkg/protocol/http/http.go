@@ -729,8 +729,11 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		}
 		// Observation only: an advertisement never changes routing for this
 		// policy; it tells the tester the target offers a protocol the run
-		// is not exercising.
-		result.HTTPAltSvcH3Advertised = AltSvcAdvertisesH3(resp.Header.Values("Alt-Svc"))
+		// is not exercising. HTTP/3 serves only https origins, so a cleartext
+		// response's advertisement is not one this request could have used.
+		result.HTTPAltSvcH3Advertised = resp.Request != nil && resp.Request.URL != nil &&
+			strings.EqualFold(resp.Request.URL.Scheme, "https") &&
+			AltSvcAdvertisesH3(resp.Header.Values("Alt-Svc"))
 	}
 	if !cacheHit && staleCacheEntry != nil && resp != nil && resp.StatusCode == http.StatusNotModified {
 		h.cache.refresh(req, staleCacheEntry, resp, time.Now())

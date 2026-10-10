@@ -156,6 +156,7 @@ describe('version 4 negotiated protocol', () => {
     expect(browserResourceProtocolLabel(v4({ protocol: 'h3' }) as BrowserResourceEvidenceV2)).toBe('HTTP/3 (QUIC)')
     expect(browserResourceProtocolLabel(v4({ protocol: 'h1' }) as BrowserResourceEvidenceV2)).toBe('HTTP/1.x')
     expect(browserResourceProtocolLabel(v4({ protocol_unavailable_reason: 'cached' }) as BrowserResourceEvidenceV2)).toBe('Unavailable: served from cache')
-    expect(browserResourceProtocolLabel(fixture())).toBe('Not recorded (older evidence)')
+    expect(browserResourceProtocolLabel(fixture())).toBe('Not recorded (no document evidence for this request)')
+    expect(browserResourceProtocolLabel({ ...fixture(), version: 3 })).toBe('Not recorded (older evidence)')
   })
 })

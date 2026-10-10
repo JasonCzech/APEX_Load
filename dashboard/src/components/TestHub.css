@@ -2038,6 +2038,10 @@
   gap: 6px;
 }
 
+.scenario-browser-grid > .form-hint {
+  grid-column: 1 / -1;
+}
+
 .scenario-browser-grid label span {
   color: var(--text-muted);
   font-size: 11px;

@@ -692,9 +692,49 @@ func devWebHTTP3Toggles(raw map[string]any) []string {
 	return found
 }
 
+// devWebNamesHTTP3 reports whether one word of a camelCase, snake_case or
+// kebab-case key is http3, h3 or quic, so enableHttp3, use_quic and enableH3
+// match while depth3 or width3 do not.
 func devWebNamesHTTP3(key string) bool {
-	lower := strings.ToLower(key)
-	return strings.Contains(lower, "http3") || strings.Contains(lower, "quic") || lower == "h3" || strings.HasSuffix(lower, "h3")
+	for _, word := range devWebKeyWords(key) {
+		switch word {
+		case "http3", "h3", "quic":
+			return true
+		}
+	}
+	return false
+}
+
+func devWebKeyWords(key string) []string {
+	isUpper := func(r rune) bool { return r >= 'A' && r <= 'Z' }
+	isLower := func(r rune) bool { return r >= 'a' && r <= 'z' }
+	isDigit := func(r rune) bool { return r >= '0' && r <= '9' }
+	runes := []rune(key)
+	var words []string
+	begin := -1
+	for i, r := range runes {
+		if !isUpper(r) && !isLower(r) && !isDigit(r) {
+			if begin >= 0 {
+				words = append(words, strings.ToLower(string(runes[begin:i])))
+				begin = -1
+			}
+			continue
+		}
+		// A word starts after a separator, at a lower-or-digit to upper step
+		// (enableHttp3), or at the last capital of an acronym (QUICEnabled).
+		boundary := begin < 0 || isUpper(r) && i > 0 && (isLower(runes[i-1]) || isDigit(runes[i-1]) ||
+			isUpper(runes[i-1]) && i+1 < len(runes) && isLower(runes[i+1]))
+		if boundary {
+			if begin >= 0 {
+				words = append(words, strings.ToLower(string(runes[begin:i])))
+			}
+			begin = i
+		}
+	}
+	if begin >= 0 {
+		words = append(words, strings.ToLower(string(runes[begin:])))
+	}
+	return words
 }
 
 func devWebEnableKey(key string) bool {

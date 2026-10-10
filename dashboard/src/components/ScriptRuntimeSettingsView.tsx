@@ -1431,9 +1431,12 @@ export function ScriptRuntimeSettingsView({
               <select value={script.config.browser?.quic || 'auto'}
                 onChange={e => updateField('config.browser', { ...script.config.browser, quic: e.target.value === 'off' ? 'off' : undefined })}>
                 <option value="auto">Browser default (uses HTTP/3 when a site offers it)</option>
-                <option value="off" disabled={script.config.browser?.engine === 'webkit'}>Off (launch with QUIC disabled)</option>
+                <option value="off" disabled={selectedBrowserEngine === 'webkit' && script.config.browser?.quic !== 'off'}>Off (launch with QUIC disabled)</option>
               </select>
             </label>
+            {selectedBrowserEngine === 'webkit' && script.config.browser?.quic === 'off' && (
+              <div className="browser-config-warning">WebKit cannot launch with QUIC disabled. Choose Browser default, or switch to Chromium to keep HTTP/3 off.</div>
+            )}
             <div className="browser-emulation-checkbox-list" aria-label="Browser emulation toggles">
               <label className="checkbox-label">
                 <input type="checkbox" checked={script.config.browser?.headless ?? true}

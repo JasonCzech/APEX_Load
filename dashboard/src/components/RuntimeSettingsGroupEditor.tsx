@@ -1347,6 +1347,9 @@ export default function RuntimeSettingsGroupEditor({
                         <option value="off">Off (launch with QUIC disabled)</option>
                       </select>
                     </label>
+                    {effectiveBrowser.engine === 'webkit' && effectiveBrowser.quic === 'off' && (
+                      <div className="form-hint">WebKit cannot launch with QUIC disabled. Choose Browser default, or another engine to keep HTTP/3 off.</div>
+                    )}
                   </div>
                   <div className="scenario-option-grid">
                     <label className={`scenario-option-card ${effectiveBrowser.client_metrics ? 'selected' : ''}`}>

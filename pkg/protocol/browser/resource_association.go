@@ -282,6 +282,7 @@ func (b *Browser) observeCDPRequest(state *cdpEvidencePage, params map[string]an
 	if previous := state.latest[requestID]; previous != nil && redirect != nil {
 		previous.cacheKnown, previous.cached = true, cdpCached(redirect)
 		previous.startMS = cdpStartMS(previous, redirect, state.served[requestID])
+		recordCDPProtocol(previous, redirect)
 	}
 	if state.count >= resourceAssociationLimit {
 		state.truncated = true
@@ -323,13 +324,21 @@ func (b *Browser) observeCDPResponse(state *cdpEvidencePage, params map[string]a
 	if record := state.latest[requestID]; record != nil && response != nil {
 		record.cacheKnown, record.cached = true, cdpCached(response) || state.served[requestID]
 		record.startMS = cdpStartMS(record, response, state.served[requestID])
-		record.responded = true
-		if raw := cdpText(response, "protocol"); len(raw) <= maxBrowserProtocolBytes {
-			record.protocol = raw
-		} else {
-			record.protocol = raw[:maxBrowserProtocolBytes+1]
-		}
+		recordCDPProtocol(record, response)
 	}
+}
+
+// recordCDPProtocol keeps the protocol a hop's response reported: a final
+// response's, or a redirect hop's, which CDP delivers only as the next hop's
+// redirectResponse. An oversized value keeps one byte past the bound, so the
+// decision reads it as unsupported rather than as a shorter protocol.
+func recordCDPProtocol(record *cdpRequestRecord, response map[string]any) {
+	record.responded = true
+	raw := cdpText(response, "protocol")
+	if len(raw) > maxBrowserProtocolBytes {
+		raw = raw[:maxBrowserProtocolBytes+1]
+	}
+	record.protocol = raw
 }
 
 func (b *Browser) observeCDPCacheHit(state *cdpEvidencePage, params map[string]any, generation string) {

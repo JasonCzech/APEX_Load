@@ -1,6 +1,8 @@
 package http
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/internal/h3fixture"
@@ -32,6 +34,20 @@ func TestAltSvcH3AdvertisementAbsentForDraftsAndPlainResponses(t *testing.T) {
 	fixture.SetAltSvc(`h3-29=":443"; ma=60, h2=":443"`)
 	if r := executeVersion(t, h, fixture.URL("/draft"), "auto"); r.ProtocolEvidence["alt_svc_h3_advertised"] != nil {
 		t.Fatalf("draft-only advertisement reported as final HTTP/3: %+v", r.ProtocolEvidence)
+	}
+}
+
+func TestAltSvcH3AdvertisementIgnoredOnCleartext(t *testing.T) {
+	// HTTP/3 serves only https origins; a cleartext response's advertisement
+	// is not something the request could have exercised.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Alt-Svc", `h3=":443"; ma=60`)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	t.Cleanup(server.Close)
+	h := versionHTTP(t, nil)
+	if r := executeVersion(t, h, server.URL+"/", "auto"); r.ProtocolEvidence["alt_svc_h3_advertised"] != nil {
+		t.Fatalf("cleartext advertisement reported: %+v", r.ProtocolEvidence)
 	}
 }
 
