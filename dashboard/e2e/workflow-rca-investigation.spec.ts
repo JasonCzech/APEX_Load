@@ -1,6 +1,6 @@
 import { test, expect, seedScript, json, idOf, login } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
-import { rcaTestReportView, rcaTestResponse } from '../src/components/rca/rcaTestFixture'
+import { rcaTestReportView, rcaTestResponse, rcaTestSummary } from '../src/components/rca/rcaTestFixture'
 
 // The run is real and authorized; its archive and root-cause analyses are
 // served from fixtures. The engine and analysis service are exercised against
@@ -52,6 +52,7 @@ test('root-cause investigation opens from Summary, drills into a hypothesis and 
       ],
       completeness: { score_pct: 100 }, verdict: { status: 'fail' },
       root_cause_view: rcaTestReportView(),
+      root_cause_summary: rcaTestSummary({ origin: 'requested' }),
     } })
     if (path === `${base}/archive/summaries`) return route.fulfill({ json: { summaries, total: summaries.length } })
     if (path === `${base}/archive/resources`) return route.fulfill({ json: { samples: [], total: 0 } })
@@ -96,11 +97,13 @@ test('root-cause investigation opens from Summary, drills into a hypothesis and 
     return route.continue()
   })
 
-  // Summary names the leading hypothesis and opens its investigation.
+  // Summary's Run outcome names the leading hypothesis and opens its
+  // investigation.
   await page.goto(`/#/report/${runId}?${scopeQuery(workspace)}`)
   await page.reload()
-  await expect(page.getByText('Resource pressure is the leading hypothesis for Checkout · p95 latency (medium confidence).', { exact: false })).toBeVisible()
-  await page.getByRole('button', { name: 'Investigate root cause', exact: true }).click()
+  const outcome = page.getByRole('region', { name: 'Run outcome', exact: true })
+  await expect(outcome).toContainText('#1 Resource pressure (medium confidence)')
+  await outcome.getByRole('button', { name: 'Investigate root cause', exact: true }).click()
   await expect(page.getByRole('tab', { name: 'Diagnostics', exact: true })).toHaveAttribute('aria-selected', 'true')
   await expect(page).toHaveURL(/section=diagnostics/)
   await expect(page).toHaveURL(/analysis=rca-1/)
@@ -217,7 +220,7 @@ test('root-cause investigation opens from Summary, drills into a hypothesis and 
   await expect(panel.getByText('Analysis revision 3 is running…', { exact: true })).toBeVisible()
   await expect(panel.getByText('Analysis revision 3 is running…', { exact: true })).toBeHidden({ timeout: 15000 })
   await expect(panel.getByRole('listitem', { name: 'Hypothesis 1: Resource pressure' })).toBeVisible()
-  await expect(panel).toContainText('analysis revision 3')
+  await expect(panel).toContainText('requested analysis, revision 3')
   expect(requested).toEqual({ enrich: false })
 
   // The report composer previews the same generated root cause the exports

@@ -2,22 +2,22 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { useApi } from '../../hooks/useApi'
 import type { MetricsHistoryPoint, RunArchiveReport } from '../../types'
-import type { ExemplarPage, RcaAssessment, RcaHypothesis } from '../../types/rca'
+import type { ExemplarPage, RcaAssessment, RcaHypothesis, RcaWindowLink } from '../../types/rca'
 import { getErrorMessage } from '../../utils/errorUtils'
 import { formatMs, formatNumber, formatPct } from '../runReport/runReportModel'
 import RcaTimeline from './RcaTimeline'
+import { useRcaPhases } from './useRcaPhases'
 import {
   formatRcaDuration,
   formatRcaEffect,
   formatRcaTime,
   rcaAnomalyWindow,
+  rcaErrorPatternAnchor,
   rcaErrorPatterns,
+  rcaRevealElement,
   rcaGraphNodeLabel,
   rcaHypothesisAnomalies,
   rcaHypothesisWindow,
-  rcaLoadSteps,
-  rcaPhaseMarkers,
-  rcaTimelinePhases,
   rcaPopulationStats,
   rcaProviderLabel,
   rcaSeriesLabel,
@@ -25,7 +25,6 @@ import {
   rcaSignatureLabel,
   rcaValidityConcerns,
   sameRcaWindow,
-  type RcaPhaseMarker,
   type RcaWindow,
 } from './rcaModel'
 
@@ -52,28 +51,9 @@ export default function RootCauseInvestigation({ testId, assessment, hypothesis,
   const api = useApi()
   const involved = useMemo(() => rcaHypothesisAnomalies(hypothesis, assessment.anomalies), [assessment.anomalies, hypothesis])
   const span = useMemo(() => rcaHypothesisWindow(hypothesis, assessment.anomalies), [assessment.anomalies, hypothesis])
-  const inferredSteps = useMemo(() => rcaLoadSteps(assessment.detection?.levels || [], assessment.detection?.params?.level_settle_ns), [assessment.detection])
   // The run's archived phase events mark its load steps; a run without level
   // events falls back to steps inferred from the detection levels.
-  const phaseFile = report?.manifest?.phase_events_file || ''
-  // undefined while the archived events load; null when the run has none or
-  // they could not be read.
-  const [phases, setPhases] = useState<RcaPhaseMarker[] | null | undefined>(undefined)
-  useEffect(() => {
-    if (!phaseFile) {
-      setPhases(null)
-      return
-    }
-    setPhases(undefined)
-    const controller = new AbortController()
-    api.downloadTestArchiveArtifact(testId, phaseFile, { signal: controller.signal })
-      .then(blob => blob.text())
-      .then(text => { if (!controller.signal.aborted) setPhases(rcaPhaseMarkers(text)) })
-      .catch(() => { if (!controller.signal.aborted) setPhases(null) })
-    return () => controller.abort()
-  }, [api, phaseFile, testId])
-  // While the archived events load, no steps are shown.
-  const timeline = useMemo(() => (phases === undefined ? { phases: [], inferred: false } : rcaTimelinePhases(phases, inferredSteps)), [inferredSteps, phases])
+  const timeline = useRcaPhases(testId, report, assessment.detection)
   const populations = useMemo(() => {
     const seen = new Set<string>()
     return involved.flatMap(({ anomaly, role }) => {
@@ -90,6 +70,23 @@ export default function RootCauseInvestigation({ testId, assessment, hypothesis,
   const exemplarPopulation = populations[0]?.population || ''
   const windowStart = window ? new Date(window.start).toISOString() : ''
   const windowEnd = window ? new Date(window.end).toISOString() : ''
+  // The window in focus, or the hypothesis's span, opens in the run's trace
+  // providers that have a window link template.
+  const linkWindow = window || span
+  const linkFrom = linkWindow ? new Date(linkWindow.start).toISOString() : ''
+  const linkTo = linkWindow ? new Date(linkWindow.end).toISOString() : ''
+  const [windowLinks, setWindowLinks] = useState<RcaWindowLink[]>([])
+  useEffect(() => {
+    setWindowLinks([])
+    if (!linkFrom || !linkTo) return
+    const controller = new AbortController()
+    // Links are secondary: any failure leaves the timeline without them.
+    Promise.resolve()
+      .then(() => api.getRootCauseWindowLinks(testId, linkFrom, linkTo, { signal: controller.signal }))
+      .then(result => { if (!controller.signal.aborted) setWindowLinks(Array.isArray(result?.links) ? result.links : []) })
+      .catch(() => { if (!controller.signal.aborted) setWindowLinks([]) })
+    return () => controller.abort()
+  }, [api, linkFrom, linkTo, testId])
 
   const [exemplars, setExemplars] = useState<ExemplarPage | null>(null)
   const [exemplarError, setExemplarError] = useState('')
@@ -157,6 +154,8 @@ export default function RootCauseInvestigation({ testId, assessment, hypothesis,
         </section>
       </div>
 
+      {windowLinks.length > 0 && <p className="rca-window-links">Open {window ? 'this window' : 'the hypothesis span'} in {windowLinks.map(link => <a key={`${link.connection_id}/${link.provider}`} className="rca-trace-link" href={link.url} target="_blank" rel="noopener noreferrer">{rcaProviderLabel(link.provider)}</a>)}</p>}
+
       <section aria-label="Exemplars">
         <h4>Exemplars{exemplarName ? ` for ${exemplarName}` : ''}</h4>
         {exemplarsLoading && <p role="status">Loading exemplars…</p>}
@@ -187,7 +186,7 @@ export default function RootCauseInvestigation({ testId, assessment, hypothesis,
         {errors.length === 0 ? <p className="run-report-muted">No captured error pattern {window ? 'overlaps this window' : 'matches'}{names.length ? ` for ${names.join(', ')}` : ''}.</p> : (
           <table className="rca-table">
             <thead><tr><th scope="col">Pattern</th><th scope="col">Actions</th><th scope="col">Count</th><th scope="col">First seen</th><th scope="col">Last seen</th></tr></thead>
-            <tbody>{errors.map(p => <tr key={p.signature}><td><code>{p.sample || p.signature}</code></td><td>{p.actions?.length ? p.actions.join(', ') : 'Not attributed'}</td><td>{formatNumber(p.count, 0)}</td><td>{formatRcaTime(p.first_seen)}</td><td>{formatRcaTime(p.latest_seen)}</td></tr>)}</tbody>
+            <tbody>{errors.map(p => <tr key={p.signature}><td><code>{p.sample || p.signature}</code> <button type="button" className="btn btn-sm btn-ghost" onClick={() => rcaRevealElement(rcaErrorPatternAnchor(p.signature))}>Show in error patterns</button></td><td>{p.actions?.length ? p.actions.join(', ') : 'Not attributed'}</td><td>{formatNumber(p.count, 0)}</td><td>{formatRcaTime(p.first_seen)}</td><td>{formatRcaTime(p.latest_seen)}</td></tr>)}</tbody>
           </table>
         )}
         {errors.length > 0 && <p className="run-report-muted">Counts cover the whole run. A pattern not attributed to an action may come from any transaction.</p>}

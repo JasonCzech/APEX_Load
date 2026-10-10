@@ -22,6 +22,15 @@ const (
 	RCAStateCancelled = "cancelled"
 )
 
+// Root-cause analysis origins. A requested analysis was asked for by a
+// person or client; an automatic one was queued when the run's archive was
+// finalized. Requested analyses are claimed first, and at most one automatic
+// analysis runs at a time, so a request always finds a free worker slot.
+const (
+	RCAOriginRequested = "requested"
+	RCAOriginAutomatic = "automatic"
+)
+
 // Bounds on a run's analytical history: 50 live analyses (queued, running or
 // completed) of at most 2 MiB each keep a run's stored assessments near 100
 // MiB at worst. Failed and cancelled analyses do not count against the cap;
@@ -59,6 +68,7 @@ type RCAAnalysis struct {
 	CreatedAt      time.Time       `json:"created_at"`
 	CompletedAt    *time.Time      `json:"completed_at,omitempty"`
 	InputDigest    string          `json:"input_digest"`
+	Origin         string          `json:"origin"`
 	Payload        json.RawMessage `json:"payload"`
 	Owner          string          `json:"-"`
 	LeaseExpiresAt *time.Time      `json:"-"`
@@ -70,6 +80,8 @@ type RCAStore interface {
 	LatestRCAEvidenceRevision(project, test string) (*RCAEvidenceRevision, error)
 	GetRCAEvidenceRevision(project, test string, revision int64) (*RCAEvidenceRevision, error)
 	CreateRCAAnalysis(project, test, inputDigest string, payload []byte, now time.Time) (*RCAAnalysis, bool, error)
+	CreateRCAAnalysisWithOrigin(project, test, inputDigest, origin string, payload []byte, now time.Time) (*RCAAnalysis, bool, error)
+	LatestRCAAnalyses(project string, tests []string) (map[string]RCARunAnalyses, error)
 	GetRCAAnalysis(project, test, id string) (*RCAAnalysis, error)
 	LatestCompletedRCAAnalysis(project, test string) (*RCAAnalysis, error)
 	ClaimRCAAnalysis(owner string, now time.Time, lease time.Duration) (*RCAAnalysis, error)
@@ -254,13 +266,13 @@ func (s *SQLiteStore) GetRCAEvidenceRevision(project, test string, revision int6
 	return scanRCAEvidence(s.db.QueryRow(`SELECT `+rcaEvidenceColumns+` FROM rca_evidence_revisions WHERE project_id = ? AND test_id = ? AND revision = ?`, project, test, revision))
 }
 
-const rcaAnalysisColumns = `id, project_id, test_id, revision, state, created_at, completed_at, input_digest, payload, owner, lease_expires_at`
+const rcaAnalysisColumns = `id, project_id, test_id, revision, state, created_at, completed_at, input_digest, payload, owner, lease_expires_at, origin`
 
 func scanRCAAnalysis(row interface{ Scan(...any) error }) (*RCAAnalysis, error) {
 	var analysis RCAAnalysis
 	var completed, lease sql.NullTime
 	var payload string
-	if err := row.Scan(&analysis.ID, &analysis.ProjectID, &analysis.TestID, &analysis.Revision, &analysis.State, &analysis.CreatedAt, &completed, &analysis.InputDigest, &payload, &analysis.Owner, &lease); err != nil {
+	if err := row.Scan(&analysis.ID, &analysis.ProjectID, &analysis.TestID, &analysis.Revision, &analysis.State, &analysis.CreatedAt, &completed, &analysis.InputDigest, &payload, &analysis.Owner, &lease, &analysis.Origin); err != nil {
 		return nil, err
 	}
 	analysis.CreatedAt = analysis.CreatedAt.UTC()
@@ -280,8 +292,16 @@ func scanRCAAnalysis(row interface{ Scan(...any) error }) (*RCAAnalysis, error) 
 // idempotent: when a queued, running or completed analysis has the same
 // input digest it is returned instead, with created false.
 func (s *SQLiteStore) CreateRCAAnalysis(project, test, inputDigest string, payload []byte, now time.Time) (*RCAAnalysis, bool, error) {
+	return s.CreateRCAAnalysisWithOrigin(project, test, inputDigest, RCAOriginRequested, payload, now)
+}
+
+// CreateRCAAnalysisWithOrigin is CreateRCAAnalysis for an analysis of the
+// given origin. An existing analysis of the same inputs keeps its own origin,
+// except that a request for the inputs of a still-queued automatic analysis
+// makes it a requested one, so it is claimed ahead of the automatic queue.
+func (s *SQLiteStore) CreateRCAAnalysisWithOrigin(project, test, inputDigest, origin string, payload []byte, now time.Time) (*RCAAnalysis, bool, error) {
 	project, test = strings.TrimSpace(project), strings.TrimSpace(test)
-	if project == "" || test == "" || !validRCADigest(inputDigest) || !validRCAPayload(payload) {
+	if project == "" || test == "" || !validRCADigest(inputDigest) || !validRCAPayload(payload) || (origin != RCAOriginRequested && origin != RCAOriginAutomatic) {
 		return nil, false, errors.New("invalid root-cause analysis")
 	}
 	tx, err := s.db.Begin()
@@ -295,7 +315,17 @@ func (s *SQLiteStore) CreateRCAAnalysis(project, test, inputDigest string, paylo
 	existing, err := scanRCAAnalysis(tx.QueryRow(`SELECT `+rcaAnalysisColumns+` FROM rca_analyses WHERE test_id = ? AND input_digest = ? AND state IN (?, ?, ?) ORDER BY revision DESC LIMIT 1`,
 		test, inputDigest, RCAStateQueued, RCAStateRunning, RCAStateCompleted))
 	if err == nil {
-		return existing, false, nil
+		if origin != RCAOriginRequested || existing.State != RCAStateQueued || existing.Origin != RCAOriginAutomatic {
+			return existing, false, nil
+		}
+		result, err := tx.Exec(`UPDATE rca_analyses SET origin = ? WHERE id = ? AND state = ? AND origin = ?`, RCAOriginRequested, existing.ID, RCAStateQueued, RCAOriginAutomatic)
+		if err != nil {
+			return nil, false, err
+		}
+		if n, err := result.RowsAffected(); err == nil && n == 1 {
+			existing.Origin = RCAOriginRequested
+		}
+		return existing, false, tx.Commit()
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, false, err
@@ -318,9 +348,9 @@ func (s *SQLiteStore) CreateRCAAnalysis(project, test, inputDigest string, paylo
 	if err := tx.QueryRow(`SELECT COALESCE(MAX(revision), 0) FROM rca_analyses WHERE test_id = ?`, test).Scan(&latest); err != nil {
 		return nil, false, err
 	}
-	analysis := &RCAAnalysis{ID: uuid.NewString(), ProjectID: project, TestID: test, Revision: latest + 1, State: RCAStateQueued, CreatedAt: now.UTC(), InputDigest: inputDigest, Payload: append(json.RawMessage(nil), payload...)}
-	if _, err := tx.Exec(`INSERT INTO rca_analyses(id, project_id, test_id, revision, state, created_at, input_digest, payload, owner) VALUES(?,?,?,?,?,?,?,?, '')`,
-		analysis.ID, project, test, analysis.Revision, analysis.State, analysis.CreatedAt, inputDigest, string(payload)); err != nil {
+	analysis := &RCAAnalysis{ID: uuid.NewString(), ProjectID: project, TestID: test, Revision: latest + 1, State: RCAStateQueued, CreatedAt: now.UTC(), InputDigest: inputDigest, Origin: origin, Payload: append(json.RawMessage(nil), payload...)}
+	if _, err := tx.Exec(`INSERT INTO rca_analyses(id, project_id, test_id, revision, state, created_at, input_digest, payload, owner, origin) VALUES(?,?,?,?,?,?,?,?, '', ?)`,
+		analysis.ID, project, test, analysis.Revision, analysis.State, analysis.CreatedAt, inputDigest, string(payload), origin); err != nil {
 		return nil, false, err
 	}
 	return analysis, true, tx.Commit()
@@ -341,8 +371,90 @@ func (s *SQLiteStore) LatestCompletedRCAAnalysis(project, test string) (*RCAAnal
 	return analysis, err
 }
 
-// ClaimRCAAnalysis leases the oldest queued analysis, or a running one whose
-// owner's lease expired, to owner. It returns nil when there is none.
+// RCARunAnalyses are a run's newest analysis of any state and its newest
+// completed one (the same analysis when the newest has completed). Neither
+// carries its payload: a caller reads a completed one's assessment with
+// GetRCAAnalysis when it needs it, which a completed analysis's immutability
+// lets it cache.
+type RCARunAnalyses struct {
+	Latest    *RCAAnalysis
+	Completed *RCAAnalysis
+}
+
+// maxRCABatchRuns bounds one LatestRCAAnalyses call.
+const maxRCABatchRuns = 200
+
+// LatestRCAAnalyses returns, for each of a project's runs that has analyses,
+// its newest analysis and its newest completed one, in two queries, without
+// their payloads.
+func (s *SQLiteStore) LatestRCAAnalyses(project string, tests []string) (map[string]RCARunAnalyses, error) {
+	project = strings.TrimSpace(project)
+	out := map[string]RCARunAnalyses{}
+	ids := make([]string, 0, len(tests))
+	seen := map[string]bool{}
+	for _, test := range tests {
+		if test = strings.TrimSpace(test); test != "" && !seen[test] {
+			seen[test] = true
+			ids = append(ids, test)
+		}
+	}
+	if project == "" || len(ids) == 0 {
+		return out, nil
+	}
+	if len(ids) > maxRCABatchRuns {
+		return nil, errors.New("too many runs in one root-cause batch")
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := []any{project}
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	latestColumns := strings.Replace(rcaAnalysisColumns, "payload", "'{}' AS payload", 1)
+	latest, err := s.db.Query(`SELECT `+latestColumns+` FROM rca_analyses a WHERE project_id = ? AND test_id IN (`+placeholders+`)
+		AND revision = (SELECT MAX(revision) FROM rca_analyses b WHERE b.test_id = a.test_id)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	for latest.Next() {
+		analysis, err := scanRCAAnalysis(latest)
+		if err != nil {
+			latest.Close()
+			return nil, err
+		}
+		entry := out[analysis.TestID]
+		entry.Latest = analysis
+		out[analysis.TestID] = entry
+	}
+	if err := latest.Close(); err != nil {
+		return nil, err
+	}
+	completedArgs := append(append([]any{}, args...), RCAStateCompleted, RCAStateCompleted)
+	completed, err := s.db.Query(`SELECT `+latestColumns+` FROM rca_analyses a WHERE project_id = ? AND test_id IN (`+placeholders+`) AND state = ?
+		AND revision = (SELECT MAX(revision) FROM rca_analyses b WHERE b.test_id = a.test_id AND b.state = ?)`, completedArgs...)
+	if err != nil {
+		return nil, err
+	}
+	defer completed.Close()
+	for completed.Next() {
+		analysis, err := scanRCAAnalysis(completed)
+		if err != nil {
+			return nil, err
+		}
+		entry := out[analysis.TestID]
+		entry.Completed = analysis
+		if entry.Latest != nil && entry.Latest.ID == analysis.ID {
+			entry.Latest = analysis
+		}
+		out[analysis.TestID] = entry
+	}
+	return out, completed.Err()
+}
+
+// ClaimRCAAnalysis leases the next analysis to owner: a running one whose
+// owner's lease expired, or a queued one, requested analyses before
+// automatic ones and each oldest first. A queued automatic analysis waits
+// while another automatic one holds a live lease, which keeps a worker slot
+// for requests. It returns nil when there is none.
 func (s *SQLiteStore) ClaimRCAAnalysis(owner string, now time.Time, lease time.Duration) (*RCAAnalysis, error) {
 	if strings.TrimSpace(owner) == "" || lease <= 0 {
 		return nil, errors.New("invalid root-cause analysis claim")
@@ -354,7 +466,13 @@ func (s *SQLiteStore) ClaimRCAAnalysis(owner string, now time.Time, lease time.D
 	}
 	defer tx.Rollback()
 	var id string
-	err = tx.QueryRow(`SELECT id FROM rca_analyses WHERE state = ? OR (state = ? AND lease_expires_at <= ?) ORDER BY created_at, id LIMIT 1`, RCAStateQueued, RCAStateRunning, now).Scan(&id)
+	err = tx.QueryRow(`SELECT id FROM rca_analyses WHERE
+			(state = ? AND (origin <> ? OR NOT EXISTS (SELECT 1 FROM rca_analyses running WHERE running.state = ? AND running.origin = ? AND running.lease_expires_at > ?)))
+			OR (state = ? AND lease_expires_at <= ?)
+		ORDER BY CASE WHEN state = ? THEN 0 WHEN origin = ? THEN 2 ELSE 1 END, created_at, id LIMIT 1`,
+		RCAStateQueued, RCAOriginAutomatic, RCAStateRunning, RCAOriginAutomatic, now,
+		RCAStateRunning, now,
+		RCAStateRunning, RCAOriginAutomatic).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

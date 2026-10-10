@@ -669,6 +669,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 	}
 	s.attachDashboardPanels(report)
 	s.attachRootCause(report)
+	s.attachRootCauseSummary(r.Context(), report)
 	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("download")), "true") {
 		testID := sanitizeFilename(r.PathValue("id"))
 		w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-report-"+testID+".json\"")
@@ -746,6 +747,16 @@ func (s *Server) handleGetRunArchiveReportsBatch(w http.ResponseWriter, r *http.
 		}
 		reportBytes += encodedBytes
 		reports[id] = report
+	}
+	// One read of the project's analyses summarizes every run in the batch.
+	ids := make([]string, 0, len(reports))
+	for id := range reports {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	summaries := s.rootCauseSummaries(r.Context(), projectID, ids)
+	for id, report := range reports {
+		report.RootCauseSummary = summaries[id]
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"reports": reports,

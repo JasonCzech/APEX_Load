@@ -42,6 +42,9 @@ interface Props {
   onSelectTest: (id: string) => void
   onOpenTestArchive?: (id: string) => void
   onOpenAnalysisReport?: (id: string, context: AnalysisReportContext) => void
+  // onOpenRootCause opens a run's report at its root cause, at an analysis
+  // and hypothesis when they are known.
+  onOpenRootCause?: (id: string, rootCause: { analysis?: string; hypothesis?: string }) => void
   onOpenCommandCenter?: (id: string) => void
   onNavigate: (page: NavPage) => void
   snapshotAudience?: DashboardSnapshotAudience
@@ -92,6 +95,8 @@ interface ReleaseTrendStats {
   maxCPU: number
   maxMemoryMB: number
   telemetryBreached: number
+  invalidRuns: number
+  suspectRuns: number
 }
 
 interface SnapshotStatProps {
@@ -312,6 +317,16 @@ function deriveSelectedIds(current: Set<string>, previousIds: string[], validIds
   return hadNoPreviousIds || hadAllPreviousIds || !hasOverlap ? valid : retained
 }
 
+// dashboardRootCauseText is a recent run's validity and, where the project
+// presents root cause, its leading hypothesis, appended to its evidence line.
+function dashboardRootCauseText(report: RunArchiveReport | null | undefined): string {
+  const validity = report?.validity?.verdict
+  const summary = report?.root_cause_summary
+  const parts = validity && validity !== 'unknown' ? [` · Validity: ${validity}`] : []
+  if (summary?.presented && summary.outcome === 'supported' && summary.top_hypothesis) parts.push(` · Cause: ${summary.top_hypothesis.title}`)
+  return parts.join('')
+}
+
 function buildReleaseTrendStats(entries: PerformanceTrendEntry[]): ReleaseTrendStats {
   if (entries.length === 0) {
     return {
@@ -321,6 +336,8 @@ function buildReleaseTrendStats(entries: PerformanceTrendEntry[]): ReleaseTrendS
       maxCPU: 0,
       maxMemoryMB: 0,
       telemetryBreached: 0,
+      invalidRuns: 0,
+      suspectRuns: 0,
     }
   }
   const completenessScores = entries
@@ -336,6 +353,8 @@ function buildReleaseTrendStats(entries: PerformanceTrendEntry[]): ReleaseTrendS
     maxCPU: Math.max(...entries.map(entry => entry.report.resource_peaks?.cpu_process_pct || 0)),
     maxMemoryMB: Math.max(...entries.map(entry => entry.report.resource_peaks?.mem_process_mb || 0)),
     telemetryBreached: entries.filter(entry => entry.report.overview.telemetry?.status === 'breached').length,
+    invalidRuns: entries.filter(entry => entry.report.validity?.verdict === 'invalid').length,
+    suspectRuns: entries.filter(entry => entry.report.validity?.verdict === 'suspect').length,
   }
 }
 
@@ -572,6 +591,7 @@ function ReleaseSnapshotPanel({
                 <SnapshotStat label="Avg Completeness" value={`${formatNumber(releaseTrendStats.avgCompleteness, 0)}%`} tone={qualityTone} onClick={onResults} />
                 <SnapshotStat label="Peak VUsers" value={releaseTrendStats.peakVUsers.toLocaleString()} />
                 <SnapshotStat label="Telemetry Breaches" value={releaseTrendStats.telemetryBreached} tone={releaseTrendStats.telemetryBreached > 0 ? 'warning' : 'success'} onClick={onResults} />
+                <SnapshotStat label="Invalid / Suspect Runs" value={`${releaseTrendStats.invalidRuns} / ${releaseTrendStats.suspectRuns}`} tone={releaseTrendStats.invalidRuns > 0 ? 'danger' : releaseTrendStats.suspectRuns > 0 ? 'warning' : 'success'} onClick={onResults} />
                 <SnapshotStat label="Max CPU" value={`${formatNumber(releaseTrendStats.maxCPU, 1)}%`} />
                 <SnapshotStat label="Max Memory" value={`${formatNumber(releaseTrendStats.maxMemoryMB, 0)} MB`} />
               </div>
@@ -590,7 +610,7 @@ function ReleaseSnapshotPanel({
   )
 }
 
-export default function DashboardPage({ testStatuses, metricsHistory, connectionState, onSelectTest, onOpenTestArchive, onOpenAnalysisReport, onOpenCommandCenter, onNavigate, snapshotAudience = 'admin' }: Props) {
+export default function DashboardPage({ testStatuses, metricsHistory, connectionState, onSelectTest, onOpenTestArchive, onOpenAnalysisReport, onOpenRootCause, onOpenCommandCenter, onNavigate, snapshotAudience = 'admin' }: Props) {
   const api = useApi()
   const {
     activeApplication,
@@ -1413,6 +1433,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         onDismissAttention={item => dismissAttentionItem(item.id)}
         onAttention={item => {
           if (item.destination === 'evidence') { setRunFilters({ ...emptyRunFilters, evidence: 'unavailable' }); setActiveDashboardTab('activity') }
+          else if (item.destination === 'root-cause' && item.testId && onOpenRootCause) onOpenRootCause(item.testId, item.rootCause || {})
           else if (item.testId) { if (pendingTests.some(test => test.id === item.testId)) navigateToPendingRun(item.testId); else onSelectTest(item.testId) }
           else navigateToMonitoring()
         }}
@@ -1767,7 +1788,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                               {test.name}
                             </button>
                             <span className="trend-run-meta dashboard-run-reference">{runReference(test)}</span>
-                            <span className="dashboard-evidence" title={test.archive ? 'A saved archive is available. Acceptance is assessed separately.' : 'Saved archive unavailable; publication progress is unknown.'}>{test.archive ? 'Archive available' : 'Archive unavailable'} · Acceptance: {dashboardAcceptance(test, archiveReports)}</span>
+                            <span className="dashboard-evidence" title={test.archive ? 'A saved archive is available. Acceptance is assessed separately.' : 'Saved archive unavailable; publication progress is unknown.'}>{test.archive ? 'Archive available' : 'Archive unavailable'} · Acceptance: {dashboardAcceptance(test, archiveReports)}{dashboardRootCauseText(archiveReports[test.id])}</span>
                             <details className="dashboard-run-details" onClick={event => event.stopPropagation()}>
                               <summary>Run details<span className="dashboard-sr-only"> for {test.name} ({runReference(test)})</span></summary>
                               <dl><div><dt>Configured VUsers</dt><dd>{test.total_vusers}</dd></div><div><dt>Configured duration</dt><dd>{test.duration}</dd></div><div><dt>Archive records</dt><dd>{test.archive ? test.archive.transaction_count.toLocaleString() : 'Unavailable — publication progress unknown'}</dd></div></dl>

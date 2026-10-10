@@ -89,6 +89,36 @@ describe('SynchronizedTimeline', () => {
     expect(container.querySelector('[data-key="baselineTps"]')).not.toBeNull()
   })
 
+  it('marks root-cause spans on every lane and opens them from the legend', async () => {
+    const onOverlaySelect = vi.fn()
+    // Samples end at :00, :01 and :02, one second apart, so they start a
+    // second earlier.
+    const at = (second: string) => Date.parse(`2026-05-12T20:00:${second}Z`)
+    await act(async () => {
+      root.render(
+        <SynchronizedTimeline
+          data={[samplePoint('00', 100, 0), samplePoint('01', 700, 0), samplePoint('02', 100, 0)]}
+          overlays={[
+            { id: 'sym', kind: 'anomaly', start: at('00'), end: at('01'), label: 'Symptom: Checkout · p95 latency +600 ms (#1 Pool exhaustion)', tone: 'danger', ref: 'hypothesis:h-1' },
+            { id: 'step', kind: 'phase', start: at('00'), label: 'Load step to 20 VUsers', tone: 'muted' },
+            { id: 'suspect', kind: 'validity', start: at('00'), end: at('01'), label: 'Suspect run', tone: 'muted' },
+          ]}
+          onOverlaySelect={onOverlaySelect}
+        />,
+      )
+    })
+    const spans = Array.from(container.querySelectorAll('[data-testid="mock-reference-area"]')).map(area => [area.getAttribute('data-x1'), area.getAttribute('data-x2')])
+    // One span per lane, from the sample starting at :00 to the one at :01.
+    expect(spans).toEqual(Array(8).fill(['01', '02']))
+    const legend = container.querySelector('[aria-label="Root-cause markers"]')!
+    expect(legend.textContent).toContain('Load step to 20 VUsers')
+    await act(async () => (legend.querySelector('button') as HTMLButtonElement).click())
+    expect(onOverlaySelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'sym', ref: 'hypothesis:h-1' }))
+    // A load step or a suspect span has nothing to open.
+    expect(legend.querySelectorAll('button')).toHaveLength(1)
+    expect(legend.textContent).toContain('Suspect run')
+  })
+
   it('provides named bounded keyboard sliders and applies their window to every lane', async () => {
     await act(async () => {
       root.render(

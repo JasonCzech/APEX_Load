@@ -42,7 +42,7 @@ import type { GoalConfig, GoalTargetStatus, ScenarioMode } from '../../types/goa
 import type { GeneratorAssignmentSettings } from '../../types/testConfiguration'
 import type { RuntimeSettingsOverride } from '../../types/runtimeSettings'
 import type { PowerBIPublishResponse, PowerBIPublishStatusResponse } from '../../types/settings'
-import type { ExemplarPage, RcaAnalysisResponse, RcaCritique } from '../../types/rca'
+import type { ExemplarPage, RcaAnalysisResponse, RcaCritique, RcaWindowLinks } from '../../types/rca'
 import type {
   RunCalendarResponse,
   ScenarioSchedule,
@@ -708,6 +708,14 @@ export function useTestApi() {
     [],
   )
 
+  // getRootCauseWindowLinks opens one time window of a run in each of its
+  // trace providers that has a window link template.
+  const getRootCauseWindowLinks = useCallback(
+    (id: string, from: string, to: string, options?: ApiCallOptions) =>
+      request<RcaWindowLinks>(`/tests/${encodeURIComponent(id)}/archive/root-cause/links${buildQuery({ from, to })}`, withCallOptions(undefined, options)),
+    [],
+  )
+
   const getTestArchiveExemplars = useCallback(
     (id: string, query: { name?: string; group?: string; population?: string; from?: string; to?: string; limit?: number; offset?: number } = {}, options?: ApiCallOptions) =>
       request<ExemplarPage>(`/tests/${encodeURIComponent(id)}/archive/exemplars${buildQuery(query)}`, withCallOptions(undefined, options)),
@@ -927,6 +935,7 @@ export function useTestApi() {
       requestRootCauseAnalysis,
       getTestArchiveExemplars,
       getRootCauseCritiques,
+      getRootCauseWindowLinks,
       listTestNotes,
       createTestNote,
       updateTestNote,
@@ -1027,6 +1036,7 @@ export function useTestApi() {
       requestRootCauseAnalysis,
       getTestArchiveExemplars,
       getRootCauseCritiques,
+      getRootCauseWindowLinks,
       listTestNotes,
       createTestNote,
       updateTestNote,

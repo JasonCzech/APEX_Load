@@ -445,7 +445,7 @@ func TestArchiveAPIRoutesUseModularCatalogs(t *testing.T) {
 			}
 		}
 	}
-	if got, want := len(modular), 34; got != want {
+	if got, want := len(modular), 35; got != want {
 		t.Fatalf("modular archive route count = %d, want %d", got, want)
 	}
 

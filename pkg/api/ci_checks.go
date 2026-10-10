@@ -768,6 +768,9 @@ func ciGitHubCheckSummary(test *ManagedTest, response ciRunResponse, metadata ci
 	if validity := response.Validity; validity != nil {
 		lines = append(lines, "| Run validity | `"+validity.Verdict+"` |", "| Validity gate | `"+firstNonEmpty(validity.Gate, "advisory")+"` |")
 	}
+	if text := ciRootCauseText(response.RootCause); text != "" {
+		lines = append(lines, "| Root cause | "+strings.ReplaceAll(text, "|", "/")+" |")
+	}
 	lines = append(lines,
 		"",
 		"Source: `"+metadata.Source.Repository+"@"+metadata.Source.SHA+"`  ",

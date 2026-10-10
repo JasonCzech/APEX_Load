@@ -7,13 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 import type { RunArchiveReport, TestSummary } from '../types'
 import RunReportPage from './RunReportPage'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
-import { rcaTestReportView, rcaTestResponse } from './rca/rcaTestFixture'
+import { rcaTestReportView, rcaTestResponse, rcaTestSummary } from './rca/rcaTestFixture'
 
 vi.mock('../hooks/apiClient', () => ({ request: vi.fn().mockResolvedValue({ revision: 0, annotations: [] }) }))
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const mocks = vi.hoisted(() => ({
+  outcomeProps: {} as Record<string, unknown>,
   api: {
     getTestReportAnnotations: vi.fn(),
     getTest: vi.fn(),
@@ -139,7 +140,7 @@ vi.mock('./runReport/RunReportVerdictBanner', () => ({
     </section>
   ),
 }))
-vi.mock('./RunOutcomeSummary', () => ({ default: () => <section data-testid="outcome" /> }))
+vi.mock('./RunOutcomeSummary', () => ({ default: (props: Record<string, unknown>) => { mocks.outcomeProps = props; return <section data-testid="outcome" /> } }))
 vi.mock('./runReport/RunReportKpiScorecard', () => ({ default: () => <section data-testid="kpis" /> }))
 vi.mock('./runReport/SynchronizedTimeline', () => ({ default: () => <section data-testid="timeline" /> }))
 vi.mock('./runReport/TransactionSlaScoreboard', () => ({ default: ({ onSelectAction }: { onSelectAction: (name: string) => void }) => <section data-testid="scoreboard"><button onClick={() => onSelectAction('Checkout')}>Inspect Checkout SLA</button></section> }))
@@ -285,17 +286,45 @@ describe('RunReportPage', () => {
     expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Performance')
   })
 
-  it('links the root-cause finding in Summary to its investigation in Diagnostics', async () => {
+  it('opens the root cause from the Summary outcome cell', async () => {
     mocks.polling.test = buildTest('COMPLETE')
-    mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, root_cause_view: rcaTestReportView() } as unknown as RunArchiveReport
+    mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, root_cause_view: rcaTestReportView(), root_cause_summary: rcaTestSummary() } as unknown as RunArchiveReport
     mocks.api.getRootCauseAssessment.mockResolvedValue(rcaTestResponse())
     await act(async () => root.render(<RunReportPage testId="run-1" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
-    expect(container.textContent).toContain('Root cause: Resource pressure is the leading hypothesis for Checkout · p95 latency (medium confidence).')
-    await act(async () => buttonByText(container, 'Investigate root cause')!.click())
+    // The Summary states the root cause once, in the outcome cell.
+    expect(container.textContent).not.toContain('Root cause: Resource pressure is the leading hypothesis')
+    const outcome = mocks.outcomeProps as { rootCauseSummary?: { top_hypothesis?: { id: string } }; onRootCause?: (action: string) => void }
+    expect(outcome.rootCauseSummary?.top_hypothesis?.id).toBe('hypothesis-cpu')
+    await act(async () => outcome.onRootCause?.('investigate'))
     expect(onNavigateReport).toHaveBeenLastCalledWith({
       lens: 'executive', compare: undefined, comparisonId: undefined, section: 'diagnostics',
       analysis: 'rca-1', rev: '2', hypothesis: 'hypothesis-cpu', window: '2026-10-05T12:01:25.000Z~2026-10-05T12:06:55.000Z',
     })
+    // With no cause supported the cell opens the run's largest changes.
+    await act(async () => outcome.onRootCause?.('review'))
+    expect(onNavigateReport).toHaveBeenLastCalledWith(expect.objectContaining({ section: 'diagnostics', analysis: 'rca-1', hypothesis: undefined, focus: 'rca-changes' }))
+  })
+
+  it('shows the Summary an analysis started since the report loaded', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, root_cause_summary: rcaTestSummary() } as unknown as RunArchiveReport
+    // An editor re-analyzed in Diagnostics: the newest analysis runs.
+    const running = { analysis_id: 'rca-3', revision: 3, state: 'running', presented: true, analysis_enabled: true, origin: 'requested', created_at: '2026-10-05T12:20:00Z' }
+    mocks.api.getRootCauseAssessment.mockResolvedValue(running)
+    mocks.api.getRootCauseAnalysis.mockResolvedValue(running)
+    await act(async () => root.render(<RunReportPage testId="run-1" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    await act(async () => { await Promise.resolve() })
+    const outcome = mocks.outcomeProps as { rootCauseSummary?: { state: string; analysis_id?: string; latest?: { analysis_id: string } } }
+    expect(outcome.rootCauseSummary).toMatchObject({ state: 'running', analysis_id: 'rca-1', latest: { analysis_id: 'rca-3' } })
+  })
+
+  it('opens the Diagnostics root cause when the run has no completed analysis', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, root_cause_summary: rcaTestSummary({ state: 'none', analysis_id: undefined, outcome: undefined, top_hypothesis: undefined }) } as unknown as RunArchiveReport
+    mocks.api.getRootCauseAssessment.mockResolvedValue(rcaTestResponse({ state: 'none', analysis_id: undefined, assessment: undefined }))
+    await act(async () => root.render(<RunReportPage testId="run-1" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    await act(async () => (mocks.outcomeProps as { onRootCause?: (action: string) => void }).onRootCause?.('open'))
+    expect(onNavigateReport).toHaveBeenLastCalledWith(expect.objectContaining({ section: 'diagnostics', analysis: undefined, focus: 'root-cause' }))
   })
 
   it('keeps root cause out of Summary and Diagnostics where the project does not present it', async () => {

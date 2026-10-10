@@ -121,6 +121,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Settings.GitHub.Actions = s.stampGitHubActionsPolicyUpdate(r, storage.GitHubActionsPolicy{}, req.Settings.GitHub.Actions)
+	req.Settings.Analysis = s.stampCreatedProjectAnalysisSettings(r, req.Settings.Analysis)
 	domainID, categoryID, err := s.resolveProjectPlacement(stringPtrValue(req.DomainID), stringPtrValue(req.CategoryID))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid project placement: "+err.Error())
@@ -281,6 +282,10 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	// (PUT /projects/{id}/telemetry-policy, audited there): a settings form
 	// resending a stale copy must never revert one.
 	req.Settings.Telemetry = project.Settings.Telemetry
+	// Analysis opt-ins likewise change only through
+	// PUT /projects/{id}/analysis-settings, which a project administrator
+	// makes and which is stamped and audited there.
+	req.Settings.Analysis = project.Settings.Analysis
 	project.Settings = req.Settings
 	updater, supported := s.store.(interface {
 		UpdateProjectIfUnchanged(project *storage.Project, expectedUpdatedAt time.Time) (bool, error)

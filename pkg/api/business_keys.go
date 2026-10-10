@@ -31,12 +31,6 @@ import (
 // joins operator-supplied values, which are never stored, to the archived
 // requests by digest and to the source's logs by value.
 
-// businessKeyProjectEnabled says whether a project uses business keys
-// (APEXLOAD_BUSINESS_KEY_PROJECTS).
-func businessKeyProjectEnabled(project string) bool {
-	return projectListed("APEXLOAD_BUSINESS_KEY_PROJECTS", project)
-}
-
 const (
 	businessKeyDigestPrefix = "bk1:"
 	businessKeyDigestDomain = "apexload.business-key.v1\x00"
@@ -226,7 +220,7 @@ type RunArchiveBusinessKeys struct {
 // mappings and its groups' effective scripts. A group whose script cannot be
 // read is treated as redacting, so a value is never kept by mistake.
 func (tr *TestRunner) runArchiveBusinessKeys(project string, groups []TestGroup, groupSpecs []engine.GroupConfig) *RunArchiveBusinessKeys {
-	if tr == nil || !businessKeyProjectEnabled(project) {
+	if tr == nil || !businessKeyProjectEnabled(tr.projectStore, project) {
 		return nil
 	}
 	mappings, err := loadBusinessKeyMappings(tr.testStore, project)

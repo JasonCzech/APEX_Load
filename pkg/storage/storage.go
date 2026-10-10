@@ -1124,13 +1124,44 @@ type ProjectTelemetryPolicy struct {
 	ClientRenderEvidence bool `json:"client_render_evidence,omitempty"`
 }
 
+// ProjectAnalysisSettings are a project's analysis opt-ins. Each flag is on
+// when it is set here or when the deployment's matching environment list
+// names the project; the environment lists stay deployment-wide overrides.
+// The block changes only through PUT /projects/{id}/analysis-settings, which
+// stamps Revision, UpdatedAt and UpdatedBy and audits the change.
+type ProjectAnalysisSettings struct {
+	RootCause    ProjectRootCauseSettings   `json:"root_cause"`
+	BusinessKeys ProjectBusinessKeySettings `json:"business_keys"`
+	Revision     int64                      `json:"revision"`
+	UpdatedAt    time.Time                  `json:"updated_at"`
+	UpdatedBy    string                     `json:"updated_by,omitempty"`
+}
+
+// ProjectRootCauseSettings gate root-cause v2 for a project. Enabled computes
+// analyses, Present shows them in summaries and reports, AutoAnalyze queues
+// one for every archived run (it needs Enabled) and AutoEnrich freezes an
+// enriched evidence revision when a run's archive is finalized.
+type ProjectRootCauseSettings struct {
+	Enabled     bool `json:"enabled"`
+	Present     bool `json:"present"`
+	AutoAnalyze bool `json:"auto_analyze"`
+	AutoEnrich  bool `json:"auto_enrich"`
+}
+
+// ProjectBusinessKeySettings gate business-key digests and lookups.
+type ProjectBusinessKeySettings struct {
+	Enabled bool `json:"enabled"`
+}
+
 type ProjectSettings struct {
-	Authoring          *ProjectAuthoringPolicy `json:"authoring,omitempty"`
-	Telemetry          *ProjectTelemetryPolicy `json:"telemetry,omitempty"`
-	RedactionRules     []engine.RedactionRule  `json:"redaction_rules,omitempty"`
-	MaxConcurrentTests int                     `json:"max_concurrent_tests,omitempty"`
-	MaxVUsers          int                     `json:"max_vusers,omitempty"`
-	GitHub             GitHubProjectPolicy     `json:"github,omitempty"`
+	Authoring *ProjectAuthoringPolicy `json:"authoring,omitempty"`
+	Telemetry *ProjectTelemetryPolicy `json:"telemetry,omitempty"`
+	// Analysis holds the project's analysis opt-ins; nil means none is set.
+	Analysis           *ProjectAnalysisSettings `json:"analysis,omitempty"`
+	RedactionRules     []engine.RedactionRule   `json:"redaction_rules,omitempty"`
+	MaxConcurrentTests int                      `json:"max_concurrent_tests,omitempty"`
+	MaxVUsers          int                      `json:"max_vusers,omitempty"`
+	GitHub             GitHubProjectPolicy      `json:"github,omitempty"`
 	// Per-test hard caps (reject at creation, not queue). MaxVUsersPerTest bounds
 	// a single test's VUser count; MaxTestDurationMinutes bounds a single test's
 	// duration. Zero means no limit.

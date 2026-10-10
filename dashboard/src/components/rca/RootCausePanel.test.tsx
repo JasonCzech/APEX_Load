@@ -9,10 +9,11 @@ import type { RunArchiveReport } from '../../types'
 import type { ExemplarPage, RcaAnalysisResponse } from '../../types/rca'
 import RootCausePanel from './RootCausePanel'
 import { normalizeRcaAssessment } from './rcaModel'
-import { rcaTestResponse } from './rcaTestFixture'
+import { rcaTestResponse, rcaTestSummary } from './rcaTestFixture'
+import type { RcaHypothesisActions } from './RootCausePanel'
 import type { RootCauseAnalysisModel } from './useRootCauseAnalysis'
 
-const mocks = vi.hoisted(() => ({ api: { getTestArchiveExemplars: vi.fn(), downloadTestArchiveArtifact: vi.fn(), getRootCauseCritiques: vi.fn() } }))
+const mocks = vi.hoisted(() => ({ api: { getTestArchiveExemplars: vi.fn(), downloadTestArchiveArtifact: vi.fn(), getRootCauseCritiques: vi.fn(), getRootCauseWindowLinks: vi.fn() } }))
 vi.mock('../../hooks/useApi', () => ({ useApi: () => mocks.api }))
 
 const exemplar = (timestamp: string, trace: string) => ({
@@ -48,6 +49,7 @@ describe('RootCausePanel', () => {
     root = createRoot(container)
     onRouteChange.mockReset()
     mocks.api.getRootCauseCritiques.mockReset().mockResolvedValue({ critiques: [] })
+    mocks.api.getRootCauseWindowLinks.mockReset().mockResolvedValue({ links: [] })
     mocks.api.getTestArchiveExemplars.mockReset().mockResolvedValue({
       exemplars: [exemplar('2026-10-05T12:04:00Z', 'trace-in-1'), exemplar('2026-10-05T12:05:30Z', 'trace-in-2')],
       total: 2,
@@ -216,5 +218,103 @@ describe('RootCausePanel', () => {
     expect(container.textContent).not.toContain('earlier revision')
     await render(model({ ...rcaTestResponse(), archive_changed: true }))
     expect(container.textContent).toContain("This analysis judged an earlier revision of the run's archive; evidence archived since is not in it. Re-analyze to include it.")
+  })
+
+  it('shows the run\'s largest changes on its timeline when no hypothesis is open', async () => {
+    await render(model(rcaTestResponse()))
+    const overview = container.querySelector('[aria-label="Largest changes"]')!
+    expect(overview.getAttribute('data-report-focus')).toBe('rca-changes')
+    expect(overview.textContent).toContain('Change: Checkout · p95 latency rose +300 ms')
+    expect(overview.textContent).toContain('Suspect run from 2026-10-05 12:04:30 UTC')
+    await act(async () => Array.from(overview.querySelectorAll('button')).find(b => b.textContent === 'Focus Checkout · p95 latency')!.click())
+    expect(onRouteChange).toHaveBeenLastCalledWith({ analysis: 'rca-1', rev: '2', hypothesis: undefined, window: '2026-10-05T12:03:10.000Z~2026-10-05T12:06:00.000Z' })
+    // A run whose hypotheses none support still shows what moved.
+    await render(model(rcaTestResponse({ assessment: { ...rcaTestResponse().assessment!, outcome: 'no_supported_hypothesis', hypotheses: [] } })))
+    expect(container.textContent).toContain('2 series changed, but no signature explains the symptoms')
+    expect(container.querySelector('[aria-label="Largest changes"]')).not.toBeNull()
+    // With a hypothesis open its own drill-down replaces the overview.
+    await render(model(rcaTestResponse()), { analysis: 'rca-1', hypothesis: 'hypothesis-cpu' })
+    expect(container.querySelector('[aria-label="Largest changes"]')).toBeNull()
+  })
+
+  it('states the analysis origin and the series it judged', async () => {
+    await render(model(rcaTestResponse({ origin: 'automatic' })))
+    const facts = container.querySelector('.rca-facts')!.textContent || ''
+    expect(facts).toContain('AnalysisAutomatic · revision 2')
+    expect(facts).toContain('Series judged12 of 12 · Complete')
+    expect(container.textContent).toContain('automatic analysis, revision 2')
+  })
+
+  it('says an automatic analysis is on its way before any has completed', async () => {
+    const latest = { analysis_id: 'rca-5', revision: 5, state: 'queued' as const, origin: 'automatic' as const, created_at: '2026-10-05T12:20:00Z' }
+    await act(async () => {
+      root.render(<RootCausePanel testId="run-1" model={model({ state: 'none', presented: true })} report={report} history={[]} canAnalyze route={{}} onRouteChange={onRouteChange}
+        liveSummary={rcaTestSummary({ state: 'queued', analysis_id: undefined, outcome: undefined, top_hypothesis: undefined, latest })} />)
+    })
+    expect(container.textContent).toContain('Automatic analysis revision 5 is queued; it replaces this view when it completes.')
+    expect(container.textContent).not.toContain('No root-cause analysis has completed')
+    expect(button('Analyze')!.disabled).toBe(true)
+    await act(async () => {
+      root.render(<RootCausePanel testId="run-1" model={model({ state: 'none', presented: true })} report={report} history={[]} canAnalyze route={{}} onRouteChange={onRouteChange}
+        liveSummary={rcaTestSummary({ state: 'failed', analysis_id: undefined, outcome: undefined, top_hypothesis: undefined, latest: { ...latest, state: 'failed' } })} />)
+    })
+    expect(container.querySelector('[role="alert"]')!.textContent).toBe("The run's automatic analysis failed. Analyze to try again.")
+  })
+
+  it('points an analyst at the project\'s analysis settings when root cause is off', async () => {
+    await act(async () => {
+      root.render(<RootCausePanel testId="run-1" model={model(rcaTestResponse({ presented: false }))} report={report} history={[]} canAnalyze route={{}} onRouteChange={onRouteChange} settingsHref="#/settings?setting=analysis" />)
+    })
+    const link = container.querySelector('[role="note"] a')!
+    expect(link.textContent).toBe('Settings › Project › Analysis')
+    expect(link.getAttribute('href')).toBe('#/settings?setting=analysis')
+    await render(model(rcaTestResponse({ presented: false })))
+    expect(container.textContent).toContain('A project administrator turns it on in Settings › Project › Analysis.')
+  })
+
+  it('names the monitor sources behind a coverage gap with links to their evidence', async () => {
+    const assessment = rcaTestResponse().assessment!
+    const coverage = [{ evidence: 'monitor_sources', status: 'partial' as const, detail: '2 sources, 1 incomplete', sources: [{ id: 'elastic-logs', pack: 'elastic-query', state: 'failed', reason: 'query_failed', required: true }, { id: 'prom', pack: 'prometheus', state: 'completed' }] }]
+    await act(async () => {
+      root.render(<RootCausePanel testId="run-1" model={model(rcaTestResponse({ assessment: { ...assessment, coverage } }))} report={report} history={[]} canAnalyze route={{}} onRouteChange={onRouteChange}
+        monitorEvidenceHref="#/report/run-1?section=evidence&focus=monitor-evidence" monitorSourcesHref="#/monitoring?category=telemetry" />)
+    })
+    const gaps = container.querySelector('[aria-label="Monitor sources with gaps"]')!
+    expect(gaps.textContent).toContain('elastic-query source elastic-logs (required): Query failed')
+    expect(gaps.textContent).not.toContain('prom')
+    expect(Array.from(gaps.querySelectorAll('a')).map(a => a.getAttribute('href'))).toEqual(['#/report/run-1?section=evidence&focus=monitor-evidence', '#/monitoring?category=telemetry'])
+  })
+
+  it('hands a hypothesis to the report\'s other tools for editors', async () => {
+    const actions: RcaHypothesisActions = {
+      recordFinding: vi.fn().mockResolvedValue('Added to the Executive report\'s findings.'),
+      annotate: vi.fn().mockRejectedValue(new Error('This hypothesis has no onset to place on the timeline.')),
+      addNote: vi.fn(),
+    }
+    await act(async () => {
+      root.render(<RootCausePanel testId="run-1" model={model(rcaTestResponse())} report={report} history={[]} canAnalyze route={{}} onRouteChange={onRouteChange} hypothesisActions={actions} onCopyLink={vi.fn()} />)
+    })
+    const first = container.querySelectorAll('.rca-hypothesis')[0]
+    const action = (name: string) => Array.from(first.querySelectorAll('button')).find(b => b.textContent === name)!
+    await act(async () => action('Record as finding').click())
+    expect(actions.recordFinding).toHaveBeenCalledWith(expect.objectContaining({ id: 'hypothesis-cpu' }), expect.objectContaining({ analysis_id: 'rca-1' }))
+    expect(first.querySelector('[role="status"]')!.textContent).toBe("Added to the Executive report's findings.")
+    await act(async () => action('Annotate timeline').click())
+    expect(first.querySelector('[role="alert"]')!.textContent).toBe('This hypothesis has no onset to place on the timeline.')
+    await act(async () => action('Add test note').click())
+    expect(actions.addNote).toHaveBeenCalled()
+    expect(button('Copy link')).toBeDefined()
+    // Viewers get none of them.
+    await render(model(rcaTestResponse()))
+    expect(container.querySelector('.rca-hypothesis-actions')).toBeNull()
+  })
+
+  it('opens the hypothesis span in the run\'s trace providers', async () => {
+    mocks.api.getRootCauseWindowLinks.mockResolvedValue({ links: [{ provider: 'elasticsearch', connection_id: 'elk-1', url: 'https://kibana.example/app/discover#/?_g=(time:(from:a,to:b))' }] })
+    await render(model(rcaTestResponse()), { analysis: 'rca-1', hypothesis: 'hypothesis-cpu' })
+    expect(mocks.api.getRootCauseWindowLinks).toHaveBeenCalledWith('run-1', '2026-10-05T12:01:25.000Z', '2026-10-05T12:06:55.000Z', expect.objectContaining({ signal: expect.anything() }))
+    const links = container.querySelector('.rca-window-links')!
+    expect(links.textContent).toContain('Open the hypothesis span in Elasticsearch')
+    expect(links.querySelector('a')!.getAttribute('target')).toBe('_blank')
   })
 })

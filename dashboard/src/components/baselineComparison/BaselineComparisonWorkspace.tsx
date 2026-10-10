@@ -9,11 +9,15 @@ import { comparisonColors, comparisonMagnitude, comparisonApi, comparisonVerdict
 import { ComparisonDetail } from './ComparisonDetail'
 import './BaselineComparisonWorkspace.css'
 
-type Props = { test: TestSummary; initialBaseline?: string; comparisonId?: string; canEditPolicy?: boolean; onSnapshot: (id: string) => void }
+// onAnalyzeRootCause analyzes the run's root cause against one baseline and
+// resolves to what happened.
+type Props = { test: TestSummary; initialBaseline?: string; comparisonId?: string; canEditPolicy?: boolean; onSnapshot: (id: string) => void; onAnalyzeRootCause?: (baselineId: string) => Promise<string> }
 const thresholdFields = [['load_tolerance_pct', 'Load tolerance %'], ['latency_pct', 'Latency change %'], ['latency_ms', 'Minimum latency change (ms)'], ['throughput_pct', 'Throughput change %'], ['error_points', 'Error change (percentage points)'], ['resource_pct', 'Resource change %']] as const
 const errorText = (e: unknown) => e instanceof Error ? e.message : 'The comparison could not be loaded.'
 
-export default function BaselineComparisonWorkspace({ test, initialBaseline, comparisonId, canEditPolicy = false, onSnapshot }: Props) {
+export default function BaselineComparisonWorkspace({ test, initialBaseline, comparisonId, canEditPolicy = false, onSnapshot, onAnalyzeRootCause }: Props) {
+  const [rcaBusy, setRcaBusy] = useState(false)
+  const [rcaMessage, setRcaMessage] = useState<{ text: string; error: boolean } | null>(null)
   const workspaceRef = useRef<HTMLDivElement>(null)
   const [contextTop, setContextTop] = useState(84)
   const [candidates, setCandidates] = useState<RunIdentity[]>([])
@@ -146,7 +150,11 @@ export default function BaselineComparisonWorkspace({ test, initialBaseline, com
   return <div ref={workspaceRef} className="bc-workspace">
     {snapshot && <aside style={{ top: contextTop }} className="bc-persistent-context" aria-label="Applied comparison context"><strong>{snapshot.baselines.length} baselines</strong><span>{snapshot.request.minimum_load || 0}–{snapshot.request.maximum_load || 'all'} observed VUsers · ±{snapshot.policy.load_tolerance_pct}%</span><span>{Object.keys(snapshot.request.windows || {}).length ? 'Custom measurement windows' : 'Stable windows across each run'} · policy {snapshot.policy.revision || 'defaults'}</span><span>{dirty ? 'Draft changes unapplied' : 'Saved assessment'}</span></aside>}
     <section className="bc-context run-report-panel" aria-label="Baseline comparison controls">
-      <header><div><p className="bc-eyebrow">Release over release</p><h2>Baseline Comparison</h2><p>Explain what changed, at comparable load. Findings are advisory.</p></div><button type="button" className="btn btn-primary" disabled={busy || policyLoading || snapshotLoading || selected.length === 0} onClick={() => void apply()}>{busy ? 'Working…' : snapshot ? 'Apply comparison' : 'Compare selected baselines'}</button></header>
+      <header><div><p className="bc-eyebrow">Release over release</p><h2>Baseline Comparison</h2><p>Explain what changed, at comparable load. Findings are advisory.</p></div><div className="bc-header-actions"><button type="button" className="btn btn-primary" disabled={busy || policyLoading || snapshotLoading || selected.length === 0} onClick={() => void apply()}>{busy ? 'Working…' : snapshot ? 'Apply comparison' : 'Compare selected baselines'}</button>
+        {onAnalyzeRootCause && <button type="button" className="btn btn-secondary" disabled={rcaBusy || selected.length !== 1} title={selected.length === 1 ? undefined : 'Select exactly one baseline to analyze the root cause against it.'}
+          onClick={() => { setRcaBusy(true); setRcaMessage(null); void onAnalyzeRootCause(selected[0]).then(text => setRcaMessage({ text, error: false }), (err: unknown) => setRcaMessage({ text: err instanceof Error ? err.message : 'The analysis could not be started', error: true })).finally(() => setRcaBusy(false)) }}>
+          {rcaBusy ? 'Starting…' : 'Analyze root cause against this baseline'}</button>}
+        {rcaMessage && <span className={rcaMessage.error ? 'run-report-error' : 'run-report-muted'} role={rcaMessage.error ? 'alert' : 'status'}>{rcaMessage.text}</span>}</div></header>
       <div className="bc-chips" aria-label="Selected baselines">{selected.map((id, i) => <span key={id} style={{ borderLeft: `4px solid ${comparisonColors[i + 1]}` }}>{runNames.get(id) || id}<button type="button" aria-label={`Remove baseline ${runNames.get(id) || id}`} disabled={busy} onClick={() => toggle(id)}>×</button></span>)}<small>{selected.length}/5 baselines</small></div>
       <details open={!snapshot}><summary>Select pinned baselines</summary><fieldset disabled={busy || policyLoading || snapshotLoading}><div className="bc-controls"><label>Find baseline<input type="search" value={query} onChange={e => { setQuery(e.target.value); setOffset(0) }} placeholder="Run, release, or scenario" /></label><label className="bc-check"><input type="checkbox" checked={other} onChange={e => { setOther(e.target.checked); setOffset(0) }} />Include other scenarios in this application</label></div>
         {loading && <p role="status">Loading pinned baselines…</p>}

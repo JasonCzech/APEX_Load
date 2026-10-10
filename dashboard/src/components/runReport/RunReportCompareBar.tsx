@@ -14,6 +14,9 @@ interface Props {
   error?: string
   onCompareChange: (id: string) => void
   onPinBaseline: () => Promise<boolean>
+  // onAnalyzeRootCause analyzes the run's root cause against the selected
+  // baseline and resolves to what happened.
+  onAnalyzeRootCause?: () => Promise<string>
 }
 
 function DeltaCell({ label, value }: { label: string; value?: { label: string; tone: string } }) {
@@ -36,7 +39,22 @@ export default function RunReportCompareBar({
   error,
   onCompareChange,
   onPinBaseline,
+  onAnalyzeRootCause,
 }: Props) {
+  const [analyzing, setAnalyzing] = useState(false)
+  const [analyzeMessage, setAnalyzeMessage] = useState<{ text: string; error: boolean } | null>(null)
+  const analyze = async () => {
+    if (!onAnalyzeRootCause || analyzing) return
+    setAnalyzing(true)
+    setAnalyzeMessage(null)
+    try {
+      setAnalyzeMessage({ text: await onAnalyzeRootCause(), error: false })
+    } catch (err) {
+      setAnalyzeMessage({ text: err instanceof Error ? err.message : 'The analysis could not be started', error: true })
+    } finally {
+      setAnalyzing(false)
+    }
+  }
   const [draft, setDraft] = useState(compareId)
   const [pinning, setPinning] = useState(false)
   const [pinMessage, setPinMessage] = useState('')
@@ -101,6 +119,12 @@ export default function RunReportCompareBar({
           {pinning ? 'Pinning…' : 'Pin baseline'}
         </button>
         {pinMessage && <span role="status">{pinMessage}</span>}
+        {onAnalyzeRootCause && compareId && (
+          <button className="btn btn-sm btn-secondary" type="button" onClick={() => void analyze()} disabled={analyzing}>
+            {analyzing ? 'Starting…' : 'Analyze root cause against this baseline'}
+          </button>
+        )}
+        {analyzeMessage && <span className={analyzeMessage.error ? 'run-report-error' : undefined} role={analyzeMessage.error ? 'alert' : 'status'}>{analyzeMessage.text}</span>}
       </div>
       {loading && <p role="status">Loading baseline…</p>}
       {error && <p className="run-report-error">{error}</p>}

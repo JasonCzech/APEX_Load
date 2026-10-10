@@ -11,6 +11,8 @@ var runArchiveAPIRouteCatalog = preserveRawAccessRequirementsForMethod(apiRouteC
 
 		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/tests/{id}/telemetry/client-render", "handleReportClientRender", viewerProjectAccessWithBodyLimit(resolveTestProjectID, clientRenderMaxBodyBytes), func(s *Server) http.Handler { return http.HandlerFunc(s.handleReportClientRender) }),
 		newAuthenticatedAPIRoute(http.MethodPut, "/api/v1/projects/{id}/telemetry-policy", "handleUpdateProjectTelemetryPolicy", editorProjectAccessWithBodyLimit(resolveProjectIDFromPath, 4<<10), func(s *Server) http.Handler { return http.HandlerFunc(s.handleUpdateProjectTelemetryPolicy) }),
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/projects/{id}/analysis-settings", "handleGetProjectAnalysisSettings", viewerProjectAccess(resolveProjectIDFromPath), func(s *Server) http.Handler { return http.HandlerFunc(s.handleGetProjectAnalysisSettings) }),
+		newAuthenticatedAPIRoute(http.MethodPut, "/api/v1/projects/{id}/analysis-settings", "handleUpdateProjectAnalysisSettings", projectAdminAccessWithBodyLimit(resolveProjectIDFromPath, 4<<10), func(s *Server) http.Handler { return http.HandlerFunc(s.handleUpdateProjectAnalysisSettings) }),
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/messaging-progress", "handleMessagingProgress", analysisQueryAccess(resolveTestProjectID), func(s *Server) http.Handler { return http.HandlerFunc(s.handleMessagingProgress) }),
 		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/tests/{id}/native-series", "handleNativeEvidenceSeries", analysisQueryAccess(resolveTestProjectID), func(s *Server) http.Handler { return http.HandlerFunc(s.handleNativeEvidenceSeries) }),
 		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/tests/{id}/archive/native-series", "handleNativeArchiveSeries", analysisQueryAccess(resolveTestProjectID), func(s *Server) http.Handler { return http.HandlerFunc(s.handleNativeArchiveSeries) }),
@@ -88,6 +90,9 @@ var runArchiveAPIRouteCatalog = preserveRawAccessRequirementsForMethod(apiRouteC
 		}),
 		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/cancel", "handleCancelRCAAnalysis", editorProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleCancelRCAAnalysis)
+		}),
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/root-cause/links", "handleGetRCAWindowLinks", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleGetRCAWindowLinks)
 		}),
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/bundle", "handleGetRCABundle", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetRCABundle)

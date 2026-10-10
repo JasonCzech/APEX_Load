@@ -573,10 +573,23 @@ func (tr *TestRunner) attachFinalizedRunArchive(testID string, record *storage.R
 	// are released, and counted as dropped so a sidecar written later (its
 	// first write failed, then a refresh) is marked truncated.
 	releaseHeldJointPublicationsLocked(current)
+	tr.notifyArchiveAttached(testID)
+}
+
+// notifyArchiveAttached runs the archive-attached hook for a run whose
+// archive was just attached, in its own goroutine: the hook reads the run
+// and its archive, so it waits for the runner lock the caller may hold.
+func (tr *TestRunner) notifyArchiveAttached(testID string) {
 	if hook := tr.archiveAttachedHook; hook != nil {
-		// Outside the runner lock: the hook reads the run and its archive.
 		go hook(testID)
 	}
+}
+
+// sameAttachedArchive reports whether a run already holds this archive
+// publication, attached (and announced) by finalization itself. Callers hold
+// tr.mu.
+func sameAttachedArchive(attached, next *storage.RunArchiveRecord) bool {
+	return attached != nil && next != nil && attached.ManifestSHA256 != "" && attached.ManifestSHA256 == next.ManifestSHA256
 }
 
 // publishRunArchive uploads all object-backed artifacts before manifest.json.

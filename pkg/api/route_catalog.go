@@ -516,6 +516,14 @@ func projectAdminAccess(lookup projectScopedLookup) accessRequirement {
 	}
 }
 
+// projectAdminAccessWithBodyLimit is projectAdminAccess with a request
+// body-size limit.
+func projectAdminAccessWithBodyLimit(lookup projectScopedLookup, maxBody int64) accessRequirement {
+	req := projectAdminAccess(lookup)
+	req.MaxBodyBytes = maxBody
+	return req
+}
+
 func accessRequirementFromRouteCatalog(method string, path string) (accessRequirement, bool) {
 	return accessRequirementFromCompiledRouteCatalog(indexedRouteCatalogAuthRules, method, path)
 }

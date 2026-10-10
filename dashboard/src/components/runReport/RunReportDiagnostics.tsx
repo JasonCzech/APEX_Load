@@ -19,8 +19,8 @@ export default function RunReportDiagnostics({ report, loading, error }: Props) 
     <section className="run-report-panel run-report-diagnostics">
       <div className="run-report-section-heading">
         <div>
-          <h2>Diagnostics</h2>
-          <p>Network and generator resource evidence.</p>
+          <h2>Network and generator evidence</h2>
+          <p>Network phases and the load generators' resource peaks.</p>
         </div>
       </div>
       {loading && <p role="status">Loading diagnostics…</p>}

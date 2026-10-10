@@ -167,6 +167,12 @@ Project owners can check scope, script configuration and test data. Administrato
 
 This documentation ships with the dashboard build shown below each article. It describes this checkout's capabilities; a remote controller or generator may run another version. Use the sidebar build information and current API capability responses to compare them.
 
+### October 9, 2026 root-cause analysis across the dashboard
+
+- Added [Root-Cause Analysis](APPLICATION_USER_GUIDE.md#root-cause-analysis): where root cause appears (Summary, Results, the dashboard, Command Center, the Performance timeline, error patterns), how to read the panel when no cause is supported, and the hand-offs to findings, timeline annotations and test notes.
+- Projects now turn root-cause analysis on in Settings → Project analysis, including automatic analysis of every archived run; deployment lists still apply.
+- Notification routes can subscribe to *Root-cause analysis completed* and *Run validity suspect or invalid*; CI reports the root cause beside validity.
+
 ### September 24, 2026 documentation corrections
 
 - Corrected the `apexctl` exit-code table (0 success, 1 test or SLA failure, 2 usage or configuration, 3 controller or transport, including `wait` timeouts) and added the `library` and `version` commands.
@@ -251,6 +257,10 @@ Confirm the run is active and the dashboard's live connection is healthy. Check 
 ### Reports or archives are unavailable
 
 Check whether the run is still STOPPING or finalizing archives, whether your account can read the run, and whether retention has removed its evidence. Use a report profile that supports the requested format. Do not equate a missing archive with a zero-error test. Preserve the run ID and failure message; use [Backup, recovery & retention](ENTERPRISE_PLATFORM_RUNBOOK.md#enterprise-data-platform-operations-runbook).
+
+### Root-cause analysis is missing or pending
+
+If Diagnostics says root-cause analysis is not enabled, a project administrator turns it on in [Settings → Project analysis](#/settings?setting=analysis). If a run shows **No analysis yet**, an editor can **Analyze** it; projects that analyze automatically queue one when the run's archive is finalized, and an archive still being refreshed is analyzed once the refresh finishes. **Analysis queued** waits behind other analyses (requests run before automatic ones). If an analysis failed, the panel names the reason; **Re-analyze**, with **Capture evidence afresh** after late monitoring evidence. **Too little evidence** means few series could be judged: check Evidence coverage for missing monitor sources or trace context. See [Root-Cause Analysis](APPLICATION_USER_GUIDE.md#root-cause-analysis).
 
 ### Still blocked
 

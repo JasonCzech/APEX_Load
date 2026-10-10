@@ -109,6 +109,7 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	analysisID := flags.String("analysis-id", "", "root-cause v2 analysis ID")
 	enrich := flags.Bool("enrich", false, "capture a new root-cause evidence revision before analysis")
 	baselineID := flags.String("baseline-id", "", "baseline run for root-cause analysis")
+	wait := flags.Duration("wait", 0, "rca analyze, status and show: poll up to this long until the analysis ends (show: until an automatic analysis completes); at most 10m")
 	if err := flags.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -120,6 +121,12 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	}
 	if *failOnRegression && (kind != "analysis" || action != "baseline") {
 		return errors.New("--fail-on-regression requires analysis baseline")
+	}
+	if *wait != 0 && (kind != "rca" || (action != "analyze" && action != "status" && action != "show")) {
+		return errors.New("--wait requires rca analyze, status or show")
+	}
+	if *wait < 0 || *wait > maxRCAWait {
+		return fmt.Errorf("--wait must be between 0 and %s", maxRCAWait)
 	}
 	if kind == "analysis" && analysisCLIIdentityCommand(action) {
 		if err := analysisCLIScopeAdmission(*id, *project); err != nil {
@@ -545,6 +552,14 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 		_, err = fmt.Fprintln(out, string(response))
 		return err
 	}
+	if kind == "rca" && *wait > 0 {
+		response, err := client.waitForRCAAnalysis(ctx, method, path, body, *id, *wait)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(out, string(response))
+		return err
+	}
 	if !*failOnRegression {
 		// Results stream to the output as they arrive; nothing holds a
 		// whole response in memory.
@@ -564,6 +579,57 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 		return checkBaselineVerdict(response)
 	}
 	return err
+}
+
+// maxRCAWait bounds rca --wait.
+const maxRCAWait = 10 * time.Minute
+
+// rcaWaitPoll is how often rca --wait polls.
+var rcaWaitPoll = 2 * time.Second
+
+// rcaWaitState is what rca --wait reads from an analysis response.
+type rcaWaitState struct {
+	AnalysisID  string `json:"analysis_id"`
+	State       string `json:"state"`
+	AutoAnalyze bool   `json:"auto_analyze"`
+}
+
+// waitForRCAAnalysis makes an rca request and, while the analysis it answers
+// with is queued or running (or, for show, while none has completed but the
+// project analyzes every run automatically), polls until it ends or wait
+// passes. It returns the last response; reaching the deadline is not an
+// error, so a caller still sees the state.
+func (c *ApiClient) waitForRCAAnalysis(ctx context.Context, method, path string, body []byte, testID string, wait time.Duration) ([]byte, error) {
+	response, err := c.workflowRequest(ctx, method, path, bytes.NewReader(body), "application/json")
+	if err != nil {
+		return nil, err
+	}
+	deadline := time.Now().Add(wait)
+	for {
+		var state rcaWaitState
+		if json.Unmarshal(response, &state) != nil {
+			return response, nil
+		}
+		pending := state.State == "queued" || state.State == "running"
+		awaitingAutomatic := state.State == "none" && state.AutoAnalyze
+		if (!pending && !awaitingAutomatic) || !time.Now().Before(deadline) {
+			return response, nil
+		}
+		select {
+		case <-ctx.Done():
+			return response, nil
+		case <-time.After(rcaWaitPoll):
+		}
+		next := "/api/v1/tests/" + url.PathEscape(testID) + "/archive/root-cause/v2"
+		if pending && state.AnalysisID != "" {
+			next = "/api/v1/tests/" + url.PathEscape(testID) + "/archive/root-cause/analyses/" + url.PathEscape(state.AnalysisID)
+		}
+		latest, err := c.workflowRequest(ctx, http.MethodGet, next, nil, "")
+		if err != nil {
+			return response, nil
+		}
+		response = latest
+	}
 }
 
 // checkPanelRevision refuses a panel response that is not the revision asked

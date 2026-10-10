@@ -3267,6 +3267,26 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/projects/{id}/analysis-settings",
+      "operationId": "handleGetProjectAnalysisSettings",
+      "summary": "Get Project Analysis Settings",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{id}/analysis-settings",
+      "operationId": "handleUpdateProjectAnalysisSettings",
+      "summary": "Update Project Analysis Settings",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/projects/{id}/entitlements/usage",
       "operationId": "handleGetProjectEntitlementsUsage",
       "summary": "Get Project Entitlements Usage",
@@ -6764,6 +6784,16 @@
       "public": false,
       "authenticated": true,
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/root-cause/links",
+      "operationId": "handleGetRCAWindowLinks",
+      "summary": "Get RCA Window Links",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
     },
     {
       "method": "GET",

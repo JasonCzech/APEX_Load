@@ -172,6 +172,10 @@ type ciRunResponse struct {
 
 	// Validity is the run's validity verdict and the gate it was judged by.
 	Validity *ciRunValidity `json:"validity,omitempty"`
+	// RootCause is the run's root-cause analysis in brief, for projects that
+	// present root cause. It never changes the outcome. An automatic
+	// analysis is usually still queued or running when the run ends.
+	RootCause *ciRunRootCause `json:"root_cause,omitempty"`
 
 	// TelemetryVerdict is the run's telemetry acceptance verdict, beside the
 	// application outcome; only a fail_ci policy changes Outcome (C7).
@@ -2030,6 +2034,7 @@ func (s *Server) buildCIRunResponse(ctx context.Context, test *ManagedTest) (ciR
 	if ciRunTerminal(response.Status) {
 		evidence, evidenceErr := s.validatedCIRunArchiveEvidence(ctx, test)
 		applyCITerminalEvidence(&response, evidence, evidenceErr)
+		response.RootCause = s.ciRunRootCause(ctx, test)
 	}
 	response.Error = sanitizeCIExternalText(response.Error, ciExternalErrorMaxBytes)
 	response.SLADetails = sanitizeCIExternalDetails(response.SLADetails)

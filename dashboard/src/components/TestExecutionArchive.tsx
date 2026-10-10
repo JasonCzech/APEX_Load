@@ -1,4 +1,5 @@
 import TelemetryPolicy from './TelemetryPolicy'
+import { rcaErrorPatternAnchor } from './rca/rcaModel'
 import ElasticArchiveEvidence from './ElasticArchiveEvidence'
 import MonitorRuleResults from './MonitorRuleResults'
 import PrometheusArchiveEvidence from './PrometheusArchiveEvidence'
@@ -15,7 +16,7 @@ import { handleTabKey } from './tabKeyboard'
 import './TestExecution.css'
 import { Fragment, useMemo, useState } from 'react'
 
-import { BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserLiveMetrics, BrowserPlatformLiveMetrics, MetricsHistoryPoint, RunArchiveAnalysisEdge, RunArchiveAnalysisNode, RunArchiveAnalysisResponse, RunArchiveAnalysisStats, RunArchiveActionStats, RunArchiveReport, RunArchiveSOAPFaultTimelineBucket, RunArchiveSOAPPayloadTimelineBucket, RunArchiveTransactionDrilldown, TestSummary, TransactionEvent } from '../types'
+import { BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserLiveMetrics, BrowserPlatformLiveMetrics, MetricsHistoryPoint, RunArchiveAnalysisEdge, RunArchiveAnalysisNode, RunArchiveAnalysisResponse, RunArchiveAnalysisStats, RunArchiveActionStats, RunArchiveErrorPattern, RunArchiveReport, RunArchiveSOAPFaultTimelineBucket, RunArchiveSOAPPayloadTimelineBucket, RunArchiveTransactionDrilldown, TestSummary, TransactionEvent } from '../types'
 import BrowserBreakdownChart from './BrowserBreakdownChart'
 import BrowserUXAssessment from './BrowserUXAssessment'
 import { SortIndicator as ArchiveSortIndicator } from './SortIndicator'
@@ -76,6 +77,10 @@ type ArchiveView =
   | 'transactions'
 
 interface Props {
+  // errorPatternHypotheses names the root-cause hypotheses an error pattern
+  // overlaps; onOpenHypothesis opens one.
+  errorPatternHypotheses?: (pattern: RunArchiveErrorPattern) => { id: string; rank: number; title: string }[]
+  onOpenHypothesis?: (id: string) => void
   archivePopulation?: 'action' | 'transaction' | 'unknown'
   hideReportExports?: boolean
   view?: ArchiveView
@@ -787,6 +792,8 @@ function renderBrowserSummary(
 }
 
 export default function TestExecutionArchive({
+  errorPatternHypotheses,
+  onOpenHypothesis,
   archivePopulation,
   view = 'all',
   hideReportExports = false,
@@ -1216,16 +1223,21 @@ export default function TestExecutionArchive({
                         </tr>
                       </thead>
                       <tbody>
-                        {archiveReport.error_patterns.map(pattern => (
-                          <tr key={`${pattern.signature}-${pattern.first_seen}`}>
-                            <td className="tx-name">{pattern.sample}</td>
+                        {archiveReport.error_patterns.map(pattern => {
+                          const explained = errorPatternHypotheses?.(pattern) || []
+                          return (
+                          <tr key={`${pattern.signature}-${pattern.first_seen}`} id={rcaErrorPatternAnchor(pattern.signature)}>
+                            <td className="tx-name">{pattern.sample}{explained.length > 0 && <span className="rca-pattern-explained">{explained.map(h => onOpenHypothesis
+                              ? <button key={h.id} type="button" className="btn btn-sm btn-ghost" onClick={() => onOpenHypothesis(h.id)}>Explained by #{h.rank} {h.title}</button>
+                              : <span key={h.id}>Explained by #{h.rank} {h.title}</span>)}</span>}</td>
                             <td>{pattern.count}</td>
                             <td>{formatArchiveTimestamp(pattern.first_seen)}</td>
                             <td>{formatArchiveTimestamp(pattern.latest_seen)}</td>
                             <td>{pattern.actions && pattern.actions.length > 0 ? pattern.actions.join(', ') : MISSING_VALUE}</td>
                             <td>{pattern.snapshot ? 'retained' : MISSING_VALUE}</td>
                           </tr>
-                        ))}
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>

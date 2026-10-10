@@ -135,6 +135,19 @@ describe('TestNotesDialog', () => {
     expect(apiMock.deleteTestNote).toHaveBeenCalledWith('test-1', 'note-1')
   })
 
+  it('opens a new note holding a root-cause draft beside existing notes', async () => {
+    apiMock.listTestNotes.mockResolvedValue({ test_id: 'test-1', notes: [note('note-1', 'Existing note')] })
+    apiMock.createTestNote.mockImplementation(async (_testId: string, body: string) => note('note-2', body))
+    await act(async () => {
+      root.render(<TestNotesDialog testId="test-1" testName="Checkout Run" onClose={() => {}} initialDraft={'Root cause #1: Pool exhaustion\n\nhttps://apex.example/#/report/test-1'} />)
+    })
+    await flush()
+    expect((container.querySelector('textarea') as HTMLTextAreaElement).value).toBe('Root cause #1: Pool exhaustion\n\nhttps://apex.example/#/report/test-1')
+    await click(button('Save'))
+    await flush()
+    expect(apiMock.createTestNote).toHaveBeenCalledWith('test-1', 'Root cause #1: Pool exhaustion\n\nhttps://apex.example/#/report/test-1')
+  })
+
   it('confirms before discarding an unsaved draft', async () => {
     const onClose = vi.fn()
     apiMock.listTestNotes.mockResolvedValue({

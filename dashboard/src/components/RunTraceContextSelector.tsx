@@ -47,6 +47,11 @@ export default function RunTraceContextSelector({ value, onChange, suggest }: Pr
             Monitoring capture is on for this run. Turning on trace context lets captured logs and traces be matched to individual requests.
           </p>
         )}
+        {!enabled && (
+          <p className="setting-desc run-trace-context-hint">
+            Root-cause exemplars and their trace links need W3C trace context. Without it, a hypothesis has no exemplars to open in your APM or log tools.
+          </p>
+        )}
         {active && (
           <label className="run-trace-context-origins">
             <span>Approved origins (one per line, for example https://shop.example.com)</span>

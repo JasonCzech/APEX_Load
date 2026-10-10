@@ -53,6 +53,7 @@ export const PROJECT_SETTINGS_SUBSECTIONS = [
   { id: 'catalog', title: 'Project catalog' },
   { id: 'limits', title: 'Limits' },
   { id: 'github', title: 'GitHub policy' },
+  { id: 'analysis', title: 'Analysis' },
   { id: 'redaction', title: 'Redaction rules' },
   { id: 'secrets', title: 'Project secrets' },
   { id: 'analysis-policies', title: 'Browser & journey policies' },

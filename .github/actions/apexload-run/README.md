@@ -49,6 +49,11 @@ When the action downloads `apexctl`, its pinned `actions/setup-node` step
 provides Node 22 for strict signed-manifest validation; mirror that action and
 toolcache on air-gapped GHES runners.
 
+The `validity` output carries the run's validity verdict. For projects that
+present root cause, the `root-cause` output carries its root cause in one line;
+set `wait-analysis` (for example `5m`) to wait for the automatic analysis after
+the run ends (see [Root-cause summary](../../../docs/CICD_INTEGRATION.md#root-cause-summary)).
+
 Installation, signature, and CLI-startup failures still produce schema-v1 JSON,
 JUnit, a job summary, and the stable action outputs. The composite action defers
 the gate conclusion until those files are finalized, so it fails once in its
