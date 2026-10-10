@@ -82,6 +82,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 53, Name: "evaluation-job-subject", Fingerprint: "c09bb47991735e9b36684bea7c0cb95e68abc177f57adaf6b8f5354c797dfcb2"},
 	{Version: 54, Name: "dashboard-definition-revisions", Fingerprint: "a4489a4353666e183fdb02597b00bdb9d5eae844766f9b2a87f1807d04ad7233"},
 	{Version: 55, Name: "rca-analysis-origin", Fingerprint: "794d179a7c421744813b6404fd11d62e37c359d1297816affe8373f5364fefeb"},
+	{Version: 56, Name: "reverse-generator-target-ownership", Fingerprint: "32550b77652a06cbc16494068759f548a88c8b718acafc0f65a2afbd68669a21"},
 }
 
 type SchemaMigrationRecord struct {

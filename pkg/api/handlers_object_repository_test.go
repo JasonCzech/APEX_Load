@@ -301,3 +301,80 @@ func TestObjectRepositoryFromScript(t *testing.T) {
 		t.Fatalf("expected 404 for unknown script, got %d", missingResp.Code)
 	}
 }
+
+type objectRepositoryConcurrentEditService struct {
+	objectRepositoryService
+	afterSave func()
+}
+
+func (service *objectRepositoryConcurrentEditService) SaveRepository(repository *storage.ObjectRepository) error {
+	if err := service.objectRepositoryService.SaveRepository(repository); err != nil {
+		return err
+	}
+	service.afterSave()
+	return nil
+}
+
+func TestObjectRepositoryBindingPreservesConcurrentScriptEdit(t *testing.T) {
+	for _, concurrentEdit := range []bool{false, true} {
+		name := "unchanged source binds successfully"
+		if concurrentEdit {
+			name = "concurrent source edit rejects stale binding"
+		}
+		t.Run(name, func(t *testing.T) {
+			server := recordingTestServer(t)
+			original := server.runner.StoreScript(&dsl.Script{
+				Name: "Original", Protocol: "browser",
+				Actions: []dsl.Action{{Name: "Search", Type: "browser_click", Selector: "#old"}},
+			})
+			if original == nil {
+				t.Fatal("script creation failed")
+			}
+			if concurrentEdit {
+				server.objectRepositoryService = &objectRepositoryConcurrentEditService{
+					objectRepositoryService: newTestRunnerObjectRepositoryService(server.runner, server.store),
+					afterSave: func() {
+						current, err := server.store.GetScript(original.ID)
+						if err != nil {
+							t.Fatal(err)
+						}
+						current.Name = "Concurrent edit"
+						current.Actions[0].Selector = "#new"
+						if err := server.store.SaveScript(current); err != nil {
+							t.Fatal(err)
+						}
+					},
+				}
+			}
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/object-repositories/from-script", strings.NewReader(`{"project_id":"`+original.ProjectID+`","script_id":"`+original.ID+`","bind_script":true}`))
+			response := httptest.NewRecorder()
+			server.handleObjectRepositoryFromScript(response, request)
+			after, err := server.store.GetScript(original.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			repositories, err := server.store.ListObjectRepositories(original.ProjectID, 100, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if concurrentEdit {
+				if response.Code != http.StatusConflict {
+					t.Fatalf("binding status = %d, want 409: %s", response.Code, response.Body.String())
+				}
+				if after.Name != "Concurrent edit" || after.Actions[0].Selector != "#new" || after.Actions[0].ObjectRef != "" {
+					t.Fatalf("concurrent edit overwritten: %#v", after)
+				}
+				if len(repositories) != 0 {
+					t.Fatalf("failed binding left %d orphan repositories", len(repositories))
+				}
+				return
+			}
+			if response.Code != http.StatusCreated {
+				t.Fatalf("binding status = %d, want 201: %s", response.Code, response.Body.String())
+			}
+			if len(repositories) != 1 || after.Actions[0].ObjectRef != repositories[0].ID+":Search" || after.Actions[0].Selector != "#old" {
+				t.Fatalf("source script was not durably bound: script=%#v repositories=%#v", after, repositories)
+			}
+		})
+	}
+}

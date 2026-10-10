@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"sort"
@@ -128,6 +129,10 @@ func (s *Server) handleGeneratorGatewayConnect(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, "generator and execution-target identities are required")
 		return
 	}
+	if err := storage.ValidateReverseGeneratorIdentity(generatorID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	// Rate-limit before the store lookup so unauthenticated churn cannot drive
 	// database load or WebSocket upgrades, matching every other pre-auth
 	// credential-accepting route (local login, OIDC login, CI exchange).
@@ -148,7 +153,11 @@ func (s *Server) handleGeneratorGatewayConnect(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusUnauthorized, "generator enrollment was rejected")
 		return
 	}
-	intentBound, validIntent := s.validateGeneratorCapacityEnrollment(targetID, generatorID, r.Header.Get(generatorGatewayLaunchHeader))
+	intentBound, validIntent, err := s.validateGeneratorCapacityEnrollment(targetID, generatorID, r.Header.Get(generatorGatewayLaunchHeader))
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "generator enrollment authority is unavailable")
+		return
+	}
 	if strings.EqualFold(strings.TrimSpace(r.Header.Get(generatorGatewayLifecycleHeader)), "burst") || intentBound {
 		if !validIntent {
 			writeError(w, http.StatusUnauthorized, "burst generator launch identity was rejected")
@@ -160,31 +169,38 @@ func (s *Server) handleGeneratorGatewayConnect(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusConflict, "generator enrollment target has ambiguous fleet-pool ownership")
 		return
 	}
+	owners, ok := s.store.(storage.ReverseGeneratorIdentityStore)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "generator enrollment authority is unavailable")
+		return
+	}
+	owned, err := owners.ClaimReverseGeneratorIdentity(targetID, generatorID)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "generator enrollment authority is unavailable")
+		return
+	}
+	if !owned {
+		writeError(w, http.StatusUnauthorized, "generator enrollment was rejected")
+		return
+	}
 	ws, err := generatorGatewayUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}
 	conn := generatorrpc.NewWebSocketConn(ws)
-	generation, err := s.reverseGenerators.Register(generatorID, conn)
-	if err != nil {
-		_ = conn.Close()
-		return
-	}
 	targetAddress := generatorrpc.ReverseTargetPrefix + generatorID
 	if poolID != "" {
 		if err := s.associateDynamicGenerator(generatorID, targetAddress, poolID, "", "ready"); err != nil {
-			s.reverseGenerators.Disconnect(generatorID, generation)
 			_ = conn.Close()
 			return
 		}
 	}
-	s.addReverseTargetSession(targetID, generatorID)
-	if s.runner != nil {
-		if backend, ok := s.runner.getExecutionBackend().(*distributedExecutionBackend); ok {
-			backend.AddTarget(targetAddress)
-		}
+	// Finish durable admission before replacing a previous live transport.
+	generation, err := s.registerReverseGenerator(targetID, generatorID, conn)
+	if err != nil {
+		_ = conn.Close()
+		return
 	}
-	s.broadcastFleetEvent("generator_reverse_connected", map[string]any{"generator_id": generatorID, "execution_target_id": targetID, "target": targetAddress})
 	<-conn.Done()
 	s.reverseGenerators.Disconnect(generatorID, generation)
 	if !s.launchBackground(func() {
@@ -194,16 +210,50 @@ func (s *Server) handleGeneratorGatewayConnect(w http.ResponseWriter, r *http.Re
 		if s.reverseGenerators.Connected(generatorID) {
 			return
 		}
-		s.removeReverseTargetSession(targetID, generatorID)
-		if s.runner != nil {
-			if backend, ok := s.runner.getExecutionBackend().(*distributedExecutionBackend); ok {
-				backend.RemoveTarget(targetAddress)
-			}
-		}
-		s.broadcastFleetEvent("generator_reverse_disconnected", map[string]any{"generator_id": generatorID, "execution_target_id": targetID, "target": targetAddress})
+		s.removeDisconnectedReverseGenerator(targetID, generatorID)
 	}) {
 		return
 	}
+}
+
+// registerReverseGenerator publishes a transport and its fleet membership as
+// one lifecycle transition. Admission and durable writes happen before this
+// lock; waiting for the connection to close happens after it is released.
+func (s *Server) registerReverseGenerator(targetID, generatorID string, conn net.Conn) (uint64, error) {
+	s.reverseLifecycleMu.Lock()
+	defer s.reverseLifecycleMu.Unlock()
+	generation, err := s.reverseGenerators.Register(generatorID, conn)
+	if err != nil {
+		return 0, err
+	}
+	s.addReverseTargetSession(targetID, generatorID)
+	targetAddress := generatorrpc.ReverseTargetPrefix + generatorID
+	if s.runner != nil {
+		if backend, ok := s.runner.getExecutionBackend().(*distributedExecutionBackend); ok {
+			backend.AddTarget(targetAddress)
+		}
+	}
+	s.broadcastFleetEvent("generator_reverse_connected", map[string]any{"generator_id": generatorID, "execution_target_id": targetID, "target": targetAddress})
+	return generation, nil
+}
+
+func (s *Server) removeDisconnectedReverseGenerator(targetID, generatorID string) bool {
+	s.reverseLifecycleMu.Lock()
+	defer s.reverseLifecycleMu.Unlock()
+	// The grace timer's earlier observation can already be stale. Recheck
+	// while excluding publication of a newly enrolled replacement session.
+	if s.reverseGenerators.Connected(generatorID) {
+		return false
+	}
+	s.removeReverseTargetSession(targetID, generatorID)
+	targetAddress := generatorrpc.ReverseTargetPrefix + generatorID
+	if s.runner != nil {
+		if backend, ok := s.runner.getExecutionBackend().(*distributedExecutionBackend); ok {
+			backend.RemoveTarget(targetAddress)
+		}
+	}
+	s.broadcastFleetEvent("generator_reverse_disconnected", map[string]any{"generator_id": generatorID, "execution_target_id": targetID, "target": targetAddress})
+	return true
 }
 
 func reverseGatewayRequestSecure(r *http.Request, settings AuthSettings) bool {
@@ -304,22 +354,22 @@ func (s *Server) reverseTargetSessionIDs(targetID string) []string {
 }
 
 func (s *Server) validateBurstGeneratorEnrollment(targetID, generatorID, launchNonce string) bool {
-	_, valid := s.validateGeneratorCapacityEnrollment(targetID, generatorID, launchNonce)
-	return valid
+	_, valid, err := s.validateGeneratorCapacityEnrollment(targetID, generatorID, launchNonce)
+	return err == nil && valid
 }
 
 // validateGeneratorCapacityEnrollment reports whether the generator identity
 // is bound to any durable capacity intent and, separately, whether that intent
 // is currently eligible to enroll. Known failed/expired identities remain
 // fenced even if a client omits the burst lifecycle header.
-func (s *Server) validateGeneratorCapacityEnrollment(targetID, generatorID, launchNonce string) (known, valid bool) {
+func (s *Server) validateGeneratorCapacityEnrollment(targetID, generatorID, launchNonce string) (known, valid bool, err error) {
 	store, ok := s.store.(storage.CapacityInstanceIntentStore)
 	if !ok {
-		return false, false
+		return false, false, fmt.Errorf("capacity intent storage is unavailable")
 	}
 	intents, err := store.ListCapacityInstanceIntents(targetID, "")
 	if err != nil {
-		return false, false
+		return false, false, err
 	}
 	for _, intent := range intents {
 		if intent == nil || subtle.ConstantTimeCompare([]byte(intent.GeneratorID), []byte(generatorID)) != 1 {
@@ -333,8 +383,8 @@ func (s *Server) validateGeneratorCapacityEnrollment(targetID, generatorID, laun
 			continue
 		}
 		if strings.TrimSpace(launchNonce) != "" && subtle.ConstantTimeCompare([]byte(intent.LaunchNonce), []byte(strings.TrimSpace(launchNonce))) == 1 {
-			return true, true
+			return true, true, nil
 		}
 	}
-	return known, false
+	return known, false, nil
 }

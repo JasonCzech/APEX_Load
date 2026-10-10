@@ -505,6 +505,10 @@ type ManagedTest struct {
 	MonitorWarnings []string                 `json:"monitor_warnings,omitempty"`
 	Activity        *ObjectActivitySummary   `json:"activity,omitempty"`
 	preparationID   string
+	// Immutable controller-resolved placement, protected by tr.mu. Preparations
+	// retain the authored assignment in their revision while provisioned targets
+	// are used for execution.
+	preparationCapacityAssignment *preparationCapacityAssignment
 	// Protected by tr.mu; checks only generator control-plane reservations.
 	preparationPeerCheck func(context.Context) error
 	// Protected by tr.mu; retained through terminal persistence retries.

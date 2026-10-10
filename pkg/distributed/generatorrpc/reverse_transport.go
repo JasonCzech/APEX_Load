@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 const ReverseTargetPrefix = "tunnel://"
@@ -115,8 +116,11 @@ type reverseRegistryEntry struct {
 // gRPC dialers. A duplicate identity replaces and closes its prior session;
 // callers never observe two live transports for one generator ID.
 type ReverseRegistry struct {
-	mu       sync.Mutex
-	sessions map[string]*reverseRegistryEntry
+	mu             sync.Mutex
+	sessions       map[string]*reverseRegistryEntry
+	nextGeneration uint64
+	clientsMu      sync.Mutex
+	clients        map[string]*Client
 }
 
 func NewReverseRegistry() *ReverseRegistry {
@@ -128,6 +132,9 @@ func (r *ReverseRegistry) Register(generatorID string, conn net.Conn) (uint64, e
 	if generatorID == "" || conn == nil {
 		return 0, errors.New("generator id and connection are required")
 	}
+	if err := storage.ValidateReverseGeneratorIdentity(generatorID); err != nil {
+		return 0, err
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	entry := r.sessions[generatorID]
@@ -135,7 +142,10 @@ func (r *ReverseRegistry) Register(generatorID string, conn net.Conn) (uint64, e
 		entry = &reverseRegistryEntry{notify: make(chan struct{})}
 		r.sessions[generatorID] = entry
 	}
-	entry.generation++
+	// An entry may be deleted on disconnect. A registry-wide counter prevents
+	// a delayed old disconnect from matching a later re-enrollment's generation.
+	r.nextGeneration++
+	entry.generation = r.nextGeneration
 	if entry.available != nil {
 		_ = entry.available.Close()
 	}
@@ -151,8 +161,8 @@ func (r *ReverseRegistry) Register(generatorID string, conn net.Conn) (uint64, e
 
 func (r *ReverseRegistry) Dial(ctx context.Context, generatorID string) (net.Conn, error) {
 	generatorID = strings.TrimSpace(strings.TrimPrefix(generatorID, ReverseTargetPrefix))
-	if generatorID == "" {
-		return nil, errors.New("reverse generator id is required")
+	if err := storage.ValidateReverseGeneratorIdentity(generatorID); err != nil {
+		return nil, err
 	}
 	for {
 		r.mu.Lock()
@@ -208,7 +218,7 @@ func ReverseGeneratorID(target string) (string, bool) {
 		return "", false
 	}
 	id := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(target), ReverseTargetPrefix))
-	return id, id != ""
+	return id, storage.ValidateReverseGeneratorIdentity(id) == nil
 }
 
 var DefaultReverseRegistry = NewReverseRegistry()

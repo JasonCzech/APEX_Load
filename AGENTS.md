@@ -86,6 +86,7 @@ pkg/
   scriptdisclosure/ — Irreversible disclosure-safe projections of executable scripts
   identitypolicy/ — Binds process credentials to operator-approved remote identities before token use
   netpolicy/     — Shared outbound-network trust decisions (public-IP / SSRF guard)
+  hostnet/       — Host file/socket limits and scoped UDP-drop evidence for HTTP/3 runs
   Import and asset plumbing:
   dslwalk/       — Bounded deterministic traversal of every action incl. nested control flow
   importsession/ — Importer-neutral protected policy-governed inspection sessions

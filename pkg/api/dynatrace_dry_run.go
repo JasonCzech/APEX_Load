@@ -67,7 +67,36 @@ func (s *Server) handleDynatraceDryRun(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	event := s.dynatraceDryRunEvent(req)
+	req.TestID = strings.TrimSpace(req.TestID)
+	req.Event.TestID = strings.TrimSpace(req.Event.TestID)
+	if req.TestID != "" && req.Event.TestID != "" && req.TestID != req.Event.TestID {
+		writeError(w, http.StatusBadRequest, "test_id and event.test_id must identify the same test")
+		return
+	}
+	req.TestID = firstNonEmpty(req.TestID, req.Event.TestID)
+	req.Event.TestID = req.TestID
+	var test *ManagedTest
+	if req.TestID != "" {
+		test, _ = s.runner.GetTest(req.TestID)
+		if test != nil {
+			user, _ := AuthenticatedUserFromContext(r.Context())
+			account, _ := AuthenticatedServiceAccountFromContext(r.Context())
+			// Stateless previews retain their global UI access. Enrichment with
+			// saved run data requires the same project grant as reading that run.
+			if user != nil || !isAuthBypassMode(s.authSettingsForRequest().Mode) {
+				requirement := viewerProjectAccess(func(*http.Request, storage.Store) (string, int, string) {
+					return test.ProjectID, 0, ""
+				})
+				if !authorizeAccessRequirement(w, r, s.store, authResolution{User: user, ServiceAccount: account}, requirement) {
+					return
+				}
+			}
+			req.TestID, req.Event.TestID = test.ID, test.ID
+		}
+	}
+	// Reuse the exact snapshot that passed authorization: a second lookup by
+	// ID could observe a replacement run owned by another project.
+	event := dynatraceDryRunEvent(req, test)
 	webhook := s.dynatraceDryRunWebhook(req)
 	payload := buildDynatraceNotificationPayload(webhook, event)
 	properties, _ := payload["properties"].(map[string]string)
@@ -76,7 +105,7 @@ func (s *Server) handleDynatraceDryRun(w http.ResponseWriter, r *http.Request) {
 		DeliveryDisabled:    true,
 		Endpoint:            strings.TrimSpace(webhook.URL),
 		Payload:             payload,
-		CorrelationManifest: s.buildDynatraceCorrelationManifest(event, properties),
+		CorrelationManifest: s.buildDynatraceCorrelationManifest(r.Context(), event, properties, test),
 		RequiredSettings: []string{
 			"notifications.webhooks[].format=dynatrace",
 			"notifications.webhooks[].api_token",
@@ -89,15 +118,9 @@ func (s *Server) handleDynatraceDryRun(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) dynatraceDryRunEvent(req DynatraceDryRunRequest) NotificationEvent {
+func dynatraceDryRunEvent(req DynatraceDryRunRequest, test *ManagedTest) NotificationEvent {
 	event := req.Event
 	testID := firstNonEmpty(strings.TrimSpace(req.TestID), strings.TrimSpace(event.TestID))
-	var test *ManagedTest
-	if testID != "" {
-		if found, ok := s.runner.GetTest(testID); ok {
-			test = found
-		}
-	}
 	if strings.TrimSpace(event.Type) == "" {
 		event.Type = firstNonEmpty(strings.TrimSpace(req.EventType), "test_complete")
 	}
@@ -179,7 +202,7 @@ func firstConfiguredDynatraceWebhook(settings SystemSettings) (NotificationWebho
 	return NotificationWebhookSettings{}, false
 }
 
-func (s *Server) buildDynatraceCorrelationManifest(event NotificationEvent, properties map[string]string) DynatraceCorrelationManifest {
+func (s *Server) buildDynatraceCorrelationManifest(ctx context.Context, event NotificationEvent, properties map[string]string, test *ManagedTest) DynatraceCorrelationManifest {
 	manifest := DynatraceCorrelationManifest{
 		SchemaVersion:   dynatraceCorrelationManifestSchemaVersion,
 		GeneratedAt:     time.Now().UTC(),
@@ -190,23 +213,21 @@ func (s *Server) buildDynatraceCorrelationManifest(event NotificationEvent, prop
 		EventType:       strings.TrimSpace(event.Type),
 		EventProperties: cloneStringMap(properties),
 	}
-	if manifest.TestID == "" {
+	if manifest.TestID == "" || test == nil {
 		return manifest
 	}
-	if test, ok := s.runner.GetTest(manifest.TestID); ok && test != nil {
-		manifest.ReleaseID = strings.TrimSpace(test.ReleaseID)
-		manifest.ScenarioID = strings.TrimSpace(test.ScenarioID)
-		if manifest.ProjectID == "" {
-			manifest.ProjectID = strings.TrimSpace(test.ProjectID)
-		}
-		if manifest.TestName == "" {
-			manifest.TestName = strings.TrimSpace(test.Name)
-		}
+	manifest.ReleaseID = strings.TrimSpace(test.ReleaseID)
+	manifest.ScenarioID = strings.TrimSpace(test.ScenarioID)
+	if manifest.ProjectID == "" {
+		manifest.ProjectID = strings.TrimSpace(test.ProjectID)
 	}
-	if record, ok := s.runner.GetRunArchive(manifest.TestID); ok && record != nil {
+	if manifest.TestName == "" {
+		manifest.TestName = strings.TrimSpace(test.Name)
+	}
+	if record, ok := s.runner.GetRunArchiveContext(ctx, manifest.TestID); ok && record != nil {
 		manifest.ArchiveReportPath = "/api/v1/tests/" + manifest.TestID + "/archive/report"
 		manifest.ArchiveRootCause = "/api/v1/tests/" + manifest.TestID + "/archive/root-cause"
-		traceIDs, spanIDs, dependencies, err := streamDynatraceArchiveIdentity(record, 100)
+		traceIDs, spanIDs, dependencies, err := streamDynatraceArchiveIdentity(ctx, record, test, 100)
 		if err != nil {
 			manifest.EvidenceIncomplete = true
 			manifest.EvidenceNote = "Archive correlation evidence could not be read completely: " + err.Error()
@@ -219,8 +240,8 @@ func (s *Server) buildDynatraceCorrelationManifest(event NotificationEvent, prop
 	return manifest
 }
 
-func streamDynatraceArchiveIdentity(record *storage.RunArchiveRecord, limit int) ([]string, []string, []string, error) {
-	lease, err := acquireArchiveMaterialized(context.Background(), record)
+func streamDynatraceArchiveIdentity(ctx context.Context, record *storage.RunArchiveRecord, test *ManagedTest, limit int) ([]string, []string, []string, error) {
+	lease, err := acquireArchiveMaterialized(ctx, record)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -228,6 +249,9 @@ func streamDynatraceArchiveIdentity(record *storage.RunArchiveRecord, limit int)
 	manifest, err := loadRunArchiveManifestFromRecord(record)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	if test == nil || manifest.TestID != test.ID || normalizeProjectID(manifest.Provenance.ProjectID) != normalizeProjectID(test.ProjectID) {
+		return nil, nil, nil, fmt.Errorf("archive does not belong to the authorized test")
 	}
 	file, _, err := openArchiveArtifactForRead(record.ArchivePath, manifest.TransactionsFile)
 	if err != nil {
@@ -239,7 +263,7 @@ func streamDynatraceArchiveIdentity(record *storage.RunArchiveRecord, limit int)
 	spans := newBoundedSortedStringSet(limit)
 	dependencies := newBoundedSortedStringSet(limit)
 	scanner := newArchiveJSONLScanner(file)
-	budget := newArchiveScanBudget(context.Background(), maxArchiveQueryRecords, maxArchiveQueryBytes)
+	budget := newArchiveScanBudget(ctx, maxArchiveQueryRecords, maxArchiveQueryBytes)
 	for scanner.Scan() {
 		if err := budget.Observe(scanner.Bytes()); err != nil {
 			return traces.Values(), spans.Values(), dependencies.Values(), err

@@ -310,6 +310,9 @@ func (b *distributedExecutionBackend) buildGeneratorResourceSnapshots(test *Mana
 		p95, p99, errorPct, tps := summarizeGeneratorBatchTransactions(batch.Transactions, batch.WindowMs)
 		state, reasons := classifyGeneratorImpact(resources, p95, errorPct)
 		id := firstNonEmpty(batch.GeneratorID, target)
+		if enrolledID, reverse := generatorrpc.ReverseGeneratorID(target); reverse {
+			id = enrolledID
+		}
 		timestamp := time.UnixMilli(batch.TimestampUnixMs)
 		if batch.TimestampUnixMs == 0 {
 			timestamp = time.Now()

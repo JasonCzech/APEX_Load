@@ -14,28 +14,30 @@ import (
 
 type stubObjectRepositoryService struct {
 	objectRepositoryService
-	configured          bool
-	repository          *storage.ObjectRepository
-	getCalls            int
-	listed              []*storage.ObjectRepository
-	listProjectID       string
-	listLimit           int
-	listOffset          int
-	listCalls           int
-	updateErr           error
-	updateCalls         int
-	script              *StoredScript
-	scriptFound         bool
-	scriptCalls         int
-	saved               *storage.ObjectRepository
-	saveCalls           int
-	updatedScript       *dsl.Script
-	updateScriptErr     error
-	updateScriptCalls   int
-	deleteResult        bool
-	deleteErr           error
-	deleteCalls         int
-	deletedRepositoryID string
+	configured           bool
+	repository           *storage.ObjectRepository
+	getCalls             int
+	listed               []*storage.ObjectRepository
+	listProjectID        string
+	listLimit            int
+	listOffset           int
+	listCalls            int
+	updateErr            error
+	updateCalls          int
+	script               *StoredScript
+	scriptFound          bool
+	scriptCalls          int
+	saved                *storage.ObjectRepository
+	saveCalls            int
+	updatedScript        *dsl.Script
+	updateScriptErr      error
+	updateScriptCalls    int
+	scriptExpectedAt     time.Time
+	scriptExpectedDigest string
+	deleteResult         bool
+	deleteErr            error
+	deleteCalls          int
+	deletedRepositoryID  string
 }
 
 func (service *stubObjectRepositoryService) StorageConfigured() bool { return service.configured }
@@ -77,9 +79,11 @@ func (service *stubObjectRepositoryService) GetScript(string) (*StoredScript, bo
 	return service.script, service.scriptFound
 }
 
-func (service *stubObjectRepositoryService) UpdateScript(_ string, script *dsl.Script, _ string) (bool, error) {
+func (service *stubObjectRepositoryService) UpdateScriptIfUnchanged(_ string, script *dsl.Script, _ string, expectedUpdatedAt time.Time, expectedActionGraphDigest string) (bool, error) {
 	service.updateScriptCalls++
 	service.updatedScript = script
+	service.scriptExpectedAt = expectedUpdatedAt
+	service.scriptExpectedDigest = expectedActionGraphDigest
 	return false, service.updateScriptErr
 }
 
@@ -185,12 +189,13 @@ func TestAuthoringContentHandlersPreserveUnsupportedCASErrors(t *testing.T) {
 }
 
 func TestObjectRepositoryBindingConflictRollsBackThroughServiceFence(t *testing.T) {
+	originalUpdatedAt := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
 	service := &stubObjectRepositoryService{
 		configured:  true,
 		scriptFound: true,
 		script: &StoredScript{
 			ID: "script-1", Name: "Checkout", ProjectID: "project-a",
-			Script: &dsl.Script{Actions: []dsl.Action{{Name: "Submit", Type: "browser_click", Selector: "#submit"}}},
+			Script: &dsl.Script{UpdatedAt: originalUpdatedAt, Actions: []dsl.Action{{Name: "Submit", Type: "browser_click", Selector: "#submit"}}},
 		},
 		updateScriptErr: errScriptConcurrentChange,
 		deleteResult:    true,
@@ -212,6 +217,13 @@ func TestObjectRepositoryBindingConflictRollsBackThroughServiceFence(t *testing.
 	}
 	if service.updatedScript == nil || service.updatedScript.Actions[0].ObjectRef == "" {
 		t.Fatalf("script binding was not delegated: %#v", service.updatedScript)
+	}
+	originalDigest, err := scriptCorrelationActionGraphDigest(service.script.Script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !service.scriptExpectedAt.Equal(originalUpdatedAt) || service.scriptExpectedDigest != originalDigest {
+		t.Fatalf("script binding did not preserve its source revision: timestamp=%v digest=%q", service.scriptExpectedAt, service.scriptExpectedDigest)
 	}
 }
 

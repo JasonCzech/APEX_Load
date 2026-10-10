@@ -43,14 +43,29 @@ func (s *SQLiteStore) CreateCapacityInstanceIntent(intent *CapacityInstanceInten
 		intent.CreatedAt = now
 	}
 	intent.UpdatedAt = now
-	_, err := s.db.Exec(`INSERT INTO capacity_instance_intents
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	claimed, err := claimReverseGeneratorIdentityTx(tx, strings.TrimSpace(intent.ExecutionTargetID), strings.TrimSpace(intent.GeneratorID))
+	if err != nil {
+		return err
+	}
+	if !claimed {
+		return errors.New("capacity generator identity belongs to another execution target")
+	}
+	_, err = tx.Exec(`INSERT INTO capacity_instance_intents
 		(id, execution_target_id, fleet_pool_id, test_id, provisioning_request_id, client_token,
 		 launch_nonce, generator_id, provider_id, state, archive_state, cleanup_deadline, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, intent.ID, intent.ExecutionTargetID,
 		intent.FleetPoolID, nullableString(intent.TestID), nullableString(intent.ProvisioningRequestID),
 		intent.ClientToken, intent.LaunchNonce, intent.GeneratorID, nullableString(intent.ProviderID), intent.State,
 		intent.ArchiveState, intent.CleanupDeadline, intent.CreatedAt, intent.UpdatedAt)
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) UpdateCapacityInstanceIntentIfUnchanged(intent *CapacityInstanceIntent, expected time.Time) (bool, error) {

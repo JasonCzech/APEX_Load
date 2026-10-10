@@ -295,6 +295,8 @@ func validateDistributedShardRunGoals(group TestGroup, peakShards []GeneratorSha
 type distributedExecutionBackend struct {
 	targetsMu               sync.RWMutex
 	targets                 []generatorTargetSpec
+	discoveredTargets       []generatorTargetSpec
+	enrolledTargets         map[string]generatorTargetSpec
 	timeout                 time.Duration
 	stopGrace               time.Duration
 	dial                    generatorDial
@@ -359,6 +361,8 @@ func newDistributedExecutionBackend(targets []string, timeout time.Duration, dia
 	}
 	return &distributedExecutionBackend{
 		targets:             clonedTargets,
+		discoveredTargets:   clonedTargets,
+		enrolledTargets:     make(map[string]generatorTargetSpec),
 		timeout:             timeout,
 		stopGrace:           max(2*timeout, 5*time.Second),
 		dial:                dial,
@@ -402,7 +406,9 @@ func (b *distributedExecutionBackend) configuredTargetSpecs() []generatorTargetS
 	return append([]generatorTargetSpec(nil), b.targets...)
 }
 
-// SetTargets replaces the generator fleet with the provided raw target entries
+// SetTargets replaces the configured/discovered portion of the generator fleet
+// while preserving independently enrolled reverse generators.
+// It accepts raw target entries
 // (same syntax as APEXLOAD_GENERATORS). Used by dynamic discovery (e.g. dns://
 // headless-service entries) to track generators as autoscaling adds or removes
 // pods. Drain states keyed by address are preserved across updates.
@@ -414,12 +420,19 @@ func (b *distributedExecutionBackend) SetTargets(targets []string) {
 		if spec.Address == "" {
 			continue
 		}
+		if _, duplicate := configured[spec.Address]; duplicate {
+			continue
+		}
 		specs = append(specs, spec)
 		configured[spec.Address] = struct{}{}
 	}
 	b.targetsMu.Lock()
-	b.targets = specs
-	b.targetsMu.Unlock()
+	defer b.targetsMu.Unlock()
+	b.discoveredTargets = specs
+	b.rebuildTargetsLocked()
+	for _, spec := range b.targets {
+		configured[spec.Address] = struct{}{}
+	}
 
 	b.identityMu.Lock()
 	for target, id := range b.targetIDs {
@@ -440,25 +453,24 @@ func (b *distributedExecutionBackend) AddTarget(target string) {
 	}
 	b.targetsMu.Lock()
 	defer b.targetsMu.Unlock()
-	for _, current := range b.targets {
-		if current.Address == spec.Address {
-			return
-		}
+	if b.enrolledTargets == nil {
+		b.enrolledTargets = make(map[string]generatorTargetSpec)
 	}
-	b.targets = append(b.targets, spec)
+	b.enrolledTargets[spec.Address] = spec
+	b.rebuildTargetsLocked()
 }
 
 func (b *distributedExecutionBackend) RemoveTarget(target string) {
 	target = strings.TrimSpace(target)
 	b.targetsMu.Lock()
-	filtered := b.targets[:0]
+	defer b.targetsMu.Unlock()
+	delete(b.enrolledTargets, target)
+	b.rebuildTargetsLocked()
 	for _, current := range b.targets {
-		if current.Address != target {
-			filtered = append(filtered, current)
+		if current.Address == target {
+			return // The address is still explicitly configured/discovered.
 		}
 	}
-	b.targets = filtered
-	b.targetsMu.Unlock()
 	b.identityMu.Lock()
 	if id := b.targetIDs[target]; id != "" {
 		delete(b.targetIDs, target)
@@ -467,6 +479,27 @@ func (b *distributedExecutionBackend) RemoveTarget(target string) {
 		}
 	}
 	b.identityMu.Unlock()
+}
+
+// rebuildTargetsLocked publishes a deterministic union. Explicit discovery
+// metadata takes precedence when both sources name the same address.
+func (b *distributedExecutionBackend) rebuildTargetsLocked() {
+	targets := append([]generatorTargetSpec(nil), b.discoveredTargets...)
+	seen := make(map[string]bool, len(targets))
+	for _, spec := range targets {
+		seen[spec.Address] = true
+	}
+	addresses := make([]string, 0, len(b.enrolledTargets))
+	for address := range b.enrolledTargets {
+		if !seen[address] {
+			addresses = append(addresses, address)
+		}
+	}
+	sort.Strings(addresses)
+	for _, address := range addresses {
+		targets = append(targets, b.enrolledTargets[address])
+	}
+	b.targets = targets
 }
 
 func (b *distributedExecutionBackend) SetGeneratorDrainState(target string, state string) error {
@@ -656,6 +689,9 @@ func (b *distributedExecutionBackend) recordGeneratorIdentity(target string, gen
 	if target == "" || generatorID == "" {
 		return
 	}
+	if validateReverseReportedIdentity(target, generatorID) != nil {
+		return
+	}
 	b.identityMu.Lock()
 	changed := b.idTargets[generatorID] != target
 	b.targetIDs[target] = generatorID
@@ -680,6 +716,13 @@ func (b *distributedExecutionBackend) recordGeneratorIdentity(target string, gen
 	if changed && hook != nil {
 		hook(generatorID)
 	}
+}
+
+func validateReverseReportedIdentity(target, reportedID string) error {
+	if enrolledID, reverse := generatorrpc.ReverseGeneratorID(target); reverse && strings.TrimSpace(reportedID) != enrolledID {
+		return fmt.Errorf("reported generator identity does not match the enrolled tunnel")
+	}
+	return nil
 }
 
 func (b *distributedExecutionBackend) GeneratorIDForTarget(target string) string {
@@ -968,7 +1011,14 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	// Capacity is reconciled before any generator supervision lease is armed.
 	// Cloud cold-start latency therefore cannot consume the deadman TTL.
 	if b.ensureRunCapacity != nil {
-		capacityCtx, cancelCapacity := tr.executionOperationContext(context.Background())
+		tr.mu.RLock()
+		capacityParent := test.executionCtx
+		capacityStartable := !tr.shuttingDown && tr.tests[test.ID] == test && test.Status == "INITIALIZING" && capacityParent != nil && capacityParent.Err() == nil
+		tr.mu.RUnlock()
+		if !capacityStartable {
+			return
+		}
+		capacityCtx, cancelCapacity := tr.executionOperationContext(capacityParent)
 		capacityErr := b.ensureRunCapacity(capacityCtx, test)
 		cancelCapacity()
 		if capacityErr != nil {
