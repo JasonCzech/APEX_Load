@@ -391,6 +391,36 @@ func TestEstimateCapacityAdvisoryUsesProtocolDensityEnvelopes(t *testing.T) {
 	}
 }
 
+func TestEstimateCapacityAdvisoryPlansHTTP3GroupsInTheUnmeasuredClass(t *testing.T) {
+	settings := defaultSystemSettings(5)
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 5
+	script := &dsl.Script{Protocol: "http", Config: dsl.ScriptConfig{BaseURL: "https://shop.example", HTTP: dsl.HTTPConfig{Version: "auto+h3"}},
+		Actions: []dsl.Action{{Name: "home", Type: "GET", Target: "/"}}}
+	advisory := estimateCapacityAdvisory(settings, []TestGroup{{Name: "h3", Protocol: "http", VUsers: 6000, script: script}}, 6000, 30*time.Minute, false, nil)
+	if advisory == nil || advisory.WorkloadClass != "http3" || len(advisory.ProtocolDensities) != 1 {
+		t.Fatalf("advisory = %#v", advisory)
+	}
+	density := advisory.ProtocolDensities[0]
+	if density.MaxVUsersPerGenerator != 4000 || density.CompatibilityConfidence != "unmeasured" || density.CalibratedAt != "" {
+		t.Fatalf("HTTP/3 must not reuse the HTTP design target: %#v", density)
+	}
+	if !strings.Contains(strings.Join(advisory.Warnings, "\n"), "HTTP/3 density is not yet measured") {
+		t.Fatalf("warnings = %v", advisory.Warnings)
+	}
+	for _, warning := range advisory.Warnings {
+		if strings.Contains(warning, "Unknown protocol") {
+			t.Fatalf("http3 is a known class: %v", advisory.Warnings)
+		}
+	}
+
+	// A group override that replaces config.http with HTTP/2 plans as HTTP.
+	override := &RuntimeSettingsOverride{HTTP: &dsl.HTTPConfig{Version: "2"}}
+	tcp := estimateCapacityAdvisory(settings, []TestGroup{{Name: "h2", Protocol: "http", VUsers: 6000, script: script, RuntimeSettings: override}}, 6000, 30*time.Minute, false, nil)
+	if tcp.WorkloadClass != "http" || tcp.ProtocolDensities[0].MaxVUsersPerGenerator != 10000 {
+		t.Fatalf("overridden advisory = %#v", tcp.ProtocolDensities)
+	}
+}
+
 func TestCanonicalCapacityProtocolTreatsServiceBusAsJMS(t *testing.T) {
 	for _, protocol := range []string{"jms-servicebus", "jms_servicebus", "servicebus", "azure service bus"} {
 		if got := canonicalCapacityProtocol(TestGroup{Protocol: protocol}); got != "jms" {

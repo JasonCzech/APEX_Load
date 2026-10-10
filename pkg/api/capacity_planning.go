@@ -523,7 +523,7 @@ func calculateScenarioComplexity(groups []TestGroup, runtimeSettings *RuntimeSet
 		scriptScore := 1.0
 		protocol := canonicalCapacityProtocol(group)
 		switch protocol {
-		case "http", "grpc", "websocket", "soap", "java_http", "jms", "browser":
+		case "http", "grpc", "websocket", "soap", "java_http", "jms", "browser", capacityClassHTTP3:
 			scriptScore += 0
 		case "":
 			unknownProtocol = true
@@ -642,13 +642,16 @@ func classifyCapacityWorkload(groups []TestGroup, runtimeSettings *RuntimeSettin
 			profile = mergeBrowserCapacityProfile(profile, browserCapacityProfileForTier(device.DeviceTier))
 			continue
 		}
-		protocol := canonicalCapacityProtocol(group)
+		protocol := capacityClassForGroup(group, runtimeSettings)
 		if protocol == "" {
 			protocol = "unknown"
 		}
 		protocolVUsers[protocol] += group.VUsers
 	}
 	profile.ProtocolDensities = protocolDensityEnvelopesForVUsers(protocolVUsers)
+	if protocolVUsers[capacityClassHTTP3] > 0 {
+		profile.Warnings = append(profile.Warnings, "HTTP/3 groups use a conservative envelope: HTTP/3 density is not yet measured, and QUIC moves congestion control and encryption into the generator. Run a pilot before relying on this plan.")
+	}
 	if profile.BrowserVUsers == 0 {
 		if len(profile.ProtocolDensities) == 1 {
 			profile.Class = profile.ProtocolDensities[0].Protocol
@@ -666,6 +669,37 @@ func classifyCapacityWorkload(groups []TestGroup, runtimeSettings *RuntimeSettin
 	}
 	profile.MaxBrowserVUsersPerGenerator = publishedBrowserDensityPerGenerator(profile.BrowserDeviceTierCeiling)
 	return profile
+}
+
+// capacityClassHTTP3 is the capacity class of HTTP-family groups whose
+// requests resolve to an HTTP/3 policy (3 or auto+h3). Its density is not
+// measured yet, so it never reuses the HTTP design-target envelope.
+const capacityClassHTTP3 = "http3"
+
+// capacityClassForGroup is the group's protocol class, with HTTP-family
+// groups that use HTTP/3 (after group and scenario runtime overrides, which
+// replace config.http) in the http3 class.
+func capacityClassForGroup(group TestGroup, runtimeSettings *RuntimeSettingsOverride) string {
+	protocol := canonicalCapacityProtocol(group)
+	switch protocol {
+	case "http", "soap", "java_http":
+	default:
+		return protocol
+	}
+	if group.script == nil {
+		return protocol
+	}
+	effective := *group.script
+	switch {
+	case group.RuntimeSettings != nil && group.RuntimeSettings.HTTP != nil:
+		effective.Config.HTTP = *group.RuntimeSettings.HTTP
+	case runtimeSettings != nil && runtimeSettings.HTTP != nil:
+		effective.Config.HTTP = *runtimeSettings.HTTP
+	}
+	if dsl.ScriptUsesHTTP3(&effective) {
+		return capacityClassHTTP3
+	}
+	return protocol
 }
 
 func canonicalCapacityProtocol(group TestGroup) string {
@@ -728,6 +762,11 @@ func protocolDensityEnvelope(protocol string) ProtocolDensityEnvelope {
 		return protocolDensityEnvelopeWithBenchmark(ProtocolDensityEnvelope{Protocol: "java_vuser", MaxVUsersPerGenerator: 25, CPUCoresPerVUser: 0.02000, MemoryMBPerVUser: 96.0, NetworkMbpsPerVUser: 0.04, CompatibilityConfidence: "external_runner_required"}, "java_vuser_jvm_process_pool")
 	case "jms":
 		return protocolDensityEnvelopeWithBenchmark(ProtocolDensityEnvelope{Protocol: "jms", MaxVUsersPerGenerator: 3000, CPUCoresPerVUser: 0.00050, MemoryMBPerVUser: 0.80, NetworkMbpsPerVUser: 0.05, CompatibilityConfidence: "calibrated_model"}, "jms_3k_session_send_4vcpu_8gb")
+	case capacityClassHTTP3:
+		// Unmeasured: the conservative envelope, not the HTTP design target,
+		// until the matched HTTP/2 and HTTP/3 measurements are published.
+		return ProtocolDensityEnvelope{Protocol: capacityClassHTTP3, MaxVUsersPerGenerator: 4000, CPUCoresPerVUser: 0.00045, MemoryMBPerVUser: 0.75, NetworkMbpsPerVUser: 0.10, CompatibilityConfidence: "unmeasured",
+			BenchmarkProfile: "http3_unmeasured_conservative", BenchmarkEvidence: "docs/guides/HTTP3_AND_QUIC.md#network-egress-and-udp-buffers", CalibrationSource: "conservative_default"}
 	case "sap_gui":
 		return protocolDensityEnvelopeWithBenchmark(ProtocolDensityEnvelope{Protocol: "sap_gui", MaxVUsersPerGenerator: 25, CPUCoresPerVUser: 0.02000, MemoryMBPerVUser: 80.0, NetworkMbpsPerVUser: 0.02, CompatibilityConfidence: "external_runner_required"}, "sap_gui_desktop_session_capacity")
 	default:

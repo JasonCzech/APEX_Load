@@ -17,6 +17,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/debugserver"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/hostnet"
 	"github.com/jasonczech/apexload/pkg/protocol/browser"
 	_ "github.com/jasonczech/apexload/pkg/protocol/builtin"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
@@ -190,6 +191,7 @@ func main() {
 	if javaHostOption != nil {
 		serviceOptions = append(serviceOptions, javaHostOption)
 	}
+	logHostNetworkLimits(cfg.MaxVUsers, httpprotocol.HTTP3ExecutionError() == nil, hostnet.Collect("", os.Getenv))
 	controlService := generatorrpc.NewService(generatorID, cfg.MaxVUsers, serviceOptions...)
 	if err := controlService.ReadinessError(); err != nil {
 		slog.Error("refusing to start without durable generator execution fencing", "generator_id", generatorID, "err", err)

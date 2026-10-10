@@ -230,6 +230,7 @@ Capacity advice now publishes protocol-specific density envelopes in `capacity_a
 | Protocol | Max VUsers / generator | Confidence | Notes |
 | --- | ---: | --- | --- |
 | HTTP / HTTPS / HTTP/2 | 10,000 | Design target | Baseline goroutine-per-VUser target; not yet benchmarked. |
+| HTTP/3 (`3` or `auto+h3`) | 4,000 | Unmeasured | Groups whose requests resolve to an HTTP/3 policy, after group and scenario overrides, form the `http3` class. QUIC moves congestion control and encryption into the generator and adds one UDP socket per VUser, so the HTTP design target is never reused: the class takes the conservative envelope, with a warning, until matched HTTP/2 and HTTP/3 measurements are published. Generators also check their open-file limit against the planned sockets at startup. |
 | gRPC | 12,000 | Calibrated model | High-density HTTP/2 transport with compact payloads. |
 | WebSocket | 6,000 | Calibrated model | Persistent connection footprint lowers density relative to stateless HTTP. |
 | SOAP | 5,000 | Calibrated model | XML parsing and larger payload assumptions. |
