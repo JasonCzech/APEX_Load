@@ -1053,6 +1053,11 @@ func mergeRemoteArchiveManifest(tr *TestRunner, test *ManagedTest, bundles []rem
 			manifest.BrowserDocumentRecordCount += bundle.manifest.BrowserDocumentRecordCount
 		}
 		mergeRunArchiveMessageDetailCapture(&manifest, bundle.manifest.MessageDetailCapture)
+		for _, evidence := range bundle.manifest.HostNetwork {
+			// A generator cannot name itself; the controller knows its target.
+			evidence.Source = bundle.target
+			manifest.HostNetwork = append(manifest.HostNetwork, evidence)
+		}
 		if manifest.InitialProvenance == nil && bundle.manifest.InitialProvenance != nil {
 			initial := maskRunArchiveProvenance(*bundle.manifest.InitialProvenance)
 			manifest.InitialProvenance = &initial

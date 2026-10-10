@@ -8803,6 +8803,91 @@ paths:
                             type: string
                           tier:
                             type: string
+                    host_network:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          open_files:
+                            type: object
+                            description: 'Go type: hostnet.OpenFileLimit'
+                            additionalProperties: true
+                          source:
+                            type: string
+                          udp_buffers:
+                            type: object
+                            description: 'Go type: hostnet.UDPBufferLimits'
+                            additionalProperties: true
+                          udp_drops_at_end:
+                            type: object
+                            description: 'Go type: hostnet.UDPDropCounters'
+                            additionalProperties: true
+                            nullable: true
+                          udp_drops_at_start:
+                            type: object
+                            description: 'Go type: hostnet.UDPDropCounters'
+                            additionalProperties: true
+                            nullable: true
+                          udp_drops_delta:
+                            type: object
+                            description: 'Go type: hostnet.UDPDropDelta'
+                            additionalProperties: true
+                            nullable: true
+                          warning:
+                            type: string
+                    http3_preflight:
+                      type: object
+                      properties:
+                        blocked:
+                          type: boolean
+                        omitted:
+                          type: integer
+                          format: int64
+                        policy:
+                          type: string
+                        results:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              address:
+                                type: string
+                              checked_at:
+                                type: string
+                                format: date-time
+                              error:
+                                type: string
+                              error_class:
+                                type: string
+                              group:
+                                type: string
+                              handshake_ms:
+                                type: number
+                                format: double
+                              ok:
+                                type: boolean
+                              origin:
+                                type: string
+                              policy:
+                                type: string
+                              region:
+                                type: string
+                              skipped:
+                                type: string
+                              source:
+                                type: string
+                        unchecked:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              reason:
+                                type: string
+                              region:
+                                type: string
+                              source:
+                                type: string
+                      nullable: true
                     identity_names:
                       type: object
                       properties:
@@ -9145,6 +9230,12 @@ paths:
                                 format: double
                               unit:
                                 type: string
+                        host_network:
+                          type: array
+                          items:
+                            type: object
+                            description: 'Go type: hostnet.RunEvidence'
+                            additionalProperties: true
                         initial_provenance:
                           type: object
                           properties:
@@ -9225,6 +9316,10 @@ paths:
                                 type: object
                                 description: 'Go type: TestGroup'
                                 additionalProperties: true
+                            http3_preflight:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             joint_evidence:
                               type: object
                               additionalProperties: true
@@ -9666,6 +9761,10 @@ paths:
                                 type: object
                                 description: 'Go type: TestGroup'
                                 additionalProperties: true
+                            http3_preflight:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             joint_evidence:
                               type: object
                               additionalProperties: true
@@ -363990,6 +364089,12 @@ paths:
                         - statistic
                         - threshold
                         - unit
+                  host_network:
+                    type: array
+                    items:
+                      type: object
+                      description: 'Go type: hostnet.RunEvidence'
+                      additionalProperties: true
                   initial_provenance:
                     type: object
                     properties:
@@ -365207,6 +365312,71 @@ paths:
                             - script_id
                             - script_name
                             - vusers
+                      http3_preflight:
+                        type: object
+                        properties:
+                          blocked:
+                            type: boolean
+                          omitted:
+                            type: integer
+                            format: int64
+                          policy:
+                            type: string
+                          results:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                address:
+                                  type: string
+                                checked_at:
+                                  type: string
+                                  format: date-time
+                                error:
+                                  type: string
+                                error_class:
+                                  type: string
+                                group:
+                                  type: string
+                                handshake_ms:
+                                  type: number
+                                  format: double
+                                ok:
+                                  type: boolean
+                                origin:
+                                  type: string
+                                policy:
+                                  type: string
+                                region:
+                                  type: string
+                                skipped:
+                                  type: string
+                                source:
+                                  type: string
+                              required:
+                                - checked_at
+                                - group
+                                - ok
+                                - origin
+                                - policy
+                                - source
+                          unchecked:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                reason:
+                                  type: string
+                                region:
+                                  type: string
+                                source:
+                                  type: string
+                              required:
+                                - reason
+                                - source
+                        required:
+                          - policy
+                        nullable: true
                       joint_evidence:
                         type: object
                         properties:
@@ -367938,6 +368108,71 @@ paths:
                             - script_id
                             - script_name
                             - vusers
+                      http3_preflight:
+                        type: object
+                        properties:
+                          blocked:
+                            type: boolean
+                          omitted:
+                            type: integer
+                            format: int64
+                          policy:
+                            type: string
+                          results:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                address:
+                                  type: string
+                                checked_at:
+                                  type: string
+                                  format: date-time
+                                error:
+                                  type: string
+                                error_class:
+                                  type: string
+                                group:
+                                  type: string
+                                handshake_ms:
+                                  type: number
+                                  format: double
+                                ok:
+                                  type: boolean
+                                origin:
+                                  type: string
+                                policy:
+                                  type: string
+                                region:
+                                  type: string
+                                skipped:
+                                  type: string
+                                source:
+                                  type: string
+                              required:
+                                - checked_at
+                                - group
+                                - ok
+                                - origin
+                                - policy
+                                - source
+                          unchecked:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                reason:
+                                  type: string
+                                region:
+                                  type: string
+                                source:
+                                  type: string
+                              required:
+                                - reason
+                                - source
+                        required:
+                          - policy
+                        nullable: true
                       joint_evidence:
                         type: object
                         properties:
@@ -377958,6 +378193,106 @@ paths:
                         - label
                         - status
                         - tier
+                  host_network:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        open_files:
+                          type: object
+                          description: 'Go type: hostnet.OpenFileLimit'
+                          additionalProperties: true
+                        source:
+                          type: string
+                        udp_buffers:
+                          type: object
+                          description: 'Go type: hostnet.UDPBufferLimits'
+                          additionalProperties: true
+                        udp_drops_at_end:
+                          type: object
+                          description: 'Go type: hostnet.UDPDropCounters'
+                          additionalProperties: true
+                          nullable: true
+                        udp_drops_at_start:
+                          type: object
+                          description: 'Go type: hostnet.UDPDropCounters'
+                          additionalProperties: true
+                          nullable: true
+                        udp_drops_delta:
+                          type: object
+                          description: 'Go type: hostnet.UDPDropDelta'
+                          additionalProperties: true
+                          nullable: true
+                        warning:
+                          type: string
+                      required:
+                        - open_files
+                        - udp_buffers
+                  http3_preflight:
+                    type: object
+                    properties:
+                      blocked:
+                        type: boolean
+                      omitted:
+                        type: integer
+                        format: int64
+                      policy:
+                        type: string
+                      results:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            address:
+                              type: string
+                            checked_at:
+                              type: string
+                              format: date-time
+                            error:
+                              type: string
+                            error_class:
+                              type: string
+                            group:
+                              type: string
+                            handshake_ms:
+                              type: number
+                              format: double
+                            ok:
+                              type: boolean
+                            origin:
+                              type: string
+                            policy:
+                              type: string
+                            region:
+                              type: string
+                            skipped:
+                              type: string
+                            source:
+                              type: string
+                          required:
+                            - checked_at
+                            - group
+                            - ok
+                            - origin
+                            - policy
+                            - source
+                      unchecked:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            reason:
+                              type: string
+                            region:
+                              type: string
+                            source:
+                              type: string
+                          required:
+                            - reason
+                            - source
+                    required:
+                      - policy
+                    nullable: true
                   identity_names:
                     type: object
                     properties:
@@ -378390,6 +378725,12 @@ paths:
                             - statistic
                             - threshold
                             - unit
+                      host_network:
+                        type: array
+                        items:
+                          type: object
+                          description: 'Go type: hostnet.RunEvidence'
+                          additionalProperties: true
                       initial_provenance:
                         type: object
                         properties:
@@ -379018,6 +379359,31 @@ paths:
                                 - script_id
                                 - script_name
                                 - vusers
+                          http3_preflight:
+                            type: object
+                            properties:
+                              blocked:
+                                type: boolean
+                              omitted:
+                                type: integer
+                                format: int64
+                              policy:
+                                type: string
+                              results:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: HTTP3PreflightResult'
+                                  additionalProperties: true
+                              unchecked:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: HTTP3PreflightUnchecked'
+                                  additionalProperties: true
+                            required:
+                              - policy
+                            nullable: true
                           joint_evidence:
                             type: object
                             properties:
@@ -380455,6 +380821,31 @@ paths:
                                 - script_id
                                 - script_name
                                 - vusers
+                          http3_preflight:
+                            type: object
+                            properties:
+                              blocked:
+                                type: boolean
+                              omitted:
+                                type: integer
+                                format: int64
+                              policy:
+                                type: string
+                              results:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: HTTP3PreflightResult'
+                                  additionalProperties: true
+                              unchecked:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: HTTP3PreflightUnchecked'
+                                  additionalProperties: true
+                            required:
+                              - policy
+                            nullable: true
                           joint_evidence:
                             type: object
                             properties:

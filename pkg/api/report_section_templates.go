@@ -117,6 +117,7 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
     th, td { overflow-wrap: anywhere; min-width: 0; padding: 9px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
     th { background: var(--silver); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--slate); }
     td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    td.nowrap, th.nowrap { overflow-wrap: normal; white-space: nowrap; }
     tr:last-child td { border-bottom: 0; }
     .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; }
     .pill.pass, .pill.good { background: var(--good-bg); color: var(--good); }
@@ -714,6 +715,26 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{with countText .BySelection}}<p class="section-copy">Routing: {{.}}</p>{{end}}
 {{if .Attempts}}<p class="section-copy">HTTP attempts recorded by HTTP/3 actions: {{.Attempts}}.</p>{{end}}
 {{with .Finding}}<div class="finding"><div class="finding-head"><span class="pill warn">Minor</span><span class="ft">Protocol Mix</span></div><div class="finding-body"><p>{{.Summary}}</p></div></div>{{end}}
+{{end}}
+{{with .Report.HostNetwork}}
+<h3>Load generator UDP</h3>
+<p class="section-copy">Each execution process's open-file limit and UDP buffer maxima, and how much its network namespace's UDP error counters grew between execution start and end.</p>
+<table>
+  <thead><tr><th>Process</th><th class="num">Open files</th><th>UDP buffer max (receive / send)</th><th>UDP drops during the run</th><th>Note</th></tr></thead>
+  <tbody>
+    {{range hostNetworkRows .}}<tr><td>{{.Source}}</td><td class="num">{{.OpenFiles}}</td><td>{{.Buffers}}</td><td>{{.Drops}}</td><td>{{.Note}}</td></tr>{{end}}
+  </tbody>
+</table>
+{{end}}
+{{with .Report.HTTP3Preflight}}
+<h3>HTTP/3 preflight</h3>
+<p class="section-copy">{{http3PreflightSummary .}}</p>
+<table>
+  <thead><tr><th>Load source</th><th>Group</th><th>Origin</th><th class="nowrap">Policy</th><th>Result</th><th>Detail</th></tr></thead>
+  <tbody>
+    {{range http3PreflightRows .}}<tr><td>{{.Source}}</td><td>{{.Group}}</td><td>{{.Origin}}</td><td class="nowrap">{{.Policy}}</td><td>{{.Result}}</td><td>{{.Detail}}</td></tr>{{end}}
+  </tbody>
+</table>
 {{end}}
 {{end}}
 

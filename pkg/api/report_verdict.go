@@ -252,6 +252,12 @@ func deriveReportFindings(report *RunArchiveReport) []ReportFinding {
 		})
 	}
 
+	if finding := hostNetworkFinding(report.HostNetwork); finding != nil {
+		findings = append(findings, *finding)
+	}
+	if finding := http3PreflightFinding(report.HTTP3Preflight); finding != nil {
+		findings = append(findings, *finding)
+	}
 	if mix := report.NetworkPhases.VersionMix; mix != nil && mix.Finding != nil {
 		findings = append(findings, ReportFinding{
 			Title:    protocolMixFindingTitle(mix.Finding),

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -81,4 +82,37 @@ func TestPlannedSocketsFollowTheOwnershipModel(t *testing.T) {
 	if OpenFileShortfall(OpenFileLimit{}, 10) {
 		t.Fatal("an unknown limit is not a shortfall")
 	}
+}
+
+func TestRunEvidenceAttributesOnlyOwnScopeGrowth(t *testing.T) {
+	sample := func(scope, id string, rcv, snd, in uint64) *UDPDropCounters {
+		return &UDPDropCounters{Scope: scope, ScopeID: id, ReceiveBufferErrors: rcv, SendBufferErrors: snd, InErrors: in}
+	}
+	pod := RunEvidence{Source: "gen-0", DropsAtStart: sample(ScopePod, "net:[1]", 10, 0, 20), DropsAtEnd: sample(ScopePod, "net:[1]", 25, 1, 30)}
+	delta, ok := pod.AttributableDropGrowth()
+	if !ok || delta != (UDPDropDelta{ReceiveBufferErrors: 15, SendBufferErrors: 1, InErrors: 10}) || delta.Total() != 26 {
+		t.Fatalf("pod delta = %+v %v", delta, ok)
+	}
+	if warning := pod.DropWarning(); !strings.Contains(warning, "gen-0") || !strings.Contains(warning, "receive buffer 15") {
+		t.Fatalf("warning = %q", warning)
+	}
+	shared := RunEvidence{DropsAtStart: sample(ScopeNetworkNamespace, "net:[1]", 10, 0, 0), DropsAtEnd: sample(ScopeNetworkNamespace, "net:[1]", 99, 0, 0)}
+	if _, ok := shared.DropDelta(); !ok {
+		t.Fatal("a shared namespace's delta is still reported")
+	}
+	if _, ok := shared.AttributableDropGrowth(); ok || shared.DropWarning() != "" {
+		t.Fatal("a shared namespace's growth must not be attributed to the run")
+	}
+	for name, evidence := range map[string]RunEvidence{
+		"missing end":      {DropsAtStart: sample(ScopePod, "net:[1]", 1, 0, 0)},
+		"other namespace":  {DropsAtStart: sample(ScopePod, "net:[1]", 1, 0, 0), DropsAtEnd: sample(ScopePod, "net:[2]", 5, 0, 0)},
+		"counter reset":    {DropsAtStart: sample(ScopePod, "net:[1]", 9, 0, 0), DropsAtEnd: sample(ScopePod, "net:[1]", 2, 0, 0)},
+		"no growth in pod": {DropsAtStart: sample(ScopePod, "net:[1]", 3, 0, 0), DropsAtEnd: sample(ScopePod, "net:[1]", 3, 0, 0)},
+	} {
+		if evidence.DropWarning() != "" {
+			t.Fatalf("%s warned", name)
+		}
+	}
+	var none *RunEvidence
+	none.Finish("", nil)
 }

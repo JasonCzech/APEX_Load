@@ -7226,6 +7226,220 @@ func (x *RunAdoptionProof) GetRunSupervisionToken() []byte {
 	return nil
 }
 
+type HTTP3ProbeRequest struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	TestId              string                 `protobuf:"bytes,1,opt,name=test_id,json=testId,proto3" json:"test_id,omitempty"`
+	ExecutionGeneration uint64                 `protobuf:"varint,2,opt,name=execution_generation,json=executionGeneration,proto3" json:"execution_generation,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *HTTP3ProbeRequest) Reset() {
+	*x = HTTP3ProbeRequest{}
+	mi := &file_api_proto_generator_proto_msgTypes[67]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HTTP3ProbeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HTTP3ProbeRequest) ProtoMessage() {}
+
+func (x *HTTP3ProbeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_generator_proto_msgTypes[67]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HTTP3ProbeRequest.ProtoReflect.Descriptor instead.
+func (*HTTP3ProbeRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{67}
+}
+
+func (x *HTTP3ProbeRequest) GetTestId() string {
+	if x != nil {
+		return x.TestId
+	}
+	return ""
+}
+
+func (x *HTTP3ProbeRequest) GetExecutionGeneration() uint64 {
+	if x != nil {
+		return x.ExecutionGeneration
+	}
+	return 0
+}
+
+type HTTP3ProbeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Results       []*HTTP3ProbeResult    `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HTTP3ProbeResponse) Reset() {
+	*x = HTTP3ProbeResponse{}
+	mi := &file_api_proto_generator_proto_msgTypes[68]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HTTP3ProbeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HTTP3ProbeResponse) ProtoMessage() {}
+
+func (x *HTTP3ProbeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_generator_proto_msgTypes[68]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HTTP3ProbeResponse.ProtoReflect.Descriptor instead.
+func (*HTTP3ProbeResponse) Descriptor() ([]byte, []int) {
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{68}
+}
+
+func (x *HTTP3ProbeResponse) GetResults() []*HTTP3ProbeResult {
+	if x != nil {
+		return x.Results
+	}
+	return nil
+}
+
+type HTTP3ProbeResult struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Group  string                 `protobuf:"bytes,1,opt,name=group,proto3" json:"group,omitempty"`
+	Origin string                 `protobuf:"bytes,2,opt,name=origin,proto3" json:"origin,omitempty"`
+	// "3" or "auto+h3".
+	Policy      string `protobuf:"bytes,3,opt,name=policy,proto3" json:"policy,omitempty"`
+	Ok          bool   `protobuf:"varint,4,opt,name=ok,proto3" json:"ok,omitempty"`
+	ErrorClass  string `protobuf:"bytes,5,opt,name=error_class,json=errorClass,proto3" json:"error_class,omitempty"`
+	Error       string `protobuf:"bytes,6,opt,name=error,proto3" json:"error,omitempty"`
+	Address     string `protobuf:"bytes,7,opt,name=address,proto3" json:"address,omitempty"`
+	HandshakeUs int64  `protobuf:"varint,8,opt,name=handshake_us,json=handshakeUs,proto3" json:"handshake_us,omitempty"`
+	// Why the origin was not checked; empty when it was.
+	Skipped           string `protobuf:"bytes,9,opt,name=skipped,proto3" json:"skipped,omitempty"`
+	CheckedAtUnixNano int64  `protobuf:"varint,10,opt,name=checked_at_unix_nano,json=checkedAtUnixNano,proto3" json:"checked_at_unix_nano,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *HTTP3ProbeResult) Reset() {
+	*x = HTTP3ProbeResult{}
+	mi := &file_api_proto_generator_proto_msgTypes[69]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HTTP3ProbeResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HTTP3ProbeResult) ProtoMessage() {}
+
+func (x *HTTP3ProbeResult) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_generator_proto_msgTypes[69]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HTTP3ProbeResult.ProtoReflect.Descriptor instead.
+func (*HTTP3ProbeResult) Descriptor() ([]byte, []int) {
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{69}
+}
+
+func (x *HTTP3ProbeResult) GetGroup() string {
+	if x != nil {
+		return x.Group
+	}
+	return ""
+}
+
+func (x *HTTP3ProbeResult) GetOrigin() string {
+	if x != nil {
+		return x.Origin
+	}
+	return ""
+}
+
+func (x *HTTP3ProbeResult) GetPolicy() string {
+	if x != nil {
+		return x.Policy
+	}
+	return ""
+}
+
+func (x *HTTP3ProbeResult) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *HTTP3ProbeResult) GetErrorClass() string {
+	if x != nil {
+		return x.ErrorClass
+	}
+	return ""
+}
+
+func (x *HTTP3ProbeResult) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *HTTP3ProbeResult) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *HTTP3ProbeResult) GetHandshakeUs() int64 {
+	if x != nil {
+		return x.HandshakeUs
+	}
+	return 0
+}
+
+func (x *HTTP3ProbeResult) GetSkipped() string {
+	if x != nil {
+		return x.Skipped
+	}
+	return ""
+}
+
+func (x *HTTP3ProbeResult) GetCheckedAtUnixNano() int64 {
+	if x != nil {
+		return x.CheckedAtUnixNano
+	}
+	return 0
+}
+
 var File_api_proto_generator_proto protoreflect.FileDescriptor
 
 const file_api_proto_generator_proto_rawDesc = "" +
@@ -7985,7 +8199,25 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\n" +
 	"generation\x18\x01 \x01(\x04R\n" +
 	"generation\x122\n" +
-	"\x15run_supervision_token\x18\x02 \x01(\fR\x13runSupervisionToken*\xc6\x01\n" +
+	"\x15run_supervision_token\x18\x02 \x01(\fR\x13runSupervisionToken\"_\n" +
+	"\x11HTTP3ProbeRequest\x12\x17\n" +
+	"\atest_id\x18\x01 \x01(\tR\x06testId\x121\n" +
+	"\x14execution_generation\x18\x02 \x01(\x04R\x13executionGeneration\"M\n" +
+	"\x12HTTP3ProbeResponse\x127\n" +
+	"\aresults\x18\x01 \x03(\v2\x1d.apexload.v1.HTTP3ProbeResultR\aresults\"\xa7\x02\n" +
+	"\x10HTTP3ProbeResult\x12\x14\n" +
+	"\x05group\x18\x01 \x01(\tR\x05group\x12\x16\n" +
+	"\x06origin\x18\x02 \x01(\tR\x06origin\x12\x16\n" +
+	"\x06policy\x18\x03 \x01(\tR\x06policy\x12\x0e\n" +
+	"\x02ok\x18\x04 \x01(\bR\x02ok\x12\x1f\n" +
+	"\verror_class\x18\x05 \x01(\tR\n" +
+	"errorClass\x12\x14\n" +
+	"\x05error\x18\x06 \x01(\tR\x05error\x12\x18\n" +
+	"\aaddress\x18\a \x01(\tR\aaddress\x12!\n" +
+	"\fhandshake_us\x18\b \x01(\x03R\vhandshakeUs\x12\x18\n" +
+	"\askipped\x18\t \x01(\tR\askipped\x12/\n" +
+	"\x14checked_at_unix_nano\x18\n" +
+	" \x01(\x03R\x11checkedAtUnixNano*\xc6\x01\n" +
 	"\x13RunSupervisionState\x12%\n" +
 	"!RUN_SUPERVISION_STATE_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cRUN_SUPERVISION_STATE_STAGED\x10\x01\x12 \n" +
@@ -7998,7 +8230,8 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"&RUN_ADOPTION_OUTCOME_ALREADY_COMPLETED\x10\x02\x12(\n" +
 	"$RUN_ADOPTION_OUTCOME_ALREADY_STOPPED\x10\x03\x12!\n" +
 	"\x1dRUN_ADOPTION_OUTCOME_REJECTED\x10\x04\x12%\n" +
-	"!RUN_ADOPTION_OUTCOME_UNKNOWN_TEST\x10\x052\xff\t\n" +
+	"!RUN_ADOPTION_OUTCOME_UNKNOWN_TEST\x10\x052\xce\n" +
+	"\n" +
 	"\x10GeneratorControl\x12P\n" +
 	"\x12ReservePodCapacity\x12\x1d.apexload.v1.PodCapacityClaim\x1a\x1b.apexload.v1.PodCapacityAck\x12W\n" +
 	"\x13ClaimExecutionEpoch\x12 .apexload.v1.ExecutionEpochClaim\x1a\x1e.apexload.v1.ExecutionEpochAck\x12W\n" +
@@ -8017,7 +8250,9 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x10DistributeScript\x12\x1a.apexload.v1.ScriptPayload\x1a\x16.apexload.v1.ScriptAck\x12W\n" +
 	"\x12GetArchiveArtifact\x12#.apexload.v1.ArchiveArtifactRequest\x1a\x1c.apexload.v1.ArchiveArtifact\x12a\n" +
 	"\x15StreamArchiveArtifact\x12#.apexload.v1.ArchiveArtifactRequest\x1a!.apexload.v1.ArchiveArtifactChunk0\x01\x12U\n" +
-	"\x13AcknowledgeEvidence\x12$.apexload.v1.EvidenceAcknowledgement\x1a\x18.apexload.v1.EvidenceAckB*Z(github.com/jasonczech/apexload/api/protob\x06proto3"
+	"\x13AcknowledgeEvidence\x12$.apexload.v1.EvidenceAcknowledgement\x1a\x18.apexload.v1.EvidenceAck\x12M\n" +
+	"\n" +
+	"ProbeHTTP3\x12\x1e.apexload.v1.HTTP3ProbeRequest\x1a\x1f.apexload.v1.HTTP3ProbeResponseB*Z(github.com/jasonczech/apexload/api/protob\x06proto3"
 
 var (
 	file_api_proto_generator_proto_rawDescOnce sync.Once
@@ -8032,7 +8267,7 @@ func file_api_proto_generator_proto_rawDescGZIP() []byte {
 }
 
 var file_api_proto_generator_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_api_proto_generator_proto_msgTypes = make([]protoimpl.MessageInfo, 78)
+var file_api_proto_generator_proto_msgTypes = make([]protoimpl.MessageInfo, 81)
 var file_api_proto_generator_proto_goTypes = []any{
 	(RunSupervisionState)(0),                     // 0: apexload.v1.RunSupervisionState
 	(RunAdoptionOutcome)(0),                      // 1: apexload.v1.RunAdoptionOutcome
@@ -8103,44 +8338,47 @@ var file_api_proto_generator_proto_goTypes = []any{
 	(*ArchiveArtifact)(nil),                      // 66: apexload.v1.ArchiveArtifact
 	(*ArchiveArtifactChunk)(nil),                 // 67: apexload.v1.ArchiveArtifactChunk
 	(*RunAdoptionProof)(nil),                     // 68: apexload.v1.RunAdoptionProof
-	nil,                                          // 69: apexload.v1.PreparationCheckRequest.ExpectedGroupsEntry
-	nil,                                          // 70: apexload.v1.PreparationCheckRequest.ExpectedRuntimeResourcesEntry
-	nil,                                          // 71: apexload.v1.CapacityVector.ProtocolsEntry
-	nil,                                          // 72: apexload.v1.PodCapacityClaim.GroupPeaksEntry
-	nil,                                          // 73: apexload.v1.WorkAssignment.EnvironmentEntry
-	nil,                                          // 74: apexload.v1.WorkAssignment.SecretBundleEntry
-	nil,                                          // 75: apexload.v1.WorkCommitAck.RuntimeResourceAdmissionsEntry
-	nil,                                          // 76: apexload.v1.HTTPVersionMix.ByVersionEntry
-	nil,                                          // 77: apexload.v1.HTTPVersionMix.BySelectionEntry
-	nil,                                          // 78: apexload.v1.HTTPVersionMix.ByFallbackEntry
-	nil,                                          // 79: apexload.v1.HTTPVersionMix.ByQuicErrorEntry
-	(*durationpb.Duration)(nil),                  // 80: google.protobuf.Duration
+	(*HTTP3ProbeRequest)(nil),                    // 69: apexload.v1.HTTP3ProbeRequest
+	(*HTTP3ProbeResponse)(nil),                   // 70: apexload.v1.HTTP3ProbeResponse
+	(*HTTP3ProbeResult)(nil),                     // 71: apexload.v1.HTTP3ProbeResult
+	nil,                                          // 72: apexload.v1.PreparationCheckRequest.ExpectedGroupsEntry
+	nil,                                          // 73: apexload.v1.PreparationCheckRequest.ExpectedRuntimeResourcesEntry
+	nil,                                          // 74: apexload.v1.CapacityVector.ProtocolsEntry
+	nil,                                          // 75: apexload.v1.PodCapacityClaim.GroupPeaksEntry
+	nil,                                          // 76: apexload.v1.WorkAssignment.EnvironmentEntry
+	nil,                                          // 77: apexload.v1.WorkAssignment.SecretBundleEntry
+	nil,                                          // 78: apexload.v1.WorkCommitAck.RuntimeResourceAdmissionsEntry
+	nil,                                          // 79: apexload.v1.HTTPVersionMix.ByVersionEntry
+	nil,                                          // 80: apexload.v1.HTTPVersionMix.BySelectionEntry
+	nil,                                          // 81: apexload.v1.HTTPVersionMix.ByFallbackEntry
+	nil,                                          // 82: apexload.v1.HTTPVersionMix.ByQuicErrorEntry
+	(*durationpb.Duration)(nil),                  // 83: google.protobuf.Duration
 }
 var file_api_proto_generator_proto_depIdxs = []int32{
 	3,   // 0: apexload.v1.EvidenceAcknowledgement.artifacts:type_name -> apexload.v1.AcknowledgedEvidence
-	69,  // 1: apexload.v1.PreparationCheckRequest.expected_groups:type_name -> apexload.v1.PreparationCheckRequest.ExpectedGroupsEntry
-	70,  // 2: apexload.v1.PreparationCheckRequest.expected_runtime_resources:type_name -> apexload.v1.PreparationCheckRequest.ExpectedRuntimeResourcesEntry
-	71,  // 3: apexload.v1.CapacityVector.protocols:type_name -> apexload.v1.CapacityVector.ProtocolsEntry
+	72,  // 1: apexload.v1.PreparationCheckRequest.expected_groups:type_name -> apexload.v1.PreparationCheckRequest.ExpectedGroupsEntry
+	73,  // 2: apexload.v1.PreparationCheckRequest.expected_runtime_resources:type_name -> apexload.v1.PreparationCheckRequest.ExpectedRuntimeResourcesEntry
+	74,  // 3: apexload.v1.CapacityVector.protocols:type_name -> apexload.v1.CapacityVector.ProtocolsEntry
 	6,   // 4: apexload.v1.PodCapacityClaim.schedulable:type_name -> apexload.v1.CapacityVector
 	6,   // 5: apexload.v1.PodCapacityClaim.demand:type_name -> apexload.v1.CapacityVector
-	72,  // 6: apexload.v1.PodCapacityClaim.group_peaks:type_name -> apexload.v1.PodCapacityClaim.GroupPeaksEntry
+	75,  // 6: apexload.v1.PodCapacityClaim.group_peaks:type_name -> apexload.v1.PodCapacityClaim.GroupPeaksEntry
 	6,   // 7: apexload.v1.PodCapacitySnapshot.schedulable:type_name -> apexload.v1.CapacityVector
 	6,   // 8: apexload.v1.PodCapacitySnapshot.reserved:type_name -> apexload.v1.CapacityVector
 	8,   // 9: apexload.v1.PodCapacityAck.snapshot:type_name -> apexload.v1.PodCapacitySnapshot
 	11,  // 10: apexload.v1.SourcePlanManifest.groups:type_name -> apexload.v1.SourcePlanGroup
-	73,  // 11: apexload.v1.WorkAssignment.environment:type_name -> apexload.v1.WorkAssignment.EnvironmentEntry
+	76,  // 11: apexload.v1.WorkAssignment.environment:type_name -> apexload.v1.WorkAssignment.EnvironmentEntry
 	31,  // 12: apexload.v1.WorkAssignment.data_files:type_name -> apexload.v1.DataFile
 	30,  // 13: apexload.v1.WorkAssignment.redaction_rules:type_name -> apexload.v1.RedactionRule
-	80,  // 14: apexload.v1.WorkAssignment.target_duration:type_name -> google.protobuf.Duration
-	80,  // 15: apexload.v1.WorkAssignment.ramp_up:type_name -> google.protobuf.Duration
-	80,  // 16: apexload.v1.WorkAssignment.ramp_down:type_name -> google.protobuf.Duration
-	80,  // 17: apexload.v1.WorkAssignment.pre_baseline:type_name -> google.protobuf.Duration
-	80,  // 18: apexload.v1.WorkAssignment.post_baseline:type_name -> google.protobuf.Duration
-	80,  // 19: apexload.v1.WorkAssignment.duration_offset:type_name -> google.protobuf.Duration
-	74,  // 20: apexload.v1.WorkAssignment.secret_bundle:type_name -> apexload.v1.WorkAssignment.SecretBundleEntry
-	80,  // 21: apexload.v1.WorkAssignment.start_offset:type_name -> google.protobuf.Duration
+	83,  // 14: apexload.v1.WorkAssignment.target_duration:type_name -> google.protobuf.Duration
+	83,  // 15: apexload.v1.WorkAssignment.ramp_up:type_name -> google.protobuf.Duration
+	83,  // 16: apexload.v1.WorkAssignment.ramp_down:type_name -> google.protobuf.Duration
+	83,  // 17: apexload.v1.WorkAssignment.pre_baseline:type_name -> google.protobuf.Duration
+	83,  // 18: apexload.v1.WorkAssignment.post_baseline:type_name -> google.protobuf.Duration
+	83,  // 19: apexload.v1.WorkAssignment.duration_offset:type_name -> google.protobuf.Duration
+	77,  // 20: apexload.v1.WorkAssignment.secret_bundle:type_name -> apexload.v1.WorkAssignment.SecretBundleEntry
+	83,  // 21: apexload.v1.WorkAssignment.start_offset:type_name -> google.protobuf.Duration
 	10,  // 22: apexload.v1.WorkAssignment.source_plan:type_name -> apexload.v1.SourcePlanManifest
-	80,  // 23: apexload.v1.WorkAssignment.adoption_grace:type_name -> google.protobuf.Duration
+	83,  // 23: apexload.v1.WorkAssignment.adoption_grace:type_name -> google.protobuf.Duration
 	19,  // 24: apexload.v1.WorkAssignment.java_host:type_name -> apexload.v1.JavaHostSelection
 	16,  // 25: apexload.v1.WorkAssignment.runtime_resource_claim:type_name -> apexload.v1.RuntimeResourceClaim
 	13,  // 26: apexload.v1.WorkAssignment.joint_evidence_projection:type_name -> apexload.v1.JointEvidenceProjection
@@ -8149,7 +8387,7 @@ var file_api_proto_generator_proto_depIdxs = []int32{
 	16,  // 29: apexload.v1.RuntimeResourceAdmission.claim:type_name -> apexload.v1.RuntimeResourceClaim
 	15,  // 30: apexload.v1.RuntimeResourceAdmission.admitted:type_name -> apexload.v1.RuntimeResourceDemand
 	20,  // 31: apexload.v1.JavaHostCapabilities.profiles:type_name -> apexload.v1.JavaHostProfile
-	75,  // 32: apexload.v1.WorkCommitAck.runtime_resource_admissions:type_name -> apexload.v1.WorkCommitAck.RuntimeResourceAdmissionsEntry
+	78,  // 32: apexload.v1.WorkCommitAck.runtime_resource_admissions:type_name -> apexload.v1.WorkCommitAck.RuntimeResourceAdmissionsEntry
 	0,   // 33: apexload.v1.RunSupervisionAck.state:type_name -> apexload.v1.RunSupervisionState
 	27,  // 34: apexload.v1.ExecutionEpochClaim.adoptions:type_name -> apexload.v1.RunAdoption
 	68,  // 35: apexload.v1.RunAdoption.prior_proofs:type_name -> apexload.v1.RunAdoptionProof
@@ -8158,9 +8396,9 @@ var file_api_proto_generator_proto_depIdxs = []int32{
 	19,  // 38: apexload.v1.JavaHostPlacement.selection:type_name -> apexload.v1.JavaHostSelection
 	32,  // 39: apexload.v1.AssignmentAck.java_host:type_name -> apexload.v1.JavaHostPlacement
 	17,  // 40: apexload.v1.AssignmentAck.runtime_resource_admission:type_name -> apexload.v1.RuntimeResourceAdmission
-	80,  // 41: apexload.v1.VUserAdjustment.ramp_duration:type_name -> google.protobuf.Duration
-	80,  // 42: apexload.v1.DurationAdjustment.target_duration:type_name -> google.protobuf.Duration
-	80,  // 43: apexload.v1.DurationAck.current_duration:type_name -> google.protobuf.Duration
+	83,  // 41: apexload.v1.VUserAdjustment.ramp_duration:type_name -> google.protobuf.Duration
+	83,  // 42: apexload.v1.DurationAdjustment.target_duration:type_name -> google.protobuf.Duration
+	83,  // 43: apexload.v1.DurationAck.current_duration:type_name -> google.protobuf.Duration
 	54,  // 44: apexload.v1.MetricsBatch.transactions:type_name -> apexload.v1.TransactionMetric
 	55,  // 45: apexload.v1.MetricsBatch.stats:type_name -> apexload.v1.GeneratorStats
 	42,  // 46: apexload.v1.MetricsBatch.groups:type_name -> apexload.v1.GroupMetric
@@ -8182,10 +8420,10 @@ var file_api_proto_generator_proto_depIdxs = []int32{
 	14,  // 62: apexload.v1.MetricsBatch.joint_metrics_info:type_name -> apexload.v1.JointMetricsInfo
 	43,  // 63: apexload.v1.MetricsBatch.http_version_mix:type_name -> apexload.v1.HTTPVersionMix
 	47,  // 64: apexload.v1.GroupMetric.metrics:type_name -> apexload.v1.MetricAggregate
-	76,  // 65: apexload.v1.HTTPVersionMix.by_version:type_name -> apexload.v1.HTTPVersionMix.ByVersionEntry
-	77,  // 66: apexload.v1.HTTPVersionMix.by_selection:type_name -> apexload.v1.HTTPVersionMix.BySelectionEntry
-	78,  // 67: apexload.v1.HTTPVersionMix.by_fallback:type_name -> apexload.v1.HTTPVersionMix.ByFallbackEntry
-	79,  // 68: apexload.v1.HTTPVersionMix.by_quic_error:type_name -> apexload.v1.HTTPVersionMix.ByQuicErrorEntry
+	79,  // 65: apexload.v1.HTTPVersionMix.by_version:type_name -> apexload.v1.HTTPVersionMix.ByVersionEntry
+	80,  // 66: apexload.v1.HTTPVersionMix.by_selection:type_name -> apexload.v1.HTTPVersionMix.BySelectionEntry
+	81,  // 67: apexload.v1.HTTPVersionMix.by_fallback:type_name -> apexload.v1.HTTPVersionMix.ByFallbackEntry
+	82,  // 68: apexload.v1.HTTPVersionMix.by_quic_error:type_name -> apexload.v1.HTTPVersionMix.ByQuicErrorEntry
 	45,  // 69: apexload.v1.TDigestSnapshot.centroids:type_name -> apexload.v1.TDigestCentroid
 	46,  // 70: apexload.v1.MetricAggregate.duration_digest:type_name -> apexload.v1.TDigestSnapshot
 	48,  // 71: apexload.v1.MetricAggregate.exemplars:type_name -> apexload.v1.TraceExemplar
@@ -8204,45 +8442,48 @@ var file_api_proto_generator_proto_depIdxs = []int32{
 	61,  // 84: apexload.v1.HeartbeatPong.safety_exits:type_name -> apexload.v1.GeneratorSafetyExitEvidence
 	8,   // 85: apexload.v1.HeartbeatPong.pod_capacity:type_name -> apexload.v1.PodCapacitySnapshot
 	21,  // 86: apexload.v1.HeartbeatPong.java_host:type_name -> apexload.v1.JavaHostCapabilities
-	16,  // 87: apexload.v1.PreparationCheckRequest.ExpectedRuntimeResourcesEntry.value:type_name -> apexload.v1.RuntimeResourceClaim
-	17,  // 88: apexload.v1.WorkCommitAck.RuntimeResourceAdmissionsEntry.value:type_name -> apexload.v1.RuntimeResourceAdmission
-	7,   // 89: apexload.v1.GeneratorControl.ReservePodCapacity:input_type -> apexload.v1.PodCapacityClaim
-	26,  // 90: apexload.v1.GeneratorControl.ClaimExecutionEpoch:input_type -> apexload.v1.ExecutionEpochClaim
-	24,  // 91: apexload.v1.GeneratorControl.ClaimRunSupervision:input_type -> apexload.v1.RunSupervisionClaim
-	12,  // 92: apexload.v1.GeneratorControl.AssignWork:input_type -> apexload.v1.WorkAssignment
-	22,  // 93: apexload.v1.GeneratorControl.CommitWork:input_type -> apexload.v1.WorkCommitRequest
-	5,   // 94: apexload.v1.GeneratorControl.CheckPreparation:input_type -> apexload.v1.PreparationCheckRequest
-	34,  // 95: apexload.v1.GeneratorControl.AdjustVUsers:input_type -> apexload.v1.VUserAdjustment
-	36,  // 96: apexload.v1.GeneratorControl.AdjustDuration:input_type -> apexload.v1.DurationAdjustment
-	57,  // 97: apexload.v1.GeneratorControl.SetPaused:input_type -> apexload.v1.PauseRequest
-	38,  // 98: apexload.v1.GeneratorControl.StopTest:input_type -> apexload.v1.StopRequest
-	56,  // 99: apexload.v1.GeneratorControl.StreamMetrics:input_type -> apexload.v1.ControlSignal
-	59,  // 100: apexload.v1.GeneratorControl.Heartbeat:input_type -> apexload.v1.HeartbeatPing
-	63,  // 101: apexload.v1.GeneratorControl.DistributeScript:input_type -> apexload.v1.ScriptPayload
-	65,  // 102: apexload.v1.GeneratorControl.GetArchiveArtifact:input_type -> apexload.v1.ArchiveArtifactRequest
-	65,  // 103: apexload.v1.GeneratorControl.StreamArchiveArtifact:input_type -> apexload.v1.ArchiveArtifactRequest
-	2,   // 104: apexload.v1.GeneratorControl.AcknowledgeEvidence:input_type -> apexload.v1.EvidenceAcknowledgement
-	9,   // 105: apexload.v1.GeneratorControl.ReservePodCapacity:output_type -> apexload.v1.PodCapacityAck
-	29,  // 106: apexload.v1.GeneratorControl.ClaimExecutionEpoch:output_type -> apexload.v1.ExecutionEpochAck
-	25,  // 107: apexload.v1.GeneratorControl.ClaimRunSupervision:output_type -> apexload.v1.RunSupervisionAck
-	33,  // 108: apexload.v1.GeneratorControl.AssignWork:output_type -> apexload.v1.AssignmentAck
-	23,  // 109: apexload.v1.GeneratorControl.CommitWork:output_type -> apexload.v1.WorkCommitAck
-	23,  // 110: apexload.v1.GeneratorControl.CheckPreparation:output_type -> apexload.v1.WorkCommitAck
-	35,  // 111: apexload.v1.GeneratorControl.AdjustVUsers:output_type -> apexload.v1.AdjustmentAck
-	37,  // 112: apexload.v1.GeneratorControl.AdjustDuration:output_type -> apexload.v1.DurationAck
-	58,  // 113: apexload.v1.GeneratorControl.SetPaused:output_type -> apexload.v1.PauseAck
-	39,  // 114: apexload.v1.GeneratorControl.StopTest:output_type -> apexload.v1.StopAck
-	40,  // 115: apexload.v1.GeneratorControl.StreamMetrics:output_type -> apexload.v1.MetricsBatch
-	62,  // 116: apexload.v1.GeneratorControl.Heartbeat:output_type -> apexload.v1.HeartbeatPong
-	64,  // 117: apexload.v1.GeneratorControl.DistributeScript:output_type -> apexload.v1.ScriptAck
-	66,  // 118: apexload.v1.GeneratorControl.GetArchiveArtifact:output_type -> apexload.v1.ArchiveArtifact
-	67,  // 119: apexload.v1.GeneratorControl.StreamArchiveArtifact:output_type -> apexload.v1.ArchiveArtifactChunk
-	4,   // 120: apexload.v1.GeneratorControl.AcknowledgeEvidence:output_type -> apexload.v1.EvidenceAck
-	105, // [105:121] is the sub-list for method output_type
-	89,  // [89:105] is the sub-list for method input_type
-	89,  // [89:89] is the sub-list for extension type_name
-	89,  // [89:89] is the sub-list for extension extendee
-	0,   // [0:89] is the sub-list for field type_name
+	71,  // 87: apexload.v1.HTTP3ProbeResponse.results:type_name -> apexload.v1.HTTP3ProbeResult
+	16,  // 88: apexload.v1.PreparationCheckRequest.ExpectedRuntimeResourcesEntry.value:type_name -> apexload.v1.RuntimeResourceClaim
+	17,  // 89: apexload.v1.WorkCommitAck.RuntimeResourceAdmissionsEntry.value:type_name -> apexload.v1.RuntimeResourceAdmission
+	7,   // 90: apexload.v1.GeneratorControl.ReservePodCapacity:input_type -> apexload.v1.PodCapacityClaim
+	26,  // 91: apexload.v1.GeneratorControl.ClaimExecutionEpoch:input_type -> apexload.v1.ExecutionEpochClaim
+	24,  // 92: apexload.v1.GeneratorControl.ClaimRunSupervision:input_type -> apexload.v1.RunSupervisionClaim
+	12,  // 93: apexload.v1.GeneratorControl.AssignWork:input_type -> apexload.v1.WorkAssignment
+	22,  // 94: apexload.v1.GeneratorControl.CommitWork:input_type -> apexload.v1.WorkCommitRequest
+	5,   // 95: apexload.v1.GeneratorControl.CheckPreparation:input_type -> apexload.v1.PreparationCheckRequest
+	34,  // 96: apexload.v1.GeneratorControl.AdjustVUsers:input_type -> apexload.v1.VUserAdjustment
+	36,  // 97: apexload.v1.GeneratorControl.AdjustDuration:input_type -> apexload.v1.DurationAdjustment
+	57,  // 98: apexload.v1.GeneratorControl.SetPaused:input_type -> apexload.v1.PauseRequest
+	38,  // 99: apexload.v1.GeneratorControl.StopTest:input_type -> apexload.v1.StopRequest
+	56,  // 100: apexload.v1.GeneratorControl.StreamMetrics:input_type -> apexload.v1.ControlSignal
+	59,  // 101: apexload.v1.GeneratorControl.Heartbeat:input_type -> apexload.v1.HeartbeatPing
+	63,  // 102: apexload.v1.GeneratorControl.DistributeScript:input_type -> apexload.v1.ScriptPayload
+	65,  // 103: apexload.v1.GeneratorControl.GetArchiveArtifact:input_type -> apexload.v1.ArchiveArtifactRequest
+	65,  // 104: apexload.v1.GeneratorControl.StreamArchiveArtifact:input_type -> apexload.v1.ArchiveArtifactRequest
+	2,   // 105: apexload.v1.GeneratorControl.AcknowledgeEvidence:input_type -> apexload.v1.EvidenceAcknowledgement
+	69,  // 106: apexload.v1.GeneratorControl.ProbeHTTP3:input_type -> apexload.v1.HTTP3ProbeRequest
+	9,   // 107: apexload.v1.GeneratorControl.ReservePodCapacity:output_type -> apexload.v1.PodCapacityAck
+	29,  // 108: apexload.v1.GeneratorControl.ClaimExecutionEpoch:output_type -> apexload.v1.ExecutionEpochAck
+	25,  // 109: apexload.v1.GeneratorControl.ClaimRunSupervision:output_type -> apexload.v1.RunSupervisionAck
+	33,  // 110: apexload.v1.GeneratorControl.AssignWork:output_type -> apexload.v1.AssignmentAck
+	23,  // 111: apexload.v1.GeneratorControl.CommitWork:output_type -> apexload.v1.WorkCommitAck
+	23,  // 112: apexload.v1.GeneratorControl.CheckPreparation:output_type -> apexload.v1.WorkCommitAck
+	35,  // 113: apexload.v1.GeneratorControl.AdjustVUsers:output_type -> apexload.v1.AdjustmentAck
+	37,  // 114: apexload.v1.GeneratorControl.AdjustDuration:output_type -> apexload.v1.DurationAck
+	58,  // 115: apexload.v1.GeneratorControl.SetPaused:output_type -> apexload.v1.PauseAck
+	39,  // 116: apexload.v1.GeneratorControl.StopTest:output_type -> apexload.v1.StopAck
+	40,  // 117: apexload.v1.GeneratorControl.StreamMetrics:output_type -> apexload.v1.MetricsBatch
+	62,  // 118: apexload.v1.GeneratorControl.Heartbeat:output_type -> apexload.v1.HeartbeatPong
+	64,  // 119: apexload.v1.GeneratorControl.DistributeScript:output_type -> apexload.v1.ScriptAck
+	66,  // 120: apexload.v1.GeneratorControl.GetArchiveArtifact:output_type -> apexload.v1.ArchiveArtifact
+	67,  // 121: apexload.v1.GeneratorControl.StreamArchiveArtifact:output_type -> apexload.v1.ArchiveArtifactChunk
+	4,   // 122: apexload.v1.GeneratorControl.AcknowledgeEvidence:output_type -> apexload.v1.EvidenceAck
+	70,  // 123: apexload.v1.GeneratorControl.ProbeHTTP3:output_type -> apexload.v1.HTTP3ProbeResponse
+	107, // [107:124] is the sub-list for method output_type
+	90,  // [90:107] is the sub-list for method input_type
+	90,  // [90:90] is the sub-list for extension type_name
+	90,  // [90:90] is the sub-list for extension extendee
+	0,   // [0:90] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_generator_proto_init() }
@@ -8266,7 +8507,7 @@ func file_api_proto_generator_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_generator_proto_rawDesc), len(file_api_proto_generator_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   78,
+			NumMessages:   81,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

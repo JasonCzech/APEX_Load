@@ -130,7 +130,7 @@ Browsers choose HTTP/3 themselves. `config.browser.quic` is `auto` (the browser'
 
 ## Enable HTTP/3 execution
 
-HTTP/3 execution is off until an operator enables it. Set `APEXLOAD_HTTP3=true` on the controller and on every generator, then restart them. The Helm chart does not set it yet; add it to the controller and generator deployments with your deployment tooling, for example:
+HTTP/3 execution is off until an operator enables it. Set `APEXLOAD_HTTP3=true` on the controller and on every generator, then restart them. With the Helm chart, set `http3.enabled=true`; the chart also carries the QUIC limits below as `http3.quic.*` and the preflight policy as `http3.preflight`. Other deployments set the variable with their own tooling, for example:
 
 ```sh
 kubectl -n apexload set env deployment/apexload-controller APEXLOAD_HTTP3=true
@@ -153,17 +153,33 @@ Installation-wide QUIC limits are environment variables on the controller and ge
 
 An initial window may not exceed its maximum. Receive windows size memory per connection; raise them only within the generator's capacity plan.
 
+## Scenario preflight
+
+Before a run that uses HTTP/3 starts, APEX Load checks each `https` origin an `auto+h3` or exact-`3` request reaches with one QUIC handshake, without sending a request. Each generator that runs the group checks from its own network, after the run's work is staged and before anything is committed; a local run checks from the controller. The check uses the group's TLS settings, secrets and target policy in a session of its own, so it seeds no virtual user's Alt-Svc cache, session tickets or address tokens.
+
+`APEXLOAD_HTTP3_PREFLIGHT` on the controller sets the policy:
+
+| Policy | Effect |
+| --- | --- |
+| `report` (default) | Records every check with the run. |
+| `block` | Also refuses to start the run when an exact-`3` origin fails its handshake. The error names the group, origin, generator and failure class, and no load-test traffic is sent. |
+| `off` | Skips the preflight. |
+
+Only a failed exact-`3` check blocks: an `auto+h3` origin that cannot complete a handshake stays on TCP. Origins built from templates (`https://{{param.host}}/`) and proxied routes are listed as not checked, as are checks cut short by the preflight's 20-second limit and generators that cannot run it. The run report's Diagnostics section lists every check under **HTTP/3 preflight**, and failed checks of a run that started add a finding: major for exact `3`, whose requests cannot fall back, minor for `auto+h3`. A run adopted by another controller after a failover does not carry the preflight results of the controller that started it.
+
 ## Network egress and UDP buffers
 
-- **Egress.** Generators need UDP to each target's HTTPS port (usually 443) and to any alternative port a target advertises (`h3=":8443"`). Cloud firewalls, corporate egress proxies and some NAT gateways drop UDP 443 by default. The Helm chart ships ingress policies only; the on-premises egress example allows every port outside the excluded cluster ranges. Whether the chart should open UDP egress by default is still to be decided.
+- **Egress.** Generators need UDP to each target's HTTPS port (usually 443) and to any alternative port a target advertises (`h3=":8443"`); the controller needs it too for script debug and local runs. Cloud firewalls, corporate egress proxies and some NAT gateways drop UDP 443 by default. The Helm chart's own network policies restrict ingress only, so the chart adds no egress restriction. Its opt-in egress profiles (`networkPolicy.egress.enabled=true`) allow DNS, the control plane and the load-test targets, with UDP 443 open next to TCP 80 and 443 by default; add any alternative HTTP/3 ports to `networkPolicy.egress.targets.udpPorts`. The on-premises egress example allows every port outside the excluded cluster ranges for generators and UDP 443 for the controller.
 - **What blocked UDP looks like.** `auto+h3` falls back after the QUIC handshake times out (`quic_connect_failed`, five seconds by default), keeps that origin on TCP for `broken_ttl_ms`, and the Protocol Mix finding reports the fallback ratio. Exact `3` fails every request.
-- **UDP socket buffers.** QUIC throughput depends on the kernel's UDP buffer limits. On Linux generators raise `net.core.rmem_max` and `net.core.wmem_max` (for example to 7,500,000 bytes). These are node-level settings on Kubernetes, so set them on the generator nodes rather than in the pod.
-- **File descriptors.** Each virtual user that uses HTTP/3 holds its own UDP socket, in addition to its TCP connections; size the generator's open-file limit for the VUser count.
+- **UDP socket buffers.** QUIC throughput depends on the kernel's UDP buffer limits. On Linux generators raise `net.core.rmem_max` and `net.core.wmem_max` (for example to 7,500,000 bytes). These are node-level settings on Kubernetes, so set them on the generator nodes rather than in the pod. A generator with HTTP/3 enabled logs a warning at startup when they are below 7 MB.
+- **File descriptors.** Each virtual user that uses HTTP/3 holds its own UDP socket, in addition to its TCP connections; size the generator's open-file limit for the VUser count. A generator logs a warning at startup when its open-file limit is below 256 descriptors plus one per VUser, or two per VUser with HTTP/3.
+- **Drops during a run.** Each run archive records, for the controller and every generator, the open-file limit, the UDP buffer maxima and the UDP error counters (`RcvbufErrors`, `SndbufErrors`, `InErrors`) at execution start and end. The run report shows them under **Load generator UDP**. Linux counters cover a network namespace, which may be shared with other processes, so a report warns about drops only where `APEXLOAD_UDP_COUNTER_SCOPE=pod` declares the namespace the process's own; the Helm chart sets it because its pods do not use the host network.
 - **MTU.** QUIC sends packets of at least 1,200 bytes and discovers larger sizes unless disabled. Tunnels or overlays with a small MTU can drop them; `APEXLOAD_QUIC_DISABLE_PATH_MTU_DISCOVERY=true` keeps packets at the initial size.
 
 ## Troubleshooting
 
 - **"HTTP/3 execution is not enabled on this installation."** The controller, or the generators the run was placed on, do not have `APEXLOAD_HTTP3=true`. The script still saves; enable the flag or choose a TCP policy.
+- **"HTTP/3 preflight failed for exact-3 …"** `APEXLOAD_HTTP3_PREFLIGHT=block` refused the run because a generator could not complete a QUIC handshake with an exact-`3` origin. Check UDP egress from that generator, or use `auto+h3` so the origin can stay on TCP.
 - **High fallback ratio.** Check UDP egress from the generators to the target. A short `handshake_timeout_ms` reduces the time each fallback costs.
 - **A request stays on TCP under `auto+h3`.** Its evidence names the reason: no advertisement yet, a proxy route, integrated authentication, the TLS maximum, or a recent QUIC failure.
 - **"possibly_sent".** The QUIC connection failed after the request may have reached the server. APEX Load does not repeat such a request, because it might not be safe to send twice.

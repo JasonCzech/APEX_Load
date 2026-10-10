@@ -62,6 +62,10 @@ spec:
             - name: metrics
               containerPort: 9091
           env:
+            # This pod has its own network namespace, so its UDP drop
+            # counters are attributable to it in run reports.
+            - name: APEXLOAD_UDP_COUNTER_SCOPE
+              value: pod
             # Fail closed: refuse to start in a bypass (unauthenticated) auth
             # mode, force Secure cookies, and warn on insecure gRPC transport.
             - name: APEXLOAD_ENV

@@ -18,6 +18,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/analysis"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/hostnet"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/rca"
 )
@@ -134,6 +135,7 @@ type RunArchiveManifest struct {
 	TransactionRuleResults            []TransactionSLARuleResult         `json:"transaction_rule_results,omitempty"`
 	TransactionResponseTimeSLAResults []TransactionResponseTimeSLAResult `json:"transaction_response_time_sla_results,omitempty"`
 	MessageDetailCapture              *RunArchiveMessageDetailCapture    `json:"message_detail_capture,omitempty"`
+	HostNetwork                       []hostnet.RunEvidence              `json:"host_network,omitempty"` // per process: limits and UDP drops at start and end
 	// IntervalDistributionsFile holds per-interval duration distributions
 	// (apexload.interval_distribution.v1), written once after finalize.
 	IntervalDistributionsFile      string `json:"interval_distributions_file,omitempty"`
@@ -249,6 +251,7 @@ type RunArchiveProvenance struct {
 	TerminationMode           string                              `json:"termination_mode,omitempty"`
 	CSVExports                []RunArchiveCSVExport               `json:"csv_exports,omitempty"`
 	ProtocolMix               *dsl.ProtocolMixExpectation         `json:"protocol_mix,omitempty"` // strictest Protocol Mix expectation across groups
+	HTTP3Preflight            *RunArchiveHTTP3Preflight           `json:"http3_preflight,omitempty"`
 	ApplicationID             string                              `json:"application_id,omitempty"`
 	ReleaseID                 string                              `json:"release_id,omitempty"`
 	ScenarioID                string                              `json:"scenario_id,omitempty"`
@@ -594,6 +597,8 @@ type RunArchiveReport struct {
 	ChangeAttribution                 RunArchiveChangeAttribution            `json:"change_attribution"`
 	ReportProfiles                    []RunArchiveReportProfile              `json:"report_profiles,omitempty"`
 	NetworkPhases                     RunArchiveNetworkPhaseSummary          `json:"network_phases,omitempty"`
+	HostNetwork                       []RunArchiveHostNetworkEvidence        `json:"host_network,omitempty"`
+	HTTP3Preflight                    *RunArchiveHTTP3Preflight              `json:"http3_preflight,omitempty"`
 	ArtifactInventory                 []RunArchiveArtifact                   `json:"artifact_inventory,omitempty"`
 	Integrity                         *RunArchiveIntegrityReport             `json:"integrity,omitempty"`
 	Manifest                          *RunArchiveManifest                    `json:"manifest"`

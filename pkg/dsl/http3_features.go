@@ -1,6 +1,11 @@
 package dsl
 
-import httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+import (
+	"net/url"
+	"strings"
+
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+)
 
 // FeatureNativeHTTP3V1 is the generator capability for exact HTTP/3 (policy
 // 3). A generator that does not advertise it, including any older generator,
@@ -54,4 +59,97 @@ func RequiredHTTPRuntimeFeatures(script *Script) []string {
 		return []string{FeatureNativeHTTP3V1}
 	}
 	return nil
+}
+
+// MaxHTTP3ProbeOrigins bounds the origins a preflight checks per script.
+const MaxHTTP3ProbeOrigins = 16
+
+// HTTP3ProbeOrigin is an origin a script's HTTP/3 policy will reach. A
+// dynamic one (a target built from a template) is listed for the record
+// but cannot be checked before the run resolves it.
+type HTTP3ProbeOrigin struct {
+	Origin  string // scheme://host[:port], or the raw template when dynamic
+	Policy  string // 3 or auto+h3; 3 when requests use both
+	Dynamic bool
+}
+
+// HTTP3ProbeOrigins lists, in first-use order, the https origins requests
+// reach under an HTTP/3 policy, at most MaxHTTP3ProbeOrigins. Cleartext
+// targets are not HTTP/3 origins: auto+h3 keeps them on TCP and validation
+// refuses them for 3.
+func HTTP3ProbeOrigins(script *Script) []HTTP3ProbeOrigin {
+	if script == nil {
+		return nil
+	}
+	switch ProtocolFamily(script.Protocol) {
+	case "http", "soap", "java_http":
+	default:
+		return nil
+	}
+	inherited := InheritedHTTPVersion(script)
+	base := strings.TrimSpace(script.Config.BaseURL)
+	var out []HTTP3ProbeOrigin
+	index := map[string]int{}
+	walkHTTP3RequestLeaves(script, func(_ string, leaf http3Leaf) {
+		version, err := EffectiveHTTPVersion(leaf.action, inherited)
+		if err != nil || !httpprotocol.VersionUsesQUIC(version) {
+			return
+		}
+		origin, dynamic, ok := http3LeafOrigin(strings.TrimSpace(leaf.target), base)
+		if !ok {
+			return
+		}
+		if at, seen := index[origin]; seen {
+			if version == httpprotocol.VersionHTTP3 {
+				out[at].Policy = version
+			}
+			return
+		}
+		if len(out) >= MaxHTTP3ProbeOrigins {
+			return
+		}
+		index[origin] = len(out)
+		out = append(out, HTTP3ProbeOrigin{Origin: origin, Policy: version, Dynamic: dynamic})
+	})
+	return out
+}
+
+// http3LeafOrigin resolves a request target to its origin. ok is false for
+// a cleartext or unusable target. Only a template in the scheme or
+// authority makes the origin dynamic; one in the path, query or fragment
+// does not change where the request goes.
+func http3LeafOrigin(target, base string) (origin string, dynamic, ok bool) {
+	full := target
+	if !strings.Contains(target, "://") {
+		if strings.HasPrefix(target, "{{") {
+			// The whole URL may come from the template.
+			return truncateTemplate(target), true, true
+		}
+		if base == "" {
+			return "", false, false
+		}
+		full = strings.TrimRight(base, "/") + "/" + strings.TrimLeft(target, "/")
+	}
+	scheme, rest, _ := strings.Cut(full, "://")
+	authority := rest
+	if end := strings.IndexAny(rest, "/?#"); end >= 0 {
+		authority = rest[:end]
+	}
+	if strings.Contains(scheme, "{{") || strings.Contains(authority, "{{") {
+		return truncateTemplate(scheme + "://" + authority), true, true
+	}
+	parsed, err := url.Parse(scheme + "://" + authority)
+	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || parsed.Hostname() == "" {
+		return "", false, false
+	}
+	return "https://" + parsed.Host, false, true
+}
+
+// truncateTemplate bounds a recorded template to 200 characters.
+func truncateTemplate(template string) string {
+	const maxTemplate = 200
+	if runes := []rune(template); len(runes) > maxTemplate {
+		return string(runes[:maxTemplate])
+	}
+	return template
 }

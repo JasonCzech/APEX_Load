@@ -569,6 +569,8 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	report.ChangeAttribution = buildRunArchiveChangeAttribution(manifest)
 	report.ReportProfiles = buildRunArchiveReportProfiles()
 	report.NetworkPhases = networkPhases.finalizeWithExpectation(manifest.Provenance.ProtocolMix)
+	report.HostNetwork = buildRunArchiveHostNetwork(manifest.HostNetwork)
+	report.HTTP3Preflight = cloneHTTP3Preflight(manifest.Provenance.HTTP3Preflight)
 	report.ArtifactInventory = buildRunArchiveArtifactInventory(record, manifest)
 
 	window := archivePopulationWindow(manifest)

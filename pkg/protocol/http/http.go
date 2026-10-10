@@ -68,10 +68,11 @@ type HTTP struct {
 	authHeader                 string // pre-computed Authorization header value
 	httpVersion                string // empty = automatic; "1.1"/"2" = exact; "3"/"auto+h3" = HTTP/3 policies
 	quicSettings               QUICSettings
-	http3                      *http3Owner  // exact-3 transport; nil when HTTP/3 cannot run
-	http3Err                   error        // why the exact-3 pool is unavailable, when it is
-	altSvc                     *altSvcCache // auto+h3 alternatives and broken origins, per VUser
-	maxRedirects               int          // <=0 = no follow, unset/default = 10
+	http3                      *http3Owner            // exact-3 transport; nil when HTTP/3 cannot run
+	http3Err                   error                  // why the exact-3 pool is unavailable, when it is
+	http3Route                 http3RouteRoundTripper // the proxy route rule the HTTP/3 pools apply
+	altSvc                     *altSvcCache           // auto+h3 alternatives and broken origins, per VUser
+	maxRedirects               int                    // <=0 = no follow, unset/default = 10
 	requestTimeout             time.Duration
 	pageTimeout                time.Duration
 	htmlParseMode              string

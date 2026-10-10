@@ -5640,6 +5640,9 @@ func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.Result
 		}
 		groups[index].SecretResolver = resolver
 	}
+	if err := tr.runLocalHTTP3Preflight(test, groups); err != nil {
+		return nil, err
+	}
 	preBaseline, postBaseline := testexec.ResourceBaselineWindows(test.ResourceBaseline)
 	preBaseline += testexec.StartDelayWindow(test.StartDelay)
 	return engine.NewMultiGroup(engine.MultiGroupConfig{

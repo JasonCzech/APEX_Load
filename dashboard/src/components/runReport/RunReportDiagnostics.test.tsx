@@ -42,3 +42,46 @@ it('renders an archive from before the version mix', () => {
   expect(container.textContent).not.toContain('HTTP versions')
   act(() => root.unmount())
 })
+
+it('lists each load generator UDP limits and drops, and warns only for its own pod', () => {
+  const container = document.createElement('div')
+  const root = createRoot(container)
+  const report = { host_network: [
+    { source: 'gen-0', open_files: { available: true, soft: 65536 }, udp_buffers: { available: true, receive_max_bytes: 212992, send_max_bytes: 7340032 },
+      udp_drops_at_end: { scope: 'pod', receive_buffer_errors: 12, send_buffer_errors: 0, in_errors: 3 }, udp_drops_delta: { receive_buffer_errors: 12, send_buffer_errors: 0, in_errors: 3 },
+      warning: 'UDP packets were dropped on gen-0 during the run.' },
+    { source: 'controller', udp_drops_at_end: { scope: 'network_namespace', receive_buffer_errors: 50, send_buffer_errors: 0, in_errors: 0 }, udp_drops_delta: { receive_buffer_errors: 45, send_buffer_errors: 0, in_errors: 0 } },
+  ] } as unknown as RunArchiveReport
+  act(() => root.render(<RunReportDiagnostics report={report} />))
+  const rows = Array.from(container.querySelectorAll('table[aria-label="Load generator UDP"] tbody tr')).map(row => row.textContent)
+  expect(rows[0]).toContain('gen-0')
+  expect(rows[0]).toContain('65,536')
+  expect(rows[0]).toContain('15')
+  expect(rows[1]).toContain('45 (shared namespace)')
+  expect(Array.from(container.querySelectorAll('[role="note"]')).map(note => note.textContent)).toEqual(['UDP packets were dropped on gen-0 during the run.'])
+  act(() => root.unmount())
+})
+
+it('lists the HTTP/3 preflight checks and opens on a failure', () => {
+  const container = document.createElement('div')
+  const root = createRoot(container)
+  const report = { http3_preflight: { policy: 'report', omitted: 3, results: [
+    { source: 'gen-b', region: 'west', group: 'buyers', origin: 'https://api.example', policy: '3', ok: false, error_class: 'quic_handshake_timeout', error: 'timeout' },
+    { source: 'gen-a', group: 'buyers', origin: 'https://{{param.host}}', policy: '3', ok: false, skipped: 'dynamic target: the origin is known only during the run' },
+    { source: 'gen-a', group: 'buyers', origin: 'https://shop.example', policy: 'auto+h3', ok: true, handshake_ms: 4.2, address: '10.0.0.5:443' },
+    { source: 'gen-a', group: 'buyers', origin: 'https://dead.example', policy: '3', ok: false, error_class: 'timeout', error: 'not_sent: timeout: no recent network activity' },
+  ], unchecked: [{ source: 'gen-c', reason: 'generator does not support the HTTP/3 preflight' }] } } as unknown as RunArchiveReport
+  act(() => root.render(<RunReportDiagnostics report={report} />))
+  const table = container.querySelector('table[aria-label="HTTP/3 preflight"]')
+  expect(table?.closest('details')?.open).toBe(true)
+  const rows = Array.from(table?.querySelectorAll('tbody tr') ?? []).map(row => row.textContent)
+  expect(rows[0]).toContain('gen-b (west)')
+  expect(rows[0]).toContain('Failed (quic_handshake_timeout: timeout)')
+  expect(rows[1]).toContain('Not checked: dynamic target')
+  expect(rows[2]).toContain('Handshake completed in 4.2 ms to 10.0.0.5:443')
+  expect(rows[3]).toContain('Failed (not_sent: timeout: no recent network activity)')
+  expect(rows[4]).toContain('Not checked: generator does not support the HTTP/3 preflight')
+  expect(container.textContent).toContain('Policy: report.')
+  expect(container.textContent).toContain('3 more checks are not listed')
+  act(() => root.unmount())
+})

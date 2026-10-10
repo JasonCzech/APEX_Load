@@ -1,3 +1,6 @@
+{{- if and .Values.networkPolicy.egress.enabled (not .Values.networkPolicy.enabled) }}
+{{- fail "networkPolicy.egress.enabled requires networkPolicy.enabled" }}
+{{- end }}
 {{- if .Values.networkPolicy.enabled }}
 {{- $controllerAddr := trim (default ":8080" .Values.controller.addr) }}
 {{- $controllerHTTPPort := regexFind "[0-9]+$" $controllerAddr }}
@@ -94,4 +97,62 @@ spec:
       ports:
         - protocol: TCP
           port: 9090
+{{- if .Values.networkPolicy.egress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apexload-controller-egress
+  namespace: {{ include "apexload.namespace" . }}
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: network-policy
+{{ include "apexload.labels" . | indent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: apexload-controller
+  policyTypes:
+    - Egress
+  egress:
+{{ include "apexload.egressTargetRules" . | indent 4 }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: apexload-generator
+      ports:
+        - protocol: TCP
+          port: 9090
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: apexload-controller
+      ports:
+        - protocol: TCP
+          port: {{ $controllerHTTPPortInt }}
+{{- with .Values.networkPolicy.egress.controllerExtraRules }}
+{{ toYaml . | indent 4 }}
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apexload-generator-egress
+  namespace: {{ include "apexload.namespace" . }}
+  labels:
+    app.kubernetes.io/name: apexload-generator
+    app.kubernetes.io/component: network-policy
+{{ include "apexload.labels" . | indent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: apexload-generator
+  policyTypes:
+    - Egress
+  egress:
+{{ include "apexload.egressTargetRules" . | indent 4 }}
+{{- with .Values.networkPolicy.egress.generatorExtraRules }}
+{{ toYaml . | indent 4 }}
+{{- end }}
+{{- end }}
 {{- end }}

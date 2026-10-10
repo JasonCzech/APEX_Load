@@ -1574,6 +1574,12 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		streamsByTarget[target] = stream
 	}
 
+	// Every group is staged and nothing is committed: check the HTTP/3
+	// origins from the generators that will run them.
+	if err := b.runDistributedHTTP3Preflight(executionCtx, tr, test, activeGroupShards, assignedClients, loadByTarget, executionGeneration); err != nil {
+		failStartup(err.Error())
+		return
+	}
 	if test.preparationID != "" {
 		if err := b.installPreparationReadiness(tr, test, activeGroupShards, assignedClients, executionGeneration, runSupervisionTokenBytes); err != nil {
 			failStartup(err.Error())

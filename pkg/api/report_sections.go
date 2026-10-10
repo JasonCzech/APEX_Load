@@ -1004,6 +1004,8 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 					fmt.Sprintf("TTFB: avg %.1f ms / max %.1f ms", overall.AvgTTFBMs, overall.MaxTTFBMs))
 			}
 			*lines = append(*lines, reportProtocolMixLines(d.Report.NetworkPhases)...)
+			*lines = append(*lines, reportHostNetworkLines(d.Report.HostNetwork)...)
+			*lines = append(*lines, reportHTTP3PreflightLines(d.Report.HTTP3Preflight)...)
 			*lines = append(*lines, "")
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
@@ -1011,7 +1013,13 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 				if err := csvNote(write, "network_phases", "No network-phase timing was captured for this run."); err != nil {
 					return err
 				}
-				return writeProtocolMixCSVRows(write, d.Report.NetworkPhases)
+				if err := writeProtocolMixCSVRows(write, d.Report.NetworkPhases); err != nil {
+					return err
+				}
+				if err := writeHostNetworkCSVRows(write, d.Report.HostNetwork); err != nil {
+					return err
+				}
+				return writeHTTP3PreflightCSVRows(write, d.Report.HTTP3Preflight)
 			}
 			if err := writeNetworkPhaseCSVRows(write, "overall", d.Report.NetworkPhases.Overall); err != nil {
 				return err
@@ -1026,7 +1034,13 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 					return err
 				}
 			}
-			return writeProtocolMixCSVRows(write, d.Report.NetworkPhases)
+			if err := writeProtocolMixCSVRows(write, d.Report.NetworkPhases); err != nil {
+				return err
+			}
+			if err := writeHostNetworkCSVRows(write, d.Report.HostNetwork); err != nil {
+				return err
+			}
+			return writeHTTP3PreflightCSVRows(write, d.Report.HTTP3Preflight)
 		}})
 
 	// --- Errors ------------------------------------------------------------

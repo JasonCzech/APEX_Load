@@ -35,6 +35,7 @@ const (
 	GeneratorControl_GetArchiveArtifact_FullMethodName    = "/apexload.v1.GeneratorControl/GetArchiveArtifact"
 	GeneratorControl_StreamArchiveArtifact_FullMethodName = "/apexload.v1.GeneratorControl/StreamArchiveArtifact"
 	GeneratorControl_AcknowledgeEvidence_FullMethodName   = "/apexload.v1.GeneratorControl/AcknowledgeEvidence"
+	GeneratorControl_ProbeHTTP3_FullMethodName            = "/apexload.v1.GeneratorControl/ProbeHTTP3"
 )
 
 // GeneratorControlClient is the client API for GeneratorControl service.
@@ -90,6 +91,11 @@ type GeneratorControlClient interface {
 	// HARs), each identified by its SHA-256, so the generator deletes its
 	// copies. Unknown or changed artifacts are retained and reported.
 	AcknowledgeEvidence(ctx context.Context, in *EvidenceAcknowledgement, opts ...grpc.CallOption) (*EvidenceAck, error)
+	// ProbeHTTP3 checks, before commit, the https origins a staged test's
+	// HTTP/3 policies reach with one QUIC handshake each and no request. It
+	// uses disposable sessions, so no VUser cache is seeded and no load-test
+	// traffic is sent.
+	ProbeHTTP3(ctx context.Context, in *HTTP3ProbeRequest, opts ...grpc.CallOption) (*HTTP3ProbeResponse, error)
 }
 
 type generatorControlClient struct {
@@ -275,6 +281,16 @@ func (c *generatorControlClient) AcknowledgeEvidence(ctx context.Context, in *Ev
 	return out, nil
 }
 
+func (c *generatorControlClient) ProbeHTTP3(ctx context.Context, in *HTTP3ProbeRequest, opts ...grpc.CallOption) (*HTTP3ProbeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HTTP3ProbeResponse)
+	err := c.cc.Invoke(ctx, GeneratorControl_ProbeHTTP3_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // GeneratorControlServer is the server API for GeneratorControl service.
 // All implementations must embed UnimplementedGeneratorControlServer
 // for forward compatibility.
@@ -328,6 +344,11 @@ type GeneratorControlServer interface {
 	// HARs), each identified by its SHA-256, so the generator deletes its
 	// copies. Unknown or changed artifacts are retained and reported.
 	AcknowledgeEvidence(context.Context, *EvidenceAcknowledgement) (*EvidenceAck, error)
+	// ProbeHTTP3 checks, before commit, the https origins a staged test's
+	// HTTP/3 policies reach with one QUIC handshake each and no request. It
+	// uses disposable sessions, so no VUser cache is seeded and no load-test
+	// traffic is sent.
+	ProbeHTTP3(context.Context, *HTTP3ProbeRequest) (*HTTP3ProbeResponse, error)
 	mustEmbedUnimplementedGeneratorControlServer()
 }
 
@@ -385,6 +406,9 @@ func (UnimplementedGeneratorControlServer) StreamArchiveArtifact(*ArchiveArtifac
 }
 func (UnimplementedGeneratorControlServer) AcknowledgeEvidence(context.Context, *EvidenceAcknowledgement) (*EvidenceAck, error) {
 	return nil, status.Error(codes.Unimplemented, "method AcknowledgeEvidence not implemented")
+}
+func (UnimplementedGeneratorControlServer) ProbeHTTP3(context.Context, *HTTP3ProbeRequest) (*HTTP3ProbeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ProbeHTTP3 not implemented")
 }
 func (UnimplementedGeneratorControlServer) mustEmbedUnimplementedGeneratorControlServer() {}
 func (UnimplementedGeneratorControlServer) testEmbeddedByValue()                          {}
@@ -666,6 +690,24 @@ func _GeneratorControl_AcknowledgeEvidence_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _GeneratorControl_ProbeHTTP3_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HTTP3ProbeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GeneratorControlServer).ProbeHTTP3(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GeneratorControl_ProbeHTTP3_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GeneratorControlServer).ProbeHTTP3(ctx, req.(*HTTP3ProbeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // GeneratorControl_ServiceDesc is the grpc.ServiceDesc for GeneratorControl service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -724,6 +766,10 @@ var GeneratorControl_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AcknowledgeEvidence",
 			Handler:    _GeneratorControl_AcknowledgeEvidence_Handler,
+		},
+		{
+			MethodName: "ProbeHTTP3",
+			Handler:    _GeneratorControl_ProbeHTTP3_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

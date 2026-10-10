@@ -95,6 +95,7 @@ spec:
               value: {{ .Values.generator.runSupervision.ttl | quote }}
             - name: APEXLOAD_GENERATOR_ABANDON_DRAIN
               value: {{ .Values.generator.runSupervision.abandonDrain | quote }}
+{{ include "apexload.http3Env" . | indent 12 }}
             - name: APEXLOAD_JAVA_VUSER_RUNNER_ENABLED
               value: {{ .Values.javaVuser.enabled | quote }}
 {{- if .Values.javaVuser.enabled }}

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/hostnet"
 	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -148,6 +149,7 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 			TestID:                          test.ID,
 			TestName:                        test.Name,
 			CreatedAt:                       time.Now(),
+			HostNetwork:                     []hostnet.RunEvidence{localRunHostNetworkEvidence()},
 			Provenance:                      initialProvenance,
 			InitialProvenance:               &initialProvenance,
 			TransactionsFile:                "transactions.jsonl",
@@ -779,6 +781,9 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 	w.manifest.SLAEvaluated = slaEvaluated
 	w.manifest.SLABreached = slaBreached
 	w.manifest.SLADetails = slaDetails
+	for index := range w.manifest.HostNetwork {
+		w.manifest.HostNetwork[index].Finish("", os.Getenv)
+	}
 
 	if err := errors.Join(w.flushBuffersLocked(), w.syncAndCloseDataFilesLocked(), w.closeBrowserInteractionsLocked()); err != nil {
 		return nil, err
@@ -1268,4 +1273,12 @@ func elkObservation(file string) string {
 		return ""
 	}
 	return monitorprovider.ObservationCumulative
+}
+
+// localRunHostNetworkEvidence is the controller's own network evidence for a
+// local run, whose VUsers it executes.
+func localRunHostNetworkEvidence() hostnet.RunEvidence {
+	evidence := hostnet.StartRunEvidence("", os.Getenv)
+	evidence.Source = "controller"
+	return evidence
 }

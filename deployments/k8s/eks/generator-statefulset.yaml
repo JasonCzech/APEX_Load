@@ -57,6 +57,10 @@ spec:
               drop:
                 - ALL
           env:
+            # This pod has its own network namespace, so its UDP drop
+            # counters are attributable to it in run reports.
+            - name: APEXLOAD_UDP_COUNTER_SCOPE
+              value: pod
             # Fail closed: with APEXLOAD_ENV=production the generator refuses to
             # start on a plaintext, tokenless gRPC channel (see cmd/generator).
             # This guarantees a missing/misnamed token or TLS secret crashes the

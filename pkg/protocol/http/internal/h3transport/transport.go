@@ -650,3 +650,44 @@ func (t *Transport) track(conn *quic.Conn) error {
 	})
 	return nil
 }
+
+// ProbeResult describes a completed probe handshake.
+type ProbeResult struct {
+	Address  string // the address that answered
+	Duration time.Duration
+}
+
+// Probe completes one QUIC handshake with host:port and closes the
+// connection at once: no HTTP request is sent. It applies the transport's
+// target authorization, resolver, address checks, source address and TLS
+// settings, but takes no connection-budget slot. A failure is an *Error with
+// certainty not_sent. Callers probe with a transport no VUser uses, so its
+// ticket cache and address tokens never seed a VUser's.
+func (t *Transport) Probe(ctx context.Context, host string, port int) (ProbeResult, error) {
+	if port < 1 || port > 65535 {
+		return ProbeResult{}, fmt.Errorf("invalid port %d", port)
+	}
+	if t.opts.AuthorizeHost != nil {
+		if err := t.opts.AuthorizeHost(host); err != nil {
+			return ProbeResult{}, err
+		}
+	}
+	tlsConfig := t.h3.TLSClientConfig.Clone()
+	tlsConfig.NextProtos = []string{http3.NextProtoH3}
+	if tlsConfig.ServerName == "" {
+		tlsConfig.ServerName = host
+	}
+	dialCtx, cancel := t.dialContext(ctx)
+	defer cancel()
+	// The caller's deadline bounds the probe as well as the connect timeout.
+	stop := context.AfterFunc(ctx, cancel)
+	defer stop()
+	started := time.Now()
+	conn, err := t.dialAddress(ctx, dialCtx, nil, host, port, tlsConfig, t.h3.QUICConfig)
+	if err != nil {
+		return ProbeResult{}, &Error{Certainty: NotSent, Class: classify(err), Err: err}
+	}
+	result := ProbeResult{Address: conn.RemoteAddr().String(), Duration: time.Since(started)}
+	_ = conn.CloseWithError(quic.ApplicationErrorCode(http3.ErrCodeNoError), "")
+	return result, nil
+}

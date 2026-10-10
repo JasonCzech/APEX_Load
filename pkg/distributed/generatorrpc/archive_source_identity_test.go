@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -166,6 +167,12 @@ func TestArchiveSourceIdentityRecordedByExecutionAcrossAdoption(t *testing.T) {
 	}
 	if manifest.SourceIdentity != identity || manifest.SourceIdentity == ArchiveSourceIdentity("run", next, "source") {
 		t.Fatal("finalization lost original assignment identity")
+	} // The generator records its own network evidence; the controller names it.
+	if len(manifest.HostNetwork) != 1 || manifest.HostNetwork[0].Source != "" {
+		t.Fatalf("host network evidence = %+v", manifest.HostNetwork)
+	}
+	if runtime.GOOS == "linux" && (manifest.HostNetwork[0].DropsAtStart == nil || manifest.HostNetwork[0].DropsAtEnd == nil) {
+		t.Fatalf("Linux generators sample UDP counters at start and end: %+v", manifest.HostNetwork[0])
 	}
 }
 

@@ -39,8 +39,11 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # Everything else, EXCEPT cluster infrastructure ranges. Adjust the
-    # except list to your cluster:
+    # Everything else, EXCEPT cluster infrastructure ranges. The rule lists
+    # no ports, so it covers TCP and UDP, including UDP 443 for HTTP/3
+    # (QUIC); if you narrow it to ports, keep UDP 443 next to TCP 443 or
+    # auto+h3 stays on TCP and exact 3 fails. Adjust the except list to
+    # your cluster:
     #   - apiserver/service CIDR (kubernetes.default backend IPs)
     #   - node CIDR (kubelet :10250)
     #   - pod CIDR of kube-system, if distinct
@@ -110,6 +113,10 @@ spec:
             cidr: 0.0.0.0/0
       ports:
         - protocol: TCP
+          port: 443
+        # HTTP/3 (QUIC) for script debug and local runs on the controller.
+        # Remove it when APEXLOAD_HTTP3 is off.
+        - protocol: UDP
           port: 443
         # Registered cluster connections whose API server is NOT on 443.
         # AKS and most managed distributions use 443, but kubeadm, RKE2, k3s,

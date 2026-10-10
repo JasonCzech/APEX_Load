@@ -88,6 +88,29 @@ the credential is never copied into values or the shared ConfigMap. See
 [OpenTelemetry tracing](../../../docs/OBSERVABILITY_INTEGRATIONS.md) for configuration and
 data-handling details.
 
+HTTP/3 is off by default. `http3.enabled=true` sets `APEXLOAD_HTTP3` on the
+controller and every generator, so runs may use `auto+h3` and exact `3`.
+`http3.preflight` (`off`, `report` by default, or `block`) sets the
+controller's scenario preflight, a QUIC handshake check of each HTTP/3 origin
+before a run starts; `block` refuses to start a run when an exact-3 origin
+fails. `http3.quic.*` sets the operator QUIC limits (`APEXLOAD_QUIC_*`); `0`
+or `false` keeps the built-in default. Chart pods have their own network
+namespace, so both pods set `APEXLOAD_UDP_COUNTER_SCOPE=pod` and run reports
+attribute UDP drops to them. See
+[HTTP/3 and QUIC](../../../docs/guides/HTTP3_AND_QUIC.md).
+
+The chart's network policies restrict ingress only, so egress is unrestricted
+unless the cluster adds its own policies. `networkPolicy.egress.enabled=true`
+(which requires `networkPolicy.enabled`) adds egress profiles for the
+controller and the generators: DNS to `networkPolicy.egress.dns`, the
+load-test targets in `networkPolicy.egress.targets` (any address on TCP 80 and
+443 and UDP 443 by default, UDP 443 being HTTP/3), the controller-to-generator
+gRPC port and controller peers, plus `controllerExtraRules` and
+`generatorExtraRules`. List the controller's database, Redis, Kubernetes API
+server (when it is not on 443) and telemetry endpoints in
+`controllerExtraRules` before enabling the profiles. `exceptCidrs` entries
+apply to the target CIDRs of the same address family and must lie inside them.
+
 Set `controller.ha.enabled=true` before setting more than one controller
 replica; the chart fails rendering otherwise. HA also requires PostgreSQL and
 Redis. In HA, CI run mutations and every other leader-only route (test,

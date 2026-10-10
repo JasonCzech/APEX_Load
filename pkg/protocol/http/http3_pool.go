@@ -228,8 +228,10 @@ func (h *HTTP) newHTTP3Pool(settings transportConfig, tlsConfig *tls.Config, con
 		owner := h.http3
 		h.connections.trackQUIC(&quicBudgetMember{closeIdle: owner.CloseIdleConnections, open: owner.openConnections})
 	}
-	var transport stdhttp.RoundTripper = h.http3
-	transport = http3RouteRoundTripper{base: transport, proxy: baseline.Proxy, pac: pacSource, allowed: h.allowedTargetHosts}
+	h.http3Route = http3RouteRoundTripper{proxy: baseline.Proxy, pac: pacSource, allowed: h.allowedTargetHosts}
+	route := h.http3Route
+	route.base = h.http3
+	var transport stdhttp.RoundTripper = route
 	client := &stdhttp.Client{Transport: transport, Jar: jar, Timeout: h.requestTimeout}
 	applyRedirectPolicy(client, h.maxRedirects)
 	if len(h.allowedTargetHosts) > 0 {

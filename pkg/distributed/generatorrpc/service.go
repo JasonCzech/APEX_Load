@@ -1538,7 +1538,7 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 	if http3ExecutionError() == nil {
 		// Only a generator whose operator enabled HTTP/3 and whose build
 		// carries the transport may receive exact-3 work.
-		features = append(features, dsl.FeatureNativeHTTP3V1)
+		features = append(features, dsl.FeatureNativeHTTP3V1, FeatureHTTP3PreflightV1)
 	}
 	if http3UpgradeExecutionError() == nil {
 		features = append(features, dsl.FeatureHTTP3UpgradeV1)

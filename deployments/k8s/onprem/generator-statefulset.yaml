@@ -56,6 +56,10 @@ spec:
               drop:
                 - ALL
           env:
+            # This pod has its own network namespace, so its UDP drop
+            # counters are attributable to it in run reports.
+            - name: APEXLOAD_UDP_COUNTER_SCOPE
+              value: pod
             # Warn loudly if the gRPC transport is left plaintext/tokenless.
             - name: APEXLOAD_ENV
               value: production

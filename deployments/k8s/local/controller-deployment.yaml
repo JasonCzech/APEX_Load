@@ -39,6 +39,10 @@ spec:
             - name: http
               containerPort: 8080
           env:
+            # This pod has its own network namespace, so its UDP drop
+            # counters are attributable to it in run reports.
+            - name: APEXLOAD_UDP_COUNTER_SCOPE
+              value: pod
             - name: APEXLOAD_FLEET_ID
               value: apexload-local
             # Labels the build/runtime indicator in the dashboard. Auto-detection

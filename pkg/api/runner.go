@@ -509,6 +509,9 @@ type ManagedTest struct {
 	preparationPeerCheck func(context.Context) error
 	// Protected by tr.mu; retained through terminal persistence retries.
 	localArchiveFinalizationFailed bool
+	// http3Preflight is the scenario HTTP/3 preflight, set once before the
+	// run starts and replaced, never mutated (protected by tr.mu).
+	http3Preflight *RunArchiveHTTP3Preflight
 
 	TerminationMode       string `json:"termination_mode,omitempty"`
 	podCapacityEnabled    bool

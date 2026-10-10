@@ -22,5 +22,11 @@ export function reportEvidenceWarnings(report: RunArchiveReport): string[] {
     const reasons = (validity.reasons || []).slice(0, 3)
     warnings.push(`Run validity is ${validity.verdict}${reasons.length ? `: ${reasons.join('; ')}` : ''}. Symptoms may come from the load generators rather than the system under test.`)
   }
+  // UDP drops in a load generator's own pod during the run.
+  for (const evidence of report.host_network || []) if (evidence.warning) warnings.push(evidence.warning)
+  // Exact-3 requests to an origin that failed its QUIC handshake cannot fall back to TCP.
+  const preflight = report.http3_preflight
+  const exactFailures = preflight && !preflight.blocked ? (preflight.results || []).filter(result => result.policy === '3' && !result.ok && !result.skipped).length : 0
+  if (exactFailures > 0) warnings.push(`${exactFailures.toLocaleString()} exact HTTP/3 origin check${exactFailures === 1 ? '' : 's'} failed before the run started; those requests cannot fall back to TCP.`)
   return [...new Set(warnings)]
 }

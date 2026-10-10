@@ -1016,6 +1016,7 @@ func cloneManagedTestFieldsLocked(test *ManagedTest) *ManagedTest {
 	cloned.GoalTargets = cloneGoalTargetStatusMap(test.GoalTargets)
 	cloned.Continuity = runContinuityStatusLocked(test)
 	cloned.continuityFailovers = append([]RunFailover(nil), test.continuityFailovers...)
+	cloned.http3Preflight = cloneHTTP3Preflight(test.http3Preflight)
 	cloned.TrafficProfile = cloneTrafficProfile(test.TrafficProfile)
 	cloned.RuntimeSettings = cloneRuntimeSettings(test.RuntimeSettings)
 	cloned.ELKCapture = cloneELKCaptureConfig(test.ELKCapture)

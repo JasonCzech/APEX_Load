@@ -234,6 +234,59 @@ networkPolicy:
   enabled: true
   ingressNamespace: app-routing-system
   monitoringNamespace: monitoring
+  # Egress profiles, off by default: without them the controller and the
+  # generators reach any destination the cluster allows. Enabled, each pod
+  # may reach only DNS, the APEX control plane, the load-test targets below
+  # and the extra rules, so list the controller's dependencies (database,
+  # Redis, the Kubernetes API server, telemetry) in controllerExtraRules.
+  egress:
+    enabled: false
+    dns:
+      namespace: kube-system
+      podLabels:
+        k8s-app: kube-dns
+    # Load-test and replay destinations, for generators and for the
+    # controller's script debug and local runs. Empty cidrs allow no target
+    # traffic, and an empty port list closes that protocol. exceptCidrs
+    # entries apply to the cidrs of the same address family and must lie
+    # inside them.
+    targets:
+      cidrs:
+        - 0.0.0.0/0
+        - ::/0
+      exceptCidrs: []
+      tcpPorts: [80, 443]
+      # UDP 443 carries HTTP/3 (QUIC). It is open by default so auto+h3
+      # and exact-3 work wherever the egress profile is enabled.
+      udpPorts: [443]
+    # NetworkPolicy egress rules added verbatim to each profile. The
+    # controller usually needs its database, Redis and, on clusters whose
+    # API server listens on another port than 443, the Kubernetes API, e.g.
+    #   controllerExtraRules:
+    #     - to: [{ipBlock: {cidr: 10.20.0.0/24}}]
+    #       ports: [{protocol: TCP, port: 5432}, {protocol: TCP, port: 6380}]
+    # Generators need a rule for a tracing endpoint on a non-target port.
+    controllerExtraRules: []
+    generatorExtraRules: []
+
+http3:
+  # HTTP/3 (auto+h3 and exact 3) on the controller and every generator
+  # (APEXLOAD_HTTP3). Off by default.
+  enabled: false
+  # Scenario preflight before HTTP/3 runs (APEXLOAD_HTTP3_PREFLIGHT):
+  # off, report (record the QUIC handshake checks with the run) or block
+  # (also refuse to start when an exact-3 origin fails).
+  preflight: report
+  # Operator QUIC limits (APEXLOAD_QUIC_*). 0 or false keeps the built-in
+  # default. Windows are byte counts between 16384 and 1073741824.
+  quic:
+    initialStreamReceiveWindow: 0
+    maxStreamReceiveWindow: 0
+    initialConnectionReceiveWindow: 0
+    maxConnectionReceiveWindow: 0
+    maxResponseHeaderBytes: 0
+    initialPacketSize: 0
+    disablePathMTUDiscovery: false
 
 pdb:
   enabled: true

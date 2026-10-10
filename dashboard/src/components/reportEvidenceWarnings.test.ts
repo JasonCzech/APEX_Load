@@ -23,4 +23,21 @@ describe('report evidence qualifications', () => {
   expect(warnings).toEqual([expect.stringContaining('Run validity is invalid: gen-1 was OOM-killed')])
   expect(reportEvidenceWarnings(report({ validity: { rules_version: 'validity.v1', verdict: 'valid', reasons: [], windows: [], limitations: [] } }))).toEqual([])
  })
+ it('carries load generator UDP drop warnings, never shared-namespace counts', () => {
+  const warnings = reportEvidenceWarnings(report({ host_network: [
+   { source: 'gen-0', warning: 'UDP packets were dropped on gen-0 during the run.' },
+   { source: 'controller', udp_drops_delta: { receive_buffer_errors: 40, send_buffer_errors: 0, in_errors: 0 } },
+  ] }))
+  expect(warnings).toEqual(['UDP packets were dropped on gen-0 during the run.'])
+ })
+ it('warns about failed exact HTTP/3 preflight checks of a run that started', () => {
+  const results = [
+   { source: 'gen-a', group: 'g', origin: 'https://api.example', policy: '3', ok: false, error_class: 'quic_handshake_timeout' },
+   { source: 'gen-a', group: 'g', origin: 'https://cdn.example', policy: 'auto+h3', ok: false, error_class: 'quic_handshake_timeout' },
+   { source: 'gen-a', group: 'g', origin: 'https://{{param.host}}', policy: '3', ok: false, skipped: 'dynamic target' },
+   { source: 'gen-b', group: 'g', origin: 'https://shop.example', policy: '3', ok: true },
+  ]
+  expect(reportEvidenceWarnings(report({ http3_preflight: { policy: 'report', results } }))).toEqual(['1 exact HTTP/3 origin check failed before the run started; those requests cannot fall back to TCP.'])
+  expect(reportEvidenceWarnings(report({ http3_preflight: { policy: 'block', blocked: true, results } }))).toEqual([])
+ })
 })

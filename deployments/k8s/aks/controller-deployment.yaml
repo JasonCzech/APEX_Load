@@ -65,6 +65,10 @@ spec:
             - name: metrics
               containerPort: 9091
           env:
+            # This pod has its own network namespace, so its UDP drop
+            # counters are attributable to it in run reports.
+            - name: APEXLOAD_UDP_COUNTER_SCOPE
+              value: pod
             # Fail closed: refuse to start in a bypass (unauthenticated) auth
             # mode. Configure auth.mode=oidc or trusted_headers in settings.
             - name: APEXLOAD_ENV

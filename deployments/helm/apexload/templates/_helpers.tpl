@@ -86,3 +86,71 @@ chart default while explicit false values remain false.
 {{- define "apexload.archiveStagingClaimName" -}}
 {{- default "apexload-controller-archive-staging" .Values.archiveStaging.persistence.existingClaim -}}
 {{- end -}}
+
+{{/*
+HTTP/3 settings shared by the controller and every generator: the flag, the
+operator QUIC limits that are set, and the UDP counter scope. Chart pods do
+not use hostNetwork, so each has its own network namespace and its UDP
+drop counters are attributable to it.
+*/}}
+{{- define "apexload.http3Env" -}}
+- name: APEXLOAD_HTTP3
+  value: {{ .Values.http3.enabled | quote }}
+- name: APEXLOAD_UDP_COUNTER_SCOPE
+  value: pod
+{{- range $key, $env := dict "initialStreamReceiveWindow" "APEXLOAD_QUIC_INITIAL_STREAM_RECEIVE_WINDOW" "maxStreamReceiveWindow" "APEXLOAD_QUIC_MAX_STREAM_RECEIVE_WINDOW" "initialConnectionReceiveWindow" "APEXLOAD_QUIC_INITIAL_CONNECTION_RECEIVE_WINDOW" "maxConnectionReceiveWindow" "APEXLOAD_QUIC_MAX_CONNECTION_RECEIVE_WINDOW" "maxResponseHeaderBytes" "APEXLOAD_QUIC_MAX_RESPONSE_HEADER_BYTES" "initialPacketSize" "APEXLOAD_QUIC_INITIAL_PACKET_SIZE" }}
+{{- $value := int64 (index $.Values.http3.quic $key) }}
+{{- if gt $value 0 }}
+- name: {{ $env }}
+  value: {{ $value | toString | quote }}
+{{- end }}
+{{- end }}
+{{- if .Values.http3.quic.disablePathMTUDiscovery }}
+- name: APEXLOAD_QUIC_DISABLE_PATH_MTU_DISCOVERY
+  value: "true"
+{{- end }}
+{{- end -}}
+
+{{/* Egress rules every profile shares: DNS, then the load-test targets. */}}
+{{- define "apexload.egressTargetRules" -}}
+{{- $egress := .Values.networkPolicy.egress -}}
+- to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: {{ $egress.dns.namespace }}
+      podSelector:
+        matchLabels:
+{{ toYaml $egress.dns.podLabels | indent 10 }}
+  ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+{{- if and $egress.targets.cidrs (or $egress.targets.tcpPorts $egress.targets.udpPorts) }}
+- to:
+{{- range $egress.targets.cidrs }}
+    - ipBlock:
+        cidr: {{ . }}
+{{- $cidr := . }}
+{{- $except := list }}
+{{- range $egress.targets.exceptCidrs }}
+{{- if eq (contains ":" .) (contains ":" $cidr) }}
+{{- $except = append $except . }}
+{{- end }}
+{{- end }}
+{{- if $except }}
+        except:
+{{ toYaml $except | indent 10 }}
+{{- end }}
+{{- end }}
+  ports:
+{{- range $egress.targets.tcpPorts }}
+    - protocol: TCP
+      port: {{ . }}
+{{- end }}
+{{- range $egress.targets.udpPorts }}
+    - protocol: UDP
+      port: {{ . }}
+{{- end }}
+{{- end }}
+{{- end -}}

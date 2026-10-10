@@ -172,7 +172,7 @@ This documentation ships with the dashboard build shown below each article. It d
 ### October 10, 2026 HTTP/3 and QUIC (preview)
 
 - Added [HTTP/3 and QUIC](guides/HTTP3_AND_QUIC.md): the `auto+h3` (upgrade when advertised) and `3` (require HTTP/3) policies with worked examples, the QUIC settings panel, what stays on TCP, importing captured HTTP/3, and reading the HTTP version mix in replay, reports, the live run and Power BI.
-- Operators enable execution with `APEXLOAD_HTTP3=true` on the controller and every generator; [HTTP/3 (QUIC) execution](guides/HTTP3_AND_QUIC.md#enable-http-3-execution) covers the QUIC limits, UDP egress and buffer sizing.
+- Operators enable execution with `APEXLOAD_HTTP3=true` on the controller and every generator (`http3.enabled` in the Helm chart); [HTTP/3 (QUIC) execution](guides/HTTP3_AND_QUIC.md#enable-http-3-execution) covers the QUIC limits, the scenario preflight, UDP egress and buffer sizing.
 - Power BI datasets move to schema version 2 (HTTP version mix columns); recreate an existing dataset before publishing.
 
 ### October 9, 2026 root-cause analysis across the dashboard

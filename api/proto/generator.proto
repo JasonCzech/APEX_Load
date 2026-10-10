@@ -69,6 +69,12 @@ service GeneratorControl {
   // HARs), each identified by its SHA-256, so the generator deletes its
   // copies. Unknown or changed artifacts are retained and reported.
   rpc AcknowledgeEvidence(EvidenceAcknowledgement) returns (EvidenceAck);
+
+  // ProbeHTTP3 checks, before commit, the https origins a staged test's
+  // HTTP/3 policies reach with one QUIC handshake each and no request. It
+  // uses disposable sessions, so no VUser cache is seeded and no load-test
+  // traffic is sent.
+  rpc ProbeHTTP3(HTTP3ProbeRequest) returns (HTTP3ProbeResponse);
 }
 
 message EvidenceAcknowledgement {
@@ -1003,4 +1009,28 @@ message ArchiveArtifactChunk {
 message RunAdoptionProof {
   uint64 generation = 1;
   bytes run_supervision_token = 2;
+}
+
+message HTTP3ProbeRequest {
+  string test_id = 1;
+  uint64 execution_generation = 2;
+}
+
+message HTTP3ProbeResponse {
+  repeated HTTP3ProbeResult results = 1;
+}
+
+message HTTP3ProbeResult {
+  string group = 1;
+  string origin = 2;
+  // "3" or "auto+h3".
+  string policy = 3;
+  bool ok = 4;
+  string error_class = 5;
+  string error = 6;
+  string address = 7;
+  int64 handshake_us = 8;
+  // Why the origin was not checked; empty when it was.
+  string skipped = 9;
+  int64 checked_at_unix_nano = 10;
 }

@@ -1753,6 +1753,10 @@ export interface RunArchiveReport {
   change_attribution?: RunArchiveChangeAttribution
   report_profiles?: RunArchiveReportProfile[]
   network_phases?: RunArchiveNetworkPhaseSummary
+  /** Each execution process's network limits and UDP drops during the run. */
+  host_network?: RunArchiveHostNetworkEvidence[]
+  /** QUIC handshake checks of the HTTP/3 origins before the run started. */
+  http3_preflight?: RunArchiveHTTP3Preflight
   artifact_inventory?: RunArchiveArtifact[]
   integrity?: RunArchiveIntegrityReport
   manifest: RunArchiveManifest
@@ -1837,6 +1841,54 @@ export interface HTTPVersionMix {
   quic_attempted?: number
   quic_failed?: number
   attempts?: number
+}
+
+export interface UDPDropCounters {
+  /** pod: the process's own network namespace; network_namespace: possibly shared. */
+  scope: string
+  scope_id?: string
+  receive_buffer_errors: number
+  send_buffer_errors: number
+  in_errors: number
+  sampled_at?: string
+}
+
+export interface RunArchiveHostNetworkEvidence {
+  source?: string
+  open_files?: { available: boolean; soft?: number; hard?: number }
+  udp_buffers?: { available: boolean; receive_max_bytes?: number; send_max_bytes?: number }
+  udp_drops_at_start?: UDPDropCounters
+  udp_drops_at_end?: UDPDropCounters
+  udp_drops_delta?: { receive_buffer_errors: number; send_buffer_errors: number; in_errors: number }
+  /** Set only when drops grew in the process's own pod scope. */
+  warning?: string
+}
+
+export interface HTTP3PreflightResult {
+  group: string
+  origin: string
+  /** 3 or auto+h3. */
+  policy: string
+  ok: boolean
+  error_class?: string
+  error?: string
+  address?: string
+  handshake_ms?: number
+  /** Why the origin was not checked. */
+  skipped?: string
+  checked_at?: string
+  /** Generator target, or "controller" for a local run. */
+  source: string
+  region?: string
+}
+
+export interface RunArchiveHTTP3Preflight {
+  /** report or block (APEXLOAD_HTTP3_PREFLIGHT). */
+  policy: string
+  results?: HTTP3PreflightResult[]
+  omitted?: number
+  unchecked?: { source: string; region?: string; reason: string }[]
+  blocked?: boolean
 }
 
 export interface HTTPVersionRatio {

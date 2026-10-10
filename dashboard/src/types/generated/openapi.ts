@@ -3118,6 +3118,39 @@ export interface operations {
               "status"?: string;
               "tier"?: string;
             }>;
+            "host_network"?: Array<{
+              "open_files"?: Record<string, unknown>;
+              "source"?: string;
+              "udp_buffers"?: Record<string, unknown>;
+              "udp_drops_at_end"?: (Record<string, unknown>) | null;
+              "udp_drops_at_start"?: (Record<string, unknown>) | null;
+              "udp_drops_delta"?: (Record<string, unknown>) | null;
+              "warning"?: string;
+            }>;
+            "http3_preflight"?: ({
+              "blocked"?: boolean;
+              "omitted"?: number;
+              "policy"?: string;
+              "results"?: Array<{
+                "address"?: string;
+                "checked_at"?: string;
+                "error"?: string;
+                "error_class"?: string;
+                "group"?: string;
+                "handshake_ms"?: number;
+                "ok"?: boolean;
+                "origin"?: string;
+                "policy"?: string;
+                "region"?: string;
+                "skipped"?: string;
+                "source"?: string;
+              }>;
+              "unchecked"?: Array<{
+                "reason"?: string;
+                "region"?: string;
+                "source"?: string;
+              }>;
+            }) | null;
             "identity_names"?: {
               "application"?: string;
               "project"?: string;
@@ -3260,6 +3293,7 @@ export interface operations {
                 "threshold"?: number;
                 "unit"?: string;
               }>;
+              "host_network"?: Array<Record<string, unknown>>;
               "initial_provenance"?: ({
                 "application_id"?: string;
                 "assignment"?: (Record<string, unknown>) | null;
@@ -3281,6 +3315,7 @@ export interface operations {
                 "goal_config"?: (Record<string, unknown>) | null;
                 "governance"?: (Record<string, unknown>) | null;
                 "groups"?: Array<Record<string, unknown>>;
+                "http3_preflight"?: (Record<string, unknown>) | null;
                 "joint_evidence"?: (Record<string, unknown>) | null;
                 "policy_pins"?: (Array<{
                   "applied"?: boolean;
@@ -3440,6 +3475,7 @@ export interface operations {
                 "goal_config"?: (Record<string, unknown>) | null;
                 "governance"?: (Record<string, unknown>) | null;
                 "groups"?: Array<Record<string, unknown>>;
+                "http3_preflight"?: (Record<string, unknown>) | null;
                 "joint_evidence"?: (Record<string, unknown>) | null;
                 "policy_pins"?: (Array<{
                   "applied"?: boolean;
@@ -68450,6 +68486,7 @@ export interface operations {
               "threshold": number;
               "unit": string;
             }>;
+            "host_network"?: Array<Record<string, unknown>>;
             "initial_provenance"?: ({
               "application_id"?: string;
               "assignment"?: ({
@@ -68839,6 +68876,30 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
+              "http3_preflight"?: ({
+                "blocked"?: boolean;
+                "omitted"?: number;
+                "policy": string;
+                "results"?: Array<{
+                  "address"?: string;
+                  "checked_at": string;
+                  "error"?: string;
+                  "error_class"?: string;
+                  "group": string;
+                  "handshake_ms"?: number;
+                  "ok": boolean;
+                  "origin": string;
+                  "policy": string;
+                  "region"?: string;
+                  "skipped"?: string;
+                  "source": string;
+                }>;
+                "unchecked"?: Array<{
+                  "reason": string;
+                  "region"?: string;
+                  "source": string;
+                }>;
+              }) | null;
               "joint_evidence"?: ({
                 "dimensions": Array<string>;
                 "population": string;
@@ -69751,6 +69812,30 @@ export interface operations {
                 "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
+              "http3_preflight"?: ({
+                "blocked"?: boolean;
+                "omitted"?: number;
+                "policy": string;
+                "results"?: Array<{
+                  "address"?: string;
+                  "checked_at": string;
+                  "error"?: string;
+                  "error_class"?: string;
+                  "group": string;
+                  "handshake_ms"?: number;
+                  "ok": boolean;
+                  "origin": string;
+                  "policy": string;
+                  "region"?: string;
+                  "skipped"?: string;
+                  "source": string;
+                }>;
+                "unchecked"?: Array<{
+                  "reason": string;
+                  "region"?: string;
+                  "source": string;
+                }>;
+              }) | null;
               "joint_evidence"?: ({
                 "dimensions": Array<string>;
                 "population": string;
@@ -72627,6 +72712,39 @@ export interface operations {
               "status": string;
               "tier": string;
             }>;
+            "host_network"?: Array<{
+              "open_files": Record<string, unknown>;
+              "source"?: string;
+              "udp_buffers": Record<string, unknown>;
+              "udp_drops_at_end"?: (Record<string, unknown>) | null;
+              "udp_drops_at_start"?: (Record<string, unknown>) | null;
+              "udp_drops_delta"?: (Record<string, unknown>) | null;
+              "warning"?: string;
+            }>;
+            "http3_preflight"?: ({
+              "blocked"?: boolean;
+              "omitted"?: number;
+              "policy": string;
+              "results"?: Array<{
+                "address"?: string;
+                "checked_at": string;
+                "error"?: string;
+                "error_class"?: string;
+                "group": string;
+                "handshake_ms"?: number;
+                "ok": boolean;
+                "origin": string;
+                "policy": string;
+                "region"?: string;
+                "skipped"?: string;
+                "source": string;
+              }>;
+              "unchecked"?: Array<{
+                "reason": string;
+                "region"?: string;
+                "source": string;
+              }>;
+            }) | null;
             "identity_names": {
               "application"?: string;
               "project"?: string;
@@ -72777,6 +72895,7 @@ export interface operations {
                 "threshold": number;
                 "unit": string;
               }>;
+              "host_network"?: Array<Record<string, unknown>>;
               "initial_provenance"?: ({
                 "application_id"?: string;
                 "assignment"?: ({
@@ -72970,6 +73089,13 @@ export interface operations {
                   "transaction_response_time_sla_ms"?: (number) | null;
                   "vusers": number;
                 }>;
+                "http3_preflight"?: ({
+                  "blocked"?: boolean;
+                  "omitted"?: number;
+                  "policy": string;
+                  "results"?: Array<Record<string, unknown>>;
+                  "unchecked"?: Array<Record<string, unknown>>;
+                }) | null;
                 "joint_evidence"?: ({
                   "dimensions": Array<string>;
                   "population": string;
@@ -73423,6 +73549,13 @@ export interface operations {
                   "transaction_response_time_sla_ms"?: (number) | null;
                   "vusers": number;
                 }>;
+                "http3_preflight"?: ({
+                  "blocked"?: boolean;
+                  "omitted"?: number;
+                  "policy": string;
+                  "results"?: Array<Record<string, unknown>>;
+                  "unchecked"?: Array<Record<string, unknown>>;
+                }) | null;
                 "joint_evidence"?: ({
                   "dimensions": Array<string>;
                   "population": string;

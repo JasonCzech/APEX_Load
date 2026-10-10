@@ -181,6 +181,9 @@ spec:
             - name: metrics
               containerPort: 9091
           env:
+{{ include "apexload.http3Env" . | indent 12 }}
+            - name: APEXLOAD_HTTP3_PREFLIGHT
+              value: {{ .Values.http3.preflight | quote }}
             - name: APEXLOAD_K8S_RESTART_ENABLED
               value: {{ $restartControls.enabled | quote }}
 {{- if $restartControls.enabled }}

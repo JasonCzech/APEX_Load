@@ -17,6 +17,7 @@ import (
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/hostnet"
 	"github.com/jasonczech/apexload/pkg/internal/archivequota"
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/internal/diskspace"
@@ -72,6 +73,10 @@ type archiveManifest struct {
 	IntervalSummaryCount          int64                        `json:"interval_summary_count"`
 	TerminalMetrics               json.RawMessage              `json:"terminal_metrics,omitempty"`
 	MessageDetailCapture          *archiveMessageDetailCapture `json:"message_detail_capture,omitempty"`
+	// HostNetwork is this generator's network limits and its namespace's UDP
+	// drop counters at execution start and end; the controller names the
+	// source when it merges the archives.
+	HostNetwork []hostnet.RunEvidence `json:"host_network,omitempty"`
 }
 
 type archiveMessageDetailCapture struct {
@@ -893,6 +898,7 @@ func newArchiveRecorderInNamespace(namespace *generatorArchiveNamespace, testID 
 			ResourceSamplesParquetFile:   "resources.parquet",
 			IntervalSummariesFile:        "interval_summaries.jsonl",
 			IntervalSummariesParquetFile: "interval_summaries.parquet",
+			HostNetwork:                  []hostnet.RunEvidence{hostnet.StartRunEvidence("", os.Getenv)},
 		},
 		namespace:       namespace,
 		runRoot:         runRoot,
@@ -1469,6 +1475,9 @@ func (w *archiveRecorder) Finalize(status string, completedAt time.Time, errStr 
 		return nil, err
 	} else if w.byteBudget != nil && size > w.byteBudget.maxBytes {
 		return nil, fmt.Errorf("generator archive size %d exceeds byte limit %d", size, w.byteBudget.maxBytes)
+	}
+	for index := range w.manifest.HostNetwork {
+		w.manifest.HostNetwork[index].Finish("", os.Getenv)
 	}
 	data, err := json.MarshalIndent(w.manifest, "", "  ")
 	if err != nil {
