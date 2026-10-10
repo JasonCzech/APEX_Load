@@ -790,11 +790,12 @@ type Result struct {
 	DOMSummary                 *DOMSummary
 	ClientMetrics              *ClientMetrics
 	ServerTelemetry            *ServerTelemetry
-	HTTPVersionPolicy          string `json:"-"`
-	HTTPVersionNegotiated      string `json:"-"`
-	HTTPVersionSource          string `json:"-"`
-	HTTPAltSvcH3Advertised     bool   `json:"-"` // wire response advertised final HTTP/3 in Alt-Svc
-	HTTP3FailureCertainty      string `json:"-"` // not_sent, possibly_sent or rejected_unprocessed for a failed HTTP/3 request
+	HTTPVersionPolicy          string         `json:"-"`
+	HTTPVersionNegotiated      string         `json:"-"`
+	HTTPVersionSource          string         `json:"-"`
+	HTTPAltSvcH3Advertised     bool           `json:"-"` // wire response advertised final HTTP/3 in Alt-Svc
+	HTTP3FailureCertainty      string         `json:"-"` // not_sent, possibly_sent or rejected_unprocessed for a failed HTTP/3 request
+	HTTPReceipt                map[string]any `json:"-"` // HTTP/3 version receipt fields (routing, connection, timing availability)
 	ProtocolEvidence           map[string]any
 	Snapshot                   *ErrorSnapshot // populated when snapshot_on_error is enabled
 	SourceStepID               string

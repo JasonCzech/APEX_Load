@@ -20,6 +20,13 @@ describe('HTTP version replay evidence', () => {
     expect(cached).not.toContain('Actual negotiated HTTP version</dt><dd>HTTP/2')
   })
 
+  it('shows the HTTP/3 receipt rows', () => {
+    const html = renderToStaticMarkup(<HTTPVersionReplayEvidence evidence={{ http_version_policy: '3', http_version_source: 'wire', http_version_negotiated: '3', quic_attempted: true, http_version_selection_reason: 'exact_policy', quic_connection: 'reused', attempt_count: 1 }} />)
+    expect(html).toContain('<dt>QUIC connection</dt><dd>Reused connection</dd>')
+    expect(html).toContain('<dt>Actual negotiated HTTP version</dt><dd>HTTP/3</dd>')
+    expect(renderToStaticMarkup(<HTTPVersionReplayEvidence evidence={{ http_version_policy: '2', http_version_source: 'wire', http_version_negotiated: '2' }} />)).not.toContain('HTTP/3 receipt')
+  })
+
   it('notes an HTTP/3 advertisement the replay did not exercise', () => {
     const html = renderToStaticMarkup(<HTTPVersionReplayEvidence evidence={{ http_version_policy: 'auto', http_version_source: 'wire', http_version_negotiated: '2', alt_svc_h3_advertised: true }} />)
     expect(html).toContain('The target advertises HTTP/3 (Alt-Svc). This request used HTTP/2, so HTTP/3 was not exercised.')

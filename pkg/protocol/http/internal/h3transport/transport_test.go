@@ -278,3 +278,35 @@ func TestTLSBelow13IsRefused(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestUnroutedFamilyFallsBackQuickly(t *testing.T) {
+	fixture := h3fixture.Start(t, h3fixture.Options{}) // IPv4 only
+	transport := newTransport(t, fixture, func(o *Options) {
+		o.HandshakeTimeout, o.ConnectTimeout = 10*time.Second, 10*time.Second
+		o.Resolve = func(context.Context, string) ([]netip.Addr, error) {
+			return []netip.Addr{netip.MustParseAddr("::1"), netip.MustParseAddr("127.0.0.1")}, nil
+		}
+	})
+	started := time.Now()
+	resp, err := get(t, transport, context.Background(), fixture.LocalhostURL("/echo"))
+	if err != nil || resp.ProtoMajor != 3 {
+		t.Fatalf("%v %v", resp, err)
+	}
+	if elapsed := time.Since(started); elapsed > 3*time.Second {
+		t.Fatalf("falling back from an unrouted IPv6 address took %s", elapsed)
+	}
+	if transport.OpenConnections() != 1 {
+		t.Fatalf("connections = %d, want only the winner", transport.OpenConnections())
+	}
+}
+
+func TestInterleaveFamilies(t *testing.T) {
+	in := []netip.Addr{netip.MustParseAddr("::1"), netip.MustParseAddr("::2"), netip.MustParseAddr("10.0.0.1"), netip.MustParseAddr("10.0.0.2")}
+	got := interleaveFamilies(in)
+	want := []string{"::1", "10.0.0.1", "::2", "10.0.0.2"}
+	for i, address := range got {
+		if address.String() != want[i] {
+			t.Fatalf("interleaved = %v, want %v", got, want)
+		}
+	}
+}

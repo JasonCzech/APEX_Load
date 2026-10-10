@@ -123,16 +123,25 @@ describe('qualified HTTP version evidence', () => {
 
   it('retains a measured wire version independently of the selected policy', () => {
     expect(httpReplayVersionEvidence({ http_version_policy: 'auto', http_version_negotiated: '1.1', http_version_source: 'wire' }))
-      .toEqual({ policy: 'Auto-negotiate (HTTP/2 or HTTP/1.1)', actual: 'HTTP/1.1', source: 'Wire response', advertisesHTTP3: false })
+      .toEqual({ policy: 'Auto-negotiate (HTTP/2 or HTTP/1.1)', actual: 'HTTP/1.1', source: 'Wire response', advertisesHTTP3: false, http3: [] })
     expect(httpReplayVersionEvidence({ http_version_policy: '2', http_version_negotiated: '2', http_version_source: 'wire' })?.actual).toBe('HTTP/2')
     expect(httpReplayVersionEvidence({ http_version_policy: '3', http_version_negotiated: '3', http_version_source: 'wire', alt_svc_h3_advertised: true })).toMatchObject({ policy: 'HTTP/3 required (no fallback)', actual: 'HTTP/3', advertisesHTTP3: false })
+    expect(httpReplayVersionEvidence({ http_version_policy: '3', http_version_negotiated: '3', http_version_source: 'wire', quic_attempted: true, http_version_selection_reason: 'exact_policy', quic_connection: 'new', tls_resumed: true, attempt_count: 1, tls_in_transport_handshake: true })?.http3).toEqual([
+      { label: 'HTTP/3 routing', value: 'Exact HTTP/3 policy' },
+      { label: 'QUIC connection', value: 'New connection (TLS resumed)' },
+      { label: 'HTTP attempts', value: '1' },
+      { label: 'TLS timing', value: 'Part of the QUIC handshake (counted in connect time)' },
+    ])
+    expect(httpReplayVersionEvidence({ http_version_policy: '3', quic_attempted: true, http3_failure_certainty: 'possibly_sent', quic_connection: 'surprise', attempt_count: -1 } as unknown as ProtocolEvidence)?.http3).toEqual([
+      { label: 'Failure certainty', value: 'Possibly sent (the target may have processed it)' },
+    ])
   })
 
   it('never infers negotiation from policy, cached responses or malformed evidence', () => {
     expect(httpReplayVersionEvidence({ http_version_policy: '2' })?.actual).toBe('Not observed')
     expect(httpReplayVersionEvidence({ http_version_policy: '2', http_version_source: 'cache', http_version_negotiated: '2' })?.actual).toBe('Not measured (cached response)')
     expect(httpReplayVersionEvidence({ http_version_source: 'wire', http_version_negotiated: 'HTTP/2', http_version_policy: 'private-detail' } as unknown as ProtocolEvidence))
-      .toEqual({ policy: 'Not retained', actual: 'Not observed', source: 'Wire response', advertisesHTTP3: false })
+      .toEqual({ policy: 'Not retained', actual: 'Not observed', source: 'Wire response', advertisesHTTP3: false, http3: [] })
     expect(httpReplayVersionEvidence(undefined)).toBeNull()
     expect(httpReplayVersionEvidence({ http_version_source: 'wire', http_version_negotiated: '2', alt_svc_h3_advertised: true })?.advertisesHTTP3).toBe(true)
     expect(httpReplayVersionEvidence({ http_version_source: 'cache', alt_svc_h3_advertised: true })?.advertisesHTTP3).toBe(false)

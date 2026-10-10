@@ -30,6 +30,9 @@ func buildHTTPProtocolEvidence(_ *protocol.Action, result *protocol.Result) map[
 	if result.HTTP3FailureCertainty != "" {
 		evidence["http3_failure_certainty"] = result.HTTP3FailureCertainty
 	}
+	for key, value := range result.HTTPReceipt {
+		evidence[key] = value
+	}
 	if len(evidence) == 0 {
 		return nil
 	}

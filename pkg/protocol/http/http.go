@@ -22,6 +22,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/internal/bodyencoding"
 	"github.com/jasonczech/apexload/pkg/internal/contentdecode"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/http/internal/h3transport"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
@@ -339,6 +340,13 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	ctx = context.WithValue(ctx, httpVersionCacheKey{}, policy)
 	result.HTTPVersionPolicy = policy
 	defer func() { result.ProtocolEvidence = buildHTTPProtocolEvidence(action, result) }()
+	// Exact-3 actions add the version receipt's routing, connection and
+	// timing facts. This defer runs before the evidence builder above.
+	var h3Receipt *http3Receipt
+	if policy == VersionHTTP3 {
+		h3Receipt = newHTTP3Receipt()
+		defer func() { result.HTTPReceipt = h3Receipt.evidence(result) }()
+	}
 	defaultHeaders := h.defaultHeaders
 	defaultHeaderList := h.defaultHeaderList
 	if action.ResolvedDefaultHeaders {
@@ -485,6 +493,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	if integratedAuth != nil && IsIntegratedAuthType(integratedAuth.Type) && !authorizationAuthored &&
 		(actionAuthOverride || authHostScopesAllow(h.authHosts, targetURL)) {
 		if h.httpVersion == VersionHTTP3 {
+			h3Receipt.refuse("integrated_auth")
 			result.StatusCode = http.StatusBadRequest
 			result.Duration = time.Since(result.StartTime)
 			result.ErrorMessage = ErrHTTP3IntegratedAuth.Error()
@@ -575,9 +584,20 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	wroteHeaders := false
 	startTime := result.StartTime
 	trace := &httptrace.ClientTrace{
-		DNSStart:          func(_ httptrace.DNSStartInfo) { traceMu.Lock(); dnsStart = time.Now(); traceMu.Unlock() },
-		DNSDone:           func(_ httptrace.DNSDoneInfo) { traceMu.Lock(); traceDNSTime = time.Since(dnsStart); traceMu.Unlock() },
-		ConnectStart:      func(_, _ string) { traceMu.Lock(); connStart = time.Now(); traceMu.Unlock() },
+		GetConn: func(string) { h3Receipt.onGetConn() },
+		DNSStart: func(_ httptrace.DNSStartInfo) {
+			h3Receipt.onDNSStart()
+			traceMu.Lock()
+			dnsStart = time.Now()
+			traceMu.Unlock()
+		},
+		DNSDone: func(_ httptrace.DNSDoneInfo) { traceMu.Lock(); traceDNSTime = time.Since(dnsStart); traceMu.Unlock() },
+		ConnectStart: func(_, _ string) {
+			h3Receipt.onConnectStart()
+			traceMu.Lock()
+			connStart = time.Now()
+			traceMu.Unlock()
+		},
 		ConnectDone:       func(_, _ string, _ error) { traceMu.Lock(); traceConnectTime = time.Since(connStart); traceMu.Unlock() },
 		TLSHandshakeStart: func() { traceMu.Lock(); tlsStart = time.Now(); traceMu.Unlock() },
 		TLSHandshakeDone: func(_ tls.ConnectionState, _ error) {
@@ -585,7 +605,12 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			traceTLSTime = time.Since(tlsStart)
 			traceMu.Unlock()
 		},
-		GotConn:      func(info httptrace.GotConnInfo) { traceMu.Lock(); connectionReused = info.Reused; traceMu.Unlock() },
+		GotConn: func(info httptrace.GotConnInfo) {
+			h3Receipt.onGotConn(info.Reused)
+			traceMu.Lock()
+			connectionReused = info.Reused
+			traceMu.Unlock()
+		},
 		WroteHeaders: func() { traceMu.Lock(); wroteHeaders = true; traceMu.Unlock() },
 		GotFirstResponseByte: func() {
 			traceMu.Lock()
@@ -596,6 +621,9 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		},
 	}
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+	if h3Receipt != nil {
+		req = req.WithContext(h3transport.WithDialObserver(req.Context(), h3Receipt.onDial))
+	}
 	client := *h.client
 	if action.TimeoutMs > 0 {
 		client.Timeout = time.Duration(action.TimeoutMs) * time.Millisecond
@@ -674,6 +702,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, reused, rCount, rDur)
 			result.ErrorMessage = h.transportErrorMessage(err)
 			result.HTTP3FailureCertainty = HTTP3FailureCertainty(err)
+			h3Receipt.fail(err)
 			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
 			h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, nil, false)
 			return result, nil
@@ -708,6 +737,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, reused, rCount, rDur)
 			result.ErrorMessage = h.transportErrorMessage(retryErr)
 			result.HTTP3FailureCertainty = HTTP3FailureCertainty(retryErr)
+			h3Receipt.fail(retryErr)
 			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
 			h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, nil, false)
 			return result, nil

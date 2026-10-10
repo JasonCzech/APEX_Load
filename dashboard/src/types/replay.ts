@@ -64,6 +64,16 @@ export interface ProtocolEvidence {
   http_version_negotiated?: '1.1' | '2' | '3'
   /** Failed HTTP/3 request: whether it may have reached the target. */
   http3_failure_certainty?: 'not_sent' | 'possibly_sent' | 'rejected_unprocessed'
+  /** HTTP/3 version receipt (evidence version 2). */
+  http_version_selection_reason?: string
+  quic_attempted?: boolean
+  quic_connection?: 'new' | 'reused' | 'shared_pending'
+  quic_error_class?: string
+  attempt_count?: number
+  tls_in_transport_handshake?: boolean
+  tls_resumed?: boolean
+  ttfb_boundary?: 'first_byte' | 'headers'
+  timing_availability?: Record<string, string>
   http_version_source?: 'wire' | 'cache'
   alt_svc_h3_advertised?: boolean
   protocol?: string

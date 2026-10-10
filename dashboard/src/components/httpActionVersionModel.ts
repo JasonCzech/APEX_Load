@@ -114,5 +114,35 @@ export function httpReplayVersionEvidence(evidence: ProtocolEvidence | undefined
     source: source === 'wire' ? 'Wire response' : source === 'cache' ? 'Cached response' : 'Not observed',
     // Observation only: the wire response advertised final HTTP/3 in Alt-Svc.
     advertisesHTTP3: source === 'wire' && evidence.alt_svc_h3_advertised === true && negotiated !== '3',
+    http3: http3ReceiptRows(evidence),
   }
+}
+
+const quicConnectionLabels: Record<string, string> = {
+  new: 'New connection', reused: 'Reused connection', shared_pending: 'Joined a connection still being opened',
+}
+const certaintyLabels: Record<string, string> = {
+  not_sent: 'Not sent', possibly_sent: 'Possibly sent (the target may have processed it)', rejected_unprocessed: 'Rejected unprocessed by the server',
+}
+const selectionLabels: Record<string, string> = {
+  exact_policy: 'Exact HTTP/3 policy', proxy_route: 'Refused: the route is a proxy', integrated_auth: 'Refused: integrated authentication runs on TCP',
+}
+
+/** HTTP/3 receipt rows; only known enum values are shown, never raw strings. */
+function http3ReceiptRows(evidence: ProtocolEvidence): Array<{ label: string; value: string }> {
+  if (evidence.quic_attempted === undefined && evidence.http_version_selection_reason === undefined) return []
+  const rows: Array<{ label: string; value: string }> = []
+  const selection = evidence.http_version_selection_reason
+  if (typeof selection === 'string' && selectionLabels[selection]) rows.push({ label: 'HTTP/3 routing', value: selectionLabels[selection] })
+  const connection = evidence.quic_connection
+  if (typeof connection === 'string' && quicConnectionLabels[connection]) {
+    rows.push({ label: 'QUIC connection', value: quicConnectionLabels[connection] + (evidence.tls_resumed === true ? ' (TLS resumed)' : '') })
+  }
+  if (typeof evidence.attempt_count === 'number' && Number.isSafeInteger(evidence.attempt_count) && evidence.attempt_count >= 0) {
+    rows.push({ label: 'HTTP attempts', value: String(evidence.attempt_count) })
+  }
+  const certainty = evidence.http3_failure_certainty
+  if (typeof certainty === 'string' && certaintyLabels[certainty]) rows.push({ label: 'Failure certainty', value: certaintyLabels[certainty] })
+  if (evidence.tls_in_transport_handshake === true) rows.push({ label: 'TLS timing', value: 'Part of the QUIC handshake (counted in connect time)' })
+  return rows
 }

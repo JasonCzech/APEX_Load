@@ -44,9 +44,24 @@ const (
 	RejectedUnprocessed Certainty = "rejected_unprocessed"
 )
 
+// ErrorClass categorizes a failure for the receipt. It describes what the
+// transport observed, never a cause it cannot see: a timeout is not reported
+// as "UDP blocked".
+type ErrorClass string
+
+const (
+	ClassTimeout            ErrorClass = "timeout"
+	ClassHandshake          ErrorClass = "handshake"
+	ClassVersionNegotiation ErrorClass = "version_negotiation"
+	ClassConnectionClosed   ErrorClass = "connection_closed"
+	ClassRequestRejected    ErrorClass = "request_rejected"
+	ClassPossiblySent       ErrorClass = "possibly_sent"
+)
+
 // Error is a failed HTTP/3 request with its transmission certainty.
 type Error struct {
 	Certainty Certainty
+	Class     ErrorClass
 	Err       error
 }
 
@@ -177,12 +192,44 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	var h3Err *http3.Error
 	switch {
 	case errors.As(err, &h3Err) && h3Err.ErrorCode == http3.ErrCodeRequestRejected:
-		return nil, &Error{Certainty: RejectedUnprocessed, Err: err}
+		return nil, &Error{Certainty: RejectedUnprocessed, Class: ClassRequestRejected, Err: err}
 	case !written.Load():
-		return nil, &Error{Certainty: NotSent, Err: err}
+		return nil, &Error{Certainty: NotSent, Class: classify(err), Err: err}
 	default:
-		return nil, &Error{Certainty: PossiblySent, Err: err}
+		return nil, &Error{Certainty: PossiblySent, Class: ClassPossiblySent, Err: err}
 	}
+}
+
+// classify maps a failure before the request was written to a class.
+func classify(err error) ErrorClass {
+	var idle *quic.IdleTimeoutError
+	var handshakeTimeout *quic.HandshakeTimeoutError
+	var versions *quic.VersionNegotiationError
+	var transportErr *quic.TransportError
+	switch {
+	case errors.As(err, &idle), errors.As(err, &handshakeTimeout), errors.Is(err, context.DeadlineExceeded):
+		return ClassTimeout
+	case errors.As(err, &versions):
+		return ClassVersionNegotiation
+	case errors.As(err, &transportErr) && transportErr.ErrorCode.IsCryptoError():
+		return ClassHandshake
+	default:
+		return ClassConnectionClosed
+	}
+}
+
+// DialInfo describes a connection this transport opened.
+type DialInfo struct {
+	// Resumed is set when the TLS handshake resumed an earlier session.
+	Resumed bool
+}
+
+type dialObserverKey struct{}
+
+// WithDialObserver returns a request context whose request, if it is the
+// one that opens a new connection, reports that connection to observe.
+func WithDialObserver(ctx context.Context, observe func(DialInfo)) context.Context {
+	return context.WithValue(ctx, dialObserverKey{}, observe)
 }
 
 // CloseIdleConnections closes connections no request is using.
@@ -254,33 +301,121 @@ func (t *Transport) dial(ctx context.Context, addr string, tlsConfig *tls.Config
 	if err != nil {
 		return nil, err
 	}
-	var errs []error
-	for _, address := range addresses {
-		remote := &net.UDPAddr{IP: address.AsSlice(), Port: port, Zone: address.Zone()}
-		socket, err := t.socket(address.Is6() && !address.Is4In6())
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		if trace != nil && trace.ConnectStart != nil {
-			trace.ConnectStart("udp", remote.String())
-		}
-		conn, err := socket.Dial(dialCtx, remote, tlsConfig, quicConfig)
-		if trace != nil && trace.ConnectDone != nil {
-			trace.ConnectDone("udp", remote.String(), err)
-		}
-		if err == nil {
-			if err := t.track(conn); err != nil {
-				return nil, err
+	addresses = interleaveFamilies(addresses)
+	remote := func(address netip.Addr) string {
+		return net.JoinHostPort(address.String(), strconv.Itoa(port))
+	}
+	// One connect phase covers the whole dial, whichever address wins.
+	if trace != nil && trace.ConnectStart != nil {
+		trace.ConnectStart("udp", remote(addresses[0]))
+	}
+	conn, winner, err := t.raceAddresses(dialCtx, addresses, port, tlsConfig, quicConfig)
+	if trace != nil && trace.ConnectDone != nil {
+		trace.ConnectDone("udp", remote(winner), err)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := t.track(conn); err != nil {
+		return nil, err
+	}
+	if observe, _ := ctx.Value(dialObserverKey{}).(func(DialInfo)); observe != nil {
+		observe(DialInfo{Resumed: conn.ConnectionState().TLS.DidResume})
+	}
+	return conn, nil
+}
+
+// fallbackDelay is how long an address gets before the next one starts, as
+// in the TCP dialer's dual-stack fallback (RFC 8305 recommends 250 ms).
+const fallbackDelay = 300 * time.Millisecond
+
+// raceAddresses dials the addresses in order, starting the next one when the
+// previous fails or after fallbackDelay, so an address family that resolves
+// but does not route costs a fraction of a second rather than the handshake
+// timeout. The first completed handshake wins; later winners are closed.
+func (t *Transport) raceAddresses(ctx context.Context, addresses []netip.Addr, port int, tlsConfig *tls.Config, quicConfig *quic.Config) (*quic.Conn, netip.Addr, error) {
+	type outcome struct {
+		conn    *quic.Conn
+		address netip.Addr
+		err     error
+	}
+	raceCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	results := make(chan outcome, len(addresses))
+	start := func(address netip.Addr) {
+		go func() {
+			socket, err := t.socket(address.Is6())
+			if err != nil {
+				results <- outcome{address: address, err: err}
+				return
 			}
-			return conn, nil
-		}
-		errs = append(errs, err)
-		if dialCtx.Err() != nil {
-			break
+			remote := &net.UDPAddr{IP: address.AsSlice(), Port: port, Zone: address.Zone()}
+			conn, err := socket.Dial(raceCtx, remote, tlsConfig, quicConfig)
+			results <- outcome{conn: conn, address: address, err: err}
+		}()
+	}
+	next, pending := 0, 0
+	launch := func() {
+		start(addresses[next])
+		next++
+		pending++
+	}
+	launch()
+	var errs []error
+	timer := time.NewTimer(fallbackDelay)
+	defer timer.Stop()
+	for pending > 0 {
+		select {
+		case result := <-results:
+			pending--
+			if result.err == nil {
+				cancel()
+				// Close any later winner once the others finish.
+				go func(remaining int) {
+					for range remaining {
+						if late := <-results; late.conn != nil {
+							_ = late.conn.CloseWithError(quic.ApplicationErrorCode(http3.ErrCodeNoError), "")
+						}
+					}
+				}(pending)
+				return result.conn, result.address, nil
+			}
+			errs = append(errs, result.err)
+			if next < len(addresses) && ctx.Err() == nil {
+				launch()
+				timer.Reset(fallbackDelay)
+			}
+		case <-timer.C:
+			if next < len(addresses) {
+				launch()
+				timer.Reset(fallbackDelay)
+			}
 		}
 	}
-	return nil, errors.Join(errs...)
+	return nil, addresses[0], errors.Join(errs...)
+}
+
+// interleaveFamilies alternates address families, keeping the resolver's
+// order within each, so the fallback reaches the other family second.
+func interleaveFamilies(addresses []netip.Addr) []netip.Addr {
+	var first, second []netip.Addr
+	for _, address := range addresses {
+		if address.Is6() == addresses[0].Is6() {
+			first = append(first, address)
+		} else {
+			second = append(second, address)
+		}
+	}
+	out := make([]netip.Addr, 0, len(addresses))
+	for i := 0; i < len(first) || i < len(second); i++ {
+		if i < len(first) {
+			out = append(out, first[i])
+		}
+		if i < len(second) {
+			out = append(out, second[i])
+		}
+	}
+	return out
 }
 
 // dialContext detaches the dial from the triggering request and bounds it by
