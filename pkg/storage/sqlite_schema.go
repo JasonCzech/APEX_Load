@@ -1473,6 +1473,11 @@ func schemaCreateTableStatements() []string {
 			updated_at DATETIME NOT NULL,
 			UNIQUE(execution_target_id, client_token)
 		)`,
+		`CREATE TABLE IF NOT EXISTS reverse_generator_owners (
+			generator_id TEXT PRIMARY KEY,
+			execution_target_id TEXT NOT NULL,
+			created_at DATETIME NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS fleet_alert_acks (
 			id TEXT PRIMARY KEY,
 			alert_type TEXT NOT NULL,

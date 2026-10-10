@@ -157,6 +157,13 @@ func walkRepositoryTestFiles(root string, visit func(rel string, path string, co
 			return nil // unreadable trees are not the guard's business
 		}
 		if entry.IsDir() {
+			// Go's ./... pattern stops at a nested module, including visible
+			// worktrees. Their independent suites are not this module's gates.
+			if path != root {
+				if _, err := os.Stat(filepath.Join(path, "go.mod")); err == nil {
+					return filepath.SkipDir
+				}
+			}
 			// Match Go package discovery: cold archives and nested hidden checkouts
 			// are retained inputs, not active suites in this repository.
 			if path != root && (strings.HasPrefix(entry.Name(), ".") || strings.HasPrefix(entry.Name(), "_") || entry.Name() == "testdata") {
@@ -731,13 +738,18 @@ func writeCorpusFixture(t *testing.T, scriptDirs int) string {
 
 func TestOptInInventorySkipsColdArchivesAndNestedCheckouts(t *testing.T) {
 	root := t.TempDir()
-	paths := []string{"pkg/active_test.go", "_retired/bruno-runner/pkg/retired_test.go", "_scratch/pkg/unused_test.go", ".claude/worktrees/fc-wave1/pkg/nested_test.go", ".codex/worktrees/other/pkg/nested_test.go", "pkg/.hidden/hidden_test.go", "pkg/testdata/fixture_test.go", "vendor/example/vendor_test.go"}
+	paths := []string{"pkg/active_test.go", "_retired/bruno-runner/pkg/retired_test.go", "_scratch/pkg/unused_test.go", ".claude/worktrees/fc-wave1/pkg/nested_test.go", ".codex/worktrees/other/pkg/nested_test.go", "pkg/.hidden/hidden_test.go", "pkg/testdata/fixture_test.go", "vendor/example/vendor_test.go", "review-worktrees/other/pkg/nested_test.go", "separate-module/nested_test.go"}
 	for _, rel := range paths {
 		path := filepath.Join(root, rel)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(path, []byte("package fixture\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, module := range []string{".", "review-worktrees/other", "separate-module"} {
+		if err := os.WriteFile(filepath.Join(root, module, "go.mod"), []byte("module example.com/fixture\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}

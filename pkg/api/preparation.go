@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"reflect"
 	"strings"
 	"time"
 
@@ -19,6 +20,21 @@ import (
 	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+type preparationCapacityAssignment struct {
+	authored *GeneratorAssignmentSettings
+	resolved *GeneratorAssignmentSettings
+}
+
+// preparationAssignmentLocked excludes only the exact placement mutation made
+// by capacity provisioning. A subsequent edit to any assignment field must
+// still change the preparation revision. Both snapshots are immutable.
+func preparationAssignmentLocked(test *ManagedTest) *GeneratorAssignmentSettings {
+	if allocation := test.preparationCapacityAssignment; allocation != nil && reflect.DeepEqual(test.Assignment, allocation.resolved) {
+		return cloneGeneratorAssignmentSettings(allocation.authored)
+	}
+	return cloneGeneratorAssignmentSettings(test.Assignment)
+}
 
 func preparationProjectEnabled(project string) bool {
 	for _, p := range strings.Split(os.Getenv("APEXLOAD_PREPARATION_PROJECTS"), ",") {
@@ -55,7 +71,7 @@ func (tr *TestRunner) preparationRevision(id string) (string, error) {
 		Sources     []storage.MonitorSource
 		Connections []int64
 		Override    *storage.MonitorBindings
-	}{Goals: cloneGoalConfig(test.GoalConfig), Script: fingerprint.EvidenceSHA256, Duration: test.DurationStr, VUsers: test.TotalVUsers, Assignment: cloneGeneratorAssignmentSettings(test.Assignment), Override: override}
+	}{Goals: cloneGoalConfig(test.GoalConfig), Script: fingerprint.EvidenceSHA256, Duration: test.DurationStr, VUsers: test.TotalVUsers, Assignment: preparationAssignmentLocked(test), Override: override}
 	tr.mu.RUnlock()
 	if store, ok := tr.testStore.(storage.RunMonitorStore); ok {
 		if override != nil {

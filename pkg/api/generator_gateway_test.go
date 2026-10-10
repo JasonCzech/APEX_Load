@@ -185,8 +185,8 @@ func TestBurstEnrollmentRejectsFailedAndExpiredIntents(t *testing.T) {
 	if server.validateBurstGeneratorEnrollment("target", "generator-expired", "nonce-expired") {
 		t.Fatal("expired capacity intent authenticated a generator")
 	}
-	if known, valid := server.validateGeneratorCapacityEnrollment("target", "generator-failed", ""); !known || valid {
-		t.Fatalf("failed intent without lifecycle metadata = (%v, %v), want known and invalid", known, valid)
+	if known, valid, err := server.validateGeneratorCapacityEnrollment("target", "generator-failed", ""); !known || valid || err != nil {
+		t.Fatalf("failed intent without lifecycle metadata = (%v, %v, %v), want known and invalid", known, valid, err)
 	}
 }
 

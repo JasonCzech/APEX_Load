@@ -735,6 +735,10 @@ receiveLoop:
 			b.failDistributedTestOnStreamError(tr, test, target, fmt.Errorf("metrics generation %d does not match test generation %d", batch.ExecutionGeneration, executionGeneration))
 			return
 		}
+		if err := validateReverseReportedIdentity(target, batch.GeneratorID); err != nil {
+			b.failDistributedTestOnStreamError(tr, test, target, err)
+			return
+		}
 		qualifyRemoteMetricsReceipt(tr, test, target, &batch, time.Now())
 		// Source coverage counts each received publication once, including
 		// duplicates and late arrivals the live view rejects, and never the
@@ -1393,6 +1397,9 @@ func stageDistributedGoalErrorWindowLocked(tr *TestRunner, test *ManagedTest, ta
 }
 
 func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner, test *ManagedTest, target string, batch generatorrpc.MetricsBatch, fences ...distributedMetricsConsumerFence) bool {
+	if validateReverseReportedIdentity(target, batch.GeneratorID) != nil {
+		return false
+	}
 	batch.RegionMetrics = controllerApprovedRegionMetrics(batch.RegionMetrics, b.regionForTarget(target))
 	freshTransactions := append([]generatorrpc.TransactionMetric(nil), batch.Transactions...)
 	// The generator's own window, before a terminal batch takes on its last.
@@ -1766,6 +1773,9 @@ func (b *distributedExecutionBackend) applyStoredRemoteMetricsBatch(tr *TestRunn
 // returns the current aggregate for compatibility with direct callers, but
 // fresh=false keeps it out of threshold alert and stop evaluation.
 func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *TestRunner, test *ManagedTest, target string, batch generatorrpc.MetricsBatch, alreadyStored bool, fences ...distributedMetricsConsumerFence) (*LiveMetrics, string, string, bool, distributedMetricsPublication) {
+	if !alreadyStored && validateReverseReportedIdentity(target, batch.GeneratorID) != nil {
+		return nil, "", "", false, distributedMetricsPublication{}
+	}
 	if !alreadyStored {
 		batch.RegionMetrics = controllerApprovedRegionMetrics(batch.RegionMetrics, b.regionForTarget(target))
 	}
@@ -2281,6 +2291,10 @@ func (b *distributedExecutionBackend) probeGeneratorLoad(ctx context.Context, ta
 	response, err := heartbeat.Receive()
 	if err != nil {
 		slog.Warn("receive generator heartbeat probe failed during placement", "target", target, "error", err)
+		return snapshot
+	}
+	if err := validateReverseReportedIdentity(target, response.GeneratorID); err != nil {
+		slog.Warn("generator heartbeat identity rejected", "target", target, "error", err)
 		return snapshot
 	}
 	snapshot.GeneratorID = response.GeneratorID

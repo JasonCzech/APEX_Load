@@ -203,6 +203,7 @@ type Server struct {
 	capacityBackends                  capacityBackendPoolResolver
 	capacityHeartbeatProbe            func(string) bool
 	reverseGenerators                 *generatorrpc.ReverseRegistry
+	reverseLifecycleMu                sync.Mutex
 	reverseTargetMu                   sync.RWMutex
 	reverseTargetSessions             map[string]map[string]struct{}
 	reverseEnrollmentMu               sync.Mutex

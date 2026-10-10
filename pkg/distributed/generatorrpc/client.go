@@ -633,6 +633,8 @@ type sharedClientConnection struct {
 	javaHostPrepared         bool
 	mu                       sync.Mutex
 	refs                     int
+	closed                   bool
+	onClose                  func()
 }
 
 type HeartbeatStream struct {
@@ -703,20 +705,30 @@ func Dial(ctx context.Context, target string, opts ...grpc.DialOption) (*Client,
 		return nil, fmt.Errorf("generator transport config: %w", err)
 	}
 	dialTarget := target
+	registry := DefaultReverseRegistry
 	if reverse {
 		dialTarget = "passthrough:///reverse-" + generatorID
 		dialOptions = append(dialOptions, grpc.WithContextDialer(func(dialCtx context.Context, _ string) (net.Conn, error) {
-			return DefaultReverseRegistry.Dial(dialCtx, generatorID)
+			return registry.Dial(dialCtx, generatorID)
 		}))
 	}
 	dialOptions = append(dialOptions, opts...)
 
-	conn, err := grpc.DialContext(ctx, dialTarget, dialOptions...)
-	if err != nil {
-		return nil, err
+	create := func() (*Client, error) {
+		conn, err := grpc.DialContext(ctx, dialTarget, dialOptions...)
+		if err != nil {
+			return nil, err
+		}
+		return NewClient(conn), nil
 	}
-
-	return NewClient(conn), nil
+	// The enrolled tunnel is one physical byte stream. All default controller
+	// users must multiplex on the same HTTP/2 connection instead of consuming
+	// a second tunnel for inventory, another run, or execution-epoch renewal.
+	// Explicit dial options keep their existing private-transport semantics.
+	if reverse && len(opts) == 0 {
+		return registry.sharedClient(ctx, generatorID, create)
+	}
+	return create()
 }
 
 func NewClient(conn *grpc.ClientConn) *Client {
@@ -740,6 +752,10 @@ func (c *Client) Retain() (*Client, error) {
 		return nil, fmt.Errorf("generator client is closed or has no shareable connection")
 	}
 	c.connection.mu.Lock()
+	if c.connection.closed {
+		c.connection.mu.Unlock()
+		return nil, fmt.Errorf("generator client connection is closed")
+	}
 	c.connection.refs++
 	c.connection.mu.Unlock()
 	return &Client{conn: c.conn, rpc: c.rpc, connection: c.connection}, nil
@@ -756,14 +772,22 @@ func (c *Client) Close() error {
 	}
 	c.closed = true
 	c.sourcePlans.Clear()
+	var onClose func()
 	if c.connection != nil {
 		c.connection.mu.Lock()
 		c.connection.refs--
 		last := c.connection.refs == 0
+		if last {
+			c.connection.closed = true
+			onClose = c.connection.onClose
+		}
 		c.connection.mu.Unlock()
 		if !last {
 			return nil
 		}
+	}
+	if onClose != nil {
+		defer onClose()
 	}
 	if c.conn == nil {
 		return nil

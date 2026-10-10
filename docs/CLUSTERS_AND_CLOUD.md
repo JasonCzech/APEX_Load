@@ -644,6 +644,11 @@ origins, requires a target-scoped enrollment token, and additionally requires
 the persisted launch ID and nonce for burst workers. Production generators
 refuse plaintext or tokenless reverse connections.
 
+Reverse generator IDs are permanently bound to their execution target across
+reconnects and controller restarts. IDs must be 1–256 characters using ASCII
+letters, digits, dots, underscores, or hyphens; use a fresh ID when moving a
+generator to another execution target.
+
 Every reconnect also carries a fresh timestamped session nonce; stale or
 replayed enrollment requests are rejected. The reference PaaS stacks explicitly
 trust the managed ingress HTTPS scheme header because TLS terminates before the

@@ -1782,7 +1782,7 @@ func (b *distributedExecutionBackend) broadcastFleetDegraded(tr *TestRunner, tes
 	if tr == nil || tr.hub == nil || test == nil {
 		return
 	}
-	tr.hub.BroadcastJSON(map[string]any{
+	tr.hub.BroadcastScopedJSON(test.ID, normalizeProjectID(test.ProjectID), map[string]any{
 		"type":      "fleet_event",
 		"event":     "fleet_degraded",
 		"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
@@ -1793,6 +1793,5 @@ func (b *distributedExecutionBackend) broadcastFleetDegraded(tr *TestRunner, tes
 			"error":           streamErr.Error(),
 			"impacted_groups": len(impacts),
 		},
-		"broadcast_all": true,
 	})
 }

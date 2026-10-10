@@ -594,6 +594,12 @@ func generatorMaxInstanceLifetime() time.Duration {
 }
 
 func (s *Server) ensureRunCapacity(ctx context.Context, test *ManagedTest) (runErr error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	policy := compute.CapacityPolicy{}
 	if test != nil && test.preparationID != "" {
 		prepared, ok := s.store.(storage.PreparationStore)
@@ -684,6 +690,7 @@ func (s *Server) ensureRunCapacity(ctx context.Context, test *ManagedTest) (runE
 		return err
 	}
 	provisioned := false
+	readyCommitted := false
 	var intents []*storage.CapacityInstanceIntent
 	defer func() {
 		if provisioned {
@@ -703,12 +710,20 @@ func (s *Server) ensureRunCapacity(ctx context.Context, test *ManagedTest) (runE
 			slog.Error("load failed run capacity request", "test_id", test.ID, "request_id", request.ID, "error", loadErr)
 			return
 		}
-		if !canCancelProvisioningStatus(latest.Status) {
+		// Readiness can commit just before cancellation wins the in-memory
+		// publication fence. Roll back only this attempt's exact success write;
+		// never overwrite a later operator or worker transition.
+		ownUnpublishedSuccess := readyCommitted && latest.Status == "success" &&
+			latest.Revision == request.Revision && latest.AttemptToken == request.AttemptToken
+		if !canCancelProvisioningStatus(latest.Status) && !ownUnpublishedSuccess {
 			return // an operator cancellation or another fenced worker won
 		}
 		now := time.Now().UTC()
 		expectedRevision, expectedToken := latest.Revision, latest.AttemptToken
 		latest.Status = "failed"
+		if errors.Is(runErr, context.Canceled) {
+			latest.Status = "cancelled"
+		}
 		if errors.Is(runErr, context.DeadlineExceeded) || now.After(deadline) {
 			latest.Status = "timed_out"
 		}
@@ -765,7 +780,13 @@ func (s *Server) ensureRunCapacity(ctx context.Context, test *ManagedTest) (runE
 		if err != nil {
 			return err
 		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		observation = s.applyCapacityConnectivityReadiness(base, observation)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		request.ObservedCount, request.ReadyCount, request.PendingCount = observation.Observed, observation.Ready, observation.Pending
 		request.FailedCount = observation.Failed
 		ready := observation.Terminal
@@ -790,11 +811,31 @@ func (s *Server) ensureRunCapacity(ctx context.Context, test *ManagedTest) (runE
 			if err := s.transitionProvisioningRequest(request, expectedRevision, expectedToken); err != nil {
 				return err
 			}
+			readyCommitted = true
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if s.runner != nil {
 				s.runner.mu.Lock()
+				// Stop can win while the durable readiness transition is in flight.
+				// Do not attach newly provisioned placement to its terminal run;
+				// the deferred provider cancellation still owns these instances.
+				if err := ctx.Err(); err != nil {
+					s.runner.mu.Unlock()
+					return err
+				}
+				current := s.runner.tests[test.ID]
+				if (current != nil && current != test) || isTerminalTestStatus(test.Status) || test.Status == "STOPPING" || (test.executionCtx != nil && test.executionCtx.Err() != nil) {
+					s.runner.mu.Unlock()
+					return context.Canceled
+				}
 				if test.Assignment != nil {
+					authored := preparationAssignmentLocked(test)
 					test.Assignment.Mode = generatorAssignmentModeSpecificHosts
 					test.Assignment.SelectedTargets = orderedUniqueTargets(append(test.Assignment.SelectedTargets, addresses...))
+					if test.preparationID != "" {
+						test.preparationCapacityAssignment = &preparationCapacityAssignment{authored: authored, resolved: cloneGeneratorAssignmentSettings(test.Assignment)}
+					}
 				}
 				s.runner.mu.Unlock()
 			}

@@ -96,6 +96,11 @@ func (s *Server) websocketAuthorizer(r *http.Request, projectID string) func() b
 			if err != nil || stored == nil || !stored.Active {
 				return false
 			}
+			// Subjects can be renamed and reused. An existing connection belongs
+			// to the original durable identity, never its subject's replacement.
+			if strings.TrimSpace(snapshot.ID) == "" || strings.TrimSpace(stored.ID) != strings.TrimSpace(snapshot.ID) {
+				return false
+			}
 			if snapshot.SessionScoped && snapshot.SessionEpoch < stored.SessionEpoch {
 				return false
 			}

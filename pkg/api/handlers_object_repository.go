@@ -239,6 +239,16 @@ func (s *Server) handleObjectRepositoryFromScript(w http.ResponseWriter, r *http
 		writeError(w, http.StatusBadRequest, "script has no element selectors to import")
 		return
 	}
+	originalUpdatedAt := stored.Script.UpdatedAt
+	var originalActionGraphDigest string
+	if req.BindScript {
+		var err error
+		originalActionGraphDigest, err = scriptCorrelationActionGraphDigest(stored.Script)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to bind object repository creation to the current script")
+			return
+		}
+	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		name = strings.TrimSpace(stored.Name) + " objects"
@@ -259,7 +269,7 @@ func (s *Server) handleObjectRepositoryFromScript(w http.ResponseWriter, r *http
 	if req.BindScript {
 		bindCopy := cloneScriptDefinition(stored.Script)
 		if bound := bindScriptToObjectRepository(bindCopy, repo); bound > 0 {
-			ok, err := service.UpdateScript(scriptID, bindCopy, repo.ProjectID)
+			ok, err := service.UpdateScriptIfUnchanged(scriptID, bindCopy, repo.ProjectID, originalUpdatedAt, originalActionGraphDigest)
 			if err != nil {
 				cleaned, cleanupErr := s.deleteObjectRepositoryIfUnreferenced(repo)
 				if cleanupErr == nil && !cleaned {

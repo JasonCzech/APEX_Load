@@ -3595,7 +3595,18 @@ func (tr *TestRunner) runVUserScaleRamp(ctx context.Context, ramp *vuserScaleRam
 		}
 
 		for {
-			err := tr.scaleVUsersNow(id, groupName, nextTarget, false)
+			err := tr.scaleVUsersNowWithAdmissionGuard(id, groupName, nextTarget, false, func(current *ManagedTest) error {
+				// Cancellation may arrive while this step waits for another group
+				// control or admission read. Check ownership at the commit boundary,
+				// after those waits, so a replaced ramp cannot override its successor.
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				if current == nil || current.vuserScaleRamps[groupName] != ramp {
+					return context.Canceled
+				}
+				return nil
+			})
 			if err == nil {
 				break
 			}

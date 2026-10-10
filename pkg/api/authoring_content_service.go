@@ -26,7 +26,7 @@ type objectRepositoryService interface {
 	UpdateRepositoryIfUnchanged(*storage.ObjectRepository, time.Time) (bool, error)
 	DeleteRepositoryIfUnreferenced(*storage.ObjectRepository) (bool, error)
 	GetScript(string) (*StoredScript, bool)
-	UpdateScript(string, *dsl.Script, string) (bool, error)
+	UpdateScriptIfUnchanged(string, *dsl.Script, string, time.Time, string) (bool, error)
 }
 
 type testRunnerObjectRepositoryService struct {
@@ -79,8 +79,8 @@ func (service *testRunnerObjectRepositoryService) GetScript(id string) (*StoredS
 	return service.runner.GetScript(id)
 }
 
-func (service *testRunnerObjectRepositoryService) UpdateScript(id string, script *dsl.Script, projectID string) (bool, error) {
-	_, updated, err := service.runner.UpdateScriptDurableInProject(id, script, projectID)
+func (service *testRunnerObjectRepositoryService) UpdateScriptIfUnchanged(id string, script *dsl.Script, projectID string, expectedUpdatedAt time.Time, expectedActionGraphDigest string) (bool, error) {
+	_, updated, err := service.runner.UpdateScriptDurableInProjectIfUnchanged(id, script, projectID, expectedUpdatedAt, expectedActionGraphDigest)
 	return updated, err
 }
 
