@@ -72,8 +72,8 @@ func webAPIExecutionSupportMatrix() []webAPIExecutionSupportEntry {
 			ExecutionStatus:     "executable",
 			Importance:          "critical",
 			SupportedInputs:     []string{"JSON DSL", "HAR", "curl/raw HTTP samples", "OpenAPI imports", "Postman collections", "enterprise script archive Web HTTP/HTML imports"},
-			RuntimeCoverage:     []string{"HTTP/1.1", "HTTP/2", "exact HTTP/3 (preview, APEXLOAD_HTTP3)", "headers", "cookies", "redirects", "TLS/proxy/auth runtime settings", "content checks", "network shaping"},
-			RemainingGaps:       []string{"HTTP/3 upgrade from Alt-Svc (auto+h3) is not available yet", "exact HTTP/3 is a preview that needs APEXLOAD_HTTP3 on the controller and generators"},
+			RuntimeCoverage:     []string{"HTTP/1.1", "HTTP/2", "HTTP/3: exact 3 and the auto+h3 Alt-Svc upgrade (preview, APEXLOAD_HTTP3)", "headers", "cookies", "redirects", "TLS/proxy/auth runtime settings", "content checks", "network shaping"},
+			RemainingGaps:       []string{"HTTP/3 is a preview that needs APEXLOAD_HTTP3 on the controller and generators", "auto+h3 follows same-host Alt-Svc alternatives only"},
 			RecommendedWorkflow: "Author or import HTTP scripts, validate runtime settings, replay, then promote to scenarios.",
 		},
 		{

@@ -55,6 +55,7 @@ func (s *Server) handler(listener string) http.Handler {
 		}
 		w.Header().Set("X-Fixture-Listener", listener)
 		w.Header().Set("X-Fixture-Proto", r.Proto)
+		misdirected := listener != "tcp" && take(&s.misdirect)
 		defer func() {
 			key := r.Header.Get("X-Ledger-Key")
 			if key == "" {
@@ -72,6 +73,10 @@ func (s *Server) handler(listener string) http.Handler {
 				AltUsed:    r.Header.Get("Alt-Used"),
 			})
 		}()
+		if misdirected {
+			http.Error(w, "misdirected request", http.StatusMisdirectedRequest)
+			return
+		}
 		mux.ServeHTTP(w, r)
 	})
 }

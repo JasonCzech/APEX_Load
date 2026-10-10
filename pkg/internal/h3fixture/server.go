@@ -83,6 +83,7 @@ type Server struct {
 	altSvc       atomic.Value // string
 	rejectNext   atomic.Int64
 	fallbackNext atomic.Int64
+	misdirect    atomic.Int64
 	sequenceMu   sync.Mutex
 	rejectQueue  []bool
 
@@ -391,6 +392,11 @@ func (s *Server) RejectQUICSequence(rejects ...bool) {
 // VersionFallbackNextQUICRequests refuses the next n HTTP/3 request streams
 // with H3_VERSION_FALLBACK before reading them.
 func (s *Server) VersionFallbackNextQUICRequests(n int) { s.fallbackNext.Store(int64(n)) }
+
+// MisdirectNextQUICRequests answers the next n QUIC requests 421 Misdirected
+// Request before the handler runs, as an alternative that cannot serve the
+// origin would. TCP requests are unaffected.
+func (s *Server) MisdirectNextQUICRequests(n int) { s.misdirect.Store(int64(n)) }
 
 // SetHandshakeDelay delays every later inbound QUIC packet by d.
 func (s *Server) SetHandshakeDelay(d time.Duration) {

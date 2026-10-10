@@ -11,19 +11,34 @@ import (
 // http3Receipt collects one HTTP/3 action's routing, connection and timing
 // facts for the version receipt (evidence version 2). Trace callbacks run on
 // transport goroutines, so every method locks.
+//
+// Under auto+h3 the router reports each hop's route before sending it, so
+// connection facts come only from QUIC legs: a TCP hop's dial or reuse never
+// reads as a QUIC connection. Hops run one after another, so the current leg
+// is unambiguous.
 type http3Receipt struct {
-	mu        sync.Mutex
-	selection string
-	attempts  int
-	dialed    bool
-	resolved  bool
-	gotConn   bool
-	reused    bool
-	resumed   bool
-	failure   error
+	mu           sync.Mutex
+	upgrade      bool // auto+h3: the router chooses each hop's transport
+	quicLeg      bool // the current hop runs on QUIC
+	finalQUIC    bool // the last hop ran, or failed, on QUIC
+	selection    string
+	fallback     string
+	attempts     int // every HTTP attempt in the action
+	quicAttempts int // attempts on QUIC legs, charged to the attempt budget
+	dialed       bool
+	resolved     bool
+	gotConn      bool
+	reused       bool
+	resumed      bool
+	failure      error
 }
 
-func newHTTP3Receipt() *http3Receipt { return &http3Receipt{selection: "exact_policy"} }
+func newHTTP3Receipt(policy string) *http3Receipt {
+	if policy == VersionAutoH3 {
+		return &http3Receipt{upgrade: true}
+	}
+	return &http3Receipt{selection: "exact_policy", quicLeg: true, finalQUIC: true}
+}
 
 func (r *http3Receipt) lock(update func()) {
 	if r == nil {
@@ -36,16 +51,43 @@ func (r *http3Receipt) lock(update func()) {
 
 // Trace notifications. GetConn fires once per HTTP attempt, including
 // quic-go's own retry, so it counts attempts (D2).
-// onGetConn counts an attempt and returns the action's attempts so far.
+// onGetConn counts an attempt and returns the QUIC attempts so far, which the
+// attempt budget limits; TCP attempts are counted but never budgeted, so
+// auto+h3 adds no failure mode to a TCP hop.
 func (r *http3Receipt) onGetConn() int {
 	attempts := 0
-	r.lock(func() { r.attempts++; attempts = r.attempts })
+	r.lock(func() {
+		r.attempts++
+		if r.quicLeg {
+			r.quicAttempts++
+		}
+		attempts = r.quicAttempts
+	})
 	return attempts
 }
-func (r *http3Receipt) onDNSStart()     { r.lock(func() { r.resolved = true }) }
-func (r *http3Receipt) onConnectStart() { r.lock(func() { r.dialed = true }) }
+func (r *http3Receipt) onDNSStart() {
+	r.lock(func() { r.resolved = r.resolved || r.quicLeg })
+}
+func (r *http3Receipt) onConnectStart() {
+	r.lock(func() { r.dialed = r.dialed || r.quicLeg })
+}
 func (r *http3Receipt) onGotConn(reused bool) {
-	r.lock(func() { r.gotConn, r.reused = true, r.reused || reused })
+	r.lock(func() {
+		if r.quicLeg {
+			r.gotConn, r.reused = true, r.reused || reused
+		}
+	})
+}
+
+// routed implements http3RouteObserver: the router's choice for one hop.
+func (r *http3Receipt) routed(selection string, quic bool) {
+	r.lock(func() { r.selection, r.quicLeg, r.finalQUIC = selection, quic, quic })
+}
+
+// fellBack implements http3RouteObserver: the hop's QUIC attempt ended
+// before the target could act on it and the hop now runs on TCP.
+func (r *http3Receipt) fellBack(kind string) {
+	r.lock(func() { r.fallback, r.quicLeg, r.finalQUIC = kind, false, false })
 }
 func (r *http3Receipt) onDial(info h3transport.DialInfo) {
 	r.lock(func() { r.resumed = r.resumed || info.Resumed })
@@ -70,28 +112,41 @@ func (r *http3Receipt) evidence(result *protocol.Result) map[string]any {
 	defer r.mu.Unlock()
 	attempted := r.dialed || r.gotConn
 	evidence := map[string]any{
-		"http_version_selection_reason": r.selection,
-		"quic_attempted":                attempted,
-		"attempt_count":                 r.attempts,
-		"ttfb_boundary":                 "first_byte",
+		"quic_attempted": attempted,
+		"attempt_count":  r.attempts,
+		"ttfb_boundary":  "first_byte",
 	}
-	connection := "not_attempted"
-	switch {
-	case r.dialed && r.gotConn:
-		connection = "new"
-	case r.dialed:
-		// The action dialed but no connection was ever handed to a request:
-		// the handshake failed or never completed.
-		connection = "dial_failed"
-	case r.gotConn && r.reused:
-		connection = "reused"
-	case r.gotConn:
-		// The request waited on another request's handshake: it neither
-		// dialed nor reused an established connection.
-		connection = "shared_pending"
+	if r.selection != "" {
+		// Empty only when auto+h3 never routed a hop (a fresh cache hit).
+		evidence["http_version_selection_reason"] = r.selection
+	}
+	if r.upgrade {
+		evidence["http_version_fallback"] = "none"
+		if r.fallback != "" {
+			evidence["http_version_fallback"] = r.fallback
+		}
+	}
+	if attempted {
+		evidence["quic_connection"] = r.connectionLocked()
+		if r.finalQUIC {
+			// Explains TLSTime = 0; a fallback's timings are TCP's.
+			evidence["tls_in_transport_handshake"] = true
+		}
+	}
+	if r.resumed {
+		evidence["tls_resumed"] = true
+	}
+	var h3Err *h3transport.Error
+	if errors.As(r.failure, &h3Err) && h3Err.Class != "" {
+		evidence["quic_error_class"] = string(h3Err.Class)
+	}
+	if !r.finalQUIC {
+		// The result's timings describe a TCP hop, which carries no
+		// availability reasons.
+		return evidence
 	}
 	availability := map[string]any{"ttfb": "available", "tls": "in_transport_handshake"}
-	switch connection {
+	switch r.connectionLocked() {
 	case "new", "dial_failed":
 		availability["connect"] = "available"
 		availability["dns"] = "available"
@@ -109,16 +164,25 @@ func (r *http3Receipt) evidence(result *protocol.Result) map[string]any {
 		availability["ttfb"] = "no_response"
 	}
 	evidence["timing_availability"] = availability
-	if attempted {
-		evidence["quic_connection"] = connection
-		evidence["tls_in_transport_handshake"] = true
-	}
-	if r.resumed {
-		evidence["tls_resumed"] = true
-	}
-	var h3Err *h3transport.Error
-	if errors.As(r.failure, &h3Err) && h3Err.Class != "" {
-		evidence["quic_error_class"] = string(h3Err.Class)
-	}
 	return evidence
+}
+
+// connectionLocked classifies the QUIC connection the action's QUIC legs
+// used. The caller holds r.mu.
+func (r *http3Receipt) connectionLocked() string {
+	switch {
+	case r.dialed && r.gotConn:
+		return "new"
+	case r.dialed:
+		// The action dialed but no connection was ever handed to a request:
+		// the handshake failed or never completed.
+		return "dial_failed"
+	case r.gotConn && r.reused:
+		return "reused"
+	case r.gotConn:
+		// The request waited on another request's handshake: it neither
+		// dialed nor reused an established connection.
+		return "shared_pending"
+	}
+	return "not_attempted"
 }

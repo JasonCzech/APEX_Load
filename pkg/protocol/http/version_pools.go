@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	stdhttp "net/http"
 	"strings"
@@ -48,6 +49,9 @@ func (h *HTTP) initializeHTTPPolicyPools(ctx context.Context, config map[string]
 			return err
 		}
 	}
+	// tcpBase keeps each TCP pool's transport below the shared wrappers, so
+	// the auto+h3 router can use it with its own copy of those wrappers.
+	tcpBase := make(map[string]stdhttp.RoundTripper, 3)
 	for _, policy := range []string{"auto", VersionHTTP11, VersionHTTP2} {
 		transport := newTransport(settings, tlsConfig.Clone())
 		transport.Proxy = baseline.Proxy
@@ -73,6 +77,7 @@ func (h *HTTP) initializeHTTPPolicyPools(ctx context.Context, config map[string]
 			client.Transport = &pacRoundTripper{source: pacSource, allowed: h.allowedTargetHosts, base: transport, budget: h.connections, baseDial: baseDial}
 			oauthClient.Transport = &pacRoundTripper{source: pacSource, allowed: h.allowedTargetHosts, base: oauthTransport, budget: h.connections, baseDial: baseDial}
 		}
+		tcpBase[policy] = client.Transport
 		if len(h.allowedTargetHosts) > 0 {
 			client.Transport = protocol.NewTargetPolicyRoundTripper(client.Transport, h.allowedTargetHosts)
 			oauthClient.Transport = protocol.NewTargetPolicyRoundTripper(oauthClient.Transport, h.allowedTargetHosts)
@@ -100,9 +105,18 @@ func (h *HTTP) initializeHTTPPolicyPools(ctx context.Context, config map[string]
 		} else {
 			h.policyPools[VersionHTTP3] = pool
 		}
+		// auto+h3 also runs where QUIC is ruled out by the TLS maximum: every
+		// request then stays on TCP with selection reason tls_policy.
+		if tlsBelow := tlsMaximumBelow13(tlsConfig); pool != nil || (tlsBelow && errors.Is(err, ErrHTTP3Required)) {
+			var quic stdhttp.RoundTripper
+			if pool != nil {
+				quic = h.http3
+			}
+			h.policyPools[VersionAutoH3] = h.newUpgradePool(quic, tlsBelow, baseline, pacSource, h.policyPools["auto"], tcpBase, jar)
+		}
 	}
 	defaultPolicy := h.httpVersion
-	if defaultPolicy == "" || defaultPolicy == VersionAutoH3 || h.policyPools[defaultPolicy] == nil {
+	if defaultPolicy == "" || h.policyPools[defaultPolicy] == nil {
 		// Requests that inherit an unavailable HTTP/3 policy are refused
 		// before dispatch, so the automatic pool only serves session traffic
 		// outside request leaves.
@@ -127,6 +141,12 @@ func (h *HTTP) effectiveHTTPVersion(action *protocol.Action) (string, error) {
 	case VersionAutoH3:
 		if err := HTTP3UpgradeExecutionError(); err != nil {
 			return "", err
+		}
+		if h.policyPools[VersionAutoH3] == nil {
+			if h.http3Err != nil {
+				return "", h.http3Err
+			}
+			return "", ErrHTTP3NotEnabled
 		}
 	case VersionHTTP3:
 		if h.policyPools[VersionHTTP3] == nil {

@@ -64,7 +64,7 @@ type Protocol interface {
 ```
 
 **Bundled Protocols** (registered via `init()` when their package is imported in a binary's `main.go`):
-- **HTTP**: Supports HTTP/1.1, HTTP/2 and, as a preview where `APEXLOAD_HTTP3=true`, exact HTTP/3; `http` negotiates while `http/1.1`, `http/2` and `http/3` supply exact inherited defaults. Request `http_version` may inherit or select `auto`, `1.1`, `2`, `auto+h3` (not available yet) or `3`. Handles redirects, cookies, extractors, assertions
+- **HTTP**: Supports HTTP/1.1, HTTP/2 and, as a preview where `APEXLOAD_HTTP3=true`, exact HTTP/3 and the `auto+h3` Alt-Svc upgrade; `http` negotiates while `http/1.1`, `http/2` and `http/3` supply exact inherited defaults. Request `http_version` may inherit or select `auto`, `1.1`, `2`, `auto+h3` or `3`. Handles redirects, cookies, extractors, assertions
 - **SOAP**: Reuses the HTTP transport with SOAP-specific defaults, namespaces, and fault-handling semantics
 - **Java over HTTP** (`java_http`): Reuses the HTTP transport with the bounded `java_serialized_object_base64` codec for opaque serialized payloads
 - **Java Vuser** (`java_vuser`): External-runner sidecar bridge for JVM Vuser scripts; governed and disabled unless runner config enables it

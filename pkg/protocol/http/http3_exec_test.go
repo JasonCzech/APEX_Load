@@ -161,9 +161,6 @@ func TestExactHTTP3RefusesWhatItCannotCarry(t *testing.T) {
 	if r := run(t, ntlm, h3Get(t, fixture.URL("/echo"), "3")); r.Success || r.ErrorMessage != ErrHTTP3IntegratedAuth.Error() {
 		t.Fatalf("integrated auth: %q", r.ErrorMessage)
 	}
-	if r := run(t, h, h3Get(t, fixture.URL("/echo"), "auto+h3")); r.Success || !strings.Contains(r.ErrorMessage, "auto+h3 is not available in this build") {
-		t.Fatalf("auto+h3: %q", r.ErrorMessage)
-	}
 	if n := len(fixture.Ledger.Attempts()); n != 0 {
 		t.Fatalf("refused requests reached the target %d times", n)
 	}

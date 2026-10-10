@@ -123,7 +123,7 @@ describe('qualified HTTP version evidence', () => {
 
   it('retains a measured wire version independently of the selected policy', () => {
     expect(httpReplayVersionEvidence({ http_version_policy: 'auto', http_version_negotiated: '1.1', http_version_source: 'wire' }))
-      .toEqual({ policy: 'Auto-negotiate (HTTP/2 or HTTP/1.1)', actual: 'HTTP/1.1', source: 'Wire response', advertisesHTTP3: false, http3: [] })
+      .toEqual({ policy: 'Auto-negotiate (HTTP/2 or HTTP/1.1)', actual: 'HTTP/1.1', source: 'Wire response', advertisesHTTP3: false, upgradesLater: false, http3: [] })
     expect(httpReplayVersionEvidence({ http_version_policy: '2', http_version_negotiated: '2', http_version_source: 'wire' })?.actual).toBe('HTTP/2')
     expect(httpReplayVersionEvidence({ http_version_policy: '3', http_version_negotiated: '3', http_version_source: 'wire', alt_svc_h3_advertised: true })).toMatchObject({ policy: 'HTTP/3 required (no fallback)', actual: 'HTTP/3', advertisesHTTP3: false })
     expect(httpReplayVersionEvidence({ http_version_policy: '3', http_version_negotiated: '3', http_version_source: 'wire', quic_attempted: true, http_version_selection_reason: 'exact_policy', quic_connection: 'new', tls_resumed: true, attempt_count: 1, tls_in_transport_handshake: true })?.http3).toEqual([
@@ -141,11 +141,37 @@ describe('qualified HTTP version evidence', () => {
     ])
   })
 
+  it('labels auto+h3 routing and fallback, which never refuse a request', () => {
+    const discovery = httpReplayVersionEvidence({ http_version_policy: 'auto+h3', http_version_negotiated: '2', http_version_source: 'wire', alt_svc_h3_advertised: true, quic_attempted: false, http_version_selection_reason: 'not_advertised', http_version_fallback: 'none', attempt_count: 1 })
+    expect(discovery).toMatchObject({ policy: 'Upgrade to HTTP/3 when advertised', actual: 'HTTP/2', advertisesHTTP3: true, upgradesLater: true })
+    expect(discovery?.http3).toEqual([
+      { label: 'HTTP/3 routing', value: 'TCP: the origin has not advertised HTTP/3 yet' },
+      { label: 'HTTP attempts', value: '1' },
+    ])
+    expect(httpReplayVersionEvidence({ http_version_policy: 'auto+h3', http_version_negotiated: '2', http_version_source: 'wire', quic_attempted: true, http_version_selection_reason: 'upgraded', http_version_fallback: 'quic_connect_failed', quic_connection: 'dial_failed', attempt_count: 2 })?.http3).toEqual([
+      { label: 'HTTP/3 routing', value: 'Upgraded to the advertised HTTP/3 alternative' },
+      { label: 'HTTP/3 fallback', value: 'Ran on TCP: QUIC could not connect' },
+      { label: 'QUIC connection', value: 'Could not open a connection' },
+      { label: 'HTTP attempts', value: '2' },
+    ])
+    for (const [selection, label] of [['broken_cache', 'TCP: HTTP/3 to this origin failed recently'], ['tls_policy', 'TCP: the TLS maximum is below 1.3'], ['proxy_route', 'TCP: the route is a proxy'], ['integrated_auth', 'TCP: integrated authentication runs on TCP']]) {
+      const receipt = httpReplayVersionEvidence({ http_version_policy: 'auto+h3', http_version_negotiated: '2', http_version_source: 'wire', alt_svc_h3_advertised: true, quic_attempted: false, http_version_selection_reason: selection })
+      expect(receipt?.http3[0]).toEqual({ label: 'HTTP/3 routing', value: label })
+      expect(receipt?.upgradesLater).toBe(false)
+    }
+    for (const [fallback, label] of [['h3_version_fallback', 'Ran on HTTP/1.1: the server asked for an earlier HTTP version'], ['misdirected_request', 'Ran on TCP: the HTTP/3 alternative answered 421 Misdirected Request']]) {
+      expect(httpReplayVersionEvidence({ http_version_policy: 'auto+h3', quic_attempted: true, http_version_fallback: fallback } as unknown as ProtocolEvidence)?.http3).toEqual([{ label: 'HTTP/3 fallback', value: label }])
+    }
+    // Exact-3 labels stay refusals; unknown and inherited keys are never shown.
+    expect(httpReplayVersionEvidence({ http_version_policy: '3', quic_attempted: false, http_version_selection_reason: 'proxy_route' })?.http3).toEqual([{ label: 'HTTP/3 routing', value: 'Refused: the route is a proxy' }])
+    expect(httpReplayVersionEvidence({ http_version_policy: 'auto+h3', quic_attempted: true, http_version_selection_reason: 'toString', http_version_fallback: 'surprise' } as unknown as ProtocolEvidence)?.http3).toEqual([])
+  })
+
   it('never infers negotiation from policy, cached responses or malformed evidence', () => {
     expect(httpReplayVersionEvidence({ http_version_policy: '2' })?.actual).toBe('Not observed')
     expect(httpReplayVersionEvidence({ http_version_policy: '2', http_version_source: 'cache', http_version_negotiated: '2' })?.actual).toBe('Not measured (cached response)')
     expect(httpReplayVersionEvidence({ http_version_source: 'wire', http_version_negotiated: 'HTTP/2', http_version_policy: 'private-detail' } as unknown as ProtocolEvidence))
-      .toEqual({ policy: 'Not retained', actual: 'Not observed', source: 'Wire response', advertisesHTTP3: false, http3: [] })
+      .toEqual({ policy: 'Not retained', actual: 'Not observed', source: 'Wire response', advertisesHTTP3: false, upgradesLater: false, http3: [] })
     expect(httpReplayVersionEvidence(undefined)).toBeNull()
     expect(httpReplayVersionEvidence({ http_version_source: 'wire', http_version_negotiated: '2', alt_svc_h3_advertised: true })?.advertisesHTTP3).toBe(true)
     expect(httpReplayVersionEvidence({ http_version_source: 'cache', alt_svc_h3_advertised: true })?.advertisesHTTP3).toBe(false)

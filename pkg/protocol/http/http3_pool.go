@@ -198,7 +198,7 @@ func (h *HTTP) newHTTP3Pool(settings transportConfig, tlsConfig *tls.Config, con
 		SourceIP:       settings.sourceIP,
 		IPVersion:      settings.ipVersion,
 	}
-	if tlsConfig != nil && tlsConfig.MaxVersion != 0 && tlsConfig.MaxVersion < tls.VersionTLS13 {
+	if tlsMaximumBelow13(tlsConfig) {
 		return nil, fmt.Errorf("%w: HTTP/3 requires TLS 1.3, but the TLS maximum is lower", ErrHTTP3Required)
 	}
 	if len(h.allowedTargetHosts) > 0 {
@@ -319,4 +319,36 @@ func ValidateHTTP3OperatorEnvironment() error {
 	}
 	_, err := quicOperatorLimits()
 	return err
+}
+
+func tlsMaximumBelow13(tlsConfig *tls.Config) bool {
+	return tlsConfig != nil && tlsConfig.MaxVersion != 0 && tlsConfig.MaxVersion < tls.VersionTLS13
+}
+
+// newUpgradePool builds the auto+h3 pool: the router over the automatic and
+// HTTP/1.1 TCP pools and the VUser's QUIC transport, with the same wrappers
+// as the TCP pools (target policy, user agent, integrated auth, run
+// correlation). Integrated-auth legs are routed to TCP by the router. quic is
+// nil only when tlsBelow keeps every request on TCP.
+func (h *HTTP) newUpgradePool(quic stdhttp.RoundTripper, tlsBelow bool, baseline *stdhttp.Transport, pacSource string, auto *httpPolicyPool, tcpBase map[string]stdhttp.RoundTripper, jar stdhttp.CookieJar) *httpPolicyPool {
+	h.altSvc = newAltSvcCache(time.Now)
+	router := &upgradeRoundTripper{
+		tcp:       tcpBase["auto"],
+		h3:        quic,
+		cache:     h.altSvc,
+		route:     http3RouteRoundTripper{proxy: baseline.Proxy, pac: pacSource, allowed: h.allowedTargetHosts},
+		tlsBelow:  tlsBelow || quic == nil,
+		brokenTTL: h.quicSettings.BrokenTTL,
+	}
+	client := &stdhttp.Client{Transport: router, Jar: jar, Timeout: h.requestTimeout}
+	applyRedirectPolicy(client, h.maxRedirects)
+	if len(h.allowedTargetHosts) > 0 {
+		client.Transport = protocol.NewTargetPolicyRoundTripper(client.Transport, h.allowedTargetHosts)
+	}
+	client.Transport = withoutImplicitUserAgent(client.Transport)
+	client.Transport = integratedAuthRoundTripper{base: client.Transport}
+	if h.runCorrelation.enabled() {
+		client.Transport = runCorrelationRoundTripper{base: client.Transport, policy: h.runCorrelation}
+	}
+	return &httpPolicyPool{client: client, transport: auto.transport, oauthClient: auto.oauthClient, oauthTransport: auto.oauthTransport}
 }

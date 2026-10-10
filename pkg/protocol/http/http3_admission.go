@@ -16,10 +16,9 @@ const EnvHTTP3 = "APEXLOAD_HTTP3"
 // transport (internal/h3transport).
 var http3TransportBuilt = true
 
-// http3UpgradeBuilt reports whether this build contains the auto+h3 router.
-// It stays false until the upgrade ships (Wave 3), so no installation admits
-// auto+h3 before then, whatever the flag says.
-var http3UpgradeBuilt = false
+// http3UpgradeBuilt reports whether this build contains the auto+h3 router
+// (http3_upgrade.go).
+var http3UpgradeBuilt = true
 
 // HTTP3EnabledByOperator reports whether EnvHTTP3 is set to a true value.
 func HTTP3EnabledByOperator() bool {

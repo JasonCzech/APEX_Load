@@ -38,9 +38,9 @@ func TestHTTP3AdmissionBlocksEngineLaunchAndReplay(t *testing.T) {
 	if n := requests.Load(); n != 0 {
 		t.Fatalf("a refused HTTP/3 run sent %d requests", n)
 	}
-	// With the flag on, exact 3 is admitted; auto+h3 waits for its router.
+	// With the flag on, both HTTP/3 policies are admitted.
 	t.Setenv(httpprotocol.EnvHTTP3, "true")
-	if err := importExecutionGateError(script, "launch"); err == nil || !strings.Contains(err.Error(), "auto+h3 is not available in this build") {
+	if err := importExecutionGateError(script, "launch"); err != nil {
 		t.Fatalf("flag on, auto+h3: %v", err)
 	}
 	if err := importExecutionGateError(http3EngineScript(t, server.URL, "3"), "launch"); err != nil {

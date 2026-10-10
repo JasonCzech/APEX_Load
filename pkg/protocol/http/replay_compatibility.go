@@ -147,10 +147,14 @@ func familyDialContext(base func(context.Context, string, string) (net.Conn, err
 }
 
 // BeginIteration ages cached entries by completed, unreferenced main iterations.
-// Init entries have iteration zero and survive the first main iteration.
+// Init entries have iteration zero and survive the first main iteration. With
+// alt_svc_cache: per_iteration it also forgets the auto+h3 alternatives.
 func (h *HTTP) BeginIteration(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if h.altSvc != nil && h.quicSettings.AltSvcCache == QUICAltSvcCachePerIteration {
+		h.altSvc.resetAlternatives()
 	}
 	if h.cache == nil {
 		return nil

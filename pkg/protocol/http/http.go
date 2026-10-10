@@ -68,9 +68,10 @@ type HTTP struct {
 	authHeader                 string // pre-computed Authorization header value
 	httpVersion                string // empty = automatic; "1.1"/"2" = exact; "3"/"auto+h3" = HTTP/3 policies
 	quicSettings               QUICSettings
-	http3                      *http3Owner // exact-3 transport; nil when HTTP/3 cannot run
-	http3Err                   error       // why the exact-3 pool is unavailable, when it is
-	maxRedirects               int         // <=0 = no follow, unset/default = 10
+	http3                      *http3Owner  // exact-3 transport; nil when HTTP/3 cannot run
+	http3Err                   error        // why the exact-3 pool is unavailable, when it is
+	altSvc                     *altSvcCache // auto+h3 alternatives and broken origins, per VUser
+	maxRedirects               int          // <=0 = no follow, unset/default = 10
 	requestTimeout             time.Duration
 	pageTimeout                time.Duration
 	htmlParseMode              string
@@ -341,11 +342,12 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	ctx = context.WithValue(ctx, httpVersionCacheKey{}, policy)
 	result.HTTPVersionPolicy = policy
 	defer func() { result.ProtocolEvidence = buildHTTPProtocolEvidence(action, result) }()
-	// Exact-3 actions add the version receipt's routing, connection and
-	// timing facts. This defer runs before the evidence builder above.
+	// HTTP/3 actions (exact 3 and auto+h3) add the version receipt's
+	// routing, connection and timing facts. This defer runs before the
+	// evidence builder above.
 	var h3Receipt *http3Receipt
-	if policy == VersionHTTP3 {
-		h3Receipt = newHTTP3Receipt()
+	if policy == VersionHTTP3 || policy == VersionAutoH3 {
+		h3Receipt = newHTTP3Receipt(policy)
 		defer func() { result.HTTPReceipt = h3Receipt.evidence(result) }()
 	}
 	defaultHeaders := h.defaultHeaders
@@ -579,8 +581,9 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	// finalizeHTTPServerTelemetry on the error path under -race).
 	var traceMu sync.Mutex
 	var dnsStart, connStart, tlsStart time.Time
-	// Exact-3 attempt budget: every redirect hop the action may follow, plus
-	// one quic-go retry for the whole action.
+	// HTTP/3 attempt budget: QUIC attempts for every redirect hop the action
+	// may follow, plus one quic-go retry for the whole action. auto+h3's TCP
+	// attempts are not charged.
 	var h3Cancel context.CancelCauseFunc
 	h3AttemptLimit := h.maxRedirects
 	if action.MaxRedirects != nil {
@@ -638,6 +641,9 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 	if h3Receipt != nil {
 		req = req.WithContext(h3transport.WithDialObserver(req.Context(), h3Receipt.onDial))
+		if h3Receipt.upgrade {
+			req = req.WithContext(context.WithValue(req.Context(), http3RouteObserverKey{}, http3RouteObserver(h3Receipt)))
+		}
 		var budgetCtx context.Context
 		budgetCtx, h3Cancel = context.WithCancelCause(req.Context())
 		defer h3Cancel(nil)

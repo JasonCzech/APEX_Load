@@ -66,6 +66,8 @@ export interface ProtocolEvidence {
   http3_failure_certainty?: 'not_sent' | 'possibly_sent' | 'rejected_unprocessed'
   /** HTTP/3 version receipt (evidence version 2). */
   http_version_selection_reason?: string
+  /** auto+h3: how a hop that tried QUIC ended up on TCP, or none. */
+  http_version_fallback?: 'none' | 'quic_connect_failed' | 'h3_version_fallback' | 'misdirected_request'
   quic_attempted?: boolean
   quic_connection?: 'new' | 'reused' | 'shared_pending' | 'dial_failed'
   quic_error_class?: string

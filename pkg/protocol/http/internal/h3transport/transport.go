@@ -248,6 +248,16 @@ type DialInfo struct {
 
 type dialObserverKey struct{}
 
+type dialPortKey struct{}
+
+// WithDialPort returns a request context whose request, if it opens a new
+// connection, dials port instead of the URL's. The URL keeps the origin's
+// authority, so :authority, SNI and certificate checks stay the origin's:
+// this is how an advertised same-host alternative on another port is used.
+func WithDialPort(ctx context.Context, port int) context.Context {
+	return context.WithValue(ctx, dialPortKey{}, port)
+}
+
 // WithDialObserver returns a request context whose request, if it is the
 // one that opens a new connection, reports that connection to observe.
 func WithDialObserver(ctx context.Context, observe func(DialInfo)) context.Context {
@@ -348,6 +358,10 @@ func (t *Transport) dial(ctx context.Context, addr string, tlsConfig *tls.Config
 		if err := t.opts.AuthorizeHost(host); err != nil {
 			return nil, err
 		}
+	}
+	if override, ok := ctx.Value(dialPortKey{}).(int); ok && override > 0 && override <= 65535 {
+		port = override
+		addr = net.JoinHostPort(host, strconv.Itoa(port))
 	}
 	dialCtx, cancel := t.dialContext(ctx)
 	defer cancel()

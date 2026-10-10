@@ -114,6 +114,9 @@ export function httpReplayVersionEvidence(evidence: ProtocolEvidence | undefined
     source: source === 'wire' ? 'Wire response' : source === 'cache' ? 'Cached response' : 'Not observed',
     // Observation only: the wire response advertised final HTTP/3 in Alt-Svc.
     advertisesHTTP3: source === 'wire' && evidence.alt_svc_h3_advertised === true && negotiated !== '3',
+    // auto+h3 learned the advertisement from this response, so later
+    // requests to the origin can use it.
+    upgradesLater: policy === 'auto+h3' && evidence.http_version_selection_reason === 'not_advertised',
     http3: http3ReceiptRows(evidence),
   }
 }
@@ -128,13 +131,30 @@ const certaintyLabels: Record<string, string> = {
 const selectionLabels: Record<string, string> = {
   exact_policy: 'Exact HTTP/3 policy', proxy_route: 'Refused: the route is a proxy', integrated_auth: 'Refused: integrated authentication runs on TCP',
 }
+// auto+h3 never refuses: a request that cannot use HTTP/3 runs on TCP.
+const upgradeSelectionLabels: Record<string, string> = {
+  upgraded: 'Upgraded to the advertised HTTP/3 alternative',
+  not_advertised: 'TCP: the origin has not advertised HTTP/3 yet',
+  broken_cache: 'TCP: HTTP/3 to this origin failed recently',
+  tls_policy: 'TCP: the TLS maximum is below 1.3',
+  proxy_route: 'TCP: the route is a proxy',
+  integrated_auth: 'TCP: integrated authentication runs on TCP',
+}
+const fallbackLabels: Record<string, string> = {
+  quic_connect_failed: 'Ran on TCP: QUIC could not connect',
+  h3_version_fallback: 'Ran on HTTP/1.1: the server asked for an earlier HTTP version',
+  misdirected_request: 'Ran on TCP: the HTTP/3 alternative answered 421 Misdirected Request',
+}
 
 /** HTTP/3 receipt rows; only known enum values are shown, never raw strings. */
 function http3ReceiptRows(evidence: ProtocolEvidence): Array<{ label: string; value: string }> {
   if (evidence.quic_attempted === undefined && evidence.http_version_selection_reason === undefined) return []
   const rows: Array<{ label: string; value: string }> = []
   const selection = evidence.http_version_selection_reason
-  if (typeof selection === 'string' && selectionLabels[selection]) rows.push({ label: 'HTTP/3 routing', value: selectionLabels[selection] })
+  const labels = evidence.http_version_policy === 'auto+h3' ? upgradeSelectionLabels : selectionLabels
+  if (typeof selection === 'string' && own(labels, selection)) rows.push({ label: 'HTTP/3 routing', value: labels[selection] })
+  const fallback = evidence.http_version_fallback
+  if (typeof fallback === 'string' && own(fallbackLabels, fallback)) rows.push({ label: 'HTTP/3 fallback', value: fallbackLabels[fallback] })
   const connection = evidence.quic_connection
   if (typeof connection === 'string' && quicConnectionLabels[connection]) {
     rows.push({ label: 'QUIC connection', value: quicConnectionLabels[connection] + (evidence.tls_resumed === true ? ' (TLS resumed)' : '') })
