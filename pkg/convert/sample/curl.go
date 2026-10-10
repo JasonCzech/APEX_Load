@@ -57,11 +57,16 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 			if index >= len(tokens) {
 				return nil, nil, errors.New("curl sample is missing a method after -X/--request")
 			}
-			ex.Method = strings.ToUpper(tokens[index])
-			methodExplicit = true
+			// An empty -X restores curl's default method.
+			if method := strings.TrimSpace(tokens[index]); method != "" {
+				ex.Method = strings.ToUpper(method)
+				methodExplicit = true
+			}
 		case strings.HasPrefix(token, "--request="):
-			ex.Method = strings.ToUpper(strings.TrimPrefix(token, "--request="))
-			methodExplicit = true
+			if method := strings.TrimSpace(strings.TrimPrefix(token, "--request=")); method != "" {
+				ex.Method = strings.ToUpper(method)
+				methodExplicit = true
+			}
 		case strings.HasPrefix(token, "-X") && token != "-X":
 			ex.Method = strings.ToUpper(strings.TrimPrefix(token, "-X"))
 			methodExplicit = true
@@ -70,11 +75,12 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 			if index >= len(tokens) {
 				return nil, nil, errors.New("curl sample is missing a header value after -H/--header")
 			}
-			if !addCurlHeader(&ex, tokens[index]) {
+			// curl ignores an empty -H.
+			if tokens[index] != "" && !addCurlHeader(&ex, tokens[index]) {
 				markCurlReview(&ex, "invalid_curl_header")
 			}
 		case strings.HasPrefix(token, "--header="):
-			if !addCurlHeader(&ex, strings.TrimPrefix(token, "--header=")) {
+			if header := strings.TrimPrefix(token, "--header="); header != "" && !addCurlHeader(&ex, header) {
 				markCurlReview(&ex, "invalid_curl_header")
 			}
 		case strings.HasPrefix(token, "-H") && token != "-H":
@@ -153,7 +159,9 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 			if index >= len(tokens) {
 				return nil, nil, errors.New("curl sample is missing a URL after --url")
 			}
-			ex.URL = tokens[index]
+			if tokens[index] != "" {
+				ex.URL = tokens[index]
+			}
 		case strings.HasPrefix(token, "--url="):
 			ex.URL = strings.TrimPrefix(token, "--url=")
 		case token == "-A" || token == "--user-agent":
@@ -161,9 +169,9 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 			if index >= len(tokens) {
 				return nil, nil, errors.New("curl sample is missing a value after -A/--user-agent")
 			}
-			addCurlGeneratedHeader(&ex, "User-Agent", tokens[index])
+			addCurlOptionHeader(&ex, "User-Agent", tokens[index])
 		case strings.HasPrefix(token, "--user-agent="):
-			addCurlGeneratedHeader(&ex, "User-Agent", strings.TrimPrefix(token, "--user-agent="))
+			addCurlOptionHeader(&ex, "User-Agent", strings.TrimPrefix(token, "--user-agent="))
 		case strings.HasPrefix(token, "-A") && token != "-A":
 			addCurlGeneratedHeader(&ex, "User-Agent", strings.TrimPrefix(token, "-A"))
 		case token == "-e" || token == "--referer":
@@ -171,9 +179,9 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 			if index >= len(tokens) {
 				return nil, nil, errors.New("curl sample is missing a value after -e/--referer")
 			}
-			addCurlGeneratedHeader(&ex, "Referer", tokens[index])
+			addCurlOptionHeader(&ex, "Referer", tokens[index])
 		case strings.HasPrefix(token, "--referer="):
-			addCurlGeneratedHeader(&ex, "Referer", strings.TrimPrefix(token, "--referer="))
+			addCurlOptionHeader(&ex, "Referer", strings.TrimPrefix(token, "--referer="))
 		case strings.HasPrefix(token, "-e") && token != "-e":
 			addCurlGeneratedHeader(&ex, "Referer", strings.TrimPrefix(token, "-e"))
 		case token == "--max-time":
@@ -199,9 +207,9 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 			if index >= len(tokens) {
 				return nil, nil, errors.New("curl sample is missing a value after -b/--cookie")
 			}
-			addCurlGeneratedHeader(&ex, "Cookie", tokens[index])
+			addCurlOptionHeader(&ex, "Cookie", tokens[index])
 		case strings.HasPrefix(token, "--cookie="):
-			addCurlGeneratedHeader(&ex, "Cookie", strings.TrimPrefix(token, "--cookie="))
+			addCurlOptionHeader(&ex, "Cookie", strings.TrimPrefix(token, "--cookie="))
 		case strings.HasPrefix(token, "-b") && token != "-b":
 			addCurlGeneratedHeader(&ex, "Cookie", strings.TrimPrefix(token, "-b"))
 		case token == "-u" || token == "--user":
@@ -242,6 +250,10 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 				ex.SourceSecrets = credentialpolicy.AppendSourceCredentialValue(ex.SourceSecrets, tokens[index])
 			}
 		default:
+			if token == "" {
+				// An empty argument names no URL; curl would reject it.
+				continue
+			}
 			if !strings.HasPrefix(token, "-") && ex.URL == "" {
 				ex.URL = token
 			} else if !strings.HasPrefix(token, "-") {
@@ -323,6 +335,16 @@ func addCurlHeader(ex *exchange, raw string) bool {
 		ex.HeaderList = append(ex.HeaderList, dsl.HeaderEntry{Name: key, Value: value})
 	}
 	return ok
+}
+
+// addCurlOptionHeader adds the header a curl option (-A, -e, -b) sets. An
+// empty value sends no header: an empty -A removes curl's User-Agent, and an
+// empty -b only turns on the cookie engine.
+func addCurlOptionHeader(ex *exchange, name, value string) {
+	if value == "" {
+		return
+	}
+	addCurlGeneratedHeader(ex, name, value)
 }
 
 func addCurlJSONHeaders(ex *exchange) {
@@ -576,7 +598,11 @@ func curlTransportFactsFrom(tokens []string) curlTransportFacts {
 		name, value, inline := strings.Cut(token, "=")
 		switch {
 		case name == "-x" || name == "--proxy" || name == "--preproxy" || strings.HasPrefix(name, "--socks"):
-			facts.proxy = true
+			if !inline && index+1 < len(tokens) {
+				value = tokens[index+1]
+			}
+			// An empty proxy ("--proxy ''") turns the proxy off.
+			facts.proxy = facts.proxy || strings.TrimSpace(value) != ""
 		case strings.HasPrefix(token, "-x") && len(token) > 2:
 			facts.proxy = true
 		case name == "--tls-max":
@@ -720,11 +746,15 @@ func shellSplit(input string) ([]string, error) {
 	var current strings.Builder
 	var quote rune
 	escaped := false
+	// quoted marks a token that a quote opened, so "" and '' are kept as
+	// empty arguments, as a shell keeps them.
+	quoted := false
 	flush := func() {
-		if current.Len() > 0 {
+		if current.Len() > 0 || quoted {
 			tokens = append(tokens, current.String())
 			current.Reset()
 		}
+		quoted = false
 	}
 	for _, char := range input {
 		if escaped {
@@ -738,6 +768,7 @@ func shellSplit(input string) ([]string, error) {
 		case '\'', '"':
 			if quote == 0 {
 				quote = char
+				quoted = true
 				continue
 			}
 			if quote == char {
