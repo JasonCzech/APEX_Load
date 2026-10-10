@@ -118,7 +118,7 @@ func TestAutoH3FallsBackToTCPWhenQUICCannotConnect(t *testing.T) {
 		}
 		upgradeReceipt(t, "fallback", fellBack, VersionHTTP2, "upgraded", "quic_connect_failed", true)
 		if fellBack.ProtocolEvidence["quic_connection"] != "dial_failed" || fellBack.ProtocolEvidence["attempt_count"] != 2 ||
-			fellBack.ProtocolEvidence["http3_failure_certainty"] != nil {
+			fellBack.ProtocolEvidence["http3_failure_certainty"] != nil || fellBack.ProtocolEvidence["quic_error_class"] == nil {
 			t.Fatalf("state %v: fallback receipt %v", state, fellBack.ProtocolEvidence)
 		}
 		if fixture.Ledger.Effects("f") != 1 {
@@ -209,6 +209,59 @@ func TestAutoH3VersionFallbackReplaysOnlyReplaySafeRequests(t *testing.T) {
 	}
 }
 
+func TestAutoH3ChargesAnAlternativeToItsOriginsConnectionSlot(t *testing.T) {
+	fixture := h3fixture.Start(t, h3fixture.Options{AlternatePort: true, Advertise: h3fixture.AdvertiseAltPort})
+	h := http3Session(t, map[string]any{"max_conns_per_host": 1})
+	run(t, h, h3Get(t, fixture.URL("/echo"), "auto+h3"))
+	if r := run(t, h, h3Get(t, fixture.URL("/echo"), "auto+h3")); r.HTTPVersionNegotiated != VersionHTTP3 {
+		t.Fatalf("not upgraded: %s %v", r.ErrorMessage, r.ProtocolEvidence)
+	}
+	h.connections.mu.Lock()
+	origin, alternative := h.connections.counts[hostPort(fixture.Host, fixture.Port)], h.connections.counts[hostPort(fixture.Host, fixture.AltPort)]
+	h.connections.mu.Unlock()
+	if origin != 1 || alternative != 0 {
+		t.Fatalf("origin slots %d, alternative-port slots %d; want the QUIC connection in the origin's only slot", origin, alternative)
+	}
+}
+
+func TestAutoH3ConnectionSlotWaitIsNotABrokenOrigin(t *testing.T) {
+	fixture := h3fixture.Start(t, h3fixture.Options{Advertise: h3fixture.AdvertiseSamePort})
+	h := http3Session(t, map[string]any{"max_conns_per_host": 1, "connect_timeout_ms": 300})
+	run(t, h, h3Get(t, fixture.URL("/echo"), "auto+h3"))
+	// A slow HTTP/2 request keeps the origin's only slot busy, so the QUIC
+	// dial waits out its connect timeout; HTTP/2 multiplexes the fallback.
+	busy := make(chan *protocol.Result, 1)
+	go func() { busy <- run(t, h, h3Get(t, fixture.URL("/slow?ms=1200"), "2")) }()
+	time.Sleep(150 * time.Millisecond)
+	waited := run(t, h, h3Get(t, fixture.URL("/echo"), "auto+h3"))
+	if !waited.Success {
+		t.Fatal(waited.ErrorMessage)
+	}
+	upgradeReceipt(t, "slot wait", waited, VersionHTTP2, "upgraded", "quic_connect_failed", false)
+	if waited.ProtocolEvidence["quic_error_class"] != nil {
+		t.Fatalf("a connection-slot wait was classified as a QUIC error: %v", waited.ProtocolEvidence)
+	}
+	if r := <-busy; !r.Success {
+		t.Fatal(r.ErrorMessage)
+	}
+	upgradeReceipt(t, "after the wait", run(t, h, h3Get(t, fixture.URL("/echo"), "auto+h3")), VersionHTTP3, "upgraded", "none", true)
+}
+
+func TestAutoH3OmitsTimingReasonsWhenHopsMixTransports(t *testing.T) {
+	fixture := h3fixture.Start(t, h3fixture.Options{Advertise: h3fixture.AdvertiseSamePort})
+	h := http3Session(t, map[string]any{quicHandshakeTimeoutKey: float64(5000)})
+	// localhost learns its alternative; 127.0.0.1 then never sees one.
+	run(t, h, h3Get(t, fixture.LocalhostURL("/echo"), "auto+h3"))
+	fixture.SetAltSvc("")
+	result := run(t, h, h3Get(t, fixture.URL("/redirect?to="+url.QueryEscape(fixture.LocalhostURL("/echo"))), "auto+h3"))
+	if !result.Success || result.HTTPVersionNegotiated != VersionHTTP3 || result.ProtocolEvidence["http_version_selection_reason"] != "upgraded" {
+		t.Fatalf("TCP then QUIC: %s %v", result.ErrorMessage, result.ProtocolEvidence)
+	}
+	if result.ProtocolEvidence["timing_availability"] != nil || result.ProtocolEvidence["tls_in_transport_handshake"] != nil {
+		t.Fatalf("a TCP hop's timings were described as QUIC's: %v", result.ProtocolEvidence)
+	}
+}
+
 func TestAutoH3MisdirectedRequestKeepsTheOriginOnTCP(t *testing.T) {
 	fixture := h3fixture.Start(t, h3fixture.Options{Advertise: h3fixture.AdvertiseSamePort})
 	h := http3Session(t, nil)
@@ -277,7 +330,7 @@ func TestAutoH3IsRefusedWithoutTheFlag(t *testing.T) {
 	h := versionHTTP(t, nil)
 	t.Setenv(EnvHTTP3, "")
 	result := run(t, h, h3Get(t, fixture.URL("/echo"), "auto+h3"))
-	if result.Success || !errors.Is(HTTP3UpgradeExecutionError(), ErrHTTP3NotEnabled) || len(fixture.Ledger.Attempts()) != 0 {
+	if result.Success || !strings.Contains(result.ErrorMessage, EnvHTTP3) || len(fixture.Ledger.Attempts()) != 0 {
 		t.Fatalf("flag off: success=%v message=%q attempts=%d", result.Success, result.ErrorMessage, len(fixture.Ledger.Attempts()))
 	}
 }
@@ -314,8 +367,10 @@ func TestUpgradeRouterNeverReplaysABodyItCannotRebuild(t *testing.T) {
 		for _, method := range []string{http.MethodPost, http.MethodPut} {
 			req, _ := http.NewRequest(method, origin.String()+"/write", io.NopCloser(strings.NewReader("streamed")))
 			req.GetBody = nil
-			if _, err := router.RoundTrip(req); err == nil {
-				t.Fatalf("%s %s: a body without GetBody was replayed", failure.Certainty, method)
+			_, err := router.RoundTrip(req)
+			// The QUIC failure, with its certainty, is what the caller sees.
+			if err == nil || HTTP3FailureCertainty(err) != string(failure.Certainty) {
+				t.Fatalf("%s %s: err=%v", failure.Certainty, method, err)
 			}
 			cache.broken = map[string]time.Time{}
 		}
@@ -323,6 +378,30 @@ func TestUpgradeRouterNeverReplaysABodyItCannotRebuild(t *testing.T) {
 			t.Fatalf("%s: TCP ran %d times", failure.Certainty, tcp.calls.Load())
 		}
 	}
+	// A 421 for such a request is returned as the answer, not replayed.
+	tcp := &countingTCP{}
+	cache := newAltSvcCache(time.Now)
+	cache.observe(origin, []string{`h3=":443"`})
+	misdirected := &upgradeRoundTripper{tcp: tcp, http11: tcp, h3: statusQUIC(http.StatusMisdirectedRequest), cache: cache, brokenTTL: time.Minute}
+	req, _ := http.NewRequest(http.MethodPost, origin.String()+"/write", io.NopCloser(strings.NewReader("streamed")))
+	req.GetBody = nil
+	resp, err := misdirected.RoundTrip(req)
+	if err != nil || resp.StatusCode != http.StatusMisdirectedRequest || tcp.calls.Load() != 0 {
+		t.Fatalf("421 with a streamed body: resp=%v err=%v tcp=%d", resp, err, tcp.calls.Load())
+	}
+	if _, reason := cache.alternative("https://example.test:443"); reason != "broken_cache" {
+		t.Fatalf("after a 421 the origin is %q", reason)
+	}
+}
+
+// statusQUIC answers every request with one status code.
+type statusQUIC int
+
+func (s statusQUIC) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Body != nil {
+		_ = req.Body.Close()
+	}
+	return &http.Response{StatusCode: int(s), Body: http.NoBody, Header: http.Header{}, Request: req}, nil
 }
 
 func TestAltSvcCacheEntries(t *testing.T) {
@@ -339,14 +418,16 @@ func TestAltSvcCacheEntries(t *testing.T) {
 		reason string
 	}{
 		{[]string{`h3=":9443"; ma=60`}, 9443, ""},
-		{[]string{`h2=":443"`}, 9443, ""},                        // no h3: entry kept
-		{[]string{`h3="other.test:443"`}, 9443, ""},              // another host: ignored
-		{[]string{`h3-29=":7443", h3=":7443"; ma=60`}, 7443, ""}, // replaced by the final h3
+		{[]string{`h2=":443"`}, 0, "not_advertised"}, // a field without h3 replaces it
+		{[]string{`h3=":9443"; ma=60`}, 9443, ""},
+		{[]string{`h3="other.test:443"`}, 0, "not_advertised"},   // only another host: replaced too
+		{[]string{`h3-29=":7443", h3=":7443"; ma=60`}, 7443, ""}, // the final h3, not the draft
 		{[]string{`h3=":6443"`, `clear`}, 7443, ""},              // clear mixed with alternatives is malformed
-		{[]string{`clear`}, 0, "not_advertised"},                 // clear forgets it
-		{[]string{`h3=":6443"; ma=60`}, 6443, ""},                // re-advertised
-		{[]string{`h3=":6443"; ma=0`}, 0, "not_advertised"},      // ma=0 withdraws it
-		{[]string{`h3=":5443"; ma=60`}, 5443, ""},
+		{[]string{`garbage`}, 7443, ""},                          // only malformed alternatives: ignored
+		{[]string{`clear`}, 0, "not_advertised"},
+		{[]string{`h3=":6443"; ma=60`}, 6443, ""},
+		{[]string{`h3=":6443"; ma=0`}, 0, "not_advertised"}, // ma=0 withdraws it
+		{[]string{`h3=":4443"; ma=0, h3=":5443"; ma=60`}, 5443, ""},
 		{nil, 5443, ""}, // no field: kept
 	} {
 		cache.observe(origin, tc.values)

@@ -2,6 +2,7 @@ package http
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	stdhttp "net/http"
@@ -54,29 +55,26 @@ func originKey(u *url.URL) (key, host string, port int, ok bool) {
 	return "https://" + net.JoinHostPort(host, strconv.Itoa(port)), host, port, true
 }
 
-// observe applies one response's Alt-Svc field to the origin's entry:
-// "clear" removes it, a same-host final h3 alternative replaces it, and an
-// advertisement for another host is ignored (cross-host alternatives are an
-// extension). A field without h3 leaves the entry alone.
+// observe applies one response's Alt-Svc field to the origin's entry. A
+// valid field replaces everything cached for the origin (RFC 7838 §3): the
+// first same-host final h3 alternative with a positive max age becomes the
+// entry, and a field without one ("clear", other protocols, or only
+// cross-host alternatives, which are an extension) removes it. A response
+// without the field, or with only malformed alternatives, changes nothing.
 func (c *altSvcCache) observe(u *url.URL, values []string) {
 	key, host, _, ok := originKey(u)
 	if !ok || len(values) == 0 {
 		return
 	}
 	parsed := ParseAltSvc(values)
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if parsed.Clear {
-		delete(c.entries, key)
+	if !parsed.Clear && len(parsed.Entries) == 0 {
 		return
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	for _, entry := range parsed.FinalH3() {
-		if entry.Host != "" && !strings.EqualFold(entry.Host, host) {
+		if (entry.Host != "" && !strings.EqualFold(entry.Host, host)) || entry.MaxAge <= 0 {
 			continue
-		}
-		if entry.MaxAge <= 0 {
-			delete(c.entries, key)
-			return
 		}
 		if _, known := c.entries[key]; !known && len(c.entries) >= maxAltSvcOrigins {
 			c.evictLocked(c.entries)
@@ -84,6 +82,7 @@ func (c *altSvcCache) observe(u *url.URL, values []string) {
 		c.entries[key] = altSvcAlternative{port: entry.Port, expires: c.now().Add(entry.MaxAge)}
 		return
 	}
+	delete(c.entries, key)
 }
 
 // evictLocked drops expired entries, then one arbitrary entry if still full.
@@ -161,7 +160,9 @@ func (c *altSvcCache) resetAlternatives() {
 // http3RouteObserver receives the router's decisions for the receipt.
 type http3RouteObserver interface {
 	routed(selection string, quic bool)
-	fellBack(kind string)
+	// fellBack reports the TCP rerun and the QUIC failure that caused it
+	// (nil for a 421).
+	fellBack(kind string, cause error)
 }
 
 type http3RouteObserverKey struct{}
@@ -224,12 +225,16 @@ func (rt *upgradeRoundTripper) RoundTrip(req *stdhttp.Request) (*stdhttp.Respons
 			// not processed, retryable on another connection). Forget it,
 			// keep the origin on TCP for broken_ttl_ms so the TCP response's
 			// own Alt-Svc does not send the next request straight back, and
-			// run this request on TCP.
-			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
-			_ = resp.Body.Close()
+			// run this request on TCP when its body can be sent again;
+			// otherwise the 421 is the answer.
 			rt.cache.drop(key)
 			rt.cache.markBroken(key, rt.brokenTTL)
-			return rt.fallback(req, key, "misdirected_request", rt.tcp, observer)
+			if !rebuildableBody(req) {
+				return resp, nil
+			}
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+			_ = resp.Body.Close()
+			return rt.fallback(req, key, "misdirected_request", nil, rt.tcp, observer)
 		}
 		rt.cache.observe(req.URL, resp.Header.Values("Alt-Svc"))
 		return resp, nil
@@ -244,12 +249,22 @@ func (rt *upgradeRoundTripper) RoundTrip(req *stdhttp.Request) (*stdhttp.Respons
 	switch {
 	case h3Err.Class == h3transport.ClassVersionFallback &&
 		(h3Err.Certainty == h3transport.NotSent || idempotentReplayable(req)):
-		return rt.fallback(req, key, "h3_version_fallback", rt.http11, observer)
+		if !rebuildableBody(req) {
+			return nil, fmt.Errorf("%w (the request body cannot be sent again over HTTP/1.1)", err)
+		}
+		return rt.fallback(req, key, "h3_version_fallback", err, rt.http11, observer)
 	case h3Err.Certainty == h3transport.NotSent:
 		// The QUIC path failed before the request was sent: keep the origin
-		// on TCP for broken_ttl_ms and run this request once on TCP.
-		rt.cache.markBroken(key, rt.brokenTTL)
-		return rt.fallback(req, key, "quic_connect_failed", rt.tcp, observer)
+		// on TCP for broken_ttl_ms and run this request once on TCP. Waiting
+		// out the VUser's own connection budget says nothing about QUIC, so
+		// it does not mark the origin.
+		if !errors.Is(err, h3transport.ErrConnectionSlot) {
+			rt.cache.markBroken(key, rt.brokenTTL)
+		}
+		if !rebuildableBody(req) {
+			return nil, fmt.Errorf("%w (the request body cannot be sent again over TCP)", err)
+		}
+		return rt.fallback(req, key, "quic_connect_failed", err, rt.tcp, observer)
 	}
 	// possibly_sent and rejected_unprocessed fail: the target may have
 	// processed the request, or quic-go already used its single retry.
@@ -264,14 +279,17 @@ func (rt *upgradeRoundTripper) tcpRoundTrip(req *stdhttp.Request, key string) (*
 	return resp, err
 }
 
-// fallback replays a request that never reached the target over TCP, once.
-// It needs a body it can rebuild; quic-go has already closed the original.
-func (rt *upgradeRoundTripper) fallback(req *stdhttp.Request, key, kind string, transport stdhttp.RoundTripper, observer http3RouteObserver) (*stdhttp.Response, error) {
+// rebuildableBody reports whether a request's body can be sent again: quic-go
+// has consumed or closed the original by the time a fallback is chosen.
+func rebuildableBody(req *stdhttp.Request) bool {
+	return req.Body == nil || req.Body == stdhttp.NoBody || req.GetBody != nil
+}
+
+// fallback runs a request the target did not process over TCP, once. The
+// caller has checked rebuildableBody.
+func (rt *upgradeRoundTripper) fallback(req *stdhttp.Request, key, kind string, cause error, transport stdhttp.RoundTripper, observer http3RouteObserver) (*stdhttp.Response, error) {
 	retry := req.Clone(req.Context())
 	if req.Body != nil && req.Body != stdhttp.NoBody {
-		if req.GetBody == nil {
-			return nil, errors.New("HTTP/3 fallback needs a request body that can be sent again")
-		}
 		body, err := req.GetBody()
 		if err != nil {
 			return nil, err
@@ -279,7 +297,7 @@ func (rt *upgradeRoundTripper) fallback(req *stdhttp.Request, key, kind string, 
 		retry.Body = body
 	}
 	if observer != nil {
-		observer.fellBack(kind)
+		observer.fellBack(kind, cause)
 	}
 	resp, err := transport.RoundTrip(retry)
 	if err == nil && key != "" {
@@ -294,8 +312,7 @@ func (rt *upgradeRoundTripper) fallback(req *stdhttp.Request, key, kind string, 
 func idempotentReplayable(req *stdhttp.Request) bool {
 	switch req.Method {
 	case stdhttp.MethodGet, stdhttp.MethodHead, stdhttp.MethodOptions, stdhttp.MethodPut, stdhttp.MethodDelete, stdhttp.MethodTrace:
-	default:
-		return false
+		return rebuildableBody(req)
 	}
-	return req.Body == nil || req.Body == stdhttp.NoBody || req.GetBody != nil
+	return false
 }

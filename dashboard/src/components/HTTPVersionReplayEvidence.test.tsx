@@ -36,7 +36,7 @@ describe('HTTP version replay evidence', () => {
 
   it('says auto+h3 can use an advertisement it learned on later requests', () => {
     const discovery = renderToStaticMarkup(<HTTPVersionReplayEvidence evidence={{ http_version_policy: 'auto+h3', http_version_source: 'wire', http_version_negotiated: '2', alt_svc_h3_advertised: true, quic_attempted: false, http_version_selection_reason: 'not_advertised', http_version_fallback: 'none' }} />)
-    expect(discovery).toContain('This request used HTTP/2; later requests to this origin can use HTTP/3.')
+    expect(discovery).toContain('This request used HTTP/2. auto+h3 uses a same-host HTTP/3 alternative for later requests to this origin.')
     expect(discovery).toContain('<dt>HTTP/3 routing</dt><dd>TCP: the origin has not advertised HTTP/3 yet</dd>')
     const broken = renderToStaticMarkup(<HTTPVersionReplayEvidence evidence={{ http_version_policy: 'auto+h3', http_version_source: 'wire', http_version_negotiated: '2', alt_svc_h3_advertised: true, quic_attempted: false, http_version_selection_reason: 'broken_cache' }} />)
     expect(broken).toContain('so HTTP/3 was not exercised.')

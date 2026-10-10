@@ -148,7 +148,10 @@ describe('qualified HTTP version evidence', () => {
       { label: 'HTTP/3 routing', value: 'TCP: the origin has not advertised HTTP/3 yet' },
       { label: 'HTTP attempts', value: '1' },
     ])
-    expect(httpReplayVersionEvidence({ http_version_policy: 'auto+h3', http_version_negotiated: '2', http_version_source: 'wire', quic_attempted: true, http_version_selection_reason: 'upgraded', http_version_fallback: 'quic_connect_failed', quic_connection: 'dial_failed', attempt_count: 2 })?.http3).toEqual([
+    const fellBack = httpReplayVersionEvidence({ http_version_policy: 'auto+h3', http_version_negotiated: '2', http_version_source: 'wire', alt_svc_h3_advertised: true, quic_attempted: true, http_version_selection_reason: 'upgraded', http_version_fallback: 'quic_connect_failed', quic_connection: 'dial_failed', attempt_count: 2 })
+    // The router acted on the advertisement, so no "not exercised" note.
+    expect(fellBack?.advertisesHTTP3).toBe(false)
+    expect(fellBack?.http3).toEqual([
       { label: 'HTTP/3 routing', value: 'Upgraded to the advertised HTTP/3 alternative' },
       { label: 'HTTP/3 fallback', value: 'Ran on TCP: QUIC could not connect' },
       { label: 'QUIC connection', value: 'Could not open a connection' },

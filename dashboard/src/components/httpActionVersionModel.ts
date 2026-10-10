@@ -113,9 +113,12 @@ export function httpReplayVersionEvidence(evidence: ProtocolEvidence | undefined
       ? `HTTP/${negotiated}` : source === 'cache' ? 'Not measured (cached response)' : 'Not observed',
     source: source === 'wire' ? 'Wire response' : source === 'cache' ? 'Cached response' : 'Not observed',
     // Observation only: the wire response advertised final HTTP/3 in Alt-Svc.
-    advertisesHTTP3: source === 'wire' && evidence.alt_svc_h3_advertised === true && negotiated !== '3',
-    // auto+h3 learned the advertisement from this response, so later
-    // requests to the origin can use it.
+    // An auto+h3 request routed to the alternative acted on it; its receipt
+    // rows say what happened instead.
+    advertisesHTTP3: source === 'wire' && evidence.alt_svc_h3_advertised === true && negotiated !== '3' &&
+      !(policy === 'auto+h3' && evidence.http_version_selection_reason === 'upgraded'),
+    // auto+h3 caches a same-host advertisement from this response for later
+    // requests to the origin.
     upgradesLater: policy === 'auto+h3' && evidence.http_version_selection_reason === 'not_advertised',
     http3: http3ReceiptRows(evidence),
   }

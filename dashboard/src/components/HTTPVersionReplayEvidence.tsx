@@ -10,7 +10,7 @@ export function HTTPVersionReplayEvidence({ evidence, unavailable = false }: { e
       <dt>Version evidence source</dt><dd>{receipt.source}</dd></dl>
     {receipt.http3.length > 0 && <dl aria-label="HTTP/3 receipt">{receipt.http3.map(row => <div key={row.label}><dt>{row.label}</dt><dd>{row.value}</dd></div>)}</dl>}
     {receipt.advertisesHTTP3 && (receipt.upgradesLater
-      ? <p>The target advertises HTTP/3 (Alt-Svc). This request used {receipt.actual.startsWith('HTTP/') ? receipt.actual : 'another HTTP version'}; later requests to this origin can use HTTP/3.</p>
+      ? <p>The target advertises HTTP/3 (Alt-Svc). This request used {receipt.actual.startsWith('HTTP/') ? receipt.actual : 'another HTTP version'}. auto+h3 uses a same-host HTTP/3 alternative for later requests to this origin.</p>
       : <p>The target advertises HTTP/3 (Alt-Svc). This request used {receipt.actual.startsWith('HTTP/') ? receipt.actual : 'another HTTP version'}, so HTTP/3 was not exercised.</p>)}
     <small>Negotiated versions describe the observed response. Cached responses and missing wire evidence do not establish an HTTP version.</small>
   </section>

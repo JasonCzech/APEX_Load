@@ -21,10 +21,12 @@ type http3Receipt struct {
 	upgrade      bool // auto+h3: the router chooses each hop's transport
 	quicLeg      bool // the current hop runs on QUIC
 	finalQUIC    bool // the last hop ran, or failed, on QUIC
+	tcpHop       bool // some hop ran on TCP, so the action's timings mix transports
 	selection    string
 	fallback     string
-	attempts     int // every HTTP attempt in the action
-	quicAttempts int // attempts on QUIC legs, charged to the attempt budget
+	fellBackFrom error // the QUIC failure a fallback replaced
+	attempts     int   // every HTTP attempt in the action
+	quicAttempts int   // attempts on QUIC legs, charged to the attempt budget
 	dialed       bool
 	resolved     bool
 	gotConn      bool
@@ -81,13 +83,21 @@ func (r *http3Receipt) onGotConn(reused bool) {
 
 // routed implements http3RouteObserver: the router's choice for one hop.
 func (r *http3Receipt) routed(selection string, quic bool) {
-	r.lock(func() { r.selection, r.quicLeg, r.finalQUIC = selection, quic, quic })
+	r.lock(func() {
+		r.selection, r.quicLeg, r.finalQUIC = selection, quic, quic
+		r.tcpHop = r.tcpHop || !quic
+	})
 }
 
 // fellBack implements http3RouteObserver: the hop's QUIC attempt ended
 // before the target could act on it and the hop now runs on TCP.
-func (r *http3Receipt) fellBack(kind string) {
-	r.lock(func() { r.fallback, r.quicLeg, r.finalQUIC = kind, false, false })
+func (r *http3Receipt) fellBack(kind string, cause error) {
+	r.lock(func() {
+		r.fallback, r.quicLeg, r.finalQUIC, r.tcpHop = kind, false, false, true
+		if cause != nil {
+			r.fellBackFrom = cause
+		}
+	})
 }
 func (r *http3Receipt) onDial(info h3transport.DialInfo) {
 	r.lock(func() { r.resumed = r.resumed || info.Resumed })
@@ -128,21 +138,25 @@ func (r *http3Receipt) evidence(result *protocol.Result) map[string]any {
 	}
 	if attempted {
 		evidence["quic_connection"] = r.connectionLocked()
-		if r.finalQUIC {
-			// Explains TLSTime = 0; a fallback's timings are TCP's.
+		if r.finalQUIC && !r.tcpHop {
+			// Explains TLSTime = 0; once a hop ran on TCP the timings are
+			// not the QUIC handshake's alone.
 			evidence["tls_in_transport_handshake"] = true
 		}
 	}
 	if r.resumed {
 		evidence["tls_resumed"] = true
 	}
+	// The action's own QUIC failure, else the one a fallback replaced.
 	var h3Err *h3transport.Error
 	if errors.As(r.failure, &h3Err) && h3Err.Class != "" {
 		evidence["quic_error_class"] = string(h3Err.Class)
+	} else if errors.As(r.fellBackFrom, &h3Err) && h3Err.Class != "" {
+		evidence["quic_error_class"] = string(h3Err.Class)
 	}
-	if !r.finalQUIC {
-		// The result's timings describe a TCP hop, which carries no
-		// availability reasons.
+	if !r.finalQUIC || r.tcpHop {
+		// The result's timings come from, or include, a TCP hop, which
+		// carries no availability reasons.
 		return evidence
 	}
 	availability := map[string]any{"ttfb": "available", "tls": "in_transport_handshake"}

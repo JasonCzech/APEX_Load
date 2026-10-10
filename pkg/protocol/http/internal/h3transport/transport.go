@@ -62,6 +62,10 @@ const (
 	ClassVersionFallback ErrorClass = "version_fallback"
 )
 
+// ErrConnectionSlot marks a dial that ended while waiting for a slot in the
+// VUser's connection budget: local contention, not a QUIC failure.
+var ErrConnectionSlot = errors.New("waiting for a connection slot")
+
 // Error is a failed HTTP/3 request with its transmission certainty.
 type Error struct {
 	Certainty Certainty
@@ -238,6 +242,8 @@ func classify(err error) ErrorClass {
 	var versions *quic.VersionNegotiationError
 	var transportErr *quic.TransportError
 	switch {
+	case errors.Is(err, ErrConnectionSlot):
+		return "" // no QUIC packet was sent: nothing to classify
 	case errors.As(err, &idle), errors.As(err, &handshakeTimeout), errors.Is(err, context.DeadlineExceeded):
 		return ClassTimeout
 	case errors.As(err, &versions):
@@ -368,17 +374,18 @@ func (t *Transport) dial(ctx context.Context, addr string, tlsConfig *tls.Config
 			return nil, err
 		}
 	}
-	if override, ok := ctx.Value(dialPortKey{}).(int); ok && override > 0 && override <= 65535 {
-		port = override
-		addr = net.JoinHostPort(host, strconv.Itoa(port))
-	}
 	dialCtx, cancel := t.dialContext(ctx)
 	defer cancel()
 	release := func() {}
 	if t.opts.Acquire != nil {
+		// The connection serves addr's origin wherever it is dialed, so it
+		// takes that origin's slot, as a TCP connection to it would.
 		if release, err = t.opts.Acquire(dialCtx, addr); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w: %w", ErrConnectionSlot, err)
 		}
+	}
+	if override, ok := ctx.Value(dialPortKey{}).(int); ok && override > 0 && override <= 65535 {
+		port = override
 	}
 	conn, err := t.dialAddress(ctx, dialCtx, trace, host, port, tlsConfig, quicConfig)
 	if err != nil {
