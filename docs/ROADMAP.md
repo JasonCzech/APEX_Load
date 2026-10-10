@@ -98,7 +98,7 @@ Wave 5 landed five work packages on the same branch:
   - report sections;
   - a golden in Chromium and WebKit against the page's own measurements.
 - **Native analytics (NA-6, NA-5):** acceptance goldens whose series come from DuckDB's own SQL, duplicate-file refusal at commit, and an opt-in reference benchmark.
-- **Telemetry (TEL-4):** the fault matrix as an opt-in race-detector suite, and an opt-in reference workload. That workload exposes a pre-existing shortfall in distributed live run totals, which is not fixed here.
+- **Telemetry (TEL-4):** the fault matrix as an opt-in race-detector suite, and an opt-in reference workload. That workload exposed a pre-existing shortfall in distributed live run totals; it was fixed after the wave (see the Wave 5 record).
 
 Each package passed independent review rounds until no finding stayed open without a fix or a documented limit. A cross-cutting review through four lenses followed. There is no schema change.
 

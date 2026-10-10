@@ -606,6 +606,12 @@ message MetricsBatchTelemetry {
   // subscribers in this process, cumulative from zero. Absent from older
   // generators, which report only the process-wide count.
   optional int64 test_dropped_subscriber_batches = 9;
+  // collection_sequence identifies the collection that produced the batch's
+  // window. It increases with every collection in the generator process
+  // (source_epoch), and a batch that re-sends the last window (stopping,
+  // paused, terminal, a subscription replay) repeats it. Zero from older
+  // generators.
+  uint64 collection_sequence = 10;
 }
 
 message GroupMetric {

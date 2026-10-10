@@ -417,7 +417,23 @@ A local run (darwin-arm64, 10 CPUs) **failed the target**:
 - **Analyses:** 94 concurrent analyses, none failed.
 - **Coverage:** 61 of 65 s observed; under the default budgets, 13 s degraded, 46 s breached and none healthy.
 
-After the review's per-path loss accounting, 20-second local runs show the archive path exact (for example 43,059 served and 43,059 archived) while the run's live totals are short by 1,900 to 5,900, with no recorded errors and every live loss counter exact at 0. A whole live window can go missing, and the final window is counted again by each terminal publication. The reference workload therefore fails on the live path. This is a defect in the live run totals that the harness exposes, not fixed in C8.
+After the review's per-path loss accounting, 20-second local runs showed the archive path exact (for example 43,059 served and 43,059 archived) while the run's live totals were short by 1,900 to 5,900, with no recorded errors and every live loss counter exact at 0. A whole live window could go missing, and the final window was counted again by each terminal publication. The reference workload therefore failed on the live path. This was a defect in the live run totals that the harness exposed, and it was fixed after Wave 5. Before the fix, the run totals summed published samples, which are throttled fleet-wide and hold only each generator's latest window. A distributed run now counts each generator's window where its batch is accepted:
+- **Collections are numbered.** A generator numbers its metric collections within its process (`collection_sequence`). A batch that re-sends the last window repeats the number and is not counted again; that covers stopping, paused and terminal batches and a subscription replay.
+- **A stop drain is a new window.** It is counted. On a generator running several groups it replaces every group's published window, so a group that ended earlier is not carried into the terminal batch again.
+- **During a stop requested on the controller, the controller keeps reading each generator's metrics.** That covers an operator, a threshold or goal rule, a CI abort and a shutdown. The run is set STOPPING before the generators stop, so a window collected before then can still arrive ahead of the terminal batch. The controller counts that window without publishing it, then reads the terminal batch with the final drain.
+  - Before, it stopped reading at that window. For a graceful stop both were lost, and the run ended only when the stop grace period forced it.
+  - A forced abort (Abort, or a CI abort) ends once every generator confirms. A window that arrives after that is not counted.
+- **Older generators** send no collection number. Their re-sends are matched by the collection's publication time. A batch with neither is counted unless it is terminal; a terminal one is taken to re-send.
+- **Counting rules.** A window is counted by the same rules as a published sample, and a parity test holds the two together.
+
+Limits:
+- **A controller that takes over a run** starts the totals from the stored history, not from a copy it kept. If the stored history cannot be read, it starts from the history it holds.
+  - Stored history keeps no run totals, so the start is the sum of the stored windows, which is bounded and approximate as before the fix.
+  - Stored windows keep no groups either. A run with one group starts its group's totals from the same sum; with several groups, the group totals restart at zero.
+  - Each generator's last window, replayed when the stream reconnects, may be counted a second time.
+- **An older generator** is matched by publication time only. Two of its collections published in the same millisecond count once. With several groups, its stop drain carries forward the last window of any group with nothing left to drain, and that window is counted again.
+
+Four 20-second runs of the reference workload afterwards, each completing on its own, showed the live totals equal to the archived samples: 43,036 of 43,037 served (one in flight at the stop) and 43,056 of 43,056; after the review fixes, 43,122 of 43,122; and with the stop fix, 43,052 of 43,052. The 20-second test passed each time. The declared 60-second target was not rerun.
 
 Deviations:
 - The transport and sample-age P99s come from one or two publications per run, and they persist without the concurrent analyses; a generator's final publication is suspected and is not yet explained.
