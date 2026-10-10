@@ -15,6 +15,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 	"golang.org/x/net/http/httpguts"
 )
 
@@ -44,9 +45,13 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 	dataAsQuery := false
 	methodExplicit := false
 	location := "curl command"
+	// versionFlag is the last HTTP version option; like curl, the last one wins.
+	versionFlag := ""
 	for index := 1; index < len(tokens); index++ {
 		token := tokens[index]
 		switch {
+		case curlHTTPVersionFlags[token]:
+			versionFlag = token
 		case token == "-X" || token == "--request":
 			index++
 			if index >= len(tokens) {
@@ -249,6 +254,7 @@ func parseCurl(content, responseContent string, diagnostics *diag.Collector) ([]
 	if ex.URL == "" {
 		return nil, nil, errors.New("curl sample did not include a URL")
 	}
+	applyCurlHTTPVersion(&ex, versionFlag, diagnostics, location)
 	if len(dataParts) > 0 {
 		if dataAsQuery {
 			ex.URL = addCurlQueryData(ex.URL, dataParts)
@@ -549,6 +555,49 @@ func curlMultipartBoundaryOccurs(boundary string, parts []curlFormPart) bool {
 		}
 	}
 	return false
+}
+
+// curlHTTPVersionFlags are curl's HTTP version options. Each takes no value.
+var curlHTTPVersionFlags = map[string]bool{
+	"--http1.0": true, "-0": true, "--http1.1": true, "--http2": true,
+	"--http2-prior-knowledge": true, "--http3": true, "--http3-only": true,
+}
+
+// applyCurlHTTPVersion maps the last curl version option to a replay policy,
+// or keeps a review gate when the runtime cannot reproduce it:
+//
+//	--http1.1                 exact HTTP/1.1
+//	--http2-prior-knowledge   exact HTTP/2 (h2, or prior-knowledge h2c)
+//	--http2 on https://       automatic negotiation, as curl's ALPN offer
+//	--http2 on http://        gated: curl sends Upgrade: h2c, which is not modeled
+//	--http1.0, -0             gated: HTTP/1.0 is not a native replay version
+//	--http3, --http3-only     gated until native HTTP/3 replay ships
+func applyCurlHTTPVersion(ex *exchange, flag string, diagnostics *diag.Collector, location string) {
+	if flag == "" {
+		return
+	}
+	cleartext := strings.HasPrefix(strings.ToLower(strings.TrimSpace(ex.URL)), "http://")
+	switch flag {
+	case "--http1.1":
+		ex.HTTPVersion = httpprotocol.VersionHTTP11
+		diagnostics.Add(diag.Info, "cURL HTTP version", location, "--http1.1 maps to the exact HTTP/1.1 replay policy")
+	case "--http2-prior-knowledge":
+		ex.HTTPVersion = httpprotocol.VersionHTTP2
+		diagnostics.Add(diag.Info, "cURL HTTP version", location, "--http2-prior-knowledge maps to the exact HTTP/2 replay policy")
+	case "--http2":
+		if cleartext {
+			diagnostics.Add(diag.Warning, "cURL HTTP version", location, "--http2 on an http:// URL makes curl attempt an Upgrade: h2c, which native replay does not model; choose HTTP/1.1 or prior-knowledge HTTP/2 before replay")
+			markCurlReview(ex, "curl_http2_upgrade_not_modeled")
+			return
+		}
+		diagnostics.Add(diag.Info, "cURL HTTP version", location, "--http2 maps to automatic negotiation (HTTP/2 with HTTP/1.1 fallback), as curl's ALPN offer does")
+	case "--http1.0", "-0":
+		diagnostics.Add(diag.Warning, "cURL HTTP version", location, flag+" requests HTTP/1.0, which native replay does not support; choose HTTP/1.1 before replay")
+		markCurlReview(ex, "curl_http10_not_supported")
+	case "--http3", "--http3-only":
+		diagnostics.Add(diag.Warning, "cURL HTTP version", location, flag+" requests HTTP/3, which native replay does not support yet; review before replay")
+		markCurlReview(ex, "curl_http3_not_supported")
+	}
 }
 
 func markCurlReview(ex *exchange, reason string) {
