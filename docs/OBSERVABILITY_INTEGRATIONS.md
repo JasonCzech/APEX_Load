@@ -607,9 +607,9 @@ Settings → Integrations → **Power BI**:
 
 Use **Test connection** after saving to verify token acquisition and workspace access.
 
-### Dataset schema (v1)
+### Dataset schema (v2)
 
-Two tables, related on `run_id` (relationship is created with the dataset, cross-filtering both directions).
+Two tables, related on `run_id` (relationship is created with the dataset, cross-filtering both directions). Version 2 added the HTTP version mix columns; a dataset created by an earlier build reports drift until it is recreated (see below).
 
 #### `runs` — one row per published run
 
@@ -633,6 +633,15 @@ Two tables, related on `run_id` (relationship is created with the dataset, cross
 | `sla_evaluated`, `sla_passed`, `sla_warned`, `sla_failed` | Int64 | SLA rollup counts |
 | `apexload_url` | String | Deep link to the APEX Load run report |
 | `published_at` | DateTime | Publish timestamp |
+| `http_actions` | Int64 | Native HTTP actions with version facts (0 for runs archived before the mix existed) |
+| `http1_actions`, `http2_actions`, `http3_actions` | Int64 | Actions by the version their response used |
+| `http_no_response_actions`, `http_cache_actions` | Int64 | Actions that got no response, and cache hits; neither counts as a wire version |
+| `http_attempts` | Int64 | HTTP attempts recorded by HTTP/3-policy actions (retries and fallbacks included) |
+| `http3_upgrade_eligible`, `http3_fallbacks` | Int64 | `auto+h3` actions routed to the HTTP/3 alternative, and those that fell back to TCP |
+| `http3_fallback_ratio` | Double | `http3_fallbacks` ÷ `http3_upgrade_eligible` (0 without a denominator) |
+| `quic_attempted`, `quic_failed` | Int64 | Actions that tried QUIC, and those whose QUIC attempt failed |
+| `quic_failure_ratio` | Double | `quic_failed` ÷ `quic_attempted` (0 without a denominator) |
+| `protocol_mix_finding` | String | The Protocol Mix finding's summary when a ratio exceeded its expectation, else empty |
 
 #### `transactions` — one row per action + one per group, per run
 
@@ -648,6 +657,9 @@ Two tables, related on `run_id` (relationship is created with the dataset, cross
 | `has_sla` | Bool | Actions only |
 | `sla_ms` | Double | Configured p95 SLA |
 | `sla_result` | String | `pass` / `warn` / `fail` / `na` |
+| `http_version` | String | Actions only: `1.1`, `2` or `3` when every wire response used it, `mixed` when they differ, empty without one |
+| `http1_count`, `http2_count`, `http3_count` | Int64 | Actions only: responses by version |
+| `http_fallbacks`, `http_attempts` | Int64 | Actions only: QUIC-to-TCP fallbacks and recorded HTTP attempts |
 
 ### Re-publish and dedupe
 

@@ -568,7 +568,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	report.Completeness = buildRunArchiveCompletenessScoreFromCounts(manifest, report, report.Overview.Transactions, int64(len(resources)), int64(len(summaries)))
 	report.ChangeAttribution = buildRunArchiveChangeAttribution(manifest)
 	report.ReportProfiles = buildRunArchiveReportProfiles()
-	report.NetworkPhases = networkPhases.finalize()
+	report.NetworkPhases = networkPhases.finalizeWithExpectation(manifest.Provenance.ProtocolMix)
 	report.ArtifactInventory = buildRunArchiveArtifactInventory(record, manifest)
 
 	window := archivePopulationWindow(manifest)

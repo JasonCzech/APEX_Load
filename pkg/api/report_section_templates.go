@@ -682,7 +682,39 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
     <tr><td>TTFB (server + transfer)</td><td class="num">{{f0 .Report.NetworkPhases.Overall.AvgTTFBMs}}</td><td class="num">{{f0 .Report.NetworkPhases.Overall.MaxTTFBMs}}</td></tr>
   </tbody>
 </table>
+{{with versionPhaseRows .Report.NetworkPhases}}
+<h3>Phases by negotiated HTTP version</h3>
+<table>
+  <thead><tr><th>Version</th><th class="num">Samples</th><th class="num">DNS avg (ms)</th><th class="num">Connect avg (ms)</th><th class="num">TLS avg (ms)</th><th class="num">TTFB avg (ms)</th><th class="num">TTFB max (ms)</th></tr></thead>
+  <tbody>
+    {{range .}}<tr><td>{{.Label}}</td><td class="num">{{.Phases.Count}}</td><td class="num">{{f0 .Phases.AvgDNSMs}}</td><td class="num">{{f0 .Phases.AvgConnectMs}}</td><td class="num">{{f0 .Phases.AvgTLSMs}}</td><td class="num">{{f0 .Phases.AvgTTFBMs}}</td><td class="num">{{f0 .Phases.MaxTTFBMs}}</td></tr>{{end}}
+  </tbody>
+</table>
+<p class="section-copy">HTTP/3 connect time includes the QUIC handshake, which carries TLS, so HTTP/3 has no separate TLS time.</p>
+{{end}}
 {{else}}<p class="muted">No network-phase timing was captured for this run.</p>{{end}}
+{{with .Report.NetworkPhases.VersionMix}}
+<h3>HTTP version mix</h3>
+<p class="section-copy">Every HTTP action, by the version its response used. Cache hits and requests that got no response are counted separately.</p>
+<table>
+  <thead><tr><th>Version</th><th class="num">Actions</th><th class="num">Share</th></tr></thead>
+  <tbody>
+    {{range versionMixRows .}}<tr><td>{{.Label}}</td><td class="num">{{.Count}}</td><td class="num">{{formatPercent .SharePct}}</td></tr>{{end}}
+  </tbody>
+</table>
+{{if .UsedHTTP3}}
+<table>
+  <thead><tr><th>Ratio</th><th>Observed</th></tr></thead>
+  <tbody>
+    <tr><td>Fell back to TCP</td><td>{{ratioText .FallbackRatio "upgrade-eligible auto+h3 actions"}}</td></tr>
+    <tr><td>QUIC failures</td><td>{{ratioText .QUICFailureRatio "QUIC attempts"}}</td></tr>
+  </tbody>
+</table>
+{{end}}
+{{with countText .BySelection}}<p class="section-copy">Routing: {{.}}</p>{{end}}
+{{if .Attempts}}<p class="section-copy">HTTP attempts recorded by HTTP/3 actions: {{.Attempts}}.</p>{{end}}
+{{with .Finding}}<div class="finding"><div class="finding-head"><span class="pill warn">Minor</span><span class="ft">Protocol Mix</span></div><div class="finding-body"><p>{{.Summary}}</p></div></div>{{end}}
+{{end}}
 {{end}}
 
 {{define "errors"}}

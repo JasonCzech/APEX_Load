@@ -210,6 +210,9 @@ type MetricsBatch struct {
 	LifecycleError             string
 	Telemetry                  *MetricsTelemetry
 	TransactionResponseTimeSLA []TransactionResponseTimeSLACompliance
+	// HTTPVersionMix is the generator's run-to-date HTTP version mix; nil
+	// from older generators or before any HTTP action.
+	HTTPVersionMix *protocol.HTTPVersionMix
 }
 
 type TransactionResponseTimeSLACompliance struct {
@@ -1722,7 +1725,56 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		LifecycleError:             batch.GetLifecycleError(),
 		Telemetry:                  telemetry,
 		TransactionResponseTimeSLA: transactionResponseTimeSLAFromProto(batch.GetTransactionResponseTimeSla()),
+		HTTPVersionMix:             httpVersionMixFromProto(batch.GetHttpVersionMix()),
 	}, nil
+}
+
+// maxHTTPVersionMixKeys bounds each count map a generator sends; the keys
+// are small enums, so a larger map is malformed.
+const maxHTTPVersionMixKeys = 32
+
+// httpVersionMixFromProto validates a generator's mix: negative counts,
+// oversized maps or a breakdown larger than the action count discard it.
+func httpVersionMixFromProto(in *pb.HTTPVersionMix) *protocol.HTTPVersionMix {
+	if in == nil || in.GetActions() <= 0 {
+		return nil
+	}
+	out := &protocol.HTTPVersionMix{
+		Actions: in.GetActions(), HTTP3Policies: in.GetHttp3Policies(), UpgradeEligible: in.GetUpgradeEligible(), FellBack: in.GetFellBack(),
+		QUICAttempted: in.GetQuicAttempted(), QUICFailed: in.GetQuicFailed(), Attempts: in.GetAttempts(),
+	}
+	for _, value := range []int64{out.HTTP3Policies, out.UpgradeEligible, out.FellBack, out.QUICAttempted, out.QUICFailed, out.Attempts} {
+		if value < 0 {
+			return nil
+		}
+	}
+	if out.HTTP3Policies > out.Actions || out.UpgradeEligible > out.Actions || out.FellBack > out.UpgradeEligible || out.QUICAttempted > out.Actions || out.QUICFailed > out.QUICAttempted {
+		return nil
+	}
+	maps := []struct {
+		in  map[string]int64
+		out *map[string]int64
+	}{{in.GetByVersion(), &out.ByVersion}, {in.GetBySelection(), &out.BySelection}, {in.GetByFallback(), &out.ByFallback}, {in.GetByQuicError(), &out.ByQUICError}}
+	for _, counts := range maps {
+		if len(counts.in) > maxHTTPVersionMixKeys {
+			return nil
+		}
+		var sum int64
+		for key, value := range counts.in {
+			if value < 0 || len(key) == 0 || len(key) > 64 {
+				return nil
+			}
+			sum += value
+			if sum > out.Actions {
+				return nil
+			}
+			if *counts.out == nil {
+				*counts.out = make(map[string]int64, len(counts.in))
+			}
+			(*counts.out)[key] = value
+		}
+	}
+	return out
 }
 
 func transactionResponseTimeSLAFromProto(rows []*pb.TransactionResponseTimeSLACompliance) []TransactionResponseTimeSLACompliance {

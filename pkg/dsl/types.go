@@ -223,6 +223,43 @@ type ResultsConfig struct {
 
 	CSVExports    []CSVExport          `json:"csv_exports,omitempty"`
 	MessageDetail *MessageDetailConfig `json:"message_detail,omitempty"`
+	// ProtocolMix sets the HTTP/3 expectations behind the run report's
+	// Protocol Mix finding. Unset fields use the defaults.
+	ProtocolMix *ProtocolMixExpectation `json:"protocol_mix,omitempty"`
+}
+
+// ProtocolMixExpectation bounds the HTTP/3 ratios a run report accepts: the
+// share of upgrade-eligible auto+h3 actions that fell back to TCP, and the
+// share of QUIC attempts that failed. The finding fires only above MinSamples
+// actions in the ratio's denominator.
+type ProtocolMixExpectation struct {
+	MaxFallbackRatio    *float64 `json:"max_fallback_ratio,omitempty" jsonschema:"minimum=0,maximum=1"`
+	MaxQUICFailureRatio *float64 `json:"max_quic_failure_ratio,omitempty" jsonschema:"minimum=0,maximum=1"`
+	MinSamples          int      `json:"min_samples,omitempty" jsonschema:"minimum=0,maximum=1000000"`
+}
+
+// Protocol Mix defaults.
+const (
+	DefaultProtocolMixMaxRatio   = 0.05
+	DefaultProtocolMixMinSamples = 20
+)
+
+// Effective returns the expectation with defaults applied.
+func (e *ProtocolMixExpectation) Effective() (maxFallback, maxQUICFailure float64, minSamples int) {
+	maxFallback, maxQUICFailure, minSamples = DefaultProtocolMixMaxRatio, DefaultProtocolMixMaxRatio, DefaultProtocolMixMinSamples
+	if e == nil {
+		return
+	}
+	if e.MaxFallbackRatio != nil {
+		maxFallback = *e.MaxFallbackRatio
+	}
+	if e.MaxQUICFailureRatio != nil {
+		maxQUICFailure = *e.MaxQUICFailureRatio
+	}
+	if e.MinSamples > 0 {
+		minSamples = e.MinSamples
+	}
+	return
 }
 
 // MessageDetailConfig is an author-requested capture envelope. Controller and

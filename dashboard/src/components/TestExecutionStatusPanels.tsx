@@ -1,7 +1,7 @@
 import TelemetryPolicy from './TelemetryPolicy'
 import TelemetryStageDistributions from './TelemetryStageDistributions'
 import TelemetryAcceptanceVerdict from './TelemetryAcceptanceVerdict'
-import { BrowserDeviceLiveMetrics, BrowserLiveMetrics, CapacityAdvisory, GoalStatus, GroupLiveMetrics, LiveCapacityStatus, TelemetryHealth, TestSummary, TxMetrics } from '../types'
+import { BrowserDeviceLiveMetrics, BrowserLiveMetrics, CapacityAdvisory, GoalStatus, GroupLiveMetrics, LiveCapacityStatus, RunArchiveHTTPVersionMix, TelemetryHealth, TestSummary, TxMetrics } from '../types'
 import { formatTimeCompact } from '../utils/timeUtils'
 import { browserMetricRecord, finiteBrowserMetric, formatBrowserSampleCount, formatBrowserEngineLabel, formatDevicePlatformLabel } from './browserBreakdownModel'
 import BrowserUXAssessment from './BrowserUXAssessment'
@@ -9,6 +9,7 @@ import BrowserDocumentEvidencePanel from './BrowserDocumentEvidencePanel'
 import BrowserComparisonTable from './runReport/BrowserComparisonTable'
 import type { BrowserDocumentSummary } from '../types/browserDocumentEvidence'
 import { MISSING_VALUE } from './runReport/reportPresentation'
+import { ratioParts, usedHTTP3, versionMixHeadline } from './runReport/httpVersionMixModel'
 
 interface LiveMetricsSummary {
   browser_documents?: BrowserDocumentSummary | null
@@ -23,6 +24,7 @@ interface LiveMetricsSummary {
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
   capacity_status?: LiveCapacityStatus
   by_region?: Record<string, TxMetrics>
+  http_versions?: RunArchiveHTTPVersionMix
 }
 
 interface Props {
@@ -200,6 +202,9 @@ export default function TestExecutionStatusPanels({
     (right[1].count ?? 0) - (left[1].count ?? 0) || left[0].localeCompare(right[0])
   ))
   const regionalActivityMax = Math.max(1, ...regionalActivity.map(([, value]) => value.count ?? 0))
+  const httpVersions = usedHTTP3(metrics?.http_versions) ? metrics?.http_versions : undefined
+  const fallback = ratioParts(httpVersions?.fallback_ratio, 'upgrade-eligible actions')
+  const quicFailures = ratioParts(httpVersions?.quic_failure_ratio, 'QUIC attempts')
 
   return (
     <>
@@ -313,6 +318,38 @@ export default function TestExecutionStatusPanels({
           </div>
         </div>
       ) : null}
+
+      {httpVersions && (
+        <div className="goal-status-card http-versions-card" data-testid="live-http-versions">
+          <div className="goal-status-header">
+            <div>
+              <h3 className="goal-status-title">HTTP versions</h3>
+              <p className="goal-status-subtitle">Every HTTP action since the run started, by the version its response used.</p>
+            </div>
+            <div className={`goal-status-badge ${httpVersions.finding ? 'warning' : 'healthy'}`}>
+              {httpVersions.finding ? 'Protocol Mix above expectation' : 'Within expectation'}
+            </div>
+          </div>
+          <p className="http-versions-headline">{versionMixHeadline(httpVersions) || 'No response version observed yet'}</p>
+          <div className="goal-status-grid">
+            <div className="goal-status-metric">
+              <span className="goal-status-label">HTTP actions</span>
+              <span className="goal-status-value">{httpVersions.actions.toLocaleString()}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Fell back to TCP</span>
+              <span className="goal-status-value">{fallback.value}</span>
+              <small>{fallback.detail}</small>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">QUIC failures</span>
+              <span className="goal-status-value">{quicFailures.value}</span>
+              <small>{quicFailures.detail}</small>
+            </div>
+          </div>
+          {httpVersions.finding && <p className="goal-status-subtitle" role="note">{httpVersions.finding.summary}</p>}
+        </div>
+      )}
 
       {metrics && <TelemetryPolicy evidence={metrics.telemetry_policy} />}
 

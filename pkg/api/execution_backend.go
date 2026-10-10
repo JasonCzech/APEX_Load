@@ -398,6 +398,7 @@ func buildRunArchiveProvenanceFromSnapshot(snapshot *ManagedTest) RunArchiveProv
 	provenance.Duration = snapshot.DurationStr
 	provenance.TerminationMode = snapshot.TerminationMode
 	provenance.CSVExports = declaredCSVExports(snapshot)
+	provenance.ProtocolMix = declaredProtocolMixExpectation(snapshot)
 	provenance.Assignment = cloneGeneratorAssignmentSettings(snapshot.Assignment)
 	provenance.GeneratorShards = cloneGeneratorShardSummaries(snapshot.GeneratorShards)
 	provenance.GoalConfig = cloneGoalConfig(snapshot.GoalConfig)

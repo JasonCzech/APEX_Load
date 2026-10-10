@@ -622,6 +622,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		BrowserDocuments:           browserDocumentsForLive(batch.BrowserDocuments, batch.Browser != nil || len(batch.BrowserByDevice) > 0),
 		MessagingProgress:          batch.MessagingProgress.Clone(),
 		TransactionResponseTimeSLA: remoteTransactionResponseTimeSLAResults(test),
+		HTTPVersions:               buildRunArchiveHTTPVersionMix(remoteHTTPVersionMix(test), nil),
 		Timestamp:                  timestamp,
 		SampleWindowSeconds:        batchWindowSeconds(batch.WindowMs),
 		ActiveVUsers:               int64(batch.Stats.ActiveVUsers),

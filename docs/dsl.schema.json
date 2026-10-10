@@ -9038,6 +9038,27 @@
       },
       "type": "object"
     },
+    "ProtocolMixExpectation": {
+      "additionalProperties": false,
+      "properties": {
+        "max_fallback_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "max_quic_failure_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "min_samples": {
+          "maximum": 1000000,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "ProxyConfig": {
       "additionalProperties": false,
       "properties": {
@@ -9079,6 +9100,9 @@
             "$ref": "#/$defs/PropertyAnalytics"
           },
           "type": "array"
+        },
+        "protocol_mix": {
+          "$ref": "#/$defs/ProtocolMixExpectation"
         }
       },
       "type": "object"

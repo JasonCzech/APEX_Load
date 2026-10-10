@@ -128,6 +128,10 @@ var profileHTMLFuncMap = template.FuncMap{
 	"formatScore": func(value float64) string {
 		return fmt.Sprintf("%.3f", value)
 	},
+	"versionMixRows":   reportHTTPVersionMixRows,
+	"versionPhaseRows": reportHTTPVersionPhaseRows,
+	"ratioText":        reportRatioText,
+	"countText":        reportCountText,
 	"f0": func(value float64) string {
 		return fmt.Sprintf("%.0f", value)
 	},

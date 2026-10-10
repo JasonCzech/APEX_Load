@@ -102,6 +102,31 @@ describe('TestExecutionStatusPanels', () => {
     expect(container.textContent).not.toContain('Dead-letter rate')
   })
 
+  it('shows the run-to-date HTTP version mix only when HTTP/3 was in play', async () => {
+    const test = { id: 'test-h3', name: 'H3 Run', status: 'RUNNING', total_vusers: 10, duration: '5m', created_at: '2026-10-10T08:00:00Z', groups: [] } as never
+    const ratio = (numerator: number, denominator: number) => ({ numerator, denominator, value: denominator ? numerator / denominator : 0 })
+    const render = async (httpVersions: unknown) => {
+      await act(async () => {
+        root.render(<TestExecutionStatusPanels isGoalOriented={false} goalDescription="" test={test} metrics={{ tps: 10, http_versions: httpVersions as never }} isMultiGroup={false} groupMetrics={[]} groupColors={[]} />)
+      })
+      return container.querySelector('[data-testid="live-http-versions"]')
+    }
+    let card = await render({
+      actions: 120, by_version: { '3': 90, '2': 30 }, http3_policies: 120, upgrade_eligible: 100, fell_back: 12, quic_attempted: 100, quic_failed: 12,
+      fallback_ratio: ratio(12, 100), quic_failure_ratio: ratio(12, 100),
+      finding: { breaches: [], summary: '12.0% of upgrade-eligible auto+h3 actions fell back to TCP (12 of 100; expected at most 5.0%).' },
+    })
+    expect(card?.textContent).toContain('Protocol Mix above expectation')
+    expect(card?.textContent).toContain('HTTP/2 25% · HTTP/3 75%')
+    expect(card?.textContent).toContain('Fell back to TCP12.0%12 of 100 upgrade-eligible actions')
+    expect(card?.querySelector('[role="note"]')?.textContent).toContain('expected at most 5.0%')
+    card = await render({ actions: 5, by_version: { '3': 5 }, http3_policies: 5, quic_attempted: 5, fallback_ratio: ratio(0, 0), quic_failure_ratio: ratio(0, 5) })
+    expect(card?.textContent).toContain('Within expectation')
+    expect(card?.textContent).toContain('Fell back to TCPn/ano upgrade-eligible actions')
+    expect(await render({ actions: 5, by_version: { '2': 5 }, fallback_ratio: ratio(0, 0), quic_failure_ratio: ratio(0, 0) })).toBeNull()
+    expect(await render(undefined)).toBeNull()
+  })
+
   it('renders telemetry ages and separate observed websocket drop counts when available', async () => {
     await act(async () => {
       root.render(

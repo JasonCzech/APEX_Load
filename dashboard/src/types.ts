@@ -1309,6 +1309,12 @@ export interface TransactionEvent {
   connect_ms?: number
   tls_ms?: number
   ttfb_ms?: number
+  /** Negotiated wire version of a native HTTP action (1.1, 2 or 3). */
+  http_version?: string
+  /** How an attempted QUIC path ended on TCP. */
+  http_version_fallback?: string
+  /** HTTP attempts in the logical action (recorded by HTTP/3 policies). */
+  attempt_count?: number
   bytes_sent?: number
   bytes_received?: number
   status_code?: number
@@ -1811,6 +1817,46 @@ export interface RunArchiveNetworkPhaseSummary {
   overall?: RunArchiveNetworkPhases
   by_action?: Record<string, RunArchiveNetworkPhases>
   by_dependency?: Record<string, RunArchiveNetworkPhases>
+  /** Phase averages per negotiated wire version (1.1, 2, 3). */
+  by_http_version?: Record<string, RunArchiveNetworkPhases>
+  version_mix?: RunArchiveHTTPVersionMix
+  version_mix_by_action?: Record<string, HTTPVersionMix>
+}
+
+/** HTTP actions counted by negotiated version and routing. by_version keys are
+ * 1.1, 2, 3, unknown (no response) and cache. */
+export interface HTTPVersionMix {
+  actions: number
+  by_version?: Record<string, number>
+  by_selection?: Record<string, number>
+  by_fallback?: Record<string, number>
+  by_quic_error?: Record<string, number>
+  http3_policies?: number
+  upgrade_eligible?: number
+  fell_back?: number
+  quic_attempted?: number
+  quic_failed?: number
+  attempts?: number
+}
+
+export interface HTTPVersionRatio {
+  numerator: number
+  denominator: number
+  value: number
+}
+
+export interface RunArchiveHTTPVersionMix extends HTTPVersionMix {
+  /** Fell back ÷ upgrade-eligible auto+h3 actions. */
+  fallback_ratio: HTTPVersionRatio
+  /** Failed ÷ attempted QUIC actions. */
+  quic_failure_ratio: HTTPVersionRatio
+  finding?: RunArchiveProtocolMixFinding
+}
+
+export interface RunArchiveProtocolMixFinding {
+  breaches: Array<{ ratio: 'fallback' | 'quic_failure'; observed: HTTPVersionRatio; expected: number; min_samples: number }>
+  top_reasons?: Array<{ reason: string; count: number }>
+  summary: string
 }
 
 export interface RunArchiveNetworkPhases {
@@ -2153,6 +2199,8 @@ export type TestStatus =
   | 'PAUSED'
 
 export interface LiveMetrics {
+  /** Run-to-date HTTP version mix (cumulative, unlike the window fields). */
+  http_versions?: RunArchiveHTTPVersionMix
   telemetry_policy?: import('./types/telemetryPolicy').TelemetryPolicyEvidence
   browser_documents?: BrowserDocumentSummary | null
   messaging_progress?: MessagingProgressSnapshot

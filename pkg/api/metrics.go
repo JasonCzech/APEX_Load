@@ -75,6 +75,7 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 		ByRegion:                   make(map[string]*TxMetrics),
 		Resources:                  snap.Resources,
 		TransactionResponseTimeSLA: transactionResponseTimeSLAResultsFromEngine(snap.TransactionResponseTimeSLA),
+		HTTPVersions:               buildRunArchiveHTTPVersionMix(snap.HTTPVersions, nil),
 		SampleWindowSeconds:        snap.Window.Seconds(),
 	}
 	if snap.Browser != nil {
@@ -560,6 +561,11 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	live.ActiveRuntimeSeconds = activeRuntimeSecondsLocked(test, now)
 	live.LoadLevels = activeLoadLevelsLocked(test)
 	test.runTotals.apply(live, test.History)
+	if live.HTTPVersions != nil {
+		// The builders have no run; evaluate the finding against its
+		// declared expectation.
+		live.HTTPVersions = buildRunArchiveHTTPVersionMix(&live.HTTPVersions.HTTPVersionMix, declaredProtocolMixExpectation(test))
+	}
 	tests := make([]*ManagedTest, 0, len(tr.tests))
 	for _, candidate := range tr.tests {
 		tests = append(tests, candidate)

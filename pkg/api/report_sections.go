@@ -994,20 +994,24 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			pdfHeading(lines, "Network Phase Breakdown")
 			overall := d.Report.NetworkPhases.Overall
 			if d.Report.NetworkPhases.Samples == 0 {
-				*lines = append(*lines, "No network-phase timing was captured for this run.", "")
-				return
+				*lines = append(*lines, "No network-phase timing was captured for this run.")
+			} else {
+				*lines = append(*lines,
+					fmt.Sprintf("Samples: %s", formatPDFInt(d.Report.NetworkPhases.Samples)),
+					fmt.Sprintf("DNS: avg %.1f ms / max %.1f ms", overall.AvgDNSMs, overall.MaxDNSMs),
+					fmt.Sprintf("Connect: avg %.1f ms / max %.1f ms", overall.AvgConnectMs, overall.MaxConnectMs),
+					fmt.Sprintf("TLS: avg %.1f ms / max %.1f ms", overall.AvgTLSMs, overall.MaxTLSMs),
+					fmt.Sprintf("TTFB: avg %.1f ms / max %.1f ms", overall.AvgTTFBMs, overall.MaxTTFBMs))
 			}
-			*lines = append(*lines,
-				fmt.Sprintf("Samples: %s", formatPDFInt(d.Report.NetworkPhases.Samples)),
-				fmt.Sprintf("DNS: avg %.1f ms / max %.1f ms", overall.AvgDNSMs, overall.MaxDNSMs),
-				fmt.Sprintf("Connect: avg %.1f ms / max %.1f ms", overall.AvgConnectMs, overall.MaxConnectMs),
-				fmt.Sprintf("TLS: avg %.1f ms / max %.1f ms", overall.AvgTLSMs, overall.MaxTLSMs),
-				fmt.Sprintf("TTFB: avg %.1f ms / max %.1f ms", overall.AvgTTFBMs, overall.MaxTTFBMs),
-				"")
+			*lines = append(*lines, reportProtocolMixLines(d.Report.NetworkPhases)...)
+			*lines = append(*lines, "")
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
 			if d.Report.NetworkPhases.Samples == 0 {
-				return csvNote(write, "network_phases", "No network-phase timing was captured for this run.")
+				if err := csvNote(write, "network_phases", "No network-phase timing was captured for this run."); err != nil {
+					return err
+				}
+				return writeProtocolMixCSVRows(write, d.Report.NetworkPhases)
 			}
 			if err := writeNetworkPhaseCSVRows(write, "overall", d.Report.NetworkPhases.Overall); err != nil {
 				return err
@@ -1022,7 +1026,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 					return err
 				}
 			}
-			return nil
+			return writeProtocolMixCSVRows(write, d.Report.NetworkPhases)
 		}})
 
 	// --- Errors ------------------------------------------------------------

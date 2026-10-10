@@ -915,6 +915,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -3291,6 +3292,7 @@ export interface operations {
                   "source"?: string;
                 }>) | null;
                 "project_id"?: string;
+                "protocol_mix"?: (Record<string, unknown>) | null;
                 "release_id"?: string;
                 "requested_at"?: string;
                 "resource_baseline"?: boolean;
@@ -3449,6 +3451,7 @@ export interface operations {
                   "source"?: string;
                 }>) | null;
                 "project_id"?: string;
+                "protocol_mix"?: (Record<string, unknown>) | null;
                 "release_id"?: string;
                 "requested_at"?: string;
                 "resource_baseline"?: boolean;
@@ -3882,6 +3885,17 @@ export interface operations {
                 "max_tls_ms"?: number;
                 "max_ttfb_ms"?: number;
               }>;
+              "by_http_version"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "count"?: number;
+                "max_connect_ms"?: number;
+                "max_dns_ms"?: number;
+                "max_tls_ms"?: number;
+                "max_ttfb_ms"?: number;
+              }>;
               "overall"?: {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -3894,6 +3908,24 @@ export interface operations {
                 "max_ttfb_ms"?: number;
               };
               "samples"?: number;
+              "version_mix"?: ({
+                "fallback_ratio"?: Record<string, unknown>;
+                "finding"?: (Record<string, unknown>) | null;
+                "quic_failure_ratio"?: Record<string, unknown>;
+              }) | null;
+              "version_mix_by_action"?: Record<string, ({
+                "actions"?: number;
+                "attempts"?: number;
+                "by_fallback"?: Record<string, number>;
+                "by_quic_error"?: Record<string, number>;
+                "by_selection"?: Record<string, number>;
+                "by_version"?: Record<string, number>;
+                "fell_back"?: number;
+                "http3_policies"?: number;
+                "quic_attempted"?: number;
+                "quic_failed"?: number;
+                "upgrade_eligible"?: number;
+              }) | null>;
             };
             "oracle_db"?: ({
               "correlations"?: Array<{
@@ -4601,6 +4633,11 @@ export interface operations {
                 "name"?: string;
                 "values"?: Array<string>;
               }>;
+              "protocol_mix"?: ({
+                "max_fallback_ratio"?: (number) | null;
+                "max_quic_failure_ratio"?: (number) | null;
+                "min_samples"?: number;
+              }) | null;
             }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
@@ -4976,6 +5013,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -5456,6 +5494,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -6288,6 +6327,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -7022,6 +7062,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -12413,6 +12454,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -13307,6 +13349,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -14018,6 +14061,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -14694,6 +14738,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -15252,6 +15297,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -15887,6 +15933,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -16538,6 +16585,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -17179,6 +17227,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -18038,6 +18087,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -18695,6 +18745,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -20313,6 +20364,11 @@ export interface operations {
                   "name": string;
                   "values": Array<string>;
                 }>;
+                "protocol_mix"?: ({
+                  "max_fallback_ratio"?: (number) | null;
+                  "max_quic_failure_ratio"?: (number) | null;
+                  "min_samples"?: number;
+                }) | null;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -20647,6 +20703,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -21404,6 +21461,11 @@ export interface operations {
                   "name": string;
                   "values": Array<string>;
                 }>;
+                "protocol_mix"?: ({
+                  "max_fallback_ratio"?: (number) | null;
+                  "max_quic_failure_ratio"?: (number) | null;
+                  "min_samples"?: number;
+                }) | null;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -21738,6 +21800,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -22643,6 +22706,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -23718,6 +23782,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -24545,6 +24610,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -26457,6 +26523,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -27098,6 +27165,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -28115,6 +28183,11 @@ export interface operations {
                   "name": string;
                   "values": Array<string>;
                 }>;
+                "protocol_mix"?: ({
+                  "max_fallback_ratio"?: (number) | null;
+                  "max_quic_failure_ratio"?: (number) | null;
+                  "min_samples"?: number;
+                }) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -29189,6 +29262,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -29912,6 +29986,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -34776,6 +34851,7 @@ export interface operations {
               "csv_exports"?: Array<Record<string, unknown>>;
               "message_detail"?: (Record<string, unknown>) | null;
               "property_analytics"?: Array<Record<string, unknown>>;
+              "protocol_mix"?: (Record<string, unknown>) | null;
             }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
@@ -35155,6 +35231,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -35980,6 +36057,11 @@ export interface operations {
                   "transfer_breached"?: boolean;
                 }) | null;
                 "groups"?: Record<string, (Record<string, unknown>) | null>;
+                "http_versions"?: ({
+                  "fallback_ratio": Record<string, unknown>;
+                  "finding"?: (Record<string, unknown>) | null;
+                  "quic_failure_ratio": Record<string, unknown>;
+                }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
@@ -36492,6 +36574,11 @@ export interface operations {
                   "transactions": number;
                   "vusers": number;
                 }) | null>;
+                "http_versions"?: ({
+                  "fallback_ratio": Record<string, unknown>;
+                  "finding"?: (Record<string, unknown>) | null;
+                  "quic_failure_ratio": Record<string, unknown>;
+                }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
@@ -37024,6 +37111,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -38038,6 +38126,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -38320,6 +38409,11 @@ export interface operations {
                 "name"?: string;
                 "values"?: Array<string>;
               }>;
+              "protocol_mix"?: ({
+                "max_fallback_ratio"?: (number) | null;
+                "max_quic_failure_ratio"?: (number) | null;
+                "min_samples"?: number;
+              }) | null;
             }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
@@ -39050,6 +39144,11 @@ export interface operations {
                   "name": string;
                   "values": Array<string>;
                 }>;
+                "protocol_mix"?: ({
+                  "max_fallback_ratio"?: (number) | null;
+                  "max_quic_failure_ratio"?: (number) | null;
+                  "min_samples"?: number;
+                }) | null;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -39384,6 +39483,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -40263,6 +40363,11 @@ export interface operations {
                   "sample_rate"?: number;
                 }) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: ({
+                  "max_fallback_ratio"?: (number) | null;
+                  "max_quic_failure_ratio"?: (number) | null;
+                  "min_samples"?: number;
+                }) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -41356,6 +41461,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -42127,6 +42233,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -42422,6 +42529,11 @@ export interface operations {
                 "name"?: string;
                 "values"?: Array<string>;
               }>;
+              "protocol_mix"?: ({
+                "max_fallback_ratio"?: (number) | null;
+                "max_quic_failure_ratio"?: (number) | null;
+                "min_samples"?: number;
+              }) | null;
             }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
@@ -43541,6 +43653,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -43860,6 +43973,34 @@ export interface operations {
                 "transactions": number;
                 "vusers": number;
               }) | null>;
+              "http_versions"?: ({
+                "actions": number;
+                "attempts"?: number;
+                "by_fallback"?: Record<string, number>;
+                "by_quic_error"?: Record<string, number>;
+                "by_selection"?: Record<string, number>;
+                "by_version"?: Record<string, number>;
+                "fallback_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "fell_back"?: number;
+                "finding"?: ({
+                  "breaches": Array<Record<string, unknown>>;
+                  "summary": string;
+                  "top_reasons"?: Array<Record<string, unknown>>;
+                }) | null;
+                "http3_policies"?: number;
+                "quic_attempted"?: number;
+                "quic_failed"?: number;
+                "quic_failure_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "upgrade_eligible"?: number;
+              }) | null;
               "latency"?: ({
                 "targets": Array<Record<string, unknown>>;
               }) | null;
@@ -44957,6 +45098,34 @@ export interface operations {
                 "transactions": number;
                 "vusers": number;
               }) | null>;
+              "http_versions"?: ({
+                "actions": number;
+                "attempts"?: number;
+                "by_fallback"?: Record<string, number>;
+                "by_quic_error"?: Record<string, number>;
+                "by_selection"?: Record<string, number>;
+                "by_version"?: Record<string, number>;
+                "fallback_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "fell_back"?: number;
+                "finding"?: ({
+                  "breaches": Array<Record<string, unknown>>;
+                  "summary": string;
+                  "top_reasons"?: Array<Record<string, unknown>>;
+                }) | null;
+                "http3_policies"?: number;
+                "quic_attempted"?: number;
+                "quic_failed"?: number;
+                "quic_failure_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "upgrade_eligible"?: number;
+              }) | null;
               "latency"?: ({
                 "targets": Array<{
                   "connect_ms"?: number;
@@ -46337,6 +46506,11 @@ export interface operations {
                   "name": string;
                   "values": Array<string>;
                 }>;
+                "protocol_mix"?: ({
+                  "max_fallback_ratio"?: (number) | null;
+                  "max_quic_failure_ratio"?: (number) | null;
+                  "min_samples"?: number;
+                }) | null;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -49261,6 +49435,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -49928,6 +50103,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -50517,6 +50693,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -51184,6 +51361,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -53548,6 +53726,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -53843,6 +54022,11 @@ export interface operations {
                 "name"?: string;
                 "values"?: Array<string>;
               }>;
+              "protocol_mix"?: ({
+                "max_fallback_ratio"?: (number) | null;
+                "max_quic_failure_ratio"?: (number) | null;
+                "min_samples"?: number;
+              }) | null;
             }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
@@ -54335,6 +54519,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -55267,6 +55452,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -57186,6 +57372,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -61578,6 +61765,34 @@ export interface operations {
                 "transactions": number;
                 "vusers": number;
               }) | null>;
+              "http_versions"?: ({
+                "actions": number;
+                "attempts"?: number;
+                "by_fallback"?: Record<string, number>;
+                "by_quic_error"?: Record<string, number>;
+                "by_selection"?: Record<string, number>;
+                "by_version"?: Record<string, number>;
+                "fallback_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "fell_back"?: number;
+                "finding"?: ({
+                  "breaches": Array<Record<string, unknown>>;
+                  "summary": string;
+                  "top_reasons"?: Array<Record<string, unknown>>;
+                }) | null;
+                "http3_policies"?: number;
+                "quic_attempted"?: number;
+                "quic_failed"?: number;
+                "quic_failure_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "upgrade_eligible"?: number;
+              }) | null;
               "latency"?: ({
                 "targets": Array<Record<string, unknown>>;
               }) | null;
@@ -62671,6 +62886,34 @@ export interface operations {
                 "transactions": number;
                 "vusers": number;
               }) | null>;
+              "http_versions"?: ({
+                "actions": number;
+                "attempts"?: number;
+                "by_fallback"?: Record<string, number>;
+                "by_quic_error"?: Record<string, number>;
+                "by_selection"?: Record<string, number>;
+                "by_version"?: Record<string, number>;
+                "fallback_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "fell_back"?: number;
+                "finding"?: ({
+                  "breaches": Array<Record<string, unknown>>;
+                  "summary": string;
+                  "top_reasons"?: Array<Record<string, unknown>>;
+                }) | null;
+                "http3_policies"?: number;
+                "quic_attempted"?: number;
+                "quic_failed"?: number;
+                "quic_failure_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "upgrade_eligible"?: number;
+              }) | null;
               "latency"?: ({
                 "targets": Array<{
                   "connect_ms"?: number;
@@ -65772,6 +66015,11 @@ export interface operations {
                   "transfer_breached"?: boolean;
                 }) | null;
                 "groups"?: Record<string, (Record<string, unknown>) | null>;
+                "http_versions"?: ({
+                  "fallback_ratio": Record<string, unknown>;
+                  "finding"?: (Record<string, unknown>) | null;
+                  "quic_failure_ratio": Record<string, unknown>;
+                }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
@@ -66284,6 +66532,11 @@ export interface operations {
                   "transactions": number;
                   "vusers": number;
                 }) | null>;
+                "http_versions"?: ({
+                  "fallback_ratio": Record<string, unknown>;
+                  "finding"?: (Record<string, unknown>) | null;
+                  "quic_failure_ratio": Record<string, unknown>;
+                }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
@@ -66816,6 +67069,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -68590,6 +68844,11 @@ export interface operations {
                 "source": string;
               }>) | null;
               "project_id"?: string;
+              "protocol_mix"?: ({
+                "max_fallback_ratio"?: (number) | null;
+                "max_quic_failure_ratio"?: (number) | null;
+                "min_samples"?: number;
+              }) | null;
               "release_id"?: string;
               "requested_at"?: string;
               "resource_baseline"?: boolean;
@@ -68737,6 +68996,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -69496,6 +69756,11 @@ export interface operations {
                 "source": string;
               }>) | null;
               "project_id"?: string;
+              "protocol_mix"?: ({
+                "max_fallback_ratio"?: (number) | null;
+                "max_quic_failure_ratio"?: (number) | null;
+                "min_samples"?: number;
+              }) | null;
               "release_id"?: string;
               "requested_at"?: string;
               "resource_baseline"?: boolean;
@@ -69643,6 +69908,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -72709,6 +72975,11 @@ export interface operations {
                   "source": string;
                 }>) | null;
                 "project_id"?: string;
+                "protocol_mix"?: ({
+                  "max_fallback_ratio"?: (number) | null;
+                  "max_quic_failure_ratio"?: (number) | null;
+                  "min_samples"?: number;
+                }) | null;
                 "release_id"?: string;
                 "requested_at"?: string;
                 "resource_baseline"?: boolean;
@@ -73157,6 +73428,11 @@ export interface operations {
                   "source": string;
                 }>) | null;
                 "project_id"?: string;
+                "protocol_mix"?: ({
+                  "max_fallback_ratio"?: (number) | null;
+                  "max_quic_failure_ratio"?: (number) | null;
+                  "min_samples"?: number;
+                }) | null;
                 "release_id"?: string;
                 "requested_at"?: string;
                 "resource_baseline"?: boolean;
@@ -73703,6 +73979,17 @@ export interface operations {
                 "max_tls_ms"?: number;
                 "max_ttfb_ms"?: number;
               }>;
+              "by_http_version"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "count"?: number;
+                "max_connect_ms"?: number;
+                "max_dns_ms"?: number;
+                "max_tls_ms"?: number;
+                "max_ttfb_ms"?: number;
+              }>;
               "overall"?: {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -73715,6 +74002,47 @@ export interface operations {
                 "max_ttfb_ms"?: number;
               };
               "samples"?: number;
+              "version_mix"?: ({
+                "actions": number;
+                "attempts"?: number;
+                "by_fallback"?: Record<string, number>;
+                "by_quic_error"?: Record<string, number>;
+                "by_selection"?: Record<string, number>;
+                "by_version"?: Record<string, number>;
+                "fallback_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "fell_back"?: number;
+                "finding"?: ({
+                  "breaches": Array<Record<string, unknown>>;
+                  "summary": string;
+                  "top_reasons"?: Array<Record<string, unknown>>;
+                }) | null;
+                "http3_policies"?: number;
+                "quic_attempted"?: number;
+                "quic_failed"?: number;
+                "quic_failure_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "upgrade_eligible"?: number;
+              }) | null;
+              "version_mix_by_action"?: Record<string, ({
+                "actions": number;
+                "attempts"?: number;
+                "by_fallback"?: Record<string, number>;
+                "by_quic_error"?: Record<string, number>;
+                "by_selection"?: Record<string, number>;
+                "by_version"?: Record<string, number>;
+                "fell_back"?: number;
+                "http3_policies"?: number;
+                "quic_attempted"?: number;
+                "quic_failed"?: number;
+                "upgrade_eligible"?: number;
+              }) | null>;
             };
             "oracle_db"?: ({
               "correlations"?: Array<{
@@ -75191,6 +75519,11 @@ export interface operations {
                   "name": string;
                   "values": Array<string>;
                 }>;
+                "protocol_mix"?: ({
+                  "max_fallback_ratio"?: (number) | null;
+                  "max_quic_failure_ratio"?: (number) | null;
+                  "min_samples"?: number;
+                }) | null;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -75525,6 +75858,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -75993,6 +76327,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -76879,6 +77214,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -77594,6 +77930,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -80815,6 +81152,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -81134,6 +81472,34 @@ export interface operations {
                 "transactions": number;
                 "vusers": number;
               }) | null>;
+              "http_versions"?: ({
+                "actions": number;
+                "attempts"?: number;
+                "by_fallback"?: Record<string, number>;
+                "by_quic_error"?: Record<string, number>;
+                "by_selection"?: Record<string, number>;
+                "by_version"?: Record<string, number>;
+                "fallback_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "fell_back"?: number;
+                "finding"?: ({
+                  "breaches": Array<Record<string, unknown>>;
+                  "summary": string;
+                  "top_reasons"?: Array<Record<string, unknown>>;
+                }) | null;
+                "http3_policies"?: number;
+                "quic_attempted"?: number;
+                "quic_failed"?: number;
+                "quic_failure_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "upgrade_eligible"?: number;
+              }) | null;
               "latency"?: ({
                 "targets": Array<Record<string, unknown>>;
               }) | null;
@@ -82231,6 +82597,34 @@ export interface operations {
                 "transactions": number;
                 "vusers": number;
               }) | null>;
+              "http_versions"?: ({
+                "actions": number;
+                "attempts"?: number;
+                "by_fallback"?: Record<string, number>;
+                "by_quic_error"?: Record<string, number>;
+                "by_selection"?: Record<string, number>;
+                "by_version"?: Record<string, number>;
+                "fallback_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "fell_back"?: number;
+                "finding"?: ({
+                  "breaches": Array<Record<string, unknown>>;
+                  "summary": string;
+                  "top_reasons"?: Array<Record<string, unknown>>;
+                }) | null;
+                "http3_policies"?: number;
+                "quic_attempted"?: number;
+                "quic_failed"?: number;
+                "quic_failure_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "upgrade_eligible"?: number;
+              }) | null;
               "latency"?: ({
                 "targets": Array<{
                   "connect_ms"?: number;
@@ -83611,6 +84005,11 @@ export interface operations {
                   "name": string;
                   "values": Array<string>;
                 }>;
+                "protocol_mix"?: ({
+                  "max_fallback_ratio"?: (number) | null;
+                  "max_quic_failure_ratio"?: (number) | null;
+                  "min_samples"?: number;
+                }) | null;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -84241,6 +84640,11 @@ export interface operations {
                   "name": string;
                   "values": Array<string>;
                 }>;
+                "protocol_mix"?: ({
+                  "max_fallback_ratio"?: (number) | null;
+                  "max_quic_failure_ratio"?: (number) | null;
+                  "min_samples"?: number;
+                }) | null;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -84557,6 +84961,11 @@ export interface operations {
                   "name": string;
                   "values": Array<string>;
                 }>;
+                "protocol_mix"?: ({
+                  "max_fallback_ratio"?: (number) | null;
+                  "max_quic_failure_ratio"?: (number) | null;
+                  "min_samples"?: number;
+                }) | null;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -84859,6 +85268,11 @@ export interface operations {
                   "name": string;
                   "values": Array<string>;
                 }>;
+                "protocol_mix"?: ({
+                  "max_fallback_ratio"?: (number) | null;
+                  "max_quic_failure_ratio"?: (number) | null;
+                  "min_samples"?: number;
+                }) | null;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -85161,6 +85575,11 @@ export interface operations {
                   "name": string;
                   "values": Array<string>;
                 }>;
+                "protocol_mix"?: ({
+                  "max_fallback_ratio"?: (number) | null;
+                  "max_quic_failure_ratio"?: (number) | null;
+                  "min_samples"?: number;
+                }) | null;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -85697,6 +86116,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -86210,6 +86630,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -86736,6 +87157,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -89238,6 +89660,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -89953,6 +90376,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -101978,6 +102402,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -102297,6 +102722,34 @@ export interface operations {
                 "transactions": number;
                 "vusers": number;
               }) | null>;
+              "http_versions"?: ({
+                "actions": number;
+                "attempts"?: number;
+                "by_fallback"?: Record<string, number>;
+                "by_quic_error"?: Record<string, number>;
+                "by_selection"?: Record<string, number>;
+                "by_version"?: Record<string, number>;
+                "fallback_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "fell_back"?: number;
+                "finding"?: ({
+                  "breaches": Array<Record<string, unknown>>;
+                  "summary": string;
+                  "top_reasons"?: Array<Record<string, unknown>>;
+                }) | null;
+                "http3_policies"?: number;
+                "quic_attempted"?: number;
+                "quic_failed"?: number;
+                "quic_failure_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "upgrade_eligible"?: number;
+              }) | null;
               "latency"?: ({
                 "targets": Array<Record<string, unknown>>;
               }) | null;
@@ -103394,6 +103847,34 @@ export interface operations {
                 "transactions": number;
                 "vusers": number;
               }) | null>;
+              "http_versions"?: ({
+                "actions": number;
+                "attempts"?: number;
+                "by_fallback"?: Record<string, number>;
+                "by_quic_error"?: Record<string, number>;
+                "by_selection"?: Record<string, number>;
+                "by_version"?: Record<string, number>;
+                "fallback_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "fell_back"?: number;
+                "finding"?: ({
+                  "breaches": Array<Record<string, unknown>>;
+                  "summary": string;
+                  "top_reasons"?: Array<Record<string, unknown>>;
+                }) | null;
+                "http3_policies"?: number;
+                "quic_attempted"?: number;
+                "quic_failed"?: number;
+                "quic_failure_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "upgrade_eligible"?: number;
+              }) | null;
               "latency"?: ({
                 "targets": Array<{
                   "connect_ms"?: number;
@@ -104774,6 +105255,11 @@ export interface operations {
                   "name": string;
                   "values": Array<string>;
                 }>;
+                "protocol_mix"?: ({
+                  "max_fallback_ratio"?: (number) | null;
+                  "max_quic_failure_ratio"?: (number) | null;
+                  "min_samples"?: number;
+                }) | null;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -105706,6 +106192,7 @@ export interface operations {
               "csv_exports"?: Array<Record<string, unknown>>;
               "message_detail"?: (Record<string, unknown>) | null;
               "property_analytics"?: Array<Record<string, unknown>>;
+              "protocol_mix"?: (Record<string, unknown>) | null;
             }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
@@ -107860,6 +108347,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -108805,6 +109293,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -109529,6 +110018,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -110322,6 +110812,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -111294,6 +111785,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -112005,6 +112497,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -112681,6 +113174,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -113239,6 +113733,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -115323,6 +115818,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -116038,6 +116534,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -116746,6 +117243,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -118109,6 +118607,11 @@ export interface operations {
                   "transfer_breached"?: boolean;
                 }) | null;
                 "groups"?: Record<string, (Record<string, unknown>) | null>;
+                "http_versions"?: ({
+                  "fallback_ratio": Record<string, unknown>;
+                  "finding"?: (Record<string, unknown>) | null;
+                  "quic_failure_ratio": Record<string, unknown>;
+                }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
@@ -118621,6 +119124,11 @@ export interface operations {
                   "transactions": number;
                   "vusers": number;
                 }) | null>;
+                "http_versions"?: ({
+                  "fallback_ratio": Record<string, unknown>;
+                  "finding"?: (Record<string, unknown>) | null;
+                  "quic_failure_ratio": Record<string, unknown>;
+                }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
@@ -119153,6 +119661,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -120061,6 +120570,11 @@ export interface operations {
                   "transfer_breached"?: boolean;
                 }) | null;
                 "groups"?: Record<string, (Record<string, unknown>) | null>;
+                "http_versions"?: ({
+                  "fallback_ratio": Record<string, unknown>;
+                  "finding"?: (Record<string, unknown>) | null;
+                  "quic_failure_ratio": Record<string, unknown>;
+                }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
@@ -120573,6 +121087,11 @@ export interface operations {
                   "transactions": number;
                   "vusers": number;
                 }) | null>;
+                "http_versions"?: ({
+                  "fallback_ratio": Record<string, unknown>;
+                  "finding"?: (Record<string, unknown>) | null;
+                  "quic_failure_ratio": Record<string, unknown>;
+                }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
@@ -121105,6 +121624,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -122013,6 +122533,11 @@ export interface operations {
                   "transfer_breached"?: boolean;
                 }) | null;
                 "groups"?: Record<string, (Record<string, unknown>) | null>;
+                "http_versions"?: ({
+                  "fallback_ratio": Record<string, unknown>;
+                  "finding"?: (Record<string, unknown>) | null;
+                  "quic_failure_ratio": Record<string, unknown>;
+                }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
@@ -122525,6 +123050,11 @@ export interface operations {
                   "transactions": number;
                   "vusers": number;
                 }) | null>;
+                "http_versions"?: ({
+                  "fallback_ratio": Record<string, unknown>;
+                  "finding"?: (Record<string, unknown>) | null;
+                  "quic_failure_ratio": Record<string, unknown>;
+                }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
@@ -123057,6 +123587,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -123965,6 +124496,11 @@ export interface operations {
                   "transfer_breached"?: boolean;
                 }) | null;
                 "groups"?: Record<string, (Record<string, unknown>) | null>;
+                "http_versions"?: ({
+                  "fallback_ratio": Record<string, unknown>;
+                  "finding"?: (Record<string, unknown>) | null;
+                  "quic_failure_ratio": Record<string, unknown>;
+                }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
@@ -124477,6 +125013,11 @@ export interface operations {
                   "transactions": number;
                   "vusers": number;
                 }) | null>;
+                "http_versions"?: ({
+                  "fallback_ratio": Record<string, unknown>;
+                  "finding"?: (Record<string, unknown>) | null;
+                  "quic_failure_ratio": Record<string, unknown>;
+                }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
@@ -125009,6 +125550,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -125917,6 +126459,11 @@ export interface operations {
                   "transfer_breached"?: boolean;
                 }) | null;
                 "groups"?: Record<string, (Record<string, unknown>) | null>;
+                "http_versions"?: ({
+                  "fallback_ratio": Record<string, unknown>;
+                  "finding"?: (Record<string, unknown>) | null;
+                  "quic_failure_ratio": Record<string, unknown>;
+                }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
@@ -126429,6 +126976,11 @@ export interface operations {
                   "transactions": number;
                   "vusers": number;
                 }) | null>;
+                "http_versions"?: ({
+                  "fallback_ratio": Record<string, unknown>;
+                  "finding"?: (Record<string, unknown>) | null;
+                  "quic_failure_ratio": Record<string, unknown>;
+                }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
@@ -126961,6 +127513,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -127668,6 +128221,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -128477,6 +129031,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -129976,6 +130531,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -130295,6 +130851,34 @@ export interface operations {
                 "transactions": number;
                 "vusers": number;
               }) | null>;
+              "http_versions"?: ({
+                "actions": number;
+                "attempts"?: number;
+                "by_fallback"?: Record<string, number>;
+                "by_quic_error"?: Record<string, number>;
+                "by_selection"?: Record<string, number>;
+                "by_version"?: Record<string, number>;
+                "fallback_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "fell_back"?: number;
+                "finding"?: ({
+                  "breaches": Array<Record<string, unknown>>;
+                  "summary": string;
+                  "top_reasons"?: Array<Record<string, unknown>>;
+                }) | null;
+                "http3_policies"?: number;
+                "quic_attempted"?: number;
+                "quic_failed"?: number;
+                "quic_failure_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "upgrade_eligible"?: number;
+              }) | null;
               "latency"?: ({
                 "targets": Array<Record<string, unknown>>;
               }) | null;
@@ -131392,6 +131976,34 @@ export interface operations {
                 "transactions": number;
                 "vusers": number;
               }) | null>;
+              "http_versions"?: ({
+                "actions": number;
+                "attempts"?: number;
+                "by_fallback"?: Record<string, number>;
+                "by_quic_error"?: Record<string, number>;
+                "by_selection"?: Record<string, number>;
+                "by_version"?: Record<string, number>;
+                "fallback_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "fell_back"?: number;
+                "finding"?: ({
+                  "breaches": Array<Record<string, unknown>>;
+                  "summary": string;
+                  "top_reasons"?: Array<Record<string, unknown>>;
+                }) | null;
+                "http3_policies"?: number;
+                "quic_attempted"?: number;
+                "quic_failed"?: number;
+                "quic_failure_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "upgrade_eligible"?: number;
+              }) | null;
               "latency"?: ({
                 "targets": Array<{
                   "connect_ms"?: number;
@@ -132772,6 +133384,11 @@ export interface operations {
                   "name": string;
                   "values": Array<string>;
                 }>;
+                "protocol_mix"?: ({
+                  "max_fallback_ratio"?: (number) | null;
+                  "max_quic_failure_ratio"?: (number) | null;
+                  "min_samples"?: number;
+                }) | null;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -135788,6 +136405,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -137378,6 +137996,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -137803,6 +138422,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -138442,6 +139062,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -140239,6 +140860,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -140966,6 +141588,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -142422,6 +143045,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -143955,6 +144579,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -145510,6 +146135,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -147066,6 +147692,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -148621,6 +149248,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -155057,6 +155685,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -155376,6 +156005,34 @@ export interface operations {
                 "transactions": number;
                 "vusers": number;
               }) | null>;
+              "http_versions"?: ({
+                "actions": number;
+                "attempts"?: number;
+                "by_fallback"?: Record<string, number>;
+                "by_quic_error"?: Record<string, number>;
+                "by_selection"?: Record<string, number>;
+                "by_version"?: Record<string, number>;
+                "fallback_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "fell_back"?: number;
+                "finding"?: ({
+                  "breaches": Array<Record<string, unknown>>;
+                  "summary": string;
+                  "top_reasons"?: Array<Record<string, unknown>>;
+                }) | null;
+                "http3_policies"?: number;
+                "quic_attempted"?: number;
+                "quic_failed"?: number;
+                "quic_failure_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "upgrade_eligible"?: number;
+              }) | null;
               "latency"?: ({
                 "targets": Array<Record<string, unknown>>;
               }) | null;
@@ -156473,6 +157130,34 @@ export interface operations {
                 "transactions": number;
                 "vusers": number;
               }) | null>;
+              "http_versions"?: ({
+                "actions": number;
+                "attempts"?: number;
+                "by_fallback"?: Record<string, number>;
+                "by_quic_error"?: Record<string, number>;
+                "by_selection"?: Record<string, number>;
+                "by_version"?: Record<string, number>;
+                "fallback_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "fell_back"?: number;
+                "finding"?: ({
+                  "breaches": Array<Record<string, unknown>>;
+                  "summary": string;
+                  "top_reasons"?: Array<Record<string, unknown>>;
+                }) | null;
+                "http3_policies"?: number;
+                "quic_attempted"?: number;
+                "quic_failed"?: number;
+                "quic_failure_ratio": {
+                  "denominator": number;
+                  "numerator": number;
+                  "value": number;
+                };
+                "upgrade_eligible"?: number;
+              }) | null;
               "latency"?: ({
                 "targets": Array<{
                   "connect_ms"?: number;
@@ -157853,6 +158538,11 @@ export interface operations {
                   "name": string;
                   "values": Array<string>;
                 }>;
+                "protocol_mix"?: ({
+                  "max_fallback_ratio"?: (number) | null;
+                  "max_quic_failure_ratio"?: (number) | null;
+                  "min_samples"?: number;
+                }) | null;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -158763,6 +159453,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -159485,6 +160176,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -163307,6 +163999,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -163589,6 +164282,11 @@ export interface operations {
                 "name"?: string;
                 "values"?: Array<string>;
               }>;
+              "protocol_mix"?: ({
+                "max_fallback_ratio"?: (number) | null;
+                "max_quic_failure_ratio"?: (number) | null;
+                "min_samples"?: number;
+              }) | null;
             }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
@@ -164318,6 +165016,11 @@ export interface operations {
                   "name": string;
                   "values": Array<string>;
                 }>;
+                "protocol_mix"?: ({
+                  "max_fallback_ratio"?: (number) | null;
+                  "max_quic_failure_ratio"?: (number) | null;
+                  "min_samples"?: number;
+                }) | null;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -164652,6 +165355,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
@@ -165651,6 +166355,11 @@ export interface operations {
                   "sample_rate"?: number;
                 }) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: ({
+                  "max_fallback_ratio"?: (number) | null;
+                  "max_quic_failure_ratio"?: (number) | null;
+                  "min_samples"?: number;
+                }) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -166742,6 +167451,7 @@ export interface operations {
                   "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                   "property_analytics"?: Array<Record<string, unknown>>;
+                  "protocol_mix"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
                   "action_sequence"?: Array<string>;
@@ -170860,6 +171570,11 @@ export interface operations {
                 "name"?: string;
                 "values"?: Array<string>;
               }>;
+              "protocol_mix"?: ({
+                "max_fallback_ratio"?: (number) | null;
+                "max_quic_failure_ratio"?: (number) | null;
+                "min_samples"?: number;
+              }) | null;
             }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
@@ -171173,6 +171888,11 @@ export interface operations {
                   "name": string;
                   "values": Array<string>;
                 }>;
+                "protocol_mix"?: ({
+                  "max_fallback_ratio"?: (number) | null;
+                  "max_quic_failure_ratio"?: (number) | null;
+                  "min_samples"?: number;
+                }) | null;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -172092,6 +172812,11 @@ export interface operations {
                   "sample_rate"?: number;
                 }) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: ({
+                  "max_fallback_ratio"?: (number) | null;
+                  "max_quic_failure_ratio"?: (number) | null;
+                  "min_samples"?: number;
+                }) | null;
               };
               "run_logic"?: {
                 "action_sequence"?: Array<string>;
@@ -173083,6 +173808,7 @@ export interface operations {
                 "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
                 "property_analytics"?: Array<Record<string, unknown>>;
+                "protocol_mix"?: (Record<string, unknown>) | null;
               }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
@@ -173365,6 +174091,11 @@ export interface operations {
                 "name"?: string;
                 "values"?: Array<string>;
               }>;
+              "protocol_mix"?: ({
+                "max_fallback_ratio"?: (number) | null;
+                "max_quic_failure_ratio"?: (number) | null;
+                "min_samples"?: number;
+              }) | null;
             }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;

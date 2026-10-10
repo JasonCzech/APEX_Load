@@ -81,6 +81,7 @@ type assignedTest struct {
 	groupTransactions               map[string][]TransactionMetric
 	groupAggregates                 map[string]metricsAggregateSet
 	groupTransactionResponseTimeSLA map[string][]engine.TransactionResponseTimeSLACompliance
+	groupHTTPVersions               map[string]*protocol.HTTPVersionMix // run-to-date, per group
 	groupAssignments                map[string][sha256.Size]byte
 	groupSecretBundleIDs            map[string]string
 	groupScripts                    map[string]string
@@ -139,6 +140,7 @@ type executionMetricsSnapshot struct {
 	telemetry                  MetricsTelemetry
 	aggregates                 metricsAggregateSet
 	transactionResponseTimeSLA []engine.TransactionResponseTimeSLACompliance
+	httpVersions               *protocol.HTTPVersionMix
 	// sourceSnapshotAt identifies the engine snapshot whose gauges and
 	// side-channel aggregates were projected into this window. LatestSnapshot
 	// returns the cached latest value, so the timestamp fences that evidence from
@@ -1917,6 +1919,7 @@ func (s *Service) publishMetricsWithAggregates(testID string, groupName string, 
 		expected.metricsMu.Lock()
 		if expected.lastMetrics != nil {
 			assignment.groupTransactionResponseTimeSLA[groupName] = append([]engine.TransactionResponseTimeSLACompliance(nil), expected.lastMetrics.transactionResponseTimeSLA...)
+			setGroupHTTPVersions(&assignment, groupName, expected.lastMetrics.httpVersions)
 		}
 		expected.metricsMu.Unlock()
 	}
@@ -2289,6 +2292,7 @@ func (s *Service) metricsBatchForAssignment(testID string, assignment assignedTe
 	}
 	batch := s.metricsBatchForMetrics(testID, assignment.executionGeneration, stats, transactions, aggregates, assignment.paused, groupAssignments, lifecycleState, lifecycleError, telemetry)
 	batch.TransactionResponseTimeSla = transactionResponseTimeSLA
+	batch.HttpVersionMix = httpVersionMixToProto(assignment.groupHTTPVersions)
 	return batch
 }
 
@@ -2763,12 +2767,15 @@ func (s *Service) collectExecutionMetricsWithIdle(exec *groupExecution, includeI
 	}
 	telemetry.DroppedSubscriberBatches = droppedSubscriberBatches
 	transactionResponseTimeSLA := snapshot.TransactionResponseTimeSLA
+	httpVersions := snapshot.HTTPVersions
 	if !snapshotOK && previous != nil {
 		transactionResponseTimeSLA = previous.transactionResponseTimeSLA
+		httpVersions = previous.httpVersions
 	}
 	metrics := executionMetricsSnapshot{
 		stats: stats, transactions: transactions, telemetry: telemetry, aggregates: aggregates,
 		transactionResponseTimeSLA: append([]engine.TransactionResponseTimeSLACompliance(nil), transactionResponseTimeSLA...),
+		httpVersions:               httpVersions.Clone(),
 	}
 	if snapshotOK {
 		metrics.sourceSnapshotAt = snapshot.Timestamp
@@ -2836,6 +2843,7 @@ func storeExecutionMetrics(exec *groupExecution, metrics executionMetricsSnapsho
 	stored.aggregates.MessagingProgress = metrics.aggregates.MessagingProgress.Clone()
 	stored.transactions = append([]TransactionMetric(nil), metrics.transactions...)
 	stored.transactionResponseTimeSLA = append([]engine.TransactionResponseTimeSLACompliance(nil), metrics.transactionResponseTimeSLA...)
+	stored.httpVersions = metrics.httpVersions.Clone()
 	exec.lastMetrics = &stored
 	exec.metricsMu.Unlock()
 }
@@ -2887,6 +2895,36 @@ func applyExecutionMetricsToAssignment(assignment *assignedTest, groupName strin
 		delete(assignment.groupAggregates, groupName)
 	}
 	assignment.groupTransactionResponseTimeSLA[groupName] = append([]engine.TransactionResponseTimeSLACompliance(nil), metrics.transactionResponseTimeSLA...)
+	setGroupHTTPVersions(assignment, groupName, metrics.httpVersions)
+}
+
+// setGroupHTTPVersions records a group's run-to-date HTTP version mix; a
+// snapshot without one keeps the group's earlier counts.
+func setGroupHTTPVersions(assignment *assignedTest, groupName string, mix *protocol.HTTPVersionMix) {
+	if mix == nil {
+		return
+	}
+	if assignment.groupHTTPVersions == nil {
+		assignment.groupHTTPVersions = make(map[string]*protocol.HTTPVersionMix)
+	}
+	assignment.groupHTTPVersions[groupName] = mix.Clone()
+}
+
+// httpVersionMixToProto sums the groups' run-to-date mixes (nil when no group
+// ran an HTTP action).
+func httpVersionMixToProto(groups map[string]*protocol.HTTPVersionMix) *pb.HTTPVersionMix {
+	var total protocol.HTTPVersionMix
+	for _, mix := range groups {
+		total.Merge(mix)
+	}
+	if total.Actions == 0 {
+		return nil
+	}
+	return &pb.HTTPVersionMix{
+		Actions: total.Actions, ByVersion: total.ByVersion, BySelection: total.BySelection, ByFallback: total.ByFallback, ByQuicError: total.ByQUICError,
+		Http3Policies: total.HTTP3Policies, UpgradeEligible: total.UpgradeEligible, FellBack: total.FellBack,
+		QuicAttempted: total.QUICAttempted, QuicFailed: total.QUICFailed, Attempts: total.Attempts,
+	}
 }
 
 // captureStoppedExecutionMetrics drains evidence after detached executions have

@@ -943,6 +943,7 @@ type LiveMetrics struct {
 	ErrorBreakdown             map[string]int64                      `json:"error_breakdown,omitempty"`
 	Transactions               map[string]*TxMetrics                 `json:"transactions,omitempty"`
 	TransactionResponseTimeSLA []TransactionResponseTimeSLAResult    `json:"transaction_response_time_sla,omitempty"`
+	HTTPVersions               *RunArchiveHTTPVersionMix             `json:"http_versions,omitempty"` // run-to-date version mix, ratios and Protocol Mix finding
 	DependencyHealth           map[string]*TxMetrics                 `json:"dependency_health,omitempty"`
 	DependencyMap              *LiveDependencyMap                    `json:"dependency_map,omitempty"`
 	ErrorPatterns              []LiveErrorPattern                    `json:"error_patterns,omitempty"`

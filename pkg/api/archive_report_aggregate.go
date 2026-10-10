@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -90,20 +91,38 @@ func buildRunArchiveNetworkPhaseSummary(transactions []TransactionEvent) RunArch
 }
 
 type runArchiveNetworkPhaseAccumulator struct {
-	overall      *networkPhaseAccumulator
-	byAction     map[string]*networkPhaseAccumulator
-	byDependency map[string]*networkPhaseAccumulator
+	overall       *networkPhaseAccumulator
+	byAction      map[string]*networkPhaseAccumulator
+	byDependency  map[string]*networkPhaseAccumulator
+	byHTTPVersion map[string]*networkPhaseAccumulator
+	versionMix    protocol.HTTPVersionMix
+	mixByAction   map[string]*protocol.HTTPVersionMix
 }
 
 func newRunArchiveNetworkPhaseAccumulator() *runArchiveNetworkPhaseAccumulator {
 	return &runArchiveNetworkPhaseAccumulator{
-		overall:      &networkPhaseAccumulator{},
-		byAction:     map[string]*networkPhaseAccumulator{},
-		byDependency: map[string]*networkPhaseAccumulator{},
+		overall:       &networkPhaseAccumulator{},
+		byAction:      map[string]*networkPhaseAccumulator{},
+		byDependency:  map[string]*networkPhaseAccumulator{},
+		byHTTPVersion: map[string]*networkPhaseAccumulator{},
+		mixByAction:   map[string]*protocol.HTTPVersionMix{},
 	}
 }
 
 func (a *runArchiveNetworkPhaseAccumulator) merge(tx TransactionEvent) {
+	facts, httpAction := archiveTransactionHTTPVersionFacts(tx)
+	if httpAction {
+		// The mix counts every HTTP action, measured phases or not.
+		a.versionMix.Add(facts)
+		if tx.ActionName != "" {
+			mix := a.mixByAction[tx.ActionName]
+			if mix == nil {
+				mix = &protocol.HTTPVersionMix{}
+				a.mixByAction[tx.ActionName] = mix
+			}
+			mix.Add(facts)
+		}
+	}
 	// Skip rows with no positive phase measurement. Using <= 0 also discards any
 	// negative "unmeasured" sentinel a future importer/protocol might emit, so it
 	// cannot pull the averages below the real values.
@@ -111,6 +130,14 @@ func (a *runArchiveNetworkPhaseAccumulator) merge(tx TransactionEvent) {
 		return
 	}
 	mergeNetworkPhaseAccumulator(a.overall, tx)
+	if version := facts.HTTPVersionBucket(); httpAction && (version == "1.1" || version == "2" || version == "3") {
+		acc := a.byHTTPVersion[version]
+		if acc == nil {
+			acc = &networkPhaseAccumulator{}
+			a.byHTTPVersion[version] = acc
+		}
+		mergeNetworkPhaseAccumulator(acc, tx)
+	}
 	if tx.ActionName != "" {
 		acc := a.byAction[tx.ActionName]
 		if acc == nil {
@@ -134,16 +161,30 @@ func (a *runArchiveNetworkPhaseAccumulator) merge(tx TransactionEvent) {
 }
 
 func (a *runArchiveNetworkPhaseAccumulator) finalize() RunArchiveNetworkPhaseSummary {
-	if a == nil || a.overall.count == 0 {
+	return a.finalizeWithExpectation(nil)
+}
+
+// finalizeWithExpectation applies the run's Protocol Mix expectation (nil uses
+// the defaults).
+func (a *runArchiveNetworkPhaseAccumulator) finalizeWithExpectation(expectation *dsl.ProtocolMixExpectation) RunArchiveNetworkPhaseSummary {
+	if a == nil {
 		return RunArchiveNetworkPhaseSummary{}
 	}
-	summary := RunArchiveNetworkPhaseSummary{
-		Samples:  a.overall.count,
-		Overall:  finalizeNetworkPhaseAccumulator(a.overall),
-		ByAction: finalizeNetworkPhaseAccumulatorMap(a.byAction),
+	summary := RunArchiveNetworkPhaseSummary{VersionMix: buildRunArchiveHTTPVersionMix(&a.versionMix, expectation)}
+	if len(a.mixByAction) > 0 {
+		summary.VersionMixByAction = a.mixByAction
 	}
+	if a.overall.count == 0 {
+		return summary
+	}
+	summary.Samples = a.overall.count
+	summary.Overall = finalizeNetworkPhaseAccumulator(a.overall)
+	summary.ByAction = finalizeNetworkPhaseAccumulatorMap(a.byAction)
 	if dependencies := finalizeNetworkPhaseAccumulatorMap(a.byDependency); len(dependencies) > 0 {
 		summary.ByDependency = dependencies
+	}
+	if versions := finalizeNetworkPhaseAccumulatorMap(a.byHTTPVersion); len(versions) > 0 {
+		summary.ByHTTPVersion = versions
 	}
 	return summary
 }

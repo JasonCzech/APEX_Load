@@ -98,3 +98,22 @@ it('states the run validity and root cause, and opens it with the cell action', 
   expect(container.querySelector('.run-outcome-root-cause')).toBeNull()
   act(() => root.unmount())
 })
+
+it('leads with the HTTP version mix only when HTTP/3 was in play', () => {
+  const container = document.createElement('div')
+  const root = createRoot(container)
+  const mix = {
+    actions: 40, by_version: { '2': 10, '3': 30 }, http3_policies: 40, upgrade_eligible: 36, fell_back: 6, quic_attempted: 36, quic_failed: 6,
+    fallback_ratio: { numerator: 6, denominator: 36, value: 6 / 36 }, quic_failure_ratio: { numerator: 6, denominator: 36, value: 6 / 36 },
+    finding: { breaches: [], summary: 'above' },
+  }
+  const report = { network_phases: { version_mix: mix } } as unknown as RunArchiveReport
+  act(() => root.render(<RunOutcomeSummary report={report} />))
+  expect(container.textContent).toContain('HTTP versionsHTTP/2 25% · HTTP/3 75%')
+  expect(container.textContent).toContain('Fell back to TCP: 16.7% (6 of 36 upgrade-eligible auto+h3 actions)')
+  expect(container.textContent).toContain('Protocol Mix: above the expected ratio. See Diagnostics.')
+  const tcpOnly = { actions: 10, by_version: { '2': 10 }, fallback_ratio: { numerator: 0, denominator: 0, value: 0 }, quic_failure_ratio: { numerator: 0, denominator: 0, value: 0 } }
+  act(() => root.render(<RunOutcomeSummary report={{ network_phases: { version_mix: tcpOnly } } as unknown as RunArchiveReport} />))
+  expect(container.textContent).not.toContain('HTTP versions')
+  act(() => root.unmount())
+})

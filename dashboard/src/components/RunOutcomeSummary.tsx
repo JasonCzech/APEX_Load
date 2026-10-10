@@ -4,6 +4,7 @@ import type { RunArchiveReport } from '../types'
 import type { ReportRootCauseSummary } from '../types/rca'
 import { rcaSummaryLine, rcaTone, rcaValidityLabel, type RcaSummaryAction } from './rca/rcaModel'
 import { formatMs } from './runReport/runReportModel'
+import { ratioText, usedHTTP3, versionMixHeadline } from './runReport/httpVersionMixModel'
 import './rca/RootCause.css'
 
 interface Props {
@@ -32,6 +33,9 @@ export default function RunOutcomeSummary({ report, showPopulations = true, show
   // Unknown validity (no generator statistics) is common and says nothing
   // about the run, so only a judged verdict is shown.
   const validity = showRootCause && report.validity?.verdict && report.validity.verdict !== 'unknown' ? report.validity.verdict : undefined
+  // The version mix leads only when HTTP/3 was in play.
+  const versionMix = report.network_phases?.version_mix
+  const showVersions = usedHTTP3(versionMix)
   return <section className="run-outcome-summary" aria-label="Run outcome">
     <h3>Run outcome</h3>
     <dl>
@@ -39,6 +43,13 @@ export default function RunOutcomeSummary({ report, showPopulations = true, show
       <div><dt>Workload completion</dt><dd>Planned {manifest?.provenance?.duration || 'Unknown'} · elapsed {outcome.elapsed}</dd></div>
       <div><dt>Acceptance assessment</dt><dd>{assessment || report.verdict?.status || 'Unknown'}</dd><dd>{computed?.assessment.explanation || report.verdict?.explanation || 'No acceptance assessment is available.'}</dd></div>
       <div><dt>Evidence coverage</dt><dd>{report.completeness?.score_pct === undefined ? 'Unknown' : `${report.completeness.score_pct}% of expected captured evidence`}</dd><dd>Archive coverage does not imply completion of the planned workload.</dd></div>
+      {showVersions && versionMix && <div className="run-outcome-versions">
+        <dt>HTTP versions</dt>
+        <dd>{versionMixHeadline(versionMix) || 'No HTTP version was observed'}</dd>
+        {(versionMix.upgrade_eligible ?? 0) > 0 && <dd>Fell back to TCP: {ratioText(versionMix.fallback_ratio, 'upgrade-eligible auto+h3 actions')}</dd>}
+        {(versionMix.quic_attempted ?? 0) > 0 && <dd>QUIC failures: {ratioText(versionMix.quic_failure_ratio, 'QUIC attempts')}</dd>}
+        {versionMix.finding && <dd role="note">Protocol Mix: above the expected ratio. See Diagnostics.</dd>}
+      </div>}
       {(rootCause || validity) && <div className="run-outcome-root-cause" data-tone={rootCause?.tone}>
         <dt>{rootCause ? 'Root cause' : 'Run validity'}</dt>
         {validity && <dd><span className={`rca-badge rca-badge-${rcaTone(validity)}`}>{rcaValidityLabel(validity)}</span></dd>}

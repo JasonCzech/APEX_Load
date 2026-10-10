@@ -740,6 +740,16 @@ func TestBuildPowerBIRows(t *testing.T) {
 		SLARows: map[string]SLAComplianceRow{
 			"checkout": {Name: "checkout", HasSLA: true, SLAMs: 350, ResultKind: "pass"},
 		},
+		NetworkPhases: RunArchiveNetworkPhaseSummary{
+			VersionMix: buildRunArchiveHTTPVersionMix(&protocol.HTTPVersionMix{
+				Actions: 40, ByVersion: map[string]int64{"2": 10, "3": 29, "unknown": 1}, BySelection: map[string]int64{"upgraded": 36, "not_advertised": 4},
+				ByFallback: map[string]int64{"quic_connect_failed": 6}, HTTP3Policies: 40, UpgradeEligible: 36, FellBack: 6, QUICAttempted: 37, QUICFailed: 7, Attempts: 47,
+			}, nil),
+			VersionMixByAction: map[string]*protocol.HTTPVersionMix{
+				"checkout": {Actions: 30, ByVersion: map[string]int64{"2": 6, "3": 24}, ByFallback: map[string]int64{"quic_connect_failed": 6}, Attempts: 36},
+				"browse":   {Actions: 10, ByVersion: map[string]int64{"3": 5, "unknown": 1, "cache": 4}, Attempts: 11},
+			},
+		},
 	}
 
 	publishedAt := completed.Add(time.Hour)
@@ -772,6 +782,33 @@ func TestBuildPowerBIRows(t *testing.T) {
 		t.Fatalf("unexpected group row: %+v", txRows[2])
 	}
 
+	// The HTTP version mix (dataset schema version 2).
+	if runRow["http_actions"] != int64(40) || runRow["http3_actions"] != int64(29) || runRow["http_no_response_actions"] != int64(1) || runRow["http_attempts"] != int64(47) {
+		t.Fatalf("run version counts not mapped: %+v", runRow)
+	}
+	if runRow["http3_upgrade_eligible"] != int64(36) || runRow["http3_fallbacks"] != int64(6) || runRow["http3_fallback_ratio"] != 6.0/36.0 {
+		t.Fatalf("run fallback ratio not mapped: %+v", runRow)
+	}
+	if runRow["quic_attempted"] != int64(37) || runRow["quic_failed"] != int64(7) || runRow["quic_failure_ratio"] != 7.0/37.0 {
+		t.Fatalf("run QUIC failure ratio not mapped: %+v", runRow)
+	}
+	if finding, _ := runRow["protocol_mix_finding"].(string); !strings.Contains(finding, "fell back to TCP (6 of 36") {
+		t.Fatalf("run protocol mix finding = %q", finding)
+	}
+	if txRows[1]["http_version"] != "mixed" || txRows[1]["http3_count"] != int64(24) || txRows[1]["http_fallbacks"] != int64(6) || txRows[1]["http_attempts"] != int64(36) {
+		t.Fatalf("checkout version columns: %+v", txRows[1])
+	}
+	if txRows[0]["http_version"] != "3" || txRows[0]["http3_count"] != int64(5) {
+		t.Fatalf("browse version columns: %+v", txRows[0])
+	}
+	if txRows[2]["http_version"] != "" || txRows[2]["http3_count"] != int64(0) {
+		t.Fatalf("group rows carry no version mix: %+v", txRows[2])
+	}
+	legacy := buildPowerBIRunRow(&RunArchiveReport{Manifest: report.Manifest}, "pub-2", publishedAt, "")
+	if legacy["http_actions"] != int64(0) || legacy["http3_fallback_ratio"] != 0.0 || legacy["protocol_mix_finding"] != "" {
+		t.Fatalf("an archive without a mix publishes zeros: %+v", legacy)
+	}
+
 	// Every row key must exist in the declared table schema (≤75 columns).
 	runCols := map[string]bool{}
 	for _, col := range powerBIRunsColumns() {
@@ -789,6 +826,17 @@ func TestBuildPowerBIRows(t *testing.T) {
 	for key := range txRows[0] {
 		if !txCols[key] {
 			t.Fatalf("transaction row key %q missing from declared schema", key)
+		}
+	}
+	// And every declared column is filled.
+	for name := range runCols {
+		if _, ok := runRow[name]; !ok {
+			t.Fatalf("declared run column %q has no value", name)
+		}
+	}
+	for name := range txCols {
+		if _, ok := txRows[0][name]; !ok {
+			t.Fatalf("declared transaction column %q has no value", name)
 		}
 	}
 }

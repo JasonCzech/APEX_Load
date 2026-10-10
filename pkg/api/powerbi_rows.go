@@ -3,6 +3,8 @@ package api
 import (
 	"sort"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 // buildPowerBIRunRow flattens a run's headline aggregates into the single
@@ -54,6 +56,7 @@ func buildPowerBIRunRow(report *RunArchiveReport, publishID string, publishedAt 
 		"apexload_url":       apexloadURL,
 		"published_at":       publishedAt.UTC().Format(time.RFC3339),
 	}
+	addPowerBIRunVersionMix(row, report.NetworkPhases.VersionMix)
 	if report.SLARollup != nil {
 		row["sla_evaluated"] = report.SLARollup.Evaluated
 		row["sla_passed"] = report.SLARollup.Passed
@@ -112,13 +115,16 @@ func buildPowerBITransactionRows(report *RunArchiveReport, publishID string, pub
 			"sla_ms":       0.0,
 			"sla_result":   "",
 		}
+		var mix *protocol.HTTPVersionMix
 		if kind == "action" {
 			if sla, ok := report.SLARows[name]; ok {
 				row["has_sla"] = sla.HasSLA
 				row["sla_ms"] = sla.SLAMs
 				row["sla_result"] = sla.ResultKind
 			}
+			mix = report.NetworkPhases.VersionMixByAction[name]
 		}
+		addPowerBITransactionVersionMix(row, mix)
 		rows = append(rows, row)
 	}
 	for _, name := range sortedStatKeys(report.ByAction) {
@@ -128,6 +134,62 @@ func buildPowerBITransactionRows(report *RunArchiveReport, publishID string, pub
 		appendStats("group", name, report.ByGroup[name])
 	}
 	return rows
+}
+
+// addPowerBIRunVersionMix adds the run's HTTP version mix; a run without HTTP
+// actions, or an archive from before the mix existed, reports zeros.
+func addPowerBIRunVersionMix(row map[string]any, mix *RunArchiveHTTPVersionMix) {
+	if mix == nil {
+		mix = &RunArchiveHTTPVersionMix{}
+	}
+	finding := ""
+	if mix.Finding != nil {
+		finding = mix.Finding.Summary
+	}
+	row["http_actions"] = mix.Actions
+	row["http1_actions"] = mix.ByVersion["1.1"]
+	row["http2_actions"] = mix.ByVersion["2"]
+	row["http3_actions"] = mix.ByVersion["3"]
+	row["http_no_response_actions"] = mix.ByVersion["unknown"]
+	row["http_cache_actions"] = mix.ByVersion["cache"]
+	row["http_attempts"] = mix.Attempts
+	row["http3_upgrade_eligible"] = mix.UpgradeEligible
+	row["http3_fallbacks"] = mix.FellBack
+	row["http3_fallback_ratio"] = mix.FallbackRatio.Value
+	row["quic_attempted"] = mix.QUICAttempted
+	row["quic_failed"] = mix.QUICFailed
+	row["quic_failure_ratio"] = mix.QUICFailureRatio.Value
+	row["protocol_mix_finding"] = finding
+}
+
+// addPowerBITransactionVersionMix adds an action's version counts.
+// http_version is the one version every wire response used, "mixed" when
+// they differ, and empty without a wire response.
+func addPowerBITransactionVersionMix(row map[string]any, mix *protocol.HTTPVersionMix) {
+	if mix == nil {
+		mix = &protocol.HTTPVersionMix{}
+	}
+	version := ""
+	for _, key := range []string{"1.1", "2", "3"} {
+		if mix.ByVersion[key] == 0 {
+			continue
+		}
+		if version != "" {
+			version = "mixed"
+			break
+		}
+		version = key
+	}
+	row["http_version"] = version
+	row["http1_count"] = mix.ByVersion["1.1"]
+	row["http2_count"] = mix.ByVersion["2"]
+	row["http3_count"] = mix.ByVersion["3"]
+	var fallbacks int64
+	for _, count := range mix.ByFallback {
+		fallbacks += count
+	}
+	row["http_fallbacks"] = fallbacks
+	row["http_attempts"] = mix.Attempts
 }
 
 func sortedStatKeys(stats map[string]RunArchiveActionStats) []string {

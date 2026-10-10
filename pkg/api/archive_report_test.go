@@ -708,6 +708,14 @@ func consistencyMatrixReport() *RunArchiveReport {
 		NetworkPhases: RunArchiveNetworkPhaseSummary{
 			Samples: 2,
 			Overall: RunArchiveNetworkPhases{Count: 2, AvgDNSMs: 2, AvgConnectMs: 4, AvgTLSMs: 6, AvgTTFBMs: 60, MaxTTFBMs: 80},
+			ByHTTPVersion: map[string]RunArchiveNetworkPhases{
+				"2": {Count: 1, AvgConnectMs: 4, AvgTLSMs: 12, AvgTTFBMs: 70, MaxTTFBMs: 70},
+				"3": {Count: 1, AvgConnectMs: 4, AvgTTFBMs: 50, MaxTTFBMs: 50},
+			},
+			VersionMix: buildRunArchiveHTTPVersionMix(&protocol.HTTPVersionMix{
+				Actions: 40, ByVersion: map[string]int64{"2": 10, "3": 30}, BySelection: map[string]int64{"upgraded": 36, "not_advertised": 4},
+				ByFallback: map[string]int64{"quic_connect_failed": 6}, HTTP3Policies: 40, UpgradeEligible: 36, FellBack: 6, QUICAttempted: 36, QUICFailed: 6, Attempts: 46,
+			}, nil),
 		},
 		Web2Migration: &RunArchiveWeb2MigrationEvidence{
 			Status: "ready_for_review", ImportedSteps: 1, ReplayedSteps: 1, ConversionToHTTPReady: true,

@@ -252,6 +252,15 @@ func deriveReportFindings(report *RunArchiveReport) []ReportFinding {
 		})
 	}
 
+	if mix := report.NetworkPhases.VersionMix; mix != nil && mix.Finding != nil {
+		findings = append(findings, ReportFinding{
+			Title:    protocolMixFindingTitle(mix.Finding),
+			Severity: "minor",
+			Observed: mix.Finding.Summary,
+			Evidence: fmt.Sprintf("Expectation from config.results.protocol_mix, evaluated at %d or more samples.", mix.Finding.Breaches[0].MinSamples),
+		})
+	}
+
 	if len(findings) > reportMaxAutoFindings {
 		findings = findings[:reportMaxAutoFindings]
 	}

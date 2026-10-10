@@ -2614,6 +2614,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                           run_logic:
                             type: object
                             properties:
@@ -9248,6 +9252,10 @@ paths:
                               nullable: true
                             project_id:
                               type: string
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             release_id:
                               type: string
                             requested_at:
@@ -9685,6 +9693,10 @@ paths:
                               nullable: true
                             project_id:
                               type: string
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             release_id:
                               type: string
                             requested_at:
@@ -10835,6 +10847,38 @@ paths:
                               max_ttfb_ms:
                                 type: number
                                 format: double
+                        by_http_version:
+                          type: object
+                          additionalProperties:
+                            type: object
+                            properties:
+                              avg_connect_ms:
+                                type: number
+                                format: double
+                              avg_dns_ms:
+                                type: number
+                                format: double
+                              avg_tls_ms:
+                                type: number
+                                format: double
+                              avg_ttfb_ms:
+                                type: number
+                                format: double
+                              count:
+                                type: integer
+                                format: int64
+                              max_connect_ms:
+                                type: number
+                                format: double
+                              max_dns_ms:
+                                type: number
+                                format: double
+                              max_tls_ms:
+                                type: number
+                                format: double
+                              max_ttfb_ms:
+                                type: number
+                                format: double
                         overall:
                           type: object
                           properties:
@@ -10868,6 +10912,67 @@ paths:
                         samples:
                           type: integer
                           format: int64
+                        version_mix:
+                          type: object
+                          properties:
+                            fallback_ratio:
+                              type: object
+                              additionalProperties: true
+                            finding:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
+                            quic_failure_ratio:
+                              type: object
+                              additionalProperties: true
+                          nullable: true
+                        version_mix_by_action:
+                          type: object
+                          additionalProperties:
+                            type: object
+                            properties:
+                              actions:
+                                type: integer
+                                format: int64
+                              attempts:
+                                type: integer
+                                format: int64
+                              by_fallback:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              by_quic_error:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              by_selection:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              by_version:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              fell_back:
+                                type: integer
+                                format: int64
+                              http3_policies:
+                                type: integer
+                                format: int64
+                              quic_attempted:
+                                type: integer
+                                format: int64
+                              quic_failed:
+                                type: integer
+                                format: int64
+                              upgrade_eligible:
+                                type: integer
+                                format: int64
+                            nullable: true
                     oracle_db:
                       type: object
                       properties:
@@ -12717,6 +12822,21 @@ paths:
                                 type: array
                                 items:
                                   type: string
+                        protocol_mix:
+                          type: object
+                          properties:
+                            max_fallback_ratio:
+                              type: number
+                              format: double
+                              nullable: true
+                            max_quic_failure_ratio:
+                              type: number
+                              format: double
+                              nullable: true
+                            min_samples:
+                              type: integer
+                              format: int64
+                          nullable: true
                       nullable: true
                     run_logic:
                       type: object
@@ -13743,6 +13863,10 @@ paths:
                                 type: object
                                 description: 'Go type: PropertyAnalytics'
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                           nullable: true
                         run_logic:
                           type: object
@@ -14988,6 +15112,10 @@ paths:
                                 type: object
                                 description: 'Go type: PropertyAnalytics'
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                         run_logic:
                           type: object
                           properties:
@@ -17116,6 +17244,10 @@ paths:
                                 type: object
                                 description: 'Go type: PropertyAnalytics'
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                         run_logic:
                           type: object
                           properties:
@@ -19058,6 +19190,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                           run_logic:
                             type: object
                             properties:
@@ -51736,6 +51872,21 @@ paths:
                                 - extraction
                                 - name
                                 - values
+                          protocol_mix:
+                            type: object
+                            properties:
+                              max_fallback_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_quic_failure_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              min_samples:
+                                type: integer
+                                format: int64
+                            nullable: true
                       run_logic:
                         type: object
                         properties:
@@ -83812,6 +83963,10 @@ paths:
                             type: object
                             description: 'Go type: PropertyAnalytics'
                             additionalProperties: true
+                        protocol_mix:
+                          type: object
+                          additionalProperties: true
+                          nullable: true
                       nullable: true
                     run_logic:
                       type: object
@@ -84851,6 +85006,10 @@ paths:
                                 type: object
                                 description: 'Go type: PropertyAnalytics'
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                           nullable: true
                         run_logic:
                           type: object
@@ -87333,6 +87492,24 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            http_versions:
+                              type: object
+                              properties:
+                                fallback_ratio:
+                                  type: object
+                                  additionalProperties: true
+                                finding:
+                                  type: object
+                                  description: 'Go type: RunArchiveProtocolMixFinding'
+                                  additionalProperties: true
+                                  nullable: true
+                                quic_failure_ratio:
+                                  type: object
+                                  additionalProperties: true
+                              required:
+                                - fallback_ratio
+                                - quic_failure_ratio
+                              nullable: true
                             latency:
                               type: object
                               properties:
@@ -89010,6 +89187,23 @@ paths:
                                 - transactions
                                 - vusers
                               nullable: true
+                          http_versions:
+                            type: object
+                            properties:
+                              fallback_ratio:
+                                type: object
+                                additionalProperties: true
+                              finding:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              quic_failure_ratio:
+                                type: object
+                                additionalProperties: true
+                            required:
+                              - fallback_ratio
+                              - quic_failure_ratio
+                            nullable: true
                           latency:
                             type: object
                             properties:
@@ -90671,6 +90865,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             nullable: true
                           run_logic:
                             type: object
@@ -93356,6 +93554,24 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            http_versions:
+                              type: object
+                              properties:
+                                fallback_ratio:
+                                  type: object
+                                  additionalProperties: true
+                                finding:
+                                  type: object
+                                  description: 'Go type: RunArchiveProtocolMixFinding'
+                                  additionalProperties: true
+                                  nullable: true
+                                quic_failure_ratio:
+                                  type: object
+                                  additionalProperties: true
+                              required:
+                                - fallback_ratio
+                                - quic_failure_ratio
+                              nullable: true
                             latency:
                               type: object
                               properties:
@@ -95033,6 +95249,23 @@ paths:
                                 - transactions
                                 - vusers
                               nullable: true
+                          http_versions:
+                            type: object
+                            properties:
+                              fallback_ratio:
+                                type: object
+                                additionalProperties: true
+                              finding:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              quic_failure_ratio:
+                                type: object
+                                additionalProperties: true
+                            required:
+                              - fallback_ratio
+                              - quic_failure_ratio
+                            nullable: true
                           latency:
                             type: object
                             properties:
@@ -96694,6 +96927,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             nullable: true
                           run_logic:
                             type: object
@@ -99380,6 +99617,24 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            http_versions:
+                              type: object
+                              properties:
+                                fallback_ratio:
+                                  type: object
+                                  additionalProperties: true
+                                finding:
+                                  type: object
+                                  description: 'Go type: RunArchiveProtocolMixFinding'
+                                  additionalProperties: true
+                                  nullable: true
+                                quic_failure_ratio:
+                                  type: object
+                                  additionalProperties: true
+                              required:
+                                - fallback_ratio
+                                - quic_failure_ratio
+                              nullable: true
                             latency:
                               type: object
                               properties:
@@ -101057,6 +101312,23 @@ paths:
                                 - transactions
                                 - vusers
                               nullable: true
+                          http_versions:
+                            type: object
+                            properties:
+                              fallback_ratio:
+                                type: object
+                                additionalProperties: true
+                              finding:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              quic_failure_ratio:
+                                type: object
+                                additionalProperties: true
+                            required:
+                              - fallback_ratio
+                              - quic_failure_ratio
+                            nullable: true
                           latency:
                             type: object
                             properties:
@@ -102718,6 +102990,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             nullable: true
                           run_logic:
                             type: object
@@ -105416,6 +105692,24 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            http_versions:
+                              type: object
+                              properties:
+                                fallback_ratio:
+                                  type: object
+                                  additionalProperties: true
+                                finding:
+                                  type: object
+                                  description: 'Go type: RunArchiveProtocolMixFinding'
+                                  additionalProperties: true
+                                  nullable: true
+                                quic_failure_ratio:
+                                  type: object
+                                  additionalProperties: true
+                              required:
+                                - fallback_ratio
+                                - quic_failure_ratio
+                              nullable: true
                             latency:
                               type: object
                               properties:
@@ -107093,6 +107387,23 @@ paths:
                                 - transactions
                                 - vusers
                               nullable: true
+                          http_versions:
+                            type: object
+                            properties:
+                              fallback_ratio:
+                                type: object
+                                additionalProperties: true
+                              finding:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              quic_failure_ratio:
+                                type: object
+                                additionalProperties: true
+                            required:
+                              - fallback_ratio
+                              - quic_failure_ratio
+                            nullable: true
                           latency:
                             type: object
                             properties:
@@ -108754,6 +109065,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             nullable: true
                           run_logic:
                             type: object
@@ -111452,6 +111767,24 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            http_versions:
+                              type: object
+                              properties:
+                                fallback_ratio:
+                                  type: object
+                                  additionalProperties: true
+                                finding:
+                                  type: object
+                                  description: 'Go type: RunArchiveProtocolMixFinding'
+                                  additionalProperties: true
+                                  nullable: true
+                                quic_failure_ratio:
+                                  type: object
+                                  additionalProperties: true
+                              required:
+                                - fallback_ratio
+                                - quic_failure_ratio
+                              nullable: true
                             latency:
                               type: object
                               properties:
@@ -113129,6 +113462,23 @@ paths:
                                 - transactions
                                 - vusers
                               nullable: true
+                          http_versions:
+                            type: object
+                            properties:
+                              fallback_ratio:
+                                type: object
+                                additionalProperties: true
+                              finding:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              quic_failure_ratio:
+                                type: object
+                                additionalProperties: true
+                            required:
+                              - fallback_ratio
+                              - quic_failure_ratio
+                            nullable: true
                           latency:
                             type: object
                             properties:
@@ -114790,6 +115140,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             nullable: true
                           run_logic:
                             type: object
@@ -117488,6 +117842,24 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            http_versions:
+                              type: object
+                              properties:
+                                fallback_ratio:
+                                  type: object
+                                  additionalProperties: true
+                                finding:
+                                  type: object
+                                  description: 'Go type: RunArchiveProtocolMixFinding'
+                                  additionalProperties: true
+                                  nullable: true
+                                quic_failure_ratio:
+                                  type: object
+                                  additionalProperties: true
+                              required:
+                                - fallback_ratio
+                                - quic_failure_ratio
+                              nullable: true
                             latency:
                               type: object
                               properties:
@@ -119165,6 +119537,23 @@ paths:
                                 - transactions
                                 - vusers
                               nullable: true
+                          http_versions:
+                            type: object
+                            properties:
+                              fallback_ratio:
+                                type: object
+                                additionalProperties: true
+                              finding:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              quic_failure_ratio:
+                                type: object
+                                additionalProperties: true
+                            required:
+                              - fallback_ratio
+                              - quic_failure_ratio
+                            nullable: true
                           latency:
                             type: object
                             properties:
@@ -120826,6 +121215,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             nullable: true
                           run_logic:
                             type: object
@@ -123524,6 +123917,24 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            http_versions:
+                              type: object
+                              properties:
+                                fallback_ratio:
+                                  type: object
+                                  additionalProperties: true
+                                finding:
+                                  type: object
+                                  description: 'Go type: RunArchiveProtocolMixFinding'
+                                  additionalProperties: true
+                                  nullable: true
+                                quic_failure_ratio:
+                                  type: object
+                                  additionalProperties: true
+                              required:
+                                - fallback_ratio
+                                - quic_failure_ratio
+                              nullable: true
                             latency:
                               type: object
                               properties:
@@ -125201,6 +125612,23 @@ paths:
                                 - transactions
                                 - vusers
                               nullable: true
+                          http_versions:
+                            type: object
+                            properties:
+                              fallback_ratio:
+                                type: object
+                                additionalProperties: true
+                              finding:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              quic_failure_ratio:
+                                type: object
+                                additionalProperties: true
+                            required:
+                              - fallback_ratio
+                              - quic_failure_ratio
+                            nullable: true
                           latency:
                             type: object
                             properties:
@@ -126862,6 +127290,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             nullable: true
                           run_logic:
                             type: object
@@ -142975,6 +143407,11 @@ paths:
                                     type: object
                                     description: 'Go type: PropertyAnalytics'
                                     additionalProperties: true
+                                protocol_mix:
+                                  type: object
+                                  description: 'Go type: ProtocolMixExpectation'
+                                  additionalProperties: true
+                                  nullable: true
                               nullable: true
                             run_logic:
                               type: object
@@ -144072,6 +144509,11 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                description: 'Go type: ProtocolMixExpectation'
+                                additionalProperties: true
+                                nullable: true
                             nullable: true
                           run_logic:
                             type: object
@@ -144791,6 +145233,21 @@ paths:
                                 type: array
                                 items:
                                   type: string
+                        protocol_mix:
+                          type: object
+                          properties:
+                            max_fallback_ratio:
+                              type: number
+                              format: double
+                              nullable: true
+                            max_quic_failure_ratio:
+                              type: number
+                              format: double
+                              nullable: true
+                            min_samples:
+                              type: integer
+                              format: int64
+                          nullable: true
                       nullable: true
                     run_logic:
                       type: object
@@ -146799,6 +147256,21 @@ paths:
                                 - extraction
                                 - name
                                 - values
+                          protocol_mix:
+                            type: object
+                            properties:
+                              max_fallback_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_quic_failure_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              min_samples:
+                                type: integer
+                                format: int64
+                            nullable: true
                         nullable: true
                       run_logic:
                         type: object
@@ -147728,6 +148200,11 @@ paths:
                                     type: object
                                     description: 'Go type: PropertyAnalytics'
                                     additionalProperties: true
+                                protocol_mix:
+                                  type: object
+                                  description: 'Go type: ProtocolMixExpectation'
+                                  additionalProperties: true
+                                  nullable: true
                               nullable: true
                             run_logic:
                               type: object
@@ -149989,6 +150466,21 @@ paths:
                                     - extraction
                                     - name
                                     - values
+                              protocol_mix:
+                                type: object
+                                properties:
+                                  max_fallback_ratio:
+                                    type: number
+                                    format: double
+                                    nullable: true
+                                  max_quic_failure_ratio:
+                                    type: number
+                                    format: double
+                                    nullable: true
+                                  min_samples:
+                                    type: integer
+                                    format: int64
+                                nullable: true
                             nullable: true
                           run_logic:
                             type: object
@@ -150918,6 +151410,11 @@ paths:
                                         type: object
                                         description: 'Go type: PropertyAnalytics'
                                         additionalProperties: true
+                                    protocol_mix:
+                                      type: object
+                                      description: 'Go type: ProtocolMixExpectation'
+                                      additionalProperties: true
+                                      nullable: true
                                   nullable: true
                                 run_logic:
                                   type: object
@@ -152296,6 +152793,10 @@ paths:
                                       type: object
                                       description: 'Go type: PropertyAnalytics'
                                       additionalProperties: true
+                                  protocol_mix:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                                 nullable: true
                               run_logic:
                                 type: object
@@ -153449,6 +153950,11 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                description: 'Go type: ProtocolMixExpectation'
+                                additionalProperties: true
+                                nullable: true
                             nullable: true
                           run_logic:
                             type: object
@@ -154168,6 +154674,21 @@ paths:
                                 type: array
                                 items:
                                   type: string
+                        protocol_mix:
+                          type: object
+                          properties:
+                            max_fallback_ratio:
+                              type: number
+                              format: double
+                              nullable: true
+                            max_quic_failure_ratio:
+                              type: number
+                              format: double
+                              nullable: true
+                            min_samples:
+                              type: integer
+                              format: int64
+                          nullable: true
                       nullable: true
                     run_logic:
                       type: object
@@ -156176,6 +156697,21 @@ paths:
                                 - extraction
                                 - name
                                 - values
+                          protocol_mix:
+                            type: object
+                            properties:
+                              max_fallback_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_quic_failure_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              min_samples:
+                                type: integer
+                                format: int64
+                            nullable: true
                         nullable: true
                       run_logic:
                         type: object
@@ -157105,6 +157641,11 @@ paths:
                                     type: object
                                     description: 'Go type: PropertyAnalytics'
                                     additionalProperties: true
+                                protocol_mix:
+                                  type: object
+                                  description: 'Go type: ProtocolMixExpectation'
+                                  additionalProperties: true
+                                  nullable: true
                               nullable: true
                             run_logic:
                               type: object
@@ -159264,6 +159805,21 @@ paths:
                                 - extraction
                                 - name
                                 - values
+                          protocol_mix:
+                            type: object
+                            properties:
+                              max_fallback_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_quic_failure_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              min_samples:
+                                type: integer
+                                format: int64
+                            nullable: true
                         nullable: true
                       run_logic:
                         type: object
@@ -160193,6 +160749,11 @@ paths:
                                     type: object
                                     description: 'Go type: PropertyAnalytics'
                                     additionalProperties: true
+                                protocol_mix:
+                                  type: object
+                                  description: 'Go type: ProtocolMixExpectation'
+                                  additionalProperties: true
+                                  nullable: true
                               nullable: true
                             run_logic:
                               type: object
@@ -163160,6 +163721,21 @@ paths:
                                 - extraction
                                 - name
                                 - values
+                          protocol_mix:
+                            type: object
+                            properties:
+                              max_fallback_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_quic_failure_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              min_samples:
+                                type: integer
+                                format: int64
+                            nullable: true
                         nullable: true
                       run_logic:
                         type: object
@@ -164089,6 +164665,11 @@ paths:
                                     type: object
                                     description: 'Go type: PropertyAnalytics'
                                     additionalProperties: true
+                                protocol_mix:
+                                  type: object
+                                  description: 'Go type: ProtocolMixExpectation'
+                                  additionalProperties: true
+                                  nullable: true
                               nullable: true
                             run_logic:
                               type: object
@@ -165819,6 +166400,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             nullable: true
                           run_logic:
                             type: object
@@ -169363,6 +169948,10 @@ paths:
                                 type: object
                                 description: 'Go type: PropertyAnalytics'
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                           nullable: true
                         run_logic:
                           type: object
@@ -171232,6 +171821,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             nullable: true
                           run_logic:
                             type: object
@@ -173306,6 +173899,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             nullable: true
                           run_logic:
                             type: object
@@ -174978,6 +175575,10 @@ paths:
                                 type: object
                                 description: 'Go type: PropertyAnalytics'
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                           nullable: true
                         run_logic:
                           type: object
@@ -176847,6 +177448,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             nullable: true
                           run_logic:
                             type: object
@@ -178357,6 +178962,11 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                description: 'Go type: ProtocolMixExpectation'
+                                additionalProperties: true
+                                nullable: true
                             nullable: true
                           run_logic:
                             type: object
@@ -179076,6 +179686,21 @@ paths:
                                 type: array
                                 items:
                                   type: string
+                        protocol_mix:
+                          type: object
+                          properties:
+                            max_fallback_ratio:
+                              type: number
+                              format: double
+                              nullable: true
+                            max_quic_failure_ratio:
+                              type: number
+                              format: double
+                              nullable: true
+                            min_samples:
+                              type: integer
+                              format: int64
+                          nullable: true
                       nullable: true
                     run_logic:
                       type: object
@@ -195828,6 +196453,21 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              properties:
+                                max_fallback_ratio:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                max_quic_failure_ratio:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                min_samples:
+                                  type: integer
+                                  format: int64
+                              nullable: true
                         run_logic:
                           type: object
                           properties:
@@ -198824,6 +199464,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                           run_logic:
                             type: object
                             properties:
@@ -201923,6 +202567,10 @@ paths:
                                       type: object
                                       description: 'Go type: PropertyAnalytics'
                                       additionalProperties: true
+                                  protocol_mix:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                               run_logic:
                                 type: object
                                 properties:
@@ -203868,6 +204516,10 @@ paths:
                                       type: object
                                       description: 'Go type: PropertyAnalytics'
                                       additionalProperties: true
+                                  protocol_mix:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                               run_logic:
                                 type: object
                                 properties:
@@ -206069,6 +206721,21 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              properties:
+                                max_fallback_ratio:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                max_quic_failure_ratio:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                min_samples:
+                                  type: integer
+                                  format: int64
+                              nullable: true
                         run_logic:
                           type: object
                           properties:
@@ -209063,6 +209730,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                           run_logic:
                             type: object
                             properties:
@@ -212090,6 +212761,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                           run_logic:
                             type: object
                             properties:
@@ -214233,6 +214908,10 @@ paths:
                                 type: object
                                 description: 'Go type: PropertyAnalytics'
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                         run_logic:
                           type: object
                           properties:
@@ -218499,6 +219178,10 @@ paths:
                                 type: object
                                 description: 'Go type: PropertyAnalytics'
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                         run_logic:
                           type: object
                           properties:
@@ -223442,6 +224125,10 @@ paths:
                                 type: object
                                 description: 'Go type: PropertyAnalytics'
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                         run_logic:
                           type: object
                           properties:
@@ -225589,6 +226276,10 @@ paths:
                                 type: object
                                 description: 'Go type: PropertyAnalytics'
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                         run_logic:
                           type: object
                           properties:
@@ -230618,6 +231309,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                           run_logic:
                             type: object
                             properties:
@@ -234364,6 +235059,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                           run_logic:
                             type: object
                             properties:
@@ -236325,6 +237024,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                           run_logic:
                             type: object
                             properties:
@@ -238377,6 +239080,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                           run_logic:
                             type: object
                             properties:
@@ -240342,6 +241049,10 @@ paths:
                                 type: object
                                 description: 'Go type: PropertyAnalytics'
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                         run_logic:
                           type: object
                           properties:
@@ -242243,6 +242954,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                           run_logic:
                             type: object
                             properties:
@@ -246221,6 +246936,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                           run_logic:
                             type: object
                             properties:
@@ -248548,6 +249267,10 @@ paths:
                                 type: object
                                 description: 'Go type: PropertyAnalytics'
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                         run_logic:
                           type: object
                           properties:
@@ -252513,6 +253236,10 @@ paths:
                                 type: object
                                 description: 'Go type: PropertyAnalytics'
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                         run_logic:
                           type: object
                           properties:
@@ -254426,6 +255153,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                           run_logic:
                             type: object
                             properties:
@@ -256585,6 +257316,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                           run_logic:
                             type: object
                             properties:
@@ -258770,6 +259505,10 @@ paths:
                                 type: object
                                 description: 'Go type: PropertyAnalytics'
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                         run_logic:
                           type: object
                           properties:
@@ -262786,6 +263525,10 @@ paths:
                                 type: object
                                 description: 'Go type: PropertyAnalytics'
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                         run_logic:
                           type: object
                           properties:
@@ -265643,6 +266386,11 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                description: 'Go type: ProtocolMixExpectation'
+                                additionalProperties: true
+                                nullable: true
                           run_logic:
                             type: object
                             properties:
@@ -267429,6 +268177,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                           run_logic:
                             type: object
                             properties:
@@ -269657,6 +270409,11 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                description: 'Go type: ProtocolMixExpectation'
+                                additionalProperties: true
+                                nullable: true
                           run_logic:
                             type: object
                             properties:
@@ -271420,6 +272177,11 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                description: 'Go type: ProtocolMixExpectation'
+                                additionalProperties: true
+                                nullable: true
                           run_logic:
                             type: object
                             properties:
@@ -273610,6 +274372,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                           run_logic:
                             type: object
                             properties:
@@ -276663,6 +277429,10 @@ paths:
                                 type: object
                                 description: 'Go type: PropertyAnalytics'
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                         run_logic:
                           type: object
                           properties:
@@ -279071,6 +279841,10 @@ paths:
                                 type: object
                                 description: 'Go type: PropertyAnalytics'
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                         run_logic:
                           type: object
                           properties:
@@ -282613,6 +283387,10 @@ paths:
                                       type: object
                                       description: 'Go type: PropertyAnalytics'
                                       additionalProperties: true
+                                  protocol_mix:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                               run_logic:
                                 type: object
                                 properties:
@@ -284545,6 +285323,10 @@ paths:
                                       type: object
                                       description: 'Go type: PropertyAnalytics'
                                       additionalProperties: true
+                                  protocol_mix:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                               run_logic:
                                 type: object
                                 properties:
@@ -286409,6 +287191,11 @@ paths:
                                         type: object
                                         description: 'Go type: PropertyAnalytics'
                                         additionalProperties: true
+                                    protocol_mix:
+                                      type: object
+                                      description: 'Go type: ProtocolMixExpectation'
+                                      additionalProperties: true
+                                      nullable: true
                                 run_logic:
                                   type: object
                                   properties:
@@ -287994,6 +288781,11 @@ paths:
                                         type: object
                                         description: 'Go type: PropertyAnalytics'
                                         additionalProperties: true
+                                    protocol_mix:
+                                      type: object
+                                      description: 'Go type: ProtocolMixExpectation'
+                                      additionalProperties: true
+                                      nullable: true
                                 run_logic:
                                   type: object
                                   properties:
@@ -290021,6 +290813,10 @@ paths:
                                       type: object
                                       description: 'Go type: PropertyAnalytics'
                                       additionalProperties: true
+                                  protocol_mix:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                               run_logic:
                                 type: object
                                 properties:
@@ -291953,6 +292749,10 @@ paths:
                                       type: object
                                       description: 'Go type: PropertyAnalytics'
                                       additionalProperties: true
+                                  protocol_mix:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                               run_logic:
                                 type: object
                                 properties:
@@ -293817,6 +294617,11 @@ paths:
                                         type: object
                                         description: 'Go type: PropertyAnalytics'
                                         additionalProperties: true
+                                    protocol_mix:
+                                      type: object
+                                      description: 'Go type: ProtocolMixExpectation'
+                                      additionalProperties: true
+                                      nullable: true
                                 run_logic:
                                   type: object
                                   properties:
@@ -295402,6 +296207,11 @@ paths:
                                         type: object
                                         description: 'Go type: PropertyAnalytics'
                                         additionalProperties: true
+                                    protocol_mix:
+                                      type: object
+                                      description: 'Go type: ProtocolMixExpectation'
+                                      additionalProperties: true
+                                      nullable: true
                                 run_logic:
                                   type: object
                                   properties:
@@ -297470,6 +298280,10 @@ paths:
                                 type: object
                                 description: 'Go type: PropertyAnalytics'
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                         run_logic:
                           type: object
                           properties:
@@ -299358,6 +300172,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                           run_logic:
                             type: object
                             properties:
@@ -301372,6 +302190,10 @@ paths:
                                 type: object
                                 description: 'Go type: PropertyAnalytics'
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                         run_logic:
                           type: object
                           properties:
@@ -303105,6 +303927,11 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                description: 'Go type: ProtocolMixExpectation'
+                                additionalProperties: true
+                                nullable: true
                           run_logic:
                             type: object
                             properties:
@@ -304746,6 +305573,10 @@ paths:
                                 type: object
                                 description: 'Go type: PropertyAnalytics'
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                         run_logic:
                           type: object
                           properties:
@@ -306755,6 +307586,10 @@ paths:
                                 type: object
                                 description: 'Go type: PropertyAnalytics'
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                         run_logic:
                           type: object
                           properties:
@@ -308884,6 +309719,10 @@ paths:
                                 type: object
                                 description: 'Go type: PropertyAnalytics'
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                         run_logic:
                           type: object
                           properties:
@@ -312904,6 +313743,10 @@ paths:
                                 type: object
                                 description: 'Go type: PropertyAnalytics'
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                         run_logic:
                           type: object
                           properties:
@@ -314819,6 +315662,10 @@ paths:
                                 type: object
                                 description: 'Go type: PropertyAnalytics'
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                         run_logic:
                           type: object
                           properties:
@@ -316701,6 +317548,10 @@ paths:
                                       type: object
                                       description: 'Go type: PropertyAnalytics'
                                       additionalProperties: true
+                                  protocol_mix:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                               run_logic:
                                 type: object
                                 properties:
@@ -318625,6 +319476,10 @@ paths:
                                       type: object
                                       description: 'Go type: PropertyAnalytics'
                                       additionalProperties: true
+                                  protocol_mix:
+                                    type: object
+                                    additionalProperties: true
+                                    nullable: true
                               run_logic:
                                 type: object
                                 properties:
@@ -320861,6 +321716,21 @@ paths:
                               items:
                                 type: object
                                 additionalProperties: true
+                            protocol_mix:
+                              type: object
+                              properties:
+                                max_fallback_ratio:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                max_quic_failure_ratio:
+                                  type: number
+                                  format: double
+                                  nullable: true
+                                min_samples:
+                                  type: integer
+                                  format: int64
+                              nullable: true
                         run_logic:
                           type: object
                           properties:
@@ -331881,6 +332751,11 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                description: 'Go type: ProtocolMixExpectation'
+                                additionalProperties: true
+                                nullable: true
                             nullable: true
                           run_logic:
                             type: object
@@ -332630,6 +333505,21 @@ paths:
                                 type: array
                                 items:
                                   type: string
+                        protocol_mix:
+                          type: object
+                          properties:
+                            max_fallback_ratio:
+                              type: number
+                              format: double
+                              nullable: true
+                            max_quic_failure_ratio:
+                              type: number
+                              format: double
+                              nullable: true
+                            min_samples:
+                              type: integer
+                              format: int64
+                          nullable: true
                       nullable: true
                     run_logic:
                       type: object
@@ -336081,6 +336971,11 @@ paths:
                                     type: object
                                     description: 'Go type: PropertyAnalytics'
                                     additionalProperties: true
+                                protocol_mix:
+                                  type: object
+                                  description: 'Go type: ProtocolMixExpectation'
+                                  additionalProperties: true
+                                  nullable: true
                               nullable: true
                             run_logic:
                               type: object
@@ -337100,6 +337995,108 @@ paths:
                               - transactions
                               - vusers
                             nullable: true
+                        http_versions:
+                          type: object
+                          properties:
+                            actions:
+                              type: integer
+                              format: int64
+                            attempts:
+                              type: integer
+                              format: int64
+                            by_fallback:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            by_quic_error:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            by_selection:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            by_version:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            fallback_ratio:
+                              type: object
+                              properties:
+                                denominator:
+                                  type: integer
+                                  format: int64
+                                numerator:
+                                  type: integer
+                                  format: int64
+                                value:
+                                  type: number
+                                  format: double
+                              required:
+                                - denominator
+                                - numerator
+                                - value
+                            fell_back:
+                              type: integer
+                              format: int64
+                            finding:
+                              type: object
+                              properties:
+                                breaches:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunArchiveProtocolMixBreach'
+                                    additionalProperties: true
+                                summary:
+                                  type: string
+                                top_reasons:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunArchiveProtocolMixReason'
+                                    additionalProperties: true
+                              required:
+                                - breaches
+                                - summary
+                              nullable: true
+                            http3_policies:
+                              type: integer
+                              format: int64
+                            quic_attempted:
+                              type: integer
+                              format: int64
+                            quic_failed:
+                              type: integer
+                              format: int64
+                            quic_failure_ratio:
+                              type: object
+                              properties:
+                                denominator:
+                                  type: integer
+                                  format: int64
+                                numerator:
+                                  type: integer
+                                  format: int64
+                                value:
+                                  type: number
+                                  format: double
+                              required:
+                                - denominator
+                                - numerator
+                                - value
+                            upgrade_eligible:
+                              type: integer
+                              format: int64
+                          required:
+                            - actions
+                            - fallback_ratio
+                            - quic_failure_ratio
+                          nullable: true
                         latency:
                           type: object
                           properties:
@@ -340746,6 +341743,108 @@ paths:
                             - transactions
                             - vusers
                           nullable: true
+                      http_versions:
+                        type: object
+                        properties:
+                          actions:
+                            type: integer
+                            format: int64
+                          attempts:
+                            type: integer
+                            format: int64
+                          by_fallback:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          by_quic_error:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          by_selection:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          by_version:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          fallback_ratio:
+                            type: object
+                            properties:
+                              denominator:
+                                type: integer
+                                format: int64
+                              numerator:
+                                type: integer
+                                format: int64
+                              value:
+                                type: number
+                                format: double
+                            required:
+                              - denominator
+                              - numerator
+                              - value
+                          fell_back:
+                            type: integer
+                            format: int64
+                          finding:
+                            type: object
+                            properties:
+                              breaches:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunArchiveProtocolMixBreach'
+                                  additionalProperties: true
+                              summary:
+                                type: string
+                              top_reasons:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunArchiveProtocolMixReason'
+                                  additionalProperties: true
+                            required:
+                              - breaches
+                              - summary
+                            nullable: true
+                          http3_policies:
+                            type: integer
+                            format: int64
+                          quic_attempted:
+                            type: integer
+                            format: int64
+                          quic_failed:
+                            type: integer
+                            format: int64
+                          quic_failure_ratio:
+                            type: object
+                            properties:
+                              denominator:
+                                type: integer
+                                format: int64
+                              numerator:
+                                type: integer
+                                format: int64
+                              value:
+                                type: number
+                                format: double
+                            required:
+                              - denominator
+                              - numerator
+                              - value
+                          upgrade_eligible:
+                            type: integer
+                            format: int64
+                        required:
+                          - actions
+                          - fallback_ratio
+                          - quic_failure_ratio
+                        nullable: true
                       latency:
                         type: object
                         properties:
@@ -345342,6 +346441,21 @@ paths:
                                 - extraction
                                 - name
                                 - values
+                          protocol_mix:
+                            type: object
+                            properties:
+                              max_fallback_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_quic_failure_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              min_samples:
+                                type: integer
+                                format: int64
+                            nullable: true
                         nullable: true
                       run_logic:
                         type: object
@@ -349215,6 +350329,11 @@ paths:
                                     type: object
                                     description: 'Go type: PropertyAnalytics'
                                     additionalProperties: true
+                                protocol_mix:
+                                  type: object
+                                  description: 'Go type: ProtocolMixExpectation'
+                                  additionalProperties: true
+                                  nullable: true
                               nullable: true
                             run_logic:
                               type: object
@@ -350234,6 +351353,108 @@ paths:
                               - transactions
                               - vusers
                             nullable: true
+                        http_versions:
+                          type: object
+                          properties:
+                            actions:
+                              type: integer
+                              format: int64
+                            attempts:
+                              type: integer
+                              format: int64
+                            by_fallback:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            by_quic_error:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            by_selection:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            by_version:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            fallback_ratio:
+                              type: object
+                              properties:
+                                denominator:
+                                  type: integer
+                                  format: int64
+                                numerator:
+                                  type: integer
+                                  format: int64
+                                value:
+                                  type: number
+                                  format: double
+                              required:
+                                - denominator
+                                - numerator
+                                - value
+                            fell_back:
+                              type: integer
+                              format: int64
+                            finding:
+                              type: object
+                              properties:
+                                breaches:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunArchiveProtocolMixBreach'
+                                    additionalProperties: true
+                                summary:
+                                  type: string
+                                top_reasons:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunArchiveProtocolMixReason'
+                                    additionalProperties: true
+                              required:
+                                - breaches
+                                - summary
+                              nullable: true
+                            http3_policies:
+                              type: integer
+                              format: int64
+                            quic_attempted:
+                              type: integer
+                              format: int64
+                            quic_failed:
+                              type: integer
+                              format: int64
+                            quic_failure_ratio:
+                              type: object
+                              properties:
+                                denominator:
+                                  type: integer
+                                  format: int64
+                                numerator:
+                                  type: integer
+                                  format: int64
+                                value:
+                                  type: number
+                                  format: double
+                              required:
+                                - denominator
+                                - numerator
+                                - value
+                            upgrade_eligible:
+                              type: integer
+                              format: int64
+                          required:
+                            - actions
+                            - fallback_ratio
+                            - quic_failure_ratio
+                          nullable: true
                         latency:
                           type: object
                           properties:
@@ -353880,6 +355101,108 @@ paths:
                             - transactions
                             - vusers
                           nullable: true
+                      http_versions:
+                        type: object
+                        properties:
+                          actions:
+                            type: integer
+                            format: int64
+                          attempts:
+                            type: integer
+                            format: int64
+                          by_fallback:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          by_quic_error:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          by_selection:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          by_version:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          fallback_ratio:
+                            type: object
+                            properties:
+                              denominator:
+                                type: integer
+                                format: int64
+                              numerator:
+                                type: integer
+                                format: int64
+                              value:
+                                type: number
+                                format: double
+                            required:
+                              - denominator
+                              - numerator
+                              - value
+                          fell_back:
+                            type: integer
+                            format: int64
+                          finding:
+                            type: object
+                            properties:
+                              breaches:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunArchiveProtocolMixBreach'
+                                  additionalProperties: true
+                              summary:
+                                type: string
+                              top_reasons:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunArchiveProtocolMixReason'
+                                  additionalProperties: true
+                            required:
+                              - breaches
+                              - summary
+                            nullable: true
+                          http3_policies:
+                            type: integer
+                            format: int64
+                          quic_attempted:
+                            type: integer
+                            format: int64
+                          quic_failed:
+                            type: integer
+                            format: int64
+                          quic_failure_ratio:
+                            type: object
+                            properties:
+                              denominator:
+                                type: integer
+                                format: int64
+                              numerator:
+                                type: integer
+                                format: int64
+                              value:
+                                type: number
+                                format: double
+                            required:
+                              - denominator
+                              - numerator
+                              - value
+                          upgrade_eligible:
+                            type: integer
+                            format: int64
+                        required:
+                          - actions
+                          - fallback_ratio
+                          - quic_failure_ratio
+                        nullable: true
                       latency:
                         type: object
                         properties:
@@ -358476,6 +359799,21 @@ paths:
                                 - extraction
                                 - name
                                 - values
+                          protocol_mix:
+                            type: object
+                            properties:
+                              max_fallback_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_quic_failure_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              min_samples:
+                                type: integer
+                                format: int64
+                            nullable: true
                         nullable: true
                       run_logic:
                         type: object
@@ -363887,6 +365225,21 @@ paths:
                         nullable: true
                       project_id:
                         type: string
+                      protocol_mix:
+                        type: object
+                        properties:
+                          max_fallback_ratio:
+                            type: number
+                            format: double
+                            nullable: true
+                          max_quic_failure_ratio:
+                            type: number
+                            format: double
+                            nullable: true
+                          min_samples:
+                            type: integer
+                            format: int64
+                        nullable: true
                       release_id:
                         type: string
                       requested_at:
@@ -364293,6 +365646,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             nullable: true
                           run_logic:
                             type: object
@@ -366599,6 +367956,21 @@ paths:
                         nullable: true
                       project_id:
                         type: string
+                      protocol_mix:
+                        type: object
+                        properties:
+                          max_fallback_ratio:
+                            type: number
+                            format: double
+                            nullable: true
+                          max_quic_failure_ratio:
+                            type: number
+                            format: double
+                            nullable: true
+                          min_samples:
+                            type: integer
+                            format: int64
+                        nullable: true
                       release_id:
                         type: string
                       requested_at:
@@ -367005,6 +368377,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             nullable: true
                           run_logic:
                             type: object
@@ -377660,6 +379036,21 @@ paths:
                             nullable: true
                           project_id:
                             type: string
+                          protocol_mix:
+                            type: object
+                            properties:
+                              max_fallback_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_quic_failure_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              min_samples:
+                                type: integer
+                                format: int64
+                            nullable: true
                           release_id:
                             type: string
                           requested_at:
@@ -379082,6 +380473,21 @@ paths:
                             nullable: true
                           project_id:
                             type: string
+                          protocol_mix:
+                            type: object
+                            properties:
+                              max_fallback_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_quic_failure_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              min_samples:
+                                type: integer
+                                format: int64
+                            nullable: true
                           release_id:
                             type: string
                           requested_at:
@@ -380871,6 +382277,38 @@ paths:
                             max_ttfb_ms:
                               type: number
                               format: double
+                      by_http_version:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            avg_connect_ms:
+                              type: number
+                              format: double
+                            avg_dns_ms:
+                              type: number
+                              format: double
+                            avg_tls_ms:
+                              type: number
+                              format: double
+                            avg_ttfb_ms:
+                              type: number
+                              format: double
+                            count:
+                              type: integer
+                              format: int64
+                            max_connect_ms:
+                              type: number
+                              format: double
+                            max_dns_ms:
+                              type: number
+                              format: double
+                            max_tls_ms:
+                              type: number
+                              format: double
+                            max_ttfb_ms:
+                              type: number
+                              format: double
                       overall:
                         type: object
                         properties:
@@ -380904,6 +382342,157 @@ paths:
                       samples:
                         type: integer
                         format: int64
+                      version_mix:
+                        type: object
+                        properties:
+                          actions:
+                            type: integer
+                            format: int64
+                          attempts:
+                            type: integer
+                            format: int64
+                          by_fallback:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          by_quic_error:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          by_selection:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          by_version:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          fallback_ratio:
+                            type: object
+                            properties:
+                              denominator:
+                                type: integer
+                                format: int64
+                              numerator:
+                                type: integer
+                                format: int64
+                              value:
+                                type: number
+                                format: double
+                            required:
+                              - denominator
+                              - numerator
+                              - value
+                          fell_back:
+                            type: integer
+                            format: int64
+                          finding:
+                            type: object
+                            properties:
+                              breaches:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunArchiveProtocolMixBreach'
+                                  additionalProperties: true
+                              summary:
+                                type: string
+                              top_reasons:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunArchiveProtocolMixReason'
+                                  additionalProperties: true
+                            required:
+                              - breaches
+                              - summary
+                            nullable: true
+                          http3_policies:
+                            type: integer
+                            format: int64
+                          quic_attempted:
+                            type: integer
+                            format: int64
+                          quic_failed:
+                            type: integer
+                            format: int64
+                          quic_failure_ratio:
+                            type: object
+                            properties:
+                              denominator:
+                                type: integer
+                                format: int64
+                              numerator:
+                                type: integer
+                                format: int64
+                              value:
+                                type: number
+                                format: double
+                            required:
+                              - denominator
+                              - numerator
+                              - value
+                          upgrade_eligible:
+                            type: integer
+                            format: int64
+                        required:
+                          - actions
+                          - fallback_ratio
+                          - quic_failure_ratio
+                        nullable: true
+                      version_mix_by_action:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            actions:
+                              type: integer
+                              format: int64
+                            attempts:
+                              type: integer
+                              format: int64
+                            by_fallback:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            by_quic_error:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            by_selection:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            by_version:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            fell_back:
+                              type: integer
+                              format: int64
+                            http3_policies:
+                              type: integer
+                              format: int64
+                            quic_attempted:
+                              type: integer
+                              format: int64
+                            quic_failed:
+                              type: integer
+                              format: int64
+                            upgrade_eligible:
+                              type: integer
+                              format: int64
+                          required:
+                            - actions
+                          nullable: true
                   oracle_db:
                     type: object
                     properties:
@@ -392384,6 +393973,11 @@ paths:
                                     type: object
                                     description: 'Go type: PropertyAnalytics'
                                     additionalProperties: true
+                                protocol_mix:
+                                  type: object
+                                  description: 'Go type: ProtocolMixExpectation'
+                                  additionalProperties: true
+                                  nullable: true
                               nullable: true
                             run_logic:
                               type: object
@@ -393403,6 +394997,108 @@ paths:
                               - transactions
                               - vusers
                             nullable: true
+                        http_versions:
+                          type: object
+                          properties:
+                            actions:
+                              type: integer
+                              format: int64
+                            attempts:
+                              type: integer
+                              format: int64
+                            by_fallback:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            by_quic_error:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            by_selection:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            by_version:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            fallback_ratio:
+                              type: object
+                              properties:
+                                denominator:
+                                  type: integer
+                                  format: int64
+                                numerator:
+                                  type: integer
+                                  format: int64
+                                value:
+                                  type: number
+                                  format: double
+                              required:
+                                - denominator
+                                - numerator
+                                - value
+                            fell_back:
+                              type: integer
+                              format: int64
+                            finding:
+                              type: object
+                              properties:
+                                breaches:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunArchiveProtocolMixBreach'
+                                    additionalProperties: true
+                                summary:
+                                  type: string
+                                top_reasons:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunArchiveProtocolMixReason'
+                                    additionalProperties: true
+                              required:
+                                - breaches
+                                - summary
+                              nullable: true
+                            http3_policies:
+                              type: integer
+                              format: int64
+                            quic_attempted:
+                              type: integer
+                              format: int64
+                            quic_failed:
+                              type: integer
+                              format: int64
+                            quic_failure_ratio:
+                              type: object
+                              properties:
+                                denominator:
+                                  type: integer
+                                  format: int64
+                                numerator:
+                                  type: integer
+                                  format: int64
+                                value:
+                                  type: number
+                                  format: double
+                              required:
+                                - denominator
+                                - numerator
+                                - value
+                            upgrade_eligible:
+                              type: integer
+                              format: int64
+                          required:
+                            - actions
+                            - fallback_ratio
+                            - quic_failure_ratio
+                          nullable: true
                         latency:
                           type: object
                           properties:
@@ -397049,6 +398745,108 @@ paths:
                             - transactions
                             - vusers
                           nullable: true
+                      http_versions:
+                        type: object
+                        properties:
+                          actions:
+                            type: integer
+                            format: int64
+                          attempts:
+                            type: integer
+                            format: int64
+                          by_fallback:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          by_quic_error:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          by_selection:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          by_version:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          fallback_ratio:
+                            type: object
+                            properties:
+                              denominator:
+                                type: integer
+                                format: int64
+                              numerator:
+                                type: integer
+                                format: int64
+                              value:
+                                type: number
+                                format: double
+                            required:
+                              - denominator
+                              - numerator
+                              - value
+                          fell_back:
+                            type: integer
+                            format: int64
+                          finding:
+                            type: object
+                            properties:
+                              breaches:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunArchiveProtocolMixBreach'
+                                  additionalProperties: true
+                              summary:
+                                type: string
+                              top_reasons:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunArchiveProtocolMixReason'
+                                  additionalProperties: true
+                            required:
+                              - breaches
+                              - summary
+                            nullable: true
+                          http3_policies:
+                            type: integer
+                            format: int64
+                          quic_attempted:
+                            type: integer
+                            format: int64
+                          quic_failed:
+                            type: integer
+                            format: int64
+                          quic_failure_ratio:
+                            type: object
+                            properties:
+                              denominator:
+                                type: integer
+                                format: int64
+                              numerator:
+                                type: integer
+                                format: int64
+                              value:
+                                type: number
+                                format: double
+                            required:
+                              - denominator
+                              - numerator
+                              - value
+                          upgrade_eligible:
+                            type: integer
+                            format: int64
+                        required:
+                          - actions
+                          - fallback_ratio
+                          - quic_failure_ratio
+                        nullable: true
                       latency:
                         type: object
                         properties:
@@ -401645,6 +403443,21 @@ paths:
                                 - extraction
                                 - name
                                 - values
+                          protocol_mix:
+                            type: object
+                            properties:
+                              max_fallback_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_quic_failure_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              min_samples:
+                                type: integer
+                                format: int64
+                            nullable: true
                         nullable: true
                       run_logic:
                         type: object
@@ -405462,6 +407275,11 @@ paths:
                                     type: object
                                     description: 'Go type: PropertyAnalytics'
                                     additionalProperties: true
+                                protocol_mix:
+                                  type: object
+                                  description: 'Go type: ProtocolMixExpectation'
+                                  additionalProperties: true
+                                  nullable: true
                               nullable: true
                             run_logic:
                               type: object
@@ -406481,6 +408299,108 @@ paths:
                               - transactions
                               - vusers
                             nullable: true
+                        http_versions:
+                          type: object
+                          properties:
+                            actions:
+                              type: integer
+                              format: int64
+                            attempts:
+                              type: integer
+                              format: int64
+                            by_fallback:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            by_quic_error:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            by_selection:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            by_version:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            fallback_ratio:
+                              type: object
+                              properties:
+                                denominator:
+                                  type: integer
+                                  format: int64
+                                numerator:
+                                  type: integer
+                                  format: int64
+                                value:
+                                  type: number
+                                  format: double
+                              required:
+                                - denominator
+                                - numerator
+                                - value
+                            fell_back:
+                              type: integer
+                              format: int64
+                            finding:
+                              type: object
+                              properties:
+                                breaches:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunArchiveProtocolMixBreach'
+                                    additionalProperties: true
+                                summary:
+                                  type: string
+                                top_reasons:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunArchiveProtocolMixReason'
+                                    additionalProperties: true
+                              required:
+                                - breaches
+                                - summary
+                              nullable: true
+                            http3_policies:
+                              type: integer
+                              format: int64
+                            quic_attempted:
+                              type: integer
+                              format: int64
+                            quic_failed:
+                              type: integer
+                              format: int64
+                            quic_failure_ratio:
+                              type: object
+                              properties:
+                                denominator:
+                                  type: integer
+                                  format: int64
+                                numerator:
+                                  type: integer
+                                  format: int64
+                                value:
+                                  type: number
+                                  format: double
+                              required:
+                                - denominator
+                                - numerator
+                                - value
+                            upgrade_eligible:
+                              type: integer
+                              format: int64
+                          required:
+                            - actions
+                            - fallback_ratio
+                            - quic_failure_ratio
+                          nullable: true
                         latency:
                           type: object
                           properties:
@@ -410127,6 +412047,108 @@ paths:
                             - transactions
                             - vusers
                           nullable: true
+                      http_versions:
+                        type: object
+                        properties:
+                          actions:
+                            type: integer
+                            format: int64
+                          attempts:
+                            type: integer
+                            format: int64
+                          by_fallback:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          by_quic_error:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          by_selection:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          by_version:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          fallback_ratio:
+                            type: object
+                            properties:
+                              denominator:
+                                type: integer
+                                format: int64
+                              numerator:
+                                type: integer
+                                format: int64
+                              value:
+                                type: number
+                                format: double
+                            required:
+                              - denominator
+                              - numerator
+                              - value
+                          fell_back:
+                            type: integer
+                            format: int64
+                          finding:
+                            type: object
+                            properties:
+                              breaches:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunArchiveProtocolMixBreach'
+                                  additionalProperties: true
+                              summary:
+                                type: string
+                              top_reasons:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunArchiveProtocolMixReason'
+                                  additionalProperties: true
+                            required:
+                              - breaches
+                              - summary
+                            nullable: true
+                          http3_policies:
+                            type: integer
+                            format: int64
+                          quic_attempted:
+                            type: integer
+                            format: int64
+                          quic_failed:
+                            type: integer
+                            format: int64
+                          quic_failure_ratio:
+                            type: object
+                            properties:
+                              denominator:
+                                type: integer
+                                format: int64
+                              numerator:
+                                type: integer
+                                format: int64
+                              value:
+                                type: number
+                                format: double
+                            required:
+                              - denominator
+                              - numerator
+                              - value
+                          upgrade_eligible:
+                            type: integer
+                            format: int64
+                        required:
+                          - actions
+                          - fallback_ratio
+                          - quic_failure_ratio
+                        nullable: true
                       latency:
                         type: object
                         properties:
@@ -414723,6 +416745,21 @@ paths:
                                 - extraction
                                 - name
                                 - values
+                          protocol_mix:
+                            type: object
+                            properties:
+                              max_fallback_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_quic_failure_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              min_samples:
+                                type: integer
+                                format: int64
+                            nullable: true
                         nullable: true
                       run_logic:
                         type: object
@@ -417089,6 +419126,21 @@ paths:
                                 - extraction
                                 - name
                                 - values
+                          protocol_mix:
+                            type: object
+                            properties:
+                              max_fallback_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_quic_failure_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              min_samples:
+                                type: integer
+                                format: int64
+                            nullable: true
                         nullable: true
                       run_logic:
                         type: object
@@ -417906,6 +419958,21 @@ paths:
                                 - extraction
                                 - name
                                 - values
+                          protocol_mix:
+                            type: object
+                            properties:
+                              max_fallback_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_quic_failure_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              min_samples:
+                                type: integer
+                                format: int64
+                            nullable: true
                         nullable: true
                       run_logic:
                         type: object
@@ -418681,6 +420748,21 @@ paths:
                                 - extraction
                                 - name
                                 - values
+                          protocol_mix:
+                            type: object
+                            properties:
+                              max_fallback_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_quic_failure_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              min_samples:
+                                type: integer
+                                format: int64
+                            nullable: true
                         nullable: true
                       run_logic:
                         type: object
@@ -419456,6 +421538,21 @@ paths:
                                 - extraction
                                 - name
                                 - values
+                          protocol_mix:
+                            type: object
+                            properties:
+                              max_fallback_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_quic_failure_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              min_samples:
+                                type: integer
+                                format: int64
+                            nullable: true
                         nullable: true
                       run_logic:
                         type: object
@@ -420271,6 +422368,21 @@ paths:
                                 type: array
                                 items:
                                   type: string
+                        protocol_mix:
+                          type: object
+                          properties:
+                            max_fallback_ratio:
+                              type: number
+                              format: double
+                              nullable: true
+                            max_quic_failure_ratio:
+                              type: number
+                              format: double
+                              nullable: true
+                            min_samples:
+                              type: integer
+                              format: int64
+                          nullable: true
                       nullable: true
                     run_logic:
                       type: object
@@ -421059,6 +423171,21 @@ paths:
                                 - extraction
                                 - name
                                 - values
+                          protocol_mix:
+                            type: object
+                            properties:
+                              max_fallback_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_quic_failure_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              min_samples:
+                                type: integer
+                                format: int64
+                            nullable: true
                         nullable: true
                       run_logic:
                         type: object
@@ -424331,6 +426458,11 @@ paths:
                                     type: object
                                     description: 'Go type: PropertyAnalytics'
                                     additionalProperties: true
+                                protocol_mix:
+                                  type: object
+                                  description: 'Go type: ProtocolMixExpectation'
+                                  additionalProperties: true
+                                  nullable: true
                               nullable: true
                             run_logic:
                               type: object
@@ -425350,6 +427482,108 @@ paths:
                               - transactions
                               - vusers
                             nullable: true
+                        http_versions:
+                          type: object
+                          properties:
+                            actions:
+                              type: integer
+                              format: int64
+                            attempts:
+                              type: integer
+                              format: int64
+                            by_fallback:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            by_quic_error:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            by_selection:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            by_version:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            fallback_ratio:
+                              type: object
+                              properties:
+                                denominator:
+                                  type: integer
+                                  format: int64
+                                numerator:
+                                  type: integer
+                                  format: int64
+                                value:
+                                  type: number
+                                  format: double
+                              required:
+                                - denominator
+                                - numerator
+                                - value
+                            fell_back:
+                              type: integer
+                              format: int64
+                            finding:
+                              type: object
+                              properties:
+                                breaches:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunArchiveProtocolMixBreach'
+                                    additionalProperties: true
+                                summary:
+                                  type: string
+                                top_reasons:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunArchiveProtocolMixReason'
+                                    additionalProperties: true
+                              required:
+                                - breaches
+                                - summary
+                              nullable: true
+                            http3_policies:
+                              type: integer
+                              format: int64
+                            quic_attempted:
+                              type: integer
+                              format: int64
+                            quic_failed:
+                              type: integer
+                              format: int64
+                            quic_failure_ratio:
+                              type: object
+                              properties:
+                                denominator:
+                                  type: integer
+                                  format: int64
+                                numerator:
+                                  type: integer
+                                  format: int64
+                                value:
+                                  type: number
+                                  format: double
+                              required:
+                                - denominator
+                                - numerator
+                                - value
+                            upgrade_eligible:
+                              type: integer
+                              format: int64
+                          required:
+                            - actions
+                            - fallback_ratio
+                            - quic_failure_ratio
+                          nullable: true
                         latency:
                           type: object
                           properties:
@@ -428996,6 +431230,108 @@ paths:
                             - transactions
                             - vusers
                           nullable: true
+                      http_versions:
+                        type: object
+                        properties:
+                          actions:
+                            type: integer
+                            format: int64
+                          attempts:
+                            type: integer
+                            format: int64
+                          by_fallback:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          by_quic_error:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          by_selection:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          by_version:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          fallback_ratio:
+                            type: object
+                            properties:
+                              denominator:
+                                type: integer
+                                format: int64
+                              numerator:
+                                type: integer
+                                format: int64
+                              value:
+                                type: number
+                                format: double
+                            required:
+                              - denominator
+                              - numerator
+                              - value
+                          fell_back:
+                            type: integer
+                            format: int64
+                          finding:
+                            type: object
+                            properties:
+                              breaches:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunArchiveProtocolMixBreach'
+                                  additionalProperties: true
+                              summary:
+                                type: string
+                              top_reasons:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunArchiveProtocolMixReason'
+                                  additionalProperties: true
+                            required:
+                              - breaches
+                              - summary
+                            nullable: true
+                          http3_policies:
+                            type: integer
+                            format: int64
+                          quic_attempted:
+                            type: integer
+                            format: int64
+                          quic_failed:
+                            type: integer
+                            format: int64
+                          quic_failure_ratio:
+                            type: object
+                            properties:
+                              denominator:
+                                type: integer
+                                format: int64
+                              numerator:
+                                type: integer
+                                format: int64
+                              value:
+                                type: number
+                                format: double
+                            required:
+                              - denominator
+                              - numerator
+                              - value
+                          upgrade_eligible:
+                            type: integer
+                            format: int64
+                        required:
+                          - actions
+                          - fallback_ratio
+                          - quic_failure_ratio
+                        nullable: true
                       latency:
                         type: object
                         properties:
@@ -433592,6 +435928,21 @@ paths:
                                 - extraction
                                 - name
                                 - values
+                          protocol_mix:
+                            type: object
+                            properties:
+                              max_fallback_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              max_quic_failure_ratio:
+                                type: number
+                                format: double
+                                nullable: true
+                              min_samples:
+                                type: integer
+                                format: int64
+                            nullable: true
                         nullable: true
                       run_logic:
                         type: object
@@ -435553,6 +437904,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             nullable: true
                           run_logic:
                             type: object
@@ -437047,6 +439402,10 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                             nullable: true
                           run_logic:
                             type: object
@@ -438622,6 +440981,11 @@ paths:
                                     type: object
                                     description: 'Go type: PropertyAnalytics'
                                     additionalProperties: true
+                                protocol_mix:
+                                  type: object
+                                  description: 'Go type: ProtocolMixExpectation'
+                                  additionalProperties: true
+                                  nullable: true
                               nullable: true
                             run_logic:
                               type: object
@@ -440129,6 +442493,108 @@ paths:
                               - transactions
                               - vusers
                             nullable: true
+                        http_versions:
+                          type: object
+                          properties:
+                            actions:
+                              type: integer
+                              format: int64
+                            attempts:
+                              type: integer
+                              format: int64
+                            by_fallback:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            by_quic_error:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            by_selection:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            by_version:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            fallback_ratio:
+                              type: object
+                              properties:
+                                denominator:
+                                  type: integer
+                                  format: int64
+                                numerator:
+                                  type: integer
+                                  format: int64
+                                value:
+                                  type: number
+                                  format: double
+                              required:
+                                - denominator
+                                - numerator
+                                - value
+                            fell_back:
+                              type: integer
+                              format: int64
+                            finding:
+                              type: object
+                              properties:
+                                breaches:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunArchiveProtocolMixBreach'
+                                    additionalProperties: true
+                                summary:
+                                  type: string
+                                top_reasons:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: RunArchiveProtocolMixReason'
+                                    additionalProperties: true
+                              required:
+                                - breaches
+                                - summary
+                              nullable: true
+                            http3_policies:
+                              type: integer
+                              format: int64
+                            quic_attempted:
+                              type: integer
+                              format: int64
+                            quic_failed:
+                              type: integer
+                              format: int64
+                            quic_failure_ratio:
+                              type: object
+                              properties:
+                                denominator:
+                                  type: integer
+                                  format: int64
+                                numerator:
+                                  type: integer
+                                  format: int64
+                                value:
+                                  type: number
+                                  format: double
+                              required:
+                                - denominator
+                                - numerator
+                                - value
+                            upgrade_eligible:
+                              type: integer
+                              format: int64
+                          required:
+                            - actions
+                            - fallback_ratio
+                            - quic_failure_ratio
+                          nullable: true
                         latency:
                           type: object
                           properties:
@@ -443763,6 +446229,108 @@ paths:
                             - transactions
                             - vusers
                           nullable: true
+                      http_versions:
+                        type: object
+                        properties:
+                          actions:
+                            type: integer
+                            format: int64
+                          attempts:
+                            type: integer
+                            format: int64
+                          by_fallback:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          by_quic_error:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          by_selection:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          by_version:
+                            type: object
+                            additionalProperties:
+                              type: integer
+                              format: int64
+                          fallback_ratio:
+                            type: object
+                            properties:
+                              denominator:
+                                type: integer
+                                format: int64
+                              numerator:
+                                type: integer
+                                format: int64
+                              value:
+                                type: number
+                                format: double
+                            required:
+                              - denominator
+                              - numerator
+                              - value
+                          fell_back:
+                            type: integer
+                            format: int64
+                          finding:
+                            type: object
+                            properties:
+                              breaches:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunArchiveProtocolMixBreach'
+                                  additionalProperties: true
+                              summary:
+                                type: string
+                              top_reasons:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: RunArchiveProtocolMixReason'
+                                  additionalProperties: true
+                            required:
+                              - breaches
+                              - summary
+                            nullable: true
+                          http3_policies:
+                            type: integer
+                            format: int64
+                          quic_attempted:
+                            type: integer
+                            format: int64
+                          quic_failed:
+                            type: integer
+                            format: int64
+                          quic_failure_ratio:
+                            type: object
+                            properties:
+                              denominator:
+                                type: integer
+                                format: int64
+                              numerator:
+                                type: integer
+                                format: int64
+                              value:
+                                type: number
+                                format: double
+                            required:
+                              - denominator
+                              - numerator
+                              - value
+                          upgrade_eligible:
+                            type: integer
+                            format: int64
+                        required:
+                          - actions
+                          - fallback_ratio
+                          - quic_failure_ratio
+                        nullable: true
                       latency:
                         type: object
                         properties:
@@ -455701,6 +458269,11 @@ paths:
                                   type: object
                                   description: 'Go type: PropertyAnalytics'
                                   additionalProperties: true
+                              protocol_mix:
+                                type: object
+                                description: 'Go type: ProtocolMixExpectation'
+                                additionalProperties: true
+                                nullable: true
                             nullable: true
                           run_logic:
                             type: object
@@ -456450,6 +459023,21 @@ paths:
                                 type: array
                                 items:
                                   type: string
+                        protocol_mix:
+                          type: object
+                          properties:
+                            max_fallback_ratio:
+                              type: number
+                              format: double
+                              nullable: true
+                            max_quic_failure_ratio:
+                              type: number
+                              format: double
+                              nullable: true
+                            min_samples:
+                              type: integer
+                              format: int64
+                          nullable: true
                       nullable: true
                     run_logic:
                       type: object
@@ -457798,6 +460386,11 @@ paths:
                                     type: object
                                     description: 'Go type: PropertyAnalytics'
                                     additionalProperties: true
+                                protocol_mix:
+                                  type: object
+                                  description: 'Go type: ProtocolMixExpectation'
+                                  additionalProperties: true
+                                  nullable: true
                               nullable: true
                             run_logic:
                               type: object
@@ -459281,6 +461874,10 @@ paths:
                             type: object
                             description: 'Go type: PropertyAnalytics'
                             additionalProperties: true
+                        protocol_mix:
+                          type: object
+                          additionalProperties: true
+                          nullable: true
                       nullable: true
                     run_logic:
                       type: object

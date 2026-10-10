@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/rca"
@@ -247,6 +248,7 @@ type RunArchiveProvenance struct {
 	ComparisonMetrics         map[string]BaselineMetricDefinition `json:"comparison_metrics,omitempty"`
 	TerminationMode           string                              `json:"termination_mode,omitempty"`
 	CSVExports                []RunArchiveCSVExport               `json:"csv_exports,omitempty"`
+	ProtocolMix               *dsl.ProtocolMixExpectation         `json:"protocol_mix,omitempty"` // strictest Protocol Mix expectation across groups
 	ApplicationID             string                              `json:"application_id,omitempty"`
 	ReleaseID                 string                              `json:"release_id,omitempty"`
 	ScenarioID                string                              `json:"scenario_id,omitempty"`
@@ -388,6 +390,12 @@ type TransactionEvent struct {
 	SourceAction          string                    `json:"source_action,omitempty"`
 	SourceActionName      string                    `json:"source_action_name,omitempty"`
 	SourceProfile         string                    `json:"source_profile,omitempty"`
+	// HTTP version facts of a native HTTP action; the full receipt stays in
+	// protocol_evidence. HTTPVersion is the negotiated wire version (empty
+	// for a cache hit or a request that got no response).
+	HTTPVersion         string `json:"http_version,omitempty"`
+	HTTPVersionFallback string `json:"http_version_fallback,omitempty"`
+	AttemptCount        int    `json:"attempt_count,omitempty"`
 
 	// ExtractionDigests are the business-key digests of mapped extractions,
 	// computed from the raw values before scrubbing.
@@ -723,6 +731,14 @@ type RunArchiveNetworkPhaseSummary struct {
 	Overall      RunArchiveNetworkPhases            `json:"overall,omitempty"`
 	ByAction     map[string]RunArchiveNetworkPhases `json:"by_action,omitempty"`
 	ByDependency map[string]RunArchiveNetworkPhases `json:"by_dependency,omitempty"`
+	// ByHTTPVersion holds phase averages and maxima per negotiated wire
+	// version (1.1, 2, 3); cache hits and requests without a response are
+	// not counted.
+	ByHTTPVersion map[string]RunArchiveNetworkPhases `json:"by_http_version,omitempty"`
+	// VersionMix counts every HTTP action, measured phases or not;
+	// VersionMixByAction splits the same counts by action name.
+	VersionMix         *RunArchiveHTTPVersionMix           `json:"version_mix,omitempty"`
+	VersionMixByAction map[string]*protocol.HTTPVersionMix `json:"version_mix_by_action,omitempty"`
 }
 
 type RunArchiveNetworkPhases struct {

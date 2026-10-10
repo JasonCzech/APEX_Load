@@ -1103,6 +1103,7 @@ func cloneLiveMetrics(metrics *LiveMetrics) *LiveMetrics {
 	cloned.Messaging = protocol.CloneMessagingSummaries(metrics.Messaging)
 	cloned.Transactions = cloneTxMetricsMap(metrics.Transactions)
 	cloned.TransactionResponseTimeSLA = append([]TransactionResponseTimeSLAResult(nil), metrics.TransactionResponseTimeSLA...)
+	cloned.HTTPVersions = cloneRunArchiveHTTPVersionMix(metrics.HTTPVersions)
 	cloned.DependencyHealth = cloneTxMetricsMap(metrics.DependencyHealth)
 	cloned.DependencyMap = cloneLiveDependencyMap(metrics.DependencyMap)
 	cloned.ErrorPatterns = cloneLiveErrorPatterns(metrics.ErrorPatterns)

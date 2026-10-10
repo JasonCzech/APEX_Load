@@ -275,6 +275,18 @@
   font-variant-numeric: tabular-nums;
 }
 
+.http-versions-headline {
+  margin: 0 0 12px;
+  color: var(--text-primary);
+  font-weight: 600;
+  overflow-wrap: break-word;
+}
+
+.http-versions-card .goal-status-metric small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .goal-status-flags {
   display: flex;
   flex-wrap: wrap;

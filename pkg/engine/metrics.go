@@ -43,6 +43,9 @@ type MetricsCollector struct {
 	// names each group's protocol for the protocol dimension.
 	jointProjection *JointProjection
 	groupProtocols  map[string]string
+	// httpVersions counts every HTTP action since the start of the run; only
+	// the aggregation goroutine touches it.
+	httpVersions protocol.HTTPVersionMix
 }
 
 // SetJointProjection sets (or, with nil, clears) the run's joint evidence
@@ -129,6 +132,9 @@ type MetricsSnapshot struct {
 	Telemetry                  *TelemetryMetrics                      `json:"telemetry,omitempty"`
 	Resources                  *SystemResources                       `json:"resources,omitempty"`
 	TransactionResponseTimeSLA []TransactionResponseTimeSLACompliance `json:"transaction_response_time_sla,omitempty"`
+	// HTTPVersions is the run-to-date HTTP version mix (nil before the first
+	// HTTP action); unlike the window fields it is cumulative.
+	HTTPVersions *protocol.HTTPVersionMix `json:"http_versions,omitempty"`
 }
 
 // TransactionResponseTimeSLACompliance is a cumulative, successful-sample-only
@@ -731,6 +737,9 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	joint := newJointAccumulator(jointProjection)
 	for _, r := range results {
 		joint.add(jointProjection, r, groupProtocols)
+		if facts, ok := protocol.HTTPVersionFactsFromResult(r); ok {
+			mc.httpVersions.Add(facts)
+		}
 		if r.BusinessTransaction {
 			group := strings.TrimSpace(r.Group)
 			transaction := strings.TrimSpace(r.ActionName)
@@ -928,6 +937,9 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 				}
 			}
 		}
+	}
+	if mc.httpVersions.Actions > 0 {
+		snap.HTTPVersions = mc.httpVersions.Clone()
 	}
 	if len(slaThresholds) > 0 {
 		keys := make([]string, 0, len(mc.transactionResponseTimeSLACumulative))

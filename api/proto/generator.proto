@@ -586,6 +586,9 @@ message MetricsBatch {
   // generators send neither.
   repeated MetricAggregate joint_metrics_v4 = 34;
   JointMetricsInfo joint_metrics_info = 35;
+  // Run-to-date HTTP version mix of the generator's groups, cumulative like
+  // transaction_response_time_sla. Older generators omit it.
+  HTTPVersionMix http_version_mix = 36;
 }
 
 message MetricsBatchTelemetry {
@@ -612,6 +615,22 @@ message GroupMetric {
   string name = 1;
   int32 active_vusers = 2;
   MetricAggregate metrics = 3;
+}
+
+// HTTPVersionMix counts HTTP actions by negotiated version (1.1, 2, 3,
+// unknown, cache) and HTTP/3 routing; keys are bounded enums.
+message HTTPVersionMix {
+  int64 actions = 1;
+  map<string, int64> by_version = 2;
+  map<string, int64> by_selection = 3;
+  map<string, int64> by_fallback = 4;
+  map<string, int64> by_quic_error = 5;
+  int64 http3_policies = 6;
+  int64 upgrade_eligible = 7;
+  int64 fell_back = 8;
+  int64 quic_attempted = 9;
+  int64 quic_failed = 10;
+  int64 attempts = 11;
 }
 
 message TransactionResponseTimeSLACompliance {

@@ -115,6 +115,8 @@ func filterLiveMetricsForGroups(live *LiveMetrics, filter groupFilterQuery) *Liv
 	out.Messaging = nil
 	out.NativeEvidence = nil
 	out.Transactions = nil
+	// The version mix is run-wide too.
+	out.HTTPVersions = nil
 	selectedNames := make(map[string]struct{}, len(filter.Names))
 	for _, name := range filter.Names {
 		selectedNames[name] = struct{}{}

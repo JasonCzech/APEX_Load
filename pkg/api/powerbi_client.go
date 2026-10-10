@@ -19,7 +19,8 @@ import (
 // powerBIDatasetSchemaVersion identifies the push-dataset table layout this
 // build creates. Bump it when the runs/transactions column sets change; a
 // stored publish with a different version marks the remote dataset as drifted.
-const powerBIDatasetSchemaVersion = 1
+// Version 2 added the HTTP version mix columns.
+const powerBIDatasetSchemaVersion = 2
 
 // powerBIMaxRowsPerPost is the Power BI push API's documented per-request row
 // ceiling.
@@ -374,6 +375,20 @@ func powerBIRunsColumns() []map[string]any {
 		powerBIColumn("sla_failed", "Int64"),
 		powerBIColumn("apexload_url", "String"),
 		powerBIColumn("published_at", "DateTime"),
+		powerBIColumn("http_actions", "Int64"),
+		powerBIColumn("http1_actions", "Int64"),
+		powerBIColumn("http2_actions", "Int64"),
+		powerBIColumn("http3_actions", "Int64"),
+		powerBIColumn("http_no_response_actions", "Int64"),
+		powerBIColumn("http_cache_actions", "Int64"),
+		powerBIColumn("http_attempts", "Int64"),
+		powerBIColumn("http3_upgrade_eligible", "Int64"),
+		powerBIColumn("http3_fallbacks", "Int64"),
+		powerBIColumn("http3_fallback_ratio", "Double"),
+		powerBIColumn("quic_attempted", "Int64"),
+		powerBIColumn("quic_failed", "Int64"),
+		powerBIColumn("quic_failure_ratio", "Double"),
+		powerBIColumn("protocol_mix_finding", "String"),
 	}
 }
 
@@ -398,5 +413,11 @@ func powerBITransactionsColumns() []map[string]any {
 		powerBIColumn("has_sla", "Bool"),
 		powerBIColumn("sla_ms", "Double"),
 		powerBIColumn("sla_result", "String"),
+		powerBIColumn("http_version", "String"),
+		powerBIColumn("http1_count", "Int64"),
+		powerBIColumn("http2_count", "Int64"),
+		powerBIColumn("http3_count", "Int64"),
+		powerBIColumn("http_fallbacks", "Int64"),
+		powerBIColumn("http_attempts", "Int64"),
 	}
 }

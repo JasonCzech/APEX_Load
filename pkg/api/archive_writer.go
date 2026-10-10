@@ -368,6 +368,7 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 		SourceProfile:         result.SourceProfile,
 	}
 	applySentTraceContext(&event, result.TraceContext)
+	event.HTTPVersion, event.HTTPVersionFallback, event.AttemptCount = protocol.ArchiveHTTPVersionFields(result)
 	if len(result.TraceLinks) > 0 || result.TraceLinksTruncated {
 		event.TraceLinks = append([]protocol.TraceLink(nil), result.TraceLinks...)
 		event.TraceLinksTruncated = result.TraceLinksTruncated

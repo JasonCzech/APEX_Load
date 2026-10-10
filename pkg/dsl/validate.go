@@ -740,6 +740,7 @@ func validateExecutionResourceIssues(script *Script) []string {
 	issues = append(issues, validateThinkTimeResourceIssues("config.think_time", script.Config.ThinkTime)...)
 	issues = append(issues, validateErrorHandlingResourceIssues(script.Config.ErrorHandling)...)
 	issues = append(issues, validateMessageDetailResourceIssues(script.Config.Results.MessageDetail)...)
+	issues = append(issues, validateProtocolMixExpectation(script.Config.Results.ProtocolMix)...)
 	for i, action := range script.Init {
 		issues = append(issues, validateControlResourceIssues(fmt.Sprintf("init[%d]", i), action)...)
 	}
@@ -748,6 +749,25 @@ func validateExecutionResourceIssues(script *Script) []string {
 	}
 	for i, action := range script.Teardown {
 		issues = append(issues, validateControlResourceIssues(fmt.Sprintf("teardown[%d]", i), action)...)
+	}
+	return issues
+}
+
+func validateProtocolMixExpectation(expectation *ProtocolMixExpectation) []string {
+	if expectation == nil {
+		return nil
+	}
+	var issues []string
+	for _, ratio := range []struct {
+		name  string
+		value *float64
+	}{{"max_fallback_ratio", expectation.MaxFallbackRatio}, {"max_quic_failure_ratio", expectation.MaxQUICFailureRatio}} {
+		if ratio.value != nil && (*ratio.value < 0 || *ratio.value > 1) {
+			issues = append(issues, "config.results.protocol_mix."+ratio.name+" must be between 0 and 1")
+		}
+	}
+	if expectation.MinSamples < 0 || expectation.MinSamples > 1000000 {
+		issues = append(issues, "config.results.protocol_mix.min_samples must be between 0 and 1000000")
 	}
 	return issues
 }
