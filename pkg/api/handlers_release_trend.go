@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -162,13 +163,14 @@ func profileIncludesSection(profileID, section string) bool {
 
 // enrichArchiveReportForProfile attaches everything a profile's export
 // needs beyond the pure archive report: the release trend, identity names,
-// imported dashboard panels and the generated root cause, each only when the
-// profile renders it.
-func (s *Server) enrichArchiveReportForProfile(report *RunArchiveReport, profileID string) {
+// imported dashboard panels, the generated root cause and the browser
+// intelligence results, each only when the profile renders it.
+func (s *Server) enrichArchiveReportForProfile(ctx context.Context, report *RunArchiveReport, profileID string) {
 	s.attachReleaseTrendForProfile(report, profileID)
 	s.attachIdentityNames(report)
 	s.attachDashboardPanelsForProfile(report, profileID)
 	s.attachRootCauseForProfile(report, profileID)
+	s.attachBrowserIntelligenceForProfile(ctx, report, profileID)
 }
 
 // attachIdentityNames resolves the project/release/scenario display names for the

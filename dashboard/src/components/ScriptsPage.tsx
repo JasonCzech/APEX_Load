@@ -24,7 +24,8 @@ import { useLibraryFederation } from './useLibraryFederation'
 import { type NavPage } from './Sidebar'
 import { type ScriptSecretStatus } from '../types/secrets'
 import { useScriptsLibraryModel } from './useScriptsLibraryModel'
-import { type ImportedSaveResult, type ScriptsAuthoringSubView, useScriptsAuthoringState } from './useScriptsAuthoringState'
+import { type ImportedSaveResult, type ScriptsAuthoringEntryView, type ScriptsAuthoringSubView, useScriptsAuthoringState } from './useScriptsAuthoringState'
+import type { ScriptImportLauncherDescriptor } from '../scriptImportLaunchers'
 import { getErrorMessage } from '../utils/errorUtils'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { prepareProjectSecretsSettingsNavigation } from './projectSecretsNavigation'
@@ -49,7 +50,9 @@ interface Props {
   initialCreateWorkflow?: 'start-new' | 'source'
 
   applicationRepository?: ApplicationRepository | null
-  initialMode?: ScriptsAuthoringSubView
+  initialMode?: ScriptsAuthoringEntryView
+  /** The importer the route names; it takes precedence over initialMode. */
+  initialImport?: ScriptImportLauncherDescriptor | null
   initialEditId?: string
   nativeImportRequest?: {
     id: number
@@ -60,7 +63,7 @@ interface Props {
   onNativeImportRequestHandled?: () => void
   onSelectScenario?: (id: string) => void
   onNavigate?: (page: NavPage) => void
-  onAuthoringStateChange?: (state: { subView: ScriptsAuthoringSubView; editingId: string | null; importLauncher?: string | null }) => void
+  onAuthoringStateChange?: (state: { subView: ScriptsAuthoringSubView; editingId: string | null; importLauncher?: string | null; importMode?: string | null }) => void
   featurePolicySignal?: number
 }
 
@@ -158,7 +161,7 @@ function scriptSearchText(script: StoredScript) {
 
 const healthFilterKeys = healthFilters.map(filter => filter.key)
 
-export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, applicationRepository, initialMode = 'list', initialEditId, nativeImportRequest, onNativeImportRequestHandled, onSelectScenario, onNavigate, onAuthoringStateChange, featurePolicySignal = 0 }: Props) {
+export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, applicationRepository, initialMode = 'list', initialImport, initialEditId, nativeImportRequest, onNativeImportRequestHandled, onSelectScenario, onNavigate, onAuthoringStateChange, featurePolicySignal = 0 }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const activeProjectId = activeProject?.id
@@ -475,6 +478,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   } = useScriptsAuthoringState({
     api,
     initialMode,
+    initialImport,
     initialEditId,
     projectId: activeProjectId,
   })
@@ -837,8 +841,9 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
       subView: authoringState.subView,
       editingId: authoringState.editingId,
       importLauncher: authoringState.importLauncher,
+      importMode: authoringState.importMode,
     })
-  }, [authoringState.editingId, authoringState.importLauncher, authoringState.subView, onAuthoringStateChange])
+  }, [authoringState.editingId, authoringState.importLauncher, authoringState.importMode, authoringState.subView, onAuthoringStateChange])
 
   const handleDelete = async (id: string) => {
     if (!canManageScripts || movingScriptIds.has(id)) return

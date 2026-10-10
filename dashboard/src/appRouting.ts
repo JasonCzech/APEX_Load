@@ -1,6 +1,7 @@
 import { isAccessView, type AccessView } from './components/accessDestinations'
 import { API_GUIDE_DEFAULT_PAGE, isApiGuideContentPageID, type ApiGuideContentPageID } from './apiGuideNavigation'
 import type { NavPage } from './components/Sidebar'
+import { isScriptImportLauncher, isScriptImportMode, LEGACY_IMPORT_ROUTE_LAUNCHER } from './scriptImportLaunchers'
 
 export type AppWorkspaceScope = {
   projectId?: string
@@ -18,7 +19,7 @@ export type AppView = AppWorkspaceScope & (
   | { page: 'report'; testId: string; lens?: ReportLens; compare?: string; comparisonId?: string; section?: ReportSection; transaction?: string; population?: 'action' | 'transaction' | 'unknown'; focus?: ReportFocus } & RootCauseRouteState
   | { page: 'tests'; scenarioView?: 'library' | 'builder' | 'plans' }
   | { page: 'new-test'; scenarioId?: string; prefillStartLocal?: string }
-  | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string }
+  | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string; importLauncher?: string; importMode?: string }
   | { page: 'swagger'; search?: string }
   | { page: 'recorder-panel'; sessionId: string; folderId?: string }
   | { page: 'test'; testId: string; tab?: TestWorkspaceTabID }
@@ -96,7 +97,7 @@ export function rootCauseRouteState(params: URLSearchParams): RootCauseRouteStat
   }
 }
 
-export const REPORT_SECTIONS = ['summary', 'performance', 'comparison', 'diagnostics', 'evidence', 'execution'] as const
+export const REPORT_SECTIONS = ['summary', 'performance', 'comparison', 'diagnostics', 'browser', 'evidence', 'execution'] as const
 export type ReportSection = typeof REPORT_SECTIONS[number]
 export const REPORT_LENSES = ['executive', 'engineer', 'audit'] as const
 
@@ -263,6 +264,22 @@ export function parseAppViewFromHash(hash: string): AppView {
   if (page === 'scripts') {
     const mode = params.get('mode')
     const scriptId = params.get('scriptId') || undefined
+    if (mode === 'import') {
+      // An import route names its launcher. An address written before routes
+      // did (`mode=import` alone) opens the LoadRunner archive importer it
+      // always opened; an unknown launcher opens the create options, which
+      // list every importer.
+      const launcher = params.get('launcher')
+      if (launcher !== null && !isScriptImportLauncher(launcher)) return { page: 'scripts', mode: 'create', ...workspaceScope }
+      const importMode = params.get('importMode')
+      return {
+        page: 'scripts',
+        mode,
+        importLauncher: launcher ?? LEGACY_IMPORT_ROUTE_LAUNCHER,
+        ...(launcher !== null && isScriptImportMode(importMode) ? { importMode } : {}),
+        ...workspaceScope,
+      }
+    }
     return {
       page: 'scripts',
       ...(isScriptMode(mode) ? { mode } : {}),
@@ -452,6 +469,10 @@ export function viewToLocationHash(view: AppView): string {
   if (view.page === 'scripts') {
     const params = new URLSearchParams()
     if (view.mode) params.set('mode', view.mode)
+    if (view.mode === 'import' && view.importLauncher) {
+      params.set('launcher', view.importLauncher)
+      if (view.importMode) params.set('importMode', view.importMode)
+    }
     if (view.scriptId) params.set('scriptId', view.scriptId)
     appendWorkspaceScope(params, view)
     const query = params.toString()
@@ -514,6 +535,25 @@ export function workspaceScopeForAppView(view: AppView): AppWorkspaceScope {
     ...(view.applicationId ? { applicationId: view.applicationId } : {}),
     ...(view.releaseId ? { releaseId: view.releaseId } : {}),
   }
+}
+
+/**
+ * The scripts route naming what the authoring surface has open, so a refresh
+ * or a shared link returns to it: the library, a saved script's editor, or a
+ * named importer. The create options, the recorder and an unsaved draft have
+ * no route of their own and reopen at the create options, never at the
+ * archive importer a bare import route opens.
+ */
+export function scriptsRouteForAuthoringState(
+  state: { subView: string; editingId: string | null; importLauncher?: string | null; importMode?: string | null },
+  scope: AppWorkspaceScope,
+): Extract<AppView, { page: 'scripts' }> {
+  if (state.subView === 'list') return { page: 'scripts', mode: 'list', ...scope }
+  if (state.subView === 'edit' && state.editingId) return { page: 'scripts', mode: 'edit', scriptId: state.editingId, ...scope }
+  if (state.importLauncher && isScriptImportLauncher(state.importLauncher)) {
+    return { page: 'scripts', mode: 'import', importLauncher: state.importLauncher, ...(state.importMode ? { importMode: state.importMode } : {}), ...scope }
+  }
+  return { page: 'scripts', mode: 'create', ...scope }
 }
 
 export function scopeAppViewToWorkspace(view: AppView, scope: AppWorkspaceScope): AppView {
@@ -600,6 +640,7 @@ export function resetProjectScopedAssetView(view: AppView, projectId?: string): 
     return {
       page: 'scripts',
       ...(view.mode && view.mode !== 'edit' ? { mode: view.mode } : {}),
+      ...(view.mode === 'import' && view.importLauncher ? { importLauncher: view.importLauncher, ...(view.importMode ? { importMode: view.importMode } : {}) } : {}),
       ...(projectId ? { projectId } : {}),
     }
   }

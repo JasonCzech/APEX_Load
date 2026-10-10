@@ -54,24 +54,14 @@ import { type ApiCallOptions, withCallOptions } from './requestOptions'
 import { admitScriptAuthoringBaseline, baselineFromSavedScript, ScriptSaveOutcomeUnknown, withoutScriptAuthoringReadContext } from '../../utils/scriptAuthoringRevision'
 import { admitScenarioAuthoringBaseline, baselineFromSavedScenario, ScenarioChangedSinceObserved, scenarioBaselineFromRead, ScenarioSaveOutcomeUnknown } from '../../utils/scenarioAuthoringRevision'
 
-type StoredScriptDebugStartRequestBody = JsonRequestBody<'handleStartScriptDebugScript'>
 type DraftScriptDebugStartRequestBody = JsonRequestBody<'handleStartScriptDebugDraftScript'>
 type ScriptDebugStepRequestBody = JsonRequestBody<'handleStepScriptDebugSession'>
 type ScriptDebugBreakpointsRequestBody = JsonRequestBody<'handleUpdateScriptDebugBreakpoints'>
 type ScriptDebugOptionsRequestBody = JsonRequestBody<'handleUpdateScriptDebugOptions'>
 
-// The public authoring types intentionally retain a few forward-compatible
-// domain fields. This adapter keeps those call signatures stable while using
-// the generated transport keys and scalar contracts at the serialization edge.
-type CompatibleDebugStartRequest<Transport extends object, Domain extends object> = {
-  [Key in keyof Transport]?: Key extends keyof Domain ? Domain[Key] : Transport[Key]
-}
-
-type StoredScriptDebugStartBody = CompatibleDebugStartRequest<StoredScriptDebugStartRequestBody, ScriptDebugStartRequest>
-type DraftScriptDebugStartBody = CompatibleDebugStartRequest<
-  DraftScriptDebugStartRequestBody,
-  ScriptDebugStartRequest & { script: ScriptDefinition }
->
+// The draft route takes the same body as the stored-script route, plus the
+// script itself (required).
+type DraftScriptDebugStartBody = Omit<DraftScriptDebugStartRequestBody, 'script'> & { script: ScriptDefinition }
 
 type ScriptListResponse = {
   scripts: StoredScript[]
@@ -606,14 +596,14 @@ export function useScriptApi() {
 
   const startScriptDebugSession = useCallback(
     (id: string, payload?: ScriptDebugStartRequest) => {
-      const body: StoredScriptDebugStartBody = payload || {}
+      const body: ScriptDebugStartRequest = payload || {}
       return request<ScriptDebugStartResponse>(`/scripts/${id}/debug/sessions`, { method: 'POST', body: JSON.stringify(body) })
     },
     [],
   )
 
   const startDraftScriptDebugSession = useCallback(
-    (payload: ScriptDebugStartRequest & { script: ScriptDefinition }) => {
+    (payload: DraftScriptDebugStartBody) => {
       const body: DraftScriptDebugStartBody = payload
       return request<ScriptDebugStartResponse>('/scripts/debug/sessions', { method: 'POST', body: JSON.stringify(body) })
     },

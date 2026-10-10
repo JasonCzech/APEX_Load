@@ -111,7 +111,7 @@ describe('TestExecutionScenarioPreview', () => {
           onCancelShakeoutRun={vi.fn()}
           queuedScenarioPreview={{
             points: [{ second: 0, group0: 10, total: 10 }],
-            totalVUsers: 10,
+            totalVUsers: 10, showVUsers: true, peakVUsers: 10,
             totalSeconds: 300,
             steadySeconds: 300,
             startDelaySeconds: 30,
@@ -233,7 +233,7 @@ describe('TestExecutionScenarioPreview', () => {
       test={{ id: 'version-test', name: 'Version', status: 'QUEUED', total_vusers: 1, duration: '1m', groups: [group] } as never}
       startCapacityConflict={null} startShakeoutConflict={null} startFeedback="" onDismissStartConflict={vi.fn()}
       onConfirmStartAnyway={vi.fn()} onContinueAfterShakeoutFailure={vi.fn()} onCancelShakeoutRun={vi.fn()}
-      queuedScenarioPreview={{ points: [{ second: 0, group0: 1, total: 1 }], totalVUsers: 1, totalSeconds: 60, steadySeconds: 60, startDelaySeconds: 0, preBaselineSeconds: 0, postBaselineSeconds: 0 }}
+      queuedScenarioPreview={{ points: [{ second: 0, group0: 1, total: 1 }], totalVUsers: 1, showVUsers: true, peakVUsers: 1, totalSeconds: 60, steadySeconds: 60, startDelaySeconds: 0, preBaselineSeconds: 0, postBaselineSeconds: 0 }}
       queuedScenarioRows={[{ group, detail: detail as never, actionCount: 0, initCount: 0, teardownCount: 0, dataSourceCount: 0 }]}
       snapshotSource="immutable_manifest" snapshotLoading={false} snapshotError="" expandedScenarioScript="Version"
       onExpandedScenarioScriptChange={vi.fn()} onEditScript={vi.fn()} groupColors={['#0a84ff']} />))
@@ -277,7 +277,7 @@ describe('TestExecutionScenarioPreview', () => {
           onCancelShakeoutRun={vi.fn()}
           queuedScenarioPreview={{
             points: [{ second: 0, group0: 10, total: 10 }],
-            totalVUsers: 10,
+            totalVUsers: 10, showVUsers: true, peakVUsers: 10,
             totalSeconds: 300,
             steadySeconds: 300,
             startDelaySeconds: 0,
@@ -358,7 +358,7 @@ describe('TestExecutionScenarioPreview', () => {
           onCancelShakeoutRun={vi.fn()}
           queuedScenarioPreview={{
             points: [{ second: 0, group0: 10, total: 10 }],
-            totalVUsers: 10,
+            totalVUsers: 10, showVUsers: true, peakVUsers: 10,
             totalSeconds: 300,
             steadySeconds: 300,
             startDelaySeconds: 0,
@@ -413,7 +413,7 @@ describe('TestExecutionScenarioPreview', () => {
           onCancelShakeoutRun={vi.fn()}
           queuedScenarioPreview={{
             points: [],
-            totalVUsers: 10,
+            totalVUsers: 10, showVUsers: true, peakVUsers: 10,
             totalSeconds: 300,
             steadySeconds: 300,
             startDelaySeconds: 0,
@@ -482,7 +482,7 @@ describe('TestExecutionScenarioPreview', () => {
           onCancelShakeoutRun={onCancelShakeoutRun}
           queuedScenarioPreview={{
             points: [],
-            totalVUsers: 10,
+            totalVUsers: 10, showVUsers: true, peakVUsers: 10,
             totalSeconds: 300,
             steadySeconds: 300,
             startDelaySeconds: 0,
@@ -556,7 +556,7 @@ describe('TestExecutionScenarioPreview', () => {
           onCancelShakeoutRun={vi.fn()}
           queuedScenarioPreview={{
             points,
-            totalVUsers: 10,
+            totalVUsers: 10, showVUsers: true, peakVUsers: 10,
             totalSeconds,
             steadySeconds: 600,
             startDelaySeconds: 0,

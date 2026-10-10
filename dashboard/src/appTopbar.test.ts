@@ -42,9 +42,11 @@ describe('app topbar helpers', () => {
     expect(pageTitleForScriptSubView('create-options')).toBe('Scripts')
     expect(pageTitleForScriptSubView('create')).toBe('Create script')
     expect(pageTitleForScriptSubView('edit')).toBe('Edit script')
-    expect(pageTitleForScriptSubView('openapi-import')).toBe('Import OpenAPI / Swagger')
+    expect(pageTitleForScriptSubView('protocol-import', 'openapi')).toBe('Import OpenAPI / Swagger')
     expect(pageTitleForScriptSubView('bruno-import')).toBe('Import Bruno Collection')
-    expect(pageTitleForScriptSubView('raml-import')).toBe('Import RAML / Anypoint')
+    expect(pageTitleForScriptSubView('protocol-import', 'raml')).toBe('Import RAML / Anypoint')
+    expect(pageTitleForScriptSubView('import')).toBe('Import LoadRunner Script Archive')
+    expect(pageTitleForScriptSubView('jmeter-import')).toBe('Import JMeter Test Plan')
     expect(pageTitleForScriptSubView('protocol-import')).toBe('Import from source')
     // A protocol importer is titled for its source, not the generic surface.
     expect(pageTitleForScriptSubView('protocol-import', 'k6')).toBe('Import k6 Script')

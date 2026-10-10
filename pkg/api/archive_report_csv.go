@@ -38,8 +38,11 @@ func writeRunArchiveReportCSVWithProfileAndAnnotations(report *RunArchiveReport,
 		csvWriter.Flush()
 		return csvWriter.Error()
 	}
+	// Keys and values can carry editor- or target-authored text (journey
+	// names, routes, actions): one a spreadsheet would read as a formula is
+	// neutralized, while a number (a negative delta included) is kept as is.
 	write := func(section, key, metric, value string) error {
-		return csvWriter.Write([]string{section, key, metric, value})
+		return csvWriter.Write([]string{section, reportCSVSafeCell(key), metric, reportCSVSafeCell(value)})
 	}
 
 	data := buildRunArchiveReportRenderData(report, profile, annotations, manifest)
@@ -371,4 +374,13 @@ func formatCSVInt(value int64) string {
 
 func formatCSVFloat(value float64) string {
 	return strconv.FormatFloat(value, 'f', -1, 64)
+}
+
+// reportCSVSafeCell is spreadsheetSafeCSVCell for report cells, which keeps
+// numbers: "-12.5" stays a number, "=HYPERLINK(...)" does not become a formula.
+func reportCSVSafeCell(value string) string {
+	if _, err := strconv.ParseFloat(strings.TrimSpace(value), 64); err == nil {
+		return value
+	}
+	return spreadsheetSafeCSVCell(value)
 }

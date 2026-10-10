@@ -317,6 +317,9 @@ export interface ReportBrowserBaseline {
   summary: string
   findings?: string[]
   limitations?: string[]
+  // qualification: the baseline run's qualification when not fully
+  // qualified, the browser policy, excluded buckets and unscored reasons.
+  qualification?: string[]
 }
 
 export interface ReportRootCauseHypothesis {

@@ -65,6 +65,7 @@ import EntitlementHeadroom from './EntitlementHeadroom'
 import ProjectPoolQuotasCard, { type ProjectPoolQuotasDraftController } from './ProjectPoolQuotasCard'
 import ProjectTelemetryEvidenceCard from './ProjectTelemetryEvidenceCard'
 import ProjectSecretsPanel from './ProjectSecretsPanel'
+import AnalysisPoliciesPanel from './analysisPolicies/AnalysisPoliciesPanel'
 import ProjectAnalysisSettingsPanel from './ProjectAnalysisSettingsPanel'
 import { listAllFleetPools } from './fleetCatalogModel'
 import {
@@ -1216,6 +1217,7 @@ export default function SettingsPage({
     analysis: selectedProject?.settings?.analysis?.revision ? `Revision ${selectedProject.settings.analysis.revision}` : 'Not set',
     redaction: `${customRuleCount} rule${customRuleCount === 1 ? '' : 's'}`,
     secrets: `${projectSecretCount} configured`,
+    'analysis-policies': selectedProject ? selectedProject.name : 'Select project',
   }), [customRuleCount, projectDraftGitHubEnabled, projectSecretCount, projects.length, selectedProject])
   const integrationSubsectionSummaries = useMemo<Record<IntegrationSettingsSubsectionId, string>>(() => ({
     'elk-capture': activeProject?.name || 'Project scoped',
@@ -6022,7 +6024,19 @@ export default function SettingsPage({
                   />
                 </section>
 
-                {activeProjectSubsection !== 'secrets' && activeProjectSubsection !== 'catalog' && activeProjectSubsection !== 'analysis' && (
+                <section
+                  id="settings-projects-panel-analysis-policies"
+                  className="settings-subpanel"
+                  role="tabpanel"
+                  aria-labelledby="settings-projects-tab-analysis-policies"
+                  hidden={activeProjectSubsection !== 'analysis-policies'}
+                >
+                  {/* Kept mounted (hidden) like the secrets panel, so a policy
+                      draft and its unsaved-work guard survive a tab switch. */}
+                  <AnalysisPoliciesPanel key={selectedProject.id} projectId={selectedProject.id} canEdit={canManageScripts || canManageProjects || canManageSystem} />
+                </section>
+
+                {activeProjectSubsection !== 'secrets' && activeProjectSubsection !== 'catalog' && activeProjectSubsection !== 'analysis-policies' && activeProjectSubsection !== 'analysis' && (
                   <div className="settings-subsection settings-subsection-actions">
                     {projectDraftValidationError && <p className="settings-error-inline">{projectDraftValidationError}</p>}
                     {!canManageProjects && <p className="settings-error-inline">Current session can view this project but cannot change project governance.</p>}

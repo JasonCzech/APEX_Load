@@ -6,6 +6,7 @@ import { formatTimeCompact } from '../utils/timeUtils'
 import { browserMetricRecord, finiteBrowserMetric, formatBrowserSampleCount, formatBrowserEngineLabel, formatDevicePlatformLabel } from './browserBreakdownModel'
 import BrowserUXAssessment from './BrowserUXAssessment'
 import BrowserDocumentEvidencePanel from './BrowserDocumentEvidencePanel'
+import BrowserComparisonTable from './runReport/BrowserComparisonTable'
 import type { BrowserDocumentSummary } from '../types/browserDocumentEvidence'
 import { MISSING_VALUE } from './runReport/reportPresentation'
 
@@ -475,9 +476,11 @@ export default function TestExecutionStatusPanels({
         </div>
       )}
 
-      {(metrics?.browser_documents != null || metrics?.browser || test.groups?.some(group => group.protocol === 'browser')) && (
+      {(metrics?.browser_documents != null || metrics?.browser || test.groups?.some(group => group.protocol === 'browser')) && (<>
+        {/* Live browser intelligence (BI-4): documents compared by engine, device and group. Findings, interaction patterns and journeys read the finalized archive. */}
+        <BrowserComparisonTable summary={metrics?.browser_documents} mode="live-history" />
         <BrowserDocumentEvidencePanel summary={metrics?.browser_documents} summaryMode="live-history" />
-      )}
+      </>)}
 
       {isGoalOriented && (
         <div className="goal-status-card">

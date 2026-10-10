@@ -11523,6 +11523,10 @@ paths:
                               type: array
                               items:
                                 type: string
+                            qualification:
+                              type: array
+                              items:
+                                type: string
                             status:
                               type: string
                             summary:
@@ -358165,6 +358169,93 @@ paths:
       tags:
         - Tests
       x-handler: handleListRunArchiveBrowserHARs
+  /api/v1/tests/{id}/archive/browser/har-entry:
+    get:
+      summary: Get Run Archive Browser HAR Entry
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
+      operationId: handleGetRunArchiveBrowserHAREntry
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  artifact:
+                    type: string
+                  entry: {}
+                  fidelity:
+                    type: string
+                  headers_omitted:
+                    type: boolean
+                  native_har_coverage_unknown:
+                    type: integer
+                    format: int64
+                  omitted_reason:
+                    type: string
+                  request_id:
+                    type: string
+                  source_generation:
+                    type: string
+                required:
+                  - fidelity
+                  - request_id
+                nullable: true
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: request_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleGetRunArchiveBrowserHAREntry
   /api/v1/tests/{id}/archive/browser/har/{artifact}:
     get:
       summary: Download Run Archive Browser HAR
@@ -378314,6 +378405,10 @@ paths:
                             items:
                               type: string
                           limitations:
+                            type: array
+                            items:
+                              type: string
+                          qualification:
                             type: array
                             items:
                               type: string

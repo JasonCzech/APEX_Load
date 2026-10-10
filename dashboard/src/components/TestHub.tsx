@@ -79,11 +79,12 @@ import {
   replaceScenarioRuntimeDefaults,
   reseedScenarioGroups,
   runtimeSettingsFromForm,
+  scenarioErrorHandlingFlag,
   scenarioFormStateFromStoredScenario,
+  seededScenarioRuntime,
+  withAdaptedGoalBounds,
+  withScenarioErrorHandlingFlag,
 } from './scenarioFormModel'
-import {
-  canonicalThinkTimeType,
-} from './thinkTimeConfig'
 import { requestSettingsFocus } from './settingsSectionLayout'
 import { loadAllTestSummaries } from './testCatalogPagination'
 import { scenarioSeedFromTemplate } from './scenarioTemplateSeed'
@@ -122,44 +123,13 @@ export interface ScenarioFormState {
   scenario_mode: ScenarioMode
   script_shakeout: boolean
   resource_baseline: boolean
-  goal_target_average_tps?: number
-  goal_min_vusers?: number
-  goal_max_vusers?: number
-  goal_p95_latency_ms?: number
-  goal_max_error_pct?: number
   goal_config?: GoalConfig
   traffic_profile?: TrafficProfile
-  continue_on_error?: boolean
-  snapshot_on_error?: boolean
-  runtime_iterations?: number
-  runtime_pacing_type: '' | 'none' | 'fixed_delay' | 'random_delay' | 'fixed_interval' | 'random_interval' | 'tps'
-  runtime_pacing_delay_ms?: number
-  runtime_pacing_min_delay_ms?: number
-  runtime_pacing_max_delay_ms?: number
-  runtime_pacing_interval_ms?: number
-  runtime_pacing_min_interval_ms?: number
-  runtime_pacing_max_interval_ms?: number
-  runtime_pacing_tps?: number
-  runtime_think_time_type?: '' | 'none' | 'fixed' | 'recorded' | 'random_percentage' | 'gaussian' | 'uniform'
-  runtime_think_time_ms?: number
-  runtime_think_time_std_ms?: number
-  runtime_think_time_min_ms?: number
-  runtime_think_time_max_ms?: number
-  runtime_think_time_min_percent?: number
-  runtime_think_time_max_percent?: number
-  runtime_think_time_multiplier?: number
-  runtime_think_time_limit_ms?: number
-  runtime_ignore_think_time: boolean
-  runtime_log_level: string
-  runtime_auto_transactions: string
-  /** Canonical stored override used to retain advanced fields the compact editor does not expose. */
+  /**
+   * The scenario-wide runtime defaults, as stored. Every editor writes this
+   * canonical override directly (AUTH-3): there are no flat display mirrors.
+   */
   runtime_settings?: RuntimeSettingsOverride
-  browser_device_profile?: string
-  browser_orientation?: string
-  browser_touch_mode?: '' | 'true' | 'false'
-  browser_headless?: '' | 'true' | 'false'
-  assignment_mode: NonNullable<GeneratorAssignmentSettings['mode']>
-  assignment_targets: string[]
   assignment?: GeneratorAssignmentSettings
   /** Canonical data-pool bindings shared by editing, validation and submission. */
   data_pools?: ScenarioDataPoolBinding[]
@@ -269,17 +239,6 @@ function emptyScenarioForm(scriptId = ''): ScenarioFormState {
     resource_baseline: false,
     // These are defaults for a new owned draft, not an edit-time replacement.
     goal_config: { early_stop: { enabled: false, error_rate_pct: 5, breach_window: '1m' } },
-    runtime_pacing_type: '',
-    runtime_think_time_type: '',
-    runtime_ignore_think_time: false,
-    runtime_log_level: '',
-    runtime_auto_transactions: '',
-    browser_device_profile: '',
-    browser_orientation: '',
-    browser_touch_mode: '',
-    browser_headless: '',
-    assignment_mode: 'auto',
-    assignment_targets: [],
   }
 }
 
@@ -390,19 +349,10 @@ function scenarioFormWithGoalField<K extends keyof GoalConfig>(
   } else {
     goal[field] = value as never
   }
-  const next: ScenarioFormState = {
+  return {
     ...form,
     goal_config: Object.keys(goal).length > 0 ? goal : undefined,
   }
-  const numberValue = value as number | undefined
-  switch (field) {
-    case 'target_average_tps': next.goal_target_average_tps = numberValue; break
-    case 'min_vusers': next.goal_min_vusers = numberValue; break
-    case 'max_vusers': next.goal_max_vusers = numberValue; break
-    case 'p95_latency_ms': next.goal_p95_latency_ms = numberValue; break
-    case 'max_error_pct': next.goal_max_error_pct = numberValue; break
-  }
-  return next
 }
 
 function scenarioSeedFromPreset(preset: ScenarioShapePreset): ScenarioSeed {
@@ -440,34 +390,10 @@ function scenarioSeedFromForm(form: ScenarioFormState): ScenarioSeed {
       iterations: group.iterations,
     })),
     goal: goalConfigFromForm(form),
-    pacing: {
-      type: form.runtime_pacing_type,
-      delay_ms: form.runtime_pacing_delay_ms,
-      min_delay_ms: form.runtime_pacing_min_delay_ms,
-      max_delay_ms: form.runtime_pacing_max_delay_ms,
-      interval_ms: form.runtime_pacing_interval_ms,
-      min_interval_ms: form.runtime_pacing_min_interval_ms,
-      max_interval_ms: form.runtime_pacing_max_interval_ms,
-      tps: form.runtime_pacing_tps,
-    },
-    think_time: {
-      type: form.runtime_think_time_type,
-      mean_ms: form.runtime_think_time_ms,
-      std_ms: form.runtime_think_time_std_ms,
-      min_ms: form.runtime_think_time_min_ms,
-      max_ms: form.runtime_think_time_max_ms,
-      min_percent: form.runtime_think_time_min_percent,
-      max_percent: form.runtime_think_time_max_percent,
-      multiplier: form.runtime_think_time_multiplier,
-      limit_ms: form.runtime_think_time_limit_ms,
-      ignore: form.runtime_ignore_think_time,
-    },
+    // The current runtime defaults travel as the seed's runtime_settings, so a
+    // re-seed keeps them; shape adaptation reads the pacing it may replace.
+    pacing: form.runtime_settings?.pacing ? { ...form.runtime_settings.pacing } as ScenarioSeed['pacing'] : undefined,
     runtime_settings: form.runtime_settings ? structuredClone(form.runtime_settings) : undefined,
-    iterations: form.runtime_iterations,
-    log_level: form.runtime_log_level,
-    auto_transactions: form.runtime_auto_transactions,
-    continue_on_error: form.continue_on_error,
-    snapshot_on_error: form.snapshot_on_error,
   }
 }
 
@@ -1157,12 +1083,12 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 		if (goalDrivenStoredConfig) return goalDrivenStoredConfig
 		return {
 			groups: Object.fromEntries(formGroups.map((_, index) => [goalDrivenGroupKey(index), {
-				target_tps: reconstructedGoalTarget(formGroups, index, form.goal_target_average_tps || 25),
+				target_tps: reconstructedGoalTarget(formGroups, index, form.goal_config?.target_average_tps || 25),
 			}]))
 		}
-	}, [form.goal_target_average_tps, formGroups, goalDrivenStoredConfig])
+	}, [form.goal_config?.target_average_tps, formGroups, goalDrivenStoredConfig])
 	const activeGoalDrivenDefinition: GoalDrivenGroupDefinition = goalDrivenConfig.groups[goalDrivenGroupKey(activeGroupIndex)] || {
-		target_tps: reconstructedGoalTarget(formGroups, activeGroupIndex, form.goal_target_average_tps || 25),
+		target_tps: reconstructedGoalTarget(formGroups, activeGroupIndex, form.goal_config?.target_average_tps || 25),
 	}
 	const goalDrivenEstimatedVUsers = formGroups.map((group, index) => {
 		const definition = goalDrivenConfig.groups[goalDrivenGroupKey(index)]
@@ -1180,10 +1106,10 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 			if (!definition || !Number.isFinite(definition.target_tps) || definition.target_tps <= 0) return `${label}: Target TPS must be greater than zero.`
 			if (definition.art && (!Number.isFinite(definition.art.art_ms) || definition.art.art_ms <= 0)) return `${label}: ART must be greater than zero.`
 		}
-		if (form.goal_min_vusers !== undefined && form.goal_min_vusers < 1) return 'Minimum VUsers must be at least 1.'
-		if (form.goal_max_vusers !== undefined && form.goal_max_vusers < (form.goal_min_vusers || 1)) return 'Maximum VUsers must be at least the minimum.'
+		if (form.goal_config?.min_vusers !== undefined && form.goal_config?.min_vusers < 1) return 'Minimum VUsers must be at least 1.'
+		if (form.goal_config?.max_vusers !== undefined && form.goal_config?.max_vusers < (form.goal_config?.min_vusers || 1)) return 'Maximum VUsers must be at least the minimum.'
 		return ''
-	}, [form.goal_max_vusers, form.goal_min_vusers, formGroups, goalDrivenConfig.groups, isGoalDriven])
+	}, [form.goal_config?.max_vusers, form.goal_config?.min_vusers, formGroups, goalDrivenConfig.groups, isGoalDriven])
 	const closedVUserStoredConfig = form.goal_config?.workload_shape_config?.closed_vuser
 	const isGuidedClosedVUser = isClosedVUser && isGuidedClosedVUserOwned(Boolean(closedVUserStoredConfig), formGroups)
 	const steppedRampConfig: SteppedRampConfig = useMemo(
@@ -1349,10 +1275,10 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 				stop_after_stages: isGuidedClosedVUser,
 				target_tps: isGoalDriven ? goalDrivenConfig.groups[goalDrivenGroupKey(index)]?.target_tps : undefined,
       })),
-      goalTargetTps: form.goal_target_average_tps,
+      goalTargetTps: form.goal_config?.target_average_tps,
       trafficProfile: form.traffic_profile,
     }),
-	[form.duration, form.goal_target_average_tps, form.scenario_mode, form.traffic_profile, formGroups, goalDrivenConfig.groups, isGoalDriven, isGuidedClosedVUser, scripts],
+	[form.duration, form.goal_config?.target_average_tps, form.scenario_mode, form.traffic_profile, formGroups, goalDrivenConfig.groups, isGoalDriven, isGuidedClosedVUser, scripts],
   )
   const filteredCloneScenarios = useMemo(() => {
     const query = scenarioCloneQuery.trim().toLowerCase()
@@ -1400,8 +1326,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const bindingErrors = dataBindingErrors(scenarioBindings)
   const updateDataBindings = (bindings: ScenarioDataPoolBinding[]) => setForm(current => ({ ...current, data_pools: bindings.map(binding => ({...binding})) }))
   const buildScenarioDraftPayload = useCallback((draftForm: ScenarioFormState = form, shapeId: string = selectedShapeId) => (
-    scenarioUpsertPayload(scenarioDraftFromForm(draftForm, { includeBrowser: showBrowserRuntimeSettings }), { projectId: activeProjectId, workloadShapeId: shapeId, fallbackName: 'Draft scenario' })
-  ), [activeProjectId, form, selectedShapeId, showBrowserRuntimeSettings])
+    scenarioUpsertPayload(scenarioDraftFromForm(draftForm), { projectId: activeProjectId, workloadShapeId: shapeId, fallbackName: 'Draft scenario' })
+  ), [activeProjectId, form, selectedShapeId])
 
   const refresh = useCallback(async () => {
     const requestedArchiveState = archiveStateRef.current
@@ -1551,7 +1477,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     const timer = window.setTimeout(() => {
       if (cancelled) return
       setEstimateLoading(true)
-      api.estimateTest(scenarioEstimateRequest(scenarioDraftFromForm(form, { includeBrowser: showBrowserRuntimeSettings }), { projectId: activeProjectId }))
+      api.estimateTest(scenarioEstimateRequest(scenarioDraftFromForm(form), { projectId: activeProjectId }))
       .then((estimate) => {
         if (cancelled) return
         setDraftEstimate(estimate)
@@ -1852,7 +1778,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     const storedClosed = nextForm.goal_config?.workload_shape_config?.closed_vuser
     const storedGoalDriven = nextForm.goal_config?.workload_shape_config?.goal_driven
     goalGuardrailsEditedRef.current = nextForm.scenario_mode === 'goal_oriented'
-      && (nextForm.goal_min_vusers !== undefined || nextForm.goal_max_vusers !== undefined)
+      && (nextForm.goal_config?.min_vusers !== undefined || nextForm.goal_config?.max_vusers !== undefined)
     setGoalArtModes(Object.fromEntries(Object.entries(storedGoalDriven?.groups || {}).map(([key, definition]) => [key, definition.art?.basis || 'manual'])))
     setGoalArtUnits({})
     const storedBaselineId = Object.values(storedGoalDriven?.groups || {}).find(definition => definition.art?.basis === 'baseline')?.art?.baseline_test_id || ''
@@ -1984,7 +1910,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     const storedClosed = clonedForm.goal_config?.workload_shape_config?.closed_vuser
     const storedGoalDriven = clonedForm.goal_config?.workload_shape_config?.goal_driven
     goalGuardrailsEditedRef.current = clonedForm.scenario_mode === 'goal_oriented'
-      && (clonedForm.goal_min_vusers !== undefined || clonedForm.goal_max_vusers !== undefined)
+      && (clonedForm.goal_config?.min_vusers !== undefined || clonedForm.goal_config?.max_vusers !== undefined)
     setGoalArtModes(Object.fromEntries(Object.entries(storedGoalDriven?.groups || {}).map(([key, definition]) => [key, definition.art?.basis || 'manual'])))
     setGoalArtUnits({})
     const storedBaselineId = Object.values(storedGoalDriven?.groups || {}).find(definition => definition.art?.basis === 'baseline')?.art?.baseline_test_id || ''
@@ -2022,7 +1948,6 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   // role, initialization, iteration, runtime, and placement settings are retained.
   const seedFormFromScenario = (seed: ScenarioSeed) => {
     setForm(prev => {
-      const replacesRuntime = seed.runtime_settings !== undefined
       // A shape owns its demand bounds and workload configuration. Other authored
       // guardrails survive unless the seed explicitly replaces that field.
       const authoredGuardrails = goalConfigFromForm(prev)
@@ -2038,40 +1963,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       script_shakeout: seed.script_shakeout ?? prev.script_shakeout,
       resource_baseline: seed.resource_baseline ?? prev.resource_baseline,
       groups: reseedScenarioGroups(seed.groups, prev.groups),
-      goal_target_average_tps: seededGoal.target_average_tps,
-      goal_min_vusers: seededGoal.min_vusers,
-      goal_max_vusers: seededGoal.max_vusers,
-      goal_p95_latency_ms: seededGoal.p95_latency_ms,
-      goal_max_error_pct: seededGoal.max_error_pct,
       goal_config: Object.keys(seededGoal).length ? seededGoal : undefined,
-      runtime_iterations: seed.iterations ?? prev.runtime_iterations,
-      runtime_pacing_type: (seed.pacing?.type || (replacesRuntime ? '' : prev.runtime_pacing_type) || '') as ScenarioFormState['runtime_pacing_type'],
-      runtime_pacing_delay_ms: seed.pacing ? seed.pacing.delay_ms : (replacesRuntime ? undefined : prev.runtime_pacing_delay_ms),
-      runtime_pacing_min_delay_ms: seed.pacing ? seed.pacing.min_delay_ms : (replacesRuntime ? undefined : prev.runtime_pacing_min_delay_ms),
-      runtime_pacing_max_delay_ms: seed.pacing ? seed.pacing.max_delay_ms : (replacesRuntime ? undefined : prev.runtime_pacing_max_delay_ms),
-      runtime_pacing_interval_ms: seed.pacing ? seed.pacing.interval_ms : (replacesRuntime ? undefined : prev.runtime_pacing_interval_ms),
-      runtime_pacing_min_interval_ms: seed.pacing ? seed.pacing.min_interval_ms : (replacesRuntime ? undefined : prev.runtime_pacing_min_interval_ms),
-      runtime_pacing_max_interval_ms: seed.pacing ? seed.pacing.max_interval_ms : (replacesRuntime ? undefined : prev.runtime_pacing_max_interval_ms),
-      runtime_pacing_tps: seed.pacing ? seed.pacing.tps : (replacesRuntime ? undefined : prev.runtime_pacing_tps),
-      runtime_think_time_type: canonicalThinkTimeType(
-        seed.think_time?.type || (replacesRuntime ? '' : prev.runtime_think_time_type),
-      ) as ScenarioFormState['runtime_think_time_type'],
-      runtime_think_time_ms: seed.think_time ? seed.think_time.mean_ms : (replacesRuntime ? undefined : prev.runtime_think_time_ms),
-      runtime_think_time_std_ms: seed.think_time ? seed.think_time.std_ms : (replacesRuntime ? undefined : prev.runtime_think_time_std_ms),
-      runtime_think_time_min_ms: seed.think_time ? seed.think_time.min_ms : (replacesRuntime ? undefined : prev.runtime_think_time_min_ms),
-      runtime_think_time_max_ms: seed.think_time ? seed.think_time.max_ms : (replacesRuntime ? undefined : prev.runtime_think_time_max_ms),
-      runtime_think_time_min_percent: seed.think_time ? seed.think_time.min_percent : (replacesRuntime ? undefined : prev.runtime_think_time_min_percent),
-      runtime_think_time_max_percent: seed.think_time ? seed.think_time.max_percent : (replacesRuntime ? undefined : prev.runtime_think_time_max_percent),
-      runtime_think_time_multiplier: seed.think_time ? seed.think_time.multiplier : (replacesRuntime ? undefined : prev.runtime_think_time_multiplier),
-      runtime_think_time_limit_ms: seed.think_time ? seed.think_time.limit_ms : (replacesRuntime ? undefined : prev.runtime_think_time_limit_ms),
-      runtime_ignore_think_time: seed.think_time ? Boolean(seed.think_time.ignore) : (replacesRuntime ? false : prev.runtime_ignore_think_time),
-      runtime_settings: seed.runtime_settings
-        ? structuredClone(seed.runtime_settings)
-        : prev.runtime_settings,
-      runtime_log_level: seed.log_level ?? prev.runtime_log_level,
-      runtime_auto_transactions: seed.auto_transactions ?? prev.runtime_auto_transactions,
-      continue_on_error: seed.continue_on_error ?? prev.continue_on_error,
-      snapshot_on_error: seed.snapshot_on_error ?? prev.snapshot_on_error,
+      runtime_settings: seededScenarioRuntime(prev.runtime_settings, seed),
       }
     })
   }
@@ -2118,7 +2011,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       const seed = adaptScenarioShapeDefaults(shapeId, scenarioSeedFromPreset(preset), {
         duration: form.duration,
         groups: form.groups,
-        goalTps: form.goal_target_average_tps,
+        goalTps: form.goal_config?.target_average_tps,
       })
       if (shapeId === 'closed-vuser') closedRampDownEnabledOnceRef.current.clear()
 	  if (shapeId === 'open-arrival-rate' || shapeId === 'goal-based') goalGuardrailsEditedRef.current = false
@@ -2157,7 +2050,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     const seed = adaptScenarioShapeDefaults(template.shape_id, scenarioSeedFromTemplate(template), {
       duration: form.duration,
       groups: form.groups,
-      goalTps: form.goal_target_average_tps,
+      goalTps: form.goal_config?.target_average_tps,
     })
     if (template.shape_id === 'closed-vuser') closedRampDownEnabledOnceRef.current.clear()
 	if (template.shape_id === 'open-arrival-rate' || template.shape_id === 'goal-based') goalGuardrailsEditedRef.current = false
@@ -2411,7 +2304,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 				const existing = current?.groups?.[goalDrivenGroupKey(index)]
 				definitions[goalDrivenGroupKey(index)] = existing
 					? { ...existing, art: existing.art ? { ...existing.art } : undefined }
-					: { target_tps: reconstructedGoalTarget(previous.groups, index, previous.goal_target_average_tps || 25) }
+					: { target_tps: reconstructedGoalTarget(previous.groups, index, previous.goal_config?.target_average_tps || 25) }
 			})
 			if (definitionPatch && definitions[goalDrivenGroupKey(groupIndex)]) {
 				const hasARTPatch = Object.prototype.hasOwnProperty.call(definitionPatch, 'art')
@@ -2437,8 +2330,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 			const goalConfig: GoalConfig = {
 				...(previous.goal_config || {}),
 				target_average_tps: totalTarget,
-				min_vusers: goalGuardrailsEditedRef.current ? previous.goal_min_vusers : totalEstimate,
-				max_vusers: goalGuardrailsEditedRef.current ? previous.goal_max_vusers : Math.max(2, totalEstimate * 2),
+				min_vusers: goalGuardrailsEditedRef.current ? previous.goal_config?.min_vusers : totalEstimate,
+				max_vusers: goalGuardrailsEditedRef.current ? previous.goal_config?.max_vusers : Math.max(2, totalEstimate * 2),
 				workload_shape_config: { ...otherShapeConfig, goal_driven: { groups: definitions } },
 			}
 			return {
@@ -2446,9 +2339,6 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 				duration: previous.duration || '60m',
 				scenario_mode: 'goal_oriented',
 				groups,
-				goal_target_average_tps: totalTarget,
-				goal_min_vusers: goalConfig.min_vusers,
-				goal_max_vusers: goalConfig.max_vusers,
 				goal_config: goalConfig,
 			}
 		})
@@ -2473,7 +2363,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 			const definitions: Record<string, GoalDrivenGroupDefinition> = {}
 			const groups = previous.groups.map((group, index) => {
 				const key = goalDrivenGroupKey(index)
-				const existing = current?.groups?.[key] || { target_tps: reconstructedGoalTarget(previous.groups, index, previous.goal_target_average_tps || 25) }
+				const existing = current?.groups?.[key] || { target_tps: reconstructedGoalTarget(previous.groups, index, previous.goal_config?.target_average_tps || 25) }
 				const match = options.find(option => option.script_id && option.script_id === group.script_id)
 					|| options.find(option => normalizeName(option.group) === normalizeName(group.name))
 				if (!match) {
@@ -2489,11 +2379,11 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 			const goalConfig: GoalConfig = {
 				...(previous.goal_config || {}),
 				target_average_tps: totalTarget,
-				min_vusers: goalGuardrailsEditedRef.current ? previous.goal_min_vusers : totalEstimate,
-				max_vusers: goalGuardrailsEditedRef.current ? previous.goal_max_vusers : Math.max(2, totalEstimate * 2),
+				min_vusers: goalGuardrailsEditedRef.current ? previous.goal_config?.min_vusers : totalEstimate,
+				max_vusers: goalGuardrailsEditedRef.current ? previous.goal_config?.max_vusers : Math.max(2, totalEstimate * 2),
 				workload_shape_config: { ...(previous.goal_config?.workload_shape_config || {}), goal_driven: { groups: definitions } },
 			}
-			return { ...previous, groups, scenario_mode: 'goal_oriented', goal_target_average_tps: totalTarget, goal_min_vusers: goalConfig.min_vusers, goal_max_vusers: goalConfig.max_vusers, goal_config: goalConfig }
+			return { ...previous, groups, scenario_mode: 'goal_oriented', goal_config: goalConfig }
 		})
 	}
 
@@ -2524,9 +2414,6 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   })()
 
   // The scenario-defaults editor owns the canonical runtime_settings object.
-  // The legacy flat mirrors are kept in sync (Scenario Settings tab) or cleared
-  // (pacing/think-time, which no longer have flat editors) so
-  // runtimeSettingsFromForm composes deterministically from the canonical value.
   const applyScenarioDefaultRuntime = (next: ScenarioRuntimeSettingsDraft | undefined) => {
     setForm(prev => replaceScenarioRuntimeDefaults(prev, next))
     setLoadModelValidation(null)
@@ -2542,7 +2429,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
         prev.groups,
         scripts,
         engineDefaults,
-        runtimeSettingsFromForm(prev, true),
+        runtimeSettingsFromForm(prev),
         sourceIndex,
         targetIndexes,
       ),
@@ -2723,7 +2610,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       ? adaptScenarioShapeDefaults(selectedShapeId, scenarioSeedFromForm(form), {
         duration: form.duration,
         groups: form.groups,
-        goalTps: form.goal_target_average_tps,
+        goalTps: form.goal_config?.target_average_tps,
       })
       : undefined
     const adaptedGroup = adapted?.groups?.[stageGroupIndex]
@@ -2731,7 +2618,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       ? buildShapeStages(strategy, {
         peakVusers: activeStageGroup.vusers,
         durationSeconds,
-        turbulenceTps: adapted?.goal?.target_average_tps || form.goal_target_average_tps,
+        turbulenceTps: adapted?.goal?.target_average_tps || form.goal_config?.target_average_tps,
       })
       : []
     const nextStages = shapeStages.length > 0
@@ -2743,19 +2630,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     setForm(prev => ({
       ...prev,
       ...(adapted?.scenario_mode ? { scenario_mode: adapted.scenario_mode } : {}),
-      goal_target_average_tps: adapted?.goal?.target_average_tps ?? prev.goal_target_average_tps,
-      goal_min_vusers: adapted?.goal?.min_vusers ?? prev.goal_min_vusers,
-      goal_max_vusers: adapted?.goal?.max_vusers ?? prev.goal_max_vusers,
-      goal_p95_latency_ms: adapted?.goal?.p95_latency_ms ?? prev.goal_p95_latency_ms,
-      goal_max_error_pct: adapted?.goal?.max_error_pct ?? prev.goal_max_error_pct,
-      runtime_pacing_type: (adapted?.pacing?.type || prev.runtime_pacing_type || '') as ScenarioFormState['runtime_pacing_type'],
-      runtime_pacing_delay_ms: adapted?.pacing ? adapted.pacing.delay_ms : prev.runtime_pacing_delay_ms,
-      runtime_pacing_min_delay_ms: adapted?.pacing ? adapted.pacing.min_delay_ms : prev.runtime_pacing_min_delay_ms,
-      runtime_pacing_max_delay_ms: adapted?.pacing ? adapted.pacing.max_delay_ms : prev.runtime_pacing_max_delay_ms,
-      runtime_pacing_interval_ms: adapted?.pacing ? adapted.pacing.interval_ms : prev.runtime_pacing_interval_ms,
-      runtime_pacing_min_interval_ms: adapted?.pacing ? adapted.pacing.min_interval_ms : prev.runtime_pacing_min_interval_ms,
-      runtime_pacing_max_interval_ms: adapted?.pacing ? adapted.pacing.max_interval_ms : prev.runtime_pacing_max_interval_ms,
-      runtime_pacing_tps: adapted?.pacing ? adapted.pacing.tps : prev.runtime_pacing_tps,
+      goal_config: withAdaptedGoalBounds(prev.goal_config, adapted?.goal),
+      runtime_settings: adapted?.pacing ? seededScenarioRuntime(prev.runtime_settings, { pacing: adapted.pacing }) : prev.runtime_settings,
       groups: ensureScenarioGroups(prev.groups.map((group, groupIndex) => groupIndex === stageGroupIndex ? {
         ...group,
         stages: nextStages,
@@ -3009,7 +2885,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     return { baselineTag, baselineForm, baselineShapeId: originalShapeIdRef.current }
   }
   const buildBrowserDraft = (): ScenarioAuthoringDraft => ({
-    version: 2, projectId: activeProjectId || '', savedAt: new Date().toISOString(),
+    version: 3, projectId: activeProjectId || '', savedAt: new Date().toISOString(),
     editingId, editingUpdatedAt: editingBaselineUpdatedAtRef.current || scenarios.find(item => item.id === editingId)?.updated_at || '',
     ...recordedScenarioBaseline(),
     form, source: scenarioSourceMode, startChoice: scenarioStartChoice,
@@ -3184,7 +3060,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     setForm(draft.form)
     const storedGoal = draft.form.goal_config?.workload_shape_config?.goal_driven
     setGoalArtModes(Object.fromEntries(Object.entries(storedGoal?.groups || {}).map(([key, group]) => [key, group.art?.basis || 'manual'])))
-    goalGuardrailsEditedRef.current = draft.form.goal_min_vusers !== undefined || draft.form.goal_max_vusers !== undefined
+    goalGuardrailsEditedRef.current = draft.form.goal_config?.min_vusers !== undefined || draft.form.goal_config?.max_vusers !== undefined
     const storedClosed = draft.form.goal_config?.workload_shape_config?.closed_vuser
     closedRampDownEnabledOnceRef.current = new Set(storedClosed ? storedClosed.scope === 'group' ? Object.keys(storedClosed.groups || {}) : ['scenario'] : [])
     const existing = scenarios.find(item => item.id === draft.editingId)
@@ -3319,8 +3195,6 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     setForm(previous => ({
       ...previous,
       assignment,
-      assignment_mode: assignment.mode || 'auto',
-      assignment_targets: [...(assignment.selected_targets || [])],
     }))
   }
 
@@ -3541,12 +3415,12 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
           <input type="checkbox" checked={form.resource_baseline} onChange={event => setForm({ ...form, resource_baseline: event.target.checked })} />
           <div><strong>Resource baseline windows</strong><span>Capture 5m pre/post resource evidence around the run.</span></div>
         </label>
-        <label className={`scenario-option-card ${form.continue_on_error ? 'selected' : ''}`}>
-          <input type="checkbox" checked={form.continue_on_error ?? false} onChange={event => setForm({ ...form, continue_on_error: event.target.checked })} />
+        <label className={`scenario-option-card ${scenarioErrorHandlingFlag(form, 'continue_on_error') ? 'selected' : ''}`}>
+          <input type="checkbox" checked={scenarioErrorHandlingFlag(form, 'continue_on_error') ?? false} onChange={event => setForm(withScenarioErrorHandlingFlag(form, 'continue_on_error', event.target.checked))} />
           <div><strong>Continue on action errors</strong><span>Keep collecting resilience evidence after request-level failures.</span></div>
         </label>
-        <label className={`scenario-option-card ${form.snapshot_on_error ? 'selected' : ''}`}>
-          <input type="checkbox" checked={form.snapshot_on_error ?? false} onChange={event => setForm({ ...form, snapshot_on_error: event.target.checked })} />
+        <label className={`scenario-option-card ${scenarioErrorHandlingFlag(form, 'snapshot_on_error') ? 'selected' : ''}`}>
+          <input type="checkbox" checked={scenarioErrorHandlingFlag(form, 'snapshot_on_error') ?? false} onChange={event => setForm(withScenarioErrorHandlingFlag(form, 'snapshot_on_error', event.target.checked))} />
           <div><strong>Snapshot on error</strong><span>Preserve request/response context for failed actions.</span></div>
         </label>
       </div>
@@ -3765,11 +3639,6 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                   scenario_mode: result.traffic_profile.runtime_target === 'vusers' ? 'vuser_driven' : 'goal_oriented',
                   traffic_profile: result.traffic_profile,
                   goal_config: goal ? structuredClone(goal) : undefined,
-                  goal_target_average_tps: goal?.target_average_tps,
-                  goal_min_vusers: goal?.min_vusers,
-                  goal_max_vusers: goal?.max_vusers,
-                  goal_p95_latency_ms: goal?.p95_latency_ms,
-                  goal_max_error_pct: goal?.max_error_pct,
                   groups: previous.groups.map((group, index) => {
                     const name = group.name.trim() || findScriptById(scripts, group.script_id)?.name || `Group ${index + 1}`
                     const mapping = managed.get(name)
@@ -3795,11 +3664,6 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                   scenario_mode: result.traffic_profile.runtime_target === 'vusers' ? 'vuser_driven' : 'goal_oriented',
                   traffic_profile: result.traffic_profile,
                   goal_config: goal ? structuredClone(goal) : undefined,
-                  goal_target_average_tps: goal?.target_average_tps,
-                  goal_min_vusers: goal?.min_vusers,
-                  goal_max_vusers: goal?.max_vusers,
-                  goal_p95_latency_ms: goal?.p95_latency_ms,
-                  goal_max_error_pct: goal?.max_error_pct,
                   groups: previous.groups.map((group, index) => {
                     const name = group.name.trim() || findScriptById(scripts, group.script_id)?.name || `Group ${index + 1}`
                     const mapping = managed.get(name)
@@ -4205,7 +4069,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 										<label className="scenario-field"><span>Target TPS for {activeGroupLabel}</span><div className="stepped-ramp-unit-input"><input aria-label={`Target TPS for ${activeGroupLabel}`} className="settings-input" type="number" min={0.01} step="any" value={activeGoalDrivenDefinition.target_tps} onChange={event => updateGoalDriven({ target_tps: Number(event.target.value) })} /><span>TPS</span></div></label>
 									</div>
 									{formGroups.length > 1 && <TabList className="scenario-group-tabs" role="tablist" aria-label="Goal-driven groups" onKeyDown={handleTabKey}>{formGroups.map((group, index) => <button key={`goal-group-${index}`} type="button" className={`scenario-group-tab ${activeGroupIndex === index ? 'active' : ''}`} role="tab" aria-selected={activeGroupIndex === index} onClick={() => setStageGroupIndex(index)} tabIndex={(activeGroupIndex === index) ? 0 : -1}><strong>{group.name.trim() || `Group ${index + 1}`}</strong><span>{goalDrivenConfig.groups[goalDrivenGroupKey(index)]?.target_tps || 0} TPS</span></button>)}</TabList>}
-									<div className="stepped-ramp-equation" aria-live="polite"><strong>{form.goal_target_average_tps || 0} aggregate TPS</strong><span>Constant requested throughput for {formatModelTimeLabel(parseDurationToSeconds(form.duration))}</span></div>
+									<div className="stepped-ramp-equation" aria-live="polite"><strong>{form.goal_config?.target_average_tps || 0} aggregate TPS</strong><span>Constant requested throughput for {formatModelTimeLabel(parseDurationToSeconds(form.duration))}</span></div>
 								</div>
 							</section>
 							<section className="stepped-ramp-section" data-tab="composition" aria-labelledby="goal-demand-title">
@@ -4236,10 +4100,10 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 									<h4 id="goal-guardrails-title">Guardrails &amp; protection</h4>
 									<p>Bound adaptive demand and optionally stop after a sustained SLA breach.</p>
 									<div className="settings-grid scenario-core-grid">
-										<label className="scenario-field"><span>Min VUsers</span><input className="settings-input" type="number" min={1} value={form.goal_min_vusers ?? totalGoalDrivenEstimatedVUsers} onChange={event => updateGoalDrivenGuardrail('min_vusers', Number(event.target.value))} /></label>
-										<label className="scenario-field"><span>Max VUsers</span><input className="settings-input" type="number" min={1} value={form.goal_max_vusers ?? Math.max(2, totalGoalDrivenEstimatedVUsers * 2)} onChange={event => updateGoalDrivenGuardrail('max_vusers', Number(event.target.value))} /></label>
-										<label className="scenario-field"><span>P95 latency ceiling</span><div className="stepped-ramp-unit-input"><input className="settings-input" type="number" min={0} step="any" value={form.goal_p95_latency_ms ?? ''} onChange={event => updateGoalDrivenGuardrail('p95_latency_ms', event.target.value === '' ? undefined : Number(event.target.value))} /><span>ms</span></div></label>
-										<label className="scenario-field"><span>Max error rate</span><div className="stepped-ramp-unit-input"><input className="settings-input" type="number" min={0} max={100} step="any" value={form.goal_max_error_pct ?? ''} onChange={event => updateGoalDrivenGuardrail('max_error_pct', event.target.value === '' ? undefined : Number(event.target.value))} /><span>%</span></div></label>
+										<label className="scenario-field"><span>Min VUsers</span><input className="settings-input" type="number" min={1} value={form.goal_config?.min_vusers ?? totalGoalDrivenEstimatedVUsers} onChange={event => updateGoalDrivenGuardrail('min_vusers', Number(event.target.value))} /></label>
+										<label className="scenario-field"><span>Max VUsers</span><input className="settings-input" type="number" min={1} value={form.goal_config?.max_vusers ?? Math.max(2, totalGoalDrivenEstimatedVUsers * 2)} onChange={event => updateGoalDrivenGuardrail('max_vusers', Number(event.target.value))} /></label>
+										<label className="scenario-field"><span>P95 latency ceiling</span><div className="stepped-ramp-unit-input"><input className="settings-input" type="number" min={0} step="any" value={form.goal_config?.p95_latency_ms ?? ''} onChange={event => updateGoalDrivenGuardrail('p95_latency_ms', event.target.value === '' ? undefined : Number(event.target.value))} /><span>ms</span></div></label>
+										<label className="scenario-field"><span>Max error rate</span><div className="stepped-ramp-unit-input"><input className="settings-input" type="number" min={0} max={100} step="any" value={form.goal_config?.max_error_pct ?? ''} onChange={event => updateGoalDrivenGuardrail('max_error_pct', event.target.value === '' ? undefined : Number(event.target.value))} /><span>%</span></div></label>
 										<DurationField className="scenario-field" label="Breach window" value={form.goal_config?.sla_breach_window || '1m'} compact onChange={value => updateGoalDrivenGuardrail('sla_breach_window', value)} />
 									</div>
 									<label className="stepped-ramp-toggle"><input type="checkbox" checked={Boolean(form.goal_config?.stop_on_sla_breach)} onChange={event => updateGoalDrivenGuardrail('stop_on_sla_breach', event.target.checked)} /><span><strong>Stop on sustained guardrail breach</strong><small>Stop only after the configured breach window.</small></span></label>
@@ -4573,7 +4437,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                 })}
                 focusedIndex={runtimeGroupIndex}
                 onFocusChange={setRuntimeGroupIndex}
-                scenarioDefault={overrideFromRuntimeDraft(runtimeSettingsFromForm(form, showBrowserRuntimeSettings))}
+                scenarioDefault={overrideFromRuntimeDraft(runtimeSettingsFromForm(form))}
                 engineDefaults={engineDefaults}
                 overrides={formGroups.map(group => group.runtimeSettings)}
                 onChange={updateGroupRuntime}
@@ -4589,7 +4453,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                 onFocusChange={() => {}}
                 engineDefaults={engineDefaults}
                 applicableProtocols={scenarioDefaultProtocols}
-                overrides={[runtimeSettingsFromForm(form, showBrowserRuntimeSettings)]}
+                overrides={[runtimeSettingsFromForm(form)]}
                 onChange={(_, next) => applyScenarioDefaultRuntime(next)}
                 onApplyToGroups={() => {}}
               />}
@@ -4737,8 +4601,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
         <section className="scenario-review-details" aria-label="Runtime and placement review">
           <h4>Runtime and placement</h4>
           <p>Load window: {form.duration}, including ramp-up. Start delay: {form.start_delay || 'none'}. Resource baseline: {form.resource_baseline ? 'enabled' : 'disabled'}.</p>
-          <p>Default pacing: {formatPacing(runtimeSettingsFromForm(form, true).pacing) || 'inherits script'}. Think time: {formatThinkTime(runtimeSettingsFromForm(form, true).think_time) || 'inherits script'}. Error handling: {formatErrorHandling(overrideFromRuntimeDraft(runtimeSettingsFromForm(form, true))?.error_handling) || 'inherits script'}.</p>
-          <p>Scenario placement: {assignmentFromForm(form)?.mode || 'automatic'}{form.assignment_targets.length ? ` · Targets: ${form.assignment_targets.join(', ')}` : ''}.</p>
+          <p>Default pacing: {formatPacing(runtimeSettingsFromForm(form).pacing) || 'inherits script'}. Think time: {formatThinkTime(runtimeSettingsFromForm(form).think_time) || 'inherits script'}. Error handling: {formatErrorHandling(overrideFromRuntimeDraft(runtimeSettingsFromForm(form))?.error_handling) || 'inherits script'}.</p>
+          <p>Scenario placement: {rootAssignment.mode || 'automatic'}{rootAssignment.selected_targets?.length ? ` · Targets: ${rootAssignment.selected_targets.join(', ')}` : ''}.</p>
           <ul>{formGroups.map((group, index) => <li key={index}><strong>{group.name || `Group ${index + 1}`}</strong>: {group.iterations ? `${group.iterations} iterations` : 'duration limited'}; placement {group.assignment?.mode || 'inherits scenario'}; runtime {group.runtimeSettings ? 'group overrides configured' : 'inherits scenario defaults'}.
             <p>Pacing: {formatPacing(group.runtimeSettings?.pacing) || 'inherits defaults'}. Think time: {formatThinkTime(group.runtimeSettings?.think_time) || 'inherits defaults'}. {group.assignment?.selected_targets?.length ? `Selected targets: ${group.assignment.selected_targets.join(', ')}` : ''}</p>
             {group.stages.length > 0 && <p>{group.stages.map(stage => `${stage.name || stage.type}: ${stage.duration} → ${stage.target_vusers} VUsers`).join(' · ')}</p>}
@@ -4950,7 +4814,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 					<div className="stepped-ramp-stage-preview goal-driven-preview-details">
 						<div className="stepped-ramp-stage-preview-header"><strong>Adaptive demand plan</strong><span>Live preview</span></div>
 						<table><thead><tr><th>Group</th><th>Target TPS</th><th>ART</th><th>Seed estimate</th></tr></thead><tbody>{formGroups.map((group, index) => { const definition = goalDrivenConfig.groups[goalDrivenGroupKey(index)]; return <tr key={`goal-preview-${index}`}><td>{group.name.trim() || `Group ${index + 1}`}</td><td>{definition?.target_tps || 0}</td><td>{definition?.art ? `${definition.art.art_ms.toLocaleString()} ms` : 'Not set'}</td><td>{definition?.art ? `${goalDrivenEstimatedVUsers[index]} VUsers` : 'Unavailable — set ART'}</td></tr> })}</tbody></table>
-						<p>Guardrail range {form.goal_min_vusers ?? totalGoalDrivenEstimatedVUsers}–{form.goal_max_vusers ?? Math.max(2, totalGoalDrivenEstimatedVUsers * 2)} VUsers. Actual demand adapts; the chart represents requested TPS.</p>
+						<p>Guardrail range {form.goal_config?.min_vusers ?? totalGoalDrivenEstimatedVUsers}–{form.goal_config?.max_vusers ?? Math.max(2, totalGoalDrivenEstimatedVUsers * 2)} VUsers. Actual demand adapts; the chart represents requested TPS.</p>
 					</div>
 				)}
               </aside>

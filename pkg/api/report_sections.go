@@ -235,6 +235,9 @@ func pdfRootCauseLines(lines *[]string, view *ReportRootCause, hypotheses []Repo
 		for _, finding := range b.Findings {
 			*lines = append(*lines, "  "+finding)
 		}
+		for _, qualification := range b.Qualification {
+			*lines = append(*lines, "  "+qualification)
+		}
 		for _, limitation := range b.Limitations {
 			*lines = append(*lines, "  Limitation: "+limitation)
 		}
@@ -282,6 +285,9 @@ func csvRootCauseRows(write reportCSVWriteFunc, section string, view *ReportRoot
 		rows = append(rows, [3]string{"browser_baseline", "summary", b.Summary})
 		for _, finding := range b.Findings {
 			rows = append(rows, [3]string{"browser_baseline", "finding", finding})
+		}
+		for _, qualification := range b.Qualification {
+			rows = append(rows, [3]string{"browser_baseline", "qualification", qualification})
 		}
 		for _, limitation := range b.Limitations {
 			rows = append(rows, [3]string{"browser_baseline", "limitation", limitation})
@@ -744,6 +750,10 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 
 	// --- Completeness ------------------------------------------------------
 	add(reportSectionRenderer{ID: "telemetry_acceptance", Label: "Telemetry Acceptance", PDF: telemetryAcceptanceReportPDF, CSV: telemetryAcceptanceReportCSV})
+	// --- Browser intelligence (BI-4) ---------------------------------------
+	add(reportSectionRenderer{ID: reportSectionBrowserFindings, Label: "Browser Findings", PDF: browserFindingsReportPDF, CSV: browserFindingsReportCSV})
+	add(reportSectionRenderer{ID: reportSectionInteractionMap, Label: "Interaction Patterns and Heatmaps", PDF: interactionMapReportPDF, CSV: interactionMapReportCSV})
+	add(reportSectionRenderer{ID: reportSectionJourneyRisk, Label: "Journey Risk", PDF: journeyRiskReportPDF, CSV: journeyRiskReportCSV})
 	add(reportSectionRenderer{ID: "completeness", Label: "Completeness Score",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
 			pdfHeading(lines, "Completeness")

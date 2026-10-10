@@ -4,6 +4,7 @@ import { normalizeRequiredLabels } from './assignmentLabels'
 import { canonicalThinkTimeType } from './thinkTimeConfig'
 import { formatMillisecondsAsSecondsValue, formatPacingTiming } from './runtimeTiming'
 import { trafficProfileMappingForGroup, trafficProfileTargetAt, trafficProfileTimelineSeconds, trafficProfileTpsStatistics } from './trafficProfilePreviewModel'
+import { initialStageLevel, maxStageVUsers, stageBoundarySeconds, stageLevelAt } from './workloadStages'
 
 export type RunDefaultKey =
   | 'duration'
@@ -649,11 +650,7 @@ export function getEffectiveRuntimeDefaults(scenario: StoredScenario, overrides:
 
 export function stagedGroupPeakVUsers(group: ScenarioScriptGroup): number | undefined {
   if (!group.stages?.length) return undefined
-
-  const peakTarget = group.stages.reduce((peak, stage) => {
-    const target = Number(stage.target_vusers)
-    return Number.isFinite(target) ? Math.max(peak, target) : peak
-  }, 0)
+  const peakTarget = maxStageVUsers(group.stages)
   return peakTarget > 0 ? peakTarget : group.vusers
 }
 
@@ -771,6 +768,10 @@ export function buildRunLoadProfilePreview(groups: ScenarioScriptGroup[], durati
     ? Number(goalTargetTps)
     : undefined
   const includesTps = profileTps || configuredGoalTps !== undefined
+  // A group activates at its start offset (traffic-profile groups have none):
+  // its ramp and stages count from activation, and it holds until the shared
+  // scenario deadline, as the engine runs it.
+  const groupOffsets = groups.map((group, index) => profileMappings[index] ? 0 : Math.min(steadySeconds, parseDurationToSeconds(group.start_offset)))
   const maxRampDown = groups.reduce(
     (max, group, index) => (profileMappings[index] || group.stages?.length) ? max : Math.max(max, parseDurationToSeconds(group.ramp_down)),
     0,
@@ -785,15 +786,14 @@ export function buildRunLoadProfilePreview(groups: ScenarioScriptGroup[], durati
   for (let second = step; second < totalSeconds; second += step) timeline.add(second)
   groups.forEach((group, index) => {
     if (profileMappings[index]) return
+    timeline.add(preBaselineSeconds + groupOffsets[index])
     if (group.stages?.length) {
-      let cursor = preBaselineSeconds
-      group.stages.forEach(stage => {
-        cursor += parseDurationToSeconds(stage.duration)
-        timeline.add(Math.min(preBaselineSeconds + steadySeconds, cursor))
+      stageBoundarySeconds(group.stages).forEach(end => {
+        timeline.add(Math.min(preBaselineSeconds + steadySeconds, preBaselineSeconds + groupOffsets[index] + end))
       })
       return
     }
-    timeline.add(preBaselineSeconds + Math.min(steadySeconds, parseDurationToSeconds(group.ramp_up)))
+    timeline.add(preBaselineSeconds + Math.min(steadySeconds, groupOffsets[index] + parseDurationToSeconds(group.ramp_up)))
     timeline.add(preBaselineSeconds + steadySeconds + parseDurationToSeconds(group.ramp_down))
   })
   trafficProfileTimelineSeconds(trafficProfile).forEach(second => timeline.add(preBaselineSeconds + Math.min(steadySeconds, second)))
@@ -809,24 +809,28 @@ export function buildRunLoadProfilePreview(groups: ScenarioScriptGroup[], durati
     const point: Record<string, number> = { second, total: 0 }
     groups.forEach((group, index) => {
       const loadSecond = Math.max(0, second - preBaselineSeconds)
+      const groupSecond = loadSecond - groupOffsets[index]
       const profileMapping = profileMappings[index]
       let value = 0
 
-      if (second < preBaselineSeconds) {
+      if (second < preBaselineSeconds || groupSecond < 0) {
         value = 0
       } else if (profileVUsers && profileMapping) {
         value = loadSecond < steadySeconds ? trafficProfileTargetAt(profileMapping, loadSecond) : 0
       } else if (group.stages?.length) {
-        value = loadSecond < steadySeconds ? stagedRunGroupValue(group, loadSecond) : 0
+        value = loadSecond < steadySeconds ? stagedRunGroupValue(group, groupSecond) : 0
       } else {
         const rampUp = parseDurationToSeconds(group.ramp_up)
         const rampDown = parseDurationToSeconds(group.ramp_down)
-        if (loadSecond < rampUp) {
-          value = rampUp > 0 ? (loadSecond / rampUp) * group.vusers : group.vusers
-        } else if (loadSecond < steadySeconds) {
-          value = group.vusers
+        // The level a group reached after activeSeconds of its own ramp.
+        const level = (activeSeconds: number) => activeSeconds < rampUp ? (activeSeconds / rampUp) * group.vusers : group.vusers
+        if (loadSecond < steadySeconds) {
+          value = level(groupSecond)
         } else if (loadSecond < steadySeconds + rampDown) {
-          value = rampDown > 0 ? (1 - ((loadSecond - steadySeconds) / rampDown)) * group.vusers : 0
+          // At the deadline a group stops ramping up and ramps down from the
+          // level it reached; one that activates at the deadline never ran.
+          const active = steadySeconds - groupOffsets[index]
+          value = rampDown > 0 && active > 0 ? (1 - ((loadSecond - steadySeconds) / rampDown)) * level(active) : 0
         }
       }
 
@@ -879,31 +883,14 @@ export function buildRunLoadProfilePreview(groups: ScenarioScriptGroup[], durati
   }
 }
 
+// A saved stage schedule as the controller runs it (workloadStages).
 function stagedRunGroupValue(group: ScenarioScriptGroup, elapsedSeconds: number): number {
   const stages = group.stages || []
-  const firstType = stages[0]?.type?.trim().toLowerCase()
-  let previousValue = firstType === 'ramp_down'
-    ? Math.max(0, Number(group.vusers) || 0)
-    : firstType === 'hold'
-      ? Math.max(0, Number(stages[0]?.target_vusers) || 0)
-      : 0
-  let cursor = 0
-
-  for (const stage of stages) {
-    const duration = parseDurationToSeconds(stage.duration)
-    const target = Math.max(0, Number(stage.target_vusers) || 0)
-    const end = cursor + duration
-    if (elapsedSeconds <= end) {
-      if (stage.type.trim().toLowerCase() === 'ramp_up' || stage.type.trim().toLowerCase() === 'ramp_down') {
-        const progress = duration > 0 ? Math.max(0, Math.min(1, (elapsedSeconds - cursor) / duration)) : 1
-        return previousValue + ((target - previousValue) * progress)
-      }
-      return target
-    }
-    cursor = end
-    previousValue = target
-  }
-  return previousValue
+  return stageLevelAt(stages, elapsedSeconds, 'target_vusers', {
+    initialLevel: initialStageLevel(stages, group.vusers),
+    emptyDurationSeconds: 0,
+    missingTarget: 'zero',
+  })
 }
 
 export function buildRunDefaultCards(scenario: StoredScenario | undefined, overrides: RunDefaultOverrides): RunDefaultCard[] {

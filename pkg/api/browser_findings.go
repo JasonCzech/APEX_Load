@@ -317,6 +317,18 @@ func runBrowserIntelligence(ctx context.Context, s *Server, job *storage.Evaluat
 	if inputs.fingerprint != job.InputFingerprint {
 		return nil, errors.New("the run archive or the policy revision changed after this evaluation was queued; queue a new evaluation")
 	}
+	result, err := evaluateArchiveBrowserFindings(ctx, inputs)
+	if err != nil {
+		// Never box a nil *BrowserIntelligenceResult into the job's result.
+		return nil, err
+	}
+	return result, nil
+}
+
+// evaluateArchiveBrowserFindings judges the finalized archive's retained
+// document measurements (each measurement once, at its latest revision)
+// under the inputs' policy revision.
+func evaluateArchiveBrowserFindings(ctx context.Context, inputs *browserIntelligenceInputs) (*BrowserIntelligenceResult, error) {
 	lease, err := acquireArchiveMaterialized(ctx, inputs.record)
 	if err != nil {
 		return nil, fmt.Errorf("run %s archive: %w", inputs.runID, err)

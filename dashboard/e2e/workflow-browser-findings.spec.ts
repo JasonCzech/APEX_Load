@@ -48,10 +48,11 @@ test('browser findings are evaluated on demand and never score absent evidence',
   // A policy revision that does not exist is not found (a request fault would be 400).
   expect(unknown.status()).toBe(404)
 
-  await page.goto(`/#/report/${id}?section=diagnostics&${scopeQuery(workspace)}`)
+  // The pinned browser policy offers the Browser area although the run kept
+  // no browser evidence.
+  await page.goto(`/#/report/${id}?section=browser&${scopeQuery(workspace)}`)
   await page.reload()
-  await page.getByRole('tab', { name: 'Diagnostics', exact: true }).click()
-  await page.getByText('Browser evidence', { exact: true }).click()
+  await expect(page.getByRole('tab', { name: 'Browser', exact: true })).toHaveAttribute('aria-selected', 'true')
   const panel = page.getByRole('region', { name: 'Browser findings' })
   await expect(panel).toContainText('No overall score: the run retained no document evidence.', { timeout: 30_000 })
   await expect(panel).toContainText("Web vitals revision")

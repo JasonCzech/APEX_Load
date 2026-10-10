@@ -612,6 +612,9 @@ function formatReportSectionLabel(section: string): string {
     report_authorship: 'Report authorship',
     official_outcome: 'Official outcome',
     telemetry_acceptance: 'Telemetry acceptance',
+    browser_findings: 'Browser findings',
+    interaction_map: 'Interaction patterns and heatmaps',
+    journey_risk: 'Journey risk',
   }
   return labels[section] || section.replace(/_/g, ' ')
 }

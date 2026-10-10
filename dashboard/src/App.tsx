@@ -1,7 +1,7 @@
 import TooltipButton from './components/ux/TooltipButton'
 import { takeMonitoringTabFocus } from './components/monitoringWorkspaceModel';
 import { contextualHelpHash } from './contextualHelp';
-import { terminalRunReportView } from './appRouting';
+import { scriptsRouteForAuthoringState, terminalRunReportView } from './appRouting';
 import PageHeader from './components/ux/PageHeader'
 import { settingsOwner } from "./components/settingsNavigation";
 import {
@@ -416,6 +416,12 @@ function AppShell({
   const isDevUserPreview = authStatus?.mode === "dev" && devViewMode === "user";
   const scriptMode =
     view.page === "scripts" && "mode" in view ? view.mode : undefined;
+  // An import route names its importer (the route boundary translates older
+  // addresses); the page opens it by launcher descriptor.
+  const scriptImport =
+    view.page === "scripts" && view.mode === "import" && view.importLauncher
+      ? { launcher: view.importLauncher, mode: view.importMode || null }
+      : null;
   const scriptEditId =
     view.page === "scripts" && "scriptId" in view ? view.scriptId : undefined;
   const [scriptsNavigationVersion, setScriptsNavigationVersion] = useState(0);
@@ -424,6 +430,7 @@ function AppShell({
     subView: ScriptsAuthoringSubView;
     editingId: string | null;
     importLauncher?: string | null;
+    importMode?: string | null;
   } | null>(null);
   const [effectiveAccessResources, setEffectiveAccessResources] = useState<
     import("./types").DashboardAuthEffectiveAccessResource[]
@@ -2399,26 +2406,14 @@ function AppShell({
   useDockBadge(desktopShellActiveRunCount);
 
   const handleScriptsAuthoringStateChange = useCallback(
-    (state: { subView: ScriptsAuthoringSubView; editingId: string | null; importLauncher?: string | null }) => {
+    (state: { subView: ScriptsAuthoringSubView; editingId: string | null; importLauncher?: string | null; importMode?: string | null }) => {
       setScriptsTopbarState(state);
       // Keep the URL naming what is open (library, editor, import) so a
       // refresh or a shared link returns to it. replaceState, not setView:
       // the page is keyed by its route and a view change would remount it.
       const current = parseAppViewFromHash(window.location.hash);
       if (current.page !== "scripts") return;
-      const mode = state.subView === "list"
-        ? "list"
-        : state.subView === "edit" && state.editingId
-          ? "edit"
-          : state.subView === "create" || state.subView === "create-options"
-            ? "create"
-            : "import";
-      const next = viewToLocationHash({
-        page: "scripts",
-        mode,
-        ...(mode === "edit" && state.editingId ? { scriptId: state.editingId } : {}),
-        ...workspaceScopeForAppView(current),
-      });
+      const next = viewToLocationHash(scriptsRouteForAuthoringState(state, workspaceScopeForAppView(current)));
       if (next !== window.location.hash) window.history.replaceState(window.history.state, "", next);
     },
     [],
@@ -3619,9 +3614,10 @@ function AppShell({
               {view.page === "scripts" && !routeAssetScopeBlocked && (
                 <ScriptsPage
                   featurePolicySignal={featurePolicySignal}
-                  key={`scripts-${scriptsNavigationVersion}-${scriptMode || "list"}-${scriptEditId || ""}`}
+                  key={`scripts-${scriptsNavigationVersion}-${scriptMode || "list"}-${scriptEditId || ""}-${scriptImport ? `${scriptImport.launcher}:${scriptImport.mode || ""}` : ""}`}
                   applicationRepository={applicationRepository}
-                  initialMode={scriptMode}
+                  initialMode={scriptMode === "import" ? undefined : scriptMode}
+                  initialImport={scriptImport}
                   initialEditId={scriptEditId}
                   nativeImportRequest={nativeImportRequest}
                   onNativeImportRequestHandled={() =>

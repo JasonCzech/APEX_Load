@@ -1,6 +1,7 @@
 import type { ClientMetrics } from './metrics'
 import type { RedactionRule } from './runtimeSettings'
 import type { BrowserConfig, HTTPActionVersion, ReplayPreflight, ScriptDefinition } from './scripts'
+import type { JsonRequestBody } from './generated/openapi'
 
 /** Transport and view contracts for browser replay and script debugging. */
 export interface BrowserReplayConsoleEntry {
@@ -370,21 +371,14 @@ export interface ScriptDebugSession {
   condition_evidence?: Record<string, ConditionEvidence>
 }
 
-export interface ScriptDebugStartRequest {
-  group_name?: string
-  project_id?: string
-  replay_session_id?: string
-  replay_profile?: string
-  runtime_profile?: ReplayRuntimeProfile
-  variables?: Record<string, string>
-  start_paused?: boolean
-  breakpoints?: ScriptDebugBreakpoint[]
-  break_on_failure?: boolean
-  log_level?: ScriptDebugLogLevel
-  browser?: BrowserConfig
-  ignore_think_time?: boolean
-  script?: ScriptDefinition
-}
+/**
+ * A debug session start request: the generated transport body (stored-script
+ * route), with the script typed by the DSL's own definition. The generated
+ * contract carries a script's open maps (assertions, conditions, control
+ * steps) as open objects, which ScriptDefinition narrows; every other field is
+ * the transport's own type.
+ */
+export type ScriptDebugStartRequest = Omit<JsonRequestBody<'handleStartScriptDebugScript'>, 'script'> & { script?: ScriptDefinition }
 
 export interface ScriptDebugStartResponse {
   script_id: string

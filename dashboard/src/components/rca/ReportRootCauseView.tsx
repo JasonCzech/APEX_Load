@@ -29,6 +29,7 @@ export default function ReportRootCauseView({ view, limit }: { view: ReportRootC
       {view.browser_baseline && <div className="report-browser-baseline">
         <p>{view.browser_baseline.summary}</p>
         {view.browser_baseline.findings?.length ? <ul className="report-list">{view.browser_baseline.findings.map((finding, i) => <li key={i}>{finding}</li>)}</ul> : null}
+        {view.browser_baseline.qualification?.length ? <p className="report-hint">{view.browser_baseline.qualification.join('; ')}.</p> : null}
         {view.browser_baseline.limitations?.map((limitation, i) => <p key={i} className="report-hint">Limitation: {limitation}</p>)}
       </div>}
     </div>

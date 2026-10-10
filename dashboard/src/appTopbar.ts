@@ -1,6 +1,7 @@
 import type { AppView } from './appRouting'
 import type { TestStatus, TestSummary } from './types'
 import { isPendingTestStatus, normalizeTestStatus, resolveTestStatus } from './utils/testStatusUtils'
+import { launcherForImportSurface } from './scriptImportLaunchers'
 
 export type TopbarPageTitleOptions = {
   testName?: string
@@ -100,22 +101,6 @@ export function importSurfaceTitle(launcher: string): string {
   return launcher === 'oracle_ebusiness_review' ? name : `Import ${name}`
 }
 
-const IMPORT_SUBVIEW_LAUNCHERS: Record<string, string> = {
-  import: 'enterprise_archive',
-  'jmeter-import': 'jmeter',
-  'bruno-import': 'bruno',
-  sample: 'sample',
-  'oracle-review': 'oracle_ebusiness_review',
-  'devweb-import': 'devweb',
-  'har-import': 'traffic_har',
-  'recorder-import': 'recorder_export',
-  'openapi-import': 'openapi',
-  'raml-import': 'raml',
-  'postman-import': 'postman',
-  'wsdl-import': 'wsdl',
-  'asyncapi-import': 'asyncapi',
-}
-
 export function pageTitleForScriptSubView(subView?: string, importLauncher?: string | null): string {
   switch (subView) {
     // Library and Builder are tabs of the Scripts page.
@@ -131,7 +116,7 @@ export function pageTitleForScriptSubView(subView?: string, importLauncher?: str
     case 'protocol-import':
       return importLauncher ? importSurfaceTitle(importLauncher) : 'Import from source'
   }
-  const launcher = subView ? IMPORT_SUBVIEW_LAUNCHERS[subView] : undefined
+  const launcher = launcherForImportSurface(subView)
   return launcher ? importSurfaceTitle(launcher) : 'Scripts'
 }
 

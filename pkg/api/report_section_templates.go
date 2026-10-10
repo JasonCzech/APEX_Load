@@ -416,7 +416,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 </div>
 {{end}}
 {{if .RootCause}}{{if gt (len .RootCause.Hypotheses) (len .RootCauseHypotheses)}}<p class="muted">{{sub (len .RootCause.Hypotheses) (len .RootCauseHypotheses)}} more ranked in the Detailed Technical report.</p>{{end}}
-{{with .RootCause.BrowserBaseline}}<div class="browser-baseline"><p>{{.Summary}}</p>{{if .Findings}}<ul>{{range .Findings}}<li>{{.}}</li>{{end}}</ul>{{end}}{{range .Limitations}}<p class="muted">Limitation: {{.}}</p>{{end}}</div>{{end}}
+{{with .RootCause.BrowserBaseline}}<div class="browser-baseline"><p>{{.Summary}}</p>{{if .Findings}}<ul>{{range .Findings}}<li>{{.}}</li>{{end}}</ul>{{end}}{{if .Qualification}}<p class="muted">{{range $i, $q := .Qualification}}{{if $i}}; {{end}}{{$q}}{{end}}.</p>{{end}}{{range .Limitations}}<p class="muted">Limitation: {{.}}</p>{{end}}</div>{{end}}
 {{if .RootCause.Limitations}}<details><summary>Limitations</summary><ul>{{range .RootCause.Limitations}}<li>{{.}}</li>{{end}}</ul></details>{{end}}{{end}}
 {{end}}
 
@@ -553,6 +553,45 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{range .Stages}}<tr><td>{{.Stage}}</td><td>{{.Availability}}</td><td class="num">{{.Samples}}</td><td class="num">{{.P50}}</td><td class="num">{{.P95}}</td><td class="num">{{.P99}}</td><td class="num">{{.Max}}</td><td>{{.Excluded}}</td></tr>{{end}}
 </tbody></table>{{end}}
 {{if .Exclusions}}<ul>{{range .Exclusions}}<li>Excluded — {{.}}</li>{{end}}</ul>{{end}}
+{{end}}
+{{end}}
+
+{{define "browser_findings"}}
+<h2>Browser Findings</h2>
+{{with .BrowserFindingsView}}
+<p class="section-copy">{{.Summary}}</p>
+{{if .Findings}}<table><thead><tr><th>Finding</th><th>State</th><th>Severity</th><th>Observed</th><th>Summary</th></tr></thead><tbody>
+{{range .Findings}}<tr><td>{{.Title}}</td><td>{{.State}}</td><td>{{.Severity}}</td><td>{{.Observed}}</td><td>{{.Summary}}</td></tr>{{end}}
+</tbody></table>{{end}}
+{{if .More}}<p class="section-copy">{{.More}} more findings are in the run report.</p>{{end}}
+{{if .Notes}}<ul>{{range .Notes}}<li>{{.}}</li>{{end}}</ul>{{end}}
+{{end}}
+{{end}}
+
+{{define "interaction_map"}}
+<h2>Interaction Patterns and Heatmaps</h2>
+{{with .InteractionMapView}}
+<p class="section-copy">{{.Summary}}</p>
+{{if .Patterns}}<table><thead><tr><th>Pattern</th><th>Provenance</th><th>Route</th><th>Action</th><th class="num">Gestures</th><th>Detail</th></tr></thead><tbody>
+{{range .Patterns}}<tr><td>{{.Kind}}</td><td>{{.Provenance}}</td><td>{{.Route}}</td><td>{{.Action}}</td><td class="num">{{.Count}}</td><td>{{.Detail}}</td></tr>{{end}}
+</tbody></table>{{end}}
+{{if .More}}<p class="section-copy">{{.More}} more patterns are in the run report.</p>{{end}}
+{{if .Heatmaps}}<table><thead><tr><th>Route</th><th>Layout</th><th>Viewport</th><th>Engine</th><th>Profile</th><th class="num">Gestures</th><th>Occupied cells</th></tr></thead><tbody>
+{{range .Heatmaps}}<tr><td>{{.Route}}</td><td>{{.Layout}}</td><td>{{.Viewport}}</td><td>{{.Engine}}</td><td>{{.Profile}}</td><td class="num">{{.Gestures}}</td><td>{{.Cells}}</td></tr>{{end}}
+</tbody></table>{{end}}
+{{if .MoreMaps}}<p class="section-copy">{{.MoreMaps}} more heatmaps are in the run report.</p>{{end}}
+{{if .Notes}}<ul>{{range .Notes}}<li>{{.}}</li>{{end}}</ul>{{end}}
+{{end}}
+{{end}}
+
+{{define "journey_risk"}}
+<h2>Journey Risk</h2>
+{{with .JourneyRiskView}}
+<p class="section-copy">{{.Summary}}</p>
+{{if .Journeys}}<table><thead><tr><th>Journey</th><th class="num">Eligible</th><th class="num">Completed</th><th class="num">Failed</th><th class="num">Aborted</th><th class="num">Skipped</th><th class="num">Censored</th><th class="num">Failure rate</th></tr></thead><tbody>
+{{range .Journeys}}<tr><td>{{.Name}}{{if ne .Name .ID}} <span class="muted">({{.ID}})</span>{{end}}</td><td class="num">{{.Eligible}}</td><td class="num">{{.Completed}}</td><td class="num">{{.Failed}}</td><td class="num">{{.Aborted}}</td><td class="num">{{.Skipped}}</td><td class="num">{{.Censored}}</td><td class="num">{{.FailureRate}}</td></tr>{{end}}
+</tbody></table>{{end}}
+{{if .Notes}}<ul>{{range .Notes}}<li>{{.}}</li>{{end}}</ul>{{end}}
 {{end}}
 {{end}}
 

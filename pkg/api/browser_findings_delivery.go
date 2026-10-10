@@ -133,13 +133,22 @@ func (s *Server) handleGetRunArchiveBrowserFindings(w http.ResponseWriter, r *ht
 		writeError(w, http.StatusServiceUnavailable, "evaluations unavailable")
 		return
 	}
-	project := normalizeProjectID(test.ProjectID)
-	jobs, err := pinnedBrowserEvaluations(store, project, test.ID)
+	response, err := runBrowserFindings(store, normalizeProjectID(test.ProjectID), test.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "cannot list browser findings")
 		return
 	}
-	response := RunBrowserFindingsResponse{RunID: test.ID, Status: "not_evaluated"}
+	writeJSON(w, http.StatusOK, response)
+}
+
+// runBrowserFindings reads the run's latest ready browser findings under its
+// pinned policy: the run page, the report sections and the CLI read the same.
+func runBrowserFindings(store storage.EvaluationJobStore, project, testID string) (RunBrowserFindingsResponse, error) {
+	jobs, err := pinnedBrowserEvaluations(store, project, testID)
+	if err != nil {
+		return RunBrowserFindingsResponse{}, err
+	}
+	response := RunBrowserFindingsResponse{RunID: testID, Status: "not_evaluated"}
 	for index, summary := range jobs {
 		switch summary.State {
 		case storage.EvaluationJobQueued, storage.EvaluationJobRunning:
@@ -175,7 +184,7 @@ func (s *Server) handleGetRunArchiveBrowserFindings(w http.ResponseWriter, r *ht
 			response.Status = "failed"
 		}
 	}
-	writeJSON(w, http.StatusOK, response)
+	return response, nil
 }
 
 // notifyBrowserFindingTransitions sends webhook events when an evaluation

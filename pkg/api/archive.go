@@ -646,6 +646,12 @@ type RunArchiveReport struct {
 	// TelemetryAcceptance is the run's telemetry verdict under its pinned
 	// acceptance policy, apart from the application verdict (C7).
 	TelemetryAcceptance *TelemetryAcceptanceVerdict `json:"telemetry_acceptance,omitempty"`
+	// BrowserIntelligence holds the browser findings, interaction patterns
+	// and journey accounting a report renders (the browser baseline is in
+	// the root-cause section). It is attached only for an export that
+	// renders it ((*Server).attachBrowserIntelligenceForProfile), never to the
+	// JSON report, so it is not part of the JSON contract.
+	BrowserIntelligence *ReportBrowserIntelligence `json:"-"`
 }
 
 // RunArchiveLoadLevelSummary preserves the evidence collected while one

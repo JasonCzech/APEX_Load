@@ -532,7 +532,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusBadRequest, "unknown report profile")
 			return
 		}
-		s.enrichArchiveReportForProfile(report, profile.ID)
+		s.enrichArchiveReportForProfile(r.Context(), report, profile.ID)
 		testID := r.PathValue("id")
 		annotations, err := resolveReportAnnotations(s.store, report, testID, profile.ID)
 		if err != nil {
@@ -565,7 +565,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		profileID := profile.ID
-		s.enrichArchiveReportForProfile(report, profileID)
+		s.enrichArchiveReportForProfile(r.Context(), report, profileID)
 		annotations, err := resolveReportAnnotations(s.store, report, testID, profileID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to load report commentary: "+err.Error())
@@ -596,7 +596,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("report profile %q does not support pdf export", profile.ID))
 			return
 		}
-		s.enrichArchiveReportForProfile(report, profile.ID)
+		s.enrichArchiveReportForProfile(r.Context(), report, profile.ID)
 		testID := r.PathValue("id")
 		annotations, err := resolveReportAnnotations(s.store, report, testID, profile.ID)
 		if err != nil {
@@ -635,7 +635,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("report profile %q does not support docx export", profile.ID))
 			return
 		}
-		s.enrichArchiveReportForProfile(report, profile.ID)
+		s.enrichArchiveReportForProfile(r.Context(), report, profile.ID)
 		testID := r.PathValue("id")
 		annotations, err := resolveReportAnnotations(s.store, report, testID, profile.ID)
 		if err != nil {
@@ -1124,7 +1124,7 @@ func (s *Server) handleGetTestHTMLReport(w http.ResponseWriter, r *http.Request)
 	}
 	// Attach the cross-run and storage-backed sections before rendering, each
 	// only for profiles that display it.
-	s.enrichArchiveReportForProfile(report, profile)
+	s.enrichArchiveReportForProfile(r.Context(), report, profile)
 	annotations, err := resolveReportAnnotations(s.store, report, r.PathValue("id"), profile)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load report commentary: "+err.Error())

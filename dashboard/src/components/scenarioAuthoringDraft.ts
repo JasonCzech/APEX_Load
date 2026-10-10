@@ -1,9 +1,10 @@
 import type { ScenarioFormState, ScenarioStartChoice } from './TestHub'
 import type { ScenarioSourceMode, ScenarioWizardStep } from './scenarioWizardUtils'
+import { legacyFlatFormFieldsValid, migrateLegacyFlatForm } from './scenarioAuthoringDraftV2'
 
 /** Authoring checkpoints are browser-local and can never be used as run payloads. */
 export interface ScenarioAuthoringDraft {
-  version: 2
+  version: 3
   projectId: string
   savedAt: string
   editingId: string | null
@@ -34,25 +35,34 @@ const WIZARD_STEPS: ScenarioWizardStep[] = ['scripts', 'source', 'run', 'data', 
 const V1_WIZARD_STEPS = ['start', 'scripts', 'source', 'run', 'data', 'review']
 
 /**
- * Upgrade a stored checkpoint to the current step order. Version 1 used six steps
+ * Upgrade a stored checkpoint to the current version. Version 1 used six steps
  * (Start, Scripts, Shape / Source, …); the model choice now lives on the Model &
  * Shape step, so Start maps to Scripts and the visited index is re-expressed in the
- * five-step order. Returns null for anything that is not a recognizable checkpoint.
+ * five-step order. Version 2 forms carried flat mirrors beside the canonical
+ * runtime override, goal config and assignment; version 3 forms carry only the
+ * canonical values, so the mirrors are composed into them
+ * (scenarioAuthoringDraftV2). Returns null for
+ * anything that is not a recognizable checkpoint.
  */
 export function migrateScenarioAuthoringDraft(value: Record<string, unknown>): Record<string, unknown> | null {
-  if (value.version === 2) {
+  if (value.version === 3) {
     if (!WIZARD_STEPS.includes(value.step as ScenarioWizardStep) || !Number.isInteger(value.visited) || Number(value.visited) < 0 || Number(value.visited) >= WIZARD_STEPS.length) return null
     return value
+  }
+  if (value.version === 2) {
+    if (!record(value.form) || !legacyFlatFormFieldsValid(value.form)) return null
+    const baseline = record(value.baselineForm) && legacyFlatFormFieldsValid(value.baselineForm) ? migrateLegacyFlatForm(value.baselineForm) : value.baselineForm
+    return migrateScenarioAuthoringDraft({ ...value, version: 3, form: migrateLegacyFlatForm(value.form), ...(value.baselineForm !== undefined ? { baselineForm: baseline } : {}) })
   }
   if (value.version !== 1) return null
   if (!V1_WIZARD_STEPS.includes(String(value.step)) || !Number.isInteger(value.visited) || Number(value.visited) < 0 || Number(value.visited) >= V1_WIZARD_STEPS.length) return null
   const toCurrent = (step: string) => (step === 'start' ? 'scripts' : step) as ScenarioWizardStep
-  return {
+  return migrateScenarioAuthoringDraft({
     ...value,
     version: 2,
     step: toCurrent(String(value.step)),
     visited: WIZARD_STEPS.indexOf(toCurrent(V1_WIZARD_STEPS[Number(value.visited)])),
-  }
+  })
 }
 
 // Refuse to persist inline credentials rather than silently dropping authored
@@ -106,10 +116,9 @@ export function readScenarioAuthoringDraft(project: string): ScenarioAuthoringDr
     if (!['', 'goal', 'shape', 'existing', 'traffic_profile', 'csv_driven'].includes(String(d.startChoice))) return null
     const f = d.form
     if (typeof f.name !== 'string' || typeof f.duration !== 'string' || !Array.isArray(f.groups) || f.groups.length > 1000) return null
-    if (!['start_delay', 'runtime_pacing_type', 'runtime_log_level', 'runtime_auto_transactions', 'assignment_mode'].every(name => typeof f[name] === 'string')) return null
-    if (!['script_shakeout', 'resource_baseline', 'runtime_ignore_think_time'].every(name => typeof f[name] === 'boolean')) return null
+    if (typeof f.start_delay !== 'string') return null
+    if (!['script_shakeout', 'resource_baseline'].every(name => typeof f[name] === 'boolean')) return null
     if (!['vuser_driven', 'goal_oriented'].includes(String(f.scenario_mode))) return null
-    if (!Array.isArray(f.assignment_targets) || !f.assignment_targets.every(value => typeof value === 'string')) return null
     if (!f.groups.every(g => record(g) && typeof g.script_id === 'string' && typeof g.name === 'string'
       && typeof g.ramp_up === 'string' && typeof g.ramp_down === 'string' && ['at_runtime', 'at_once'].includes(String(g.initialization))
       && Number.isFinite(g.vusers) && Array.isArray(g.stages) && g.stages.every(stage => record(stage) && typeof stage.duration === 'string' && typeof stage.type === 'string' && Number.isFinite(stage.target_vusers))

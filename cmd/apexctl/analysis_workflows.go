@@ -62,6 +62,15 @@ func executeWorkflowCommand(ctx context.Context, kind string, args []string, out
 	if kind == "analysis" && action == "browser-findings" {
 		return executeAnalysisBrowserFindingsCommand(ctx, args[1:], out)
 	}
+	if kind == "analysis" && action == "interactions" {
+		return executeAnalysisInteractionsCommand(ctx, args[1:], out)
+	}
+	if kind == "analysis" && action == "har-entry" {
+		return executeAnalysisHAREntryCommand(ctx, args[1:], out)
+	}
+	if kind == "analysis" && action == "policies" {
+		return executeAnalysisPoliciesCommand(ctx, args[1:], out)
+	}
 	flags := flag.NewFlagSet(kind+" "+action, flag.ContinueOnError)
 	flags.SetOutput(out)
 	endpoint := flags.String("api", "http://127.0.0.1:8080", "controller URL")

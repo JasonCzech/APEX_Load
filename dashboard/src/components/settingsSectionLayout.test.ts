@@ -114,6 +114,7 @@ describe('settingsSectionLayout', () => {
       'analysis',
       'redaction',
       'secrets',
+      'analysis-policies',
     ])
     expect(INTEGRATION_SETTINGS_SUBSECTIONS.map(section => section.id)).toEqual([
       'library',

@@ -454,6 +454,12 @@ func TestJourneyPolicyLookupFailureIsNotAMissingPolicy(t *testing.T) {
 	if code, _, body := getJourneys(t, server, "pinned", ""); code != http.StatusServiceUnavailable || strings.Contains(body, "locked") {
 		t.Fatalf("store failure: %d %s", code, body)
 	}
+	// The report's Journey Risk section says so without the cause, which is
+	// returned for the log.
+	journeys, reason, err := server.runJourneyRisk(context.Background(), "pinned", storage.DefaultProjectID)
+	if journeys != nil || reason != "The run's pinned journey policy could not be read." || err == nil || !strings.Contains(err.Error(), "locked") {
+		t.Fatalf("report on a store failure: %+v %q %v", journeys, reason, err)
+	}
 }
 
 // The journey report reads the archive the run actually wrote.

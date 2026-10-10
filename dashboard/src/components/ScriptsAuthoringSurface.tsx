@@ -170,6 +170,7 @@ function ScriptsAuthoringContent({
     createOptionsSurface(content, hidden, destinationFolderControl, destinationOperationBusy)
   const enterpriseArchiveEditReturnTarget: AuthoringReturnTarget = {
     subView: 'import',
+    importLauncher: 'enterprise_archive',
     label: 'Back to Converted Script',
     description: 'Return to the converted enterprise script archive review without losing the current import results.',
   }
@@ -243,38 +244,6 @@ function ScriptsAuthoringContent({
         <OracleEBusinessReviewImport projectId={projectId} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
         false,
         null,
-      )
-    case 'devweb-import':
-      return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="devweb" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
-      )
-    case 'har-import':
-      return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="har" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
-      )
-    case 'recorder-import':
-      return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="recorder-export" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
-      )
-    case 'openapi-import':
-      return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="openapi" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
-      )
-    case 'raml-import':
-      return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="raml" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
-      )
-    case 'postman-import':
-      return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="postman" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
-      )
-    case 'wsdl-import':
-      return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="wsdl" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
-      )
-    case 'asyncapi-import':
-      return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="asyncapi" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
       )
     default:
       return null

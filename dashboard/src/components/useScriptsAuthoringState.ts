@@ -8,8 +8,14 @@ import type { ObjectActivitySummary } from '../types/objectActivity'
 import { useApi } from '../hooks/useApi'
 import { composeComponentDraft, createApiDraft, createDatabaseDraft, createGrpcDraft, createJavaHttpDraft, createJmsDraft, createKafkaDraft, createNetworkDraft, createSoapDraft, createWebDraft, createWebSocketDraft } from './scriptDraftFactories'
 import { getErrorMessage } from '../utils/errorUtils'
+import { importSurfaceForLauncher, scriptImportLauncherDescriptor, type ScriptImportLauncherDescriptor, type ScriptImportSurface } from '../scriptImportLaunchers'
 
-export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'bruno-import' | 'jmeter-import' | 'recorder' | 'sample' | 'protocol-import' | 'oracle-review' | 'recorder-import' | 'java-http-import' | 'devweb-import' | 'har-import' | 'salesforce-import' | 'openapi-import' | 'raml-import' | 'postman-import' | 'wsdl-import' | 'asyncapi-import'
+// An importer is opened by its launcher descriptor (scriptImportLaunchers);
+// its sub-view is derived from the launcher, never named by callers.
+export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'edit' | 'recorder' | ScriptImportSurface
+
+/** The non-import sub-views a caller may open directly. */
+export type ScriptsAuthoringEntryView = Exclude<ScriptsAuthoringSubView, ScriptImportSurface>
 
 export interface DraftEditorFocus {
   targetAction?: string | null
@@ -22,6 +28,9 @@ export interface AuthoringReturnTarget {
   subView: ScriptsAuthoringSubView
   label: string
   description?: string
+  /** The importer to return to, when the return target is an import surface. */
+  importLauncher?: string | null
+  importMode?: string | null
 }
 
 export interface AuthoringState {
@@ -56,7 +65,10 @@ export interface ImportedSaveResult {
 
 interface UseScriptsAuthoringStateOptions {
   api: ReturnType<typeof useApi>
-  initialMode?: ScriptsAuthoringSubView
+  /** The sub-view to open; 'create' opens the create options. Ignored when initialImport is given. */
+  initialMode?: ScriptsAuthoringEntryView
+  /** The importer to open, as the route named it. */
+  initialImport?: ScriptImportLauncherDescriptor | null
   initialEditId?: string
   projectId?: string
 }
@@ -94,7 +106,7 @@ export interface ScriptsCreateOptionActions {
 
 interface ScriptsAuthoringStateModel {
   authoringState: AuthoringState
-  setSubview: (subView: ScriptsAuthoringSubView) => void
+  setSubview: (subView: ScriptsAuthoringEntryView) => void
   openLibrary: () => void
   openCreateOptions: () => void
   openCreateOptionsWithNotice: (notice: string) => void
@@ -128,71 +140,25 @@ function normalizeAuthoringReturnTarget(returnTarget?: AuthoringReturnTarget | n
   if (!returnTarget || !label) return null
 
   const description = returnTarget.description?.trim()
+  const importLauncher = returnTarget.importLauncher?.trim()
+  const importMode = returnTarget.importMode?.trim()
   return {
     subView: returnTarget.subView,
     label,
     ...(description ? { description } : {}),
+    ...(importLauncher ? { importLauncher } : {}),
+    ...(importLauncher && importMode ? { importMode } : {}),
   }
 }
 
 function importLauncherState(launcher: string, mode?: string | null): Pick<AuthoringState, 'subView' | 'importLauncher' | 'importMode'> {
-  const normalizedLauncher = launcher.trim()
-  const normalizedMode = mode?.trim() || null
-  switch (normalizedLauncher) {
-    case 'enterprise_archive':
-      return { subView: 'import', importLauncher: normalizedLauncher, importMode: normalizedMode }
-    case 'jmeter':
-      return { subView: 'jmeter-import', importLauncher: normalizedLauncher, importMode: normalizedMode }
-    case 'bruno':
-      return { subView: 'bruno-import', importLauncher: normalizedLauncher, importMode: normalizedMode }
-    case 'sample':
-      return { subView: 'sample', importLauncher: normalizedLauncher, importMode: normalizedMode }
-    case 'oracle_ebusiness_review':
-      return { subView: 'oracle-review', importLauncher: normalizedLauncher, importMode: normalizedMode }
-    default:
-      return { subView: 'protocol-import', importLauncher: normalizedLauncher, importMode: normalizedMode }
-  }
+  const descriptor = scriptImportLauncherDescriptor(launcher, mode)
+  return { subView: importSurfaceForLauncher(descriptor.launcher), importLauncher: descriptor.launcher, importMode: descriptor.mode }
 }
 
-function aliasImportState(mode: ScriptsAuthoringSubView): Pick<AuthoringState, 'subView' | 'importLauncher' | 'importMode'> | null {
-  switch (mode) {
-    case 'import':
-      return importLauncherState('enterprise_archive')
-    case 'jmeter-import':
-      return importLauncherState('jmeter')
-    case 'bruno-import':
-      return importLauncherState('bruno')
-    case 'sample':
-      return importLauncherState('sample', 'standard_api')
-    case 'java-http-import':
-      return importLauncherState('sample', 'java_http')
-    case 'salesforce-import':
-      return importLauncherState('traffic_har', 'auto_detect')
-    case 'har-import':
-      return importLauncherState('traffic_har', 'auto_detect')
-    case 'recorder-import':
-      return importLauncherState('recorder_export')
-    case 'devweb-import':
-      return importLauncherState('devweb')
-    case 'openapi-import':
-      return importLauncherState('openapi')
-    case 'raml-import':
-      return importLauncherState('raml')
-    case 'postman-import':
-      return importLauncherState('postman')
-    case 'wsdl-import':
-      return importLauncherState('wsdl')
-    case 'asyncapi-import':
-      return importLauncherState('asyncapi')
-    default:
-      return null
-  }
-}
-
-function createAuthoringState(mode?: ScriptsAuthoringSubView, editId?: string): AuthoringState {
-  const normalizedMode = mode === 'create' ? 'create-options' : mode
-  const alias = normalizedMode ? aliasImportState(normalizedMode) : null
-  const subView = alias?.subView || normalizedMode || 'list'
+function createAuthoringState(mode?: ScriptsAuthoringEntryView, editId?: string, initialImport?: ScriptImportLauncherDescriptor | null): AuthoringState {
+  const importState = initialImport?.launcher ? importLauncherState(initialImport.launcher, initialImport.mode) : null
+  const subView: ScriptsAuthoringSubView = importState?.subView || (mode === 'create' ? 'create-options' : mode) || 'list'
   return {
     subView,
     editingId: editId || null,
@@ -202,8 +168,8 @@ function createAuthoringState(mode?: ScriptsAuthoringSubView, editId?: string): 
     draftEditorFocus: null,
     draftReturnTarget: null,
     authoringNotice: null,
-    importLauncher: alias?.importLauncher || null,
-    importMode: alias?.importMode || null,
+    importLauncher: importState?.importLauncher || null,
+    importMode: importState?.importMode || null,
     importFiles: null,
   }
 }
@@ -211,20 +177,20 @@ function createAuthoringState(mode?: ScriptsAuthoringSubView, editId?: string): 
 export function useScriptsAuthoringState({
   api,
   initialMode,
+  initialImport,
   initialEditId,
   projectId,
 }: UseScriptsAuthoringStateOptions): ScriptsAuthoringStateModel {
-  const [authoringState, setAuthoringState] = useState<AuthoringState>(() => createAuthoringState(initialMode, initialEditId))
+  const [authoringState, setAuthoringState] = useState<AuthoringState>(() => createAuthoringState(initialMode, initialEditId, initialImport))
   const editRequestGenerationRef = useRef(0)
   const invalidateEditRequest = useCallback(() => {
     editRequestGenerationRef.current += 1
   }, [])
 
-  const setSubview = useCallback((subView: ScriptsAuthoringSubView) => {
+  const setSubview = useCallback((subView: ScriptsAuthoringEntryView) => {
     invalidateEditRequest()
-    const alias = aliasImportState(subView)
     setAuthoringState({
-      subView: alias?.subView || subView,
+      subView,
       editingId: null,
       editingScript: null,
       draftScript: null,
@@ -232,8 +198,8 @@ export function useScriptsAuthoringState({
       draftEditorFocus: null,
       draftReturnTarget: null,
       authoringNotice: null,
-      importLauncher: alias?.importLauncher || null,
-      importMode: alias?.importMode || null,
+      importLauncher: null,
+      importMode: null,
       importFiles: null,
     })
   }, [invalidateEditRequest])
@@ -476,22 +442,27 @@ export function useScriptsAuthoringState({
         draftEditorFocus: null,
         draftReturnTarget: null,
         authoringNotice: null,
-        importLauncher: null,
-        importMode: null,
+        // An import surface is returned to with the launcher that opened it.
+        importLauncher: returnTarget.importLauncher || null,
+        importMode: returnTarget.importLauncher ? returnTarget.importMode || null : null,
         importFiles: null,
       }
     })
   }, [invalidateEditRequest])
 
+  // The route's importer as primitives: callers build the descriptor afresh
+  // on each render, and the state is reset only when what it names changes.
+  const initialImportLauncher = initialImport?.launcher || null
+  const initialImportMode = initialImport?.mode || null
   useEffect(() => {
-    if (initialMode === 'edit' && initialEditId) {
+    if (initialMode === 'edit' && initialEditId && !initialImportLauncher) {
       void handleEdit(initialEditId)
     } else {
       invalidateEditRequest()
-      setAuthoringState(createAuthoringState(initialMode, initialEditId))
+      setAuthoringState(createAuthoringState(initialMode, initialEditId, initialImportLauncher ? { launcher: initialImportLauncher, mode: initialImportMode } : null))
     }
     return invalidateEditRequest
-  }, [handleEdit, initialEditId, initialMode, invalidateEditRequest])
+  }, [handleEdit, initialEditId, initialImportLauncher, initialImportMode, initialMode, invalidateEditRequest])
 
   return {
     authoringState,

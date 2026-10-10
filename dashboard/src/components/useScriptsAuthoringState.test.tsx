@@ -5,7 +5,8 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { useScriptsAuthoringState, type ScriptsAuthoringSubView } from './useScriptsAuthoringState'
+import { useScriptsAuthoringState, type ScriptsAuthoringEntryView } from './useScriptsAuthoringState'
+import type { ScriptImportLauncherDescriptor } from '../scriptImportLaunchers'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -13,12 +14,13 @@ type HarnessProps = {
   api: {
     getScript: (id: string) => Promise<{ script?: { id?: string; name?: string; protocol?: string } | null }>
   }
-  initialMode?: ScriptsAuthoringSubView
+  initialMode?: ScriptsAuthoringEntryView
+  initialImport?: ScriptImportLauncherDescriptor | null
   initialEditId?: string
 }
 
-function AuthoringStateHarness({ api, initialMode, initialEditId }: HarnessProps) {
-  const model = useScriptsAuthoringState({ api: { ...api, ...pairedAuthoringTestApi(api.getScript) } as never, initialMode, initialEditId })
+function AuthoringStateHarness({ api, initialMode, initialImport, initialEditId }: HarnessProps) {
+  const model = useScriptsAuthoringState({ api: { ...api, ...pairedAuthoringTestApi(api.getScript) } as never, initialMode, initialImport, initialEditId })
 
   return (
     <div>
@@ -45,7 +47,7 @@ function AuthoringStateHarness({ api, initialMode, initialEditId }: HarnessProps
       <span data-testid="authoring-notice">{model.authoringState.authoringNotice || 'none'}</span>
       <button data-testid="open-library" onClick={model.openLibrary}>open-library</button>
       <button data-testid="open-create-options" onClick={model.openCreateOptions}>open-create-options</button>
-      <button data-testid="set-jmeter" onClick={() => model.setSubview('jmeter-import')}>set-jmeter</button>
+      <button data-testid="set-jmeter" onClick={model.createOptionActions.openJMeterImport}>set-jmeter</button>
       <button data-testid="start-draft" onClick={() => model.startDraft(() => ({ name: 'Draft Checkout', protocol: 'http', config: {}, actions: [] } as never))}>start-draft</button>
       <button data-testid="draft-edit" onClick={() => model.handleDraftEdit({ name: 'Edited Draft', protocol: 'http', config: {}, actions: [] } as never)}>draft-edit</button>
       <button data-testid="draft-edit-focused" onClick={() => model.handleDraftEdit({ name: 'Focused Draft', protocol: 'http', config: {}, actions: [] } as never, { targetAction: 'Submit Order' })}>draft-edit-focused</button>
@@ -53,7 +55,7 @@ function AuthoringStateHarness({ api, initialMode, initialEditId }: HarnessProps
       <button data-testid="draft-edit-runtime-area-focused" onClick={() => model.handleDraftEdit({ name: 'Runtime Area Draft', protocol: 'http', config: {}, actions: [] } as never, { targetSection: 'runtime', targetRuntimeArea: 'Logging' })}>draft-edit-runtime-area-focused</button>
       <button data-testid="draft-edit-parameter-data-focused" onClick={() => model.handleDraftEdit({ name: 'Parameter Draft', protocol: 'http', config: {}, actions: [] } as never, { targetSection: 'parameter-data' })}>draft-edit-parameter-data-focused</button>
       <button data-testid="draft-edit-data-source-focused" onClick={() => model.handleDraftEdit({ name: 'Data Source Draft', protocol: 'http', config: {}, actions: [] } as never, { targetSection: 'parameter-data', targetDataSource: 'login_users' })}>draft-edit-data-source-focused</button>
-      <button data-testid="draft-edit-with-return" onClick={() => model.handleDraftEdit({ name: 'Review Draft', protocol: 'http', config: {}, actions: [] } as never, undefined, { subView: 'import', label: 'Back to Converted Script' })}>draft-edit-with-return</button>
+      <button data-testid="draft-edit-with-return" onClick={() => model.handleDraftEdit({ name: 'Review Draft', protocol: 'http', config: {}, actions: [] } as never, undefined, { subView: 'import', label: 'Back to Converted Script', importLauncher: 'enterprise_archive' })}>draft-edit-with-return</button>
       <button data-testid="return-draft-source" onClick={model.returnToDraftSource}>return-draft-source</button>
       <button data-testid="load-edit" onClick={() => void model.handleEdit('script-1')}>load-edit</button>
       <button data-testid="save-script" onClick={() => model.handleSavedScript({ id: 'saved-script-1', name: 'Saved Draft', protocol: 'http', version: '1.0.0', created_at: '2026-05-17T00:00:00Z' })}>save-script</button>
@@ -180,6 +182,8 @@ describe('useScriptsAuthoringState', () => {
     await click('return-draft-source')
 
     expect(readTestId('subview')).toBe('import')
+    // The return target reopens the importer with the launcher that opened it.
+    expect(readTestId('import-launcher')).toBe('enterprise_archive')
     expect(readTestId('draft-name')).toBe('none')
     expect(readTestId('draft-return-label')).toBe('none')
     expect(readTestId('draft-return-subview')).toBe('none')
@@ -252,6 +256,24 @@ describe('useScriptsAuthoringState', () => {
     await click('set-jmeter')
 
     expect(readTestId('subview')).toBe('jmeter-import')
+    expect(readTestId('import-launcher')).toBe('jmeter')
+  })
+
+  it('opens the importer a route names by its launcher descriptor', async () => {
+    const api = { getScript: vi.fn() }
+    const cases: [ScriptImportLauncherDescriptor, string, string][] = [
+      [{ launcher: 'enterprise_archive', mode: null }, 'import', 'none'],
+      [{ launcher: 'jmeter', mode: null }, 'jmeter-import', 'none'],
+      [{ launcher: 'sample', mode: 'java_http' }, 'sample', 'java_http'],
+      [{ launcher: 'traffic_har', mode: 'auto_detect' }, 'protocol-import', 'auto_detect'],
+      [{ launcher: 'k6', mode: null }, 'protocol-import', 'none'],
+    ]
+    for (const [descriptor, subView, mode] of cases) {
+      await act(async () => { root.render(<AuthoringStateHarness key={descriptor.launcher} api={api} initialMode="list" initialImport={descriptor} />) })
+      expect(readTestId('subview')).toBe(subView)
+      expect(readTestId('import-launcher')).toBe(descriptor.launcher)
+      expect(readTestId('import-mode')).toBe(mode)
+    }
   })
 
   it('surfaces edit-load failures as an authoring notice', async () => {

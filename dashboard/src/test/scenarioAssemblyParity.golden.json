@@ -1,0 +1,2509 @@
+{
+  "minimal": {
+    "upsert": {
+      "duration": "5m",
+      "scenario_mode": "vuser_driven",
+      "script_shakeout": false,
+      "resource_baseline": false,
+      "assignment": {
+        "mode": "auto"
+      },
+      "groups": [
+        {
+          "script_id": "script-a",
+          "vusers": 5,
+          "initialization": "at_runtime"
+        }
+      ],
+      "data_pools": [],
+      "name": "Minimal",
+      "project_id": "project-1",
+      "workload_shape_id": "shape-1"
+    },
+    "estimate": {
+      "duration": "5m",
+      "scenario_mode": "vuser_driven",
+      "script_shakeout": false,
+      "resource_baseline": false,
+      "assignment": {
+        "mode": "auto"
+      },
+      "groups": [
+        {
+          "script_id": "script-a",
+          "vusers": 5,
+          "initialization": "at_runtime"
+        }
+      ],
+      "name": "Minimal",
+      "project_id": "project-1"
+    },
+    "timeline": [
+      {
+        "name": "",
+        "script_id": "script-a",
+        "vusers": 5
+      }
+    ],
+    "preview": {
+      "points": [
+        {
+          "second": 0,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 10,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 20,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 30,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 40,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 50,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 60,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 70,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 80,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 90,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 100,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 110,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 120,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 130,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 140,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 150,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 160,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 170,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 180,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 190,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 200,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 210,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 220,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 230,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 240,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 250,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 260,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 270,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 280,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 290,
+          "total": 5,
+          "group0": 5
+        },
+        {
+          "second": 300,
+          "total": 0,
+          "group0": 0
+        }
+      ],
+      "showVUsers": true,
+      "totalSeconds": 300,
+      "steadySeconds": 300,
+      "preBaselineSeconds": 0,
+      "postBaselineSeconds": 0,
+      "peakVUsers": 5
+    }
+  },
+  "canonical-runtime": {
+    "upsert": {
+      "duration": "10m",
+      "scenario_mode": "vuser_driven",
+      "script_shakeout": true,
+      "resource_baseline": true,
+      "assignment": {
+        "mode": "auto"
+      },
+      "groups": [
+        {
+          "script_id": "script-a",
+          "vusers": 10,
+          "initialization": "at_runtime",
+          "name": "Checkout",
+          "ramp_up": "30s"
+        },
+        {
+          "script_id": "script-b",
+          "vusers": 20,
+          "initialization": "at_once",
+          "name": "Browse",
+          "transaction_response_time_sla_ms": 1200,
+          "ramp_up": "1m",
+          "ramp_down": "30s",
+          "start_offset": "15s"
+        }
+      ],
+      "start_delay": "30s",
+      "runtime_settings": {
+        "pacing": {
+          "type": "fixed_delay",
+          "delay_ms": 1500
+        },
+        "think_time": {
+          "type": "gaussian",
+          "mean_ms": 800,
+          "std_ms": 120,
+          "min_ms": 200,
+          "max_ms": 2000,
+          "multiplier": 1.5,
+          "limit_ms": 5000
+        },
+        "error_handling": {
+          "continue_on_error": false,
+          "snapshot_on_error": true,
+          "max_retries": 2,
+          "retry_delay_ms": 250,
+          "retry_backoff": "exponential"
+        },
+        "log": {
+          "level": "debug"
+        },
+        "run_logic": {
+          "iterations": 12,
+          "auto_transactions": "per_action"
+        },
+        "http": {
+          "request_timeout_ms": 9000
+        },
+        "base_url": "https://checkout.example.test",
+        "env": {
+          "REGION": "us-east"
+        }
+      },
+      "data_pools": [],
+      "name": "Canonical runtime",
+      "project_id": "project-1",
+      "workload_shape_id": "shape-1"
+    },
+    "estimate": {
+      "duration": "10m",
+      "scenario_mode": "vuser_driven",
+      "script_shakeout": true,
+      "resource_baseline": true,
+      "assignment": {
+        "mode": "auto"
+      },
+      "groups": [
+        {
+          "script_id": "script-a",
+          "vusers": 10,
+          "initialization": "at_runtime",
+          "name": "Checkout",
+          "ramp_up": "30s"
+        },
+        {
+          "script_id": "script-b",
+          "vusers": 20,
+          "initialization": "at_once",
+          "name": "Browse",
+          "transaction_response_time_sla_ms": 1200,
+          "ramp_up": "1m",
+          "ramp_down": "30s",
+          "start_offset": "15s"
+        }
+      ],
+      "start_delay": "30s",
+      "runtime_settings": {
+        "pacing": {
+          "type": "fixed_delay",
+          "delay_ms": 1500
+        },
+        "think_time": {
+          "type": "gaussian",
+          "mean_ms": 800,
+          "std_ms": 120,
+          "min_ms": 200,
+          "max_ms": 2000,
+          "multiplier": 1.5,
+          "limit_ms": 5000
+        },
+        "error_handling": {
+          "continue_on_error": false,
+          "snapshot_on_error": true,
+          "max_retries": 2,
+          "retry_delay_ms": 250,
+          "retry_backoff": "exponential"
+        },
+        "log": {
+          "level": "debug"
+        },
+        "run_logic": {
+          "iterations": 12,
+          "auto_transactions": "per_action"
+        },
+        "http": {
+          "request_timeout_ms": 9000
+        },
+        "base_url": "https://checkout.example.test",
+        "env": {
+          "REGION": "us-east"
+        }
+      },
+      "name": "Canonical runtime",
+      "project_id": "project-1"
+    },
+    "timeline": [
+      {
+        "name": "Checkout",
+        "script_id": "script-a",
+        "ramp_up": "30s",
+        "vusers": 10,
+        "role": "load"
+      },
+      {
+        "name": "Browse",
+        "script_id": "script-b",
+        "start_offset": "15s",
+        "ramp_up": "1m",
+        "ramp_down": "30s",
+        "vusers": 20
+      }
+    ],
+    "preview": {
+      "points": [
+        {
+          "second": 0,
+          "total": 0,
+          "group0": 0,
+          "group1": 0
+        },
+        {
+          "second": 42,
+          "total": 0,
+          "group0": 0,
+          "group1": 0
+        },
+        {
+          "second": 84,
+          "total": 0,
+          "group0": 0,
+          "group1": 0
+        },
+        {
+          "second": 126,
+          "total": 0,
+          "group0": 0,
+          "group1": 0
+        },
+        {
+          "second": 168,
+          "total": 0,
+          "group0": 0,
+          "group1": 0
+        },
+        {
+          "second": 210,
+          "total": 0,
+          "group0": 0,
+          "group1": 0
+        },
+        {
+          "second": 252,
+          "total": 0,
+          "group0": 0,
+          "group1": 0
+        },
+        {
+          "second": 294,
+          "total": 0,
+          "group0": 0,
+          "group1": 0
+        },
+        {
+          "second": 330,
+          "total": 0,
+          "group0": 0,
+          "group1": 0
+        },
+        {
+          "second": 336,
+          "total": 2,
+          "group0": 2,
+          "group1": 0
+        },
+        {
+          "second": 345,
+          "total": 5,
+          "group0": 5,
+          "group1": 0
+        },
+        {
+          "second": 360,
+          "total": 15,
+          "group0": 10,
+          "group1": 5
+        },
+        {
+          "second": 378,
+          "total": 21,
+          "group0": 10,
+          "group1": 11
+        },
+        {
+          "second": 405,
+          "total": 30,
+          "group0": 10,
+          "group1": 20
+        },
+        {
+          "second": 420,
+          "total": 30,
+          "group0": 10,
+          "group1": 20
+        },
+        {
+          "second": 462,
+          "total": 30,
+          "group0": 10,
+          "group1": 20
+        },
+        {
+          "second": 504,
+          "total": 30,
+          "group0": 10,
+          "group1": 20
+        },
+        {
+          "second": 546,
+          "total": 30,
+          "group0": 10,
+          "group1": 20
+        },
+        {
+          "second": 588,
+          "total": 30,
+          "group0": 10,
+          "group1": 20
+        },
+        {
+          "second": 630,
+          "total": 30,
+          "group0": 10,
+          "group1": 20
+        },
+        {
+          "second": 672,
+          "total": 30,
+          "group0": 10,
+          "group1": 20
+        },
+        {
+          "second": 714,
+          "total": 30,
+          "group0": 10,
+          "group1": 20
+        },
+        {
+          "second": 756,
+          "total": 30,
+          "group0": 10,
+          "group1": 20
+        },
+        {
+          "second": 798,
+          "total": 30,
+          "group0": 10,
+          "group1": 20
+        },
+        {
+          "second": 840,
+          "total": 30,
+          "group0": 10,
+          "group1": 20
+        },
+        {
+          "second": 882,
+          "total": 30,
+          "group0": 10,
+          "group1": 20
+        },
+        {
+          "second": 924,
+          "total": 30,
+          "group0": 10,
+          "group1": 20
+        },
+        {
+          "second": 930,
+          "total": 20,
+          "group0": 0,
+          "group1": 20
+        },
+        {
+          "second": 960,
+          "total": 0,
+          "group0": 0,
+          "group1": 0
+        },
+        {
+          "second": 966,
+          "total": 0,
+          "group0": 0,
+          "group1": 0
+        },
+        {
+          "second": 1008,
+          "total": 0,
+          "group0": 0,
+          "group1": 0
+        },
+        {
+          "second": 1050,
+          "total": 0,
+          "group0": 0,
+          "group1": 0
+        },
+        {
+          "second": 1092,
+          "total": 0,
+          "group0": 0,
+          "group1": 0
+        },
+        {
+          "second": 1134,
+          "total": 0,
+          "group0": 0,
+          "group1": 0
+        },
+        {
+          "second": 1176,
+          "total": 0,
+          "group0": 0,
+          "group1": 0
+        },
+        {
+          "second": 1218,
+          "total": 0,
+          "group0": 0,
+          "group1": 0
+        },
+        {
+          "second": 1260,
+          "total": 0,
+          "group0": 0,
+          "group1": 0
+        }
+      ],
+      "showVUsers": true,
+      "totalSeconds": 1260,
+      "steadySeconds": 600,
+      "preBaselineSeconds": 330,
+      "postBaselineSeconds": 300,
+      "peakVUsers": 30
+    }
+  },
+  "legacy-top-level": {
+    "upsert": {
+      "duration": "15m",
+      "scenario_mode": "vuser_driven",
+      "script_shakeout": false,
+      "resource_baseline": false,
+      "assignment": {
+        "mode": "auto"
+      },
+      "groups": [
+        {
+          "script_id": "script-a",
+          "vusers": 3,
+          "initialization": "at_runtime",
+          "runtime_settings": {
+            "iterations": 4
+          }
+        }
+      ],
+      "runtime_settings": {
+        "iterations": 7,
+        "pacing": {
+          "type": "random_interval",
+          "min_interval_ms": 1000,
+          "max_interval_ms": 3000
+        },
+        "think_time": {
+          "type": "random_percentage",
+          "mean_ms": 0,
+          "min_percent": 50,
+          "max_percent": 150
+        },
+        "log_level": "warn",
+        "auto_transactions": "none"
+      },
+      "data_pools": [],
+      "name": "Legacy top-level runtime",
+      "project_id": "project-1",
+      "workload_shape_id": "shape-1"
+    },
+    "estimate": {
+      "duration": "15m",
+      "scenario_mode": "vuser_driven",
+      "script_shakeout": false,
+      "resource_baseline": false,
+      "assignment": {
+        "mode": "auto"
+      },
+      "groups": [
+        {
+          "script_id": "script-a",
+          "vusers": 3,
+          "initialization": "at_runtime",
+          "runtime_settings": {
+            "iterations": 4
+          }
+        }
+      ],
+      "runtime_settings": {
+        "iterations": 7,
+        "pacing": {
+          "type": "random_interval",
+          "min_interval_ms": 1000,
+          "max_interval_ms": 3000
+        },
+        "think_time": {
+          "type": "random_percentage",
+          "mean_ms": 0,
+          "min_percent": 50,
+          "max_percent": 150
+        },
+        "log_level": "warn",
+        "auto_transactions": "none"
+      },
+      "name": "Legacy top-level runtime",
+      "project_id": "project-1"
+    },
+    "timeline": [
+      {
+        "name": "",
+        "script_id": "script-a",
+        "vusers": 3
+      }
+    ],
+    "preview": {
+      "points": [
+        {
+          "second": 0,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 30,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 60,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 90,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 120,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 150,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 180,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 210,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 240,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 270,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 300,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 330,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 360,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 390,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 420,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 450,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 480,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 510,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 540,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 570,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 600,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 630,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 660,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 690,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 720,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 750,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 780,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 810,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 840,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 870,
+          "total": 3,
+          "group0": 3
+        },
+        {
+          "second": 900,
+          "total": 0,
+          "group0": 0
+        }
+      ],
+      "showVUsers": true,
+      "totalSeconds": 900,
+      "steadySeconds": 900,
+      "preBaselineSeconds": 0,
+      "postBaselineSeconds": 0,
+      "peakVUsers": 3
+    }
+  },
+  "browser-blocks": {
+    "upsert": {
+      "duration": "8m",
+      "scenario_mode": "vuser_driven",
+      "script_shakeout": false,
+      "resource_baseline": false,
+      "assignment": {
+        "mode": "auto"
+      },
+      "groups": [
+        {
+          "script_id": "script-browser",
+          "vusers": 2,
+          "initialization": "at_runtime"
+        }
+      ],
+      "runtime_settings": {
+        "think_time": {
+          "type": "recorded",
+          "multiplier": 0.5,
+          "limit_ms": 3000,
+          "ignore": true
+        },
+        "browser": {
+          "device_profile": "iphone_15",
+          "orientation": "landscape",
+          "touch_mode": false,
+          "headless": true
+        },
+        "error_handling": {
+          "continue_on_error": true
+        }
+      },
+      "data_pools": [],
+      "name": "Browser blocks",
+      "project_id": "project-1",
+      "workload_shape_id": "shape-1"
+    },
+    "estimate": {
+      "duration": "8m",
+      "scenario_mode": "vuser_driven",
+      "script_shakeout": false,
+      "resource_baseline": false,
+      "assignment": {
+        "mode": "auto"
+      },
+      "groups": [
+        {
+          "script_id": "script-browser",
+          "vusers": 2,
+          "initialization": "at_runtime"
+        }
+      ],
+      "runtime_settings": {
+        "think_time": {
+          "type": "recorded",
+          "multiplier": 0.5,
+          "limit_ms": 3000,
+          "ignore": true
+        },
+        "browser": {
+          "device_profile": "iphone_15",
+          "orientation": "landscape",
+          "touch_mode": false,
+          "headless": true
+        },
+        "error_handling": {
+          "continue_on_error": true
+        }
+      },
+      "name": "Browser blocks",
+      "project_id": "project-1"
+    },
+    "timeline": [
+      {
+        "name": "",
+        "script_id": "script-browser",
+        "vusers": 2
+      }
+    ],
+    "preview": {
+      "points": [
+        {
+          "second": 0,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 16,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 32,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 48,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 64,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 80,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 96,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 112,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 128,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 144,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 160,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 176,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 192,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 208,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 224,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 240,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 256,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 272,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 288,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 304,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 320,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 336,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 352,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 368,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 384,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 400,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 416,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 432,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 448,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 464,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 480,
+          "total": 0,
+          "group0": 0
+        }
+      ],
+      "showVUsers": true,
+      "totalSeconds": 480,
+      "steadySeconds": 480,
+      "preBaselineSeconds": 0,
+      "postBaselineSeconds": 0,
+      "peakVUsers": 2
+    }
+  },
+  "browser-config": {
+    "upsert": {
+      "duration": "8m",
+      "scenario_mode": "vuser_driven",
+      "script_shakeout": false,
+      "resource_baseline": false,
+      "assignment": {
+        "mode": "auto"
+      },
+      "groups": [
+        {
+          "script_id": "script-browser",
+          "vusers": 2,
+          "initialization": "at_runtime"
+        }
+      ],
+      "runtime_settings": {
+        "pacing": {
+          "type": "none"
+        },
+        "browser_config": {
+          "device_profile": "pixel_8",
+          "orientation": "portrait",
+          "touch_mode": true,
+          "headless": false,
+          "capture_document_metrics": true
+        }
+      },
+      "data_pools": [],
+      "name": "Canonical browser config",
+      "project_id": "project-1",
+      "workload_shape_id": "shape-1"
+    },
+    "estimate": {
+      "duration": "8m",
+      "scenario_mode": "vuser_driven",
+      "script_shakeout": false,
+      "resource_baseline": false,
+      "assignment": {
+        "mode": "auto"
+      },
+      "groups": [
+        {
+          "script_id": "script-browser",
+          "vusers": 2,
+          "initialization": "at_runtime"
+        }
+      ],
+      "runtime_settings": {
+        "pacing": {
+          "type": "none"
+        },
+        "browser_config": {
+          "device_profile": "pixel_8",
+          "orientation": "portrait",
+          "touch_mode": true,
+          "headless": false,
+          "capture_document_metrics": true
+        }
+      },
+      "name": "Canonical browser config",
+      "project_id": "project-1"
+    },
+    "timeline": [
+      {
+        "name": "",
+        "script_id": "script-browser",
+        "vusers": 2
+      }
+    ],
+    "preview": {
+      "points": [
+        {
+          "second": 0,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 16,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 32,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 48,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 64,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 80,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 96,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 112,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 128,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 144,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 160,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 176,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 192,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 208,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 224,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 240,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 256,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 272,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 288,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 304,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 320,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 336,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 352,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 368,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 384,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 400,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 416,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 432,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 448,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 464,
+          "total": 2,
+          "group0": 2
+        },
+        {
+          "second": 480,
+          "total": 0,
+          "group0": 0
+        }
+      ],
+      "showVUsers": true,
+      "totalSeconds": 480,
+      "steadySeconds": 480,
+      "preBaselineSeconds": 0,
+      "postBaselineSeconds": 0,
+      "peakVUsers": 2
+    }
+  },
+  "group-overrides": {
+    "upsert": {
+      "duration": "20m",
+      "scenario_mode": "vuser_driven",
+      "script_shakeout": false,
+      "resource_baseline": false,
+      "assignment": {
+        "mode": "specific_hosts",
+        "selected_targets": [
+          "gen-1",
+          "gen-2"
+        ],
+        "shard_strategy": "capacity_weighted",
+        "required_labels": {
+          "zone": "a"
+        },
+        "pool_id": "pool-a",
+        "tolerate_generator_loss": true,
+        "failover_policy": "continue",
+        "recovery_spare_vusers": 3
+      },
+      "groups": [
+        {
+          "script_id": "script-a",
+          "vusers": 40,
+          "initialization": "at_runtime",
+          "name": "Staged",
+          "stages": [
+            {
+              "type": "ramp",
+              "duration": "2m",
+              "target_vusers": 40
+            },
+            {
+              "type": "hold",
+              "duration": "10m",
+              "target_vusers": 40
+            }
+          ],
+          "runtime_settings": {
+            "pacing": {
+              "type": "tps",
+              "tps": 5
+            },
+            "error_handling": {
+              "snapshot_on_error": false
+            },
+            "run_logic": {
+              "iterations": 3
+            }
+          },
+          "assignment": {
+            "mode": "region_weighted",
+            "region_weights": {
+              "east": 2,
+              "west": 1
+            }
+          }
+        },
+        {
+          "script_id": "script-b",
+          "vusers": 4,
+          "initialization": "at_runtime",
+          "name": "Iterations",
+          "runtime_settings": {
+            "iterations": 9,
+            "think_time": {
+              "type": "uniform",
+              "mean_ms": 0,
+              "min_ms": 100,
+              "max_ms": 900
+            },
+            "log_level": "info"
+          }
+        },
+        {
+          "script_id": "script-c",
+          "vusers": 1,
+          "initialization": "at_runtime",
+          "name": "Observer",
+          "role": "observer",
+          "start_offset": "1m"
+        }
+      ],
+      "data_pools": [],
+      "name": "Group overrides",
+      "project_id": "project-1",
+      "workload_shape_id": "shape-1"
+    },
+    "estimate": {
+      "duration": "20m",
+      "scenario_mode": "vuser_driven",
+      "script_shakeout": false,
+      "resource_baseline": false,
+      "assignment": {
+        "mode": "specific_hosts",
+        "selected_targets": [
+          "gen-1",
+          "gen-2"
+        ],
+        "shard_strategy": "capacity_weighted",
+        "required_labels": {
+          "zone": "a"
+        },
+        "pool_id": "pool-a",
+        "tolerate_generator_loss": true,
+        "failover_policy": "continue",
+        "recovery_spare_vusers": 3
+      },
+      "groups": [
+        {
+          "script_id": "script-a",
+          "vusers": 40,
+          "initialization": "at_runtime",
+          "name": "Staged",
+          "stages": [
+            {
+              "type": "ramp",
+              "duration": "2m",
+              "target_vusers": 40
+            },
+            {
+              "type": "hold",
+              "duration": "10m",
+              "target_vusers": 40
+            }
+          ],
+          "runtime_settings": {
+            "pacing": {
+              "type": "tps",
+              "tps": 5
+            },
+            "error_handling": {
+              "snapshot_on_error": false
+            },
+            "run_logic": {
+              "iterations": 3
+            }
+          },
+          "assignment": {
+            "mode": "region_weighted",
+            "region_weights": {
+              "east": 2,
+              "west": 1
+            }
+          }
+        },
+        {
+          "script_id": "script-b",
+          "vusers": 4,
+          "initialization": "at_runtime",
+          "name": "Iterations",
+          "runtime_settings": {
+            "iterations": 9,
+            "think_time": {
+              "type": "uniform",
+              "mean_ms": 0,
+              "min_ms": 100,
+              "max_ms": 900
+            },
+            "log_level": "info"
+          }
+        },
+        {
+          "script_id": "script-c",
+          "vusers": 1,
+          "initialization": "at_runtime",
+          "name": "Observer",
+          "role": "observer",
+          "start_offset": "1m"
+        }
+      ],
+      "name": "Group overrides",
+      "project_id": "project-1"
+    },
+    "timeline": [
+      {
+        "name": "Staged",
+        "script_id": "script-a",
+        "vusers": 40,
+        "stages": [
+          {
+            "type": "ramp",
+            "duration": "2m",
+            "target_vusers": 40
+          },
+          {
+            "type": "hold",
+            "duration": "10m",
+            "target_vusers": 40
+          }
+        ]
+      },
+      {
+        "name": "Iterations",
+        "script_id": "script-b",
+        "vusers": 4
+      },
+      {
+        "name": "Observer",
+        "script_id": "script-c",
+        "start_offset": "1m",
+        "vusers": 1,
+        "role": "observer"
+      }
+    ],
+    "preview": {
+      "points": [
+        {
+          "second": 0,
+          "total": 44,
+          "group0": 40,
+          "group1": 4,
+          "group2": 0
+        },
+        {
+          "second": 40,
+          "total": 44,
+          "group0": 40,
+          "group1": 4,
+          "group2": 0
+        },
+        {
+          "second": 60,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 80,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 120,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 160,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 200,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 240,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 280,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 320,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 360,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 400,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 440,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 480,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 520,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 560,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 600,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 640,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 680,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 720,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 760,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 800,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 840,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 880,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 920,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 960,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 1000,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 1040,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 1080,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 1120,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 1160,
+          "total": 45,
+          "group0": 40,
+          "group1": 4,
+          "group2": 1
+        },
+        {
+          "second": 1200,
+          "total": 0,
+          "group0": 0,
+          "group1": 0,
+          "group2": 0
+        }
+      ],
+      "showVUsers": true,
+      "totalSeconds": 1200,
+      "steadySeconds": 1200,
+      "preBaselineSeconds": 0,
+      "postBaselineSeconds": 0,
+      "peakVUsers": 45
+    }
+  },
+  "goal-oriented": {
+    "upsert": {
+      "duration": "30m",
+      "termination_mode": "duration",
+      "scenario_mode": "goal_oriented",
+      "script_shakeout": false,
+      "resource_baseline": false,
+      "assignment": {
+        "mode": "auto"
+      },
+      "groups": [
+        {
+          "script_id": "script-a",
+          "vusers": 10,
+          "initialization": "at_runtime"
+        }
+      ],
+      "goal_config": {
+        "p95_latency_ms": 800,
+        "max_error_pct": 2,
+        "transaction_rules": [
+          {
+            "transaction": "Checkout",
+            "p95_ms": 900
+          }
+        ],
+        "early_stop": {
+          "enabled": true,
+          "after": "5m"
+        },
+        "workload_shape_config": {
+          "kind": "steady",
+          "params": {
+            "level": 3
+          }
+        },
+        "target_average_tps": 120,
+        "min_vusers": 5,
+        "max_vusers": 200
+      },
+      "runtime_settings": {
+        "pacing": {
+          "type": "fixed_interval",
+          "interval_ms": 2000
+        },
+        "think_time": {
+          "type": "fixed",
+          "mean_ms": 0
+        }
+      },
+      "data_pools": [],
+      "name": "Goal oriented",
+      "project_id": "project-1",
+      "workload_shape_id": "shape-1"
+    },
+    "estimate": {
+      "duration": "30m",
+      "termination_mode": "duration",
+      "scenario_mode": "goal_oriented",
+      "script_shakeout": false,
+      "resource_baseline": false,
+      "assignment": {
+        "mode": "auto"
+      },
+      "groups": [
+        {
+          "script_id": "script-a",
+          "vusers": 10,
+          "initialization": "at_runtime"
+        }
+      ],
+      "goal_config": {
+        "p95_latency_ms": 800,
+        "max_error_pct": 2,
+        "transaction_rules": [
+          {
+            "transaction": "Checkout",
+            "p95_ms": 900
+          }
+        ],
+        "early_stop": {
+          "enabled": true,
+          "after": "5m"
+        },
+        "workload_shape_config": {
+          "kind": "steady",
+          "params": {
+            "level": 3
+          }
+        },
+        "target_average_tps": 120,
+        "min_vusers": 5,
+        "max_vusers": 200
+      },
+      "runtime_settings": {
+        "pacing": {
+          "type": "fixed_interval",
+          "interval_ms": 2000
+        },
+        "think_time": {
+          "type": "fixed",
+          "mean_ms": 0
+        }
+      },
+      "name": "Goal oriented",
+      "project_id": "project-1"
+    },
+    "timeline": [
+      {
+        "name": "",
+        "script_id": "script-a",
+        "vusers": 10
+      }
+    ],
+    "preview": {
+      "points": [
+        {
+          "second": 0,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 60,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 120,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 180,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 240,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 300,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 360,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 420,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 480,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 540,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 600,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 660,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 720,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 780,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 840,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 900,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 960,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 1020,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 1080,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 1140,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 1200,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 1260,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 1320,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 1380,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 1440,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 1500,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 1560,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 1620,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 1680,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 1740,
+          "total": 10,
+          "group0": 10,
+          "totalTps": 120
+        },
+        {
+          "second": 1800,
+          "total": 0,
+          "group0": 0,
+          "totalTps": 0
+        }
+      ],
+      "showVUsers": false,
+      "totalSeconds": 1800,
+      "steadySeconds": 1800,
+      "preBaselineSeconds": 0,
+      "postBaselineSeconds": 0,
+      "peakVUsers": 10,
+      "peakTps": 120,
+      "minTps": 120,
+      "averageTps": 120,
+      "runtimeTarget": "tps",
+      "tpsGroupIndexes": []
+    }
+  },
+  "iterations-traffic-data": {
+    "upsert": {
+      "duration": "",
+      "termination_mode": "iterations",
+      "scenario_mode": "vuser_driven",
+      "script_shakeout": false,
+      "resource_baseline": false,
+      "assignment": {
+        "mode": "auto"
+      },
+      "groups": [
+        {
+          "script_id": "script-a",
+          "vusers": 6,
+          "initialization": "at_runtime",
+          "ramp_up": "10s"
+        }
+      ],
+      "runtime_settings": {
+        "pacing": {
+          "type": "random_delay",
+          "min_delay_ms": 100,
+          "max_delay_ms": 400
+        },
+        "run_logic": {
+          "iterations": 25
+        },
+        "results": {
+          "capture_responses": "failures"
+        },
+        "redaction_rules": [
+          {
+            "pattern": "token=[^&]+",
+            "replacement": "token=***"
+          }
+        ]
+      },
+      "traffic_profile": {
+        "source": "csv",
+        "points": [
+          {
+            "offset": "0s",
+            "tps": 10
+          },
+          {
+            "offset": "5m",
+            "tps": 40
+          }
+        ]
+      },
+      "data_pools": [
+        {
+          "pool_id": "pool-users",
+          "pool_name": "Users",
+          "alias": "users",
+          "access_mode": "read_only",
+          "selection_strategy": "unique"
+        }
+      ],
+      "name": "Iterations, traffic and data",
+      "project_id": "project-1",
+      "workload_shape_id": "shape-1"
+    },
+    "estimate": {
+      "duration": "",
+      "termination_mode": "iterations",
+      "scenario_mode": "vuser_driven",
+      "script_shakeout": false,
+      "resource_baseline": false,
+      "assignment": {
+        "mode": "auto"
+      },
+      "groups": [
+        {
+          "script_id": "script-a",
+          "vusers": 6,
+          "initialization": "at_runtime",
+          "ramp_up": "10s"
+        }
+      ],
+      "runtime_settings": {
+        "pacing": {
+          "type": "random_delay",
+          "min_delay_ms": 100,
+          "max_delay_ms": 400
+        },
+        "run_logic": {
+          "iterations": 25
+        },
+        "results": {
+          "capture_responses": "failures"
+        },
+        "redaction_rules": [
+          {
+            "pattern": "token=[^&]+",
+            "replacement": "token=***"
+          }
+        ]
+      },
+      "traffic_profile": {
+        "source": "csv",
+        "points": [
+          {
+            "offset": "0s",
+            "tps": 10
+          },
+          {
+            "offset": "5m",
+            "tps": 40
+          }
+        ]
+      },
+      "name": "Iterations, traffic and data",
+      "project_id": "project-1"
+    },
+    "timeline": [
+      {
+        "name": "",
+        "script_id": "script-a",
+        "ramp_up": "10s",
+        "vusers": 6
+      }
+    ],
+    "preview": {
+      "points": [],
+      "showVUsers": true,
+      "totalSeconds": 0,
+      "steadySeconds": 0,
+      "preBaselineSeconds": 0,
+      "postBaselineSeconds": 0,
+      "peakVUsers": 0
+    }
+  },
+  "conflicting-aliases": {
+    "upsert": {
+      "duration": "5m",
+      "scenario_mode": "vuser_driven",
+      "script_shakeout": false,
+      "resource_baseline": false,
+      "assignment": {
+        "mode": "auto"
+      },
+      "groups": [
+        {
+          "script_id": "script-browser",
+          "vusers": 1,
+          "initialization": "at_runtime"
+        }
+      ],
+      "runtime_settings": {
+        "log": {
+          "level": "extended"
+        },
+        "run_logic": {
+          "iterations": 4,
+          "auto_transactions": "per_action"
+        },
+        "browser_config": {
+          "device_profile": "pixel_8",
+          "headless": false
+        }
+      },
+      "data_pools": [],
+      "name": "Legacy aliases beside canonical sections",
+      "project_id": "project-1",
+      "workload_shape_id": "shape-1"
+    },
+    "estimate": {
+      "duration": "5m",
+      "scenario_mode": "vuser_driven",
+      "script_shakeout": false,
+      "resource_baseline": false,
+      "assignment": {
+        "mode": "auto"
+      },
+      "groups": [
+        {
+          "script_id": "script-browser",
+          "vusers": 1,
+          "initialization": "at_runtime"
+        }
+      ],
+      "runtime_settings": {
+        "log": {
+          "level": "extended"
+        },
+        "run_logic": {
+          "iterations": 4,
+          "auto_transactions": "per_action"
+        },
+        "browser_config": {
+          "device_profile": "pixel_8",
+          "headless": false
+        }
+      },
+      "name": "Legacy aliases beside canonical sections",
+      "project_id": "project-1"
+    },
+    "timeline": [
+      {
+        "name": "",
+        "script_id": "script-browser",
+        "vusers": 1
+      }
+    ],
+    "preview": {
+      "points": [
+        {
+          "second": 0,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 10,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 20,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 30,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 40,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 50,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 60,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 70,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 80,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 90,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 100,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 110,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 120,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 130,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 140,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 150,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 160,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 170,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 180,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 190,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 200,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 210,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 220,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 230,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 240,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 250,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 260,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 270,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 280,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 290,
+          "total": 1,
+          "group0": 1
+        },
+        {
+          "second": 300,
+          "total": 0,
+          "group0": 0
+        }
+      ],
+      "showVUsers": true,
+      "totalSeconds": 300,
+      "steadySeconds": 300,
+      "preBaselineSeconds": 0,
+      "postBaselineSeconds": 0,
+      "peakVUsers": 1
+    }
+  },
+  "no-groups": {
+    "upsert": {
+      "duration": "1m",
+      "scenario_mode": "vuser_driven",
+      "script_shakeout": false,
+      "resource_baseline": false,
+      "assignment": {
+        "mode": "auto"
+      },
+      "groups": [],
+      "runtime_settings": {
+        "log": {
+          "level": "error"
+        }
+      },
+      "data_pools": [],
+      "name": "Saved without groups",
+      "project_id": "project-1",
+      "workload_shape_id": "shape-1"
+    },
+    "estimate": {
+      "duration": "1m",
+      "scenario_mode": "vuser_driven",
+      "script_shakeout": false,
+      "resource_baseline": false,
+      "assignment": {
+        "mode": "auto"
+      },
+      "groups": [],
+      "runtime_settings": {
+        "log": {
+          "level": "error"
+        }
+      },
+      "name": "Saved without groups",
+      "project_id": "project-1"
+    },
+    "timeline": [],
+    "preview": {
+      "points": [],
+      "showVUsers": true,
+      "totalSeconds": 0,
+      "steadySeconds": 0,
+      "preBaselineSeconds": 0,
+      "postBaselineSeconds": 0,
+      "peakVUsers": 0
+    }
+  }
+}

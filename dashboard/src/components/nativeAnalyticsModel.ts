@@ -29,6 +29,14 @@ export const browserDocumentPanelMetrics: Record<string, { label: string; unit: 
  document_inp: { label: 'Interaction to next paint', unit: 'ms' },
 }
 
+// Browser document metrics (BI-4 browser populations): final qualified
+// document measurements of one measurement tuple, as merged distributions.
+export const nativeBrowserDocumentMetrics: Record<string, { label: string; aggregations: string[]; unit: string }> = {
+ document_lcp: { ...browserDocumentPanelMetrics.document_lcp, aggregations: ['p75', 'p50', 'p90', 'p95', 'p99'] },
+ document_fcp: { ...browserDocumentPanelMetrics.document_fcp, aggregations: ['p75', 'p50', 'p90', 'p95', 'p99'] },
+ document_inp: { ...browserDocumentPanelMetrics.document_inp, aggregations: ['p75', 'p50', 'p90', 'p95', 'p99'] },
+ document_cls: { ...browserDocumentPanelMetrics.document_cls, aggregations: ['p75', 'p50', 'p90', 'p95', 'p99'] },
+}
 export const nativePopulationMetrics: Record<string, { label: string; aggregations: string[]; unit: string }> = {
  response_time: { ...nativeMetrics.response_time, unit: 'ms' },
  error_rate: { ...nativeMetrics.error_rate, unit: '%' },

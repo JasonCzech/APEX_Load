@@ -5,13 +5,18 @@ import LazyLoadBoundary from './LazyLoadBoundary'
 
 const BrowserResourceInspector = lazy(() => import('./BrowserResourceInspector'))
 
-interface Props extends ArchiveResourceInspectorReadScope { loadPage?: BrowserResourcePageLoader }
+interface Props extends ArchiveResourceInspectorReadScope {
+  loadPage?: BrowserResourcePageLoader
+  /** Opens the inspector filtered to one document (a browser finding's drill-down). */
+  documentId?: string
+}
 export default function ArchiveResourceInspectorDisclosure(props: Props) {
   const owner = archiveResourceInspectorOwner(props)
-  return <OwnedDisclosure key={owner?.sourceIdentity || 'unavailable'} owner={owner} loadPage={props.loadPage} />
+  return <OwnedDisclosure key={`${owner?.sourceIdentity || 'unavailable'}/${props.documentId || ''}`} owner={owner} loadPage={props.loadPage} documentId={props.documentId} />
 }
-function OwnedDisclosure({ owner, loadPage }: { owner: ReturnType<typeof archiveResourceInspectorOwner>; loadPage?: BrowserResourcePageLoader }) {
-  const [open, setOpen] = useState(false)
+function OwnedDisclosure({ owner, loadPage, documentId }: { owner: ReturnType<typeof archiveResourceInspectorOwner>; loadPage?: BrowserResourcePageLoader; documentId?: string }) {
+  // A document drill-down opens the inspector at once.
+  const [open, setOpen] = useState(Boolean(documentId))
   const id = useId()
   return <section className="tx-section archive-summary-section" aria-label="Archive resource inspection">
     <h3 className="chart-title">Retained archive resource inspection</h3>
@@ -20,6 +25,6 @@ function OwnedDisclosure({ owner, loadPage }: { owner: ReturnType<typeof archive
       {open ? 'Close retained resource inspector' : 'Inspect retained archive resources'}
     </button>
     {!owner && <p role="status">A matching archived run, project and report are required for resource inspection.</p>}
-    <div id={id}>{open && owner && <LazyLoadBoundary title="Retained resource inspector could not be loaded."><Suspense fallback={<p role="status">Loading retained resource inspector…</p>}><BrowserResourceInspector {...owner} loadPage={loadPage} /></Suspense></LazyLoadBoundary>}</div>
+    <div id={id}>{open && owner && <LazyLoadBoundary title="Retained resource inspector could not be loaded."><Suspense fallback={<p role="status">Loading retained resource inspector…</p>}><BrowserResourceInspector {...owner} loadPage={loadPage} initialDocumentId={documentId} /></Suspense></LazyLoadBoundary>}</div>
   </section>
 }

@@ -11,6 +11,7 @@ import {
 import { type PacingConfig, type ThinkTimeConfig } from '../types/scripts'
 import { formatTimeCompact, parseDurationToNanoseconds, parseDurationToSeconds } from '../utils/timeUtils'
 import { trafficProfileMappingForGroup, trafficProfileTargetAt, trafficProfileTimelineSeconds, trafficProfileTpsStatistics } from './trafficProfilePreviewModel'
+import { initialStageLevel, maxStageVUsers, stageBoundarySeconds, stageLevelAt, stageScheduleSeconds } from './workloadStages'
 
 export type ScenarioWizardStep = 'scripts' | 'source' | 'run' | 'data' | 'review'
 
@@ -560,10 +561,6 @@ export function buildShapeStages(strategy: ShapeStageStrategy, options: ShapeSta
   }
 }
 
-function maxStageVUsers(stages?: LoadStageDraft[]): number {
-  return (stages || []).reduce((max, stage) => Math.max(max, Number(stage.target_vusers) || 0), 0)
-}
-
 function stageDurationSum(stages: LoadStageDraft[], type: string): number {
   return stages
     .filter(stage => stage.type === type)
@@ -933,37 +930,18 @@ function simpleGroupValue(group: ScenarioModelGroupInput, elapsedSeconds: number
   return 0
 }
 
-function stagedValue(stages: LoadStageDraft[], elapsedSeconds: number, valueKey: 'target_vusers' | 'target_tps'): number {
-  let cursor = 0
-  let previousValue = 0
-  for (const stage of stages) {
-    const stageDuration = parseDurationSeconds(stage.duration, 60)
-    const rawTarget = stage[valueKey]
-    const target = rawTarget === undefined ? previousValue : Math.max(0, Number(rawTarget) || 0)
-    const stageEnd = cursor + stageDuration
-    // A stage owns [start, end). At the exact boundary the runtime has already
-    // applied the next stage target, so the preview must advance as well.
-    if (elapsedSeconds < stageEnd) {
-      if (stage.type === 'ramp_up' || stage.type === 'ramp_down') {
-        const progress = stageDuration > 0 ? (elapsedSeconds - cursor) / stageDuration : 1
-        return previousValue + ((target - previousValue) * Math.max(0, Math.min(1, progress)))
-      }
-      return target
-    }
-    cursor = stageEnd
-    previousValue = target
-  }
-  return previousValue
-}
+// An editor's draft stages, drawn with the controller's stage semantics
+// (workloadStages): an unfinished duration counts as a minute, and a stage
+// without a target keeps the level before it (a TPS-only stage's VUsers).
+const DRAFT_STAGE_SECONDS = 60
 
-function stageTimelineSeconds(stages: LoadStageDraft[]): number[] {
-  const timeline = [0]
-  let cursor = 0
-  stages.forEach((stage) => {
-    cursor += parseDurationSeconds(stage.duration, 60)
-    timeline.push(cursor)
+function draftStageLevel(group: ScenarioModelGroupInput, elapsedSeconds: number, valueKey: 'target_vusers' | 'target_tps'): number {
+  const stages = group.stages || []
+  return stageLevelAt(stages, elapsedSeconds, valueKey, {
+    initialLevel: initialStageLevel(stages, Number(group.vusers) || 0, valueKey),
+    emptyDurationSeconds: DRAFT_STAGE_SECONDS,
+    missingTarget: 'previous',
   })
-  return timeline
 }
 
 function collectTimeline(steadySeconds: number, totalSeconds: number, groups: ScenarioModelGroupInput[], trafficProfile?: TrafficProfile): number[] {
@@ -982,7 +960,8 @@ function collectTimeline(steadySeconds: number, totalSeconds: number, groups: Sc
       values.add(steadySeconds + rampDownSeconds)
     }
     if (group.stages?.length) {
-      stageTimelineSeconds(group.stages).forEach(second => values.add(Math.min(steadySeconds, second)))
+      values.add(0)
+      stageBoundarySeconds(group.stages, DRAFT_STAGE_SECONDS).forEach(second => values.add(Math.min(steadySeconds, second)))
     }
   })
   trafficProfileTimelineSeconds(trafficProfile).forEach(second => values.add(Math.min(steadySeconds, second)))
@@ -1047,8 +1026,8 @@ export function buildScenarioModelPreview(params: {
       const value = profileVUsers && profileMapping
         ? (elapsedSeconds < steadySeconds ? trafficProfileTargetAt(profileMapping, elapsedSeconds) : 0)
         : group.stages?.length
-          ? (elapsedSeconds < steadySeconds && (!group.stop_after_stages || elapsedSeconds < group.stages.reduce((sum, stage) => sum + parseDurationSeconds(stage.duration, 60), 0))
-            ? stagedValue(group.stages, elapsedSeconds, 'target_vusers')
+          ? (elapsedSeconds < steadySeconds && (!group.stop_after_stages || elapsedSeconds < stageScheduleSeconds(group.stages, DRAFT_STAGE_SECONDS))
+            ? draftStageLevel(group, elapsedSeconds, 'target_vusers')
             : 0)
           : simpleGroupValue(group, elapsedSeconds, steadySeconds)
       point[groupKey] = Math.round(value * 100) / 100
@@ -1060,7 +1039,7 @@ export function buildScenarioModelPreview(params: {
 			? trafficProfileTargetAt(profileMapping, elapsedSeconds)
 			: Number(group.target_tps) > 0
 			  ? Number(group.target_tps)
-			  : stagedValue(group.stages || [], elapsedSeconds, 'target_tps')
+			  : draftStageLevel(group, elapsedSeconds, 'target_tps')
           : 0
         point[tpsKey] = Math.round(tps * 100) / 100
         point.totalTps = (point.totalTps || 0) + tps

@@ -4141,6 +4141,7 @@ export interface operations {
                 "compared"?: number;
                 "findings"?: Array<string>;
                 "limitations"?: Array<string>;
+                "qualification"?: Array<string>;
                 "status"?: string;
                 "summary"?: string;
                 "unscored"?: number;
@@ -66561,6 +66562,66 @@ export interface operations {
       };
     };
   };
+  "handleGetRunArchiveBrowserHAREntry": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "request_id"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": ({
+            "artifact"?: string;
+            "entry"?: unknown;
+            "fidelity": string;
+            "headers_omitted"?: boolean;
+            "native_har_coverage_unknown"?: number;
+            "omitted_reason"?: string;
+            "request_id": string;
+            "source_generation"?: string;
+          }) | null;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleGetRunArchiveBrowserInteractions": {
     parameters: {
       "path": {
@@ -72976,6 +73037,7 @@ export interface operations {
                 "compared": number;
                 "findings"?: Array<string>;
                 "limitations"?: Array<string>;
+                "qualification"?: Array<string>;
                 "status": string;
                 "summary": string;
                 "unscored": number;
@@ -175009,6 +175071,9 @@ export interface paths {
   };
   "/api/v1/tests/{id}/archive/browser/har": {
     "get": operations["handleListRunArchiveBrowserHARs"];
+  };
+  "/api/v1/tests/{id}/archive/browser/har-entry": {
+    "get": operations["handleGetRunArchiveBrowserHAREntry"];
   };
   "/api/v1/tests/{id}/archive/browser/har/{artifact}": {
     "get": operations["handleDownloadRunArchiveBrowserHAR"];

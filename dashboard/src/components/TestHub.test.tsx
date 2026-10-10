@@ -12,6 +12,7 @@ import { withScenarioAuthoring } from '../test/scenarioAuthoringFixtures'
 import { ApiError } from '../hooks/apiClient'
 import { duplicateScenarioGroupNameIndexes, scenarioGroupNameAfterScriptSelection } from './scenarioGroupUtils'
 import { scenarioSeedFromTemplate } from './scenarioTemplateSeed'
+import { thinkTimeConfigForType } from './thinkTimeConfig'
 import {
   replaceScenarioRuntimeDefaults,
   reseedScenarioGroups,
@@ -284,14 +285,13 @@ describe('TestHub', () => {
       },
     }
 
+    // The form keeps the stored override itself; nothing is mirrored into
+    // display fields and rebuilt at save (AUTH-3).
     const form = scenarioFormStateFromStoredScenario(stored, '')
-    expect(form.runtime_iterations).toBe(4)
-    expect(form.runtime_auto_transactions).toBe('per_action')
-    expect(form.runtime_log_level).toBe('extended')
-    expect(form.browser_device_profile).toBe('pixel_8')
-    expect(form.browser_headless).toBe('false')
+    expect(form.runtime_settings).toEqual(stored.runtime_settings)
+    expect(form.runtime_settings).not.toBe(stored.runtime_settings)
 
-    const roundTripped = runtimeSettingsFromForm(form, true)
+    const roundTripped = runtimeSettingsFromForm(form)
     expect(roundTripped.run_logic).toEqual(stored.runtime_settings?.run_logic)
     expect(roundTripped.log).toEqual(stored.runtime_settings?.log)
     expect(roundTripped.browser_config).toEqual(stored.runtime_settings?.browser_config)
@@ -300,14 +300,13 @@ describe('TestHub', () => {
     expect(roundTripped.log_level).toBe('')
     expect(roundTripped.browser).toBeUndefined()
 
-    const edited = runtimeSettingsFromForm({
-      ...form,
-      runtime_iterations: 7,
-      runtime_auto_transactions: 'per_iteration',
-      runtime_log_level: 'standard',
-      browser_device_profile: 'iphone_15_pro',
-      browser_headless: 'true',
-    }, true)
+    // The runtime editor edits the canonical sections; advanced fields stay.
+    const edited = runtimeSettingsFromForm(replaceScenarioRuntimeDefaults(form, {
+      ...roundTripped,
+      run_logic: { ...roundTripped.run_logic, iterations: 7, auto_transactions: 'per_iteration' },
+      log: { ...roundTripped.log, level: 'standard' },
+      browser_config: { ...roundTripped.browser_config, device_profile: 'iphone_15_pro', headless: true },
+    }))
     expect(edited.run_logic).toEqual({
       iterations: 7,
       auto_transactions: 'per_iteration',
@@ -357,20 +356,12 @@ describe('TestHub', () => {
     }
 
     const form = scenarioFormStateFromStoredScenario(stored, '')
-    expect(form).toMatchObject({
-      runtime_pacing_type: 'random_interval',
-      runtime_pacing_min_interval_ms: 2500,
-      runtime_pacing_max_interval_ms: 7500,
-      runtime_think_time_type: 'recorded',
-      runtime_think_time_multiplier: 1.5,
-      runtime_think_time_limit_ms: 4000,
-      runtime_ignore_think_time: false,
-    })
-    expect(runtimeSettingsFromForm(form, true)).toMatchObject(stored.runtime_settings!)
-    expect(runtimeSettingsFromForm(form, true).think_time).not.toHaveProperty('mean_ms')
+    expect(form.runtime_settings).toEqual(stored.runtime_settings)
+    expect(runtimeSettingsFromForm(form)).toMatchObject(stored.runtime_settings!)
+    expect(runtimeSettingsFromForm(form).think_time).not.toHaveProperty('mean_ms')
   })
 
-  it('canonicalizes legacy normal think time and persists edited distribution fields', () => {
+  it('keeps a legacy normal think time as stored and persists edited distribution fields', () => {
     const stored: StoredScenario = {
       id: 'legacy-normal-runtime',
       name: 'Legacy normal runtime',
@@ -391,22 +382,21 @@ describe('TestHub', () => {
       },
     }
 
+    // An unchanged load and save keeps the authored (still accepted) type; the
+    // runtime editor canonicalizes it when the section is edited.
     const form = scenarioFormStateFromStoredScenario(stored, '')
-    expect(form.runtime_think_time_type).toBe('gaussian')
-    expect(runtimeSettingsFromForm({
-      ...form,
-      runtime_think_time_std_ms: 125,
-      runtime_think_time_min_ms: 50,
-      runtime_think_time_max_ms: 1200,
-    }, true).think_time).toEqual({
+    expect(runtimeSettingsFromForm(form).think_time).toEqual(stored.runtime_settings?.think_time)
+    const current = runtimeSettingsFromForm(form)
+    expect(runtimeSettingsFromForm(replaceScenarioRuntimeDefaults(form, {
+      ...current,
+      think_time: thinkTimeConfigForType({ ...current.think_time, std_ms: 125, min_ms: 50, max_ms: 1200 }, 'gaussian'),
+    })).think_time).toEqual({
       type: 'gaussian',
       mean_ms: 500,
       std_ms: 125,
       min_ms: 50,
       max_ms: 1200,
       multiplier: 1.25,
-      limit_ms: undefined,
-      ignore: false,
     })
   })
 
@@ -439,12 +429,12 @@ describe('TestHub', () => {
     }
     const form = scenarioFormStateFromStoredScenario(stored, '')
     const nextDraft = {
-      ...runtimeSettingsFromForm(form, true),
+      ...runtimeSettingsFromForm(form),
       base_url: 'https://orders.example.test',
     }
 
     const replaced = replaceScenarioRuntimeDefaults(form, nextDraft)
-    expect(runtimeSettingsFromForm(replaced, true)).toMatchObject({
+    expect(runtimeSettingsFromForm(replaced)).toMatchObject({
       pacing: stored.runtime_settings?.pacing,
       think_time: stored.runtime_settings?.think_time,
       base_url: 'https://orders.example.test',
@@ -3194,7 +3184,8 @@ describe('TestHub', () => {
       }),
 		runtime_settings: expect.objectContaining({
 			pacing: { type: 'random_delay', min_delay_ms: 100, max_delay_ms: 900 },
-			think_time: { type: 'gaussian', mean_ms: 250, std_ms: 75, min_ms: 25, max_ms: 900, multiplier: 1.5, limit_ms: 1200, ignore: false },
+			// The untouched think-time section is saved exactly as stored (AUTH-3).
+			think_time: { type: 'normal', mean_ms: 250, std_ms: 75, min_ms: 25, max_ms: 900, multiplier: 1.5, limit_ms: 1200 },
 			error_handling: { max_retries: 3, retry_delay_ms: 150, retry_backoff: 'exponential' },
         run_logic: { iterations: 4, workload_model: 'closed' },
         http: { version: '2' },
@@ -3306,7 +3297,7 @@ describe('TestHub', () => {
       goal_config: expect.objectContaining({ max_throttled_requests: 3, max_dead_letter_rate_pct: 1 }),
 		runtime_settings: expect.objectContaining({
 			pacing: { type: 'random_delay', min_delay_ms: 100, max_delay_ms: 900 },
-			think_time: { type: 'gaussian', mean_ms: 250, std_ms: 75, min_ms: 25, max_ms: 900, multiplier: 1.5, limit_ms: 1200, ignore: false },
+			think_time: { type: 'normal', mean_ms: 250, std_ms: 75, min_ms: 25, max_ms: 900, multiplier: 1.5, limit_ms: 1200 },
 			base_url: 'https://orders.example.test',
         env: { REGION: 'east' },
       }),

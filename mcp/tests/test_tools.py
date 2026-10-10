@@ -328,3 +328,45 @@ async def test_elastic_evidence_projection_filter_parity():
     assert result["ok"] is True
     assert dict(seen[-1].url.params) == {key: str(value) for key, value in filters.items()}
     assert "UTC from/until" in tool("run_monitor_evidence").description
+
+
+@pytest.mark.asyncio
+async def test_browser_intelligence_tools_call_expected_routes():
+    seen: list[tuple[str, str, str]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path, request.url.query.decode()))
+        return httpx.Response(200, json={"ok": True})
+
+    client = APEXLoadClient(
+        APEXLoadClientConfig(base_url="http://storm.test/api/v1", default_project_id="p1"),
+        transport=httpx.MockTransport(handler),
+    )
+    unconfirmed = json.loads(await run_endpoint_tool(tool("analysis_policy_update"), client=client, path_params={"id": "policy-1"}, payload={"revision": 3}))
+    assert unconfirmed["ok"] is False and seen == []
+
+    calls = [
+        (tool("run_archive_browser_findings"), {"path_params": {"id": "run-1"}}),
+        (tool("run_archive_browser_interactions"), {"path_params": {"id": "run-1"}}),
+        (tool("run_archive_journeys"), {"path_params": {"id": "run-1"}}),
+        (tool("run_archive_browser_har_entry"), {"path_params": {"id": "run-1"}, "query": {"request_id": "gen-request-7"}}),
+        (tool("analysis_policy_list"), {"query": {"kind": "browser_policy"}}),
+        (tool("analysis_policy_get"), {"path_params": {"id": "policy-1"}, "query": {"revision": 2}}),
+        (tool("analysis_policy_update"), {"path_params": {"id": "policy-1"}, "payload": {"kind": "browser_policy", "name": "Vitals", "definition": {}, "revision": 3}, "confirm": True}),
+    ]
+    for spec, kwargs in calls:
+        result = json.loads(await run_endpoint_tool(spec, client=client, **kwargs))
+        assert result["ok"] is True
+
+    assert [(method, path) for method, path, _ in seen] == [
+        ("GET", "/api/v1/tests/run-1/archive/browser-findings"),
+        ("GET", "/api/v1/tests/run-1/archive/browser-interactions"),
+        ("GET", "/api/v1/tests/run-1/archive/journeys"),
+        ("GET", "/api/v1/tests/run-1/archive/browser/har-entry"),
+        ("GET", "/api/v1/analysis/policies"),
+        ("GET", "/api/v1/analysis/policies/policy-1"),
+        ("PUT", "/api/v1/analysis/policies/policy-1"),
+    ]
+    assert "request_id=gen-request-7" in seen[3][2]
+    assert "kind=browser_policy" in seen[4][2] and "project_id=p1" in seen[4][2]
+    assert "project_id=p1" in seen[6][2]

@@ -51,6 +51,38 @@ test('source catalog search and importer guidance stay consistent across formats
   }
 })
 
+test('import addresses name their importer, survive a reload and keep the old address', async ({ page }) => {
+  test.setTimeout(90_000)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const workspace = await createWorkspace(page.context().request)
+  const scope = scopeQuery(workspace)
+  const title = (name: string) => page.getByRole('heading', { level: 1, name, exact: true })
+
+  // The address written before import routes named their launcher still
+  // opens the LoadRunner archive importer.
+  await page.goto(`/#/scripts?mode=import&${scope}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  await expect(title('Import LoadRunner Script Archive')).toBeVisible()
+
+  // An importer opened from the catalog is named in the address, so a reload
+  // reopens it (it used to fall back to the LoadRunner archive importer).
+  await page.goto(`/#/scripts?mode=create&${scope}`)
+  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('searchbox', { name: 'Find a source format' }).fill('HAR Traffic')
+  await page.locator('.script-create-option').filter({ has: page.getByRole('heading', { name: 'HAR Traffic', exact: true }) }).click()
+  await expect(title('Import HAR Traffic')).toBeVisible()
+  await expect(page).toHaveURL(/mode=import&launcher=traffic_har&importMode=auto_detect/)
+  await page.reload()
+  await expect(title('Import HAR Traffic')).toBeVisible()
+
+  // A named launcher opens directly; an unknown one opens the create options.
+  await page.goto(`/#/scripts?mode=import&launcher=jmeter&${scope}`)
+  await expect(title('Import JMeter Test Plan')).toBeVisible()
+  await page.goto(`/#/scripts?mode=import&launcher=har-import&${scope}`)
+  await expect(title('Scripts')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Import', exact: true })).toBeVisible()
+})
+
 test('Oracle review clears obsolete findings and never offers a script destination', async ({ page }, testInfo) => {
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
   const request = page.context().request

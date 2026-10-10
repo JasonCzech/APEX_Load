@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ScenarioFormState } from './TestHub'
-import { scenarioFormStateFromStoredScenario, runtimeSettingsFromForm, replaceScenarioRuntimeDefaults, reseedScenarioGroups } from './scenarioFormModel'
+import { scenarioFormStateFromStoredScenario, runtimeSettingsFromForm, replaceScenarioRuntimeDefaults, reseedScenarioGroups, seededScenarioRuntime } from './scenarioFormModel'
 
 describe('reseedScenarioGroups', () => {
   it('preserves groups beyond the selected shape and does not invent script mappings', () => {
@@ -28,7 +28,7 @@ describe('reseedScenarioGroups', () => {
 it('retains percentage bounds through scenario runtime replacement and form serialization', () => {
  const form = { runtime_settings: {}, groups: [] } as unknown as ScenarioFormState
  const next = replaceScenarioRuntimeDefaults(form, { log_level: '', auto_transactions: '', think_time: { type: 'random_percentage', min_percent: 0, max_percent: 125 } })
- expect(runtimeSettingsFromForm(next, false)?.think_time).toMatchObject({ type: 'random_percentage', min_percent: 0, max_percent: 125 })
+ expect(runtimeSettingsFromForm(next).think_time).toMatchObject({ type: 'random_percentage', min_percent: 0, max_percent: 125 })
 })
 
 it('preserves group SLA overrides when applying a new load shape', () => {
@@ -46,4 +46,42 @@ it('reopens every pool binding without maintaining first-binding shadow fields',
  expect(form).not.toHaveProperty('data_pool_id')
  form.data_pools![0].alias='changed'
  expect(scenario.data_pools![0].alias).toBe('customers')
+})
+
+describe('seededScenarioRuntime', () => {
+  it('keeps the authored iterations, log level, auto transactions and error flags a seed\'s runtime settings leave unset', () => {
+    const current = {
+      run_logic: { iterations: 7, auto_transactions: true },
+      log: { level: 'debug' },
+      error_handling: { continue_on_error: false, snapshot_on_error: true },
+      pacing: { type: 'fixed', delay_ms: 500 },
+    } as const
+    const seeded = seededScenarioRuntime(structuredClone(current) as never, { runtime_settings: { pacing: { type: 'none' }, think_time: { type: 'ignore' } } as never })
+    expect(seeded).toEqual({
+      pacing: { type: 'none' },
+      think_time: { type: 'ignore' },
+      iterations: 7,
+      log_level: 'debug',
+      auto_transactions: true,
+      error_handling: { continue_on_error: false, snapshot_on_error: true },
+    })
+  })
+
+  it('keeps the scenario\'s browser settings when the seed\'s runtime sets none', () => {
+    const current = { browser_config: { device_profile: 'iphone_15', orientation: 'portrait', headless: true } }
+    expect(seededScenarioRuntime(current as never, { runtime_settings: { pacing: { type: 'none' } } as never })).toEqual({
+      pacing: { type: 'none' }, browser_config: { device_profile: 'iphone_15', orientation: 'portrait', headless: true },
+    })
+    // A seed that brings its own browser settings replaces them.
+    expect(seededScenarioRuntime(current as never, { runtime_settings: { browser_config: { device_profile: 'desktop' } } as never })).toEqual({ browser_config: { device_profile: 'desktop' } })
+  })
+
+  it('lets the seed\'s own values replace them', () => {
+    const current = { iterations: 7, log_level: 'debug', error_handling: { continue_on_error: false } }
+    const seeded = seededScenarioRuntime(current as never, {
+      runtime_settings: { run_logic: { iterations: 1 }, error_handling: { continue_on_error: true } } as never,
+      log_level: 'info',
+    })
+    expect(seeded).toEqual({ run_logic: { iterations: 1 }, log_level: 'info', error_handling: { continue_on_error: true } })
+  })
 })
