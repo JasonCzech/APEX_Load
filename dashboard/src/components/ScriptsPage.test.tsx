@@ -75,8 +75,11 @@ vi.mock('../hooks/useProject', () => ({
 }))
 
 vi.mock('./ScriptEditor', () => ({
-  default: ({ initialScript, initiallyDirty, scriptId, onSave, onClose }: { initialScript?: { name?: string }, initiallyDirty?: boolean, scriptId?: string | null, onSave?: (script: { id: string; name: string }) => void, onClose?: () => void }) => (
-    <div data-testid="script-editor">
+  default: ({ initialScript, initiallyDirty, scriptId, onSave, onClose, returnTarget }: { initialScript?: { name?: string }, initiallyDirty?: boolean, scriptId?: string | null, onSave?: (script: { id: string; name: string }) => void, onClose?: () => void, returnTarget?: { label: string; retainedGuardIds?: readonly string[]; onReturn: () => void } | null }) => (
+    <div data-testid="script-editor" data-retained-guards={returnTarget?.retainedGuardIds?.join(',') ?? ''}>
+      {returnTarget && <button onClick={returnTarget.onReturn}>{returnTarget.label}</button>}
+      {/* Save changes in the prompt on the way back: the editor saves, then the return goes ahead. */}
+      {returnTarget && <button onClick={() => { onSave?.({ id: 'saved-script-1', name: initialScript?.name || 'Saved Script' }); returnTarget.onReturn() }}>mock-return-after-saving</button>}
       <span>editor:{initialScript?.name || 'blank'}</span>
       <span>script-id:{scriptId || 'none'}</span>
       <span>initially-dirty:{initiallyDirty ? 'yes' : 'no'}</span>
@@ -2018,6 +2021,8 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('editor:Converted Enterprise Script Archive Draft')
     expect(container.textContent).toContain('Back to Converted Script')
     expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull()
+    // The review stays open behind the editor, so leaving keeps its guard.
+    expect(container.querySelector('[data-testid="script-editor"]')?.getAttribute('data-retained-guards')).toBe('enterprise-archive-import')
 
     await clickButton('Back to Converted Script')
 
@@ -2025,6 +2030,62 @@ describe('ScriptsPage', () => {
     expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull()
     expect((container.querySelector('input[aria-label="mock-enterprise-archive-state"]') as HTMLInputElement | null)?.value).toBe('review-state-preserved')
     expect(container.textContent).toContain('mock-enterprise-archive-review-option')
+  })
+
+  it('opens a script saved on the way back even when its save returned no authoring projection', async () => {
+    apiMock.getScript.mockResolvedValue({ script: { id: 'saved-script-1', name: 'Converted Enterprise Script Archive Draft', protocol: 'http', version: '1', created_at: '2026-10-09T00:00:00Z' } })
+    let loadSaved!: () => void
+    apiMock.getScriptAuthoring.mockReturnValue(new Promise(resolve => {
+      loadSaved = () => resolve(authoringFixture({ name: 'Converted Enterprise Script Archive Draft' }, 'saved-script-1'))
+    }))
+    await act(async () => {
+      root.render(<ScriptsPage initialMode="create-options" />)
+    })
+    await flushPromises()
+    await clickButton('Import')
+    await clickButton('Import Loadrunner Script Archive')
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull(), { timeout: 5000 })
+    await clickButton('mock-enterprise-archive-review-option')
+
+    // The saved script carries no projection, so the page loads it; the
+    // return that follows the save must not drop that load. Until it lands,
+    // the editor and the review behind it stay as they were.
+    await clickButton('mock-return-after-saving')
+    await flushPromises()
+    expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="script-editor"]')?.getAttribute('data-retained-guards')).toBe('enterprise-archive-import')
+    await act(async () => { loadSaved() })
+    await vi.waitFor(() => expect(container.textContent).toContain('script-id:saved-script-1'), { timeout: 5000 })
+    expect(apiMock.getScriptAuthoring.mock.calls.some(call => call[0] === 'saved-script-1')).toBe(true)
+  })
+
+  it('returns to the review when Back is clicked while a saved script is still loading', async () => {
+    apiMock.getScript.mockResolvedValue({ script: { id: 'saved-script-1', name: 'Converted Enterprise Script Archive Draft', protocol: 'http', version: '1', created_at: '2026-10-09T00:00:00Z' } })
+    let loadSaved!: () => void
+    apiMock.getScriptAuthoring.mockReturnValue(new Promise(resolve => {
+      loadSaved = () => resolve(authoringFixture({ name: 'Converted Enterprise Script Archive Draft' }, 'saved-script-1'))
+    }))
+    await act(async () => {
+      root.render(<ScriptsPage initialMode="create-options" />)
+    })
+    await flushPromises()
+    await clickButton('Import')
+    await clickButton('Import Loadrunner Script Archive')
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull(), { timeout: 5000 })
+    await clickButton('mock-enterprise-archive-review-option')
+
+    // A plain save, then, a moment later, Back.
+    const plainSave = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'mock-save')
+    expect(plainSave).toBeTruthy()
+    await act(async () => { plainSave!.click() })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+    await clickButton('Back to Converted Script')
+    expect(container.querySelector('[data-testid="script-editor"]')).toBeNull()
+    expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull()
+    // The dropped load does not reopen the saved script when it lands.
+    await act(async () => { loadSaved() })
+    await flushPromises()
+    expect(container.querySelector('[data-testid="script-editor"]')).toBeNull()
   })
 
   it('returns JMeter import close actions to the create options shell', async () => {

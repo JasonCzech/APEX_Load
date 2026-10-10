@@ -24,7 +24,7 @@ The first round raised 40 findings: 2 high, 9 medium and 29 low. The high ones w
 - **B8 and C8:** the reference harnesses called `syscall.Getrusage`, which breaks the Windows build of the API tests. The rusage and RSS helpers are now build-tagged, with a stub that records the values as not measured.
 - **C8:** a run that stopped on a fatal error was written as a `pending` F4 request. It is now `failed`.
 
-The review also found a gap in A8: the plan's script session absorption (the editor's paired baseline, dirty calculation, save state and navigation moving into `useScriptAuthoringSession`) was not done. It is recorded as a deviation rather than done in a review round. That is a deep move inside the 7,300-line script editor, already deferred once from A5.
+The review also found a gap in A8: the plan's script session absorption (the editor's paired baseline, dirty calculation, save state and navigation moving into `useScriptAuthoringSession`) was not done. It was recorded as a deviation rather than done in a review round, since it is a deep move inside the 7,300-line script editor and was already deferred once from A5. It was done after the wave (see the A8 notes of the specification and `docs/qa/ADAPTER_RETIREMENT.md`).
 
 Later rounds:
 - **Round 2:** E7 was clean. The other packages had 16 findings, mostly partial fixes. The medium ones were generated API docs not regenerated after a new report field (found by two reviewers), and C8's live loss path counting successes only.
@@ -57,7 +57,7 @@ Notable corrections from review:
 The specification records each package's deviations in full; in brief:
 
 - **Adapter retirement (A8):**
-  - Script session absorption is not done (see Review). Validation is not bound to capability, policy or approval revisions, which have no client-visible revision yet.
+  - Script session absorption was done after the wave (see Review). The Scripts page keeps the routing state. Validation is not bound to capability, policy or approval revisions, which have no client-visible revision yet.
   - TestHub keeps a form as its editing view, holding only canonical values.
   - The wizard's model chart keeps its own builder. A queued run's preview draws profile-mapped groups from their ramps. `NewTestPage`'s group edit draft stays a run-only projection.
 - **Browser area (E6):**

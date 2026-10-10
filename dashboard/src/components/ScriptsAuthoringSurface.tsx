@@ -7,6 +7,7 @@ import { Project, type StoredScript } from '../types'
 import { type ImportKind } from './ProtocolAssetImport'
 import { type AuthoringReturnTarget, type DraftEditorFocus, type ImportedSaveResult, type ScriptsAuthoringSubView } from './useScriptsAuthoringState'
 import LazyLoadBoundary from './LazyLoadBoundary'
+import { ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID } from './enterpriseArchiveReviewOutcome'
 import ImportDestinationFolder from './ImportDestinationFolder'
 
 const ScriptEditor = lazy(() => import('./ScriptEditor'))
@@ -173,6 +174,7 @@ function ScriptsAuthoringContent({
     importLauncher: 'enterprise_archive',
     label: 'Back to Converted Script',
     description: 'Return to the converted enterprise script archive review without losing the current import results.',
+    retainedGuardIds: [ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID],
   }
   const openEnterpriseArchiveDraftInEditor = (script: ScriptDefinition, focus?: DraftEditorFocus) => {
     onEditDraft(script, focus, enterpriseArchiveEditReturnTarget)
@@ -192,12 +194,8 @@ function ScriptsAuthoringContent({
           <div className="scripts-authoring-stack">
             {renderEnterpriseArchiveImportSurface(true)}
             <div className="page">
-              <div className="authoring-return-bar">
-                <button className="btn btn-secondary" onClick={onReturnToDraftSource}>{draftReturnTarget.label}</button>
-                {draftReturnTarget.description && <span>{draftReturnTarget.description}</span>}
-              </div>
               {authoringNotice && <div className="settings-notice">{authoringNotice}</div>}
-              <ScriptEditor initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={onSaved} onClose={closeCreateEditor} />
+              <ScriptEditor returnTarget={{ label: draftReturnTarget.label, description: draftReturnTarget.description, retainedGuardIds: draftReturnTarget.retainedGuardIds, onReturn: onReturnToDraftSource }} initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={onSaved} onClose={closeCreateEditor} />
             </div>
           </div>
         )

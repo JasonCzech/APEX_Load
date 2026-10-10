@@ -33,7 +33,7 @@ import { getImportSummary } from './scriptEditorImportModel'
 import { getImportedRuntimeSectionId } from './scriptEditorRuntimeSettingsModel'
 import ScriptImportReview from './ScriptImportReview'
 import ArchiveReviewBoundary from './ArchiveReviewBoundary'
-import { archiveReviewOutcome } from './enterpriseArchiveReviewOutcome'
+import { ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID, archiveReviewOutcome } from './enterpriseArchiveReviewOutcome'
 import ImportIssueSeverityTag from './ImportIssueSeverityTag'
 import { groupImportFindings, draftImportFindings, reviewSectionFindings, type ImportFinding, type IssueCategory } from './importReviewIssues'
 import { prepareProjectSecretsSettingsNavigation } from './projectSecretsNavigation'
@@ -1239,7 +1239,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   const pendingReviewScriptCount = importItems.reduce((count, item) => count + pendingItemReviewCount(item), 0)
   const validatedAwaitingSaveCount = validatedItems.filter(item => pendingItemReviewCount(item) > 0).length
   // Validated drafts and review decisions live only in this page until saved.
-  useUnsavedWorkGuard('enterprise-archive-import', 'LoadRunner import review', pendingReviewScriptCount > 0, () => {
+  useUnsavedWorkGuard(ENTERPRISE_ARCHIVE_REVIEW_GUARD_ID, 'LoadRunner import review', pendingReviewScriptCount > 0, () => {
     invalidateOperationScopes()
     setImportItems([])
     setSelectedItemId('')

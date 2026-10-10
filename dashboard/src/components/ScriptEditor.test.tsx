@@ -10,6 +10,7 @@ import type { ScriptDefinition } from '../types/scripts'
 import { ApiError } from '../hooks/apiClient'
 import { formatSnapshotRequestSection, formatSnapshotResponseSection } from '../utils/snapshotFormatUtils'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
+import { useUnsavedWorkGuard } from '../hooks/NavigationGuardProvider'
 import { KeyboardShortcutProvider } from '../hooks/KeyboardShortcutRoot'
 import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
@@ -8004,34 +8005,27 @@ describe('ScriptEditor', () => {
     })
 
     const nameInput = container.querySelector<HTMLInputElement>('.side-panel-script-name input[placeholder="My_Test_Script"]')
-    expect(nameInput).toBeDefined()
-    if (!nameInput) return
-
+    expect(nameInput).not.toBeNull()
     await act(async () => {
-      changeInputValue(nameInput, 'Guarded Checkout Flow')
+      changeInputValue(nameInput!, 'Guarded Checkout Flow')
       await Promise.resolve()
     })
 
-    const closeButton = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Close script editor"]')
-    expect(closeButton).toBeDefined()
-    if (!closeButton) return
-    expect(closeButton.textContent?.trim()).toBe('')
-    expect(closeButton.querySelector('svg')).not.toBeNull()
-
+    const closeButton = container.querySelector<HTMLButtonElement>('button[aria-label="Close script editor"]')
+    expect(closeButton).not.toBeNull()
     await act(async () => {
-      closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      closeButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
 
     expect(onClose).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('Create Script has unsaved changes')
+    expect(container.textContent).toContain('Create script has unsaved changes')
 
     const saveChangesButton = findButtonByText(container, 'Save changes')
-    expect(saveChangesButton).toBeDefined()
-    if (!saveChangesButton) return
+    expect(saveChangesButton).not.toBeUndefined()
 
     await act(async () => {
-      saveChangesButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      saveChangesButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
     await flushReact()
@@ -8043,12 +8037,196 @@ describe('ScriptEditor', () => {
     expect(container.textContent).not.toContain('Unsaved Changes')
 
     await act(async () => {
-      closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      closeButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
 
     expect(onClose).toHaveBeenCalledTimes(2)
     expect(container.textContent).not.toContain('Unsaved Changes')
+  })
+
+  it('returns to its source through its own guard only, keeping the open source\'s', async () => {
+    // The page holds back the return that follows a save in the same turn,
+    // so nothing may be awaited between onSave and the return.
+    let laterTurn = false
+    const returnedInLaterTurn: boolean[] = []
+    const onReturn = vi.fn(() => { returnedInLaterTurn.push(laterTurn) })
+    const onSave = vi.fn<(...args: unknown[]) => void>(() => { setTimeout(() => { laterTurn = true }, 0) })
+    const discardReview = vi.fn()
+    apiMock.createScript.mockResolvedValueOnce({
+      id: 'script-saved-on-return', name: 'Edited Converted Flow', protocol: initialScript.protocol, version: initialScript.version,
+      created_at: '2026-10-09T00:00:00Z', script: { ...initialScript, name: 'Edited Converted Flow' },
+    })
+    // The import review stays open behind the editor, holding unsaved drafts.
+    function OpenReview() {
+      useUnsavedWorkGuard('enterprise-archive-import', 'LoadRunner import review', true, discardReview)
+      return null
+    }
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <OpenReview />
+          <ScriptEditor initialScript={initialScript} onSave={onSave} returnTarget={{ label: 'Back to Converted Script', description: 'Return to the converted archive review.', retainedGuardIds: ['enterprise-archive-import'], onReturn }} />
+        </NavigationGuardProvider>,
+      )
+    })
+    expect(container.querySelector('.authoring-return-bar')?.textContent).toContain('Return to the converted archive review.')
+    const backButton = findButtonByText(container, 'Back to Converted Script')!
+    // An unedited draft leaves at once.
+    await act(async () => { backButton.click(); await Promise.resolve() })
+    expect(onReturn).toHaveBeenCalledTimes(1)
+    expect(container.textContent).not.toContain('Unsaved Changes')
+
+    const nameInput = container.querySelector<HTMLInputElement>('.side-panel-script-name input[placeholder="My_Test_Script"]')!
+    await act(async () => { changeInputValue(nameInput, 'Edited Converted Flow'); await Promise.resolve() })
+    await act(async () => { backButton.click(); await Promise.resolve() })
+    expect(onReturn).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('Create script has unsaved changes')
+    expect(container.textContent).not.toContain('LoadRunner import review')
+
+    // Save changes saves, then the return goes ahead (the page decides where
+    // a saved script opens).
+    await act(async () => { findButtonByText(container, 'Save changes')!.click(); await Promise.resolve() })
+    await flushReact()
+    expect(onSave.mock.calls[0]?.[0]).toEqual(expect.objectContaining({ id: 'script-saved-on-return' }))
+    expect(onReturn).toHaveBeenCalledTimes(2)
+    expect(returnedInLaterTurn).toEqual([false, false])
+    expect(container.textContent).not.toContain('Unsaved Changes')
+    expect(discardReview).not.toHaveBeenCalled()
+  })
+
+  it('shares a save still running when Save changes is chosen on the way back', async () => {
+    let finishCreate!: () => void
+    apiMock.createScript.mockImplementationOnce(() => new Promise(resolve => {
+      finishCreate = () => resolve({
+        id: 'script-running-save', name: 'Running Save', protocol: initialScript.protocol, version: initialScript.version,
+        created_at: '2026-10-09T00:00:00Z', script: { ...initialScript, name: 'Running Save' },
+      })
+    }))
+    const onReturn = vi.fn()
+    const onSave = vi.fn()
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <ScriptEditor initialScript={initialScript} onSave={onSave} returnTarget={{ label: 'Back to Converted Script', onReturn }} />
+        </NavigationGuardProvider>,
+      )
+    })
+    const nameInput = container.querySelector<HTMLInputElement>('.side-panel-script-name input[placeholder="My_Test_Script"]')!
+    await act(async () => { changeInputValue(nameInput, 'Running Save'); await Promise.resolve() })
+    const saveButton = container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')
+    expect(saveButton).toBeTruthy()
+    await act(async () => { saveButton!.click(); await Promise.resolve() })
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+
+    // Back while the save is still running, then Save changes in the prompt.
+    await act(async () => { findButtonByText(container, 'Back to Converted Script')!.click(); await Promise.resolve() })
+    expect(container.textContent).toContain('Create script has unsaved changes')
+    await act(async () => { findButtonByText(container, 'Save changes')!.click(); await Promise.resolve() })
+    await act(async () => { finishCreate(); await Promise.resolve() })
+    await flushReact()
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onReturn).toHaveBeenCalledTimes(1)
+    expect(container.textContent).not.toContain('Save did not complete')
+    expect(container.textContent).not.toContain('Unsaved Changes')
+  })
+
+  it('keeps the prompt open when the running save it shared misses later edits', async () => {
+    let finishCreate!: () => void
+    apiMock.createScript.mockImplementationOnce(() => new Promise(resolve => {
+      finishCreate = () => resolve({
+        id: 'script-older-save', name: 'First Name', protocol: initialScript.protocol, version: initialScript.version,
+        created_at: '2026-10-09T00:00:00Z', script: { ...initialScript, name: 'First Name' },
+      })
+    }))
+    const onReturn = vi.fn()
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <ScriptEditor initialScript={initialScript} onSave={vi.fn()} returnTarget={{ label: 'Back to Converted Script', onReturn }} />
+        </NavigationGuardProvider>,
+      )
+    })
+    const nameInput = () => container.querySelector<HTMLInputElement>('.side-panel-script-name input[placeholder="My_Test_Script"]')!
+    await act(async () => { changeInputValue(nameInput(), 'First Name'); await Promise.resolve() })
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.click(); await Promise.resolve() })
+    // An edit made while that save runs, then Back and Save changes.
+    await act(async () => { changeInputValue(nameInput(), 'Second Name'); await Promise.resolve() })
+    await act(async () => { findButtonByText(container, 'Back to Converted Script')!.click(); await Promise.resolve() })
+    await act(async () => { findButtonByText(container, 'Save changes')!.click(); await Promise.resolve() })
+    await act(async () => { finishCreate(); await Promise.resolve() })
+    await flushReact()
+    expect(onReturn).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('edits made since it started are not saved yet')
+    expect(nameInput().value).toBe('Second Name')
+  })
+
+  it('keeps the prompt open when a running Java Vuser queue it shared misses later edits', async () => {
+    let finishQueue!: () => void
+    apiMock.createAuthoringSession.mockImplementationOnce(() => new Promise(resolve => {
+      finishQueue = () => resolve({
+        id: 'java-session-running', source: 'manual', name: 'Java Flow A', status: 'reviewing',
+        created_at: '2026-10-09T00:00:00Z', updated_at: '2026-10-09T00:00:00Z', last_accessed_at: '2026-10-09T00:00:00Z',
+      })
+    }))
+    const onReturn = vi.fn()
+    const javaScript: ScriptDefinition = {
+      ...initialScript, protocol: 'java_vuser', name: 'Java Flow A',
+      actions: [{ name: 'Java action', type: 'java_vuser_run', target: '', params: { method: 'action' } }],
+    }
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <ScriptEditor initialScript={javaScript} initiallyDirty projectId="project-1" returnTarget={{ label: 'Back to Converted Script', onReturn }} />
+        </NavigationGuardProvider>,
+      )
+    })
+    await act(async () => { container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')!.click(); await Promise.resolve() })
+    expect(apiMock.createAuthoringSession).toHaveBeenCalledTimes(1)
+    const nameInput = container.querySelector<HTMLInputElement>('.side-panel-script-name input[placeholder="My_Test_Script"]')!
+    await act(async () => { changeInputValue(nameInput, 'Java Flow B'); await Promise.resolve() })
+    await act(async () => { findButtonByText(container, 'Back to Converted Script')!.click(); await Promise.resolve() })
+    await act(async () => { findButtonByText(container, 'Save changes')!.click(); await Promise.resolve() })
+    await act(async () => { finishQueue(); await Promise.resolve() })
+    await flushReact()
+    expect(onReturn).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('edits made since it started are not saved yet')
+    expect(nameInput.value).toBe('Java Flow B')
+  })
+
+  it('refuses a second create while the saved script is still opening', async () => {
+    apiMock.createScript.mockResolvedValueOnce({
+      id: 'script-opening', name: 'Opening Flow', protocol: initialScript.protocol, version: initialScript.version,
+      created_at: '2026-10-09T00:00:00Z', script: { ...initialScript, name: 'Opening Flow' },
+    })
+    const onClose = vi.fn()
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <ScriptEditor initialScript={initialScript} initiallyDirty onSave={vi.fn()} onClose={onClose} />
+        </NavigationGuardProvider>,
+      )
+    })
+    const save = () => container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')!
+    const nameInput = container.querySelector<HTMLInputElement>('.side-panel-script-name input[placeholder="My_Test_Script"]')!
+    await act(async () => { changeInputValue(nameInput, 'Opening Flow'); await Promise.resolve() })
+    await act(async () => { save().click(); await Promise.resolve() })
+    await flushReact()
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+    // The page has not opened the saved script yet: Save is off and says why.
+    await act(async () => { changeInputValue(nameInput, 'Opening Flow Edited'); await Promise.resolve() })
+    expect(save().disabled).toBe(true)
+    expect(save().getAttribute('data-tooltip') || save().getAttribute('title')).toBe('The saved script is opening')
+    // Leaving through the prompt explains it too, and creates nothing.
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Close script editor"]')!.click(); await Promise.resolve() })
+    await act(async () => { findButtonByText(container, 'Save changes')!.click(); await Promise.resolve() })
+    await flushReact()
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+    expect(onClose).not.toHaveBeenCalled()
+    // The prompt itself gives the reason, not a validation failure.
+    expect(container.querySelector('.unsaved-changes-modal [role="alert"]')?.textContent).toBe('This script was saved and is opening. Edits made after it was saved are not kept.')
+    expect(container.textContent).not.toContain('Save did not complete')
   })
 
   it('renders the new Web HTTP/HTML runtime sections from the draft model', async () => {

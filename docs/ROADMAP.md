@@ -91,7 +91,7 @@ Wave 3 landed nine work packages on the same branch: synthetic HARs from retaine
 ## Feature completion Wave 5 — 2026-10-09
 
 Wave 5 landed five work packages on the same branch:
-- **Authoring (AUTH-3):** adapters retired behind single owners, with a decision, an owner and parity proof per seam, and a ratchet against reintroduction. Script session absorption is deferred.
+- **Authoring (AUTH-3):** adapters retired behind single owners, with a decision, an owner and parity proof per seam, and a ratchet against reintroduction. Script session absorption followed the wave.
 - **Browser intelligence (BI-4):**
   - the run report's Browser area, with the drill-down from finding to document to resources to HAR entry;
   - the browser and journey policy editor;

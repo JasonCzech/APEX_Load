@@ -91,6 +91,14 @@ export function NavigationGuardProvider({ children }: { children: ReactNode }) {
   }, [continueAfterResolvedGuard, pending, saving])
   const handleSave = useCallback(async () => {
     if (!pending || saving) return
+    // A save already in flight when the prompt opened may have landed, or
+    // the guarded editor closed, while the prompt was open: with nothing left
+    // to save, the navigation goes ahead without saving again.
+    const current = guardsRef.current.get(pending.guard.id)
+    if (!current || !(current.dirty || current.isDirty())) {
+      continueAfterResolvedGuard(pending)
+      return
+    }
     setSaving(true); setError(null)
     try {
       const saved = await pending.guard.save()

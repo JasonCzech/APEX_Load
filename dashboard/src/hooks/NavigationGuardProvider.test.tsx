@@ -129,6 +129,47 @@ describe('NavigationGuardProvider', () => {
     expect(container.textContent).not.toContain('Unsaved Changes')
   })
 
+  it('goes ahead without saving when the work was saved or closed while the prompt was open', async () => {
+    for (const settle of ['saved', 'closed'] as const) {
+      const proceed = vi.fn()
+      const save = vi.fn().mockResolvedValue(true)
+      const guard = makeGuard({ dirty: true, save })
+      await act(async () => root.render(<NavigationGuardProvider>
+        <Runner proceed={proceed} />
+        <Publisher guard={guard} dirty />
+      </NavigationGuardProvider>))
+      await click('Navigate')
+      expect(container.textContent).toContain('Test Builder has unsaved changes')
+      // The save that was already in flight lands, or the editor closes.
+      await act(async () => root.render(<NavigationGuardProvider>
+        <Runner proceed={proceed} />
+        {settle === 'saved' && <Publisher guard={makeGuard({ dirty: false, save })} dirty={false} />}
+      </NavigationGuardProvider>))
+      await click('Save changes')
+      expect(save, settle).not.toHaveBeenCalled()
+      expect(proceed, settle).toHaveBeenCalledOnce()
+      expect(container.textContent).not.toContain('Unsaved Changes')
+      await act(async () => root.render(<></>))
+    }
+  })
+
+  it('still saves when the guard reads dirty though its registration does not', async () => {
+    const proceed = vi.fn()
+    const save = vi.fn().mockResolvedValue(true)
+    await act(async () => root.render(<NavigationGuardProvider>
+      <Runner proceed={proceed} />
+      <Publisher guard={makeGuard({ dirty: true, save })} dirty />
+    </NavigationGuardProvider>))
+    await click('Navigate')
+    await act(async () => root.render(<NavigationGuardProvider>
+      <Runner proceed={proceed} />
+      <Publisher guard={makeGuard({ dirty: true, save })} dirty={false} />
+    </NavigationGuardProvider>))
+    await click('Save changes')
+    expect(save).toHaveBeenCalledOnce()
+    expect(proceed).toHaveBeenCalledOnce()
+  })
+
   it('ignores a second guarded navigation while a prompt is open', async () => {
     const proceed = vi.fn()
 
