@@ -93,6 +93,7 @@ not the source of truth for current API or DSL contracts.
 | Document | Status |
 | --- | --- |
 | [NODE_FAILURE_READINESS_PLAN.md](NODE_FAILURE_READINESS_PLAN.md) | Proposed implementation and qualification plan for worker recovery, KEDA capacity, liveness, storage, and archive issues found in September 2026 fault tests |
+| [HTTP3_IMPLEMENTATION.md](HTTP3_IMPLEMENTATION.md) | HTTP/3 delivery status, quic-go contract, test fixture, and transport decision records (timing, retries, socket ownership, defaults) |
 | [NODE_STORAGE_RECOVERY.md](NODE_STORAGE_RECOVERY.md) | Worker state inventory, fencing, storage recovery, and qualification limits |
 | [ARCHIVE_SOURCE_RETENTION.md](ARCHIVE_SOURCE_RETENTION.md) | Opt-in confirmed-source retention, publication fences and recoverability limits |
 | [ANALYSIS_WORKFLOWS.md](ANALYSIS_WORKFLOWS.md) | Project-gated run monitoring, traffic-free preparation, native Parquet imports, saved mappings and correlation; validation limits |

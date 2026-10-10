@@ -25,6 +25,7 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/jmespath/go-jmespath v0.4.0
 	github.com/mxschmitt/playwright-go v0.6100.0
+	github.com/quic-go/quic-go v0.63.0
 	github.com/redis/go-redis/v9 v9.21.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/shirou/gopsutil/v3 v3.24.5
@@ -45,6 +46,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.53.0
 )
+
+require github.com/quic-go/qpack v0.6.0 // indirect
 
 require (
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
