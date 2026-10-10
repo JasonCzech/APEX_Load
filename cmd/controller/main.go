@@ -22,6 +22,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/kubeops"
 	_ "github.com/jasonczech/apexload/pkg/protocol/builtin"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 	"github.com/jasonczech/apexload/pkg/runtimetuning"
 	"github.com/jasonczech/apexload/pkg/storage"
 	"github.com/jasonczech/apexload/pkg/telemetry"
@@ -54,6 +55,9 @@ func runController() (runErr error) {
 		slog.Warn("applied TLS compatibility defaults", "godebug", value)
 	}
 	logRuntimeTuning(runtimetuning.ApplyFromCgroup(os.Getenv))
+	if err := httpprotocol.ValidateHTTP3OperatorEnvironment(); err != nil {
+		return fmt.Errorf("invalid HTTP/3 operator configuration: %w", err)
+	}
 	build := buildinfo.Get()
 	tracingConfig, err := telemetry.LoadConfig(os.Getenv, "apexload-controller", build.Version)
 	if err != nil {

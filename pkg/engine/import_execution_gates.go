@@ -31,7 +31,11 @@ func importExecutionGateError(script *dsl.Script, operation string) error {
 	}
 	// HTTP/3 admission for every path that builds an engine: local, embedded,
 	// CLI, replay and shakeout runs, and each generator's own execution.
-	if dsl.ScriptUsesHTTP3(script) {
+	if exact, upgrade := dsl.ScriptHTTP3Policies(script); upgrade {
+		if err := httpprotocol.HTTP3UpgradeExecutionError(); err != nil {
+			return fmt.Errorf("script %s is blocked: %w", operation, err)
+		}
+	} else if exact {
 		if err := httpprotocol.HTTP3ExecutionError(); err != nil {
 			return fmt.Errorf("script %s is blocked: %w", operation, err)
 		}

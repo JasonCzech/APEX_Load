@@ -877,8 +877,8 @@ func TestHTTP3GroupsNeedGeneratorsAdvertisingNativeHTTP3(t *testing.T) {
 	script := &dsl.Script{Name: "h3", Protocol: "http", Config: dsl.ScriptConfig{BaseURL: "https://app.example.test", HTTP: dsl.HTTPConfig{Version: "auto+h3"}},
 		Actions: []dsl.Action{{Name: "home", Type: "GET", Target: "/"}}}
 	group := TestGroup{Name: "h3-users", Protocol: "http", VUsers: 10, script: script}
-	if required := groupRequiredRuntimeFeature(group); !strings.Contains(required, dsl.FeatureNativeHTTP3V1) {
-		t.Fatalf("required feature = %q, want native_http3_v1", required)
+	if required := groupRequiredRuntimeFeature(group); !strings.Contains(required, dsl.FeatureNativeHTTP3V1) || !strings.Contains(required, dsl.FeatureHTTP3UpgradeV1) {
+		t.Fatalf("required feature = %q, want native_http3_v1 and http3_upgrade_v1 for auto+h3", required)
 	}
 	loadByTarget := map[string]generatorLoadSnapshot{
 		"gen-old": {Target: "gen-old", AvailableCapacity: 100, SupportedProtocols: []string{"http"}},
@@ -889,7 +889,7 @@ func TestHTTP3GroupsNeedGeneratorsAdvertisingNativeHTTP3(t *testing.T) {
 		t.Fatalf("rejection = %q, want the generator and the flag named", message)
 	}
 	// A capacity rejection of an HTTP/3 group does not blame the flag.
-	specs = []generatorTargetSpec{{Address: "gen-new", Protocols: []string{"http"}, Features: []string{dsl.FeatureNativeHTTP3V1}}}
+	specs = []generatorTargetSpec{{Address: "gen-new", Protocols: []string{"http"}, Features: []string{dsl.FeatureNativeHTTP3V1, dsl.FeatureHTTP3UpgradeV1}}}
 	loadByTarget = map[string]generatorLoadSnapshot{"gen-new": {Target: "gen-new", AvailableCapacity: 1, SupportedProtocols: []string{"http"}}}
 	if message := generatorPlacementRejectionMessage(group, loadByTarget, specs, nil); strings.Contains(message, httpprotocol.EnvHTTP3) {
 		t.Fatalf("capacity rejection = %q blamed the flag", message)

@@ -339,9 +339,9 @@ func generatorPlacementRejectionMessage(group TestGroup, loadByTarget map[string
 	sort.Strings(reasons)
 	message := fmt.Sprintf("no compatible generator target is available for group %q using protocol %s: %s", group.Name, protocolName, strings.Join(reasons, "; "))
 	if strings.Contains(message, dsl.FeatureNativeHTTP3V1) {
-		// Generators advertise native_http3_v1 only with the operator flag on
-		// and an HTTP/3-capable build; say so, so the fix is clear.
-		message += fmt.Sprintf(" (group %q uses HTTP/3: generators advertise %s only when %s is on and their build supports HTTP/3)", group.Name, dsl.FeatureNativeHTTP3V1, httpprotocol.EnvHTTP3)
+		// Generators advertise the HTTP/3 capabilities only with the operator
+		// flag on and a build that supports the policy; say so.
+		message += fmt.Sprintf(" (group %q uses HTTP/3: generators advertise %s for 3 and %s for auto+h3 only when %s is on and their build supports the policy)", group.Name, dsl.FeatureNativeHTTP3V1, dsl.FeatureHTTP3UpgradeV1, httpprotocol.EnvHTTP3)
 	}
 	return message
 }

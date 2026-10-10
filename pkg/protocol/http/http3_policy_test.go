@@ -5,6 +5,7 @@ import (
 	"errors"
 	stdhttp "net/http"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -68,8 +69,8 @@ func refusedHTTP3(t *testing.T, h *HTTP, target string, leaf string) {
 	if err != nil {
 		t.Fatalf("leaf %q: %v", leaf, err)
 	}
-	if result.Success || result.ErrorMessage != ErrHTTP3NotEnabled.Error() {
-		t.Fatalf("leaf %q: success=%v message=%q, want the HTTP/3 refusal", leaf, result.Success, result.ErrorMessage)
+	if result.Success || !strings.Contains(result.ErrorMessage, ErrHTTP3NotEnabled.Error()) || !strings.Contains(result.ErrorMessage, EnvHTTP3) {
+		t.Fatalf("leaf %q: success=%v message=%q, want the HTTP/3 refusal naming the flag", leaf, result.Success, result.ErrorMessage)
 	}
 	if err := h.ValidateSharedSessionAction(action); !errors.Is(err, ErrHTTP3NotEnabled) {
 		t.Fatalf("leaf %q: concurrent validation = %v", leaf, err)
@@ -77,6 +78,7 @@ func refusedHTTP3(t *testing.T, h *HTTP, target string, leaf string) {
 }
 
 func TestHTTP3PoliciesAreRefusedBeforeAnyTraffic(t *testing.T) {
+	t.Setenv(EnvHTTP3, "")
 	target, seen := countingTLS(t)
 	auto := versionHTTP(t, nil)
 	for _, leaf := range []string{VersionHTTP3, VersionAutoH3} {
@@ -92,6 +94,7 @@ func TestHTTP3PoliciesAreRefusedBeforeAnyTraffic(t *testing.T) {
 }
 
 func TestHTTP3SessionPolicyKeepsLeafPrecedence(t *testing.T) {
+	t.Setenv(EnvHTTP3, "")
 	target, seen := countingTLS(t)
 	h := versionHTTP(t, map[string]any{"http_version": "3"})
 	for _, leaf := range []string{"auto", "1.1", "2"} {

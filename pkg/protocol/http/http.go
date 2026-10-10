@@ -66,7 +66,9 @@ type HTTP struct {
 	authHeader                 string // pre-computed Authorization header value
 	httpVersion                string // empty = automatic; "1.1"/"2" = exact; "3"/"auto+h3" = HTTP/3 policies
 	quicSettings               QUICSettings
-	maxRedirects               int // <=0 = no follow, unset/default = 10
+	http3                      *http3Owner // exact-3 transport; nil when HTTP/3 cannot run
+	http3Err                   error       // why the exact-3 pool is unavailable, when it is
+	maxRedirects               int         // <=0 = no follow, unset/default = 10
 	requestTimeout             time.Duration
 	pageTimeout                time.Duration
 	htmlParseMode              string
@@ -482,6 +484,12 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	}
 	if integratedAuth != nil && IsIntegratedAuthType(integratedAuth.Type) && !authorizationAuthored &&
 		(actionAuthOverride || authHostScopesAllow(h.authHosts, targetURL)) {
+		if h.httpVersion == VersionHTTP3 {
+			result.StatusCode = http.StatusBadRequest
+			result.Duration = time.Since(result.StartTime)
+			result.ErrorMessage = ErrHTTP3IntegratedAuth.Error()
+			return result, nil
+		}
 		var integratedDigest *protocol.AuthConfig
 		req, integratedDigest = applyIntegratedAuth(req, integratedAuth)
 		if integratedDigest != nil {
@@ -665,6 +673,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			markUnsentTraceContext()
 			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, reused, rCount, rDur)
 			result.ErrorMessage = h.transportErrorMessage(err)
+			result.HTTP3FailureCertainty = HTTP3FailureCertainty(err)
 			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
 			h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, nil, false)
 			return result, nil
@@ -698,6 +707,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			reused, rCount, rDur := applyTraceTelemetry()
 			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, reused, rCount, rDur)
 			result.ErrorMessage = h.transportErrorMessage(retryErr)
+			result.HTTP3FailureCertainty = HTTP3FailureCertainty(retryErr)
 			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
 			h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, nil, false)
 			return result, nil
@@ -730,12 +740,15 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			result.HTTPVersionNegotiated = VersionHTTP11
 		case resp.ProtoMajor == 2 && resp.ProtoMinor == 0:
 			result.HTTPVersionNegotiated = VersionHTTP2
+		case resp.ProtoMajor == 3 && resp.ProtoMinor == 0:
+			result.HTTPVersionNegotiated = VersionHTTP3
 		}
 		// Observation only: an advertisement never changes routing for this
 		// policy; it tells the tester the target offers a protocol the run
 		// is not exercising. HTTP/3 serves only https origins, so a cleartext
-		// response's advertisement is not one this request could have used.
-		result.HTTPAltSvcH3Advertised = resp.Request != nil && resp.Request.URL != nil &&
+		// response's advertisement is not one this request could have used,
+		// and an HTTP/3 response has already exercised it.
+		result.HTTPAltSvcH3Advertised = resp.ProtoMajor != 3 && resp.Request != nil && resp.Request.URL != nil &&
 			strings.EqualFold(resp.Request.URL.Scheme, "https") &&
 			AltSvcAdvertisesH3(resp.Header.Values("Alt-Svc"))
 	}
@@ -1400,6 +1413,11 @@ func (h *HTTP) Teardown(ctx context.Context) error {
 	if h.oauthTransport != nil && h.oauthTransport != h.transport {
 		h.oauthTransport.CloseIdleConnections()
 	}
+	if h.http3 != nil {
+		// VUser stop: H3_NO_ERROR on every connection, then release the
+		// sockets, inside the bounded teardown window.
+		_ = h.http3.Close()
+	}
 	return nil
 }
 
@@ -1414,6 +1432,9 @@ func (h *HTTP) CloseIdleConnections(_ context.Context) error {
 	if h.oauthTransport != nil && h.oauthTransport != h.transport {
 		h.oauthTransport.CloseIdleConnections()
 	}
+	if h.http3 != nil {
+		h.http3.CloseIdleConnections()
+	}
 	return nil
 }
 
@@ -1427,8 +1448,11 @@ func (h *HTTP) HealthCheck(ctx context.Context) error {
 	}
 	resp, err := h.client.Do(req)
 	if err != nil {
-		if h.httpVersion == VersionHTTP2 {
+		switch h.httpVersion {
+		case VersionHTTP2:
 			return fmt.Errorf("%w: transport request failed", ErrHTTP2Required)
+		case VersionHTTP3:
+			return fmt.Errorf("%w: transport request failed", ErrHTTP3Required)
 		}
 		return err
 	}
@@ -1442,6 +1466,18 @@ func (h *HTTP) transportErrorMessage(err error) string {
 	}
 	if h != nil && h.httpVersion == VersionHTTP2 {
 		return ErrHTTP2Required.Error() + ": transport request failed"
+	}
+	if h != nil && h.httpVersion == VersionHTTP3 {
+		// Name the certainty and the cause, never the URL: possibly_sent tells
+		// the tester the target may have processed the request, and the cause
+		// says why HTTP/3 could not be used (a proxy route, a redirect to
+		// http://, a refused handshake).
+		cause := err
+		var urlError *url.Error
+		if errors.As(err, &urlError) && urlError.Err != nil {
+			cause = urlError.Err
+		}
+		return ErrHTTP3Required.Error() + ": " + cause.Error()
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		// Depending on scheduler timing, net/http may wrap a client timeout as
@@ -1460,10 +1496,16 @@ func (h *HTTP) transportErrorMessage(err error) string {
 }
 
 func (h *HTTP) validateResponseVersion(resp *http.Response) error {
-	if h == nil || h.httpVersion != VersionHTTP2 || resp == nil || resp.ProtoMajor == 2 {
+	if h == nil || resp == nil {
 		return nil
 	}
-	return fmt.Errorf("%w: transport negotiated %s", ErrHTTP2Required, resp.Proto)
+	switch {
+	case h.httpVersion == VersionHTTP2 && resp.ProtoMajor != 2:
+		return fmt.Errorf("%w: transport negotiated %s", ErrHTTP2Required, resp.Proto)
+	case h.httpVersion == VersionHTTP3 && resp.ProtoMajor != 3:
+		return fmt.Errorf("%w: transport negotiated %s", ErrHTTP3Required, resp.Proto)
+	}
+	return nil
 }
 
 func (h *HTTP) resolveURL(target string) string {

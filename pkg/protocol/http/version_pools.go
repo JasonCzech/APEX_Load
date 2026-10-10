@@ -85,11 +85,27 @@ func (h *HTTP) initializeHTTPPolicyPools(ctx context.Context, config map[string]
 		oauthClient.Transport = withoutImplicitUserAgent(oauthClient.Transport)
 		h.policyPools[policy] = &httpPolicyPool{client: client, transport: transport, oauthClient: oauthClient, oauthTransport: oauthTransport}
 	}
+	h.http3, h.http3Err = nil, nil
+	switch {
+	case HTTP3ExecutionError() != nil:
+		h.http3Err = HTTP3ExecutionError()
+	case parseNetworkSimulationProfile(config).active():
+		h.http3Err = fmt.Errorf("%w: network shaping applies to TCP only", ErrHTTP3Required)
+	default:
+		pool, err := h.newHTTP3Pool(settings, tlsConfig, config, baseline, pacSource, h.policyPools["auto"], jar)
+		if err != nil {
+			// A script that never resolves a request to 3 must still run, so
+			// the reason is kept for dispatch rather than failing the session.
+			h.http3Err = err
+		} else {
+			h.policyPools[VersionHTTP3] = pool
+		}
+	}
 	defaultPolicy := h.httpVersion
-	if defaultPolicy == "" || VersionUsesQUIC(defaultPolicy) {
-		// An HTTP/3 session policy has no pool on this runtime; requests that
-		// inherit it are refused before dispatch, so the automatic pool only
-		// serves session traffic outside request leaves.
+	if defaultPolicy == "" || defaultPolicy == VersionAutoH3 || h.policyPools[defaultPolicy] == nil {
+		// Requests that inherit an unavailable HTTP/3 policy are refused
+		// before dispatch, so the automatic pool only serves session traffic
+		// outside request leaves.
 		defaultPolicy = "auto"
 	}
 	pool := h.policyPools[defaultPolicy]
@@ -105,10 +121,20 @@ func (h *HTTP) effectiveHTTPVersion(action *protocol.Action) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// A leaf HTTP/3 policy has no pool on this runtime. Refuse it here, before
-	// forHTTPVersion could fall back to the session's TCP pool.
-	if VersionUsesQUIC(policy) {
-		return "", ErrHTTP3NotEnabled
+	// Refuse an HTTP/3 policy without a pool here, before forHTTPVersion
+	// could fall back to the session's TCP pool.
+	switch policy {
+	case VersionAutoH3:
+		if err := HTTP3UpgradeExecutionError(); err != nil {
+			return "", err
+		}
+	case VersionHTTP3:
+		if h.policyPools[VersionHTTP3] == nil {
+			if h.http3Err != nil {
+				return "", h.http3Err
+			}
+			return "", ErrHTTP3NotEnabled
+		}
 	}
 	return policy, nil
 }
@@ -128,6 +154,11 @@ func (h *HTTP) forHTTPVersion(policy string) *HTTP {
 }
 
 func (h *HTTP) validateHTTPVersionTLS(policy, target string) error {
+	if policy == VersionHTTP3 && !strings.HasPrefix(strings.ToLower(target), "https://") {
+		// The save-time rule again, after templates and runtime settings
+		// resolved the URL: HTTP/3 serves only https origins.
+		return fmt.Errorf("%w: HTTP/3 requires an https:// URL", ErrHTTP3Required)
+	}
 	if policy != VersionHTTP2 || !strings.HasPrefix(strings.ToLower(target), "https://") {
 		return nil
 	}

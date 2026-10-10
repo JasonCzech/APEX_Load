@@ -1,6 +1,8 @@
 package h3fixture
 
 import (
+	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -12,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/andybalholm/brotli"
+	"github.com/klauspost/compress/zstd"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 )
@@ -37,6 +41,7 @@ func (s *Server) handler(listener string) http.Handler {
 	mux.HandleFunc("/sse", handleSSE)
 	mux.HandleFunc("/bytes", handleBytes)
 	mux.HandleFunc("/cacheable", handleCacheable)
+	mux.HandleFunc("/encoded", handleEncoded)
 	mux.HandleFunc("/", s.handleIndex)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -260,4 +265,37 @@ func handleBytes(w http.ResponseWriter, r *http.Request) {
 func handleCacheable(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	writeJSON(w, http.StatusOK, map[string]any{"proto": r.Proto, "cacheable": true})
+}
+
+// EncodedBody is the plain text /encoded compresses.
+const EncodedBody = `{"encoded":true,"text":"HTTP/3 carries the same content codings as TCP"}`
+
+// handleEncoded returns EncodedBody compressed with the coding named by the
+// "coding" query parameter: gzip, br or zstd.
+func handleEncoded(w http.ResponseWriter, r *http.Request) {
+	coding := r.URL.Query().Get("coding")
+	var buf bytes.Buffer
+	var encoder io.WriteCloser
+	switch coding {
+	case "gzip":
+		encoder = gzip.NewWriter(&buf)
+	case "br":
+		encoder = brotli.NewWriter(&buf)
+	case "zstd":
+		zw, err := zstd.NewWriter(&buf)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		encoder = zw
+	default:
+		http.Error(w, "coding must be gzip, br or zstd", http.StatusBadRequest)
+		return
+	}
+	_, _ = io.WriteString(encoder, EncodedBody)
+	_ = encoder.Close()
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Encoding", coding)
+	w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
+	_, _ = w.Write(buf.Bytes())
 }

@@ -125,6 +125,7 @@ describe('qualified HTTP version evidence', () => {
     expect(httpReplayVersionEvidence({ http_version_policy: 'auto', http_version_negotiated: '1.1', http_version_source: 'wire' }))
       .toEqual({ policy: 'Auto-negotiate (HTTP/2 or HTTP/1.1)', actual: 'HTTP/1.1', source: 'Wire response', advertisesHTTP3: false })
     expect(httpReplayVersionEvidence({ http_version_policy: '2', http_version_negotiated: '2', http_version_source: 'wire' })?.actual).toBe('HTTP/2')
+    expect(httpReplayVersionEvidence({ http_version_policy: '3', http_version_negotiated: '3', http_version_source: 'wire', alt_svc_h3_advertised: true })).toMatchObject({ policy: 'HTTP/3 required (no fallback)', actual: 'HTTP/3', advertisesHTTP3: false })
   })
 
   it('never infers negotiation from policy, cached responses or malformed evidence', () => {

@@ -794,6 +794,7 @@ type Result struct {
 	HTTPVersionNegotiated      string `json:"-"`
 	HTTPVersionSource          string `json:"-"`
 	HTTPAltSvcH3Advertised     bool   `json:"-"` // wire response advertised final HTTP/3 in Alt-Svc
+	HTTP3FailureCertainty      string `json:"-"` // not_sent, possibly_sent or rejected_unprocessed for a failed HTTP/3 request
 	ProtocolEvidence           map[string]any
 	Snapshot                   *ErrorSnapshot // populated when snapshot_on_error is enabled
 	SourceStepID               string

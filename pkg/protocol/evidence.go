@@ -46,6 +46,9 @@ func BuildProtocolEvidence(action *Action, result *Result) map[string]any {
 	if result.HTTPAltSvcH3Advertised {
 		evidence["alt_svc_h3_advertised"] = true
 	}
+	if result.HTTP3FailureCertainty != "" {
+		evidence["http3_failure_certainty"] = result.HTTP3FailureCertainty
+	}
 	copyResponseContentReceipt(evidence, result.ProtocolEvidence)
 	if len(result.WarningCodes) > 0 {
 		evidence["warnings"] = result.WarningCodes

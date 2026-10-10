@@ -27,6 +27,9 @@ func buildHTTPProtocolEvidence(_ *protocol.Action, result *protocol.Result) map[
 	if result.HTTPAltSvcH3Advertised {
 		evidence["alt_svc_h3_advertised"] = true
 	}
+	if result.HTTP3FailureCertainty != "" {
+		evidence["http3_failure_certainty"] = result.HTTP3FailureCertainty
+	}
 	if len(evidence) == 0 {
 		return nil
 	}

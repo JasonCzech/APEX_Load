@@ -31,3 +31,22 @@ func TestHTTP3ExecutionNeedsTheFlagAndTheTransport(t *testing.T) {
 		t.Fatal("disabling the flag did not block HTTP/3")
 	}
 }
+
+func TestAutoH3WaitsForItsRouter(t *testing.T) {
+	previous, previousUpgrade := http3TransportBuilt, http3UpgradeBuilt
+	t.Cleanup(func() { http3TransportBuilt, http3UpgradeBuilt = previous, previousUpgrade })
+	http3TransportBuilt = true
+	t.Setenv(EnvHTTP3, "true")
+	http3UpgradeBuilt = false
+	if err := HTTP3UpgradeExecutionError(); !errors.Is(err, ErrHTTP3NotEnabled) || !strings.Contains(err.Error(), "auto+h3 is not available") {
+		t.Fatalf("upgrade not built: %v", err)
+	}
+	http3UpgradeBuilt = true
+	if err := HTTP3UpgradeExecutionError(); err != nil {
+		t.Fatalf("upgrade built: %v", err)
+	}
+	t.Setenv(EnvHTTP3, "")
+	if err := HTTP3UpgradeExecutionError(); err == nil || !strings.Contains(err.Error(), EnvHTTP3) {
+		t.Fatalf("flag off: %v", err)
+	}
+}

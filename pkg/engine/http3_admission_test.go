@@ -38,10 +38,13 @@ func TestHTTP3AdmissionBlocksEngineLaunchAndReplay(t *testing.T) {
 	if n := requests.Load(); n != 0 {
 		t.Fatalf("a refused HTTP/3 run sent %d requests", n)
 	}
-	// The flag alone is not enough before the transport ships.
+	// With the flag on, exact 3 is admitted; auto+h3 waits for its router.
 	t.Setenv(httpprotocol.EnvHTTP3, "true")
-	if err := importExecutionGateError(script, "launch"); err == nil || !strings.Contains(err.Error(), "no HTTP/3 transport") {
-		t.Fatalf("flag on, no transport: %v", err)
+	if err := importExecutionGateError(script, "launch"); err == nil || !strings.Contains(err.Error(), "auto+h3 is not available in this build") {
+		t.Fatalf("flag on, auto+h3: %v", err)
+	}
+	if err := importExecutionGateError(http3EngineScript(t, server.URL, "3"), "launch"); err != nil {
+		t.Fatalf("flag on, exact 3: %v", err)
 	}
 	// Scripts without HTTP/3 are unaffected by the flag.
 	if err := importExecutionGateError(http3EngineScript(t, server.URL, "2"), "launch"); err != nil {

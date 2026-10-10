@@ -316,19 +316,25 @@ func TestAssignmentCoordinatorStageTimerExpiresUncommittedWork(t *testing.T) {
 }
 
 func TestHTTP3CapabilityAdvertisementAndRequirement(t *testing.T) {
-	previous := http3ExecutionError
-	t.Cleanup(func() { http3ExecutionError = previous })
-	advertised := func() bool {
+	previous, previousUpgrade := http3ExecutionError, http3UpgradeExecutionError
+	t.Cleanup(func() { http3ExecutionError, http3UpgradeExecutionError = previous, previousUpgrade })
+	advertised := func(feature string) bool {
 		_, features, _ := runtimeAdvertisementWithCapacities(context.Background(), false, nil, nil)
-		return slices.Contains(features, dsl.FeatureNativeHTTP3V1)
+		return slices.Contains(features, feature)
 	}
-	http3ExecutionError = func() error { return httpprotocol.ErrHTTP3NotEnabled }
-	if advertised() {
-		t.Fatal("a generator that cannot run HTTP/3 advertised native_http3_v1")
+	refuse := func() error { return httpprotocol.ErrHTTP3NotEnabled }
+	allow := func() error { return nil }
+	http3ExecutionError, http3UpgradeExecutionError = refuse, refuse
+	if advertised(dsl.FeatureNativeHTTP3V1) || advertised(dsl.FeatureHTTP3UpgradeV1) {
+		t.Fatal("a generator that cannot run HTTP/3 advertised an HTTP/3 capability")
 	}
-	http3ExecutionError = func() error { return nil }
-	if !advertised() {
-		t.Fatal("an HTTP/3-capable generator did not advertise native_http3_v1")
+	http3ExecutionError = allow
+	if !advertised(dsl.FeatureNativeHTTP3V1) || advertised(dsl.FeatureHTTP3UpgradeV1) {
+		t.Fatal("an exact-only generator advertised the wrong capabilities")
+	}
+	http3UpgradeExecutionError = allow
+	if !advertised(dsl.FeatureHTTP3UpgradeV1) {
+		t.Fatal("an upgrade-capable generator did not advertise http3_upgrade_v1")
 	}
 	script := &dsl.Script{Name: "h3", Protocol: "http", Config: dsl.ScriptConfig{BaseURL: "https://app.example.test", HTTP: dsl.HTTPConfig{Version: "3"}},
 		Actions: []dsl.Action{{Name: "home", Type: "GET", Target: "/"}}}

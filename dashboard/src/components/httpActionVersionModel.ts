@@ -109,10 +109,10 @@ export function httpReplayVersionEvidence(evidence: ProtocolEvidence | undefined
   const policy: unknown = evidence.http_version_policy
   return {
     policy: isHTTPActionVersion(policy) ? formatHTTPActionVersion(policy) : 'Not retained',
-    actual: source === 'wire' && (negotiated === '1.1' || negotiated === '2')
+    actual: source === 'wire' && (negotiated === '1.1' || negotiated === '2' || negotiated === '3')
       ? `HTTP/${negotiated}` : source === 'cache' ? 'Not measured (cached response)' : 'Not observed',
     source: source === 'wire' ? 'Wire response' : source === 'cache' ? 'Cached response' : 'Not observed',
     // Observation only: the wire response advertised final HTTP/3 in Alt-Svc.
-    advertisesHTTP3: source === 'wire' && evidence.alt_svc_h3_advertised === true,
+    advertisesHTTP3: source === 'wire' && evidence.alt_svc_h3_advertised === true && negotiated !== '3',
   }
 }

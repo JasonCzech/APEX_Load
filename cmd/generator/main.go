@@ -19,6 +19,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol/browser"
 	_ "github.com/jasonczech/apexload/pkg/protocol/builtin"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 	"github.com/jasonczech/apexload/pkg/protocol/java_vuser"
 	"github.com/jasonczech/apexload/pkg/runtimetuning"
 	"github.com/jasonczech/apexload/pkg/telemetry"
@@ -63,6 +64,10 @@ func main() {
 		slog.Warn("invalid log-level configuration; using info", "err", logLevelErr)
 	}
 	logRuntimeTuning(runtimetuning.ApplyFromCgroup(os.Getenv))
+	if err := httpprotocol.ValidateHTTP3OperatorEnvironment(); err != nil {
+		slog.Error("invalid HTTP/3 operator configuration", "err", err)
+		os.Exit(1)
+	}
 	build := buildinfo.Get()
 	tracingConfig, err := telemetry.LoadConfig(os.Getenv, "apexload-generator", build.Version)
 	if err != nil {

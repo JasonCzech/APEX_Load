@@ -61,7 +61,9 @@ export interface ProtocolEvidence {
   response_content_basis?: 'decoded' | 'identity'
   response_content_source?: 'wire' | 'cache'
   http_version_policy?: HTTPActionVersion
-  http_version_negotiated?: '1.1' | '2'
+  http_version_negotiated?: '1.1' | '2' | '3'
+  /** Failed HTTP/3 request: whether it may have reached the target. */
+  http3_failure_certainty?: 'not_sent' | 'possibly_sent' | 'rejected_unprocessed'
   http_version_source?: 'wire' | 'cache'
   alt_svc_h3_advertised?: boolean
   protocol?: string
