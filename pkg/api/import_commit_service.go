@@ -612,6 +612,9 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 				if claim != nil {
 					s.releaseImportDraftAttestation(claim)
 				}
+				if writeImportDraftBusy(w, claimErr) {
+					return
+				}
 				writeError(w, http.StatusConflict, "credential-preserving import draft is invalid or expired; run the import again")
 				return
 			}
@@ -819,9 +822,9 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 				if err := s.completeImportCandidateClaim(r.Context(), candidateClaim); err != nil {
 					slog.Error("failed to finalize committed import session", "source", spec.sourceProfile, "session_id", req.ImportSessionID, "error", err)
 				}
-				// Completion failure is ambiguous. Keep the claim fenced for
-				// stale-claim reconciliation instead of releasing it as though
-				// the durable commit had failed.
+				// Never release a committed claim as though the commit had
+				// failed. A failed completion leaves the claim marked consumed
+				// for the store's janitor (see completeImportCandidateClaim).
 				candidateClaim = nil
 			}
 			if draftAttestationClaim != nil {

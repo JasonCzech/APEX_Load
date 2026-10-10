@@ -74,6 +74,10 @@ export interface ScenarioAuthoringBaseline {
 }
 
 export interface ScriptSaveOptions {
+  /** The editor's document changed while the save was in flight; retainedDraft carries the change. */
+  laterEdits?: boolean
+  /** The source the editor was opened from took the save (an archive review), and the editor returned there. */
+  returnedToSource?: boolean
   configureSecrets?: boolean
   retainedDraft?: ScriptDefinition
   retainedJsonText?: string

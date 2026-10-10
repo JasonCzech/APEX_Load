@@ -400,6 +400,12 @@ var processSourceEpoch = struct {
 	startedUnixMs int64
 }{id: uuid.NewString(), startedUnixMs: time.Now().UnixMilli()}
 
+// metricsCollections numbers this process's metric collections, so within a
+// source epoch a batch that re-sends a window can be told from a new one.
+var metricsCollections atomic.Uint64
+
+func nextMetricsCollection() uint64 { return metricsCollections.Add(1) }
+
 // assignBatchSequenceLocked runs under publishMu and gives every newly
 // published window a stable position in its execution-generation stream.
 // Terminal state ends the sequence's lifetime; the retained terminal clone

@@ -509,6 +509,9 @@ interface Props {
   showPreviewAside?: boolean
   onSave?: () => void
   onEdit?: () => void
+  // Disables the edit button, with this reason, while the page cannot open
+  // the draft in the editor (a validation or save in progress).
+  editDisabledReason?: string
   // Replaces the save button once the reviewed draft is already saved, so the
   // review offers the next step instead of explaining why saving is disabled.
   savedAction?: { label: string; onClick: () => void }
@@ -579,6 +582,7 @@ export default function ScriptImportReview({
   showPreviewAside: requestedSource = true,
   onSave,
   onEdit,
+  editDisabledReason,
   savedAction,
   children,
 }: Props) {
@@ -1035,8 +1039,8 @@ export default function ScriptImportReview({
             <button
               className="btn btn-secondary"
               onClick={() => { void runAction('edit') }}
-              disabled={credentialEditing || settingsBusy || importDraftExpired || parameterizationApplying || sharedValuesApplying || transportApplying || reviewBusy || !credentialsValid || credentialHandlerUnavailable || credentialAction !== null}
-              title={importDraftExpired
+              disabled={Boolean(editDisabledReason) || credentialEditing || settingsBusy || importDraftExpired || parameterizationApplying || sharedValuesApplying || transportApplying || reviewBusy || !credentialsValid || credentialHandlerUnavailable || credentialAction !== null}
+              title={editDisabledReason ? editDisabledReason : importDraftExpired
                 ? 'Re-run the import to obtain a fresh credential-preserving draft before editing.'
                 : !credentialsValid
                   ? 'Enter valid secret reference names before editing this draft.'

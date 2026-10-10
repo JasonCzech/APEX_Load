@@ -895,7 +895,7 @@ describe("RecordingStudio", () => {
       formatToggle?.querySelectorAll("button") || [],
     ).find((button) => button.textContent?.trim() === "PEM");
     expect(crtButton).toBeDefined();
-    expect(pemButton).toBeDefined();
+    expect(pemButton).toBeTruthy();
     if (!pemButton) return;
 
     await act(async () => {
@@ -933,7 +933,7 @@ describe("RecordingStudio", () => {
       (button) =>
         button.textContent?.trim() === "Download CA Certificate (.crt)",
     );
-    expect(crtDownload).toBeDefined();
+    expect(crtDownload).toBeTruthy();
     if (!crtDownload) return;
 
     await act(async () => {
@@ -955,7 +955,7 @@ describe("RecordingStudio", () => {
     const pemButton = Array.from(
       formatToggle?.querySelectorAll("button") || [],
     ).find((button) => button.textContent?.trim() === "PEM");
-    expect(pemButton).toBeDefined();
+    expect(pemButton).toBeTruthy();
     if (!pemButton) return;
 
     await act(async () => {
@@ -967,7 +967,7 @@ describe("RecordingStudio", () => {
       (button) =>
         button.textContent?.trim() === "Download CA Certificate (.pem)",
     );
-    expect(pemDownload).toBeDefined();
+    expect(pemDownload).toBeTruthy();
     if (!pemDownload) return;
 
     await act(async () => {
@@ -1009,7 +1009,7 @@ describe("RecordingStudio", () => {
     const reviewButton = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent?.trim() === "Review Script",
     );
-    expect(reviewButton).toBeDefined();
+    expect(reviewButton).toBeTruthy();
     if (!reviewButton) {
       return;
     }
@@ -1044,7 +1044,7 @@ describe("RecordingStudio", () => {
     const editButton = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent?.trim() === "Open in Visual Editor",
     );
-    expect(editButton).toBeDefined();
+    expect(editButton).toBeTruthy();
     if (!editButton) {
       return;
     }
@@ -1077,7 +1077,7 @@ describe("RecordingStudio", () => {
     const saveButton = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent?.trim() === "Save to Script Library",
     );
-    expect(saveButton).toBeDefined();
+    expect(saveButton).toBeTruthy();
     if (!saveButton) {
       return;
     }
@@ -1899,7 +1899,7 @@ describe("RecordingStudio", () => {
     const deleteButton = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent?.trim() === "Delete",
     );
-    expect(deleteButton).toBeDefined();
+    expect(deleteButton).toBeTruthy();
     if (!deleteButton) return;
 
     await act(async () => {
@@ -2121,7 +2121,7 @@ describe("RecordingStudio", () => {
     const convertButton = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent?.trim() === "Convert to Script",
     );
-    expect(convertButton).toBeDefined();
+    expect(convertButton).toBeTruthy();
     if (!convertButton) return;
     await act(async () => {
       convertButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -2208,7 +2208,7 @@ describe("RecordingStudio", () => {
     const reviewButton = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent?.trim() === "Review Salesforce HTTP",
     );
-    expect(reviewButton).toBeDefined();
+    expect(reviewButton).toBeTruthy();
     if (!reviewButton) return;
 
     await act(async () => {
@@ -2252,7 +2252,7 @@ describe("RecordingStudio", () => {
     act(() => setInput(bindingInput, "SALESFORCE_SESSION_TOKEN"));
     expect(editButton?.disabled).toBe(false);
     expect(deferredSaveButton?.disabled).toBe(false);
-    expect(editButton).toBeDefined();
+    expect(editButton).toBeTruthy();
     if (!editButton) return;
     await act(async () => {
       editButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -2268,7 +2268,7 @@ describe("RecordingStudio", () => {
     const saveButton = container.querySelector<HTMLButtonElement>(
       ".rec-convert-result .rec-result-actions .btn-primary",
     );
-    expect(saveButton).not.toBeNull();
+    expect(saveButton).toBeTruthy();
     expect(saveButton?.disabled).toBe(false);
     if (!saveButton) return;
     act(() => {
@@ -2446,7 +2446,7 @@ describe("RecordingStudio", () => {
         "Parameterize input values",
       ),
     ) as HTMLInputElement | undefined;
-    expect(toggle).toBeDefined();
+    expect(toggle).toBeTruthy();
     if (!toggle) return;
 
     await act(async () => {
@@ -2456,7 +2456,7 @@ describe("RecordingStudio", () => {
     const convertButton = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent?.trim() === "Convert to Script",
     );
-    expect(convertButton).toBeDefined();
+    expect(convertButton).toBeTruthy();
     if (!convertButton) return;
 
     await act(async () => {
@@ -2507,7 +2507,7 @@ describe("RecordingStudio", () => {
         "Capture cookies",
       ),
     ) as HTMLInputElement | undefined;
-    expect(captureToggle).toBeDefined();
+    expect(captureToggle).toBeTruthy();
     if (!captureToggle) return;
 
     await act(async () => {
@@ -2517,7 +2517,7 @@ describe("RecordingStudio", () => {
     const startButton = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent?.trim() === "Start Recording",
     );
-    expect(startButton).toBeDefined();
+    expect(startButton).toBeTruthy();
     if (!startButton) return;
 
     await act(async () => {
@@ -2600,13 +2600,13 @@ describe("RecordingStudio", () => {
     const serviceInput = container.querySelector(
       'input[aria-label="macOS network service"]',
     ) as HTMLInputElement | null;
-    expect(serviceInput).toBeDefined();
+    expect(serviceInput).toBeTruthy();
     if (!serviceInput) return;
 
     const startShortcut = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent?.trim() === "Copy Start Proxy Command",
     );
-    expect(startShortcut).toBeDefined();
+    expect(startShortcut).toBeTruthy();
     if (!startShortcut) return;
 
     await act(async () => {
@@ -2630,7 +2630,7 @@ describe("RecordingStudio", () => {
     ).find(
       (button) => button.textContent?.trim() === "Copy Restore Proxy Command",
     );
-    expect(restoreShortcut).toBeDefined();
+    expect(restoreShortcut).toBeTruthy();
     if (!restoreShortcut) return;
 
     await act(async () => {
@@ -2725,7 +2725,7 @@ describe("RecordingStudio", () => {
     const windowsToggle = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent?.trim() === "Windows 11",
     );
-    expect(windowsToggle).toBeDefined();
+    expect(windowsToggle).toBeTruthy();
     if (!windowsToggle) return;
 
     await act(async () => {
@@ -2739,7 +2739,7 @@ describe("RecordingStudio", () => {
     const startShortcut = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent?.trim() === "Copy Windows Start Command",
     );
-    expect(startShortcut).toBeDefined();
+    expect(startShortcut).toBeTruthy();
     if (!startShortcut) return;
 
     await act(async () => {
@@ -2768,7 +2768,7 @@ describe("RecordingStudio", () => {
     ).find(
       (button) => button.textContent?.trim() === "Copy Windows Restore Command",
     );
-    expect(restoreShortcut).toBeDefined();
+    expect(restoreShortcut).toBeTruthy();
     if (!restoreShortcut) return;
 
     await act(async () => {

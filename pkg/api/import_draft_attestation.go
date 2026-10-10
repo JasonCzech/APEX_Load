@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -27,6 +28,36 @@ const (
 )
 
 var errImportDraftAttestationInvalid = errors.New("import draft attestation is invalid or expired")
+
+// errImportDraftAttestationBusy reports a still-valid import draft (protected
+// session or in-memory attestation) that another in-flight request currently
+// holds. Unlike an invalid draft it is retryable; telling the operator to
+// re-run the conversion would only repeat the race.
+var errImportDraftAttestationBusy = errors.New("import draft is in use by another request")
+
+// writeImportDraftBusy answers a claim that failed only because another
+// in-flight request holds the same, still-valid draft, whether it reached the
+// handler as errImportDraftAttestationBusy or as a raw protected-session
+// ErrSessionClaimed. Callers check it before reporting the draft as invalid or
+// expired, which would send the operator to re-run an import that is fine.
+func writeImportDraftBusy(w http.ResponseWriter, err error) bool {
+	if !errors.Is(err, errImportDraftAttestationBusy) && !errors.Is(err, importsession.ErrSessionClaimed) {
+		return false
+	}
+	// A protected claim reads as held for up to the store's 30 s claim lease
+	// after its last renewal, so this also covers a save that just committed
+	// and is still releasing the draft. The message must not imply it is free.
+	writeProtectedImportSessionConflict(w, "Import draft is in use by another request or a save of it is finishing. Wait a moment, check the script library, then try again.")
+	return true
+}
+
+func writeProtectedImportSessionConflict(w http.ResponseWriter, message string) {
+	writeJSON(w, http.StatusConflict, map[string]any{
+		"error":     message,
+		"code":      "protected_import_session_conflict",
+		"retryable": true,
+	})
+}
 
 type importDraftAttestation struct {
 	Token                string
@@ -50,6 +81,10 @@ type importDraftAttestation struct {
 	ExpiresAt               time.Time
 	ExpirationDisabled      bool
 	Claimed                 bool
+	// Retained marks a capability whose assets committed but whose cleanup did
+	// not finish. It stays claimed so it cannot be consumed again, and it is
+	// reported as invalid rather than as a request still in flight.
+	Retained bool
 }
 
 type importDraftAttestationClaim struct {
@@ -354,10 +389,31 @@ func (s *Server) completeImportDraftMutation(
 		return time.Time{}, err
 	}
 	if err := s.completeImportDraftAttestation(claim); err != nil {
-		s.discardImportDraftAttestation(r, script)
-		return time.Time{}, err
+		// Completion marks a protected claim consumed before its cleanup, and
+		// a consumed claim can no longer be released for a retry. Once the old
+		// capability is durably retired, keep the secured replacement rather
+		// than discard it and leave the operator with no usable draft.
+		if markErr := s.markImportDraftAttestationConsumed(claim); markErr != nil {
+			s.discardImportDraftAttestation(r, script)
+			return time.Time{}, err
+		}
+		slog.Warn("previous import draft capability retired but not cleaned up", "error", err)
 	}
 	return expiresAt, nil
+}
+
+// markImportDraftAttestationConsumed durably retires a protected claim whose
+// consumer is done with it, so stale-claim recovery can never hand the same
+// draft out again. In-memory capabilities have no durable claim to mark.
+func (s *Server) markImportDraftAttestationConsumed(claim *importDraftAttestationClaim) error {
+	if s == nil || claim == nil || claim.ProtectedClaim == nil {
+		return errors.New("import draft capability has no protected claim to retire")
+	}
+	manager, err := s.protectedImportSessionManager()
+	if err != nil {
+		return err
+	}
+	return manager.MarkConsumed(*claim.ProtectedClaim)
 }
 
 func (s *Server) claimImportDraftAttestation(
@@ -391,13 +447,19 @@ func (s *Server) claimImportDraftAttestationWithJavaReview(
 	defer s.importDraftAttestationMu.Unlock()
 	s.sweepImportDraftAttestationsLocked(now)
 	record := s.importDraftAttestations[token]
-	if record == nil || record.Claimed ||
+	if record == nil ||
 		record.ProjectID != normalizeProjectID(script.ProjectID) ||
 		record.Actor != actor ||
 		record.Protocol != strings.ToLower(strings.TrimSpace(script.Protocol)) ||
 		script.Metadata == nil || script.Metadata.Import == nil ||
 		!strings.EqualFold(strings.TrimSpace(script.Metadata.Import.Source), record.Profile) {
 		return nil, errImportDraftAttestationInvalid
+	}
+	if record.Claimed {
+		if record.Retained {
+			return nil, errImportDraftAttestationInvalid
+		}
+		return nil, errImportDraftAttestationBusy
 	}
 	javaReviewDraft := javaReview && strings.EqualFold(strings.TrimSpace(record.Protocol), "java_vuser")
 	var requestedAssets []dsl.JavaClasspathAsset
@@ -489,6 +551,9 @@ func (s *Server) claimProtectedImportDraftAttestationWithJavaReview(
 		script.ProjectID,
 	)
 	if err != nil {
+		if errors.Is(err, importsession.ErrSessionClaimed) {
+			return nil, errImportDraftAttestationBusy
+		}
 		return nil, errImportDraftAttestationInvalid
 	}
 	release := true
@@ -678,6 +743,8 @@ func (s *Server) releaseImportDraftAttestation(claim *importDraftAttestationClai
 // assets are durable, a cleanup failure must leave the capability claimed until
 // its normal lifecycle/reconciliation path; releasing it would authorize the same
 // credential-bearing draft to create a second batch under a new operation ID.
+// A protected claim is also marked consumed, because a claim nobody renews is
+// otherwise recovered into a claimable session after its lease.
 func (s *Server) retainCommittedImportDraftAttestation(claim *importDraftAttestationClaim) {
 	if s == nil || claim == nil {
 		return
@@ -686,6 +753,20 @@ func (s *Server) retainCommittedImportDraftAttestation(claim *importDraftAttesta
 	claim.RawSource = nil
 	if claim.ProtectedLease != nil {
 		claim.ProtectedLease.stop()
+	}
+	if claim.ProtectedClaim != nil {
+		// Without a renewing holder the claim would go stale and be recovered
+		// into a claimable draft that a second save could commit again.
+		if err := s.markImportDraftAttestationConsumed(claim); err != nil {
+			slog.Warn("cannot mark committed import draft consumed", "error", err)
+		}
+	}
+	if claim.ProtectedClaim == nil {
+		s.importDraftAttestationMu.Lock()
+		if record := s.importDraftAttestations[claim.Token]; record != nil && record.Claimed {
+			record.Retained = true
+		}
+		s.importDraftAttestationMu.Unlock()
 	}
 }
 

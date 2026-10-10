@@ -67,6 +67,9 @@ func (s *Server) handleImportSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	claim, err := s.claimImportDraftMutation(r, req.Script)
 	if err != nil {
+		if writeImportDraftBusy(w, err) {
+			return
+		}
 		writeError(w, 409, "Import draft is stale or expired; re-import to continue")
 		return
 	}

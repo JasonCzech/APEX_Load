@@ -2281,7 +2281,7 @@ describe('BrowserRecorderControlPanel', () => {
     await renderPanel()
     const parameterize = Array.from(container.querySelectorAll('.brp-convert input[type="checkbox"]'))
       .find(input => input.parentElement?.textContent?.includes('Parameterize inputs')) as HTMLInputElement | undefined
-    expect(parameterize).toBeDefined()
+    expect(parameterize).toBeTruthy()
     if (!parameterize) return
     await act(async () => { parameterize.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await clickButton('Save unverified draft')

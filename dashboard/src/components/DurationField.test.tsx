@@ -43,8 +43,8 @@ describe('DurationField', () => {
 
     const input = container.querySelector<HTMLInputElement>('input')
     const select = container.querySelector<HTMLSelectElement>('select')
-    expect(input).not.toBeNull()
-    expect(select).not.toBeNull()
+    expect(input).toBeTruthy()
+    expect(select).toBeTruthy()
     if (!input || !select) return
 
     await act(async () => {
@@ -65,7 +65,7 @@ describe('DurationField', () => {
     })
 
     const tenMinutePreset = Array.from(container.querySelectorAll('button')).find(button => button.textContent === '10m')
-    expect(tenMinutePreset).toBeDefined()
+    expect(tenMinutePreset).toBeTruthy()
     if (!tenMinutePreset) return
 
     await act(async () => {
@@ -83,6 +83,7 @@ describe('DurationField', () => {
     const input = container.querySelector<HTMLInputElement>('input')
     expect(input?.value).toBe('1.5')
     expect(input?.step).toBe('any')
+    expect(input).toBeTruthy()
     if (!input) return
 
     await act(async () => {
@@ -101,6 +102,7 @@ describe('DurationField', () => {
     const select = container.querySelector<HTMLSelectElement>('select')
     expect(Number(input?.value)).toBe(0.00000025)
     expect(select?.value).toBe('s')
+    expect(select).toBeTruthy()
     if (!select) return
 
     await act(async () => {
@@ -123,6 +125,7 @@ describe('DurationField', () => {
     const input = container.querySelector<HTMLInputElement>('input')
     const select = container.querySelector<HTMLSelectElement>('select')
     expect(Number(input?.value)).toBe(numericValue)
+    expect(select).toBeTruthy()
     if (!select) return
 
     await act(async () => {
@@ -144,6 +147,8 @@ describe('DurationField', () => {
     const select = container.querySelector<HTMLSelectElement>('select')
     expect(input?.value).toBe(numericText)
     expect(select?.value).toBe('s')
+    expect(select).toBeTruthy()
+    expect(input).toBeTruthy()
     if (!input || !select) return
 
     await act(async () => {

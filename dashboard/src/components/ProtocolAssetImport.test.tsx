@@ -853,7 +853,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -868,7 +868,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
     }
@@ -1788,7 +1788,7 @@ describe('ProtocolAssetImport', () => {
     await closeImportCoverage(container)
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) return
 
     const file = new File(['{"openapi":"3.0.3"}'], 'orders.yaml', { type: 'application/yaml' })
@@ -1798,7 +1798,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) return
     await act(async () => {
       convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -1811,7 +1811,7 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('$.id')
 
     const modeSelect = Array.from(container.querySelectorAll('select')).find(select => select.closest('label')?.textContent?.includes('Mode')) as HTMLSelectElement | undefined
-    expect(modeSelect).toBeDefined()
+    expect(modeSelect).toBeTruthy()
     if (!modeSelect) return
     await act(async () => {
       modeSelect.value = 'replace'
@@ -1828,8 +1828,8 @@ describe('ProtocolAssetImport', () => {
 
     const scriptSelect = Array.from(container.querySelectorAll('select')).find(select => select.closest('label')?.textContent?.includes('Script')) as HTMLSelectElement | undefined
     const replaceModeSelect = Array.from(container.querySelectorAll('select')).find(select => select.closest('label')?.textContent?.includes('Replace Mode')) as HTMLSelectElement | undefined
-    expect(scriptSelect).toBeDefined()
-    expect(replaceModeSelect).toBeDefined()
+    expect(scriptSelect).toBeTruthy()
+    expect(replaceModeSelect).toBeTruthy()
     if (!scriptSelect || !replaceModeSelect) return
     await act(async () => {
       scriptSelect.value = 'script-openapi-existing'
@@ -1840,7 +1840,7 @@ describe('ProtocolAssetImport', () => {
     expect(container.querySelector('.script-import-review-save-disabled-reason')).toBeNull()
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Replace script'))
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -1866,7 +1866,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) return
 
     const file = new File(['{"log":{"entries":[]}}'], 'capture.har', { type: 'application/json' })
@@ -1881,7 +1881,7 @@ describe('ProtocolAssetImport', () => {
 
     const fileInputs = container.querySelectorAll('input[type="file"]')
     const comparisonInput = fileInputs[1] as HTMLInputElement | undefined
-    expect(comparisonInput).toBeDefined()
+    expect(comparisonInput).toBeTruthy()
     if (!comparisonInput) return
     await act(async () => {
       Object.defineProperty(comparisonInput, 'files', {
@@ -1892,7 +1892,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const includeStatic = Array.from(container.querySelectorAll('input[type="checkbox"]')).find(input => input.parentElement?.textContent?.includes('Include static assets')) as HTMLInputElement | undefined
-    expect(includeStatic).toBeDefined()
+    expect(includeStatic).toBeTruthy()
     if (!includeStatic) return
 
     await act(async () => {
@@ -1900,13 +1900,14 @@ describe('ProtocolAssetImport', () => {
     })
     const salvageTruncated = Array.from(container.querySelectorAll('input[type="checkbox"]')).find(input => input.parentElement?.textContent?.includes('Recover the complete entries of a truncated HAR')) as HTMLInputElement | undefined
     expect(salvageTruncated?.checked).toBe(false)
+    expect(salvageTruncated).toBeTruthy()
     if (!salvageTruncated) return
     await act(async () => {
       salvageTruncated.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) return
 
     await act(async () => {
@@ -1990,7 +1991,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const zone = container.querySelector('.import-dropzone')
-    expect(zone).not.toBeNull()
+    expect(zone).toBeTruthy()
     if (!zone) return
     const file = new File(['not a har'], 'notes.txt', { type: 'text/plain' })
     const drop = new Event('drop', { bubbles: true, cancelable: true })
@@ -2022,7 +2023,7 @@ describe('ProtocolAssetImport', () => {
 	    expect(container.textContent).toContain('HAR Traffic')
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) return
 
     const file = new File(['{"log":{"entries":[]}}'], 'salesforce.har', { type: 'application/json' })
@@ -2035,7 +2036,7 @@ describe('ProtocolAssetImport', () => {
     })
 
 	    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) return
 
     await act(async () => {
@@ -2101,7 +2102,7 @@ describe('ProtocolAssetImport', () => {
     await closeImportCoverage(container)
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) return
 
     const file = new File(['#%RAML 1.0\ntitle: Orders API'], 'orders.raml', { type: 'text/yaml' })
@@ -2114,7 +2115,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) return
 
     await act(async () => {
@@ -2159,7 +2160,7 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).not.toContain('Base URL Override')
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) return
 
     const file = new File(['asyncapi: 3.0.0'], 'orders.asyncapi.yaml', { type: 'application/yaml' })
@@ -2174,12 +2175,12 @@ describe('ProtocolAssetImport', () => {
     const schemaIDInput = Array.from(container.querySelectorAll('input')).find(input => input.closest('label')?.textContent?.includes('Schema ID')) as HTMLInputElement | undefined
     const subjectInput = Array.from(container.querySelectorAll('input')).find(input => input.closest('label')?.textContent?.includes('Subject')) as HTMLInputElement | undefined
     const serializationSelect = Array.from(container.querySelectorAll('select')).find(select => select.closest('label')?.textContent?.includes('Serialization')) as HTMLSelectElement | undefined
-    expect(brokerInput).toBeDefined()
-    expect(channelInput).toBeDefined()
-    expect(registryInput).toBeDefined()
-    expect(schemaIDInput).toBeDefined()
-    expect(subjectInput).toBeDefined()
-    expect(serializationSelect).toBeDefined()
+    expect(brokerInput).toBeTruthy()
+    expect(channelInput).toBeTruthy()
+    expect(registryInput).toBeTruthy()
+    expect(schemaIDInput).toBeTruthy()
+    expect(subjectInput).toBeTruthy()
+    expect(serializationSelect).toBeTruthy()
     if (!brokerInput || !channelInput || !registryInput || !schemaIDInput || !subjectInput || !serializationSelect) return
 
     await act(async () => {
@@ -2193,7 +2194,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) return
     await act(async () => {
       convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2829,7 +2830,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) return
     const file = new File(['asyncapi: 3.0.0'], 'orders.asyncapi.yaml', { type: 'application/yaml' })
     await act(async () => {
@@ -2837,7 +2838,7 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) return
     await act(async () => {
       convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2845,7 +2846,7 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     const jmsTab = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('jms-solace · Orders JMS'))
-    expect(jmsTab).toBeDefined()
+    expect(jmsTab).toBeTruthy()
     if (!jmsTab) return
     await act(async () => {
       jmsTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2855,7 +2856,7 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('Destination type')
 
     const saveAll = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save All 2 Scripts'))
-    expect(saveAll).toBeDefined()
+    expect(saveAll).toBeTruthy()
     if (!saveAll) return
     await act(async () => {
       saveAll.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2889,7 +2890,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) return
     const file = new File(['asyncapi: 3.0.0'], 'orders.asyncapi.yaml', { type: 'application/yaml' })
     await act(async () => {
@@ -2897,7 +2898,7 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) return
     await act(async () => {
       convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2905,7 +2906,7 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     const saveAll = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save All 2 Scripts'))
-    expect(saveAll).toBeDefined()
+    expect(saveAll).toBeTruthy()
     if (!saveAll) return
     await act(async () => {
       saveAll.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -3142,8 +3143,8 @@ describe('ProtocolAssetImport', () => {
     const fileInputs = container.querySelectorAll('input[type="file"]')
     const collectionInput = fileInputs[0] as HTMLInputElement | undefined
     const environmentInput = fileInputs[1] as HTMLInputElement | undefined
-    expect(collectionInput).toBeDefined()
-    expect(environmentInput).toBeDefined()
+    expect(collectionInput).toBeTruthy()
+    expect(environmentInput).toBeTruthy()
     if (!collectionInput || !environmentInput) return
 
     const collectionFile = new File(['{"info":{"name":"Orders"},"item":[]}'], 'orders.postman_collection.json', { type: 'application/json' })
@@ -3156,7 +3157,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Only'))
-    expect(validateButton).toBeDefined()
+    expect(validateButton).toBeTruthy()
     if (!validateButton) return
 
     await act(async () => {
@@ -3235,7 +3236,7 @@ describe('ProtocolAssetImport', () => {
 
     const fileInputs = container.querySelectorAll('input[type="file"]')
     const environmentInput = fileInputs[1] as HTMLInputElement | undefined
-    expect(environmentInput).toBeDefined()
+    expect(environmentInput).toBeTruthy()
     if (!environmentInput) return
 
     const collectionFile = new File(['{"info":{"name":"Orders"},"item":[]}'], 'orders.postman_collection.json', { type: 'application/json' })
@@ -3293,7 +3294,7 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     const collectionInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(collectionInput).not.toBeNull()
+    expect(collectionInput).toBeTruthy()
     if (!collectionInput) return
     const collectionFile = new File(['{"info":{"name":"Orders"},"item":[]}'], 'orders.postman_collection.json', { type: 'application/json' })
     await act(async () => {
@@ -3302,7 +3303,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) return
     await act(async () => {
       convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -3310,7 +3311,7 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     const modeSelect = Array.from(container.querySelectorAll('select')).find(select => select.closest('label')?.textContent?.includes('Mode')) as HTMLSelectElement | undefined
-    expect(modeSelect).toBeDefined()
+    expect(modeSelect).toBeTruthy()
     if (!modeSelect) return
     await act(async () => {
       modeSelect.value = 'replace'
@@ -3326,7 +3327,7 @@ describe('ProtocolAssetImport', () => {
       .toContain('Select the existing script that this Postman import should replace')
 
     const scriptSelect = Array.from(container.querySelectorAll('select')).find(select => select.closest('label')?.textContent?.includes('Script')) as HTMLSelectElement | undefined
-    expect(scriptSelect).toBeDefined()
+    expect(scriptSelect).toBeTruthy()
     if (!scriptSelect) return
     await act(async () => {
       scriptSelect.value = 'script-existing'
@@ -3335,7 +3336,7 @@ describe('ProtocolAssetImport', () => {
     expect(container.querySelector('.script-import-review-save-disabled-reason')).toBeNull()
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Replace script'))
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -3393,6 +3394,7 @@ describe('ProtocolAssetImport', () => {
     const modeSelect = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
       .find(select => select.closest('label')?.textContent?.includes('Mode'))
     await act(async () => {
+      expect(modeSelect).toBeTruthy()
       if (!modeSelect) return
       modeSelect.value = 'replace'
       modeSelect.dispatchEvent(new Event('change', { bubbles: true }))
@@ -3400,6 +3402,7 @@ describe('ProtocolAssetImport', () => {
     const projectOneTarget = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
       .find(select => select.closest('label')?.textContent?.includes('Script'))
     await act(async () => {
+      expect(projectOneTarget).toBeTruthy()
       if (!projectOneTarget) return
       projectOneTarget.value = 'project-1-script'
       projectOneTarget.dispatchEvent(new Event('change', { bubbles: true }))
@@ -3433,7 +3436,7 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     const collectionInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(collectionInput).not.toBeNull()
+    expect(collectionInput).toBeTruthy()
     if (!collectionInput) return
     const collectionFile = new File(['{"info":{"name":"Orders"},"item":[]}'], 'orders.postman_collection.json', { type: 'application/json' })
     await act(async () => {
@@ -3442,7 +3445,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) return
     await act(async () => {
       convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -3450,7 +3453,7 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -3499,7 +3502,7 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('Recorder Export / Playwright Codegen')
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) return
 
     const file = new File(['{"title":"Login","steps":[]}'], 'login.json', { type: 'application/json' })
@@ -3512,7 +3515,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) return
 
     await act(async () => {
@@ -3542,7 +3545,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) return
     const file = new File(['{"title":"Login","steps":[]}'], 'login.json', { type: 'application/json' })
     await act(async () => {
@@ -3551,7 +3554,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) return
     await act(async () => {
       convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -3560,7 +3563,7 @@ describe('ProtocolAssetImport', () => {
 
     await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label="Source Mapping"]')?.click() })
     const useFallback = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Use')
-    expect(useFallback).toBeDefined()
+    expect(useFallback).toBeTruthy()
     if (!useFallback) return
     await act(async () => {
       useFallback.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -3568,7 +3571,7 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('Selector updated in the draft')
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -3578,7 +3581,7 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('Run replay validation successfully before saving')
 
     const replayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Run Replay Validation'))
-    expect(replayButton).toBeDefined()
+    expect(replayButton).toBeTruthy()
     if (!replayButton) return
     await act(async () => {
       replayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -3596,7 +3599,7 @@ describe('ProtocolAssetImport', () => {
     }))
 
     const unsupportedRepair = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Apply Unsupported Repair'))
-    expect(unsupportedRepair).toBeDefined()
+    expect(unsupportedRepair).toBeTruthy()
     if (!unsupportedRepair) return
     await act(async () => {
       unsupportedRepair.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -3604,7 +3607,7 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('Replay suggestion type "update_timeout" is not supported')
 
     const completeReplay = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Complete Replay'))
-    expect(completeReplay).toBeDefined()
+    expect(completeReplay).toBeTruthy()
     if (!completeReplay) return
     await act(async () => {
       completeReplay.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -4067,7 +4070,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) return
 
     const file = new File(['{"openapi":"3.0.3"}'], 'agent.yaml', { type: 'application/yaml' })
@@ -4077,14 +4080,14 @@ describe('ProtocolAssetImport', () => {
     })
 
     const transformToggle = Array.from(container.querySelectorAll('input[type="checkbox"]')).find(input => input.parentElement?.textContent?.includes('Make Agentforce replay-ready')) as HTMLInputElement | undefined
-    expect(transformToggle).toBeDefined()
+    expect(transformToggle).toBeTruthy()
     if (!transformToggle) return
     await act(async () => {
       transformToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) return
     await act(async () => {
       convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -4106,7 +4109,7 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('SOAP Version')
 
     const soapVersionSelect = container.querySelector('select') as HTMLSelectElement | null
-    expect(soapVersionSelect).not.toBeNull()
+    expect(soapVersionSelect).toBeTruthy()
     if (!soapVersionSelect) return
 
     await act(async () => {
@@ -4115,7 +4118,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) return
 
     const file = new File(['<definitions />'], 'account.wsdl', { type: 'text/xml' })
@@ -4128,7 +4131,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) return
 
     await act(async () => {
@@ -4153,7 +4156,7 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) return
     const file = new File(['import http from "k6/http";'], 'script.js', { type: 'application/javascript' })
     await act(async () => {
@@ -4162,7 +4165,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) return
     await act(async () => {
       convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -4315,7 +4318,7 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).not.toContain('Base URL Override')
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) return
     const file = new File(['avro-bytes'], 'capture.avro', { type: 'application/octet-stream' })
     await act(async () => {
@@ -4324,7 +4327,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) return
     await act(async () => {
       convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -4343,7 +4346,7 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).not.toContain('Base URL Override')
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) return
     const file = new File(['DEFINE QLOCAL(ORDERS)'], 'broker.mqsc', { type: 'text/plain' })
     await act(async () => {
@@ -4352,7 +4355,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) return
     await act(async () => {
       convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -4371,7 +4374,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) return
     const file = new File(['{"log":{"entries":[]}}'], 'salesforce.har', { type: 'application/json' })
     await act(async () => {
@@ -4380,7 +4383,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) return
     await act(async () => {
       convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -4397,7 +4400,7 @@ describe('ProtocolAssetImport', () => {
     expect(apiMock.importHAR).toHaveBeenLastCalledWith(file, expect.objectContaining({ salesforce_native: true }))
 
     const forceGenericButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Force Generic HAR'))
-    expect(forceGenericButton).toBeDefined()
+    expect(forceGenericButton).toBeTruthy()
     if (!forceGenericButton) return
     await act(async () => {
       forceGenericButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -4417,7 +4420,7 @@ async function flushPromises() {
 
 async function openImportCoverage(container: HTMLElement) {
   const coverageButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Import Coverage')
-  expect(coverageButton).toBeDefined()
+  expect(coverageButton).toBeTruthy()
   if (!coverageButton) return
   await act(async () => {
     coverageButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -4426,6 +4429,7 @@ async function openImportCoverage(container: HTMLElement) {
 
 async function closeImportCoverage(container: HTMLElement) {
   const closeButton = container.querySelector('.import-coverage-modal-header button') as HTMLButtonElement | null
+  expect(closeButton).toBeTruthy()
   if (!closeButton) return
   await act(async () => {
     closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))

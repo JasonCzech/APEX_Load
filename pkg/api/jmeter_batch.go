@@ -135,29 +135,65 @@ func (s *Server) openBatchReceipt(r *http.Request, revision, project string) (*j
 	err = json.Unmarshal(b, &receipt)
 	return &receipt, err
 }
-func (s *Server) claimJMeterBatch(r *http.Request, id jmeterBatchIdentity, project string) (*jmeterBatchCandidate, *importsession.Claim, error) {
+
+// jmeterBatchSessionScope validates a batch identity and the caller's project
+// before either reader touches the protected store.
+func (s *Server) jmeterBatchSessionScope(r *http.Request, id jmeterBatchIdentity, project string) (*importsession.Manager, importsession.Scope, error) {
 	if uuid.Validate(id.ID) != nil || uuid.Validate(id.Revision) != nil {
-		return nil, nil, errors.New("invalid batch identity")
+		return nil, importsession.Scope{}, errors.New("invalid batch identity")
 	}
 	if p, ok := authorizedProjectFromRequest(r); ok && p != normalizeProjectID(project) {
-		return nil, nil, os.ErrNotExist
+		return nil, importsession.Scope{}, os.ErrNotExist
 	}
 	m, err := s.protectedImportSessionManager()
 	if err != nil {
+		return nil, importsession.Scope{}, err
+	}
+	return m, s.batchScope(r, id.Revision, jmeterBatchProfile, project), nil
+}
+
+func (s *Server) claimJMeterBatch(r *http.Request, id jmeterBatchIdentity, project string) (*jmeterBatchCandidate, *importsession.Claim, error) {
+	m, scope, err := s.jmeterBatchSessionScope(r, id, project)
+	if err != nil {
 		return nil, nil, err
 	}
-	c, err := m.Claim(r.Context(), s.batchScope(r, id.Revision, jmeterBatchProfile, project), importCandidateSessionMaxBytes)
+	c, err := m.Claim(r.Context(), scope, importCandidateSessionMaxBytes)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer clear(c.Payload)
-	var b jmeterBatchCandidate
-	if err = json.Unmarshal(c.Payload, &b); err != nil || b.Identity != id || b.ProjectID != normalizeProjectID(project) || batchDigest(b.Source) != b.SourceDigest {
+	b, err := decodeJMeterBatch(c.Payload, id, project)
+	if err != nil {
 		_ = m.Release(c.Claim)
-		clearJMeterBatchSource(&b)
-		return nil, nil, errors.New("invalid protected batch")
+		return nil, nil, err
 	}
-	return &b, &c.Claim, nil
+	return b, &c.Claim, nil
+}
+
+// openJMeterBatch reads a protected batch without leasing it, for read-only
+// repair previews; a preview holding the consume lease blocks a concurrent
+// save or apply of the same batch. A batch a consumer has already claimed
+// reads as absent.
+func (s *Server) openJMeterBatch(r *http.Request, id jmeterBatchIdentity, project string) (*jmeterBatchCandidate, error) {
+	m, scope, err := s.jmeterBatchSessionScope(r, id, project)
+	if err != nil {
+		return nil, err
+	}
+	payload, _, err := m.Open(r.Context(), scope, importCandidateSessionMaxBytes)
+	if err != nil {
+		return nil, err
+	}
+	defer clear(payload)
+	return decodeJMeterBatch(payload, id, project)
+}
+
+func decodeJMeterBatch(payload []byte, id jmeterBatchIdentity, project string) (*jmeterBatchCandidate, error) {
+	var b jmeterBatchCandidate
+	if err := json.Unmarshal(payload, &b); err != nil || b.Identity != id || b.ProjectID != normalizeProjectID(project) || batchDigest(b.Source) != b.SourceDigest {
+		clearJMeterBatchSource(&b)
+		return nil, errors.New("invalid protected batch")
+	}
+	return &b, nil
 }
 func (s *Server) publishBatchReceipt(r *http.Request, b *jmeterBatchCandidate, claim *importsession.Claim, receipt jmeterBatchReceipt) error {
 	m, err := s.protectedImportSessionManager()

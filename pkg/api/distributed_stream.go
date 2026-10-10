@@ -713,8 +713,22 @@ receiveLoop:
 			continue
 		}
 		terminal := isTerminalRemoteLifecycle(batch.LifecycleState)
-		fence, current := captureDistributedMetricsConsumerFence(tr, test, target, stream, ctx, executionGeneration, terminal)
-		if !current {
+		var (
+			fence    distributedMetricsConsumerFence
+			current  bool
+			stopping bool
+		)
+		if terminal {
+			fence, current = captureDistributedMetricsConsumerFence(tr, test, target, stream, ctx, executionGeneration, true)
+		} else {
+			// While a stop requested on the controller is in progress, a window
+			// the generator collected before it stopped can still arrive ahead
+			// of its terminal batch, which carries the final drain. The window
+			// is counted, unless the run's finalization has begun, and it is not
+			// published. The consumer reads on.
+			fence, current, stopping = captureDistributedMetricsWindowFence(tr, test, target, stream, ctx, executionGeneration)
+		}
+		if !current && !stopping {
 			return
 		}
 		if batch.ExecutionGeneration != executionGeneration {
@@ -726,7 +740,7 @@ receiveLoop:
 		// duplicates and late arrivals the live view rejects, and never the
 		// controller's own retries of the same publication below.
 		tr.mu.Lock()
-		observeTelemetryPublicationLocked(tr, test, target, fence, terminal, batch, time.Now())
+		observeTelemetryPublicationLocked(tr, test, target, fence, terminal || test.Status == "STOPPING", batch, time.Now())
 		tr.mu.Unlock()
 		var (
 			live        *LiveMetrics
@@ -738,17 +752,13 @@ receiveLoop:
 		if !terminal {
 			// Reject duplicate/stale windows before they reserve a delayed flush
 			// or enter the per-sample alert/stop pipeline.
-			for !b.storeRemoteMetricsBatchOnly(tr, test, target, batch, fence) {
-				if distributedMetricsConsumerFenceCurrent(tr, test, target, fence, false) {
-					continue receiveLoop
-				}
-				if !distributedMetricsConsumerStillOwned(tr, test, target, fence, false) {
-					return
-				}
-				fence, current = captureDistributedMetricsConsumerFence(tr, test, target, stream, ctx, executionGeneration, false)
-				if !current {
-					return
-				}
+			var outcome distributedWindowStore
+			fence, outcome = b.storeDistributedWindow(tr, test, target, stream, ctx, executionGeneration, batch, fence)
+			switch outcome {
+			case distributedWindowSkipped:
+				continue receiveLoop
+			case distributedWindowConsumerEnded:
+				return
 			}
 			var (
 				publish    bool
@@ -760,11 +770,17 @@ receiveLoop:
 				if publish || flushDelay >= 0 || distributedMetricsConsumerFenceCurrent(tr, test, target, fence, false) {
 					break
 				}
-				if !distributedMetricsConsumerStillOwned(tr, test, target, fence, false) {
+				if owned, awaitsTerminal := distributedMetricsWindowOwnership(tr, test, target, fence); !owned {
+					if awaitsTerminal {
+						continue receiveLoop
+					}
 					return
 				}
-				fence, current = captureDistributedMetricsConsumerFence(tr, test, target, stream, ctx, executionGeneration, false)
+				fence, current, stopping = captureDistributedMetricsWindowFence(tr, test, target, stream, ctx, executionGeneration)
 				if !current {
+					if stopping {
+						continue receiveLoop
+					}
 					return
 				}
 			}
@@ -782,11 +798,17 @@ receiveLoop:
 				if distributedMetricsConsumerFenceCurrent(tr, test, target, fence, false) {
 					continue receiveLoop
 				}
-				if !distributedMetricsConsumerStillOwned(tr, test, target, fence, false) {
+				if owned, awaitsTerminal := distributedMetricsWindowOwnership(tr, test, target, fence); !owned {
+					if awaitsTerminal {
+						continue receiveLoop
+					}
 					return
 				}
-				fence, current = captureDistributedMetricsConsumerFence(tr, test, target, stream, ctx, executionGeneration, false)
+				fence, current, stopping = captureDistributedMetricsWindowFence(tr, test, target, stream, ctx, executionGeneration)
 				if !current {
+					if stopping {
+						continue receiveLoop
+					}
 					return
 				}
 			}
@@ -836,8 +858,10 @@ receiveLoop:
 		}
 
 		publicationResult := b.publishDistributedMetricsRevision(ctx, tr, test, live, publication)
-		if !publicationResult.lifecycleCurrent && !distributedMetricsConsumerStillOwned(tr, test, target, fence, false) {
-			return
+		if !publicationResult.lifecycleCurrent {
+			if owned, awaitsTerminal := distributedMetricsWindowOwnership(tr, test, target, fence); !owned && !awaitsTerminal {
+				return
+			}
 		}
 	}
 }
@@ -969,6 +993,105 @@ func distributedMetricsConsumerStillOwnedLocked(tr *TestRunner, test *ManagedTes
 		}
 	}
 	return (test.Status == "RUNNING" || test.Status == "PAUSED") && !test.remoteFinalizing
+}
+
+type distributedWindowStore int
+
+const (
+	// distributedWindowStored: the window was accepted while the consumer may
+	// publish it.
+	distributedWindowStored distributedWindowStore = iota
+	// distributedWindowSkipped: the window is a duplicate or stale, or it
+	// arrived during a stop. It was counted without being published, or
+	// dropped once the run's finalization began. The consumer reads on.
+	distributedWindowSkipped
+	// distributedWindowConsumerEnded: the consumer no longer owns the stream.
+	distributedWindowConsumerEnded
+)
+
+// storeDistributedWindow stores a non-terminal window, recapturing the fence
+// when the topology changed since it was taken. During a stop requested on the
+// controller, it counts the window without publishing it. Once the run's
+// finalization has begun, the window is dropped. Either way the consumer reads
+// on for the terminal batch.
+func (b *distributedExecutionBackend) storeDistributedWindow(tr *TestRunner, test *ManagedTest, target string, stream *generatorrpc.MetricsStream, ctx context.Context, executionGeneration uint64, batch generatorrpc.MetricsBatch, fence distributedMetricsConsumerFence) (distributedMetricsConsumerFence, distributedWindowStore) {
+	for !b.storeRemoteMetricsBatchOnly(tr, test, target, batch, fence) {
+		if distributedMetricsConsumerFenceCurrent(tr, test, target, fence, false) {
+			return fence, distributedWindowSkipped
+		}
+		var current, stopping bool
+		fence, current, stopping = captureDistributedMetricsWindowFence(tr, test, target, stream, ctx, executionGeneration)
+		if !current {
+			if stopping {
+				b.storeRemoteMetricsBatchOnly(tr, test, target, batch, fence)
+				return fence, distributedWindowSkipped
+			}
+			return fence, distributedWindowConsumerEnded
+		}
+	}
+	return fence, storedDistributedWindowOutcome(tr, test, target, fence)
+}
+
+// storedDistributedWindowOutcome decides, after a window was stored, whether
+// the consumer publishes it. It does not look at the topology: publication
+// rebases a fence the topology moved past.
+func storedDistributedWindowOutcome(tr *TestRunner, test *ManagedTest, target string, fence distributedMetricsConsumerFence) distributedWindowStore {
+	switch owned, awaitsTerminal := distributedMetricsWindowOwnership(tr, test, target, fence); {
+	case owned:
+		return distributedWindowStored
+	case awaitsTerminal:
+		// Stored during a stop: counted, not published; the consumer reads on.
+		return distributedWindowSkipped
+	default:
+		return distributedWindowConsumerEnded
+	}
+}
+
+// distributedMetricsWindowOwnership reports, under one read lock, whether a
+// consumer still owns its stream for non-terminal windows and, when it does
+// not, whether it should read on for the generator's terminal batch: a stop
+// requested on the controller (by an operator, a threshold or goal rule, a CI
+// abort or a shutdown) is in progress, and that batch, which carries the
+// final drain, is still to come.
+func distributedMetricsWindowOwnership(tr *TestRunner, test *ManagedTest, target string, fence distributedMetricsConsumerFence) (owned, awaitsTerminal bool) {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	if distributedMetricsConsumerStillOwnedLocked(tr, test, target, fence, false) {
+		return true, false
+	}
+	return false, distributedMetricsConsumerAwaitsTerminalLocked(tr, test, target, fence)
+}
+
+func distributedMetricsConsumerAwaitsTerminalLocked(tr *TestRunner, test *ManagedTest, target string, fence distributedMetricsConsumerFence) bool {
+	return test.Status == "STOPPING" && distributedMetricsConsumerStillOwnedLocked(tr, test, target, fence, true)
+}
+
+// captureDistributedMetricsWindowFence captures a fence for a non-terminal
+// window and, under the same read lock, reports whether the window is
+// current or, if not, whether the consumer awaits the terminal batch.
+func captureDistributedMetricsWindowFence(tr *TestRunner, test *ManagedTest, target string, stream *generatorrpc.MetricsStream, ctx context.Context, executionGeneration uint64) (distributedMetricsConsumerFence, bool, bool) {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	fence := distributedMetricsConsumerFence{
+		ctx:                 ctx,
+		executionGeneration: executionGeneration,
+		topologyGeneration:  test.remoteControlGeneration,
+		target:              target,
+		stream:              stream,
+		enforced:            true,
+	}
+	if distributedMetricsConsumerFenceCurrentLocked(tr, test, target, fence, false) {
+		return fence, true, false
+	}
+	return fence, false, distributedMetricsConsumerAwaitsTerminalLocked(tr, test, target, fence)
+}
+
+// distributedMetricsStoppingWindowLocked reports whether a non-terminal
+// window may still be stored and counted: a stop requested on the controller
+// is in progress, its finalization has not begun, and the consumer owns the
+// stream for the terminal batch to come.
+func distributedMetricsStoppingWindowLocked(tr *TestRunner, test *ManagedTest, target string, fence distributedMetricsConsumerFence) bool {
+	return test.Status == "STOPPING" && !test.remoteFinalizing && distributedMetricsConsumerFenceCurrentLocked(tr, test, target, fence, true)
 }
 
 func distributedMetricsConsumerFenceCurrentLocked(tr *TestRunner, test *ManagedTest, target string, fence distributedMetricsConsumerFence, terminal bool) bool {
@@ -1272,15 +1395,19 @@ func stageDistributedGoalErrorWindowLocked(tr *TestRunner, test *ManagedTest, ta
 func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner, test *ManagedTest, target string, batch generatorrpc.MetricsBatch, fences ...distributedMetricsConsumerFence) bool {
 	batch.RegionMetrics = controllerApprovedRegionMetrics(batch.RegionMetrics, b.regionForTarget(target))
 	freshTransactions := append([]generatorrpc.TransactionMetric(nil), batch.Transactions...)
+	// The generator's own window, before a terminal batch takes on its last.
+	own := batch
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	if len(fences) > 0 && !distributedMetricsConsumerFenceCurrentLocked(tr, test, target, fences[0], isTerminalRemoteLifecycle(batch.LifecycleState)) {
+	terminal := isTerminalRemoteLifecycle(batch.LifecycleState)
+	if len(fences) > 0 && !distributedMetricsConsumerFenceCurrentLocked(tr, test, target, fences[0], terminal) &&
+		(terminal || !distributedMetricsStoppingWindowLocked(tr, test, target, fences[0])) {
 		return false
 	}
 	if test.remoteMetricsBatchesByTarget == nil {
 		test.remoteMetricsBatchesByTarget = make(map[string]generatorrpc.MetricsBatch)
 	}
-	if isTerminalRemoteLifecycle(batch.LifecycleState) {
+	if terminal {
 		if prior, ok := test.remoteMetricsBatchesByTarget[target]; ok {
 			if len(batch.Transactions) == 0 {
 				batch.Transactions = prior.Transactions
@@ -1346,8 +1473,10 @@ func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner
 	}
 	carryRemoteHTTPVersionMixLocked(test, target, &batch)
 	test.remoteMetricsBatchesByTarget[target] = batch
-	// Each generator's stages are sampled where its batch is accepted:
-	// publications are throttled fleet-wide, so most batches are only stored.
+	// Each generator's stages and run totals are counted where its batch is
+	// accepted: publications are throttled fleet-wide, so most batches are
+	// only stored.
+	countDistributedWindowLocked(test, target, own)
 	stageRecorderLocked(test).observeGeneratorBatch(target, batch)
 	rememberJointPublicationLocked(test, target, batch)
 	if len(batch.TransactionResponseTimeSLA) > 0 {
@@ -1359,6 +1488,19 @@ func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner
 	test.remoteMetricsAcceptedRevision++
 	stageDistributedGoalErrorWindowLocked(tr, test, target, batch)
 	return true
+}
+
+// countDistributedWindowLocked counts one generator's accepted window (its
+// own, before a terminal batch takes on its last window) toward the run's
+// totals, once (runTotalsAccumulator.newDistributedWindow), as a live sample
+// counts it (distributedWindowCounts). The caller holds tr.mu.
+func countDistributedWindowLocked(test *ManagedTest, target string, own generatorrpc.MetricsBatch) {
+	var window *runTotalsWindow
+	if test.runTotals.newDistributedWindow(target, own) {
+		counts := distributedWindowCounts(own, test.Groups)
+		window = &counts
+	}
+	test.runTotals.countWindow(window, test.History, test.Groups)
 }
 
 func rebuildRemoteTransactionResponseTimeSLA(test *ManagedTest) {
@@ -1655,6 +1797,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 		if test.remoteMetricsBatchesByTarget == nil {
 			test.remoteMetricsBatchesByTarget = make(map[string]generatorrpc.MetricsBatch)
 		}
+		own := batch
 		// A terminal lifecycle batch (COMPLETE/FAILED/ABORTED) is a state signal
 		// that the generator emits with no transaction window
 		// (metricsBatchForState). Don't let it erase the metrics already reported
@@ -1718,6 +1861,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 			accepted = true
 			test.remoteMetricsAcceptedRevision++
 			revision = test.remoteMetricsAcceptedRevision
+			countDistributedWindowLocked(test, target, own)
 			stageRecorderLocked(test).observeGeneratorBatch(target, batch)
 			stageDistributedGoalErrorWindowLocked(tr, test, target, batch)
 		}

@@ -10,6 +10,13 @@
 # The controller is started on a dedicated port with a throwaway database and
 # archive directory, so a run never touches the developer's own apexload.db.
 #
+# A run only ever tests the controller it started. A port that something else
+# already listens on (a long-running local controller, another run) is refused
+# before anything is built, and once the controller answers, the run checks
+# that the process it started is the one listening. Without that, the health
+# probe would succeed against the other server and every spec would exercise
+# the wrong code.
+#
 # Usage:
 #   scripts/run-e2e.sh                       # whole suite
 #   scripts/run-e2e.sh tier0-journey         # only specs matching a substring
@@ -34,6 +41,56 @@ if [[ "$profile" != "dev-admin" && "$profile" != "local-auth" ]]; then
   echo "ERROR: APEXLOAD_E2E_PROFILE must be dev-admin or local-auth, got $profile" >&2
   exit 1
 fi
+
+have_lsof() {
+  command -v lsof >/dev/null 2>&1
+}
+
+# port_in_use reports whether anything listens on the port: lsof sees a
+# listener on any address, and a connection to 127.0.0.1 that succeeds is one
+# too (lsof is optional, and may not list other users' processes).
+port_in_use() {
+  if have_lsof && lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+    return 0
+  fi
+  (exec 3<>"/dev/tcp/127.0.0.1/${port}") 2>/dev/null
+}
+
+# require_free_port refuses a port another process listens on, naming it when
+# lsof can, and never stops that process.
+require_free_port() {
+  if ! port_in_use; then
+    return 0
+  fi
+  echo "ERROR: port ${port} is already in use; this run would test that server instead of the controller it builds." >&2
+  if have_lsof; then
+    lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR > 1 { print "  held by pid " $2 " (" $1 ")" }' | sort -u >&2 || true
+  fi
+  echo "Stop that process or choose another port with APEXLOAD_E2E_PORT." >&2
+  exit 1
+}
+
+# require_own_listener confirms the process this run started is the one
+# answering on the port. Without lsof it settles for the process still being
+# alive a moment after it answered, since a controller that lost the port
+# exits as soon as it tries to bind.
+require_own_listener() {
+  if have_lsof; then
+    if [[ -z "$(lsof -nP -a -p "$pid" -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null || true)" ]]; then
+      echo "ERROR: ${base_url} answered, but not from the controller this run started (pid ${pid})." >&2
+      exit 1
+    fi
+    return 0
+  fi
+  sleep 1
+  if ! kill -0 "$pid" 2>/dev/null; then
+    echo "ERROR: ${base_url} answered, but the controller this run started has exited." >&2
+    exit 1
+  fi
+}
+
+# Refuse an occupied port before spending time on the build.
+require_free_port
 
 cleanup() {
   local code=$?
@@ -63,6 +120,7 @@ echo "Building controller..." >&2
 go build -trimpath -o "$controller_bin" ./cmd/controller
 
 start_controller() {
+  require_free_port
   echo "Starting controller on ${base_url} (profile=$profile, throwaway DB in $workdir)..." >&2
   APEXLOAD_ADDR="127.0.0.1:${port}" \
     APEXLOAD_DB="$workdir/apexload-e2e.db" \
@@ -72,13 +130,13 @@ start_controller() {
 
   local ready=""
   for _ in $(seq 1 60); do
-    if curl --silent --fail "${base_url}/api/v1/system/health" >/dev/null 2>&1; then
-      ready=yes
-      break
-    fi
     if ! kill -0 "$pid" 2>/dev/null; then
       echo "ERROR: controller exited during startup" >&2
       exit 1
+    fi
+    if curl --silent --fail "${base_url}/api/v1/system/health" >/dev/null 2>&1; then
+      ready=yes
+      break
     fi
     sleep 1
   done
@@ -86,6 +144,7 @@ start_controller() {
     echo "ERROR: controller did not become healthy within 60s" >&2
     exit 1
   fi
+  require_own_listener
   echo "Controller healthy." >&2
 }
 

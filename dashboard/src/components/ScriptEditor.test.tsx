@@ -10,6 +10,7 @@ import type { ScriptDefinition } from '../types/scripts'
 import { ApiError } from '../hooks/apiClient'
 import { formatSnapshotRequestSection, formatSnapshotResponseSection } from '../utils/snapshotFormatUtils'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
+import { useUnsavedWorkGuard } from '../hooks/NavigationGuardProvider'
 import { KeyboardShortcutProvider } from '../hooks/KeyboardShortcutRoot'
 import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
@@ -144,7 +145,7 @@ vi.mock('@uiw/react-codemirror', async () => {
     const hasApexDslSemanticHighlighting = flattenExtensions(extensions).includes(apexDslSemanticHighlighting())
     useEffect(() => {
       const el = ref.current
-      if (!el) return
+      if (!el) return // not mounted yet
       const lineStarts = (text: string) => {
         const starts: number[] = []
         let offset = 0
@@ -882,7 +883,7 @@ describe('ScriptEditor', () => {
     })
 
     const nameInput = container.querySelector<HTMLInputElement>('.side-panel-script-name input')
-    expect(nameInput).not.toBeNull()
+    expect(nameInput).toBeTruthy()
     if (!nameInput) return
     await act(async () => {
       changeInputValue(nameInput, 'Checkout Flow Updated')
@@ -914,7 +915,7 @@ describe('ScriptEditor', () => {
       editJsonButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     const codeArea = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
-    expect(codeArea).not.toBeNull()
+    expect(codeArea).toBeTruthy()
     if (!codeArea) return
 
     const rawDraft: ScriptDefinition = {
@@ -1057,7 +1058,7 @@ describe('ScriptEditor', () => {
     await flushReact()
 
     const valueInput = document.body.querySelector<HTMLInputElement>('input[type="password"]')
-    expect(valueInput).not.toBeNull()
+    expect(valueInput).toBeTruthy()
     if (!valueInput) return
     await act(async () => {
       changeInputValue(valueInput, 'dedicated-secret-value')
@@ -1316,17 +1317,20 @@ describe('ScriptEditor', () => {
 
     const activeNameInput = container.querySelector<HTMLInputElement>('.side-panel-script-name input[placeholder="My_Test_Script"]')
     expect(activeNameInput?.value).toBe('Checkout Flow')
+    expect(activeNameInput).toBeTruthy()
     if (!activeNameInput) return
     await act(async () => {
       changeInputValue(activeNameInput, 'Side Panel Checkout Flow')
       await Promise.resolve()
     })
 
-    const saveButton = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')
-    expect(saveButton).toBeDefined()
+    // With a topbar, Save is its action; the outline drops its icon button.
+    expect(container.querySelector('.actions-sidebar')).not.toBeNull()
+    expect(container.querySelector('.actions-sidebar button[aria-label="Save script"]')).toBeNull()
+    const saveButton = Array.from(topbar?.querySelectorAll<HTMLButtonElement>('button') || [])
+      .find(button => button.textContent?.trim() === 'Save')
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
-    expect(saveButton.textContent?.trim()).toBe('')
-    expect(saveButton.querySelector('svg')).not.toBeNull()
     expect(saveButton.disabled).toBe(false)
 
     await act(async () => {
@@ -1700,7 +1704,7 @@ describe('ScriptEditor', () => {
       findButtonByText(container, 'Save 1 as block')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     const blockNameInput = container.querySelector('.save-block-field input') as HTMLInputElement | null
-    expect(blockNameInput).not.toBeNull()
+    expect(blockNameInput).toBeTruthy()
     if (!blockNameInput) return
     await act(async () => {
       changeInputValue(blockNameInput, 'Sub action block')
@@ -1903,7 +1907,7 @@ describe('ScriptEditor', () => {
     expect(runtimeDialog?.className).not.toContain('open')
 
     const configLauncher = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('Script Configuration'))
-    expect(configLauncher).toBeDefined()
+    expect(configLauncher).toBeTruthy()
     if (!configLauncher) return
 
     await act(async () => {
@@ -2385,7 +2389,7 @@ describe('ScriptEditor', () => {
     expect((container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null)?.value).toContain('"Checkout Flow"')
 
     const debugTab = findOpenDebuggerButton(container)
-    expect(debugTab).toBeDefined()
+    expect(debugTab).toBeTruthy()
     if (!debugTab) return
 
     await act(async () => {
@@ -2494,7 +2498,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('#imported-metadata-section')).not.toBeNull()
 
     const debugTab = findOpenDebuggerButton(container)
-    expect(debugTab).toBeDefined()
+    expect(debugTab).toBeTruthy()
     if (!debugTab) return
 
     await act(async () => {
@@ -2559,7 +2563,7 @@ describe('ScriptEditor', () => {
     expect(findCenterTab(container, 'Browser Replay')).toBeUndefined()
 
     const debugTab = findOpenDebuggerButton(container)
-    expect(debugTab).toBeDefined()
+    expect(debugTab).toBeTruthy()
     if (!debugTab) return
 
     await act(async () => {
@@ -2597,7 +2601,7 @@ describe('ScriptEditor', () => {
     })
 
     const tokenRow = Array.from(container.querySelectorAll('.action-item')).find(row => row.textContent?.includes('Get Token'))
-    expect(tokenRow).toBeDefined()
+    expect(tokenRow).toBeTruthy()
     if (!tokenRow) return
     await act(async () => {
       tokenRow.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2661,6 +2665,7 @@ describe('ScriptEditor', () => {
     expect(jsRow?.textContent).toContain('1 fb')
     expect(controlRow?.textContent).toContain('ctrl')
 
+    expect(jsRow).toBeTruthy()
     if (!jsRow) return
     await act(async () => {
       jsRow.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2682,13 +2687,13 @@ describe('ScriptEditor', () => {
     ]))
 
     const configButton = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('Runtime Settings'))
-    expect(configButton).toBeDefined()
+    expect(configButton).toBeTruthy()
     if (!configButton) return
     await act(async () => {
       configButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     const transportToggle = Array.from(container.querySelectorAll('.section-toggle')).find(button => button.textContent?.includes('HTTP Transport'))
-    expect(transportToggle).toBeDefined()
+    expect(transportToggle).toBeTruthy()
     if (!transportToggle) return
     await act(async () => {
       transportToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2696,7 +2701,7 @@ describe('ScriptEditor', () => {
     const browserEmulationTab = Array.from(container.querySelectorAll('.http-transport-tabs [role="tab"]')).find(button =>
       button.textContent?.includes('Browser Emulation'),
     )
-    expect(browserEmulationTab).toBeDefined()
+    expect(browserEmulationTab).toBeTruthy()
     if (!browserEmulationTab) return
     await act(async () => {
       browserEmulationTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -3034,7 +3039,7 @@ describe('ScriptEditor', () => {
     // The raw JSON pane is a read-only mirror by default; enable direct editing
     // first, which reveals the Apply JSON / Reset / Format controls.
     const editJsonButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Edit JSON')
-    expect(editJsonButton).toBeDefined()
+    expect(editJsonButton).toBeTruthy()
     if (!editJsonButton) return
     await act(async () => {
       editJsonButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -3042,7 +3047,7 @@ describe('ScriptEditor', () => {
     })
 
     const codeArea = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
-    expect(codeArea).not.toBeNull()
+    expect(codeArea).toBeTruthy()
     if (!codeArea) return
 
     const editedScript = {
@@ -3070,7 +3075,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.script-code-status.dirty')?.textContent).toContain('Unsaved JSON edits')
 
     const applyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Apply changes')
-    expect(applyButton).toBeDefined()
+    expect(applyButton).toBeTruthy()
     if (!applyButton) return
 
     await act(async () => {
@@ -3082,8 +3087,11 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.action-list')?.textContent).toContain('Get Cart')
 
     const saveButton = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
+    // Without a topbar, the outline's Save is an icon button.
+    expect(saveButton.textContent?.trim()).toBe('')
+    expect(saveButton.querySelector('svg')).not.toBeNull()
     expect(saveButton.disabled).toBe(false)
     expect((saveButton.getAttribute('data-tooltip') || saveButton.getAttribute('title'))).toBe('Save script')
 
@@ -3104,7 +3112,7 @@ describe('ScriptEditor', () => {
     })
 
     const codeArea = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null
-    expect(codeArea).not.toBeNull()
+    expect(codeArea).toBeTruthy()
     if (!codeArea) return
 
     await act(async () => {
@@ -3123,7 +3131,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.center-document-blocked')?.textContent).toContain('Structured editing is paused until the Source JSON parses again.')
 
     const saveButton = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
     expect(saveButton.disabled).toBe(true)
     expect((saveButton.getAttribute('data-tooltip') || saveButton.getAttribute('title'))).toBe('Fix invalid Script JSON before saving')
@@ -3173,7 +3181,7 @@ describe('ScriptEditor', () => {
     const actionRows = Array.from(container.querySelectorAll('.action-item'))
     expect(actionRows).toHaveLength(2)
     const submitRow = actionRows.find(row => row.textContent?.includes('Submit login'))
-    expect(submitRow).toBeDefined()
+    expect(submitRow).toBeTruthy()
     if (!submitRow) {
       return
     }
@@ -3235,8 +3243,8 @@ describe('ScriptEditor', () => {
 
     const objectButton = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('Object Descriptors'))
     const conversionButton = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('HTTP Conversion Review'))
-    expect(objectButton).toBeDefined()
-    expect(conversionButton).toBeDefined()
+    expect(objectButton).toBeTruthy()
+    expect(conversionButton).toBeTruthy()
     if (!objectButton || !conversionButton) {
       return
     }
@@ -3253,7 +3261,7 @@ describe('ScriptEditor', () => {
     expect(descriptorDialog?.textContent).toContain('The imported step carries iframe/frame context.')
 
     const useSelectorButton = Array.from(descriptorDialog?.querySelectorAll('button') || []).find(button => button.textContent?.includes('Use Selector'))
-    expect(useSelectorButton).toBeDefined()
+    expect(useSelectorButton).toBeTruthy()
     if (!useSelectorButton) {
       return
     }
@@ -3334,7 +3342,7 @@ describe('ScriptEditor', () => {
     })
 
     const replayButton = findOpenDebuggerButton(container)
-    expect(replayButton).toBeDefined()
+    expect(replayButton).toBeTruthy()
     if (!replayButton) {
       return
     }
@@ -3348,7 +3356,7 @@ describe('ScriptEditor', () => {
     expect(apiMock.startDraftScriptDebugSession).not.toHaveBeenCalled()
 
     const runReplayButton = findDebuggerRunButton(container, 'Run Browser Replay')
-    expect(runReplayButton).toBeDefined()
+    expect(runReplayButton).toBeTruthy()
     if (!runReplayButton) {
       return
     }
@@ -3360,7 +3368,7 @@ describe('ScriptEditor', () => {
     await flushReact()
 
     const authorTab = findWorkspaceTab(container, 'Author')
-    expect(authorTab).toBeDefined()
+    expect(authorTab).toBeTruthy()
     if (!authorTab) {
       return
     }
@@ -3371,7 +3379,7 @@ describe('ScriptEditor', () => {
     })
 
     const conversionButton = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('HTTP Conversion Review'))
-    expect(conversionButton).toBeDefined()
+    expect(conversionButton).toBeTruthy()
     if (!conversionButton) {
       return
     }
@@ -3381,7 +3389,7 @@ describe('ScriptEditor', () => {
     })
 
     const generateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Generate HTTP Draft Preview')) as HTMLButtonElement | undefined
-    expect(generateButton).toBeDefined()
+    expect(generateButton).toBeTruthy()
     expect(generateButton?.disabled).toBe(false)
     if (!generateButton) {
       return
@@ -3453,7 +3461,7 @@ describe('ScriptEditor', () => {
     const parameterButton = Array.from(container.querySelectorAll('.editor-outline-link')).find(button =>
       button.textContent?.includes('Parameter Data'),
     )
-    expect(parameterButton).toBeDefined()
+    expect(parameterButton).toBeTruthy()
     if (!parameterButton) {
       return
     }
@@ -3489,7 +3497,7 @@ describe('ScriptEditor', () => {
     const parameterButton = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.includes('Parameter Data'),
     )
-    expect(parameterButton).toBeDefined()
+    expect(parameterButton).toBeTruthy()
     if (!parameterButton) {
       return
     }
@@ -3526,7 +3534,7 @@ describe('ScriptEditor', () => {
     const addButton = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.trim() === '+ Add Parameter',
     )
-    expect(addButton).toBeDefined()
+    expect(addButton).toBeTruthy()
     if (!addButton) {
       return
     }
@@ -3557,7 +3565,7 @@ describe('ScriptEditor', () => {
     )
     expect(activePanel?.textContent).not.toContain('Auto Parameterization')
     expect(parameterSection?.contains(autoButton || null)).toBe(true)
-    expect(autoButton).toBeDefined()
+    expect(autoButton).toBeTruthy()
     if (!autoButton) {
       return
     }
@@ -3595,6 +3603,7 @@ describe('ScriptEditor', () => {
 
     const nameInput = utilitySidebar?.querySelector<HTMLInputElement>('.auto-parameter-candidate.active .auto-parameter-name-field input')
     expect(nameInput?.value).toBe('username')
+    expect(nameInput).toBeTruthy()
     if (!nameInput) {
       return
     }
@@ -3606,7 +3615,7 @@ describe('ScriptEditor', () => {
     const applyButton = Array.from(utilitySidebar?.querySelectorAll('button') || []).find(button =>
       button.textContent?.trim() === 'Apply Selected',
     )
-    expect(applyButton).toBeDefined()
+    expect(applyButton).toBeTruthy()
     if (!applyButton) {
       return
     }
@@ -3643,7 +3652,7 @@ describe('ScriptEditor', () => {
     const autoButton = Array.from(container.querySelectorAll('.parameter-header-actions button')).find(button =>
       button.textContent?.trim() === 'Auto Params',
     )
-    expect(autoButton).toBeDefined()
+    expect(autoButton).toBeTruthy()
     if (!autoButton) {
       return
     }
@@ -3658,7 +3667,7 @@ describe('ScriptEditor', () => {
     expect(utilitySidebar?.querySelector('.auto-parameter-location')?.textContent).toContain('Action 1 / target')
 
     const nextButton = Array.from(utilitySidebar?.querySelectorAll('button') || []).find(button => button.textContent?.trim() === 'Next')
-    expect(nextButton).toBeDefined()
+    expect(nextButton).toBeTruthy()
     if (!nextButton) {
       return
     }
@@ -3670,7 +3679,7 @@ describe('ScriptEditor', () => {
     expect(utilitySidebar?.querySelector('.auto-parameter-location')?.textContent).toContain('Action 1 / target')
 
     const backButton = Array.from(utilitySidebar?.querySelectorAll('button') || []).find(button => button.textContent?.trim() === 'Back')
-    expect(backButton).toBeDefined()
+    expect(backButton).toBeTruthy()
     if (!backButton) {
       return
     }
@@ -3682,7 +3691,7 @@ describe('ScriptEditor', () => {
 
     const customerCandidate = Array.from(utilitySidebar?.querySelectorAll<HTMLButtonElement>('.auto-parameter-candidate-select') || [])
       .find(button => button.textContent?.includes('X-Customer'))
-    expect(customerCandidate).toBeDefined()
+    expect(customerCandidate).toBeTruthy()
     if (!customerCandidate) {
       return
     }
@@ -3694,7 +3703,7 @@ describe('ScriptEditor', () => {
 
     const bodyCandidate = Array.from(utilitySidebar?.querySelectorAll<HTMLButtonElement>('.auto-parameter-candidate-select') || [])
       .find(button => button.textContent?.includes('cart_id'))
-    expect(bodyCandidate).toBeDefined()
+    expect(bodyCandidate).toBeTruthy()
     if (!bodyCandidate) {
       return
     }
@@ -3711,7 +3720,7 @@ describe('ScriptEditor', () => {
   })
 
   const runtimeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Runtime Settings'))
-  expect(runtimeButton).toBeDefined()
+  expect(runtimeButton).toBeTruthy()
   if (!runtimeButton) {
     return
   }
@@ -3721,7 +3730,7 @@ describe('ScriptEditor', () => {
   })
 
   const webRuntimeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Web HTTP/HTML Compatibility'))
-  expect(webRuntimeButton).toBeDefined()
+  expect(webRuntimeButton).toBeTruthy()
   if (!webRuntimeButton) {
     return
   }
@@ -3761,7 +3770,7 @@ describe('ScriptEditor', () => {
     })
 
     const runtimeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Runtime Settings'))
-    expect(runtimeButton).toBeDefined()
+    expect(runtimeButton).toBeTruthy()
     if (!runtimeButton) return
 
     await act(async () => {
@@ -3784,7 +3793,7 @@ describe('ScriptEditor', () => {
 
     async function clickRuntimeCategory(label: string) {
       const button = runtimeTab(label)
-      expect(button).toBeDefined()
+      expect(button).toBeTruthy()
       if (!button) return
       await act(async () => {
         button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -3837,6 +3846,7 @@ describe('ScriptEditor', () => {
     const connectTimeoutInput = findInputByLabelText(container, 'Connect (s)')
     expect(connectTimeoutInput?.value).toBe('30')
     expect(connectTimeoutInput?.getAttribute('step')).toBe('0.001')
+    expect(connectTimeoutInput).toBeTruthy()
     if (!connectTimeoutInput) return
 
     await act(async () => {
@@ -3847,7 +3857,7 @@ describe('ScriptEditor', () => {
     expect(connectTimeoutInput.value).toBe('60.001')
 
     const scriptJsonTab = findCenterTab(container, 'Source')
-    expect(scriptJsonTab).toBeDefined()
+    expect(scriptJsonTab).toBeTruthy()
     if (!scriptJsonTab) return
     await act(async () => {
       scriptJsonTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -3859,7 +3869,7 @@ describe('ScriptEditor', () => {
     await clickRuntimeCategory('HTTP Transport')
 
     const connectionTab = httpTransportTabs.find(tab => tab.textContent?.includes('Connection'))
-    expect(connectionTab).toBeDefined()
+    expect(connectionTab).toBeTruthy()
     if (!connectionTab) return
     await act(async () => {
       connectionTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -3871,7 +3881,7 @@ describe('ScriptEditor', () => {
     const tlsTab = Array.from(container.querySelectorAll('.http-transport-tabs [role="tab"]')).find(tab =>
       tab.textContent?.includes('TLS / SSL'),
     ) as HTMLButtonElement | undefined
-    expect(tlsTab).toBeDefined()
+    expect(tlsTab).toBeTruthy()
     if (!tlsTab) return
     await act(async () => {
       tlsTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -3908,7 +3918,7 @@ describe('ScriptEditor', () => {
     })
 
     const firstAction = container.querySelector('.action-item') as HTMLDivElement | null
-    expect(firstAction).not.toBeNull()
+    expect(firstAction).toBeTruthy()
     if (!firstAction) {
       return
     }
@@ -4257,7 +4267,7 @@ describe('ScriptEditor', () => {
     const openDependentStepButton = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.trim() === 'Open Step 2',
     )
-    expect(openDependentStepButton).toBeDefined()
+    expect(openDependentStepButton).toBeTruthy()
     if (!openDependentStepButton) {
       return
     }
@@ -4275,7 +4285,7 @@ describe('ScriptEditor', () => {
     const reopenMetadataButton = Array.from(container.querySelector('.actions-sidebar')?.querySelectorAll('button') || []).find(button =>
       button.textContent?.trim() === 'Source Mapping',
     )
-    expect(reopenMetadataButton).toBeDefined()
+    expect(reopenMetadataButton).toBeTruthy()
     if (!reopenMetadataButton) {
       return
     }
@@ -4289,7 +4299,7 @@ describe('ScriptEditor', () => {
     const openRunLogicSettingsButton = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.trim() === 'Open Run Logic Settings',
     )
-    expect(openRunLogicSettingsButton).toBeDefined()
+    expect(openRunLogicSettingsButton).toBeTruthy()
     if (!openRunLogicSettingsButton) {
       return
     }
@@ -4303,7 +4313,7 @@ describe('ScriptEditor', () => {
     const openLoggingSettingsButton = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.trim() === 'Open Logging Settings',
     )
-    expect(openLoggingSettingsButton).toBeDefined()
+    expect(openLoggingSettingsButton).toBeTruthy()
     if (!openLoggingSettingsButton) {
       return
     }
@@ -4317,7 +4327,7 @@ describe('ScriptEditor', () => {
     const openMappingListButton = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.trim() === 'Open Mapping List',
     )
-    expect(openMappingListButton).toBeDefined()
+    expect(openMappingListButton).toBeTruthy()
     if (!openMappingListButton) {
       return
     }
@@ -4335,7 +4345,7 @@ describe('ScriptEditor', () => {
     const openMappedDataSourceButton = Array.from(parameterMappingsDialog?.querySelectorAll('button') || []).find(button =>
       button.textContent?.trim() === 'Open Mapped Data Source',
     )
-    expect(openMappedDataSourceButton).toBeDefined()
+    expect(openMappedDataSourceButton).toBeTruthy()
     if (!openMappedDataSourceButton) {
       return
     }
@@ -5032,7 +5042,7 @@ describe('ScriptEditor', () => {
     await flushReact()
 
     const cell = container.querySelector<HTMLInputElement>('input[aria-label="Row 1, username for users"]')
-    expect(cell).not.toBeNull()
+    expect(cell).toBeTruthy()
     if (!cell) return
 
     await act(async () => {
@@ -5130,7 +5140,7 @@ describe('ScriptEditor', () => {
     expect(Array.from(container.querySelectorAll('.parameter-grid tbody input')).map(input => (input as HTMLInputElement).value)).toEqual(['anna', 'apass', 'ben', 'bpass'])
 
     const delimiterSelect = container.querySelector('select[aria-label="Delimiter for username"]') as HTMLSelectElement | null
-    expect(delimiterSelect).not.toBeNull()
+    expect(delimiterSelect).toBeTruthy()
     if (!delimiterSelect) {
       return
     }
@@ -5251,8 +5261,8 @@ describe('ScriptEditor', () => {
 
     const searchInput = container.querySelector('input[aria-label="Search rows for users"]') as HTMLInputElement | null
     const columnSelect = container.querySelector('select[aria-label="Filter column for users"]') as HTMLSelectElement | null
-    expect(searchInput).not.toBeNull()
-    expect(columnSelect).not.toBeNull()
+    expect(searchInput).toBeTruthy()
+    expect(columnSelect).toBeTruthy()
     if (!searchInput || !columnSelect) {
       return
     }
@@ -5303,7 +5313,7 @@ describe('ScriptEditor', () => {
     })
 
     const replayButton = findOpenDebuggerButton(container)
-    expect(replayButton).toBeDefined()
+    expect(replayButton).toBeTruthy()
     if (!replayButton) {
       return
     }
@@ -5317,7 +5327,7 @@ describe('ScriptEditor', () => {
     expect(apiMock.startDraftScriptDebugSession).not.toHaveBeenCalled()
 
     const runReplayButton = findDebuggerRunButton(container)
-    expect(runReplayButton).toBeDefined()
+    expect(runReplayButton).toBeTruthy()
     if (!runReplayButton) {
       return
     }
@@ -5341,7 +5351,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-outline-list')?.textContent).not.toContain('Debug Session')
 
     const debugTab = findOpenDebuggerButton(container)
-    expect(debugTab).toBeDefined()
+    expect(debugTab).toBeTruthy()
     if (!debugTab) {
       return
     }
@@ -5361,7 +5371,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelectorAll('button[data-tooltip="Session overrides"]')).toHaveLength(1)
 
     const runReplayButton = findDebuggerRunButton(container)
-    expect(runReplayButton).toBeDefined()
+    expect(runReplayButton).toBeTruthy()
     if (!runReplayButton) {
       return
     }
@@ -5374,7 +5384,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.script-ide-tabs button[data-debug-status="Passed"]')).not.toBeNull()
 
     const authorTab = findWorkspaceTab(container, 'Author')
-    expect(authorTab).toBeDefined()
+    expect(authorTab).toBeTruthy()
     if (!authorTab) {
       return
     }
@@ -5400,7 +5410,7 @@ describe('ScriptEditor', () => {
     expect(findButtonByTitle(container, 'Session overrides')).toBeUndefined()
 
     const runReplayButton = findDebuggerRunButton(container)
-    expect(runReplayButton).toBeDefined()
+    expect(runReplayButton).toBeTruthy()
     if (!runReplayButton) {
       return
     }
@@ -5416,13 +5426,14 @@ describe('ScriptEditor', () => {
   })
 
   it('starts paused and enables stepping when step-through mode is selected', async () => {
-    apiMock.startDraftScriptDebugSession.mockResolvedValueOnce(debugSessionResponse({
+    const pausedSession = debugSessionResponse({
       group: 'Checkout Flow-debug',
       protocol: 'http',
       started_at: '2026-05-14T20:00:00Z',
       success: true,
       events: [],
     }, {
+      ...unavailableRuntimeMetadata('debug-session-1', 'paused', '1'),
       status: 'paused',
       current_event_index: -1,
       current_action: {
@@ -5434,14 +5445,17 @@ describe('ScriptEditor', () => {
         method: 'GET',
         target: '/api/products',
       },
-    }))
+    })
+    apiMock.startDraftScriptDebugSession.mockResolvedValueOnce(pausedSession)
+    // The session stays paused until it is stepped.
+    apiMock.getScriptDebugSession.mockResolvedValue({ session: pausedSession.session })
 
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
     })
 
     const replayButton = findOpenDebuggerButton(container)
-    expect(replayButton).toBeDefined()
+    expect(replayButton).toBeTruthy()
     if (!replayButton) {
       return
     }
@@ -5451,9 +5465,17 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
+    // Step through is a session override, behind the debugger's options button.
+    const sessionOptions = container.querySelector<HTMLButtonElement>('button[aria-controls="debug-session-options"]')
+    expect(sessionOptions).toBeTruthy()
+    if (!sessionOptions) return
+    await act(async () => {
+      sessionOptions.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
     const stepThroughLabel = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Step through'))
     const stepThroughCheckbox = stepThroughLabel?.querySelector('input[type="checkbox"]') as HTMLInputElement | null
-    expect(stepThroughCheckbox).not.toBeNull()
+    expect(stepThroughCheckbox).toBeTruthy()
     if (!stepThroughCheckbox) {
       return
     }
@@ -5464,7 +5486,7 @@ describe('ScriptEditor', () => {
     })
 
     const startStepThroughButton = findDebuggerRunButton(container, 'Start Step Through')
-    expect(startStepThroughButton).toBeDefined()
+    expect(startStepThroughButton).toBeTruthy()
     if (!startStepThroughButton) {
       return
     }
@@ -5473,6 +5495,7 @@ describe('ScriptEditor', () => {
       startStepThroughButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
+    await flushReact()
 
     expect(apiMock.startDraftScriptDebugSession).toHaveBeenCalledWith(expect.objectContaining({
       start_paused: true,
@@ -5483,7 +5506,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.debugger-center')?.textContent).toContain('Get Products')
 
     const stepButton = findButtonByTitle(container, 'Step to next action') as HTMLButtonElement | undefined
-    expect(stepButton).toBeDefined()
+    expect(stepButton).toBeTruthy()
     expect(stepButton?.disabled).toBe(false)
     if (!stepButton) {
       return
@@ -5494,7 +5517,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    expect(apiMock.stepScriptDebugSession).toHaveBeenCalledWith('debug-session-1')
+    expect(apiMock.stepScriptDebugSession).toHaveBeenCalledWith('debug-session-1', 'into')
   })
 
   it('sets debugger breakpoints from the popup and action list', async () => {
@@ -5503,7 +5526,7 @@ describe('ScriptEditor', () => {
     })
 
     const replayButton = findOpenDebuggerButton(container)
-    expect(replayButton).toBeDefined()
+    expect(replayButton).toBeTruthy()
     if (!replayButton) {
       return
     }
@@ -5514,7 +5537,7 @@ describe('ScriptEditor', () => {
     })
 
     const debuggerBreakpointButton = container.querySelector('.script-ide-debugger.open .debugger-gutter[data-tooltip="Add breakpoint"]') as HTMLButtonElement | null
-    expect(debuggerBreakpointButton).not.toBeNull()
+    expect(debuggerBreakpointButton).toBeTruthy()
     if (!debuggerBreakpointButton) {
       return
     }
@@ -5525,7 +5548,7 @@ describe('ScriptEditor', () => {
     })
 
     const authorTab = findWorkspaceTab(container, 'Author')
-    expect(authorTab).toBeDefined()
+    expect(authorTab).toBeTruthy()
     if (!authorTab) {
       return
     }
@@ -5538,7 +5561,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('[aria-label="Remove breakpoint on action 1"]')).not.toBeNull()
 
     const removeBreakpointButton = container.querySelector('[aria-label="Remove breakpoint on action 1"]') as HTMLButtonElement | null
-    expect(removeBreakpointButton).not.toBeNull()
+    expect(removeBreakpointButton).toBeTruthy()
     if (!removeBreakpointButton) {
       return
     }
@@ -5549,7 +5572,7 @@ describe('ScriptEditor', () => {
     })
 
     const setBreakpointButton = container.querySelector('[aria-label="Set breakpoint on action 1"]') as HTMLButtonElement | null
-    expect(setBreakpointButton).not.toBeNull()
+    expect(setBreakpointButton).toBeTruthy()
     if (!setBreakpointButton) {
       return
     }
@@ -5560,7 +5583,7 @@ describe('ScriptEditor', () => {
     })
 
     const runReplayButton = findDebuggerRunButton(container)
-    expect(runReplayButton).toBeDefined()
+    expect(runReplayButton).toBeTruthy()
     if (!runReplayButton) {
       return
     }
@@ -5586,7 +5609,7 @@ describe('ScriptEditor', () => {
     await flushReact()
 
     const runReplayButton = findDebuggerRunButton(container)
-    expect(runReplayButton).toBeDefined()
+    expect(runReplayButton).toBeTruthy()
     if (!runReplayButton) {
       return
     }
@@ -5664,7 +5687,7 @@ describe('ScriptEditor', () => {
     })
 
     const runReplayButton = findDebuggerRunButton(container)
-    expect(runReplayButton).toBeDefined()
+    expect(runReplayButton).toBeTruthy()
     if (!runReplayButton) {
       return
     }
@@ -5829,7 +5852,7 @@ describe('ScriptEditor', () => {
     })
 
     const runReplayButton = findDebuggerRunButton(container)
-    expect(runReplayButton).toBeDefined()
+    expect(runReplayButton).toBeTruthy()
     if (!runReplayButton) return
     await act(async () => {
       runReplayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -6544,7 +6567,7 @@ describe('ScriptEditor', () => {
     })
 
     const debugTab = findOpenDebuggerButton(container)
-    expect(debugTab).toBeDefined()
+    expect(debugTab).toBeTruthy()
     if (!debugTab) {
       return
     }
@@ -6566,9 +6589,9 @@ describe('ScriptEditor', () => {
     const actionsResizer = container.querySelector('[aria-label="Resize actions panel"]') as HTMLDivElement | null
     const panelResizer = container.querySelector('[aria-label="Resize debug panel"]') as HTMLDivElement | null
     const bottomResizer = container.querySelector('[aria-label="Resize bottom panel"]') as HTMLDivElement | null
-    expect(actionsResizer).not.toBeNull()
-    expect(panelResizer).not.toBeNull()
-    expect(bottomResizer).not.toBeNull()
+    expect(actionsResizer).toBeTruthy()
+    expect(panelResizer).toBeTruthy()
+    expect(bottomResizer).toBeTruthy()
     if (!actionsResizer || !panelResizer || !bottomResizer) {
       return
     }
@@ -6672,7 +6695,7 @@ describe('ScriptEditor', () => {
     })
 
     const validateButton = findButtonByTitle(container, 'Recheck script readiness')
-    expect(validateButton).toBeDefined()
+    expect(validateButton).toBeTruthy()
     if (!validateButton) {
       return
     }
@@ -6733,7 +6756,7 @@ describe('ScriptEditor', () => {
     })
 
     const validateButton = findButtonByTitle(container, 'Recheck script readiness')
-    expect(validateButton).toBeDefined()
+    expect(validateButton).toBeTruthy()
     if (!validateButton) {
       return
     }
@@ -6762,7 +6785,7 @@ describe('ScriptEditor', () => {
     })
 
     const validateButton = findButtonByTitle(container, 'Recheck script readiness')
-    expect(validateButton).toBeDefined()
+    expect(validateButton).toBeTruthy()
     if (!validateButton) {
       return
     }
@@ -6857,8 +6880,8 @@ describe('ScriptEditor', () => {
 
     const validateButton = findButtonByTitle(container, 'Recheck script readiness')
     const nameInput = container.querySelector<HTMLInputElement>('.side-panel-script-name input')
-    expect(validateButton).toBeDefined()
-    expect(nameInput).not.toBeNull()
+    expect(validateButton).toBeTruthy()
+    expect(nameInput).toBeTruthy()
     if (!validateButton || !nameInput) return
 
     await act(async () => {
@@ -6942,7 +6965,7 @@ describe('ScriptEditor', () => {
     })
 
     const validateButton = findButtonByTitle(container, 'Recheck script readiness')
-    expect(validateButton).toBeDefined()
+    expect(validateButton).toBeTruthy()
     if (!validateButton) {
       return
     }
@@ -7292,7 +7315,7 @@ describe('ScriptEditor', () => {
     })
 
     const validateButton = findButtonByTitle(container, 'Recheck script readiness')
-    expect(validateButton).toBeDefined()
+    expect(validateButton).toBeTruthy()
     if (!validateButton) {
       return
     }
@@ -7399,7 +7422,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).not.toContain('Executed: Run Logic')
 
     const validateButton = findButtonByTitle(container, 'Recheck script readiness')
-    expect(validateButton).toBeDefined()
+    expect(validateButton).toBeTruthy()
     if (!validateButton) {
       return
     }
@@ -7557,7 +7580,7 @@ describe('ScriptEditor', () => {
     await act(async () => { complete(saved) })
     await flushReact()
     expect(name().value).toBe('Edited while saving')
-    expect(onSave).toHaveBeenCalledWith(saved, expect.objectContaining({ retainedDraft: expect.objectContaining({ name: 'Edited while saving' }) }))
+    expect(onSave).toHaveBeenCalledWith(saved, expect.objectContaining({ laterEdits: true, retainedDraft: expect.objectContaining({ name: 'Edited while saving' }) }))
     await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={saved.authoring_projection!.script} initialAuthoring={{ projection: saved.authoring_projection!, etag: `"script-authoring-v1:${saved.content_revision}"` }} projectId="project-1" onSave={onSave} />) })
     expect(name().value).toBe('Edited while saving')
     expect(container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.disabled).toBe(false)
@@ -7781,7 +7804,7 @@ describe('ScriptEditor', () => {
     })
 
     const saveButton = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) {
       return
     }
@@ -7789,7 +7812,7 @@ describe('ScriptEditor', () => {
     expect((saveButton.getAttribute('data-tooltip') || saveButton.getAttribute('title'))).toBe('No unsaved changes to save')
 
     const nameInput = container.querySelector<HTMLInputElement>('.side-panel-script-name input[placeholder="My_Test_Script"]')
-    expect(nameInput).toBeDefined()
+    expect(nameInput).toBeTruthy()
     if (!nameInput) {
       return
     }
@@ -8004,34 +8027,27 @@ describe('ScriptEditor', () => {
     })
 
     const nameInput = container.querySelector<HTMLInputElement>('.side-panel-script-name input[placeholder="My_Test_Script"]')
-    expect(nameInput).toBeDefined()
-    if (!nameInput) return
-
+    expect(nameInput).not.toBeNull()
     await act(async () => {
-      changeInputValue(nameInput, 'Guarded Checkout Flow')
+      changeInputValue(nameInput!, 'Guarded Checkout Flow')
       await Promise.resolve()
     })
 
-    const closeButton = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Close script editor"]')
-    expect(closeButton).toBeDefined()
-    if (!closeButton) return
-    expect(closeButton.textContent?.trim()).toBe('')
-    expect(closeButton.querySelector('svg')).not.toBeNull()
-
+    const closeButton = container.querySelector<HTMLButtonElement>('button[aria-label="Close script editor"]')
+    expect(closeButton).not.toBeNull()
     await act(async () => {
-      closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      closeButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
 
     expect(onClose).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('Create Script has unsaved changes')
+    expect(container.textContent).toContain('Create script has unsaved changes')
 
     const saveChangesButton = findButtonByText(container, 'Save changes')
-    expect(saveChangesButton).toBeDefined()
-    if (!saveChangesButton) return
+    expect(saveChangesButton).not.toBeUndefined()
 
     await act(async () => {
-      saveChangesButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      saveChangesButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
     await flushReact()
@@ -8043,12 +8059,196 @@ describe('ScriptEditor', () => {
     expect(container.textContent).not.toContain('Unsaved Changes')
 
     await act(async () => {
-      closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      closeButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
 
     expect(onClose).toHaveBeenCalledTimes(2)
     expect(container.textContent).not.toContain('Unsaved Changes')
+  })
+
+  it('returns to its source through its own guard only, keeping the open source\'s', async () => {
+    // The page holds back the return that follows a save in the same turn,
+    // so nothing may be awaited between onSave and the return.
+    let laterTurn = false
+    const returnedInLaterTurn: boolean[] = []
+    const onReturn = vi.fn(() => { returnedInLaterTurn.push(laterTurn) })
+    const onSave = vi.fn<(...args: unknown[]) => void>(() => { setTimeout(() => { laterTurn = true }, 0) })
+    const discardReview = vi.fn()
+    apiMock.createScript.mockResolvedValueOnce({
+      id: 'script-saved-on-return', name: 'Edited Converted Flow', protocol: initialScript.protocol, version: initialScript.version,
+      created_at: '2026-10-09T00:00:00Z', script: { ...initialScript, name: 'Edited Converted Flow' },
+    })
+    // The import review stays open behind the editor, holding unsaved drafts.
+    function OpenReview() {
+      useUnsavedWorkGuard('enterprise-archive-import', 'LoadRunner import review', true, discardReview)
+      return null
+    }
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <OpenReview />
+          <ScriptEditor initialScript={initialScript} onSave={onSave} returnTarget={{ label: 'Back to Converted Script', description: 'Return to the converted archive review.', retainedGuardIds: ['enterprise-archive-import'], onReturn }} />
+        </NavigationGuardProvider>,
+      )
+    })
+    expect(container.querySelector('.authoring-return-bar')?.textContent).toContain('Return to the converted archive review.')
+    const backButton = findButtonByText(container, 'Back to Converted Script')!
+    // An unedited draft leaves at once.
+    await act(async () => { backButton.click(); await Promise.resolve() })
+    expect(onReturn).toHaveBeenCalledTimes(1)
+    expect(container.textContent).not.toContain('Unsaved Changes')
+
+    const nameInput = container.querySelector<HTMLInputElement>('.side-panel-script-name input[placeholder="My_Test_Script"]')!
+    await act(async () => { changeInputValue(nameInput, 'Edited Converted Flow'); await Promise.resolve() })
+    await act(async () => { backButton.click(); await Promise.resolve() })
+    expect(onReturn).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('Create script has unsaved changes')
+    expect(container.textContent).not.toContain('LoadRunner import review')
+
+    // Save changes saves, then the return goes ahead (the page decides where
+    // a saved script opens).
+    await act(async () => { findButtonByText(container, 'Save changes')!.click(); await Promise.resolve() })
+    await flushReact()
+    expect(onSave.mock.calls[0]?.[0]).toEqual(expect.objectContaining({ id: 'script-saved-on-return' }))
+    expect(onReturn).toHaveBeenCalledTimes(2)
+    expect(returnedInLaterTurn).toEqual([false, false])
+    expect(container.textContent).not.toContain('Unsaved Changes')
+    expect(discardReview).not.toHaveBeenCalled()
+  })
+
+  it('shares a save still running when Save changes is chosen on the way back', async () => {
+    let finishCreate!: () => void
+    apiMock.createScript.mockImplementationOnce(() => new Promise(resolve => {
+      finishCreate = () => resolve({
+        id: 'script-running-save', name: 'Running Save', protocol: initialScript.protocol, version: initialScript.version,
+        created_at: '2026-10-09T00:00:00Z', script: { ...initialScript, name: 'Running Save' },
+      })
+    }))
+    const onReturn = vi.fn()
+    const onSave = vi.fn()
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <ScriptEditor initialScript={initialScript} onSave={onSave} returnTarget={{ label: 'Back to Converted Script', onReturn }} />
+        </NavigationGuardProvider>,
+      )
+    })
+    const nameInput = container.querySelector<HTMLInputElement>('.side-panel-script-name input[placeholder="My_Test_Script"]')!
+    await act(async () => { changeInputValue(nameInput, 'Running Save'); await Promise.resolve() })
+    const saveButton = container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')
+    expect(saveButton).toBeTruthy()
+    await act(async () => { saveButton!.click(); await Promise.resolve() })
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+
+    // Back while the save is still running, then Save changes in the prompt.
+    await act(async () => { findButtonByText(container, 'Back to Converted Script')!.click(); await Promise.resolve() })
+    expect(container.textContent).toContain('Create script has unsaved changes')
+    await act(async () => { findButtonByText(container, 'Save changes')!.click(); await Promise.resolve() })
+    await act(async () => { finishCreate(); await Promise.resolve() })
+    await flushReact()
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onReturn).toHaveBeenCalledTimes(1)
+    expect(container.textContent).not.toContain('Save did not complete')
+    expect(container.textContent).not.toContain('Unsaved Changes')
+  })
+
+  it('keeps the prompt open when the running save it shared misses later edits', async () => {
+    let finishCreate!: () => void
+    apiMock.createScript.mockImplementationOnce(() => new Promise(resolve => {
+      finishCreate = () => resolve({
+        id: 'script-older-save', name: 'First Name', protocol: initialScript.protocol, version: initialScript.version,
+        created_at: '2026-10-09T00:00:00Z', script: { ...initialScript, name: 'First Name' },
+      })
+    }))
+    const onReturn = vi.fn()
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <ScriptEditor initialScript={initialScript} onSave={vi.fn()} returnTarget={{ label: 'Back to Converted Script', onReturn }} />
+        </NavigationGuardProvider>,
+      )
+    })
+    const nameInput = () => container.querySelector<HTMLInputElement>('.side-panel-script-name input[placeholder="My_Test_Script"]')!
+    await act(async () => { changeInputValue(nameInput(), 'First Name'); await Promise.resolve() })
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.click(); await Promise.resolve() })
+    // An edit made while that save runs, then Back and Save changes.
+    await act(async () => { changeInputValue(nameInput(), 'Second Name'); await Promise.resolve() })
+    await act(async () => { findButtonByText(container, 'Back to Converted Script')!.click(); await Promise.resolve() })
+    await act(async () => { findButtonByText(container, 'Save changes')!.click(); await Promise.resolve() })
+    await act(async () => { finishCreate(); await Promise.resolve() })
+    await flushReact()
+    expect(onReturn).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('edits made since it started are not saved yet')
+    expect(nameInput().value).toBe('Second Name')
+  })
+
+  it('keeps the prompt open when a running Java Vuser queue it shared misses later edits', async () => {
+    let finishQueue!: () => void
+    apiMock.createAuthoringSession.mockImplementationOnce(() => new Promise(resolve => {
+      finishQueue = () => resolve({
+        id: 'java-session-running', source: 'manual', name: 'Java Flow A', status: 'reviewing',
+        created_at: '2026-10-09T00:00:00Z', updated_at: '2026-10-09T00:00:00Z', last_accessed_at: '2026-10-09T00:00:00Z',
+      })
+    }))
+    const onReturn = vi.fn()
+    const javaScript: ScriptDefinition = {
+      ...initialScript, protocol: 'java_vuser', name: 'Java Flow A',
+      actions: [{ name: 'Java action', type: 'java_vuser_run', target: '', params: { method: 'action' } }],
+    }
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <ScriptEditor initialScript={javaScript} initiallyDirty projectId="project-1" returnTarget={{ label: 'Back to Converted Script', onReturn }} />
+        </NavigationGuardProvider>,
+      )
+    })
+    await act(async () => { container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')!.click(); await Promise.resolve() })
+    expect(apiMock.createAuthoringSession).toHaveBeenCalledTimes(1)
+    const nameInput = container.querySelector<HTMLInputElement>('.side-panel-script-name input[placeholder="My_Test_Script"]')!
+    await act(async () => { changeInputValue(nameInput, 'Java Flow B'); await Promise.resolve() })
+    await act(async () => { findButtonByText(container, 'Back to Converted Script')!.click(); await Promise.resolve() })
+    await act(async () => { findButtonByText(container, 'Save changes')!.click(); await Promise.resolve() })
+    await act(async () => { finishQueue(); await Promise.resolve() })
+    await flushReact()
+    expect(onReturn).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('edits made since it started are not saved yet')
+    expect(nameInput.value).toBe('Java Flow B')
+  })
+
+  it('refuses a second create while the saved script is still opening', async () => {
+    apiMock.createScript.mockResolvedValueOnce({
+      id: 'script-opening', name: 'Opening Flow', protocol: initialScript.protocol, version: initialScript.version,
+      created_at: '2026-10-09T00:00:00Z', script: { ...initialScript, name: 'Opening Flow' },
+    })
+    const onClose = vi.fn()
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <ScriptEditor initialScript={initialScript} initiallyDirty onSave={vi.fn()} onClose={onClose} />
+        </NavigationGuardProvider>,
+      )
+    })
+    const save = () => container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')!
+    const nameInput = container.querySelector<HTMLInputElement>('.side-panel-script-name input[placeholder="My_Test_Script"]')!
+    await act(async () => { changeInputValue(nameInput, 'Opening Flow'); await Promise.resolve() })
+    await act(async () => { save().click(); await Promise.resolve() })
+    await flushReact()
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+    // The page has not opened the saved script yet: Save is off and says why.
+    await act(async () => { changeInputValue(nameInput, 'Opening Flow Edited'); await Promise.resolve() })
+    expect(save().disabled).toBe(true)
+    expect(save().getAttribute('data-tooltip') || save().getAttribute('title')).toBe('The saved script is opening')
+    // Leaving through the prompt explains it too, and creates nothing.
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Close script editor"]')!.click(); await Promise.resolve() })
+    await act(async () => { findButtonByText(container, 'Save changes')!.click(); await Promise.resolve() })
+    await flushReact()
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+    expect(onClose).not.toHaveBeenCalled()
+    // The prompt itself gives the reason, not a validation failure.
+    expect(container.querySelector('.unsaved-changes-modal [role="alert"]')?.textContent).toBe('This script was saved and is opening. Edits made after it was saved are not kept.')
+    expect(container.textContent).not.toContain('Save did not complete')
   })
 
   it('renders the new Web HTTP/HTML runtime sections from the draft model', async () => {
@@ -8059,7 +8259,7 @@ describe('ScriptEditor', () => {
     const runtimeToggle = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.includes('Runtime Settings'),
     )
-    expect(runtimeToggle).toBeDefined()
+    expect(runtimeToggle).toBeTruthy()
     if (!runtimeToggle) {
       return
     }
@@ -8074,7 +8274,7 @@ describe('ScriptEditor', () => {
       const button = Array.from(container.querySelectorAll('.runtime-settings-tab')).find(candidate =>
         candidate.textContent?.includes(label),
       ) as HTMLButtonElement | undefined
-      expect(button).toBeDefined()
+      expect(button).toBeTruthy()
       if (!button) return
       await act(async () => {
         button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -8163,7 +8363,7 @@ describe('ScriptEditor', () => {
     const runtimeToggle = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.includes('Runtime Settings'),
     )
-    expect(runtimeToggle).toBeDefined()
+    expect(runtimeToggle).toBeTruthy()
     if (!runtimeToggle) {
       return
     }
@@ -8175,7 +8375,7 @@ describe('ScriptEditor', () => {
     const httpTransportButton = Array.from(container.querySelectorAll('.runtime-settings-tab')).find(button =>
       button.textContent?.includes('HTTP Transport'),
     ) as HTMLButtonElement | undefined
-    expect(httpTransportButton).toBeDefined()
+    expect(httpTransportButton).toBeTruthy()
     if (!httpTransportButton) {
       return
     }
@@ -8187,7 +8387,7 @@ describe('ScriptEditor', () => {
     const browserEmulationTab = Array.from(container.querySelectorAll('.http-transport-tabs [role="tab"]')).find(tab =>
       tab.textContent?.includes('Browser Emulation'),
     ) as HTMLButtonElement | undefined
-    expect(browserEmulationTab).toBeDefined()
+    expect(browserEmulationTab).toBeTruthy()
     if (!browserEmulationTab) {
       return
     }
@@ -8223,7 +8423,7 @@ describe('ScriptEditor', () => {
       Array.from(select.options).some(option => option.value === 'iphone_15_pro')
       && Array.from(select.options).some(option => option.value === 'desktop_1080p'),
     ) as HTMLSelectElement | undefined
-    expect(deviceProfileSelect).toBeDefined()
+    expect(deviceProfileSelect).toBeTruthy()
     if (!deviceProfileSelect) {
       return
     }
@@ -8248,7 +8448,7 @@ describe('ScriptEditor', () => {
     })
 
     const actionItem = container.querySelector('.action-item') as HTMLDivElement | null
-    expect(actionItem).not.toBeNull()
+    expect(actionItem).toBeTruthy()
     if (!actionItem) {
       return
     }
@@ -8262,7 +8462,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('browser_swipe')
 
     const replayButton = findDebuggerRunButton(container, 'Run Browser Replay')
-    expect(replayButton).toBeDefined()
+    expect(replayButton).toBeTruthy()
     if (!replayButton) {
       return
     }
@@ -8387,7 +8587,7 @@ describe('ScriptEditor', () => {
     })
 
     const replayButton = findDebuggerRunButton(container, 'Run Browser Replay')
-    expect(replayButton).toBeDefined()
+    expect(replayButton).toBeTruthy()
     if (!replayButton) {
       return
     }
@@ -8415,7 +8615,7 @@ describe('ScriptEditor', () => {
 
     const firstTimelineRow = Array.from(container.querySelectorAll('.debugger-action-row-main'))
       .find(row => row.textContent?.includes('Open Home')) as HTMLButtonElement | undefined
-    expect(firstTimelineRow).toBeDefined()
+    expect(firstTimelineRow).toBeTruthy()
     if (!firstTimelineRow) {
       return
     }
@@ -8518,7 +8718,7 @@ describe('ScriptEditor', () => {
     })
 
     const replayButton = findDebuggerRunButton(container, 'Run Browser Replay')
-    expect(replayButton).toBeDefined()
+    expect(replayButton).toBeTruthy()
     if (!replayButton) {
       return
     }
@@ -8529,7 +8729,7 @@ describe('ScriptEditor', () => {
     })
 
     const applyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Use suggested selector'))
-    expect(applyButton).toBeDefined()
+    expect(applyButton).toBeTruthy()
     if (!applyButton) {
       return
     }
@@ -8541,7 +8741,7 @@ describe('ScriptEditor', () => {
 
     expect(container.textContent).toContain('Updated selector for Submit Search.')
     const scriptJsonTab = findCenterTab(container, 'Source')
-    expect(scriptJsonTab).toBeDefined()
+    expect(scriptJsonTab).toBeTruthy()
     if (!scriptJsonTab) {
       return
     }
@@ -8567,7 +8767,7 @@ describe('ScriptEditor', () => {
     expect(repairedScript.actions[1].selector).toBe('[data-testid="search-submit"]')
 
     const authorTab = findWorkspaceTab(container, 'Author')
-    expect(authorTab).toBeDefined()
+    expect(authorTab).toBeTruthy()
     if (!authorTab) {
       return
     }
@@ -8578,7 +8778,7 @@ describe('ScriptEditor', () => {
     })
 
     const undoButton = findButtonByTitle(container, 'Undo document change')
-    expect(undoButton).toBeDefined()
+    expect(undoButton).toBeTruthy()
     if (!undoButton) {
       return
     }
@@ -8625,7 +8825,7 @@ describe('ScriptEditor', () => {
     })
 
     const actionItem = container.querySelector('.action-item') as HTMLDivElement | null
-    expect(actionItem).not.toBeNull()
+    expect(actionItem).toBeTruthy()
     if (!actionItem) {
       return
     }
@@ -8684,7 +8884,7 @@ describe('ScriptEditor', () => {
     })
 
     const replayButton = findDebuggerRunButton(container, 'Run Browser Replay')
-    expect(replayButton).toBeDefined()
+    expect(replayButton).toBeTruthy()
     if (!replayButton) {
       return
     }
@@ -8823,7 +9023,7 @@ describe('ScriptEditor', () => {
     expect(readinessCard?.textContent).toContain('Missing variable: account_id')
 
     const debugTab = findOpenDebuggerButton(container)
-    expect(debugTab).toBeDefined()
+    expect(debugTab).toBeTruthy()
     if (!debugTab) {
       return
     }
@@ -8833,7 +9033,7 @@ describe('ScriptEditor', () => {
     })
 
     const settingsButton = findButtonByTitle(container, 'Session overrides')
-    expect(settingsButton).toBeDefined()
+    expect(settingsButton).toBeTruthy()
     if (!settingsButton) {
       return
     }
@@ -8847,7 +9047,7 @@ describe('ScriptEditor', () => {
     expect(runtimeDocument?.textContent).not.toContain('Missing variable: account_id')
 
     const replayButton = findDebuggerRunButton(container)
-    expect(replayButton).toBeDefined()
+    expect(replayButton).toBeTruthy()
     if (!replayButton) {
       return
     }
@@ -8925,7 +9125,7 @@ describe('ScriptEditor', () => {
     })
 
     const replayButton = findDebuggerRunButton(container, 'Run Browser Replay')
-    expect(replayButton).toBeDefined()
+    expect(replayButton).toBeTruthy()
     if (!replayButton) {
       return
     }
@@ -8937,7 +9137,7 @@ describe('ScriptEditor', () => {
     await flushReact()
 
     const exportButton = findButtonByTitle(container, 'Download Debug JSON')
-    expect(exportButton).toBeDefined()
+    expect(exportButton).toBeTruthy()
     if (!exportButton) {
       return
     }
@@ -9037,7 +9237,7 @@ describe('ScriptEditor', () => {
     })
 
     const replayButton = findDebuggerRunButton(container, 'Run Browser Replay')
-    expect(replayButton).toBeDefined()
+    expect(replayButton).toBeTruthy()
     if (!replayButton) {
       return
     }
@@ -9073,7 +9273,7 @@ describe('ScriptEditor', () => {
     const runtimeToggle = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.includes('Runtime Settings'),
     )
-    expect(runtimeToggle).toBeDefined()
+    expect(runtimeToggle).toBeTruthy()
     if (!runtimeToggle) {
       return
     }
@@ -9085,7 +9285,7 @@ describe('ScriptEditor', () => {
     const compatibilityToggle = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.includes('Web HTTP/HTML Compatibility'),
     )
-    expect(compatibilityToggle).toBeDefined()
+    expect(compatibilityToggle).toBeTruthy()
     if (!compatibilityToggle) {
       return
     }
@@ -9101,7 +9301,7 @@ describe('ScriptEditor', () => {
       area.getAttribute('placeholder') === 'base64\ngzip mode=decode\njson_to_xml',
     ) as HTMLTextAreaElement | undefined
 
-    expect(dfeArea).toBeDefined()
+    expect(dfeArea).toBeTruthy()
     if (!dfeArea) {
       return
     }
@@ -9110,7 +9310,7 @@ describe('ScriptEditor', () => {
     expect(dfeArea.value).toContain('html_unescape')
 
     const nameInput = container.querySelector<HTMLInputElement>('.side-panel-script-name input[placeholder="My_Test_Script"]')
-    expect(nameInput).toBeDefined()
+    expect(nameInput).toBeTruthy()
     if (!nameInput) {
       return
     }
@@ -9128,7 +9328,7 @@ describe('ScriptEditor', () => {
     const saveButton = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.includes('Save Script'),
     )
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) {
       return
     }
@@ -9158,7 +9358,7 @@ describe('ScriptEditor', () => {
     const runtimeToggle = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.includes('Runtime Settings'),
     )
-    expect(runtimeToggle).toBeDefined()
+    expect(runtimeToggle).toBeTruthy()
     if (!runtimeToggle) {
       return
     }
@@ -9170,7 +9370,7 @@ describe('ScriptEditor', () => {
     const compatibilityToggle = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.includes('Web HTTP/HTML Compatibility'),
     )
-    expect(compatibilityToggle).toBeDefined()
+    expect(compatibilityToggle).toBeTruthy()
     if (!compatibilityToggle) {
       return
     }
@@ -9195,7 +9395,9 @@ describe('ScriptEditor', () => {
 
     expect(proxyModeSelect?.value).toBe('custom')
     expect(proxyUrlInput?.value).toBe('http://proxy.example.test:8080')
-    expect(bypassArea).toBeDefined()
+    expect(bypassArea).toBeTruthy()
+    expect(proxyUrlInput).toBeTruthy()
+    expect(proxyModeSelect).toBeTruthy()
     if (!proxyModeSelect || !proxyUrlInput || !bypassArea) {
       return
     }
@@ -9217,7 +9419,7 @@ describe('ScriptEditor', () => {
     const saveButton = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.includes('Save Script'),
     )
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) {
       return
     }
@@ -9325,7 +9527,7 @@ describe('ScriptEditor', () => {
     })
 
     const actionItem = container.querySelector('.action-item') as HTMLDivElement | null
-    expect(actionItem).not.toBeNull()
+    expect(actionItem).toBeTruthy()
     if (!actionItem) {
       return
     }
@@ -9336,7 +9538,7 @@ describe('ScriptEditor', () => {
 
     await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Edit request body in center')?.click() })
     const textarea = container.querySelector('.author-body-document textarea[data-testid="codemirror-mock"]') as HTMLTextAreaElement | null
-    expect(textarea).not.toBeNull()
+    expect(textarea).toBeTruthy()
     if (!textarea) {
       return
     }
@@ -9353,7 +9555,7 @@ describe('ScriptEditor', () => {
     const parameterizeButton = Array.from(container.querySelectorAll('.action-parameter-menu button')).find(button =>
       button.textContent?.includes('Parameterize selection'),
     )
-    expect(parameterizeButton).toBeDefined()
+    expect(parameterizeButton).toBeTruthy()
     if (!parameterizeButton) {
       return
     }
@@ -9379,7 +9581,7 @@ describe('ScriptEditor', () => {
     const saveButton = Array.from(container.querySelectorAll('.parameter-draft-panel button')).find(button =>
       button.textContent?.includes('Save To Parameter Data'),
     )
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) {
       return
     }
@@ -9422,7 +9624,7 @@ describe('ScriptEditor', () => {
     })
 
     const actionItem = container.querySelector('.action-item') as HTMLDivElement | null
-    expect(actionItem).not.toBeNull()
+    expect(actionItem).toBeTruthy()
     if (!actionItem) {
       return
     }
@@ -9433,7 +9635,7 @@ describe('ScriptEditor', () => {
 
     await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Edit request body in center')?.click() })
     const textarea = container.querySelector('.author-body-document textarea[data-testid="codemirror-mock"]') as HTMLTextAreaElement | null
-    expect(textarea).not.toBeNull()
+    expect(textarea).toBeTruthy()
     if (!textarea) {
       return
     }
@@ -9461,8 +9663,8 @@ describe('ScriptEditor', () => {
 
     const editorWrapper = container.querySelector('.script-code-editor') as HTMLElement | null
     const textarea = container.querySelector('[data-testid="codemirror-mock"]') as HTMLTextAreaElement | null
-    expect(editorWrapper).not.toBeNull()
-    expect(textarea).not.toBeNull()
+    expect(editorWrapper).toBeTruthy()
+    expect(textarea).toBeTruthy()
     if (!editorWrapper || !textarea) {
       return
     }
@@ -9480,7 +9682,7 @@ describe('ScriptEditor', () => {
     const parameterizeButton = Array.from(container.querySelectorAll('.action-parameter-menu button')).find(button =>
       button.textContent?.includes('Create new parameter'),
     )
-    expect(parameterizeButton).toBeDefined()
+    expect(parameterizeButton).toBeTruthy()
     if (!parameterizeButton) {
       return
     }
@@ -9505,7 +9707,7 @@ describe('ScriptEditor', () => {
     const saveButton = Array.from(container.querySelectorAll('.parameter-draft-panel button')).find(button =>
       button.textContent?.includes('Save To Parameter Data'),
     )
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) {
       return
     }
@@ -9534,8 +9736,8 @@ describe('ScriptEditor', () => {
 
     const editorWrapper = container.querySelector('.script-code-editor') as HTMLElement | null
     const textarea = container.querySelector('[data-testid="codemirror-mock"]') as HTMLTextAreaElement | null
-    expect(editorWrapper).not.toBeNull()
-    expect(textarea).not.toBeNull()
+    expect(editorWrapper).toBeTruthy()
+    expect(textarea).toBeTruthy()
     if (!editorWrapper || !textarea) {
       return
     }
@@ -9615,8 +9817,8 @@ describe('ScriptEditor', () => {
 
     const editorWrapper = container.querySelector('.script-code-editor') as HTMLElement | null
     const textarea = container.querySelector('[data-testid="codemirror-mock"]') as HTMLTextAreaElement | null
-    expect(editorWrapper).not.toBeNull()
-    expect(textarea).not.toBeNull()
+    expect(editorWrapper).toBeTruthy()
+    expect(textarea).toBeTruthy()
     if (!editorWrapper || !textarea) return
 
     const start = textarea.value.indexOf('/login')
@@ -9684,8 +9886,9 @@ describe('ScriptEditor', () => {
 
     const editorWrapper = container.querySelector('.script-code-editor') as HTMLElement | null
     const textarea = container.querySelector('[data-testid="codemirror-mock"]') as HTMLTextAreaElement | null
+    expect(editorWrapper).toBeTruthy()
+    expect(textarea).toBeTruthy()
     if (!editorWrapper || !textarea) {
-      expect(editorWrapper).not.toBeNull()
       return
     }
 
@@ -9749,8 +9952,9 @@ describe('ScriptEditor', () => {
 
     const editorWrapper = container.querySelector('.script-code-editor') as HTMLElement | null
     const textarea = container.querySelector('[data-testid="codemirror-mock"]') as HTMLTextAreaElement | null
+    expect(editorWrapper).toBeTruthy()
+    expect(textarea).toBeTruthy()
     if (!editorWrapper || !textarea) {
-      expect(editorWrapper).not.toBeNull()
       return
     }
 
@@ -9790,8 +9994,9 @@ describe('ScriptEditor', () => {
 
     const editorWrapper = container.querySelector('.script-code-editor') as HTMLElement | null
     const textarea = container.querySelector('[data-testid="codemirror-mock"]') as HTMLTextAreaElement | null
+    expect(editorWrapper).toBeTruthy()
+    expect(textarea).toBeTruthy()
     if (!editorWrapper || !textarea) {
-      expect(editorWrapper).not.toBeNull()
       return
     }
 
@@ -9827,8 +10032,9 @@ describe('ScriptEditor', () => {
     })
 
     const formatSelect = container.querySelector('.parameter-format-control select') as HTMLSelectElement | null
-    expect(formatSelect).not.toBeNull()
+    expect(formatSelect).toBeTruthy()
     await act(async () => {
+      expect(formatSelect).toBeTruthy()
       if (!formatSelect) return
       formatSelect.value = '2006-01-02T15:04:05Z'
       formatSelect.dispatchEvent(new Event('change', { bubbles: true }))
@@ -9869,7 +10075,7 @@ describe('ScriptEditor', () => {
     })
 
     const actionItem = container.querySelector('.action-item') as HTMLDivElement | null
-    expect(actionItem).not.toBeNull()
+    expect(actionItem).toBeTruthy()
     if (!actionItem) {
       return
     }
@@ -9879,7 +10085,7 @@ describe('ScriptEditor', () => {
 
     await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Edit request body in center')?.click() })
     const textarea = container.querySelector('.author-body-document textarea[data-testid="codemirror-mock"]') as HTMLTextAreaElement | null
-    expect(textarea).not.toBeNull()
+    expect(textarea).toBeTruthy()
     if (!textarea) {
       return
     }
@@ -9952,8 +10158,9 @@ describe('ScriptEditor', () => {
 
     const editorWrapper = container.querySelector('.script-code-editor') as HTMLElement | null
     const textarea = container.querySelector('[data-testid="codemirror-mock"]') as HTMLTextAreaElement | null
+    expect(editorWrapper).toBeTruthy()
+    expect(textarea).toBeTruthy()
     if (!editorWrapper || !textarea) {
-      expect(editorWrapper).not.toBeNull()
       return
     }
 
@@ -9981,8 +10188,9 @@ describe('ScriptEditor', () => {
 
     const editorWrapper = container.querySelector('.script-code-editor') as HTMLElement | null
     const textarea = container.querySelector('[data-testid="codemirror-mock"]') as HTMLTextAreaElement | null
+    expect(editorWrapper).toBeTruthy()
+    expect(textarea).toBeTruthy()
     if (!editorWrapper || !textarea) {
-      expect(editorWrapper).not.toBeNull()
       return
     }
 
@@ -10056,7 +10264,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('CreateOrder')
 
     const runtimeToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Runtime Settings'))
-    expect(runtimeToggle).toBeDefined()
+    expect(runtimeToggle).toBeTruthy()
     if (!runtimeToggle) {
       return
     }
@@ -10066,7 +10274,7 @@ describe('ScriptEditor', () => {
     })
 
     const soapToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('SOAP Settings'))
-    expect(soapToggle).toBeDefined()
+    expect(soapToggle).toBeTruthy()
     if (!soapToggle) {
       return
     }
@@ -10124,7 +10332,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Scalar Equals')
 
     const runtimeToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Runtime Settings'))
-    expect(runtimeToggle).toBeDefined()
+    expect(runtimeToggle).toBeTruthy()
     if (!runtimeToggle) return
 
     await act(async () => {
@@ -10132,7 +10340,7 @@ describe('ScriptEditor', () => {
     })
 
     const databaseToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Database Runtime'))
-    expect(databaseToggle).toBeDefined()
+    expect(databaseToggle).toBeTruthy()
     if (!databaseToggle) return
 
     await act(async () => {
@@ -10221,7 +10429,7 @@ describe('ScriptEditor', () => {
     })
 
     const runtimeToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Runtime Settings'))
-    expect(runtimeToggle).toBeDefined()
+    expect(runtimeToggle).toBeTruthy()
     if (!runtimeToggle) {
       return
     }
@@ -10231,7 +10439,7 @@ describe('ScriptEditor', () => {
     })
 
     const soapToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('SOAP Settings'))
-    expect(soapToggle).toBeDefined()
+    expect(soapToggle).toBeTruthy()
     if (!soapToggle) {
       return
     }
@@ -10244,7 +10452,7 @@ describe('ScriptEditor', () => {
       Array.from(select.options).some(option => option.value === '1.1')
       && Array.from(select.options).some(option => option.value === '1.2'),
     ) as HTMLSelectElement | undefined
-    expect(versionSelect).toBeDefined()
+    expect(versionSelect).toBeTruthy()
     if (!versionSelect) {
       return
     }
@@ -10252,7 +10460,7 @@ describe('ScriptEditor', () => {
     const namespaceInput = Array.from(container.querySelectorAll('input')).find(input =>
       input.value === 'http://schemas.xmlsoap.org/soap/envelope/',
     ) as HTMLInputElement | undefined
-    expect(namespaceInput).toBeDefined()
+    expect(namespaceInput).toBeTruthy()
     if (!namespaceInput) {
       return
     }
@@ -10268,7 +10476,7 @@ describe('ScriptEditor', () => {
     expect(namespaceInput.value).toBe('http://www.w3.org/2003/05/soap-envelope')
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Script'))
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) {
       return
     }
@@ -10342,7 +10550,7 @@ describe('ScriptEditor', () => {
     })
 
     const runtimeToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Runtime Settings'))
-    expect(runtimeToggle).toBeDefined()
+    expect(runtimeToggle).toBeTruthy()
     if (!runtimeToggle) {
       return
     }
@@ -10352,7 +10560,7 @@ describe('ScriptEditor', () => {
     })
 
     const soapToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('SOAP Settings'))
-    expect(soapToggle).toBeDefined()
+    expect(soapToggle).toBeTruthy()
     if (!soapToggle) {
       return
     }
@@ -10379,13 +10587,13 @@ describe('ScriptEditor', () => {
       label.textContent?.includes('Include created timestamp'),
     )?.querySelector('input') as HTMLInputElement | null
 
-    expect(usernameInput).toBeDefined()
-    expect(passwordInput).toBeDefined()
-    expect(ttlInput).toBeDefined()
-    expect(passwordTypeSelect).toBeDefined()
-    expect(failOnFaultCheckbox).not.toBeNull()
-    expect(nonceCheckbox).not.toBeNull()
-    expect(createdCheckbox).not.toBeNull()
+    expect(usernameInput).toBeTruthy()
+    expect(passwordInput).toBeTruthy()
+    expect(ttlInput).toBeTruthy()
+    expect(passwordTypeSelect).toBeTruthy()
+    expect(failOnFaultCheckbox).toBeTruthy()
+    expect(nonceCheckbox).toBeTruthy()
+    expect(createdCheckbox).toBeTruthy()
     if (!usernameInput || !passwordInput || !ttlInput || !passwordTypeSelect || !failOnFaultCheckbox || !nonceCheckbox || !createdCheckbox) {
       return
     }
@@ -10424,7 +10632,7 @@ describe('ScriptEditor', () => {
     expect(ttlInput.value).toBe('90')
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Script'))
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) {
       return
     }
@@ -10549,7 +10757,7 @@ describe('ScriptEditor', () => {
     })
 
     const replayButton = findOpenDebuggerButton(container)
-    expect(replayButton).toBeDefined()
+    expect(replayButton).toBeTruthy()
     if (!replayButton) {
       return
     }
@@ -10560,7 +10768,7 @@ describe('ScriptEditor', () => {
     })
 
     const runReplayButton = findDebuggerRunButton(container)
-    expect(runReplayButton).toBeDefined()
+    expect(runReplayButton).toBeTruthy()
     if (!runReplayButton) {
       return
     }
@@ -10581,9 +10789,9 @@ describe('ScriptEditor', () => {
     const copyFaultButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy fault'))
     const copyRequestButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy full request'))
     const copyResponseButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy full response'))
-    expect(copyFaultButton).toBeDefined()
-    expect(copyRequestButton).toBeDefined()
-    expect(copyResponseButton).toBeDefined()
+    expect(copyFaultButton).toBeTruthy()
+    expect(copyRequestButton).toBeTruthy()
+    expect(copyResponseButton).toBeTruthy()
     if (!copyFaultButton || !copyRequestButton || !copyResponseButton) {
       return
     }
@@ -10704,7 +10912,7 @@ describe('ScriptEditor', () => {
     })
 
     const replayButton = findOpenDebuggerButton(container)
-    expect(replayButton).toBeDefined()
+    expect(replayButton).toBeTruthy()
     if (!replayButton) return
 
     await act(async () => {
@@ -10713,7 +10921,7 @@ describe('ScriptEditor', () => {
     })
 
     const runReplayButton = findDebuggerRunButton(container)
-    expect(runReplayButton).toBeDefined()
+    expect(runReplayButton).toBeTruthy()
     if (!runReplayButton) return
 
     await act(async () => {
@@ -10789,7 +10997,7 @@ describe('ScriptEditor', () => {
     })
 
     const replayButton = findOpenDebuggerButton(container)
-    expect(replayButton).toBeDefined()
+    expect(replayButton).toBeTruthy()
     if (!replayButton) {
       return
     }
@@ -10800,7 +11008,7 @@ describe('ScriptEditor', () => {
     })
 
     const runReplayButton = findDebuggerRunButton(container)
-    expect(runReplayButton).toBeDefined()
+    expect(runReplayButton).toBeTruthy()
     if (!runReplayButton) {
       return
     }
@@ -10838,7 +11046,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelectorAll('.snapshot-code-token-key').length).toBeGreaterThan(0)
 
     const expandArtifactsButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Expand artifacts'))
-    expect(expandArtifactsButton).toBeDefined()
+    expect(expandArtifactsButton).toBeTruthy()
     if (!expandArtifactsButton) {
       return
     }
@@ -10854,7 +11062,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Catalog 59 featured product with additional merchandising detail')
 
     const viewScreenshotButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('View full size'))
-    expect(viewScreenshotButton).toBeDefined()
+    expect(viewScreenshotButton).toBeTruthy()
     if (!viewScreenshotButton) {
       return
     }
@@ -10869,7 +11077,7 @@ describe('ScriptEditor', () => {
     expect(screenshotDialog?.textContent).toContain('Inspect the captured browser replay screenshot at full size.')
 
     const closeScreenshotButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Close')
-    expect(closeScreenshotButton).toBeDefined()
+    expect(closeScreenshotButton).toBeTruthy()
     if (!closeScreenshotButton) {
       return
     }
@@ -10915,7 +11123,7 @@ describe('ScriptEditor', () => {
     })
 
     const replayButton = findOpenDebuggerButton(container)
-    expect(replayButton).toBeDefined()
+    expect(replayButton).toBeTruthy()
     if (!replayButton) {
       return
     }
@@ -10926,7 +11134,7 @@ describe('ScriptEditor', () => {
     })
 
     const runReplayButton = findDebuggerRunButton(container)
-    expect(runReplayButton).toBeDefined()
+    expect(runReplayButton).toBeTruthy()
     if (!runReplayButton) {
       return
     }
@@ -11025,7 +11233,7 @@ describe('ScriptEditor', () => {
     const openMappingListButton = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.trim() === 'Open Mapping List',
     )
-    expect(openMappingListButton).toBeDefined()
+    expect(openMappingListButton).toBeTruthy()
     if (!openMappingListButton) {
       return
     }
@@ -11082,7 +11290,7 @@ describe('ScriptEditor', () => {
     const normalizeButton = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.includes('Normalize Names'),
     )
-    expect(normalizeButton).toBeDefined()
+    expect(normalizeButton).toBeTruthy()
     if (!normalizeButton) {
       return
     }
@@ -11099,7 +11307,7 @@ describe('ScriptEditor', () => {
     const starterButton = Array.from(document.querySelectorAll('button')).find(button =>
       button.textContent?.includes('POST JSON'),
     )
-    expect(starterButton).toBeDefined()
+    expect(starterButton).toBeTruthy()
     if (!starterButton) {
       return
     }
@@ -11160,7 +11368,7 @@ describe('ScriptEditor', () => {
     const insertButton = Array.from(document.querySelectorAll('.reusable-blocks-panel .starter-block-card')).find(button =>
       button.textContent?.includes('Core API Request Group'),
     ) as HTMLButtonElement | undefined
-    expect(insertButton).toBeDefined()
+    expect(insertButton).toBeTruthy()
     if (!insertButton) {
       return
     }
@@ -11174,7 +11382,7 @@ describe('ScriptEditor', () => {
     expect(Array.from(container.querySelectorAll('.action-item')).length).toBe(initialScript.actions.length + 1)
 
     const undoButton = findButtonByTitle(container, 'Undo document change')
-    expect(undoButton).toBeDefined()
+    expect(undoButton).toBeTruthy()
     if (!undoButton) {
       return
     }
@@ -11234,7 +11442,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('support embedded or sidecar helper modes')
 
     const runtimeToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Runtime Settings'))
-    expect(runtimeToggle).toBeDefined()
+    expect(runtimeToggle).toBeTruthy()
     if (!runtimeToggle) {
       return
     }
@@ -11244,7 +11452,7 @@ describe('ScriptEditor', () => {
     })
 
     const javaToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Java HTTP Settings'))
-    expect(javaToggle).toBeDefined()
+    expect(javaToggle).toBeTruthy()
     if (!javaToggle) {
       return
     }

@@ -244,6 +244,10 @@ type MetricsTelemetry struct {
 	// false for older generators that report only the process-wide count.
 	TestDroppedSubscriberBatches         int64
 	TestDroppedSubscriberBatchesReported bool
+	// CollectionSequence identifies the collection that produced the batch's
+	// window within its source epoch; a batch that re-sends the last window
+	// repeats it. Zero from older generators.
+	CollectionSequence uint64
 	// The controller qualifies the cross-host stages on receipt:
 	// TransportLagMs is corrected by the generator's clock offset when
 	// TransportLagQuality is qualified, and CollectedAtOffsetMs is the offset
@@ -2350,6 +2354,7 @@ func metricsTelemetryFromProto(in *pb.MetricsBatchTelemetry) *MetricsTelemetry {
 		GeneratorProcessingLagMs: in.GetGeneratorProcessingLagMs(),
 		TransportLagMs:           in.GetTransportLagMs(),
 		DroppedSubscriberBatches: in.GetDroppedSubscriberBatches(),
+		CollectionSequence:       in.GetCollectionSequence(),
 	}
 	if in.TestDroppedSubscriberBatches != nil {
 		telemetry.TestDroppedSubscriberBatches, telemetry.TestDroppedSubscriberBatchesReported = in.GetTestDroppedSubscriberBatches(), true

@@ -79,7 +79,7 @@ function findButtonContaining(container: HTMLElement, label: string): HTMLButton
 
 async function clickButton(container: HTMLElement, label: string, contains = false) {
   const button = contains ? findButtonContaining(container, label) : findButton(container, label)
-  expect(button).toBeDefined()
+  expect(button).toBeTruthy()
   if (!button) return
   await act(async () => {
     button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -88,7 +88,7 @@ async function clickButton(container: HTMLElement, label: string, contains = fal
 
 async function clickScopedButton(scope: HTMLElement, label: string) {
   const button = findButton(scope, label)
-  expect(button).toBeDefined()
+  expect(button).toBeTruthy()
   if (!button) return
   await act(async () => {
     button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -97,7 +97,7 @@ async function clickScopedButton(scope: HTMLElement, label: string) {
 
 async function clickSortHeader(container: HTMLElement, label: string) {
   const header = Array.from(container.querySelectorAll<HTMLButtonElement>('th button')).find(button => button.textContent?.includes(label))
-  expect(header).toBeDefined()
+  expect(header).toBeTruthy()
   if (!header) return
   await act(async () => {
     header.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -129,8 +129,8 @@ function selectByLabelText(container: HTMLElement, label: string): HTMLSelectEle
   return Array.from(container.querySelectorAll('label')).find(item => item.textContent?.includes(label))?.querySelector('select') as HTMLSelectElement | undefined
 }
 
-function inputByPlaceholder(container: HTMLElement, placeholder: string): HTMLInputElement | undefined {
-  return container.querySelector(`input[placeholder="${placeholder}"]`) as HTMLInputElement | undefined
+function inputByPlaceholder(container: HTMLElement, placeholder: string): HTMLInputElement | null {
+  return container.querySelector<HTMLInputElement>(`input[placeholder="${placeholder}"]`)
 }
 
 describe('AccessPage', () => {
@@ -513,7 +513,7 @@ describe('AccessPage', () => {
       const row = input.closest('.access-project-role-row')
       return row?.textContent?.includes('Search')
     }) as HTMLInputElement | undefined
-    expect(searchCheckbox).toBeDefined()
+    expect(searchCheckbox).toBeTruthy()
     if (!searchCheckbox) return
 
     await act(async () => {
@@ -545,8 +545,8 @@ describe('AccessPage', () => {
 
     const ownerInput = inputByPlaceholder(container, 'team or person responsible')
     const contactInput = inputByPlaceholder(container, 'oncall@example.com')
-    expect(ownerInput).toBeDefined()
-    expect(contactInput).toBeDefined()
+    expect(ownerInput).toBeTruthy()
+    expect(contactInput).toBeTruthy()
     if (!ownerInput || !contactInput) return
     changeInput(ownerInput, 'team-sre')
     changeInput(contactInput, 'sre@example.com')
@@ -556,7 +556,7 @@ describe('AccessPage', () => {
       const row = input.closest('.access-project-role-row')
       return row?.textContent?.includes('Payments')
     }) as HTMLInputElement | undefined
-    expect(domainCheckbox).toBeDefined()
+    expect(domainCheckbox).toBeTruthy()
     if (!domainCheckbox) return
     await act(async () => {
       domainCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -583,7 +583,7 @@ describe('AccessPage', () => {
     await clickButton(container, 'Edit')
 
     const nameInput = Array.from(container.querySelectorAll('label')).find(l => l.textContent?.includes('Service Account Name'))?.querySelector('input') as HTMLInputElement | undefined
-    expect(nameInput).toBeDefined()
+    expect(nameInput).toBeTruthy()
     if (!nameInput) return
     changeInput(nameInput, 'Nightly CI v2')
 
@@ -592,7 +592,7 @@ describe('AccessPage', () => {
       const row = input.closest('.access-project-role-row')
       return row?.textContent?.includes('Payments')
     }) as HTMLInputElement | undefined
-    expect(domainCheckbox).toBeDefined()
+    expect(domainCheckbox).toBeTruthy()
     if (!domainCheckbox) return
     await act(async () => { domainCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
 
@@ -643,7 +643,7 @@ describe('AccessPage', () => {
 
     // Deselect the only global role (viewer) by clicking its active chip.
     const viewerChip = Array.from(container.querySelectorAll('button.access-chip')).find(b => b.textContent?.trim() === 'Viewer' && b.className.includes('active')) as HTMLButtonElement | undefined
-    expect(viewerChip).toBeDefined()
+    expect(viewerChip).toBeTruthy()
     if (!viewerChip) return
     await act(async () => { viewerChip.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
 
@@ -747,7 +747,7 @@ describe('AccessPage', () => {
 
     await clickButton(container, 'Onboard Users')
     const subjectInput = inputByPlaceholder(container, 'oidc-subject-or-upstream-user')
-    expect(subjectInput).toBeDefined()
+    expect(subjectInput).toBeTruthy()
     if (!subjectInput) return
     changeInput(subjectInput, 'draft-user')
 
@@ -767,7 +767,7 @@ describe('AccessPage', () => {
     await clickButton(container, 'Service accounts', true)
     await clickButton(container, 'Create service account')
     const accountNameInput = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Service Account Name'))?.querySelector('input') as HTMLInputElement | undefined
-    expect(accountNameInput).toBeDefined()
+    expect(accountNameInput).toBeTruthy()
     if (!accountNameInput) return
     changeInput(accountNameInput, 'Draft automation key')
 
@@ -799,12 +799,12 @@ describe('AccessPage', () => {
     await flushPromises()
     if (kind === 'user') {
       const subjectInput = inputByPlaceholder(container, 'oidc-subject-or-upstream-user')
-      expect(subjectInput).toBeDefined()
+      expect(subjectInput).toBeTruthy()
       if (!subjectInput) return
       changeInput(subjectInput, 'cara')
     } else {
       const accountNameInput = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Service Account Name'))?.querySelector('input') as HTMLInputElement | undefined
-      expect(accountNameInput).toBeDefined()
+      expect(accountNameInput).toBeTruthy()
       if (!accountNameInput) return
       changeInput(accountNameInput, 'Nightly automation')
     }
@@ -827,12 +827,13 @@ describe('AccessPage', () => {
     await flushPromises()
 
     const userManagement = container.querySelector('.access-user-management') as HTMLElement | null
-    expect(userManagement).not.toBeNull()
+    expect(userManagement).toBeTruthy()
     if (!userManagement) return
     await clickScopedButton(userManagement, 'Edit')
     const editManagement = container.querySelector('.access-user-management') as HTMLElement | null
     const profileInputs = editManagement?.querySelectorAll<HTMLInputElement>('.access-form-grid input')
     expect(profileInputs?.length).toBe(3)
+    expect(profileInputs).toBeTruthy()
     if (!profileInputs) return
     changeInput(profileInputs[2], 'Alice Draft')
 
@@ -846,7 +847,7 @@ describe('AccessPage', () => {
       total: 1,
     })
     const searchInput = inputByPlaceholder(container, 'name, email, role, scope')
-    expect(searchInput).toBeDefined()
+    expect(searchInput).toBeTruthy()
     if (!searchInput) return
     changeInput(searchInput, 'bob')
     await flushPromises()
@@ -865,11 +866,11 @@ describe('AccessPage', () => {
 
     await clickButton(container, 'Service accounts', true)
     const accountInspector = container.querySelector('aside[aria-label="Selected service account details"]') as HTMLElement | null
-    expect(accountInspector).not.toBeNull()
+    expect(accountInspector).toBeTruthy()
     if (!accountInspector) return
     await clickScopedButton(accountInspector, 'Edit')
     const accountEditName = container.querySelector('aside[aria-label="Edit service account"] input') as HTMLInputElement | null
-    expect(accountEditName).not.toBeNull()
+    expect(accountEditName).toBeTruthy()
     if (!accountEditName) return
     changeInput(accountEditName, 'Nightly CI Draft')
 
@@ -891,8 +892,8 @@ describe('AccessPage', () => {
     await clickButton(container, 'Onboard Users')
     const subjectInput = inputByPlaceholder(container, 'oidc-subject-or-upstream-user')
     const emailInput = inputByPlaceholder(container, 'person@example.com')
-    expect(subjectInput).toBeDefined()
-    expect(emailInput).toBeDefined()
+    expect(subjectInput).toBeTruthy()
+    expect(emailInput).toBeTruthy()
     if (!subjectInput || !emailInput) return
     changeInput(subjectInput, 'invalid-email-user')
     changeInput(emailInput, 'not-an-email')
@@ -918,7 +919,7 @@ describe('AccessPage', () => {
       .mockReturnValueOnce(aliceRequest.promise)
       .mockReturnValueOnce(bobRequest.promise)
     const searchInput = inputByPlaceholder(container, 'name, email, role, scope')
-    expect(searchInput).toBeDefined()
+    expect(searchInput).toBeTruthy()
     if (!searchInput) return
     changeInput(searchInput, 'alice')
     changeInput(searchInput, 'bob')
@@ -979,14 +980,14 @@ describe('AccessPage', () => {
       api_key: 'srk_authoritative',
     })
     const inspector = container.querySelector('aside[aria-label="Selected service account details"]') as HTMLElement | null
-    expect(inspector).not.toBeNull()
+    expect(inspector).toBeTruthy()
     if (!inspector) return
     await clickScopedButton(inspector, 'Rotate key')
     await flushPromises()
     expect(tablePrimaryTexts(container)).toContain('Nightly CI Rotated')
 
     const rotatedInspector = container.querySelector('aside[aria-label="Selected service account details"]') as HTMLElement | null
-    expect(rotatedInspector).not.toBeNull()
+    expect(rotatedInspector).toBeTruthy()
     if (!rotatedInspector) return
     await clickScopedButton(rotatedInspector, 'Delete')
     await flushPromises()
@@ -1004,9 +1005,9 @@ describe('AccessPage', () => {
     const subjectInput = inputByPlaceholder(container, 'oidc-subject-or-upstream-user')
     const emailInput = inputByPlaceholder(container, 'person@example.com')
     const nameInput = inputByPlaceholder(container, 'Jordan Lee')
-    expect(subjectInput).toBeDefined()
-    expect(emailInput).toBeDefined()
-    expect(nameInput).toBeDefined()
+    expect(subjectInput).toBeTruthy()
+    expect(emailInput).toBeTruthy()
+    expect(nameInput).toBeTruthy()
     if (!subjectInput || !emailInput || !nameInput) return
     changeInput(subjectInput, 'cara')
     changeInput(emailInput, 'cara@example.com')
@@ -1049,13 +1050,13 @@ describe('AccessPage', () => {
       ?.querySelector('select') as HTMLSelectElement | undefined
     const domainSelect = userFilterSelect('Domain')
     const projectSelect = userFilterSelect('Project')
-    expect(domainSelect).toBeDefined()
-    expect(projectSelect).toBeDefined()
+    expect(domainSelect).toBeTruthy()
+    expect(projectSelect).toBeTruthy()
     if (!domainSelect || !projectSelect) return
 
     await act(async () => changeSelect(domainSelect, 'domain-1'))
     const projectOneSelect = userFilterSelect('Project')
-    expect(projectOneSelect).toBeDefined()
+    expect(projectOneSelect).toBeTruthy()
     if (!projectOneSelect) return
     await act(async () => changeSelect(projectOneSelect, 'project-1'))
     await flushPromises()
@@ -1063,7 +1064,7 @@ describe('AccessPage', () => {
 
     await clickButton(container, 'Onboard Users')
     const subjectInput = inputByPlaceholder(container, 'oidc-subject-or-upstream-user')
-    expect(subjectInput).toBeDefined()
+    expect(subjectInput).toBeTruthy()
     if (!subjectInput) return
     changeInput(subjectInput, 'cara')
     await clickButton(container, 'Create User')
@@ -1071,7 +1072,7 @@ describe('AccessPage', () => {
     expect(tablePrimaryTexts(container)).toContain('Cara QA')
 
     const projectTwoSelect = userFilterSelect('Project')
-    expect(projectTwoSelect).toBeDefined()
+    expect(projectTwoSelect).toBeTruthy()
     if (!projectTwoSelect) return
     await act(async () => changeSelect(projectTwoSelect, 'project-2'))
     await flushPromises()
@@ -1112,19 +1113,19 @@ describe('AccessPage', () => {
       .find(item => item.querySelector('span')?.textContent === label)
       ?.querySelector('select') as HTMLSelectElement | undefined
     const projectSelect = userFilterSelect('Project')
-    expect(projectSelect).toBeDefined()
+    expect(projectSelect).toBeTruthy()
     if (!projectSelect) return
 
     await act(async () => changeSelect(projectSelect, 'project-1'))
     await flushPromises()
     const removeAccess = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent?.trim() === 'Disable access')
-    expect(removeAccess).toBeDefined()
+    expect(removeAccess).toBeTruthy()
     if (!removeAccess) return
     await act(async () => removeAccess.click())
 
     const currentProjectSelect = userFilterSelect('Project')
-    expect(currentProjectSelect).toBeDefined()
+    expect(currentProjectSelect).toBeTruthy()
     if (!currentProjectSelect) return
     await act(async () => changeSelect(currentProjectSelect, 'project-2'))
     await flushPromises()
@@ -1151,7 +1152,7 @@ describe('AccessPage', () => {
     expect(tablePrimaryTexts(container)).toEqual(['Nightly CI', 'API Reporter'])
 
     const statusSelect = selectByLabelText(container, 'Status')
-    expect(statusSelect).toBeDefined()
+    expect(statusSelect).toBeTruthy()
     if (!statusSelect) return
     await act(async () => {
       changeSelect(statusSelect, 'disabled')
@@ -1162,13 +1163,14 @@ describe('AccessPage', () => {
       changeSelect(statusSelect, '')
     })
     const accountButton = findButton(container, 'Nightly CI')
-    expect(accountButton).toBeDefined()
+    expect(accountButton).toBeTruthy()
     if (!accountButton) return
     await act(async () => {
       accountButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     const inspector = container.querySelector('aside[aria-label="Selected service account details"]') as HTMLElement | null
     expect(inspector?.textContent).toContain('Account Details')
+    expect(inspector).toBeTruthy()
     if (!inspector) return
 
     await clickScopedButton(inspector, 'Rotate key')
@@ -1208,7 +1210,7 @@ describe('AccessPage', () => {
 
     const inspector = container.querySelector('aside[aria-label="Selected service account details"]') as HTMLElement | null
     const rotateButton = inspector ? findButton(inspector, 'Rotate key') : undefined
-    expect(rotateButton).toBeDefined()
+    expect(rotateButton).toBeTruthy()
     if (!rotateButton) return
 
     await act(async () => {
@@ -1253,7 +1255,7 @@ describe('AccessPage', () => {
     expect(container.textContent).toContain('3,000 VUser seconds')
 
     const searchInput = inputByPlaceholder(container, 'name, email, role, scope')
-    expect(searchInput).toBeDefined()
+    expect(searchInput).toBeTruthy()
     if (!searchInput) return
     await act(async () => {
       changeInput(searchInput, 'bob')
@@ -1268,7 +1270,7 @@ describe('AccessPage', () => {
     await flushPromises()
     expect(apiMock.listAuthUsers).toHaveBeenLastCalledWith({ limit: 50, offset: 0 })
     const statusSelect = selectByLabelText(container, 'Status')
-    expect(statusSelect).toBeDefined()
+    expect(statusSelect).toBeTruthy()
     if (!statusSelect) return
     await act(async () => {
       changeSelect(statusSelect, 'disabled')
@@ -1281,7 +1283,7 @@ describe('AccessPage', () => {
     })
     await flushPromises()
     const roleSelect = selectByLabelText(container, 'Role')
-    expect(roleSelect).toBeDefined()
+    expect(roleSelect).toBeTruthy()
     if (!roleSelect) return
     await act(async () => {
       changeSelect(roleSelect, 'editor')
@@ -1294,9 +1296,9 @@ describe('AccessPage', () => {
     const subjectInput = inputByPlaceholder(container, 'oidc-subject-or-upstream-user')
     const emailInput = inputByPlaceholder(container, 'person@example.com')
     const nameInput = inputByPlaceholder(container, 'Jordan Lee')
-    expect(subjectInput).toBeDefined()
-    expect(emailInput).toBeDefined()
-    expect(nameInput).toBeDefined()
+    expect(subjectInput).toBeTruthy()
+    expect(emailInput).toBeTruthy()
+    expect(nameInput).toBeTruthy()
     if (!subjectInput || !emailInput || !nameInput) return
     expect(container.textContent).toContain('Initial Permissions')
 
@@ -1313,7 +1315,7 @@ describe('AccessPage', () => {
     })
     expect(onboardProjectRows.length).toBeGreaterThanOrEqual(2)
     const onboardSecondProjectSelect = onboardProjectRows[1]?.querySelectorAll<HTMLSelectElement>('select')[1]
-    expect(onboardSecondProjectSelect).toBeDefined()
+    expect(onboardSecondProjectSelect).toBeTruthy()
     if (!onboardSecondProjectSelect) return
     await act(async () => {
       changeSelect(onboardSecondProjectSelect, 'project-2')
@@ -1334,7 +1336,7 @@ describe('AccessPage', () => {
 
     await clickButton(container, 'Existing Users')
     const aliceButton = findButton(container, 'Alice Admin')
-    expect(aliceButton).toBeDefined()
+    expect(aliceButton).toBeTruthy()
     if (!aliceButton) return
     await act(async () => {
       aliceButton.focus()
@@ -1347,14 +1349,19 @@ describe('AccessPage', () => {
     await act(async () => inspector?.querySelector<HTMLButtonElement>('[aria-label="Collapse user details"]')?.click())
     expect(container.querySelector('[aria-label="Expand user details"]')).not.toBeNull()
     await act(async () => aliceButton.click())
-    if (!inspector) return
-    expect(inspector.querySelectorAll('input, select').length).toBe(0)
-    expect(inspector.textContent).not.toContain('Save changes')
-    expect(inspector.textContent).not.toContain('Add Project')
+    // Collapsing unmounted the inspector; selecting the user opens a new one.
+    const reopened = container.querySelector<HTMLElement>('aside[aria-label="Selected user details"]')
+    expect(reopened).toBeTruthy()
+    if (!reopened) return
+    expect(reopened).not.toBe(inspector)
+    expect(reopened.querySelectorAll('input, select').length).toBe(0)
+    expect(reopened.textContent).not.toContain('Save changes')
+    expect(reopened.textContent).not.toContain('Add Project')
 
     const userManagement = container.querySelector('.access-user-management') as HTMLElement | null
     expect(userManagement?.textContent).toContain('User Access')
     expect(userManagement?.textContent).toContain('Edit')
+    expect(userManagement).toBeTruthy()
     if (!userManagement) return
     expect(userManagement.querySelectorAll('input, select').length).toBe(0)
 
@@ -1362,6 +1369,7 @@ describe('AccessPage', () => {
     const editManagement = container.querySelector('.access-user-management') as HTMLElement | null
     expect(editManagement?.textContent).toContain('Edit User')
     expect(editManagement?.textContent).toContain('Roles, Domains, and Projects')
+    expect(editManagement).toBeTruthy()
     if (!editManagement) return
 
     const managementInputs = editManagement.querySelectorAll<HTMLInputElement>('input')
@@ -1382,7 +1390,7 @@ describe('AccessPage', () => {
     })
     expect(editProjectRows.length).toBeGreaterThanOrEqual(2)
     const editSecondProjectSelect = editProjectRows[1]?.querySelectorAll<HTMLSelectElement>('select')[1]
-    expect(editSecondProjectSelect).toBeDefined()
+    expect(editSecondProjectSelect).toBeTruthy()
     if (!editSecondProjectSelect) return
     await act(async () => {
       changeSelect(editSecondProjectSelect, 'project-2')
@@ -1416,6 +1424,7 @@ describe('AccessPage', () => {
 
     const userManagement = container.querySelector('.access-user-management') as HTMLElement | null
     expect(userManagement?.textContent).toContain('User Access')
+    expect(userManagement).toBeTruthy()
     if (!userManagement) return
     await clickScopedButton(userManagement, 'Edit')
 
@@ -1423,6 +1432,7 @@ describe('AccessPage', () => {
     expect(editManagement?.textContent).toContain('Edit User')
     expect(editManagement?.textContent).toContain('Roles, Domains, and Projects')
     expect(editManagement?.textContent).not.toContain('Add Global Role')
+    expect(editManagement).toBeTruthy()
     if (!editManagement) return
 
     const profileInputs = Array.from(editManagement.querySelectorAll<HTMLInputElement>('.access-form-grid input'))
@@ -1439,7 +1449,7 @@ describe('AccessPage', () => {
     })
     expect(editProjectRows.length).toBeGreaterThanOrEqual(2)
     const editSecondProjectSelect = editProjectRows[1]?.querySelectorAll<HTMLSelectElement>('select')[1]
-    expect(editSecondProjectSelect).toBeDefined()
+    expect(editSecondProjectSelect).toBeTruthy()
     if (!editSecondProjectSelect) return
     await act(async () => {
       changeSelect(editSecondProjectSelect, 'project-2')
@@ -1479,11 +1489,11 @@ describe('AccessPage', () => {
 
     const editBinding = async () => {
       const management = container.querySelector('.access-user-management') as HTMLElement | null
-      expect(management).not.toBeNull()
+      expect(management).toBeTruthy()
       if (!management) return
       await clickScopedButton(management, 'Edit')
       const editor = container.querySelector('.access-user-management') as HTMLElement | null
-      expect(editor).not.toBeNull()
+      expect(editor).toBeTruthy()
       if (!editor) return
       const existingRemove = findButton(editor, 'Remove')
       if (existingRemove) await clickScopedButton(editor, 'Remove')
@@ -1493,7 +1503,7 @@ describe('AccessPage', () => {
         return scopeSelect?.value === 'project'
       })
       const projectSelect = projectRow?.querySelectorAll<HTMLSelectElement>('select')[1]
-      expect(projectSelect).toBeDefined()
+      expect(projectSelect).toBeTruthy()
       if (!projectSelect) return
       changeSelect(projectSelect, 'project-2')
       await clickScopedButton(editor, 'Save changes')
@@ -1507,7 +1517,7 @@ describe('AccessPage', () => {
     expect(container.textContent).not.toContain('Some changes were already applied; current access was reconciled before retrying.')
 
     const retryEditor = container.querySelector('.access-user-management') as HTMLElement | null
-    expect(retryEditor).not.toBeNull()
+    expect(retryEditor).toBeTruthy()
     if (!retryEditor) return
     await clickScopedButton(retryEditor, 'Save changes')
     await flushPromises()
@@ -1528,8 +1538,8 @@ describe('AccessPage', () => {
 
     const userInput = inputByPlaceholder(container, 'actor subject')
     const actionInput = inputByPlaceholder(container, 'auth.user.create')
-    expect(userInput).toBeDefined()
-    expect(actionInput).toBeDefined()
+    expect(userInput).toBeTruthy()
+    expect(actionInput).toBeTruthy()
     if (!userInput || !actionInput) return
 
     await act(async () => {
@@ -1561,7 +1571,7 @@ describe('AccessPage', () => {
     expect(container.textContent).toContain('Activity export downloaded.')
 
     const tableSearch = inputByPlaceholder(container, 'actor, action, resource, details')
-    expect(tableSearch).toBeDefined()
+    expect(tableSearch).toBeTruthy()
     if (!tableSearch) return
     await act(async () => {
       changeInput(tableSearch, 'expired key')
@@ -1570,7 +1580,7 @@ describe('AccessPage', () => {
     expect(container.querySelector('.access-data-table tbody')?.textContent).not.toContain('auth.user.create')
 
     const rotateEventActor = findButton(container, 'Nightly CI')
-    expect(rotateEventActor).toBeDefined()
+    expect(rotateEventActor).toBeTruthy()
     if (!rotateEventActor) return
     await act(async () => {
       rotateEventActor.dispatchEvent(new MouseEvent('click', { bubbles: true }))

@@ -63,17 +63,21 @@ export function useNavigationGuardRunner() {
 /**
  * Guards work that only lives in this page (an import queue, review decisions)
  * and cannot be saved from the leave prompt: leaving asks to discard it.
+ * isDirty, when given, reads the work's live state, which can change before
+ * the page renders again (a draft saved and navigated away from in one turn).
  */
-export function useUnsavedWorkGuard(id: string, label: string, dirty: boolean, discard: () => void) {
+export function useUnsavedWorkGuard(id: string, label: string, dirty: boolean, discard: () => void, isDirty?: () => boolean) {
   const discardRef = useRef(discard)
   discardRef.current = discard
   const dirtyRef = useRef(dirty)
   dirtyRef.current = dirty
+  const isDirtyRef = useRef(isDirty)
+  isDirtyRef.current = isDirty
   const guard = useMemo<NavigationGuard>(() => ({
     id,
     label,
     canSave: false,
-    isDirty: () => dirtyRef.current,
+    isDirty: () => isDirtyRef.current ? isDirtyRef.current() : dirtyRef.current,
     save: () => false,
     discard: () => discardRef.current(),
   }), [id, label])

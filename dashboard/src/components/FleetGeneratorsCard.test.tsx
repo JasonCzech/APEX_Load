@@ -221,6 +221,7 @@ describe('FleetGeneratorsCard', () => {
     const textarea = container.querySelector<HTMLTextAreaElement>('textarea')
     expect(textarea?.value).toBe('jvm=11')
     await act(async () => {
+      expect(textarea).toBeTruthy()
       if (!textarea) return
       const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
       valueSetter?.call(textarea, 'jvm=17, arch=amd64')

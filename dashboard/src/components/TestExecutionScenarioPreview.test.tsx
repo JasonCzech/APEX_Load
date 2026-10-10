@@ -198,6 +198,8 @@ describe('TestExecutionScenarioPreview', () => {
 
     expect(nestingWarning).toBe(false)
 
+    expect(editButton).toBeTruthy()
+    expect(summaryRow).toBeTruthy()
     if (!summaryRow || !editButton) {
       return
     }

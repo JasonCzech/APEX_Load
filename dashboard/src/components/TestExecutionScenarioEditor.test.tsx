@@ -97,7 +97,7 @@ describe('TestExecutionScenarioEditor', () => {
     expect(container.textContent).toContain('scenario:Queued Checkout Run')
 
     const createButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('create-copy'))
-    expect(createButton).toBeDefined()
+    expect(createButton).toBeTruthy()
     if (!createButton) {
       return
     }

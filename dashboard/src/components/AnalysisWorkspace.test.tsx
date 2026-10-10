@@ -285,7 +285,8 @@ for (const version of [1, 2]) for (const source of ['timestamp', 'value', 'name_
       expect(protectedMeasure?.disabled).toBe(false) // Existing selection may be removed.
     } else if (source !== 'timestamp') expect(protectedMeasure?.disabled).toBe(true)
     const nameColumn = [...container.querySelectorAll('label')].find(label => label.textContent?.startsWith('Metric name column'))?.querySelector('select')
-    if (nameColumn) expect(Array.from(nameColumn.options).find(option => option.value === '["password"]')?.disabled).toBe(true)
+    expect(nameColumn).toBeTruthy()
+    expect(Array.from(nameColumn?.options ?? []).find(option => option.value === '["password"]')?.disabled).toBe(true)
   } else {
     expect([...container.querySelectorAll('fieldset')].find(fieldset => fieldset.querySelector('legend')?.textContent === 'Query dataset')?.disabled).toBe(true)
     expect(button('Analyze comparison').disabled).toBe(true)

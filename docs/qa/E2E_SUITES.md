@@ -323,7 +323,7 @@ npm run test:cycle
 
 This runs TypeScript checks, strict lint, all Vitest tests, a fresh production build, and both browser profiles. CI runs these checks in its existing dashboard job and invokes the same `scripts/run-dashboard-workflows.sh` entry point. Both browser profiles execute even if the first fails; either failure makes the command fail. There are no automatic test retries.
 
-Prerequisites: the repository's Go toolchain, Node version from `dashboard/package.json`, installed dashboard dependencies, and Chromium (`dashboard/node_modules/.bin/playwright install chromium`). The controller uses ports 18081 and 18082 by default; override with `APEXLOAD_E2E_PORT` and `APEXLOAD_E2E_AUTH_PORT`.
+Prerequisites: the repository's Go toolchain, Node version from `dashboard/package.json`, installed dashboard dependencies, and Chromium (`dashboard/node_modules/.bin/playwright install chromium`). The controller uses ports 18081 and 18082 by default; override with `APEXLOAD_E2E_PORT` and `APEXLOAD_E2E_AUTH_PORT`. A port that another process already listens on (a local controller left running, another run) is refused before the build, and once the controller answers the runner checks that the process it started is the one listening, so a run never tests a server it did not start.
 
 For browser-only reruns after building, run `npm run test:workflows`. For focused diagnosis from the repository root:
 

@@ -228,8 +228,62 @@ func (s *Server) claimProtectedImportCandidateSession(
 	sessionID string,
 	projectID string,
 ) (*protectedImportCandidate, *importsession.Claim, error) {
+	manager, scope, err := s.protectedImportCandidateScope(r, profile, sessionID, projectID)
+	if err != nil {
+		return nil, nil, err
+	}
+	claimed, err := manager.Claim(r.Context(), scope, importCandidateSessionMaxBytes)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer clear(claimed.Payload)
+
+	candidate, err := decodeProtectedImportCandidate(claimed.Payload, scope.Profile, scope.ProjectID, true)
+	if err != nil {
+		if releaseErr := manager.Release(claimed.Claim); releaseErr != nil {
+			// Report the cleanup failure without wrapping it: its sentinel (for
+			// example ErrSessionClaimed) describes the release, not this
+			// candidate, and must not turn an invalid draft into a busy one.
+			return nil, nil, errors.Join(err, fmt.Errorf("release protected import candidate claim: %v", releaseErr))
+		}
+		return nil, nil, err
+	}
+	return candidate, &claimed.Claim, nil
+}
+
+// openProtectedImportCandidateSession reads a protected candidate without
+// leasing it. Read-only inspection must not take the one-shot consume lease:
+// the dashboard inspects every rotated candidate while the operator saves it,
+// and an inspection holding that lease made the concurrent save fail as an
+// invalid draft. A candidate a consumer has already claimed reads as absent.
+func (s *Server) openProtectedImportCandidateSession(
+	r *http.Request,
+	profile string,
+	sessionID string,
+	projectID string,
+) (*protectedImportCandidate, error) {
+	manager, scope, err := s.protectedImportCandidateScope(r, profile, sessionID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	payload, _, err := manager.Open(r.Context(), scope, importCandidateSessionMaxBytes)
+	if err != nil {
+		return nil, err
+	}
+	defer clear(payload)
+	return decodeProtectedImportCandidate(payload, scope.Profile, scope.ProjectID, false)
+}
+
+// protectedImportCandidateScope resolves the caller's session scope and
+// rejects an enterprise candidate that a guided repair already replaced.
+func (s *Server) protectedImportCandidateScope(
+	r *http.Request,
+	profile string,
+	sessionID string,
+	projectID string,
+) (*importsession.Manager, importsession.Scope, error) {
 	if r == nil {
-		return nil, nil, errors.New("request is required")
+		return nil, importsession.Scope{}, errors.New("request is required")
 	}
 	profile = strings.ToLower(strings.TrimSpace(profile))
 	sessionID = strings.TrimSpace(sessionID)
@@ -237,31 +291,37 @@ func (s *Server) claimProtectedImportCandidateSession(
 	_, actor, _ := s.resolveAuditActor(r)
 	manager, err := s.protectedImportSessionManager()
 	if err != nil {
-		return nil, nil, err
+		return nil, importsession.Scope{}, err
 	}
 	if profile == enterpriseArchiveSaveProfile {
 		if receipt, _, receiptErr := manager.Open(r.Context(), importsession.Scope{ID: repairReceiptID(sessionID), Profile: repairReceiptProfile, ProjectID: projectID, Actor: actor}, importCandidateSessionMaxBytes); receiptErr == nil {
 			clear(receipt)
-			return nil, nil, errors.New("candidate was superseded by repair")
+			return nil, importsession.Scope{}, errors.New("candidate was superseded by repair")
 		} else if !errors.Is(receiptErr, os.ErrNotExist) {
-			return nil, nil, receiptErr
+			return nil, importsession.Scope{}, receiptErr
 		}
 	}
-	claimed, err := manager.Claim(r.Context(), importsession.Scope{
+	return manager, importsession.Scope{
 		ID:        sessionID,
 		Profile:   profile,
 		ProjectID: projectID,
 		Actor:     actor,
-	}, importCandidateSessionMaxBytes)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer clear(claimed.Payload)
+	}, nil
+}
 
-	envelope, requirements, err := unmarshalImportCandidateEnvelope(claimed.Payload)
+// decodeProtectedImportCandidate validates a decrypted candidate envelope
+// against the requested scope. The caller still owns and clears payload.
+// Read-only callers pass retainRawSource=false so they never copy the
+// unredacted upload they do not use.
+func decodeProtectedImportCandidate(
+	payload []byte,
+	profile string,
+	projectID string,
+	retainRawSource bool,
+) (*protectedImportCandidate, error) {
+	envelope, requirements, err := unmarshalImportCandidateEnvelope(payload)
 	if err != nil {
-		_ = manager.Release(claimed.Claim)
-		return nil, nil, errors.New("protected import candidate is invalid")
+		return nil, errors.New("protected import candidate is invalid")
 	}
 	// Accept every version this build understands, not just the current one. A
 	// session is claimed by whichever binary is running when the user finishes
@@ -271,21 +331,20 @@ func (s *Server) claimProtectedImportCandidateSession(
 		!strings.EqualFold(strings.TrimSpace(envelope.Profile), profile) ||
 		normalizeProjectID(envelope.ProjectID) != projectID {
 		clearCredentialRequirementValues(requirements)
-		releaseErr := manager.Release(claimed.Claim)
-		return nil, nil, errors.Join(errors.New("protected import candidate scope is invalid"), releaseErr)
+		return nil, errors.New("protected import candidate scope is invalid")
 	}
 	if !envelope.ExpirationDisabled && !envelope.ExpiresAt.After(time.Now().UTC()) {
 		clearCredentialRequirementValues(requirements)
-		if releaseErr := manager.Release(claimed.Claim); releaseErr != nil {
-			return nil, nil, fmt.Errorf("release expired protected import candidate claim: %w", releaseErr)
-		}
-		return nil, nil, importsession.ErrSessionExpired
+		return nil, importsession.ErrSessionExpired
 	}
 	script := envelope.Script
-	// claimed.Payload is cleared by the deferred clear above, and RawSource
-	// aliases into it after json.Unmarshal, so the bytes must be copied out
-	// before that fires or the caller would see a zeroed buffer.
-	rawSource := append([]byte(nil), envelope.RawSource...)
+	// The payload is cleared by the caller, and RawSource aliases into it after
+	// json.Unmarshal, so the bytes must be copied out before that happens or
+	// the caller would see a zeroed buffer.
+	var rawSource []byte
+	if retainRawSource {
+		rawSource = append([]byte(nil), envelope.RawSource...)
+	}
 	clear(envelope.RawSource)
 	return &protectedImportCandidate{
 		Script:                 &script,
@@ -294,7 +353,7 @@ func (s *Server) claimProtectedImportCandidateSession(
 		RawSourceFormat:        envelope.RawSourceFormat,
 		ExpiresAt:              envelope.ExpiresAt,
 		ExpirationDisabled:     envelope.ExpirationDisabled,
-	}, &claimed.Claim, nil
+	}, nil
 }
 
 // supportedImportCandidateSessionVersion reports whether this build can decode a
@@ -408,10 +467,12 @@ func (s *Server) completeImportCandidateClaim(ctx context.Context, claim *import
 	}
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
-	// Completion must remain fenced to this exact lease epoch. The generic
-	// OpenAPI/Postman flow has no durable receipt authorizing an epochless
-	// finalization; if cleanup fails, retain the claim so a stale-claim recovery
-	// can reconcile the deterministic create-only script safely.
+	// Completion must remain fenced to this exact lease epoch. The store marks
+	// the claim consumed before deleting anything, so if cleanup then fails the
+	// committed session is never recovered into a claimable draft; the store's
+	// janitor finishes deleting it. Only if that first write fails does the
+	// claim stay unmarked, and then stale-claim recovery can at worst replay the
+	// generic flow's deterministic create-only script.
 	return manager.Complete(cleanupCtx, *claim)
 }
 

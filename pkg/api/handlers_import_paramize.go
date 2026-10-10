@@ -64,6 +64,9 @@ func (s *Server) handleApplyImportParameterization(w http.ResponseWriter, r *htt
 		var claimErr error
 		mutationClaim, claimErr = s.claimImportDraftMutation(r, req.Script)
 		if claimErr != nil {
+			if writeImportDraftBusy(w, claimErr) {
+				return
+			}
 			writeScriptImportResponse(w, http.StatusConflict, map[string]any{
 				"error": "credential-preserving import draft is invalid or expired; run the import again",
 				"code":  "import_draft_attestation_invalid",

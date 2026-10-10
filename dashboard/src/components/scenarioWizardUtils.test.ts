@@ -490,7 +490,7 @@ describe('SCENARIO_SHAPE_PRESETS', () => {
       const preset = getScenarioShapePreset(id)!
       const scenarioSeconds = parseDurationSeconds(preset.duration)
       preset.groups.forEach((group) => {
-        if (!group.stages?.length) return
+        if (!group.stages?.length) return // only staged groups have a timeline to check
         const validation = validateStageTimeline(preset.duration, group.stages)
         expect(validation.status).not.toBe('error')
         const stageSeconds = group.stages.reduce((sum, stage) => sum + parseDurationSeconds(stage.duration), 0)

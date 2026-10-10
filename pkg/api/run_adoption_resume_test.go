@@ -106,8 +106,17 @@ func runAdoptedResumeScenario(t *testing.T, lossTolerant bool) {
 	started := time.Now().UTC()
 	test := &ManagedTest{ID: "resume-run", Name: "resume-run", Status: "RUNNING", StartedAt: &started, Assignment: &GeneratorAssignmentSettings{FailoverPolicy: "continue", TolerateGeneratorLoss: lossTolerant}}
 	setStoredAdoptionTestCheckpoint(t, runner, store, test, string(checkpoint))
+	// The windows the lost leader persisted, and a stale count this process
+	// kept from an early hydration of the run.
+	for index, window := range [][2]int64{{300, 3}, {200, 0}} {
+		at := started.Add(time.Duration(index-10) * time.Second)
+		if err := store.SaveHistory(test.ID, at, &LiveMetrics{Timestamp: at, TotalTx: window[0], TotalErrors: window[1]}); err != nil {
+			t.Fatalf("save history: %v", err)
+		}
+	}
 	runner.mu.Lock()
 	runner.tests[test.ID] = test
+	test.runTotals.countWindow(&runTotalsWindow{runTotalsCounts: runTotalsCounts{tx: 1_000_000}}, nil, nil)
 	runner.mu.Unlock()
 
 	if err := runner.adoptOrphanedRuns(); err != nil {
@@ -158,7 +167,13 @@ func runAdoptedResumeScenario(t *testing.T, lossTolerant bool) {
 	}
 	runner.mu.RLock()
 	continuity := cloneManagedTestFieldsLocked(test).Continuity
+	runTotalTx, runTotalErrors := deref(test.LiveMetrics.RunTotalTx), deref(test.LiveMetrics.RunTotalErrors)
 	runner.mu.RUnlock()
+	// The run totals start from the stored windows (500 / 3), not the kept
+	// count, and the target answers every request.
+	if runTotalTx < 500 || runTotalTx >= 1_000_000 || runTotalErrors != 3 {
+		t.Fatalf("adopted run totals = %d / %d, want at least 500 from storage (not the kept count) / 3", runTotalTx, runTotalErrors)
+	}
 	if continuity == nil || len(continuity.Failovers) != 1 || continuity.ExecutionGeneration != newGeneration {
 		t.Fatalf("continuity after resume = %+v", continuity)
 	}

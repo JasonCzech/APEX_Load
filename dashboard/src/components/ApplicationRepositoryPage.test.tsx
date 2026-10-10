@@ -394,7 +394,7 @@ describe('ApplicationRepositoryPage', () => {
     expect(onCreateTestFromScenario).toHaveBeenCalledWith('scenario-1', project.id)
 
     const searchInput = container.querySelector('.repository-search input') as HTMLInputElement | null
-    expect(searchInput).toBeDefined()
+    expect(searchInput).toBeTruthy()
     if (!searchInput) return
     await act(async () => {
       setInputValue(searchInput, 'missing asset')
@@ -420,7 +420,7 @@ describe('ApplicationRepositoryPage', () => {
     })
 
     const releaseInput = Array.from(container.querySelectorAll('input')).find(input => input.getAttribute('placeholder') === 'New release name') as HTMLInputElement | undefined
-    expect(releaseInput).toBeDefined()
+    expect(releaseInput).toBeTruthy()
     if (!releaseInput) return
     await act(async () => {
       setInputValue(releaseInput, '2026.06')
@@ -1158,6 +1158,7 @@ describe('ApplicationRepositoryPage', () => {
     expect(paymentsCategoryInput?.value).toBe('')
     expect(repositoryApiMock.createRepositoryCategory).not.toHaveBeenCalled()
 
+    expect(paymentsCategoryInput).toBeTruthy()
     if (!paymentsCategoryInput) return
     await act(async () => setInputValue(paymentsCategoryInput, 'Payment Operations'))
     await act(async () => findButton(container, 'Add Category')?.click())
@@ -1242,6 +1243,7 @@ describe('ApplicationRepositoryPage', () => {
 
     await act(async () => findButton(container, 'Structure', false)?.click())
     const categoryInput = container.querySelector<HTMLInputElement>('input[placeholder="Payments, Claims, Search"]')
+    expect(categoryInput).toBeTruthy()
     if (!categoryInput) return
     await act(async () => setInputValue(categoryInput, created.name))
     await act(async () => findButton(container, 'Add Category')?.click())
@@ -1273,6 +1275,8 @@ describe('ApplicationRepositoryPage', () => {
     await act(async () => findButton(container, 'Structure', false)?.click())
     const categoryInput = container.querySelector<HTMLInputElement>('input[placeholder="Payments, Claims, Search"]')
     const domainSelect = container.querySelector<HTMLSelectElement>('.repository-domain-select select')
+    expect(domainSelect).toBeTruthy()
+    expect(categoryInput).toBeTruthy()
     if (!categoryInput || !domainSelect) return
 
     await act(async () => setInputValue(categoryInput, 'Retail Orders'))
@@ -1304,6 +1308,9 @@ describe('ApplicationRepositoryPage', () => {
     const projectInput = container.querySelector<HTMLInputElement>('input[placeholder="New project name"]')
     const releaseInput = container.querySelector<HTMLInputElement>('input[placeholder="New release name"]')
     const domainSelect = container.querySelector<HTMLSelectElement>('.repository-domain-select select')
+    expect(domainSelect).toBeTruthy()
+    expect(releaseInput).toBeTruthy()
+    expect(projectInput).toBeTruthy()
     if (!projectInput || !releaseInput || !domainSelect) return
     await act(async () => setInputValue(projectInput, 'Orders API'))
     await act(async () => setInputValue(releaseInput, '2026.08'))
@@ -1354,6 +1361,7 @@ describe('ApplicationRepositoryPage', () => {
     await flushPromises()
     await act(async () => findButton(container, 'Structure', false)?.click())
     const projectInput = container.querySelector<HTMLInputElement>('input[placeholder="New project name"]')
+    expect(projectInput).toBeTruthy()
     if (!projectInput) return
     await act(async () => setInputValue(projectInput, 'Orders API'))
     await act(async () => findButton(container, 'Create Project')?.click())

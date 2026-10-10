@@ -943,6 +943,9 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 			if claim != nil {
 				s.releaseImportDraftAttestation(claim)
 			}
+			if writeImportDraftBusy(w, claimErr) {
+				return
+			}
 			writeError(w, http.StatusConflict, "JMeter import draft is invalid or expired; run the import again")
 			return
 		}

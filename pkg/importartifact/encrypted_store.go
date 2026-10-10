@@ -40,8 +40,13 @@ var (
 	ErrSessionCapacity       = importsession.ErrSessionCapacity
 	ErrSessionClaimed        = importsession.ErrSessionClaimed
 	ErrSessionClaimLost      = importsession.ErrSessionClaimLost
+	ErrSessionConsumed       = importsession.ErrSessionConsumed
 	ErrUnsupportedFilesystem = errors.New("protected import artifact filesystem is unsupported")
 )
+
+// errConsumedSessionGone is returned for a consumed session. It also matches
+// os.ErrNotExist so every existing "session is gone" path treats it that way.
+var errConsumedSessionGone = fmt.Errorf("%w: %w", ErrSessionConsumed, os.ErrNotExist)
 
 type EncryptedStore struct {
 	root            string
@@ -1292,6 +1297,9 @@ func (s *EncryptedStore) RestoreSessionClaim(
 	if err := validateSessionClaimDescriptor(descriptor, id, projectID, actor, claimToken); err != nil {
 		return false, err
 	}
+	if descriptor.Consumed {
+		return false, s.completeSessionClaimLocked(ctx, descriptor, claimPath, false)
+	}
 	if !descriptor.ExpiresAt.After(now.UTC()) {
 		if err := s.consumeExpiredSessionClaimLocked(ctx, descriptor, claimPath); err != nil {
 			return false, err
@@ -1315,6 +1323,11 @@ func (s *EncryptedStore) releaseSessionClaimLocked(id, projectID, actor, claimTo
 	if err := validateSessionClaimDescriptor(descriptor, id, projectID, actor, claimToken); err != nil {
 		return err
 	}
+	if descriptor.Consumed {
+		// The consumer already committed. Releasing would hand the same draft to
+		// a second consumer; completion or the janitor finishes the cleanup.
+		return errConsumedSessionGone
+	}
 	if _, err := os.Stat(target); err == nil {
 		return errors.New("Bruno import session descriptor already exists")
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -1331,9 +1344,51 @@ func (s *EncryptedStore) releaseSessionClaimLocked(id, projectID, actor, claimTo
 	return nil
 }
 
+// MarkSessionClaimConsumed durably records that the claim's consumer committed,
+// without deleting anything. A consumed claim is never recovered or released
+// back into a claimable session; completion or the janitor removes it.
+func (s *EncryptedStore) MarkSessionClaimConsumed(id, projectID, actor, claimToken string) error {
+	if s.readOnly {
+		return errors.New("Bruno artifact store is read-only")
+	}
+	if !validSessionID(id) {
+		return errors.New("invalid Bruno import session id")
+	}
+	unlock, err := s.lockSessionClaims()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unlock() }()
+	claimPath := filepath.Join(s.root, ".sessions", strings.TrimSpace(id)+".claim.json")
+	_, descriptor, err := readSessionDescriptorFile(claimPath)
+	if err != nil {
+		return err
+	}
+	if err := validateSessionClaimDescriptor(descriptor, id, projectID, actor, claimToken); err != nil {
+		return err
+	}
+	return s.markSessionClaimConsumedLocked(claimPath, descriptor)
+}
+
+func (s *EncryptedStore) markSessionClaimConsumedLocked(claimPath string, descriptor SessionDescriptor) error {
+	if descriptor.Consumed {
+		return nil
+	}
+	descriptor.Consumed = true
+	return s.replaceSessionDescriptorFile(claimPath, descriptor)
+}
+
 // CompleteSessionClaim removes the claim and encrypted session payload only
-// after the caller has committed its database transaction.
+// after the caller has committed its database transaction. The claim is marked
+// consumed first, so a cleanup failure can never reopen the committed session.
 func (s *EncryptedStore) CompleteSessionClaim(ctx context.Context, id, projectID, actor, claimToken string) error {
+	return s.completeSessionClaim(ctx, id, projectID, actor, claimToken, true)
+}
+
+// completeSessionClaim backs CompleteSessionClaim and ConsumeSession. Only a
+// committed consumer marks the claim; ConsumeSession deletes before its caller
+// commits, so a failed cleanup there must stay releasable for a retry.
+func (s *EncryptedStore) completeSessionClaim(ctx context.Context, id, projectID, actor, claimToken string, markConsumed bool) error {
 	if s.readOnly {
 		return errors.New("Bruno artifact store is read-only")
 	}
@@ -1354,7 +1409,7 @@ func (s *EncryptedStore) CompleteSessionClaim(ctx context.Context, id, projectID
 	if err := validateSessionClaimDescriptor(descriptor, id, projectID, actor, claimToken); err != nil {
 		return err
 	}
-	return s.completeSessionClaimLocked(ctx, descriptor, claimPath)
+	return s.completeSessionClaimLocked(ctx, descriptor, claimPath, markConsumed)
 }
 
 // consumeExpiredSessionClaimLocked keeps the descriptor—the only durable
@@ -1383,7 +1438,17 @@ func (s *EncryptedStore) completeSessionClaimLocked(
 	ctx context.Context,
 	descriptor SessionDescriptor,
 	claimPath string,
+	markConsumed bool,
 ) error {
+	// A committed consumer marks the claim before deleting anything. If cleanup
+	// then fails, the claim stays a tombstone: stale-claim recovery would
+	// otherwise restore the session and let a second consumer commit it again.
+	if markConsumed {
+		if err := s.markSessionClaimConsumedLocked(claimPath, descriptor); err != nil {
+			return err
+		}
+		descriptor.Consumed = true
+	}
 	if err := s.deleteSessionPayloadIfUnreferenced(ctx, descriptor, claimPath); err != nil {
 		return err
 	}
@@ -1586,6 +1651,11 @@ func (s *EncryptedStore) recoverStaleSessionClaimScopedLocked(
 		(enforceProfile && descriptor.EffectiveProfile() != effectiveSessionProfile(profile)) {
 		return os.ErrNotExist
 	}
+	if descriptor.Consumed {
+		// Its consumer committed. Only an uncommitted, abandoned claim may be
+		// restored; this one is finished by completion or the janitor.
+		return errConsumedSessionGone
+	}
 	if now.UTC().Sub(info.ModTime().UTC()) <= sessionClaimLease {
 		return ErrSessionClaimed
 	}
@@ -1611,7 +1681,7 @@ func (s *EncryptedStore) ConsumeSession(ctx context.Context, id, projectID, acto
 	if err != nil {
 		return nil, SessionDescriptor{}, err
 	}
-	if err := s.CompleteSessionClaim(ctx, id, projectID, actor, descriptor.ClaimToken); err != nil {
+	if err := s.completeSessionClaim(ctx, id, projectID, actor, descriptor.ClaimToken, false); err != nil {
 		clear(payload)
 		_ = s.ReleaseSessionClaim(id, projectID, actor, descriptor.ClaimToken)
 		return nil, SessionDescriptor{}, err
@@ -1984,6 +2054,24 @@ func (s *EncryptedStore) DeleteExpiredSessions(ctx context.Context, now time.Tim
 		}
 		if readErr != nil {
 			cleanupErrors = append(cleanupErrors, fmt.Errorf("read Bruno import session %q: %w", entry.Name(), readErr))
+			continue
+		}
+		if descriptor.Consumed && strings.HasSuffix(entry.Name(), ".claim.json") {
+			// Finish a committed consumer's cleanup once its lease is stale.
+			// Like completion, this deletes only the session payload: related
+			// objects may now belong to the commit, so it is not reported as
+			// expired.
+			info, infoErr := entry.Info()
+			if infoErr != nil {
+				cleanupErrors = append(cleanupErrors, fmt.Errorf("inspect consumed Bruno import session claim %q: %w", descriptor.ID, infoErr))
+				continue
+			}
+			if now.UTC().Sub(info.ModTime().UTC()) <= sessionClaimLease {
+				continue
+			}
+			if completeErr := s.completeSessionClaimLocked(ctx, descriptor, path, false); completeErr != nil {
+				cleanupErrors = append(cleanupErrors, fmt.Errorf("finish consumed Bruno import session claim %q: %w", descriptor.ID, completeErr))
+			}
 			continue
 		}
 		if descriptor.ExpirationDisabled {

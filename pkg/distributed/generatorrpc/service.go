@@ -91,6 +91,11 @@ type assignedTest struct {
 	groupRuntimeResourceClaims      map[string]*pb.RuntimeResourceClaim
 	groupRuntimeResourcePeaks       map[string]int32
 	terminalError                   string
+
+	// metricsCollection identifies the collection that produced the window in
+	// groupTransactions and groupAggregates; every batch built from the
+	// assignment carries it, so a re-sent window is recognizable.
+	metricsCollection uint64
 }
 
 const defaultAssignmentStageTTL = 2 * time.Minute
@@ -1891,12 +1896,12 @@ func (s *Service) publishMetricsWithAggregates(testID string, groupName string, 
 	if assignment.groupTelemetry == nil {
 		assignment.groupTelemetry = make(map[string]MetricsTelemetry)
 	}
-	if assignment.groupTransactions == nil {
-		assignment.groupTransactions = make(map[string][]TransactionMetric)
-	}
-	if assignment.groupAggregates == nil {
-		assignment.groupAggregates = make(map[string]metricsAggregateSet)
-	}
+	// A publication is a new window, as a coordinated publication is
+	// (publishTestExecutionSnapshot): it replaces every group's published
+	// window, so another group's earlier window is not sent, and counted,
+	// again.
+	assignment.groupTransactions = make(map[string][]TransactionMetric)
+	assignment.groupAggregates = make(map[string]metricsAggregateSet)
 	if assignment.groupTransactionResponseTimeSLA == nil {
 		assignment.groupTransactionResponseTimeSLA = make(map[string][]engine.TransactionResponseTimeSLACompliance)
 	}
@@ -1915,6 +1920,7 @@ func (s *Service) publishMetricsWithAggregates(testID string, groupName string, 
 	assignment.groupTransactions[groupName] = groupTransactions
 	boundRetainedTransactionSamples(assignment.groupTransactions, groupName)
 	assignment.groupAggregates[groupName] = aggregates
+	assignment.metricsCollection = nextMetricsCollection()
 	if expected != nil {
 		expected.metricsMu.Lock()
 		if expected.lastMetrics != nil {
@@ -1926,13 +1932,10 @@ func (s *Service) publishMetricsWithAggregates(testID string, groupName string, 
 	s.assignments[testID] = assignment
 	batch := s.metricsBatchLocked(testID)
 	writer := s.archiveManager.writer(testID)
-	recordArchive := !requireMatch || s.isArchivePublisherLocked(testID, groupName)
 	s.mu.Unlock()
 
-	if recordArchive {
-		s.recordMetricsBatch(testID, writer, batch)
-	}
-
+	// Each publication carries only this group's window, so each is archived.
+	s.recordMetricsBatch(testID, writer, batch)
 	s.broadcastMetricsLocked(batch)
 	return nil
 }
@@ -2281,6 +2284,7 @@ func (s *Service) metricsBatchForAssignment(testID string, assignment assignedTe
 	// window, so behavior is unchanged.
 	if telemetry != nil {
 		telemetry.WindowMs = effectiveBatchWindowMs(assignment, telemetry.WindowMs)
+		telemetry.CollectionSequence = assignment.metricsCollection
 	}
 	for groupName, activeVUsers := range groupAssignments {
 		if !groupsWithActiveStats[groupName] {
@@ -2416,6 +2420,7 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 			GeneratorProcessingLagMs: telemetry.GeneratorProcessingLagMs,
 			TransportLagMs:           telemetry.TransportLagMs,
 			DroppedSubscriberBatches: telemetry.DroppedSubscriberBatches,
+			CollectionSequence:       telemetry.CollectionSequence,
 		}
 		// The broker attributes every dropped batch to its test, so this
 		// count starts at zero with the test.
@@ -2640,6 +2645,7 @@ func (s *Service) publishTestExecutionSnapshot(testID string, groupName string, 
 	// and deliberately retain their latest values.
 	assignment.groupTransactions = make(map[string][]TransactionMetric)
 	assignment.groupAggregates = make(map[string]metricsAggregateSet)
+	assignment.metricsCollection = nextMetricsCollection()
 	for _, group := range collected {
 		if group.ok {
 			applyExecutionMetricsToAssignment(&assignment, group.groupName, group.metrics)
@@ -2930,16 +2936,34 @@ func httpVersionMixToProto(groups map[string]*protocol.HTTPVersionMix) *pb.HTTPV
 // captureStoppedExecutionMetrics drains evidence after detached executions have
 // crossed their done barriers. Their normal final publisher is fenced by the
 // missing assignment, so this is the sole owner of any remaining result window.
+// A drain is a new window, as a coordinated publication is
+// (publishTestExecutionSnapshot): it replaces every group's published window,
+// so a group with nothing left to drain does not carry its last window into
+// the terminal batch a second time.
 func (s *Service) captureStoppedExecutionMetrics(assignment *assignedTest, executions []*groupExecution) {
 	if assignment == nil {
 		return
 	}
+	type drainedGroup struct {
+		groupName string
+		metrics   executionMetricsSnapshot
+	}
+	drained := make([]drainedGroup, 0, len(executions))
 	for _, execution := range executions {
 		metrics, ok := s.collectExecutionMetricsWithIdle(execution, false)
 		if !ok {
 			continue
 		}
-		applyExecutionMetricsToAssignment(assignment, execution.groupName, metrics)
+		drained = append(drained, drainedGroup{groupName: execution.groupName, metrics: metrics})
+	}
+	if len(drained) == 0 {
+		return
+	}
+	assignment.groupTransactions = make(map[string][]TransactionMetric)
+	assignment.groupAggregates = make(map[string]metricsAggregateSet)
+	assignment.metricsCollection = nextMetricsCollection()
+	for _, group := range drained {
+		applyExecutionMetricsToAssignment(assignment, group.groupName, group.metrics)
 	}
 }
 
