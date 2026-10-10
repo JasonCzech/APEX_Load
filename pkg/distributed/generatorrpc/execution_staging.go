@@ -1315,7 +1315,7 @@ func javaVuserDistributedContainmentError(capabilities protocol.RuntimeCapabilit
 
 func requiredRuntimeFeature(script *dsl.Script) string {
 	base := requiredBaseRuntimeFeature(script)
-	for _, feature := range append(append(dsl.RequiredMessagingRuntimeFeatures(script), dsl.RequiredCompositionRuntimeFeatures(script)...), dsl.RequiredBrowserRuntimeFeatures(script)...) {
+	for _, feature := range append(append(append(dsl.RequiredMessagingRuntimeFeatures(script), dsl.RequiredCompositionRuntimeFeatures(script)...), dsl.RequiredBrowserRuntimeFeatures(script)...), dsl.RequiredHTTPRuntimeFeatures(script)...) {
 		if base != "" {
 			base += "+"
 		}

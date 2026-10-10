@@ -1517,6 +1517,10 @@ func runtimeAdvertisement(ctx context.Context, requireHealthy bool) ([]string, [
 // probe, so heartbeat generation never holds the service state lock while
 // invoking sidecars or runner health checks. occupancyModes comes from the same
 // state snapshot and is optional for non-session runtimes.
+// http3ExecutionError decides whether this generator advertises
+// native_http3_v1; tests replace it.
+var http3ExecutionError = httpprotocol.HTTP3ExecutionError
+
 func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool, inUse map[string]int64, occupancyModes map[string]string) ([]string, []string, []*pb.ProtocolRuntimeCapacity) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -1525,6 +1529,11 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 	sort.Strings(names)
 	available := make([]string, 0, len(names))
 	features := []string{dsl.FeatureParallelLoopControlV1, dsl.FeaturePropertyAnalyticsV1, FeaturePreparationV1, FeaturePreparationReadinessV1, dsl.FeatureLRFidelityV1, FeatureEvacuationAssignmentStateV1, FeatureSecretBundleV1, FeatureRunSupervisionV1, FeatureMessageDetailCaptureV1, FeatureControlParallelV1, FeatureMessageDetailControlParallelV1}
+	if http3ExecutionError() == nil {
+		// Only a generator whose operator enabled HTTP/3 and whose build
+		// carries the transport may receive auto+h3 or 3 work.
+		features = append(features, dsl.FeatureNativeHTTP3V1)
+	}
 	runtimeCapacities := make([]*pb.ProtocolRuntimeCapacity, 0)
 	for _, name := range names {
 		normalized := strings.ToLower(strings.TrimSpace(name))

@@ -705,7 +705,7 @@ func groupRequiredRuntimeFeature(group TestGroup) string {
 		return group.requiredRuntimeFeature
 	}
 	base := groupBaseRuntimeFeature(group)
-	for _, feature := range append(append(requiredMessagingFeaturesForGroup(group), dsl.RequiredCompositionRuntimeFeatures(group.script)...), requiredBrowserFeaturesForGroup(group)...) {
+	for _, feature := range append(append(append(requiredMessagingFeaturesForGroup(group), dsl.RequiredCompositionRuntimeFeatures(group.script)...), requiredBrowserFeaturesForGroup(group)...), dsl.RequiredHTTPRuntimeFeatures(group.script)...) {
 		if base != "" {
 			base += "+"
 		}

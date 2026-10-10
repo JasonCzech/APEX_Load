@@ -8,7 +8,9 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 func parseGeneratorTargetSpec(raw string) generatorTargetSpec {
@@ -335,5 +337,11 @@ func generatorPlacementRejectionMessage(group TestGroup, loadByTarget map[string
 		return fmt.Sprintf("no compatible generator target is available for group %q using protocol %s", group.Name, protocolName)
 	}
 	sort.Strings(reasons)
-	return fmt.Sprintf("no compatible generator target is available for group %q using protocol %s: %s", group.Name, protocolName, strings.Join(reasons, "; "))
+	message := fmt.Sprintf("no compatible generator target is available for group %q using protocol %s: %s", group.Name, protocolName, strings.Join(reasons, "; "))
+	if strings.Contains(message, dsl.FeatureNativeHTTP3V1) {
+		// Generators advertise native_http3_v1 only with the operator flag on
+		// and an HTTP/3-capable build; say so, so the fix is clear.
+		message += fmt.Sprintf(" (group %q uses HTTP/3: generators advertise %s only when %s is on and their build supports HTTP/3)", group.Name, dsl.FeatureNativeHTTP3V1, httpprotocol.EnvHTTP3)
+	}
+	return message
 }

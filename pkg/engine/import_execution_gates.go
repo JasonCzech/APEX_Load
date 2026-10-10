@@ -7,6 +7,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 // importExecutionGateError enforces durable import blockers at the engine
@@ -27,6 +28,13 @@ func importExecutionGateError(script *dsl.Script, operation string) error {
 	operation = strings.TrimSpace(operation)
 	if operation == "" {
 		operation = "execution"
+	}
+	// HTTP/3 admission for every path that builds an engine: local, embedded,
+	// CLI, replay and shakeout runs, and each generator's own execution.
+	if dsl.ScriptUsesHTTP3(script) {
+		if err := httpprotocol.HTTP3ExecutionError(); err != nil {
+			return fmt.Errorf("script %s is blocked: %w", operation, err)
+		}
 	}
 
 	var issues []string

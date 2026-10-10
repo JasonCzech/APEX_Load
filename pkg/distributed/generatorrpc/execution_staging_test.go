@@ -2,6 +2,7 @@ package generatorrpc
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -310,5 +312,31 @@ func TestAssignmentCoordinatorStageTimerExpiresUncommittedWork(t *testing.T) {
 			t.Fatalf("stage timer did not expire: assigned=%v timer=%v terminal=%+v", assigned, timer, terminal)
 		}
 		time.Sleep(time.Millisecond)
+	}
+}
+
+func TestHTTP3CapabilityAdvertisementAndRequirement(t *testing.T) {
+	previous := http3ExecutionError
+	t.Cleanup(func() { http3ExecutionError = previous })
+	advertised := func() bool {
+		_, features, _ := runtimeAdvertisementWithCapacities(context.Background(), false, nil, nil)
+		return slices.Contains(features, dsl.FeatureNativeHTTP3V1)
+	}
+	http3ExecutionError = func() error { return httpprotocol.ErrHTTP3NotEnabled }
+	if advertised() {
+		t.Fatal("a generator that cannot run HTTP/3 advertised native_http3_v1")
+	}
+	http3ExecutionError = func() error { return nil }
+	if !advertised() {
+		t.Fatal("an HTTP/3-capable generator did not advertise native_http3_v1")
+	}
+	script := &dsl.Script{Name: "h3", Protocol: "http", Config: dsl.ScriptConfig{BaseURL: "https://app.example.test", HTTP: dsl.HTTPConfig{Version: "3"}},
+		Actions: []dsl.Action{{Name: "home", Type: "GET", Target: "/"}}}
+	if got := requiredRuntimeFeature(script); !strings.Contains(got, dsl.FeatureNativeHTTP3V1) {
+		t.Fatalf("requiredRuntimeFeature = %q, want native_http3_v1", got)
+	}
+	script.Config.HTTP.Version = "2"
+	if got := requiredRuntimeFeature(script); strings.Contains(got, dsl.FeatureNativeHTTP3V1) {
+		t.Fatalf("an HTTP/2 script required %q", got)
 	}
 }

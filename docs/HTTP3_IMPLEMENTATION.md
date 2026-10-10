@@ -1,6 +1,6 @@
 # HTTP/3 Implementation Plan and Decision Records
 
-Status: Wave 0 complete; Wave 1 in progress. Native HTTP/3 execution is **not** available yet; the web support matrix still lists HTTP/3 as a gap.
+Status: Waves 0 and 1 complete; Wave 2 next. Native HTTP/3 execution is **not** available yet; the web support matrix still lists HTTP/3 as a gap.
 
 This file is the in-repo companion to the HTTP/3 delivery specification (24 work packages in 7 waves). It records the decisions the code depends on, the measurements behind them, and what each wave has delivered. Code references are to `main`.
 
@@ -9,7 +9,7 @@ This file is the in-repo companion to the HTTP/3 delivery specification (24 work
 | Wave | Scope | Status |
 | --- | --- | --- |
 | 0 | Fixture, quic-go contract tests, Alt-Svc observation, browser protocol evidence and QUIC setting, cURL TCP versions, DevWeb disclosure | Complete (see deviations) |
-| 1 | Version vocabulary and resolver, `config.http.quic`, `APEXLOAD_HTTP3` flag and `native_http3_v1` capability | In progress (WP1.1, WP1.2 done) |
+| 1 | Version vocabulary and resolver, `config.http.quic`, `APEXLOAD_HTTP3` flag and `native_http3_v1` capability | Complete (see deviations) |
 | 2 | Exact HTTP/3 (`3`) preview | Not started |
 | 3 | `auto+h3` upgrade pilot | Not started |
 | 4 | Recording and import mapping | Not started |
@@ -128,3 +128,4 @@ The window and packet defaults are quic-go v0.63.0's. Stream budgets stay govern
 | --- | --- | --- |
 | WP1.1 | `auto+h3` and `3` at every level (script, request, `http_sequence` children, runtime-settings overrides) in the DSL, JSON schema, OpenAPI and dashboard types; `NormalizeVersion` maps `HTTP/3`, `HTTP/3.0` and `h3` to `3` while draft tokens stay unsupported; one precedence (request, group, scenario, script, alias) shared with the existing policies; save-time rejection of exact `3` with an `http://` URL, a TLS maximum below 1.3, a custom proxy or integrated auth, and of either policy with network shaping; HTTP/1.1-only `Expect` rule skipped for exact `3`; the runtime refuses any request that resolves to an HTTP/3 policy before sending, while overrides to other policies still run | The `http/3` protocol alias waits until every dispatch path recognizes it (Wave 2). The post-resolution URL check lands with the transport (WP2.1), because this runtime refuses all HTTP/3 requests before resolution matters. The two policies are already offered in the existing version selects so a stored policy displays correctly; the QUIC panel and capability-aware messages remain WP5.2 |
 | WP1.2 | `config.http.quic` with the five fields in the DSL, JSON schema, OpenAPI and dashboard types; range validation shared by save and session start; unknown keys kept through JSON clones so group and scenario overrides report them too; the block layers with the `http` section, which overrides replace whole; session parsing into `QUICSettings`; the seven operator variables with bounds and defaults | The operator limits are parsed and validated but consumed only once the transport exists (WP2.1), which is also where startup reads them. Authoring controls for the five fields are WP5.2 |
+| WP1.3 | `APEXLOAD_HTTP3` (off by default) and `native_http3_v1`. A script uses HTTP/3 when any request resolves to `auto+h3` or `3` after precedence. Generators advertise the capability only when the flag is on and the build carries the transport; placement requires it, so start, scheduled launch, scale-out, replacement and HA recovery (which reuses the requirement persisted at start) reject HTTP/3 groups on generators without it, naming each generator and, for a missing capability, the flag. The engine's execution gate refuses HTTP/3 scripts for local, embedded, CLI, replay and shakeout runs and inside each generator. Disabling the flag blocks new work and never rewrites stored policies | No build carries the transport yet, so even with the flag on every HTTP/3 run is refused with "this build has no HTTP/3 transport yet"; Wave 2 flips that. Mixed pools follow the existing per-generator feature rule: generators without the capability are excluded and named, rather than a separate pool-level rejection |

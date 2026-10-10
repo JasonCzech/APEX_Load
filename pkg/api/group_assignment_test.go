@@ -8,6 +8,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -869,5 +870,32 @@ func governedPersistentJavaRuntimeFeatures() []string {
 	return []string{
 		protocol.FeatureJavaVuserPersistentLifecycleV1,
 		protocol.FeatureJavaVuserSessionFrameTokenV1,
+	}
+}
+
+func TestHTTP3GroupsNeedGeneratorsAdvertisingNativeHTTP3(t *testing.T) {
+	script := &dsl.Script{Name: "h3", Protocol: "http", Config: dsl.ScriptConfig{BaseURL: "https://app.example.test", HTTP: dsl.HTTPConfig{Version: "auto+h3"}},
+		Actions: []dsl.Action{{Name: "home", Type: "GET", Target: "/"}}}
+	group := TestGroup{Name: "h3-users", Protocol: "http", VUsers: 10, script: script}
+	if required := groupRequiredRuntimeFeature(group); !strings.Contains(required, dsl.FeatureNativeHTTP3V1) {
+		t.Fatalf("required feature = %q, want native_http3_v1", required)
+	}
+	loadByTarget := map[string]generatorLoadSnapshot{
+		"gen-old": {Target: "gen-old", AvailableCapacity: 100, SupportedProtocols: []string{"http"}},
+	}
+	specs := []generatorTargetSpec{{Address: "gen-old", Protocols: []string{"http"}}}
+	message := generatorPlacementRejectionMessage(group, loadByTarget, specs, nil)
+	if !strings.Contains(message, "gen-old does not advertise required runtime feature") || !strings.Contains(message, httpprotocol.EnvHTTP3) {
+		t.Fatalf("rejection = %q, want the generator and the flag named", message)
+	}
+	// A capacity rejection of an HTTP/3 group does not blame the flag.
+	specs = []generatorTargetSpec{{Address: "gen-new", Protocols: []string{"http"}, Features: []string{dsl.FeatureNativeHTTP3V1}}}
+	loadByTarget = map[string]generatorLoadSnapshot{"gen-new": {Target: "gen-new", AvailableCapacity: 1, SupportedProtocols: []string{"http"}}}
+	if message := generatorPlacementRejectionMessage(group, loadByTarget, specs, nil); strings.Contains(message, httpprotocol.EnvHTTP3) {
+		t.Fatalf("capacity rejection = %q blamed the flag", message)
+	}
+	group.script = &dsl.Script{Name: "h2", Protocol: "http", Config: dsl.ScriptConfig{HTTP: dsl.HTTPConfig{Version: "2"}}, Actions: script.Actions}
+	if required := groupRequiredRuntimeFeature(group); strings.Contains(required, dsl.FeatureNativeHTTP3V1) {
+		t.Fatalf("an HTTP/2 group required %q", required)
 	}
 }
