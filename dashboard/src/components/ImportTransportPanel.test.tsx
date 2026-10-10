@@ -103,6 +103,19 @@ describe('ImportTransportPanel', () => {
     expect(container.querySelector('[aria-label="Transport preview"]')).not.toBeNull()
   })
 
+  it('offers exact HTTP/3 only for https origins', async () => {
+    const cleartext = { ...script, config: { base_url: 'http://plain.example.test' }, actions: [{ name: 'home', type: 'GET', method: 'GET', target: '/' }] } as unknown as ScriptDefinition
+    await render({ script: cleartext })
+    const exact = Array.from(select('http://plain.example.test').options).find(option => option.value === '3')!
+    expect(exact.disabled).toBe(true)
+    expect(exact.textContent).toBe('Require HTTP/3 (no fallback) (https only)')
+    expect(Array.from(select('http://plain.example.test').options).find(option => option.value === 'auto+h3')!.disabled).toBe(false)
+    act(() => root.unmount())
+    root = createRoot(container)
+    await render()
+    expect(Array.from(select('https://api.example.test').options).find(option => option.value === '3')!.disabled).toBe(false)
+  })
+
   it('locks every control while disabled', async () => {
     await render({ disabled: true })
     expect(Array.from(container.querySelectorAll('select')).every(element => element.disabled)).toBe(true)

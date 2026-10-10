@@ -32,7 +32,7 @@ func httpVersionSummaryLines(mix *protocol.HTTPVersionMix) []string {
 	parts := make([]string, 0, len(cliVersionBuckets))
 	for _, bucket := range cliVersionBuckets {
 		if count := mix.ByVersion[bucket.key]; count > 0 {
-			parts = append(parts, fmt.Sprintf("%s %d (%.1f%%)", bucket.label, count, float64(count)*100/float64(mix.Actions)))
+			parts = append(parts, fmt.Sprintf("%s %d (%s)", bucket.label, count, cliPercent(count, mix.Actions)))
 		}
 	}
 	lines := []string{"  HTTP versions: " + strings.Join(parts, ", ")}
@@ -43,11 +43,24 @@ func httpVersionSummaryLines(mix *protocol.HTTPVersionMix) []string {
 		if value.Denominator == 0 {
 			return fmt.Sprintf("    %s: n/a (no %s)", name, noun)
 		}
-		return fmt.Sprintf("    %s: %.1f%% (%d of %d %s)", name, value.Value*100, value.Numerator, value.Denominator, noun)
+		return fmt.Sprintf("    %s: %s (%d of %d %s)", name, cliPercent(value.Numerator, value.Denominator), value.Numerator, value.Denominator, noun)
 	}
 	return append(lines,
 		ratio("Fell back to TCP", mix.FallbackRatio(), "upgrade-eligible auto+h3 actions"),
 		ratio("QUIC failures", mix.QUICFailureRatio(), "QUIC attempts"))
+}
+
+// cliPercent formats part of whole to one decimal; a nonzero share that
+// rounds to zero reads "<0.1%", as in the dashboard.
+func cliPercent(part, whole int64) string {
+	if whole <= 0 {
+		return "n/a"
+	}
+	percent := float64(part) * 100 / float64(whole)
+	if part > 0 && percent < 0.05 {
+		return "<0.1%"
+	}
+	return fmt.Sprintf("%.1f%%", percent)
 }
 
 // httpVersionSummaryJSON is the same summary for --format json.

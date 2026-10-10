@@ -60,3 +60,14 @@ func TestScriptValidateNotesHTTP3Requirements(t *testing.T) {
 		t.Fatalf("TCP script note = %q", tcp.HTTP3)
 	}
 }
+
+func TestCLIPercentNeverShowsAZeroShareForNonzeroCounts(t *testing.T) {
+	for _, tc := range []struct {
+		part, whole int64
+		want        string
+	}{{1, 5000, "<0.1%"}, {0, 5000, "0.0%"}, {5, 1000, "0.5%"}, {1, 0, "n/a"}, {3, 4, "75.0%"}} {
+		if got := cliPercent(tc.part, tc.whole); got != tc.want {
+			t.Fatalf("cliPercent(%d, %d) = %q, want %q", tc.part, tc.whole, got, tc.want)
+		}
+	}
+}

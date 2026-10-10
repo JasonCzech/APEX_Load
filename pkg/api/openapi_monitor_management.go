@@ -14,7 +14,11 @@ func completeBoundedEvidenceModel(pkg, name string) bool {
 		switch name {
 		case "TelemetryPolicyEvidence", "TelemetryBudgetPolicy", "TelemetryStageBudget", "BrowserResourcePage", "BrowserResourcePageItem", "BrowserResourcePageLocator", "BrowserResourcePagePopulation", "BrowserResourcePageCoverage",
 			"TelemetryCoverage", "TelemetrySourceCoverage", "TelemetrySourceSummary", "TelemetryCounterTotal", "TelemetryCoverageRecord", "TelemetryPolicySegment", "TelemetryLossAccounting",
-			"TelemetryAcceptanceVerdict", "TelemetryAcceptanceCriterion", "TelemetryAcceptancePolicySnapshot", "TelemetryAcceptancePolicyDefinition", "TelemetryLagPercentileRule", "RunPolicyPin":
+			"TelemetryAcceptanceVerdict", "TelemetryAcceptanceCriterion", "TelemetryAcceptancePolicySnapshot", "TelemetryAcceptancePolicyDefinition", "TelemetryLagPercentileRule", "RunPolicyPin",
+			// HTTP/3 report evidence: the version mix, its Protocol Mix
+			// finding, load generator UDP and the scenario preflight.
+			"RunArchiveHTTPVersionMix", "RunArchiveProtocolMixFinding", "RunArchiveProtocolMixBreach", "RunArchiveProtocolMixReason",
+			"RunArchiveHostNetworkEvidence", "RunArchiveHTTP3Preflight", "HTTP3PreflightResult", "HTTP3PreflightUnchecked":
 			return true
 		}
 	}
@@ -24,7 +28,14 @@ func completeBoundedEvidenceModel(pkg, name string) bool {
 			"BrowserResourceEvidence", "BrowserResourcePhase", "BrowserResourceBytes",
 			"BrowserRuntimeCohort", "BrowserDocumentObservation", "BrowserDocumentEvidence",
 			"BrowserDocumentSummary", "BrowserDocumentMetricSummary", "BrowserMetricDistribution",
-			"BrowserRuntimeMetricAvailability", "BrowserRuntimeMetricCapability":
+			"BrowserRuntimeMetricAvailability", "BrowserRuntimeMetricCapability",
+			"HTTPVersionMix", "Ratio":
+			return true
+		}
+	}
+	if pkg == "hostnet" {
+		switch name {
+		case "RunEvidence", "OpenFileLimit", "UDPBufferLimits", "UDPDropCounters", "UDPDropDelta":
 			return true
 		}
 	}

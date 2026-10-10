@@ -3119,12 +3119,38 @@ export interface operations {
               "tier"?: string;
             }>;
             "host_network"?: Array<{
-              "open_files"?: Record<string, unknown>;
+              "open_files"?: {
+                "available"?: boolean;
+                "hard"?: number;
+                "soft"?: number;
+              };
               "source"?: string;
-              "udp_buffers"?: Record<string, unknown>;
-              "udp_drops_at_end"?: (Record<string, unknown>) | null;
-              "udp_drops_at_start"?: (Record<string, unknown>) | null;
-              "udp_drops_delta"?: (Record<string, unknown>) | null;
+              "udp_buffers"?: {
+                "available"?: boolean;
+                "receive_max_bytes"?: number;
+                "send_max_bytes"?: number;
+              };
+              "udp_drops_at_end"?: ({
+                "in_errors"?: number;
+                "receive_buffer_errors"?: number;
+                "sampled_at"?: string;
+                "scope"?: string;
+                "scope_id"?: string;
+                "send_buffer_errors"?: number;
+              }) | null;
+              "udp_drops_at_start"?: ({
+                "in_errors"?: number;
+                "receive_buffer_errors"?: number;
+                "sampled_at"?: string;
+                "scope"?: string;
+                "scope_id"?: string;
+                "send_buffer_errors"?: number;
+              }) | null;
+              "udp_drops_delta"?: ({
+                "in_errors"?: number;
+                "receive_buffer_errors"?: number;
+                "send_buffer_errors"?: number;
+              }) | null;
               "warning"?: string;
             }>;
             "http3_preflight"?: ({
@@ -3293,7 +3319,35 @@ export interface operations {
                 "threshold"?: number;
                 "unit"?: string;
               }>;
-              "host_network"?: Array<Record<string, unknown>>;
+              "host_network"?: Array<{
+                "open_files"?: {
+                  "available"?: boolean;
+                  "hard"?: number;
+                  "soft"?: number;
+                };
+                "source"?: string;
+                "udp_buffers"?: {
+                  "available"?: boolean;
+                  "receive_max_bytes"?: number;
+                  "send_max_bytes"?: number;
+                };
+                "udp_drops_at_end"?: ({
+                  "in_errors"?: number;
+                  "receive_buffer_errors"?: number;
+                  "sampled_at"?: string;
+                  "scope"?: string;
+                  "scope_id"?: string;
+                  "send_buffer_errors"?: number;
+                }) | null;
+                "udp_drops_at_start"?: ({
+                  "in_errors"?: number;
+                  "receive_buffer_errors"?: number;
+                  "sampled_at"?: string;
+                  "scope"?: string;
+                  "scope_id"?: string;
+                  "send_buffer_errors"?: number;
+                }) | null;
+              }>;
               "initial_provenance"?: ({
                 "application_id"?: string;
                 "assignment"?: (Record<string, unknown>) | null;
@@ -3315,7 +3369,30 @@ export interface operations {
                 "goal_config"?: (Record<string, unknown>) | null;
                 "governance"?: (Record<string, unknown>) | null;
                 "groups"?: Array<Record<string, unknown>>;
-                "http3_preflight"?: (Record<string, unknown>) | null;
+                "http3_preflight"?: ({
+                  "blocked"?: boolean;
+                  "omitted"?: number;
+                  "policy"?: string;
+                  "results"?: Array<{
+                    "address"?: string;
+                    "checked_at"?: string;
+                    "error"?: string;
+                    "error_class"?: string;
+                    "group"?: string;
+                    "handshake_ms"?: number;
+                    "ok"?: boolean;
+                    "origin"?: string;
+                    "policy"?: string;
+                    "region"?: string;
+                    "skipped"?: string;
+                    "source"?: string;
+                  }>;
+                  "unchecked"?: Array<{
+                    "reason"?: string;
+                    "region"?: string;
+                    "source"?: string;
+                  }>;
+                }) | null;
                 "joint_evidence"?: (Record<string, unknown>) | null;
                 "policy_pins"?: (Array<{
                   "applied"?: boolean;
@@ -3475,7 +3552,30 @@ export interface operations {
                 "goal_config"?: (Record<string, unknown>) | null;
                 "governance"?: (Record<string, unknown>) | null;
                 "groups"?: Array<Record<string, unknown>>;
-                "http3_preflight"?: (Record<string, unknown>) | null;
+                "http3_preflight"?: ({
+                  "blocked"?: boolean;
+                  "omitted"?: number;
+                  "policy"?: string;
+                  "results"?: Array<{
+                    "address"?: string;
+                    "checked_at"?: string;
+                    "error"?: string;
+                    "error_class"?: string;
+                    "group"?: string;
+                    "handshake_ms"?: number;
+                    "ok"?: boolean;
+                    "origin"?: string;
+                    "policy"?: string;
+                    "region"?: string;
+                    "skipped"?: string;
+                    "source"?: string;
+                  }>;
+                  "unchecked"?: Array<{
+                    "reason"?: string;
+                    "region"?: string;
+                    "source"?: string;
+                  }>;
+                }) | null;
                 "joint_evidence"?: (Record<string, unknown>) | null;
                 "policy_pins"?: (Array<{
                   "applied"?: boolean;
@@ -3945,9 +4045,44 @@ export interface operations {
               };
               "samples"?: number;
               "version_mix"?: ({
-                "fallback_ratio"?: Record<string, unknown>;
-                "finding"?: (Record<string, unknown>) | null;
-                "quic_failure_ratio"?: Record<string, unknown>;
+                "actions"?: number;
+                "attempts"?: number;
+                "by_fallback"?: Record<string, number>;
+                "by_quic_error"?: Record<string, number>;
+                "by_selection"?: Record<string, number>;
+                "by_version"?: Record<string, number>;
+                "fallback_ratio"?: {
+                  "denominator"?: number;
+                  "numerator"?: number;
+                  "value"?: number;
+                };
+                "fell_back"?: number;
+                "finding"?: ({
+                  "breaches"?: Array<{
+                    "expected"?: number;
+                    "min_samples"?: number;
+                    "observed"?: {
+                      "denominator"?: number;
+                      "numerator"?: number;
+                      "value"?: number;
+                    };
+                    "ratio"?: string;
+                  }>;
+                  "summary"?: string;
+                  "top_reasons"?: Array<{
+                    "count"?: number;
+                    "reason"?: string;
+                  }>;
+                }) | null;
+                "http3_policies"?: number;
+                "quic_attempted"?: number;
+                "quic_failed"?: number;
+                "quic_failure_ratio"?: {
+                  "denominator"?: number;
+                  "numerator"?: number;
+                  "value"?: number;
+                };
+                "upgrade_eligible"?: number;
               }) | null;
               "version_mix_by_action"?: Record<string, ({
                 "actions"?: number;
@@ -36103,9 +36238,44 @@ export interface operations {
                 }) | null;
                 "groups"?: Record<string, (Record<string, unknown>) | null>;
                 "http_versions"?: ({
-                  "fallback_ratio": Record<string, unknown>;
-                  "finding"?: (Record<string, unknown>) | null;
-                  "quic_failure_ratio": Record<string, unknown>;
+                  "actions": number;
+                  "attempts"?: number;
+                  "by_fallback"?: Record<string, number>;
+                  "by_quic_error"?: Record<string, number>;
+                  "by_selection"?: Record<string, number>;
+                  "by_version"?: Record<string, number>;
+                  "fallback_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "fell_back"?: number;
+                  "finding"?: ({
+                    "breaches": Array<{
+                      "expected": number;
+                      "min_samples": number;
+                      "observed": {
+                        "denominator": number;
+                        "numerator": number;
+                        "value": number;
+                      };
+                      "ratio": string;
+                    }>;
+                    "summary": string;
+                    "top_reasons"?: Array<{
+                      "count": number;
+                      "reason": string;
+                    }>;
+                  }) | null;
+                  "http3_policies"?: number;
+                  "quic_attempted"?: number;
+                  "quic_failed"?: number;
+                  "quic_failure_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "upgrade_eligible"?: number;
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
@@ -36620,9 +36790,44 @@ export interface operations {
                   "vusers": number;
                 }) | null>;
                 "http_versions"?: ({
-                  "fallback_ratio": Record<string, unknown>;
-                  "finding"?: (Record<string, unknown>) | null;
-                  "quic_failure_ratio": Record<string, unknown>;
+                  "actions": number;
+                  "attempts"?: number;
+                  "by_fallback"?: Record<string, number>;
+                  "by_quic_error"?: Record<string, number>;
+                  "by_selection"?: Record<string, number>;
+                  "by_version"?: Record<string, number>;
+                  "fallback_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "fell_back"?: number;
+                  "finding"?: ({
+                    "breaches": Array<{
+                      "expected": number;
+                      "min_samples": number;
+                      "observed": {
+                        "denominator": number;
+                        "numerator": number;
+                        "value": number;
+                      };
+                      "ratio": string;
+                    }>;
+                    "summary": string;
+                    "top_reasons"?: Array<{
+                      "count": number;
+                      "reason": string;
+                    }>;
+                  }) | null;
+                  "http3_policies"?: number;
+                  "quic_attempted"?: number;
+                  "quic_failed"?: number;
+                  "quic_failure_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "upgrade_eligible"?: number;
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
@@ -44032,9 +44237,21 @@ export interface operations {
                 };
                 "fell_back"?: number;
                 "finding"?: ({
-                  "breaches": Array<Record<string, unknown>>;
+                  "breaches": Array<{
+                    "expected": number;
+                    "min_samples": number;
+                    "observed": {
+                      "denominator": number;
+                      "numerator": number;
+                      "value": number;
+                    };
+                    "ratio": string;
+                  }>;
                   "summary": string;
-                  "top_reasons"?: Array<Record<string, unknown>>;
+                  "top_reasons"?: Array<{
+                    "count": number;
+                    "reason": string;
+                  }>;
                 }) | null;
                 "http3_policies"?: number;
                 "quic_attempted"?: number;
@@ -45157,9 +45374,21 @@ export interface operations {
                 };
                 "fell_back"?: number;
                 "finding"?: ({
-                  "breaches": Array<Record<string, unknown>>;
+                  "breaches": Array<{
+                    "expected": number;
+                    "min_samples": number;
+                    "observed": {
+                      "denominator": number;
+                      "numerator": number;
+                      "value": number;
+                    };
+                    "ratio": string;
+                  }>;
                   "summary": string;
-                  "top_reasons"?: Array<Record<string, unknown>>;
+                  "top_reasons"?: Array<{
+                    "count": number;
+                    "reason": string;
+                  }>;
                 }) | null;
                 "http3_policies"?: number;
                 "quic_attempted"?: number;
@@ -61824,9 +62053,21 @@ export interface operations {
                 };
                 "fell_back"?: number;
                 "finding"?: ({
-                  "breaches": Array<Record<string, unknown>>;
+                  "breaches": Array<{
+                    "expected": number;
+                    "min_samples": number;
+                    "observed": {
+                      "denominator": number;
+                      "numerator": number;
+                      "value": number;
+                    };
+                    "ratio": string;
+                  }>;
                   "summary": string;
-                  "top_reasons"?: Array<Record<string, unknown>>;
+                  "top_reasons"?: Array<{
+                    "count": number;
+                    "reason": string;
+                  }>;
                 }) | null;
                 "http3_policies"?: number;
                 "quic_attempted"?: number;
@@ -62945,9 +63186,21 @@ export interface operations {
                 };
                 "fell_back"?: number;
                 "finding"?: ({
-                  "breaches": Array<Record<string, unknown>>;
+                  "breaches": Array<{
+                    "expected": number;
+                    "min_samples": number;
+                    "observed": {
+                      "denominator": number;
+                      "numerator": number;
+                      "value": number;
+                    };
+                    "ratio": string;
+                  }>;
                   "summary": string;
-                  "top_reasons"?: Array<Record<string, unknown>>;
+                  "top_reasons"?: Array<{
+                    "count": number;
+                    "reason": string;
+                  }>;
                 }) | null;
                 "http3_policies"?: number;
                 "quic_attempted"?: number;
@@ -66061,9 +66314,44 @@ export interface operations {
                 }) | null;
                 "groups"?: Record<string, (Record<string, unknown>) | null>;
                 "http_versions"?: ({
-                  "fallback_ratio": Record<string, unknown>;
-                  "finding"?: (Record<string, unknown>) | null;
-                  "quic_failure_ratio": Record<string, unknown>;
+                  "actions": number;
+                  "attempts"?: number;
+                  "by_fallback"?: Record<string, number>;
+                  "by_quic_error"?: Record<string, number>;
+                  "by_selection"?: Record<string, number>;
+                  "by_version"?: Record<string, number>;
+                  "fallback_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "fell_back"?: number;
+                  "finding"?: ({
+                    "breaches": Array<{
+                      "expected": number;
+                      "min_samples": number;
+                      "observed": {
+                        "denominator": number;
+                        "numerator": number;
+                        "value": number;
+                      };
+                      "ratio": string;
+                    }>;
+                    "summary": string;
+                    "top_reasons"?: Array<{
+                      "count": number;
+                      "reason": string;
+                    }>;
+                  }) | null;
+                  "http3_policies"?: number;
+                  "quic_attempted"?: number;
+                  "quic_failed"?: number;
+                  "quic_failure_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "upgrade_eligible"?: number;
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
@@ -66578,9 +66866,44 @@ export interface operations {
                   "vusers": number;
                 }) | null>;
                 "http_versions"?: ({
-                  "fallback_ratio": Record<string, unknown>;
-                  "finding"?: (Record<string, unknown>) | null;
-                  "quic_failure_ratio": Record<string, unknown>;
+                  "actions": number;
+                  "attempts"?: number;
+                  "by_fallback"?: Record<string, number>;
+                  "by_quic_error"?: Record<string, number>;
+                  "by_selection"?: Record<string, number>;
+                  "by_version"?: Record<string, number>;
+                  "fallback_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "fell_back"?: number;
+                  "finding"?: ({
+                    "breaches": Array<{
+                      "expected": number;
+                      "min_samples": number;
+                      "observed": {
+                        "denominator": number;
+                        "numerator": number;
+                        "value": number;
+                      };
+                      "ratio": string;
+                    }>;
+                    "summary": string;
+                    "top_reasons"?: Array<{
+                      "count": number;
+                      "reason": string;
+                    }>;
+                  }) | null;
+                  "http3_policies"?: number;
+                  "quic_attempted"?: number;
+                  "quic_failed"?: number;
+                  "quic_failure_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "upgrade_eligible"?: number;
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
@@ -68486,7 +68809,35 @@ export interface operations {
               "threshold": number;
               "unit": string;
             }>;
-            "host_network"?: Array<Record<string, unknown>>;
+            "host_network"?: Array<{
+              "open_files": {
+                "available": boolean;
+                "hard"?: number;
+                "soft"?: number;
+              };
+              "source"?: string;
+              "udp_buffers": {
+                "available": boolean;
+                "receive_max_bytes"?: number;
+                "send_max_bytes"?: number;
+              };
+              "udp_drops_at_end"?: ({
+                "in_errors": number;
+                "receive_buffer_errors": number;
+                "sampled_at": string;
+                "scope": string;
+                "scope_id"?: string;
+                "send_buffer_errors": number;
+              }) | null;
+              "udp_drops_at_start"?: ({
+                "in_errors": number;
+                "receive_buffer_errors": number;
+                "sampled_at": string;
+                "scope": string;
+                "scope_id"?: string;
+                "send_buffer_errors": number;
+              }) | null;
+            }>;
             "initial_provenance"?: ({
               "application_id"?: string;
               "assignment"?: ({
@@ -72713,12 +73064,38 @@ export interface operations {
               "tier": string;
             }>;
             "host_network"?: Array<{
-              "open_files": Record<string, unknown>;
+              "open_files": {
+                "available": boolean;
+                "hard"?: number;
+                "soft"?: number;
+              };
               "source"?: string;
-              "udp_buffers": Record<string, unknown>;
-              "udp_drops_at_end"?: (Record<string, unknown>) | null;
-              "udp_drops_at_start"?: (Record<string, unknown>) | null;
-              "udp_drops_delta"?: (Record<string, unknown>) | null;
+              "udp_buffers": {
+                "available": boolean;
+                "receive_max_bytes"?: number;
+                "send_max_bytes"?: number;
+              };
+              "udp_drops_at_end"?: ({
+                "in_errors": number;
+                "receive_buffer_errors": number;
+                "sampled_at": string;
+                "scope": string;
+                "scope_id"?: string;
+                "send_buffer_errors": number;
+              }) | null;
+              "udp_drops_at_start"?: ({
+                "in_errors": number;
+                "receive_buffer_errors": number;
+                "sampled_at": string;
+                "scope": string;
+                "scope_id"?: string;
+                "send_buffer_errors": number;
+              }) | null;
+              "udp_drops_delta"?: ({
+                "in_errors": number;
+                "receive_buffer_errors": number;
+                "send_buffer_errors": number;
+              }) | null;
               "warning"?: string;
             }>;
             "http3_preflight"?: ({
@@ -72895,7 +73272,35 @@ export interface operations {
                 "threshold": number;
                 "unit": string;
               }>;
-              "host_network"?: Array<Record<string, unknown>>;
+              "host_network"?: Array<{
+                "open_files": {
+                  "available": boolean;
+                  "hard"?: number;
+                  "soft"?: number;
+                };
+                "source"?: string;
+                "udp_buffers": {
+                  "available": boolean;
+                  "receive_max_bytes"?: number;
+                  "send_max_bytes"?: number;
+                };
+                "udp_drops_at_end"?: ({
+                  "in_errors": number;
+                  "receive_buffer_errors": number;
+                  "sampled_at": string;
+                  "scope": string;
+                  "scope_id"?: string;
+                  "send_buffer_errors": number;
+                }) | null;
+                "udp_drops_at_start"?: ({
+                  "in_errors": number;
+                  "receive_buffer_errors": number;
+                  "sampled_at": string;
+                  "scope": string;
+                  "scope_id"?: string;
+                  "send_buffer_errors": number;
+                }) | null;
+              }>;
               "initial_provenance"?: ({
                 "application_id"?: string;
                 "assignment"?: ({
@@ -73093,8 +73498,25 @@ export interface operations {
                   "blocked"?: boolean;
                   "omitted"?: number;
                   "policy": string;
-                  "results"?: Array<Record<string, unknown>>;
-                  "unchecked"?: Array<Record<string, unknown>>;
+                  "results"?: Array<{
+                    "address"?: string;
+                    "checked_at": string;
+                    "error"?: string;
+                    "error_class"?: string;
+                    "group": string;
+                    "handshake_ms"?: number;
+                    "ok": boolean;
+                    "origin": string;
+                    "policy": string;
+                    "region"?: string;
+                    "skipped"?: string;
+                    "source": string;
+                  }>;
+                  "unchecked"?: Array<{
+                    "reason": string;
+                    "region"?: string;
+                    "source": string;
+                  }>;
                 }) | null;
                 "joint_evidence"?: ({
                   "dimensions": Array<string>;
@@ -73553,8 +73975,25 @@ export interface operations {
                   "blocked"?: boolean;
                   "omitted"?: number;
                   "policy": string;
-                  "results"?: Array<Record<string, unknown>>;
-                  "unchecked"?: Array<Record<string, unknown>>;
+                  "results"?: Array<{
+                    "address"?: string;
+                    "checked_at": string;
+                    "error"?: string;
+                    "error_class"?: string;
+                    "group": string;
+                    "handshake_ms"?: number;
+                    "ok": boolean;
+                    "origin": string;
+                    "policy": string;
+                    "region"?: string;
+                    "skipped"?: string;
+                    "source": string;
+                  }>;
+                  "unchecked"?: Array<{
+                    "reason": string;
+                    "region"?: string;
+                    "source": string;
+                  }>;
                 }) | null;
                 "joint_evidence"?: ({
                   "dimensions": Array<string>;
@@ -74158,9 +74597,21 @@ export interface operations {
                 };
                 "fell_back"?: number;
                 "finding"?: ({
-                  "breaches": Array<Record<string, unknown>>;
+                  "breaches": Array<{
+                    "expected": number;
+                    "min_samples": number;
+                    "observed": {
+                      "denominator": number;
+                      "numerator": number;
+                      "value": number;
+                    };
+                    "ratio": string;
+                  }>;
                   "summary": string;
-                  "top_reasons"?: Array<Record<string, unknown>>;
+                  "top_reasons"?: Array<{
+                    "count": number;
+                    "reason": string;
+                  }>;
                 }) | null;
                 "http3_policies"?: number;
                 "quic_attempted"?: number;
@@ -81628,9 +82079,21 @@ export interface operations {
                 };
                 "fell_back"?: number;
                 "finding"?: ({
-                  "breaches": Array<Record<string, unknown>>;
+                  "breaches": Array<{
+                    "expected": number;
+                    "min_samples": number;
+                    "observed": {
+                      "denominator": number;
+                      "numerator": number;
+                      "value": number;
+                    };
+                    "ratio": string;
+                  }>;
                   "summary": string;
-                  "top_reasons"?: Array<Record<string, unknown>>;
+                  "top_reasons"?: Array<{
+                    "count": number;
+                    "reason": string;
+                  }>;
                 }) | null;
                 "http3_policies"?: number;
                 "quic_attempted"?: number;
@@ -82753,9 +83216,21 @@ export interface operations {
                 };
                 "fell_back"?: number;
                 "finding"?: ({
-                  "breaches": Array<Record<string, unknown>>;
+                  "breaches": Array<{
+                    "expected": number;
+                    "min_samples": number;
+                    "observed": {
+                      "denominator": number;
+                      "numerator": number;
+                      "value": number;
+                    };
+                    "ratio": string;
+                  }>;
                   "summary": string;
-                  "top_reasons"?: Array<Record<string, unknown>>;
+                  "top_reasons"?: Array<{
+                    "count": number;
+                    "reason": string;
+                  }>;
                 }) | null;
                 "http3_policies"?: number;
                 "quic_attempted"?: number;
@@ -102878,9 +103353,21 @@ export interface operations {
                 };
                 "fell_back"?: number;
                 "finding"?: ({
-                  "breaches": Array<Record<string, unknown>>;
+                  "breaches": Array<{
+                    "expected": number;
+                    "min_samples": number;
+                    "observed": {
+                      "denominator": number;
+                      "numerator": number;
+                      "value": number;
+                    };
+                    "ratio": string;
+                  }>;
                   "summary": string;
-                  "top_reasons"?: Array<Record<string, unknown>>;
+                  "top_reasons"?: Array<{
+                    "count": number;
+                    "reason": string;
+                  }>;
                 }) | null;
                 "http3_policies"?: number;
                 "quic_attempted"?: number;
@@ -104003,9 +104490,21 @@ export interface operations {
                 };
                 "fell_back"?: number;
                 "finding"?: ({
-                  "breaches": Array<Record<string, unknown>>;
+                  "breaches": Array<{
+                    "expected": number;
+                    "min_samples": number;
+                    "observed": {
+                      "denominator": number;
+                      "numerator": number;
+                      "value": number;
+                    };
+                    "ratio": string;
+                  }>;
                   "summary": string;
-                  "top_reasons"?: Array<Record<string, unknown>>;
+                  "top_reasons"?: Array<{
+                    "count": number;
+                    "reason": string;
+                  }>;
                 }) | null;
                 "http3_policies"?: number;
                 "quic_attempted"?: number;
@@ -118750,9 +119249,44 @@ export interface operations {
                 }) | null;
                 "groups"?: Record<string, (Record<string, unknown>) | null>;
                 "http_versions"?: ({
-                  "fallback_ratio": Record<string, unknown>;
-                  "finding"?: (Record<string, unknown>) | null;
-                  "quic_failure_ratio": Record<string, unknown>;
+                  "actions": number;
+                  "attempts"?: number;
+                  "by_fallback"?: Record<string, number>;
+                  "by_quic_error"?: Record<string, number>;
+                  "by_selection"?: Record<string, number>;
+                  "by_version"?: Record<string, number>;
+                  "fallback_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "fell_back"?: number;
+                  "finding"?: ({
+                    "breaches": Array<{
+                      "expected": number;
+                      "min_samples": number;
+                      "observed": {
+                        "denominator": number;
+                        "numerator": number;
+                        "value": number;
+                      };
+                      "ratio": string;
+                    }>;
+                    "summary": string;
+                    "top_reasons"?: Array<{
+                      "count": number;
+                      "reason": string;
+                    }>;
+                  }) | null;
+                  "http3_policies"?: number;
+                  "quic_attempted"?: number;
+                  "quic_failed"?: number;
+                  "quic_failure_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "upgrade_eligible"?: number;
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
@@ -119267,9 +119801,44 @@ export interface operations {
                   "vusers": number;
                 }) | null>;
                 "http_versions"?: ({
-                  "fallback_ratio": Record<string, unknown>;
-                  "finding"?: (Record<string, unknown>) | null;
-                  "quic_failure_ratio": Record<string, unknown>;
+                  "actions": number;
+                  "attempts"?: number;
+                  "by_fallback"?: Record<string, number>;
+                  "by_quic_error"?: Record<string, number>;
+                  "by_selection"?: Record<string, number>;
+                  "by_version"?: Record<string, number>;
+                  "fallback_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "fell_back"?: number;
+                  "finding"?: ({
+                    "breaches": Array<{
+                      "expected": number;
+                      "min_samples": number;
+                      "observed": {
+                        "denominator": number;
+                        "numerator": number;
+                        "value": number;
+                      };
+                      "ratio": string;
+                    }>;
+                    "summary": string;
+                    "top_reasons"?: Array<{
+                      "count": number;
+                      "reason": string;
+                    }>;
+                  }) | null;
+                  "http3_policies"?: number;
+                  "quic_attempted"?: number;
+                  "quic_failed"?: number;
+                  "quic_failure_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "upgrade_eligible"?: number;
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
@@ -120713,9 +121282,44 @@ export interface operations {
                 }) | null;
                 "groups"?: Record<string, (Record<string, unknown>) | null>;
                 "http_versions"?: ({
-                  "fallback_ratio": Record<string, unknown>;
-                  "finding"?: (Record<string, unknown>) | null;
-                  "quic_failure_ratio": Record<string, unknown>;
+                  "actions": number;
+                  "attempts"?: number;
+                  "by_fallback"?: Record<string, number>;
+                  "by_quic_error"?: Record<string, number>;
+                  "by_selection"?: Record<string, number>;
+                  "by_version"?: Record<string, number>;
+                  "fallback_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "fell_back"?: number;
+                  "finding"?: ({
+                    "breaches": Array<{
+                      "expected": number;
+                      "min_samples": number;
+                      "observed": {
+                        "denominator": number;
+                        "numerator": number;
+                        "value": number;
+                      };
+                      "ratio": string;
+                    }>;
+                    "summary": string;
+                    "top_reasons"?: Array<{
+                      "count": number;
+                      "reason": string;
+                    }>;
+                  }) | null;
+                  "http3_policies"?: number;
+                  "quic_attempted"?: number;
+                  "quic_failed"?: number;
+                  "quic_failure_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "upgrade_eligible"?: number;
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
@@ -121230,9 +121834,44 @@ export interface operations {
                   "vusers": number;
                 }) | null>;
                 "http_versions"?: ({
-                  "fallback_ratio": Record<string, unknown>;
-                  "finding"?: (Record<string, unknown>) | null;
-                  "quic_failure_ratio": Record<string, unknown>;
+                  "actions": number;
+                  "attempts"?: number;
+                  "by_fallback"?: Record<string, number>;
+                  "by_quic_error"?: Record<string, number>;
+                  "by_selection"?: Record<string, number>;
+                  "by_version"?: Record<string, number>;
+                  "fallback_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "fell_back"?: number;
+                  "finding"?: ({
+                    "breaches": Array<{
+                      "expected": number;
+                      "min_samples": number;
+                      "observed": {
+                        "denominator": number;
+                        "numerator": number;
+                        "value": number;
+                      };
+                      "ratio": string;
+                    }>;
+                    "summary": string;
+                    "top_reasons"?: Array<{
+                      "count": number;
+                      "reason": string;
+                    }>;
+                  }) | null;
+                  "http3_policies"?: number;
+                  "quic_attempted"?: number;
+                  "quic_failed"?: number;
+                  "quic_failure_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "upgrade_eligible"?: number;
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
@@ -122676,9 +123315,44 @@ export interface operations {
                 }) | null;
                 "groups"?: Record<string, (Record<string, unknown>) | null>;
                 "http_versions"?: ({
-                  "fallback_ratio": Record<string, unknown>;
-                  "finding"?: (Record<string, unknown>) | null;
-                  "quic_failure_ratio": Record<string, unknown>;
+                  "actions": number;
+                  "attempts"?: number;
+                  "by_fallback"?: Record<string, number>;
+                  "by_quic_error"?: Record<string, number>;
+                  "by_selection"?: Record<string, number>;
+                  "by_version"?: Record<string, number>;
+                  "fallback_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "fell_back"?: number;
+                  "finding"?: ({
+                    "breaches": Array<{
+                      "expected": number;
+                      "min_samples": number;
+                      "observed": {
+                        "denominator": number;
+                        "numerator": number;
+                        "value": number;
+                      };
+                      "ratio": string;
+                    }>;
+                    "summary": string;
+                    "top_reasons"?: Array<{
+                      "count": number;
+                      "reason": string;
+                    }>;
+                  }) | null;
+                  "http3_policies"?: number;
+                  "quic_attempted"?: number;
+                  "quic_failed"?: number;
+                  "quic_failure_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "upgrade_eligible"?: number;
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
@@ -123193,9 +123867,44 @@ export interface operations {
                   "vusers": number;
                 }) | null>;
                 "http_versions"?: ({
-                  "fallback_ratio": Record<string, unknown>;
-                  "finding"?: (Record<string, unknown>) | null;
-                  "quic_failure_ratio": Record<string, unknown>;
+                  "actions": number;
+                  "attempts"?: number;
+                  "by_fallback"?: Record<string, number>;
+                  "by_quic_error"?: Record<string, number>;
+                  "by_selection"?: Record<string, number>;
+                  "by_version"?: Record<string, number>;
+                  "fallback_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "fell_back"?: number;
+                  "finding"?: ({
+                    "breaches": Array<{
+                      "expected": number;
+                      "min_samples": number;
+                      "observed": {
+                        "denominator": number;
+                        "numerator": number;
+                        "value": number;
+                      };
+                      "ratio": string;
+                    }>;
+                    "summary": string;
+                    "top_reasons"?: Array<{
+                      "count": number;
+                      "reason": string;
+                    }>;
+                  }) | null;
+                  "http3_policies"?: number;
+                  "quic_attempted"?: number;
+                  "quic_failed"?: number;
+                  "quic_failure_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "upgrade_eligible"?: number;
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
@@ -124639,9 +125348,44 @@ export interface operations {
                 }) | null;
                 "groups"?: Record<string, (Record<string, unknown>) | null>;
                 "http_versions"?: ({
-                  "fallback_ratio": Record<string, unknown>;
-                  "finding"?: (Record<string, unknown>) | null;
-                  "quic_failure_ratio": Record<string, unknown>;
+                  "actions": number;
+                  "attempts"?: number;
+                  "by_fallback"?: Record<string, number>;
+                  "by_quic_error"?: Record<string, number>;
+                  "by_selection"?: Record<string, number>;
+                  "by_version"?: Record<string, number>;
+                  "fallback_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "fell_back"?: number;
+                  "finding"?: ({
+                    "breaches": Array<{
+                      "expected": number;
+                      "min_samples": number;
+                      "observed": {
+                        "denominator": number;
+                        "numerator": number;
+                        "value": number;
+                      };
+                      "ratio": string;
+                    }>;
+                    "summary": string;
+                    "top_reasons"?: Array<{
+                      "count": number;
+                      "reason": string;
+                    }>;
+                  }) | null;
+                  "http3_policies"?: number;
+                  "quic_attempted"?: number;
+                  "quic_failed"?: number;
+                  "quic_failure_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "upgrade_eligible"?: number;
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
@@ -125156,9 +125900,44 @@ export interface operations {
                   "vusers": number;
                 }) | null>;
                 "http_versions"?: ({
-                  "fallback_ratio": Record<string, unknown>;
-                  "finding"?: (Record<string, unknown>) | null;
-                  "quic_failure_ratio": Record<string, unknown>;
+                  "actions": number;
+                  "attempts"?: number;
+                  "by_fallback"?: Record<string, number>;
+                  "by_quic_error"?: Record<string, number>;
+                  "by_selection"?: Record<string, number>;
+                  "by_version"?: Record<string, number>;
+                  "fallback_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "fell_back"?: number;
+                  "finding"?: ({
+                    "breaches": Array<{
+                      "expected": number;
+                      "min_samples": number;
+                      "observed": {
+                        "denominator": number;
+                        "numerator": number;
+                        "value": number;
+                      };
+                      "ratio": string;
+                    }>;
+                    "summary": string;
+                    "top_reasons"?: Array<{
+                      "count": number;
+                      "reason": string;
+                    }>;
+                  }) | null;
+                  "http3_policies"?: number;
+                  "quic_attempted"?: number;
+                  "quic_failed"?: number;
+                  "quic_failure_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "upgrade_eligible"?: number;
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
@@ -126602,9 +127381,44 @@ export interface operations {
                 }) | null;
                 "groups"?: Record<string, (Record<string, unknown>) | null>;
                 "http_versions"?: ({
-                  "fallback_ratio": Record<string, unknown>;
-                  "finding"?: (Record<string, unknown>) | null;
-                  "quic_failure_ratio": Record<string, unknown>;
+                  "actions": number;
+                  "attempts"?: number;
+                  "by_fallback"?: Record<string, number>;
+                  "by_quic_error"?: Record<string, number>;
+                  "by_selection"?: Record<string, number>;
+                  "by_version"?: Record<string, number>;
+                  "fallback_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "fell_back"?: number;
+                  "finding"?: ({
+                    "breaches": Array<{
+                      "expected": number;
+                      "min_samples": number;
+                      "observed": {
+                        "denominator": number;
+                        "numerator": number;
+                        "value": number;
+                      };
+                      "ratio": string;
+                    }>;
+                    "summary": string;
+                    "top_reasons"?: Array<{
+                      "count": number;
+                      "reason": string;
+                    }>;
+                  }) | null;
+                  "http3_policies"?: number;
+                  "quic_attempted"?: number;
+                  "quic_failed"?: number;
+                  "quic_failure_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "upgrade_eligible"?: number;
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
@@ -127119,9 +127933,44 @@ export interface operations {
                   "vusers": number;
                 }) | null>;
                 "http_versions"?: ({
-                  "fallback_ratio": Record<string, unknown>;
-                  "finding"?: (Record<string, unknown>) | null;
-                  "quic_failure_ratio": Record<string, unknown>;
+                  "actions": number;
+                  "attempts"?: number;
+                  "by_fallback"?: Record<string, number>;
+                  "by_quic_error"?: Record<string, number>;
+                  "by_selection"?: Record<string, number>;
+                  "by_version"?: Record<string, number>;
+                  "fallback_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "fell_back"?: number;
+                  "finding"?: ({
+                    "breaches": Array<{
+                      "expected": number;
+                      "min_samples": number;
+                      "observed": {
+                        "denominator": number;
+                        "numerator": number;
+                        "value": number;
+                      };
+                      "ratio": string;
+                    }>;
+                    "summary": string;
+                    "top_reasons"?: Array<{
+                      "count": number;
+                      "reason": string;
+                    }>;
+                  }) | null;
+                  "http3_policies"?: number;
+                  "quic_attempted"?: number;
+                  "quic_failed"?: number;
+                  "quic_failure_ratio": {
+                    "denominator": number;
+                    "numerator": number;
+                    "value": number;
+                  };
+                  "upgrade_eligible"?: number;
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
@@ -131007,9 +131856,21 @@ export interface operations {
                 };
                 "fell_back"?: number;
                 "finding"?: ({
-                  "breaches": Array<Record<string, unknown>>;
+                  "breaches": Array<{
+                    "expected": number;
+                    "min_samples": number;
+                    "observed": {
+                      "denominator": number;
+                      "numerator": number;
+                      "value": number;
+                    };
+                    "ratio": string;
+                  }>;
                   "summary": string;
-                  "top_reasons"?: Array<Record<string, unknown>>;
+                  "top_reasons"?: Array<{
+                    "count": number;
+                    "reason": string;
+                  }>;
                 }) | null;
                 "http3_policies"?: number;
                 "quic_attempted"?: number;
@@ -132132,9 +132993,21 @@ export interface operations {
                 };
                 "fell_back"?: number;
                 "finding"?: ({
-                  "breaches": Array<Record<string, unknown>>;
+                  "breaches": Array<{
+                    "expected": number;
+                    "min_samples": number;
+                    "observed": {
+                      "denominator": number;
+                      "numerator": number;
+                      "value": number;
+                    };
+                    "ratio": string;
+                  }>;
                   "summary": string;
-                  "top_reasons"?: Array<Record<string, unknown>>;
+                  "top_reasons"?: Array<{
+                    "count": number;
+                    "reason": string;
+                  }>;
                 }) | null;
                 "http3_policies"?: number;
                 "quic_attempted"?: number;
@@ -156161,9 +157034,21 @@ export interface operations {
                 };
                 "fell_back"?: number;
                 "finding"?: ({
-                  "breaches": Array<Record<string, unknown>>;
+                  "breaches": Array<{
+                    "expected": number;
+                    "min_samples": number;
+                    "observed": {
+                      "denominator": number;
+                      "numerator": number;
+                      "value": number;
+                    };
+                    "ratio": string;
+                  }>;
                   "summary": string;
-                  "top_reasons"?: Array<Record<string, unknown>>;
+                  "top_reasons"?: Array<{
+                    "count": number;
+                    "reason": string;
+                  }>;
                 }) | null;
                 "http3_policies"?: number;
                 "quic_attempted"?: number;
@@ -157286,9 +158171,21 @@ export interface operations {
                 };
                 "fell_back"?: number;
                 "finding"?: ({
-                  "breaches": Array<Record<string, unknown>>;
+                  "breaches": Array<{
+                    "expected": number;
+                    "min_samples": number;
+                    "observed": {
+                      "denominator": number;
+                      "numerator": number;
+                      "value": number;
+                    };
+                    "ratio": string;
+                  }>;
                   "summary": string;
-                  "top_reasons"?: Array<Record<string, unknown>>;
+                  "top_reasons"?: Array<{
+                    "count": number;
+                    "reason": string;
+                  }>;
                 }) | null;
                 "http3_policies"?: number;
                 "quic_attempted"?: number;

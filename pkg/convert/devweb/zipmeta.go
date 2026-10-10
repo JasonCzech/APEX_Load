@@ -400,7 +400,7 @@ func applyDevWebRTS(result *ConvertResult, ctx *convertContext, diagnostics *dia
 	for _, toggle := range devWebHTTP3Toggles(raw) {
 		if diagnostics != nil {
 			diagnostics.AddCoded(diag.Info, DevWebHTTP3EnabledCode, "DevWeb HTTP/3 replay", rtsPath,
-				"rts.yml enables HTTP/3 replay ("+toggle+"). DevWeb tries HTTP/3 first and falls back to an older version; APEX does not map this setting yet and replays over HTTP/2 or HTTP/1.1.")
+				"rts.yml enables HTTP/3 replay ("+toggle+"). DevWeb tries HTTP/3 first and falls back to an older version. APEX does not map this setting: requests keep the script's HTTP version policy. The closest policy is auto+h3, which moves an origin to HTTP/3 once it advertises it.")
 		}
 	}
 	parity := map[string]string{}

@@ -8810,28 +8810,80 @@ paths:
                         properties:
                           open_files:
                             type: object
-                            description: 'Go type: hostnet.OpenFileLimit'
-                            additionalProperties: true
+                            properties:
+                              available:
+                                type: boolean
+                              hard:
+                                type: integer
+                                format: int64
+                              soft:
+                                type: integer
+                                format: int64
                           source:
                             type: string
                           udp_buffers:
                             type: object
-                            description: 'Go type: hostnet.UDPBufferLimits'
-                            additionalProperties: true
+                            properties:
+                              available:
+                                type: boolean
+                              receive_max_bytes:
+                                type: integer
+                                format: int64
+                              send_max_bytes:
+                                type: integer
+                                format: int64
                           udp_drops_at_end:
                             type: object
-                            description: 'Go type: hostnet.UDPDropCounters'
-                            additionalProperties: true
+                            properties:
+                              in_errors:
+                                type: integer
+                                format: int64
+                              receive_buffer_errors:
+                                type: integer
+                                format: int64
+                              sampled_at:
+                                type: string
+                                format: date-time
+                              scope:
+                                type: string
+                              scope_id:
+                                type: string
+                              send_buffer_errors:
+                                type: integer
+                                format: int64
                             nullable: true
                           udp_drops_at_start:
                             type: object
-                            description: 'Go type: hostnet.UDPDropCounters'
-                            additionalProperties: true
+                            properties:
+                              in_errors:
+                                type: integer
+                                format: int64
+                              receive_buffer_errors:
+                                type: integer
+                                format: int64
+                              sampled_at:
+                                type: string
+                                format: date-time
+                              scope:
+                                type: string
+                              scope_id:
+                                type: string
+                              send_buffer_errors:
+                                type: integer
+                                format: int64
                             nullable: true
                           udp_drops_delta:
                             type: object
-                            description: 'Go type: hostnet.UDPDropDelta'
-                            additionalProperties: true
+                            properties:
+                              in_errors:
+                                type: integer
+                                format: int64
+                              receive_buffer_errors:
+                                type: integer
+                                format: int64
+                              send_buffer_errors:
+                                type: integer
+                                format: int64
                             nullable: true
                           warning:
                             type: string
@@ -9234,8 +9286,71 @@ paths:
                           type: array
                           items:
                             type: object
-                            description: 'Go type: hostnet.RunEvidence'
-                            additionalProperties: true
+                            properties:
+                              open_files:
+                                type: object
+                                properties:
+                                  available:
+                                    type: boolean
+                                  hard:
+                                    type: integer
+                                    format: int64
+                                  soft:
+                                    type: integer
+                                    format: int64
+                              source:
+                                type: string
+                              udp_buffers:
+                                type: object
+                                properties:
+                                  available:
+                                    type: boolean
+                                  receive_max_bytes:
+                                    type: integer
+                                    format: int64
+                                  send_max_bytes:
+                                    type: integer
+                                    format: int64
+                              udp_drops_at_end:
+                                type: object
+                                properties:
+                                  in_errors:
+                                    type: integer
+                                    format: int64
+                                  receive_buffer_errors:
+                                    type: integer
+                                    format: int64
+                                  sampled_at:
+                                    type: string
+                                    format: date-time
+                                  scope:
+                                    type: string
+                                  scope_id:
+                                    type: string
+                                  send_buffer_errors:
+                                    type: integer
+                                    format: int64
+                                nullable: true
+                              udp_drops_at_start:
+                                type: object
+                                properties:
+                                  in_errors:
+                                    type: integer
+                                    format: int64
+                                  receive_buffer_errors:
+                                    type: integer
+                                    format: int64
+                                  sampled_at:
+                                    type: string
+                                    format: date-time
+                                  scope:
+                                    type: string
+                                  scope_id:
+                                    type: string
+                                  send_buffer_errors:
+                                    type: integer
+                                    format: int64
+                                nullable: true
                         initial_provenance:
                           type: object
                           properties:
@@ -9318,7 +9433,56 @@ paths:
                                 additionalProperties: true
                             http3_preflight:
                               type: object
-                              additionalProperties: true
+                              properties:
+                                blocked:
+                                  type: boolean
+                                omitted:
+                                  type: integer
+                                  format: int64
+                                policy:
+                                  type: string
+                                results:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      address:
+                                        type: string
+                                      checked_at:
+                                        type: string
+                                        format: date-time
+                                      error:
+                                        type: string
+                                      error_class:
+                                        type: string
+                                      group:
+                                        type: string
+                                      handshake_ms:
+                                        type: number
+                                        format: double
+                                      ok:
+                                        type: boolean
+                                      origin:
+                                        type: string
+                                      policy:
+                                        type: string
+                                      region:
+                                        type: string
+                                      skipped:
+                                        type: string
+                                      source:
+                                        type: string
+                                unchecked:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      region:
+                                        type: string
+                                      source:
+                                        type: string
                               nullable: true
                             joint_evidence:
                               type: object
@@ -9763,7 +9927,56 @@ paths:
                                 additionalProperties: true
                             http3_preflight:
                               type: object
-                              additionalProperties: true
+                              properties:
+                                blocked:
+                                  type: boolean
+                                omitted:
+                                  type: integer
+                                  format: int64
+                                policy:
+                                  type: string
+                                results:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      address:
+                                        type: string
+                                      checked_at:
+                                        type: string
+                                        format: date-time
+                                      error:
+                                        type: string
+                                      error_class:
+                                        type: string
+                                      group:
+                                        type: string
+                                      handshake_ms:
+                                        type: number
+                                        format: double
+                                      ok:
+                                        type: boolean
+                                      origin:
+                                        type: string
+                                      policy:
+                                        type: string
+                                      region:
+                                        type: string
+                                      skipped:
+                                        type: string
+                                      source:
+                                        type: string
+                                unchecked:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      reason:
+                                        type: string
+                                      region:
+                                        type: string
+                                      source:
+                                        type: string
                               nullable: true
                             joint_evidence:
                               type: object
@@ -11014,16 +11227,112 @@ paths:
                         version_mix:
                           type: object
                           properties:
+                            actions:
+                              type: integer
+                              format: int64
+                            attempts:
+                              type: integer
+                              format: int64
+                            by_fallback:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            by_quic_error:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            by_selection:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
+                            by_version:
+                              type: object
+                              additionalProperties:
+                                type: integer
+                                format: int64
                             fallback_ratio:
                               type: object
-                              additionalProperties: true
+                              properties:
+                                denominator:
+                                  type: integer
+                                  format: int64
+                                numerator:
+                                  type: integer
+                                  format: int64
+                                value:
+                                  type: number
+                                  format: double
+                            fell_back:
+                              type: integer
+                              format: int64
                             finding:
                               type: object
-                              additionalProperties: true
+                              properties:
+                                breaches:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      expected:
+                                        type: number
+                                        format: double
+                                      min_samples:
+                                        type: integer
+                                        format: int64
+                                      observed:
+                                        type: object
+                                        properties:
+                                          denominator:
+                                            type: integer
+                                            format: int64
+                                          numerator:
+                                            type: integer
+                                            format: int64
+                                          value:
+                                            type: number
+                                            format: double
+                                      ratio:
+                                        type: string
+                                summary:
+                                  type: string
+                                top_reasons:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      count:
+                                        type: integer
+                                        format: int64
+                                      reason:
+                                        type: string
                               nullable: true
+                            http3_policies:
+                              type: integer
+                              format: int64
+                            quic_attempted:
+                              type: integer
+                              format: int64
+                            quic_failed:
+                              type: integer
+                              format: int64
                             quic_failure_ratio:
                               type: object
-                              additionalProperties: true
+                              properties:
+                                denominator:
+                                  type: integer
+                                  format: int64
+                                numerator:
+                                  type: integer
+                                  format: int64
+                                value:
+                                  type: number
+                                  format: double
+                            upgrade_eligible:
+                              type: integer
+                              format: int64
                           nullable: true
                         version_mix_by_action:
                           type: object
@@ -87594,18 +87903,137 @@ paths:
                             http_versions:
                               type: object
                               properties:
+                                actions:
+                                  type: integer
+                                  format: int64
+                                attempts:
+                                  type: integer
+                                  format: int64
+                                by_fallback:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                by_quic_error:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                by_selection:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                by_version:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
                                 fallback_ratio:
                                   type: object
-                                  additionalProperties: true
+                                  properties:
+                                    denominator:
+                                      type: integer
+                                      format: int64
+                                    numerator:
+                                      type: integer
+                                      format: int64
+                                    value:
+                                      type: number
+                                      format: double
+                                  required:
+                                    - denominator
+                                    - numerator
+                                    - value
+                                fell_back:
+                                  type: integer
+                                  format: int64
                                 finding:
                                   type: object
-                                  description: 'Go type: RunArchiveProtocolMixFinding'
-                                  additionalProperties: true
+                                  properties:
+                                    breaches:
+                                      type: array
+                                      items:
+                                        type: object
+                                        properties:
+                                          expected:
+                                            type: number
+                                            format: double
+                                          min_samples:
+                                            type: integer
+                                            format: int64
+                                          observed:
+                                            type: object
+                                            properties:
+                                              denominator:
+                                                type: integer
+                                                format: int64
+                                              numerator:
+                                                type: integer
+                                                format: int64
+                                              value:
+                                                type: number
+                                                format: double
+                                            required:
+                                              - denominator
+                                              - numerator
+                                              - value
+                                          ratio:
+                                            type: string
+                                        required:
+                                          - expected
+                                          - min_samples
+                                          - observed
+                                          - ratio
+                                    summary:
+                                      type: string
+                                    top_reasons:
+                                      type: array
+                                      items:
+                                        type: object
+                                        properties:
+                                          count:
+                                            type: integer
+                                            format: int64
+                                          reason:
+                                            type: string
+                                        required:
+                                          - count
+                                          - reason
+                                  required:
+                                    - breaches
+                                    - summary
                                   nullable: true
+                                http3_policies:
+                                  type: integer
+                                  format: int64
+                                quic_attempted:
+                                  type: integer
+                                  format: int64
+                                quic_failed:
+                                  type: integer
+                                  format: int64
                                 quic_failure_ratio:
                                   type: object
-                                  additionalProperties: true
+                                  properties:
+                                    denominator:
+                                      type: integer
+                                      format: int64
+                                    numerator:
+                                      type: integer
+                                      format: int64
+                                    value:
+                                      type: number
+                                      format: double
+                                  required:
+                                    - denominator
+                                    - numerator
+                                    - value
+                                upgrade_eligible:
+                                  type: integer
+                                  format: int64
                               required:
+                                - actions
                                 - fallback_ratio
                                 - quic_failure_ratio
                               nullable: true
@@ -89289,17 +89717,137 @@ paths:
                           http_versions:
                             type: object
                             properties:
+                              actions:
+                                type: integer
+                                format: int64
+                              attempts:
+                                type: integer
+                                format: int64
+                              by_fallback:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              by_quic_error:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              by_selection:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              by_version:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
                               fallback_ratio:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  denominator:
+                                    type: integer
+                                    format: int64
+                                  numerator:
+                                    type: integer
+                                    format: int64
+                                  value:
+                                    type: number
+                                    format: double
+                                required:
+                                  - denominator
+                                  - numerator
+                                  - value
+                              fell_back:
+                                type: integer
+                                format: int64
                               finding:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  breaches:
+                                    type: array
+                                    items:
+                                      type: object
+                                      properties:
+                                        expected:
+                                          type: number
+                                          format: double
+                                        min_samples:
+                                          type: integer
+                                          format: int64
+                                        observed:
+                                          type: object
+                                          properties:
+                                            denominator:
+                                              type: integer
+                                              format: int64
+                                            numerator:
+                                              type: integer
+                                              format: int64
+                                            value:
+                                              type: number
+                                              format: double
+                                          required:
+                                            - denominator
+                                            - numerator
+                                            - value
+                                        ratio:
+                                          type: string
+                                      required:
+                                        - expected
+                                        - min_samples
+                                        - observed
+                                        - ratio
+                                  summary:
+                                    type: string
+                                  top_reasons:
+                                    type: array
+                                    items:
+                                      type: object
+                                      properties:
+                                        count:
+                                          type: integer
+                                          format: int64
+                                        reason:
+                                          type: string
+                                      required:
+                                        - count
+                                        - reason
+                                required:
+                                  - breaches
+                                  - summary
                                 nullable: true
+                              http3_policies:
+                                type: integer
+                                format: int64
+                              quic_attempted:
+                                type: integer
+                                format: int64
+                              quic_failed:
+                                type: integer
+                                format: int64
                               quic_failure_ratio:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  denominator:
+                                    type: integer
+                                    format: int64
+                                  numerator:
+                                    type: integer
+                                    format: int64
+                                  value:
+                                    type: number
+                                    format: double
+                                required:
+                                  - denominator
+                                  - numerator
+                                  - value
+                              upgrade_eligible:
+                                type: integer
+                                format: int64
                             required:
+                              - actions
                               - fallback_ratio
                               - quic_failure_ratio
                             nullable: true
@@ -93656,18 +94204,137 @@ paths:
                             http_versions:
                               type: object
                               properties:
+                                actions:
+                                  type: integer
+                                  format: int64
+                                attempts:
+                                  type: integer
+                                  format: int64
+                                by_fallback:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                by_quic_error:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                by_selection:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                by_version:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
                                 fallback_ratio:
                                   type: object
-                                  additionalProperties: true
+                                  properties:
+                                    denominator:
+                                      type: integer
+                                      format: int64
+                                    numerator:
+                                      type: integer
+                                      format: int64
+                                    value:
+                                      type: number
+                                      format: double
+                                  required:
+                                    - denominator
+                                    - numerator
+                                    - value
+                                fell_back:
+                                  type: integer
+                                  format: int64
                                 finding:
                                   type: object
-                                  description: 'Go type: RunArchiveProtocolMixFinding'
-                                  additionalProperties: true
+                                  properties:
+                                    breaches:
+                                      type: array
+                                      items:
+                                        type: object
+                                        properties:
+                                          expected:
+                                            type: number
+                                            format: double
+                                          min_samples:
+                                            type: integer
+                                            format: int64
+                                          observed:
+                                            type: object
+                                            properties:
+                                              denominator:
+                                                type: integer
+                                                format: int64
+                                              numerator:
+                                                type: integer
+                                                format: int64
+                                              value:
+                                                type: number
+                                                format: double
+                                            required:
+                                              - denominator
+                                              - numerator
+                                              - value
+                                          ratio:
+                                            type: string
+                                        required:
+                                          - expected
+                                          - min_samples
+                                          - observed
+                                          - ratio
+                                    summary:
+                                      type: string
+                                    top_reasons:
+                                      type: array
+                                      items:
+                                        type: object
+                                        properties:
+                                          count:
+                                            type: integer
+                                            format: int64
+                                          reason:
+                                            type: string
+                                        required:
+                                          - count
+                                          - reason
+                                  required:
+                                    - breaches
+                                    - summary
                                   nullable: true
+                                http3_policies:
+                                  type: integer
+                                  format: int64
+                                quic_attempted:
+                                  type: integer
+                                  format: int64
+                                quic_failed:
+                                  type: integer
+                                  format: int64
                                 quic_failure_ratio:
                                   type: object
-                                  additionalProperties: true
+                                  properties:
+                                    denominator:
+                                      type: integer
+                                      format: int64
+                                    numerator:
+                                      type: integer
+                                      format: int64
+                                    value:
+                                      type: number
+                                      format: double
+                                  required:
+                                    - denominator
+                                    - numerator
+                                    - value
+                                upgrade_eligible:
+                                  type: integer
+                                  format: int64
                               required:
+                                - actions
                                 - fallback_ratio
                                 - quic_failure_ratio
                               nullable: true
@@ -95351,17 +96018,137 @@ paths:
                           http_versions:
                             type: object
                             properties:
+                              actions:
+                                type: integer
+                                format: int64
+                              attempts:
+                                type: integer
+                                format: int64
+                              by_fallback:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              by_quic_error:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              by_selection:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              by_version:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
                               fallback_ratio:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  denominator:
+                                    type: integer
+                                    format: int64
+                                  numerator:
+                                    type: integer
+                                    format: int64
+                                  value:
+                                    type: number
+                                    format: double
+                                required:
+                                  - denominator
+                                  - numerator
+                                  - value
+                              fell_back:
+                                type: integer
+                                format: int64
                               finding:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  breaches:
+                                    type: array
+                                    items:
+                                      type: object
+                                      properties:
+                                        expected:
+                                          type: number
+                                          format: double
+                                        min_samples:
+                                          type: integer
+                                          format: int64
+                                        observed:
+                                          type: object
+                                          properties:
+                                            denominator:
+                                              type: integer
+                                              format: int64
+                                            numerator:
+                                              type: integer
+                                              format: int64
+                                            value:
+                                              type: number
+                                              format: double
+                                          required:
+                                            - denominator
+                                            - numerator
+                                            - value
+                                        ratio:
+                                          type: string
+                                      required:
+                                        - expected
+                                        - min_samples
+                                        - observed
+                                        - ratio
+                                  summary:
+                                    type: string
+                                  top_reasons:
+                                    type: array
+                                    items:
+                                      type: object
+                                      properties:
+                                        count:
+                                          type: integer
+                                          format: int64
+                                        reason:
+                                          type: string
+                                      required:
+                                        - count
+                                        - reason
+                                required:
+                                  - breaches
+                                  - summary
                                 nullable: true
+                              http3_policies:
+                                type: integer
+                                format: int64
+                              quic_attempted:
+                                type: integer
+                                format: int64
+                              quic_failed:
+                                type: integer
+                                format: int64
                               quic_failure_ratio:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  denominator:
+                                    type: integer
+                                    format: int64
+                                  numerator:
+                                    type: integer
+                                    format: int64
+                                  value:
+                                    type: number
+                                    format: double
+                                required:
+                                  - denominator
+                                  - numerator
+                                  - value
+                              upgrade_eligible:
+                                type: integer
+                                format: int64
                             required:
+                              - actions
                               - fallback_ratio
                               - quic_failure_ratio
                             nullable: true
@@ -99719,18 +100506,137 @@ paths:
                             http_versions:
                               type: object
                               properties:
+                                actions:
+                                  type: integer
+                                  format: int64
+                                attempts:
+                                  type: integer
+                                  format: int64
+                                by_fallback:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                by_quic_error:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                by_selection:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                by_version:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
                                 fallback_ratio:
                                   type: object
-                                  additionalProperties: true
+                                  properties:
+                                    denominator:
+                                      type: integer
+                                      format: int64
+                                    numerator:
+                                      type: integer
+                                      format: int64
+                                    value:
+                                      type: number
+                                      format: double
+                                  required:
+                                    - denominator
+                                    - numerator
+                                    - value
+                                fell_back:
+                                  type: integer
+                                  format: int64
                                 finding:
                                   type: object
-                                  description: 'Go type: RunArchiveProtocolMixFinding'
-                                  additionalProperties: true
+                                  properties:
+                                    breaches:
+                                      type: array
+                                      items:
+                                        type: object
+                                        properties:
+                                          expected:
+                                            type: number
+                                            format: double
+                                          min_samples:
+                                            type: integer
+                                            format: int64
+                                          observed:
+                                            type: object
+                                            properties:
+                                              denominator:
+                                                type: integer
+                                                format: int64
+                                              numerator:
+                                                type: integer
+                                                format: int64
+                                              value:
+                                                type: number
+                                                format: double
+                                            required:
+                                              - denominator
+                                              - numerator
+                                              - value
+                                          ratio:
+                                            type: string
+                                        required:
+                                          - expected
+                                          - min_samples
+                                          - observed
+                                          - ratio
+                                    summary:
+                                      type: string
+                                    top_reasons:
+                                      type: array
+                                      items:
+                                        type: object
+                                        properties:
+                                          count:
+                                            type: integer
+                                            format: int64
+                                          reason:
+                                            type: string
+                                        required:
+                                          - count
+                                          - reason
+                                  required:
+                                    - breaches
+                                    - summary
                                   nullable: true
+                                http3_policies:
+                                  type: integer
+                                  format: int64
+                                quic_attempted:
+                                  type: integer
+                                  format: int64
+                                quic_failed:
+                                  type: integer
+                                  format: int64
                                 quic_failure_ratio:
                                   type: object
-                                  additionalProperties: true
+                                  properties:
+                                    denominator:
+                                      type: integer
+                                      format: int64
+                                    numerator:
+                                      type: integer
+                                      format: int64
+                                    value:
+                                      type: number
+                                      format: double
+                                  required:
+                                    - denominator
+                                    - numerator
+                                    - value
+                                upgrade_eligible:
+                                  type: integer
+                                  format: int64
                               required:
+                                - actions
                                 - fallback_ratio
                                 - quic_failure_ratio
                               nullable: true
@@ -101414,17 +102320,137 @@ paths:
                           http_versions:
                             type: object
                             properties:
+                              actions:
+                                type: integer
+                                format: int64
+                              attempts:
+                                type: integer
+                                format: int64
+                              by_fallback:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              by_quic_error:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              by_selection:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              by_version:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
                               fallback_ratio:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  denominator:
+                                    type: integer
+                                    format: int64
+                                  numerator:
+                                    type: integer
+                                    format: int64
+                                  value:
+                                    type: number
+                                    format: double
+                                required:
+                                  - denominator
+                                  - numerator
+                                  - value
+                              fell_back:
+                                type: integer
+                                format: int64
                               finding:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  breaches:
+                                    type: array
+                                    items:
+                                      type: object
+                                      properties:
+                                        expected:
+                                          type: number
+                                          format: double
+                                        min_samples:
+                                          type: integer
+                                          format: int64
+                                        observed:
+                                          type: object
+                                          properties:
+                                            denominator:
+                                              type: integer
+                                              format: int64
+                                            numerator:
+                                              type: integer
+                                              format: int64
+                                            value:
+                                              type: number
+                                              format: double
+                                          required:
+                                            - denominator
+                                            - numerator
+                                            - value
+                                        ratio:
+                                          type: string
+                                      required:
+                                        - expected
+                                        - min_samples
+                                        - observed
+                                        - ratio
+                                  summary:
+                                    type: string
+                                  top_reasons:
+                                    type: array
+                                    items:
+                                      type: object
+                                      properties:
+                                        count:
+                                          type: integer
+                                          format: int64
+                                        reason:
+                                          type: string
+                                      required:
+                                        - count
+                                        - reason
+                                required:
+                                  - breaches
+                                  - summary
                                 nullable: true
+                              http3_policies:
+                                type: integer
+                                format: int64
+                              quic_attempted:
+                                type: integer
+                                format: int64
+                              quic_failed:
+                                type: integer
+                                format: int64
                               quic_failure_ratio:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  denominator:
+                                    type: integer
+                                    format: int64
+                                  numerator:
+                                    type: integer
+                                    format: int64
+                                  value:
+                                    type: number
+                                    format: double
+                                required:
+                                  - denominator
+                                  - numerator
+                                  - value
+                              upgrade_eligible:
+                                type: integer
+                                format: int64
                             required:
+                              - actions
                               - fallback_ratio
                               - quic_failure_ratio
                             nullable: true
@@ -105794,18 +106820,137 @@ paths:
                             http_versions:
                               type: object
                               properties:
+                                actions:
+                                  type: integer
+                                  format: int64
+                                attempts:
+                                  type: integer
+                                  format: int64
+                                by_fallback:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                by_quic_error:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                by_selection:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                by_version:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
                                 fallback_ratio:
                                   type: object
-                                  additionalProperties: true
+                                  properties:
+                                    denominator:
+                                      type: integer
+                                      format: int64
+                                    numerator:
+                                      type: integer
+                                      format: int64
+                                    value:
+                                      type: number
+                                      format: double
+                                  required:
+                                    - denominator
+                                    - numerator
+                                    - value
+                                fell_back:
+                                  type: integer
+                                  format: int64
                                 finding:
                                   type: object
-                                  description: 'Go type: RunArchiveProtocolMixFinding'
-                                  additionalProperties: true
+                                  properties:
+                                    breaches:
+                                      type: array
+                                      items:
+                                        type: object
+                                        properties:
+                                          expected:
+                                            type: number
+                                            format: double
+                                          min_samples:
+                                            type: integer
+                                            format: int64
+                                          observed:
+                                            type: object
+                                            properties:
+                                              denominator:
+                                                type: integer
+                                                format: int64
+                                              numerator:
+                                                type: integer
+                                                format: int64
+                                              value:
+                                                type: number
+                                                format: double
+                                            required:
+                                              - denominator
+                                              - numerator
+                                              - value
+                                          ratio:
+                                            type: string
+                                        required:
+                                          - expected
+                                          - min_samples
+                                          - observed
+                                          - ratio
+                                    summary:
+                                      type: string
+                                    top_reasons:
+                                      type: array
+                                      items:
+                                        type: object
+                                        properties:
+                                          count:
+                                            type: integer
+                                            format: int64
+                                          reason:
+                                            type: string
+                                        required:
+                                          - count
+                                          - reason
+                                  required:
+                                    - breaches
+                                    - summary
                                   nullable: true
+                                http3_policies:
+                                  type: integer
+                                  format: int64
+                                quic_attempted:
+                                  type: integer
+                                  format: int64
+                                quic_failed:
+                                  type: integer
+                                  format: int64
                                 quic_failure_ratio:
                                   type: object
-                                  additionalProperties: true
+                                  properties:
+                                    denominator:
+                                      type: integer
+                                      format: int64
+                                    numerator:
+                                      type: integer
+                                      format: int64
+                                    value:
+                                      type: number
+                                      format: double
+                                  required:
+                                    - denominator
+                                    - numerator
+                                    - value
+                                upgrade_eligible:
+                                  type: integer
+                                  format: int64
                               required:
+                                - actions
                                 - fallback_ratio
                                 - quic_failure_ratio
                               nullable: true
@@ -107489,17 +108634,137 @@ paths:
                           http_versions:
                             type: object
                             properties:
+                              actions:
+                                type: integer
+                                format: int64
+                              attempts:
+                                type: integer
+                                format: int64
+                              by_fallback:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              by_quic_error:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              by_selection:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              by_version:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
                               fallback_ratio:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  denominator:
+                                    type: integer
+                                    format: int64
+                                  numerator:
+                                    type: integer
+                                    format: int64
+                                  value:
+                                    type: number
+                                    format: double
+                                required:
+                                  - denominator
+                                  - numerator
+                                  - value
+                              fell_back:
+                                type: integer
+                                format: int64
                               finding:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  breaches:
+                                    type: array
+                                    items:
+                                      type: object
+                                      properties:
+                                        expected:
+                                          type: number
+                                          format: double
+                                        min_samples:
+                                          type: integer
+                                          format: int64
+                                        observed:
+                                          type: object
+                                          properties:
+                                            denominator:
+                                              type: integer
+                                              format: int64
+                                            numerator:
+                                              type: integer
+                                              format: int64
+                                            value:
+                                              type: number
+                                              format: double
+                                          required:
+                                            - denominator
+                                            - numerator
+                                            - value
+                                        ratio:
+                                          type: string
+                                      required:
+                                        - expected
+                                        - min_samples
+                                        - observed
+                                        - ratio
+                                  summary:
+                                    type: string
+                                  top_reasons:
+                                    type: array
+                                    items:
+                                      type: object
+                                      properties:
+                                        count:
+                                          type: integer
+                                          format: int64
+                                        reason:
+                                          type: string
+                                      required:
+                                        - count
+                                        - reason
+                                required:
+                                  - breaches
+                                  - summary
                                 nullable: true
+                              http3_policies:
+                                type: integer
+                                format: int64
+                              quic_attempted:
+                                type: integer
+                                format: int64
+                              quic_failed:
+                                type: integer
+                                format: int64
                               quic_failure_ratio:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  denominator:
+                                    type: integer
+                                    format: int64
+                                  numerator:
+                                    type: integer
+                                    format: int64
+                                  value:
+                                    type: number
+                                    format: double
+                                required:
+                                  - denominator
+                                  - numerator
+                                  - value
+                              upgrade_eligible:
+                                type: integer
+                                format: int64
                             required:
+                              - actions
                               - fallback_ratio
                               - quic_failure_ratio
                             nullable: true
@@ -111869,18 +113134,137 @@ paths:
                             http_versions:
                               type: object
                               properties:
+                                actions:
+                                  type: integer
+                                  format: int64
+                                attempts:
+                                  type: integer
+                                  format: int64
+                                by_fallback:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                by_quic_error:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                by_selection:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                by_version:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
                                 fallback_ratio:
                                   type: object
-                                  additionalProperties: true
+                                  properties:
+                                    denominator:
+                                      type: integer
+                                      format: int64
+                                    numerator:
+                                      type: integer
+                                      format: int64
+                                    value:
+                                      type: number
+                                      format: double
+                                  required:
+                                    - denominator
+                                    - numerator
+                                    - value
+                                fell_back:
+                                  type: integer
+                                  format: int64
                                 finding:
                                   type: object
-                                  description: 'Go type: RunArchiveProtocolMixFinding'
-                                  additionalProperties: true
+                                  properties:
+                                    breaches:
+                                      type: array
+                                      items:
+                                        type: object
+                                        properties:
+                                          expected:
+                                            type: number
+                                            format: double
+                                          min_samples:
+                                            type: integer
+                                            format: int64
+                                          observed:
+                                            type: object
+                                            properties:
+                                              denominator:
+                                                type: integer
+                                                format: int64
+                                              numerator:
+                                                type: integer
+                                                format: int64
+                                              value:
+                                                type: number
+                                                format: double
+                                            required:
+                                              - denominator
+                                              - numerator
+                                              - value
+                                          ratio:
+                                            type: string
+                                        required:
+                                          - expected
+                                          - min_samples
+                                          - observed
+                                          - ratio
+                                    summary:
+                                      type: string
+                                    top_reasons:
+                                      type: array
+                                      items:
+                                        type: object
+                                        properties:
+                                          count:
+                                            type: integer
+                                            format: int64
+                                          reason:
+                                            type: string
+                                        required:
+                                          - count
+                                          - reason
+                                  required:
+                                    - breaches
+                                    - summary
                                   nullable: true
+                                http3_policies:
+                                  type: integer
+                                  format: int64
+                                quic_attempted:
+                                  type: integer
+                                  format: int64
+                                quic_failed:
+                                  type: integer
+                                  format: int64
                                 quic_failure_ratio:
                                   type: object
-                                  additionalProperties: true
+                                  properties:
+                                    denominator:
+                                      type: integer
+                                      format: int64
+                                    numerator:
+                                      type: integer
+                                      format: int64
+                                    value:
+                                      type: number
+                                      format: double
+                                  required:
+                                    - denominator
+                                    - numerator
+                                    - value
+                                upgrade_eligible:
+                                  type: integer
+                                  format: int64
                               required:
+                                - actions
                                 - fallback_ratio
                                 - quic_failure_ratio
                               nullable: true
@@ -113564,17 +114948,137 @@ paths:
                           http_versions:
                             type: object
                             properties:
+                              actions:
+                                type: integer
+                                format: int64
+                              attempts:
+                                type: integer
+                                format: int64
+                              by_fallback:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              by_quic_error:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              by_selection:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              by_version:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
                               fallback_ratio:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  denominator:
+                                    type: integer
+                                    format: int64
+                                  numerator:
+                                    type: integer
+                                    format: int64
+                                  value:
+                                    type: number
+                                    format: double
+                                required:
+                                  - denominator
+                                  - numerator
+                                  - value
+                              fell_back:
+                                type: integer
+                                format: int64
                               finding:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  breaches:
+                                    type: array
+                                    items:
+                                      type: object
+                                      properties:
+                                        expected:
+                                          type: number
+                                          format: double
+                                        min_samples:
+                                          type: integer
+                                          format: int64
+                                        observed:
+                                          type: object
+                                          properties:
+                                            denominator:
+                                              type: integer
+                                              format: int64
+                                            numerator:
+                                              type: integer
+                                              format: int64
+                                            value:
+                                              type: number
+                                              format: double
+                                          required:
+                                            - denominator
+                                            - numerator
+                                            - value
+                                        ratio:
+                                          type: string
+                                      required:
+                                        - expected
+                                        - min_samples
+                                        - observed
+                                        - ratio
+                                  summary:
+                                    type: string
+                                  top_reasons:
+                                    type: array
+                                    items:
+                                      type: object
+                                      properties:
+                                        count:
+                                          type: integer
+                                          format: int64
+                                        reason:
+                                          type: string
+                                      required:
+                                        - count
+                                        - reason
+                                required:
+                                  - breaches
+                                  - summary
                                 nullable: true
+                              http3_policies:
+                                type: integer
+                                format: int64
+                              quic_attempted:
+                                type: integer
+                                format: int64
+                              quic_failed:
+                                type: integer
+                                format: int64
                               quic_failure_ratio:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  denominator:
+                                    type: integer
+                                    format: int64
+                                  numerator:
+                                    type: integer
+                                    format: int64
+                                  value:
+                                    type: number
+                                    format: double
+                                required:
+                                  - denominator
+                                  - numerator
+                                  - value
+                              upgrade_eligible:
+                                type: integer
+                                format: int64
                             required:
+                              - actions
                               - fallback_ratio
                               - quic_failure_ratio
                             nullable: true
@@ -117944,18 +119448,137 @@ paths:
                             http_versions:
                               type: object
                               properties:
+                                actions:
+                                  type: integer
+                                  format: int64
+                                attempts:
+                                  type: integer
+                                  format: int64
+                                by_fallback:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                by_quic_error:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                by_selection:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                by_version:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
                                 fallback_ratio:
                                   type: object
-                                  additionalProperties: true
+                                  properties:
+                                    denominator:
+                                      type: integer
+                                      format: int64
+                                    numerator:
+                                      type: integer
+                                      format: int64
+                                    value:
+                                      type: number
+                                      format: double
+                                  required:
+                                    - denominator
+                                    - numerator
+                                    - value
+                                fell_back:
+                                  type: integer
+                                  format: int64
                                 finding:
                                   type: object
-                                  description: 'Go type: RunArchiveProtocolMixFinding'
-                                  additionalProperties: true
+                                  properties:
+                                    breaches:
+                                      type: array
+                                      items:
+                                        type: object
+                                        properties:
+                                          expected:
+                                            type: number
+                                            format: double
+                                          min_samples:
+                                            type: integer
+                                            format: int64
+                                          observed:
+                                            type: object
+                                            properties:
+                                              denominator:
+                                                type: integer
+                                                format: int64
+                                              numerator:
+                                                type: integer
+                                                format: int64
+                                              value:
+                                                type: number
+                                                format: double
+                                            required:
+                                              - denominator
+                                              - numerator
+                                              - value
+                                          ratio:
+                                            type: string
+                                        required:
+                                          - expected
+                                          - min_samples
+                                          - observed
+                                          - ratio
+                                    summary:
+                                      type: string
+                                    top_reasons:
+                                      type: array
+                                      items:
+                                        type: object
+                                        properties:
+                                          count:
+                                            type: integer
+                                            format: int64
+                                          reason:
+                                            type: string
+                                        required:
+                                          - count
+                                          - reason
+                                  required:
+                                    - breaches
+                                    - summary
                                   nullable: true
+                                http3_policies:
+                                  type: integer
+                                  format: int64
+                                quic_attempted:
+                                  type: integer
+                                  format: int64
+                                quic_failed:
+                                  type: integer
+                                  format: int64
                                 quic_failure_ratio:
                                   type: object
-                                  additionalProperties: true
+                                  properties:
+                                    denominator:
+                                      type: integer
+                                      format: int64
+                                    numerator:
+                                      type: integer
+                                      format: int64
+                                    value:
+                                      type: number
+                                      format: double
+                                  required:
+                                    - denominator
+                                    - numerator
+                                    - value
+                                upgrade_eligible:
+                                  type: integer
+                                  format: int64
                               required:
+                                - actions
                                 - fallback_ratio
                                 - quic_failure_ratio
                               nullable: true
@@ -119639,17 +121262,137 @@ paths:
                           http_versions:
                             type: object
                             properties:
+                              actions:
+                                type: integer
+                                format: int64
+                              attempts:
+                                type: integer
+                                format: int64
+                              by_fallback:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              by_quic_error:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              by_selection:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              by_version:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
                               fallback_ratio:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  denominator:
+                                    type: integer
+                                    format: int64
+                                  numerator:
+                                    type: integer
+                                    format: int64
+                                  value:
+                                    type: number
+                                    format: double
+                                required:
+                                  - denominator
+                                  - numerator
+                                  - value
+                              fell_back:
+                                type: integer
+                                format: int64
                               finding:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  breaches:
+                                    type: array
+                                    items:
+                                      type: object
+                                      properties:
+                                        expected:
+                                          type: number
+                                          format: double
+                                        min_samples:
+                                          type: integer
+                                          format: int64
+                                        observed:
+                                          type: object
+                                          properties:
+                                            denominator:
+                                              type: integer
+                                              format: int64
+                                            numerator:
+                                              type: integer
+                                              format: int64
+                                            value:
+                                              type: number
+                                              format: double
+                                          required:
+                                            - denominator
+                                            - numerator
+                                            - value
+                                        ratio:
+                                          type: string
+                                      required:
+                                        - expected
+                                        - min_samples
+                                        - observed
+                                        - ratio
+                                  summary:
+                                    type: string
+                                  top_reasons:
+                                    type: array
+                                    items:
+                                      type: object
+                                      properties:
+                                        count:
+                                          type: integer
+                                          format: int64
+                                        reason:
+                                          type: string
+                                      required:
+                                        - count
+                                        - reason
+                                required:
+                                  - breaches
+                                  - summary
                                 nullable: true
+                              http3_policies:
+                                type: integer
+                                format: int64
+                              quic_attempted:
+                                type: integer
+                                format: int64
+                              quic_failed:
+                                type: integer
+                                format: int64
                               quic_failure_ratio:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  denominator:
+                                    type: integer
+                                    format: int64
+                                  numerator:
+                                    type: integer
+                                    format: int64
+                                  value:
+                                    type: number
+                                    format: double
+                                required:
+                                  - denominator
+                                  - numerator
+                                  - value
+                              upgrade_eligible:
+                                type: integer
+                                format: int64
                             required:
+                              - actions
                               - fallback_ratio
                               - quic_failure_ratio
                             nullable: true
@@ -124019,18 +125762,137 @@ paths:
                             http_versions:
                               type: object
                               properties:
+                                actions:
+                                  type: integer
+                                  format: int64
+                                attempts:
+                                  type: integer
+                                  format: int64
+                                by_fallback:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                by_quic_error:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                by_selection:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
+                                by_version:
+                                  type: object
+                                  additionalProperties:
+                                    type: integer
+                                    format: int64
                                 fallback_ratio:
                                   type: object
-                                  additionalProperties: true
+                                  properties:
+                                    denominator:
+                                      type: integer
+                                      format: int64
+                                    numerator:
+                                      type: integer
+                                      format: int64
+                                    value:
+                                      type: number
+                                      format: double
+                                  required:
+                                    - denominator
+                                    - numerator
+                                    - value
+                                fell_back:
+                                  type: integer
+                                  format: int64
                                 finding:
                                   type: object
-                                  description: 'Go type: RunArchiveProtocolMixFinding'
-                                  additionalProperties: true
+                                  properties:
+                                    breaches:
+                                      type: array
+                                      items:
+                                        type: object
+                                        properties:
+                                          expected:
+                                            type: number
+                                            format: double
+                                          min_samples:
+                                            type: integer
+                                            format: int64
+                                          observed:
+                                            type: object
+                                            properties:
+                                              denominator:
+                                                type: integer
+                                                format: int64
+                                              numerator:
+                                                type: integer
+                                                format: int64
+                                              value:
+                                                type: number
+                                                format: double
+                                            required:
+                                              - denominator
+                                              - numerator
+                                              - value
+                                          ratio:
+                                            type: string
+                                        required:
+                                          - expected
+                                          - min_samples
+                                          - observed
+                                          - ratio
+                                    summary:
+                                      type: string
+                                    top_reasons:
+                                      type: array
+                                      items:
+                                        type: object
+                                        properties:
+                                          count:
+                                            type: integer
+                                            format: int64
+                                          reason:
+                                            type: string
+                                        required:
+                                          - count
+                                          - reason
+                                  required:
+                                    - breaches
+                                    - summary
                                   nullable: true
+                                http3_policies:
+                                  type: integer
+                                  format: int64
+                                quic_attempted:
+                                  type: integer
+                                  format: int64
+                                quic_failed:
+                                  type: integer
+                                  format: int64
                                 quic_failure_ratio:
                                   type: object
-                                  additionalProperties: true
+                                  properties:
+                                    denominator:
+                                      type: integer
+                                      format: int64
+                                    numerator:
+                                      type: integer
+                                      format: int64
+                                    value:
+                                      type: number
+                                      format: double
+                                  required:
+                                    - denominator
+                                    - numerator
+                                    - value
+                                upgrade_eligible:
+                                  type: integer
+                                  format: int64
                               required:
+                                - actions
                                 - fallback_ratio
                                 - quic_failure_ratio
                               nullable: true
@@ -125714,17 +127576,137 @@ paths:
                           http_versions:
                             type: object
                             properties:
+                              actions:
+                                type: integer
+                                format: int64
+                              attempts:
+                                type: integer
+                                format: int64
+                              by_fallback:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              by_quic_error:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              by_selection:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
+                              by_version:
+                                type: object
+                                additionalProperties:
+                                  type: integer
+                                  format: int64
                               fallback_ratio:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  denominator:
+                                    type: integer
+                                    format: int64
+                                  numerator:
+                                    type: integer
+                                    format: int64
+                                  value:
+                                    type: number
+                                    format: double
+                                required:
+                                  - denominator
+                                  - numerator
+                                  - value
+                              fell_back:
+                                type: integer
+                                format: int64
                               finding:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  breaches:
+                                    type: array
+                                    items:
+                                      type: object
+                                      properties:
+                                        expected:
+                                          type: number
+                                          format: double
+                                        min_samples:
+                                          type: integer
+                                          format: int64
+                                        observed:
+                                          type: object
+                                          properties:
+                                            denominator:
+                                              type: integer
+                                              format: int64
+                                            numerator:
+                                              type: integer
+                                              format: int64
+                                            value:
+                                              type: number
+                                              format: double
+                                          required:
+                                            - denominator
+                                            - numerator
+                                            - value
+                                        ratio:
+                                          type: string
+                                      required:
+                                        - expected
+                                        - min_samples
+                                        - observed
+                                        - ratio
+                                  summary:
+                                    type: string
+                                  top_reasons:
+                                    type: array
+                                    items:
+                                      type: object
+                                      properties:
+                                        count:
+                                          type: integer
+                                          format: int64
+                                        reason:
+                                          type: string
+                                      required:
+                                        - count
+                                        - reason
+                                required:
+                                  - breaches
+                                  - summary
                                 nullable: true
+                              http3_policies:
+                                type: integer
+                                format: int64
+                              quic_attempted:
+                                type: integer
+                                format: int64
+                              quic_failed:
+                                type: integer
+                                format: int64
                               quic_failure_ratio:
                                 type: object
-                                additionalProperties: true
+                                properties:
+                                  denominator:
+                                    type: integer
+                                    format: int64
+                                  numerator:
+                                    type: integer
+                                    format: int64
+                                  value:
+                                    type: number
+                                    format: double
+                                required:
+                                  - denominator
+                                  - numerator
+                                  - value
+                              upgrade_eligible:
+                                type: integer
+                                format: int64
                             required:
+                              - actions
                               - fallback_ratio
                               - quic_failure_ratio
                             nullable: true
@@ -338175,16 +340157,51 @@ paths:
                                   type: array
                                   items:
                                     type: object
-                                    description: 'Go type: RunArchiveProtocolMixBreach'
-                                    additionalProperties: true
+                                    properties:
+                                      expected:
+                                        type: number
+                                        format: double
+                                      min_samples:
+                                        type: integer
+                                        format: int64
+                                      observed:
+                                        type: object
+                                        properties:
+                                          denominator:
+                                            type: integer
+                                            format: int64
+                                          numerator:
+                                            type: integer
+                                            format: int64
+                                          value:
+                                            type: number
+                                            format: double
+                                        required:
+                                          - denominator
+                                          - numerator
+                                          - value
+                                      ratio:
+                                        type: string
+                                    required:
+                                      - expected
+                                      - min_samples
+                                      - observed
+                                      - ratio
                                 summary:
                                   type: string
                                 top_reasons:
                                   type: array
                                   items:
                                     type: object
-                                    description: 'Go type: RunArchiveProtocolMixReason'
-                                    additionalProperties: true
+                                    properties:
+                                      count:
+                                        type: integer
+                                        format: int64
+                                      reason:
+                                        type: string
+                                    required:
+                                      - count
+                                      - reason
                               required:
                                 - breaches
                                 - summary
@@ -341923,16 +343940,51 @@ paths:
                                 type: array
                                 items:
                                   type: object
-                                  description: 'Go type: RunArchiveProtocolMixBreach'
-                                  additionalProperties: true
+                                  properties:
+                                    expected:
+                                      type: number
+                                      format: double
+                                    min_samples:
+                                      type: integer
+                                      format: int64
+                                    observed:
+                                      type: object
+                                      properties:
+                                        denominator:
+                                          type: integer
+                                          format: int64
+                                        numerator:
+                                          type: integer
+                                          format: int64
+                                        value:
+                                          type: number
+                                          format: double
+                                      required:
+                                        - denominator
+                                        - numerator
+                                        - value
+                                    ratio:
+                                      type: string
+                                  required:
+                                    - expected
+                                    - min_samples
+                                    - observed
+                                    - ratio
                               summary:
                                 type: string
                               top_reasons:
                                 type: array
                                 items:
                                   type: object
-                                  description: 'Go type: RunArchiveProtocolMixReason'
-                                  additionalProperties: true
+                                  properties:
+                                    count:
+                                      type: integer
+                                      format: int64
+                                    reason:
+                                      type: string
+                                  required:
+                                    - count
+                                    - reason
                             required:
                               - breaches
                               - summary
@@ -351533,16 +353585,51 @@ paths:
                                   type: array
                                   items:
                                     type: object
-                                    description: 'Go type: RunArchiveProtocolMixBreach'
-                                    additionalProperties: true
+                                    properties:
+                                      expected:
+                                        type: number
+                                        format: double
+                                      min_samples:
+                                        type: integer
+                                        format: int64
+                                      observed:
+                                        type: object
+                                        properties:
+                                          denominator:
+                                            type: integer
+                                            format: int64
+                                          numerator:
+                                            type: integer
+                                            format: int64
+                                          value:
+                                            type: number
+                                            format: double
+                                        required:
+                                          - denominator
+                                          - numerator
+                                          - value
+                                      ratio:
+                                        type: string
+                                    required:
+                                      - expected
+                                      - min_samples
+                                      - observed
+                                      - ratio
                                 summary:
                                   type: string
                                 top_reasons:
                                   type: array
                                   items:
                                     type: object
-                                    description: 'Go type: RunArchiveProtocolMixReason'
-                                    additionalProperties: true
+                                    properties:
+                                      count:
+                                        type: integer
+                                        format: int64
+                                      reason:
+                                        type: string
+                                    required:
+                                      - count
+                                      - reason
                               required:
                                 - breaches
                                 - summary
@@ -355281,16 +357368,51 @@ paths:
                                 type: array
                                 items:
                                   type: object
-                                  description: 'Go type: RunArchiveProtocolMixBreach'
-                                  additionalProperties: true
+                                  properties:
+                                    expected:
+                                      type: number
+                                      format: double
+                                    min_samples:
+                                      type: integer
+                                      format: int64
+                                    observed:
+                                      type: object
+                                      properties:
+                                        denominator:
+                                          type: integer
+                                          format: int64
+                                        numerator:
+                                          type: integer
+                                          format: int64
+                                        value:
+                                          type: number
+                                          format: double
+                                      required:
+                                        - denominator
+                                        - numerator
+                                        - value
+                                    ratio:
+                                      type: string
+                                  required:
+                                    - expected
+                                    - min_samples
+                                    - observed
+                                    - ratio
                               summary:
                                 type: string
                               top_reasons:
                                 type: array
                                 items:
                                   type: object
-                                  description: 'Go type: RunArchiveProtocolMixReason'
-                                  additionalProperties: true
+                                  properties:
+                                    count:
+                                      type: integer
+                                      format: int64
+                                    reason:
+                                      type: string
+                                  required:
+                                    - count
+                                    - reason
                             required:
                               - breaches
                               - summary
@@ -364093,8 +366215,90 @@ paths:
                     type: array
                     items:
                       type: object
-                      description: 'Go type: hostnet.RunEvidence'
-                      additionalProperties: true
+                      properties:
+                        open_files:
+                          type: object
+                          properties:
+                            available:
+                              type: boolean
+                            hard:
+                              type: integer
+                              format: int64
+                            soft:
+                              type: integer
+                              format: int64
+                          required:
+                            - available
+                        source:
+                          type: string
+                        udp_buffers:
+                          type: object
+                          properties:
+                            available:
+                              type: boolean
+                            receive_max_bytes:
+                              type: integer
+                              format: int64
+                            send_max_bytes:
+                              type: integer
+                              format: int64
+                          required:
+                            - available
+                        udp_drops_at_end:
+                          type: object
+                          properties:
+                            in_errors:
+                              type: integer
+                              format: int64
+                            receive_buffer_errors:
+                              type: integer
+                              format: int64
+                            sampled_at:
+                              type: string
+                              format: date-time
+                            scope:
+                              type: string
+                            scope_id:
+                              type: string
+                            send_buffer_errors:
+                              type: integer
+                              format: int64
+                          required:
+                            - in_errors
+                            - receive_buffer_errors
+                            - sampled_at
+                            - scope
+                            - send_buffer_errors
+                          nullable: true
+                        udp_drops_at_start:
+                          type: object
+                          properties:
+                            in_errors:
+                              type: integer
+                              format: int64
+                            receive_buffer_errors:
+                              type: integer
+                              format: int64
+                            sampled_at:
+                              type: string
+                              format: date-time
+                            scope:
+                              type: string
+                            scope_id:
+                              type: string
+                            send_buffer_errors:
+                              type: integer
+                              format: int64
+                          required:
+                            - in_errors
+                            - receive_buffer_errors
+                            - sampled_at
+                            - scope
+                            - send_buffer_errors
+                          nullable: true
+                      required:
+                        - open_files
+                        - udp_buffers
                   initial_provenance:
                     type: object
                     properties:
@@ -378200,28 +380404,100 @@ paths:
                       properties:
                         open_files:
                           type: object
-                          description: 'Go type: hostnet.OpenFileLimit'
-                          additionalProperties: true
+                          properties:
+                            available:
+                              type: boolean
+                            hard:
+                              type: integer
+                              format: int64
+                            soft:
+                              type: integer
+                              format: int64
+                          required:
+                            - available
                         source:
                           type: string
                         udp_buffers:
                           type: object
-                          description: 'Go type: hostnet.UDPBufferLimits'
-                          additionalProperties: true
+                          properties:
+                            available:
+                              type: boolean
+                            receive_max_bytes:
+                              type: integer
+                              format: int64
+                            send_max_bytes:
+                              type: integer
+                              format: int64
+                          required:
+                            - available
                         udp_drops_at_end:
                           type: object
-                          description: 'Go type: hostnet.UDPDropCounters'
-                          additionalProperties: true
+                          properties:
+                            in_errors:
+                              type: integer
+                              format: int64
+                            receive_buffer_errors:
+                              type: integer
+                              format: int64
+                            sampled_at:
+                              type: string
+                              format: date-time
+                            scope:
+                              type: string
+                            scope_id:
+                              type: string
+                            send_buffer_errors:
+                              type: integer
+                              format: int64
+                          required:
+                            - in_errors
+                            - receive_buffer_errors
+                            - sampled_at
+                            - scope
+                            - send_buffer_errors
                           nullable: true
                         udp_drops_at_start:
                           type: object
-                          description: 'Go type: hostnet.UDPDropCounters'
-                          additionalProperties: true
+                          properties:
+                            in_errors:
+                              type: integer
+                              format: int64
+                            receive_buffer_errors:
+                              type: integer
+                              format: int64
+                            sampled_at:
+                              type: string
+                              format: date-time
+                            scope:
+                              type: string
+                            scope_id:
+                              type: string
+                            send_buffer_errors:
+                              type: integer
+                              format: int64
+                          required:
+                            - in_errors
+                            - receive_buffer_errors
+                            - sampled_at
+                            - scope
+                            - send_buffer_errors
                           nullable: true
                         udp_drops_delta:
                           type: object
-                          description: 'Go type: hostnet.UDPDropDelta'
-                          additionalProperties: true
+                          properties:
+                            in_errors:
+                              type: integer
+                              format: int64
+                            receive_buffer_errors:
+                              type: integer
+                              format: int64
+                            send_buffer_errors:
+                              type: integer
+                              format: int64
+                          required:
+                            - in_errors
+                            - receive_buffer_errors
+                            - send_buffer_errors
                           nullable: true
                         warning:
                           type: string
@@ -378729,8 +381005,90 @@ paths:
                         type: array
                         items:
                           type: object
-                          description: 'Go type: hostnet.RunEvidence'
-                          additionalProperties: true
+                          properties:
+                            open_files:
+                              type: object
+                              properties:
+                                available:
+                                  type: boolean
+                                hard:
+                                  type: integer
+                                  format: int64
+                                soft:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - available
+                            source:
+                              type: string
+                            udp_buffers:
+                              type: object
+                              properties:
+                                available:
+                                  type: boolean
+                                receive_max_bytes:
+                                  type: integer
+                                  format: int64
+                                send_max_bytes:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - available
+                            udp_drops_at_end:
+                              type: object
+                              properties:
+                                in_errors:
+                                  type: integer
+                                  format: int64
+                                receive_buffer_errors:
+                                  type: integer
+                                  format: int64
+                                sampled_at:
+                                  type: string
+                                  format: date-time
+                                scope:
+                                  type: string
+                                scope_id:
+                                  type: string
+                                send_buffer_errors:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - in_errors
+                                - receive_buffer_errors
+                                - sampled_at
+                                - scope
+                                - send_buffer_errors
+                              nullable: true
+                            udp_drops_at_start:
+                              type: object
+                              properties:
+                                in_errors:
+                                  type: integer
+                                  format: int64
+                                receive_buffer_errors:
+                                  type: integer
+                                  format: int64
+                                sampled_at:
+                                  type: string
+                                  format: date-time
+                                scope:
+                                  type: string
+                                scope_id:
+                                  type: string
+                                send_buffer_errors:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - in_errors
+                                - receive_buffer_errors
+                                - sampled_at
+                                - scope
+                                - send_buffer_errors
+                              nullable: true
+                          required:
+                            - open_files
+                            - udp_buffers
                       initial_provenance:
                         type: object
                         properties:
@@ -379373,14 +381731,54 @@ paths:
                                 type: array
                                 items:
                                   type: object
-                                  description: 'Go type: HTTP3PreflightResult'
-                                  additionalProperties: true
+                                  properties:
+                                    address:
+                                      type: string
+                                    checked_at:
+                                      type: string
+                                      format: date-time
+                                    error:
+                                      type: string
+                                    error_class:
+                                      type: string
+                                    group:
+                                      type: string
+                                    handshake_ms:
+                                      type: number
+                                      format: double
+                                    ok:
+                                      type: boolean
+                                    origin:
+                                      type: string
+                                    policy:
+                                      type: string
+                                    region:
+                                      type: string
+                                    skipped:
+                                      type: string
+                                    source:
+                                      type: string
+                                  required:
+                                    - checked_at
+                                    - group
+                                    - ok
+                                    - origin
+                                    - policy
+                                    - source
                               unchecked:
                                 type: array
                                 items:
                                   type: object
-                                  description: 'Go type: HTTP3PreflightUnchecked'
-                                  additionalProperties: true
+                                  properties:
+                                    reason:
+                                      type: string
+                                    region:
+                                      type: string
+                                    source:
+                                      type: string
+                                  required:
+                                    - reason
+                                    - source
                             required:
                               - policy
                             nullable: true
@@ -380835,14 +383233,54 @@ paths:
                                 type: array
                                 items:
                                   type: object
-                                  description: 'Go type: HTTP3PreflightResult'
-                                  additionalProperties: true
+                                  properties:
+                                    address:
+                                      type: string
+                                    checked_at:
+                                      type: string
+                                      format: date-time
+                                    error:
+                                      type: string
+                                    error_class:
+                                      type: string
+                                    group:
+                                      type: string
+                                    handshake_ms:
+                                      type: number
+                                      format: double
+                                    ok:
+                                      type: boolean
+                                    origin:
+                                      type: string
+                                    policy:
+                                      type: string
+                                    region:
+                                      type: string
+                                    skipped:
+                                      type: string
+                                    source:
+                                      type: string
+                                  required:
+                                    - checked_at
+                                    - group
+                                    - ok
+                                    - origin
+                                    - policy
+                                    - source
                               unchecked:
                                 type: array
                                 items:
                                   type: object
-                                  description: 'Go type: HTTP3PreflightUnchecked'
-                                  additionalProperties: true
+                                  properties:
+                                    reason:
+                                      type: string
+                                    region:
+                                      type: string
+                                    source:
+                                      type: string
+                                  required:
+                                    - reason
+                                    - source
                             required:
                               - policy
                             nullable: true
@@ -382814,16 +385252,51 @@ paths:
                                 type: array
                                 items:
                                   type: object
-                                  description: 'Go type: RunArchiveProtocolMixBreach'
-                                  additionalProperties: true
+                                  properties:
+                                    expected:
+                                      type: number
+                                      format: double
+                                    min_samples:
+                                      type: integer
+                                      format: int64
+                                    observed:
+                                      type: object
+                                      properties:
+                                        denominator:
+                                          type: integer
+                                          format: int64
+                                        numerator:
+                                          type: integer
+                                          format: int64
+                                        value:
+                                          type: number
+                                          format: double
+                                      required:
+                                        - denominator
+                                        - numerator
+                                        - value
+                                    ratio:
+                                      type: string
+                                  required:
+                                    - expected
+                                    - min_samples
+                                    - observed
+                                    - ratio
                               summary:
                                 type: string
                               top_reasons:
                                 type: array
                                 items:
                                   type: object
-                                  description: 'Go type: RunArchiveProtocolMixReason'
-                                  additionalProperties: true
+                                  properties:
+                                    count:
+                                      type: integer
+                                      format: int64
+                                    reason:
+                                      type: string
+                                  required:
+                                    - count
+                                    - reason
                             required:
                               - breaches
                               - summary
@@ -395469,16 +397942,51 @@ paths:
                                   type: array
                                   items:
                                     type: object
-                                    description: 'Go type: RunArchiveProtocolMixBreach'
-                                    additionalProperties: true
+                                    properties:
+                                      expected:
+                                        type: number
+                                        format: double
+                                      min_samples:
+                                        type: integer
+                                        format: int64
+                                      observed:
+                                        type: object
+                                        properties:
+                                          denominator:
+                                            type: integer
+                                            format: int64
+                                          numerator:
+                                            type: integer
+                                            format: int64
+                                          value:
+                                            type: number
+                                            format: double
+                                        required:
+                                          - denominator
+                                          - numerator
+                                          - value
+                                      ratio:
+                                        type: string
+                                    required:
+                                      - expected
+                                      - min_samples
+                                      - observed
+                                      - ratio
                                 summary:
                                   type: string
                                 top_reasons:
                                   type: array
                                   items:
                                     type: object
-                                    description: 'Go type: RunArchiveProtocolMixReason'
-                                    additionalProperties: true
+                                    properties:
+                                      count:
+                                        type: integer
+                                        format: int64
+                                      reason:
+                                        type: string
+                                    required:
+                                      - count
+                                      - reason
                               required:
                                 - breaches
                                 - summary
@@ -399217,16 +401725,51 @@ paths:
                                 type: array
                                 items:
                                   type: object
-                                  description: 'Go type: RunArchiveProtocolMixBreach'
-                                  additionalProperties: true
+                                  properties:
+                                    expected:
+                                      type: number
+                                      format: double
+                                    min_samples:
+                                      type: integer
+                                      format: int64
+                                    observed:
+                                      type: object
+                                      properties:
+                                        denominator:
+                                          type: integer
+                                          format: int64
+                                        numerator:
+                                          type: integer
+                                          format: int64
+                                        value:
+                                          type: number
+                                          format: double
+                                      required:
+                                        - denominator
+                                        - numerator
+                                        - value
+                                    ratio:
+                                      type: string
+                                  required:
+                                    - expected
+                                    - min_samples
+                                    - observed
+                                    - ratio
                               summary:
                                 type: string
                               top_reasons:
                                 type: array
                                 items:
                                   type: object
-                                  description: 'Go type: RunArchiveProtocolMixReason'
-                                  additionalProperties: true
+                                  properties:
+                                    count:
+                                      type: integer
+                                      format: int64
+                                    reason:
+                                      type: string
+                                  required:
+                                    - count
+                                    - reason
                             required:
                               - breaches
                               - summary
@@ -408771,16 +411314,51 @@ paths:
                                   type: array
                                   items:
                                     type: object
-                                    description: 'Go type: RunArchiveProtocolMixBreach'
-                                    additionalProperties: true
+                                    properties:
+                                      expected:
+                                        type: number
+                                        format: double
+                                      min_samples:
+                                        type: integer
+                                        format: int64
+                                      observed:
+                                        type: object
+                                        properties:
+                                          denominator:
+                                            type: integer
+                                            format: int64
+                                          numerator:
+                                            type: integer
+                                            format: int64
+                                          value:
+                                            type: number
+                                            format: double
+                                        required:
+                                          - denominator
+                                          - numerator
+                                          - value
+                                      ratio:
+                                        type: string
+                                    required:
+                                      - expected
+                                      - min_samples
+                                      - observed
+                                      - ratio
                                 summary:
                                   type: string
                                 top_reasons:
                                   type: array
                                   items:
                                     type: object
-                                    description: 'Go type: RunArchiveProtocolMixReason'
-                                    additionalProperties: true
+                                    properties:
+                                      count:
+                                        type: integer
+                                        format: int64
+                                      reason:
+                                        type: string
+                                    required:
+                                      - count
+                                      - reason
                               required:
                                 - breaches
                                 - summary
@@ -412519,16 +415097,51 @@ paths:
                                 type: array
                                 items:
                                   type: object
-                                  description: 'Go type: RunArchiveProtocolMixBreach'
-                                  additionalProperties: true
+                                  properties:
+                                    expected:
+                                      type: number
+                                      format: double
+                                    min_samples:
+                                      type: integer
+                                      format: int64
+                                    observed:
+                                      type: object
+                                      properties:
+                                        denominator:
+                                          type: integer
+                                          format: int64
+                                        numerator:
+                                          type: integer
+                                          format: int64
+                                        value:
+                                          type: number
+                                          format: double
+                                      required:
+                                        - denominator
+                                        - numerator
+                                        - value
+                                    ratio:
+                                      type: string
+                                  required:
+                                    - expected
+                                    - min_samples
+                                    - observed
+                                    - ratio
                               summary:
                                 type: string
                               top_reasons:
                                 type: array
                                 items:
                                   type: object
-                                  description: 'Go type: RunArchiveProtocolMixReason'
-                                  additionalProperties: true
+                                  properties:
+                                    count:
+                                      type: integer
+                                      format: int64
+                                    reason:
+                                      type: string
+                                  required:
+                                    - count
+                                    - reason
                             required:
                               - breaches
                               - summary
@@ -427954,16 +430567,51 @@ paths:
                                   type: array
                                   items:
                                     type: object
-                                    description: 'Go type: RunArchiveProtocolMixBreach'
-                                    additionalProperties: true
+                                    properties:
+                                      expected:
+                                        type: number
+                                        format: double
+                                      min_samples:
+                                        type: integer
+                                        format: int64
+                                      observed:
+                                        type: object
+                                        properties:
+                                          denominator:
+                                            type: integer
+                                            format: int64
+                                          numerator:
+                                            type: integer
+                                            format: int64
+                                          value:
+                                            type: number
+                                            format: double
+                                        required:
+                                          - denominator
+                                          - numerator
+                                          - value
+                                      ratio:
+                                        type: string
+                                    required:
+                                      - expected
+                                      - min_samples
+                                      - observed
+                                      - ratio
                                 summary:
                                   type: string
                                 top_reasons:
                                   type: array
                                   items:
                                     type: object
-                                    description: 'Go type: RunArchiveProtocolMixReason'
-                                    additionalProperties: true
+                                    properties:
+                                      count:
+                                        type: integer
+                                        format: int64
+                                      reason:
+                                        type: string
+                                    required:
+                                      - count
+                                      - reason
                               required:
                                 - breaches
                                 - summary
@@ -431702,16 +434350,51 @@ paths:
                                 type: array
                                 items:
                                   type: object
-                                  description: 'Go type: RunArchiveProtocolMixBreach'
-                                  additionalProperties: true
+                                  properties:
+                                    expected:
+                                      type: number
+                                      format: double
+                                    min_samples:
+                                      type: integer
+                                      format: int64
+                                    observed:
+                                      type: object
+                                      properties:
+                                        denominator:
+                                          type: integer
+                                          format: int64
+                                        numerator:
+                                          type: integer
+                                          format: int64
+                                        value:
+                                          type: number
+                                          format: double
+                                      required:
+                                        - denominator
+                                        - numerator
+                                        - value
+                                    ratio:
+                                      type: string
+                                  required:
+                                    - expected
+                                    - min_samples
+                                    - observed
+                                    - ratio
                               summary:
                                 type: string
                               top_reasons:
                                 type: array
                                 items:
                                   type: object
-                                  description: 'Go type: RunArchiveProtocolMixReason'
-                                  additionalProperties: true
+                                  properties:
+                                    count:
+                                      type: integer
+                                      format: int64
+                                    reason:
+                                      type: string
+                                  required:
+                                    - count
+                                    - reason
                             required:
                               - breaches
                               - summary
@@ -442965,16 +445648,51 @@ paths:
                                   type: array
                                   items:
                                     type: object
-                                    description: 'Go type: RunArchiveProtocolMixBreach'
-                                    additionalProperties: true
+                                    properties:
+                                      expected:
+                                        type: number
+                                        format: double
+                                      min_samples:
+                                        type: integer
+                                        format: int64
+                                      observed:
+                                        type: object
+                                        properties:
+                                          denominator:
+                                            type: integer
+                                            format: int64
+                                          numerator:
+                                            type: integer
+                                            format: int64
+                                          value:
+                                            type: number
+                                            format: double
+                                        required:
+                                          - denominator
+                                          - numerator
+                                          - value
+                                      ratio:
+                                        type: string
+                                    required:
+                                      - expected
+                                      - min_samples
+                                      - observed
+                                      - ratio
                                 summary:
                                   type: string
                                 top_reasons:
                                   type: array
                                   items:
                                     type: object
-                                    description: 'Go type: RunArchiveProtocolMixReason'
-                                    additionalProperties: true
+                                    properties:
+                                      count:
+                                        type: integer
+                                        format: int64
+                                      reason:
+                                        type: string
+                                    required:
+                                      - count
+                                      - reason
                               required:
                                 - breaches
                                 - summary
@@ -446701,16 +449419,51 @@ paths:
                                 type: array
                                 items:
                                   type: object
-                                  description: 'Go type: RunArchiveProtocolMixBreach'
-                                  additionalProperties: true
+                                  properties:
+                                    expected:
+                                      type: number
+                                      format: double
+                                    min_samples:
+                                      type: integer
+                                      format: int64
+                                    observed:
+                                      type: object
+                                      properties:
+                                        denominator:
+                                          type: integer
+                                          format: int64
+                                        numerator:
+                                          type: integer
+                                          format: int64
+                                        value:
+                                          type: number
+                                          format: double
+                                      required:
+                                        - denominator
+                                        - numerator
+                                        - value
+                                    ratio:
+                                      type: string
+                                  required:
+                                    - expected
+                                    - min_samples
+                                    - observed
+                                    - ratio
                               summary:
                                 type: string
                               top_reasons:
                                 type: array
                                 items:
                                   type: object
-                                  description: 'Go type: RunArchiveProtocolMixReason'
-                                  additionalProperties: true
+                                  properties:
+                                    count:
+                                      type: integer
+                                      format: int64
+                                    reason:
+                                      type: string
+                                  required:
+                                    - count
+                                    - reason
                             required:
                               - breaches
                               - summary

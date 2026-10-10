@@ -188,6 +188,7 @@ var openAPICrossPackageDirectories = map[string]string{
 	"collectoragent":  "collectoragent",
 	"dsl":             "dsl",
 	"engine":          "engine",
+	"hostnet":         "hostnet",
 	"k6":              "convert/k6",
 	"protocol":        "protocol",
 	"recorder":        "recorder",

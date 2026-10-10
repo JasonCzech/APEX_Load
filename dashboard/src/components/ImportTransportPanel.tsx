@@ -94,7 +94,11 @@ export function ImportTransportPanel({ script, diagnostics, disabled = false, on
                   })
                 }}>
                 {row.policy === null && <option value={KEEP}>Keep each request's policy (mixed)</option>}
-                {TRANSPORT_POLICY_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                {TRANSPORT_POLICY_OPTIONS.map(option => {
+                  // HTTP/3 serves only https origins; the server refuses exact 3 on http://.
+                  const cleartextH3 = option.value === '3' && row.origin.startsWith('http://')
+                  return <option key={option.value} value={option.value} disabled={cleartextH3}>{option.label}{cleartextH3 ? ' (https only)' : ''}</option>
+                })}
               </select>
               {proposal && <small>Suggested for curl --http3: {policyLabel(proposal)} (approximate)</small>}
             </td>

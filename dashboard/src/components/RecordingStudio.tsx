@@ -4055,7 +4055,7 @@ export default function RecordingStudio({
             </div>
           )}
           {recordingNotes.length > 0 && (
-            <div className="rec-notes" aria-label="Recording notes">
+            <div className="rec-notes" role="group" aria-label="Recording notes">
               {recordingNotes.map((note) => (
                 <div key={`${note.code}-${note.location}`} className="rec-note-item">
                   {note.element}
