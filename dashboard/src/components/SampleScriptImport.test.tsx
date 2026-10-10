@@ -324,7 +324,7 @@ describe('SampleScriptImport', () => {
     expect(pacingDelay.value).toBe('2.5')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
     }
@@ -358,7 +358,7 @@ describe('SampleScriptImport', () => {
       .toContain('no reusable correlation values were detected across the provided samples')
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) {
       return
     }
@@ -670,7 +670,7 @@ describe('SampleScriptImport', () => {
     })
 
     const formatSelect = container.querySelector('select') as HTMLSelectElement | null
-    expect(formatSelect).not.toBeNull()
+    expect(formatSelect).toBeTruthy()
     if (!formatSelect) return
 
     await act(async () => {
@@ -679,7 +679,7 @@ describe('SampleScriptImport', () => {
     })
 
     const includeStatic = Array.from(container.querySelectorAll('input[type="checkbox"]')).find(input => input.parentElement?.textContent?.includes('Include static assets')) as HTMLInputElement | undefined
-    expect(includeStatic).toBeDefined()
+    expect(includeStatic).toBeTruthy()
     if (!includeStatic) return
 
     await act(async () => {
@@ -687,7 +687,7 @@ describe('SampleScriptImport', () => {
     })
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) return
 
     await act(async () => {
@@ -755,7 +755,7 @@ describe('SampleScriptImport', () => {
     })
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) return
 
     await act(async () => {
@@ -771,7 +771,7 @@ describe('SampleScriptImport', () => {
     expect(saveButton?.disabled).toBe(true)
 
     const uploadInput = container.querySelector('input[aria-label="Upload asset for upload_bin"]') as HTMLInputElement | null
-    expect(uploadInput).not.toBeNull()
+    expect(uploadInput).toBeTruthy()
     if (!uploadInput) return
     const runtimeTab = container.querySelector<HTMLButtonElement>('[role="tab"][id$="-runtime"]') || Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(tab => tab.textContent?.includes('Runtime settings'))!
     await act(async () => runtimeTab.click())
@@ -814,7 +814,7 @@ describe('SampleScriptImport', () => {
     expect(container.textContent).toContain('HAR / HAR Entry')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
     }
@@ -837,7 +837,7 @@ describe('SampleScriptImport', () => {
       .toContain('Java-over-HTTP imports assume request and response payloads are already base64-encoded serialized Java bytes')
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) {
       return
     }
@@ -873,8 +873,8 @@ describe('SampleScriptImport', () => {
 
     const profileSelect = Array.from(container.querySelectorAll('select')).find(select => select.getAttribute('aria-label') === 'Payload profile') as HTMLSelectElement | undefined
     const formatSelect = Array.from(container.querySelectorAll('select')).find(select => select.getAttribute('aria-label') === 'Sample format') as HTMLSelectElement | undefined
-    expect(profileSelect).toBeDefined()
-    expect(formatSelect).toBeDefined()
+    expect(profileSelect).toBeTruthy()
+    expect(formatSelect).toBeTruthy()
     if (!profileSelect || !formatSelect) return
 
     // The Standard API profile offers REST JSON.
@@ -893,7 +893,7 @@ describe('SampleScriptImport', () => {
     expect(container.textContent).toContain('promoted to the `java_http` protocol')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) return
     await act(async () => {
       convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -903,7 +903,7 @@ describe('SampleScriptImport', () => {
     expect(apiMock.importSample).toHaveBeenCalledWith(expect.objectContaining({ format: 'raw_http' }))
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -943,7 +943,7 @@ describe('SampleScriptImport', () => {
     })
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) return
 
     await act(async () => {
@@ -962,7 +962,7 @@ describe('SampleScriptImport', () => {
     })
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
-    expect(convertButton).toBeDefined()
+    expect(convertButton).toBeTruthy()
     if (!convertButton) {
       return
     }

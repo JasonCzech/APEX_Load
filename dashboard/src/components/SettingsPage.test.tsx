@@ -960,6 +960,8 @@ describe('SettingsPage', () => {
     const missedRunSelect = findSettingSelect(generalSection, 'Missed Run Policy')
     expect(approvalSelect?.value).toBe('auto')
     expect(missedRunSelect?.value).toBe('skip')
+    expect(missedRunSelect).toBeTruthy()
+    expect(approvalSelect).toBeTruthy()
     if (!approvalSelect || !missedRunSelect) return
 
     await setFieldValue(approvalSelect, 'production')
@@ -978,7 +980,7 @@ describe('SettingsPage', () => {
     await setFieldValue(availabilityInputs[1], '17:00')
 
     const saveButton = findButton('Save pending settings')
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -1256,6 +1258,7 @@ describe('SettingsPage', () => {
 
     const addButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Add Domain') as HTMLButtonElement | undefined
     expect(addButton?.disabled).toBe(false)
+    expect(addButton).toBeTruthy()
     if (!addButton) return
     await act(async () => {
       addButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -1367,6 +1370,7 @@ describe('SettingsPage', () => {
 
     const saveButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Save') as HTMLButtonElement | undefined
     expect(saveButton?.disabled).toBe(false)
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -1459,6 +1463,7 @@ describe('SettingsPage', () => {
 
     const deleteButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Delete') as HTMLButtonElement | undefined
     expect(deleteButton?.disabled).toBe(false)
+    expect(deleteButton).toBeTruthy()
     if (!deleteButton) return
     await act(async () => {
       deleteButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -1548,6 +1553,7 @@ describe('SettingsPage', () => {
     const themeSelect = generalSection.querySelector('select')
     expect(Array.from(themeSelect?.options || []).map(option => option.value)).toEqual(['system', 'dark', 'light', 'solarized-dark', 'solarized-light', 'monokai-dimmed'])
 
+    expect(themeSelect).toBeTruthy()
     if (!themeSelect) return
     await setFieldValue(themeSelect, 'solarized-dark')
 
@@ -1626,7 +1632,7 @@ describe('SettingsPage', () => {
     expect(capacitySection.textContent).toContain('HAR Artifact Directory')
 
     const planButton = Array.from(capacitySection.querySelectorAll('button')).find(button => button.textContent?.includes('Plan Retention'))
-    expect(planButton).toBeDefined()
+    expect(planButton).toBeTruthy()
     if (!planButton) return
 
     await act(async () => {
@@ -1665,7 +1671,7 @@ describe('SettingsPage', () => {
     expect(generalSection.textContent).toContain('2 runs · 81,000 VUser seconds')
 
     const captureButton = Array.from(generalSection.querySelectorAll('button')).find(button => button.textContent?.includes('Capture Snapshot'))
-    expect(captureButton).toBeDefined()
+    expect(captureButton).toBeTruthy()
     if (!captureButton) return
 
     await act(async () => {
@@ -1677,7 +1683,7 @@ describe('SettingsPage', () => {
     expect(generalSection.textContent).toContain('Usage snapshot captured for 3 runs.')
 
     const exportButton = Array.from(generalSection.querySelectorAll('button')).find(button => button.textContent?.includes('Export usage CSV'))
-    expect(exportButton).toBeDefined()
+    expect(exportButton).toBeTruthy()
     if (!exportButton) return
 
     downloadBlobMock.mockResolvedValueOnce('cancelled')
@@ -1705,6 +1711,7 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     const generalSection = container.querySelector('#settings-section-general')
+    expect(generalSection).toBeTruthy()
     if (!generalSection) return
     await selectGeneralSubnav(generalSection, 'Usage')
     apiMock.listUsageAccountingSnapshots.mockRejectedValueOnce(new Error('snapshot list unavailable'))
@@ -1763,7 +1770,7 @@ describe('SettingsPage', () => {
     })
 
     const refreshButton = Array.from(generalSection.querySelectorAll('button')).find(button => button.textContent?.includes('Refresh Readiness'))
-    expect(refreshButton).toBeDefined()
+    expect(refreshButton).toBeTruthy()
     if (!refreshButton) return
 
     await act(async () => {
@@ -1798,6 +1805,9 @@ describe('SettingsPage', () => {
     expect(transportInput?.value).toBe('500')
     expect(fanoutInput?.value).toBe('500')
     expect(browserInput?.value).toBe('500')
+    expect(browserInput).toBeTruthy()
+    expect(fanoutInput).toBeTruthy()
+    expect(sampleAgeInput).toBeTruthy()
     if (!sampleAgeInput || !fanoutInput || !browserInput) return
 
     await setFieldValue(sampleAgeInput, '1750')
@@ -1805,7 +1815,7 @@ describe('SettingsPage', () => {
     await setFieldValue(browserInput, '325')
 
     const saveButton = findButton('Save pending settings')
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -1868,7 +1878,7 @@ describe('SettingsPage', () => {
     await setFieldValue(generatorsInput, '4')
 
     const saveButton = findButton('Save pending settings')
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -1939,7 +1949,7 @@ describe('SettingsPage', () => {
     await selectSettingsSubnav(capacitySection, 'Generator profile')
 
     const livePresetButton = Array.from(capacitySection.querySelectorAll('button')).find(button => button.textContent?.includes('Live Pod Capacity'))
-    expect(livePresetButton).toBeDefined()
+    expect(livePresetButton).toBeTruthy()
     if (!livePresetButton) return
 
     await act(async () => {
@@ -2000,7 +2010,7 @@ describe('SettingsPage', () => {
     await selectSettingsSubnav(projectSection, 'Redaction rules')
     expect(projectSection.textContent).toContain('Project redaction rules')
     const addRuleButton = findButton('Add Rule')
-    expect(addRuleButton).toBeDefined()
+    expect(addRuleButton).toBeTruthy()
     if (!addRuleButton) return
 
     await act(async () => {
@@ -2020,7 +2030,7 @@ describe('SettingsPage', () => {
     await setFieldValue(secondRulePattern, 'account-[A-Z0-9]+')
 
     const saveButton = findButton('Save redaction rules')
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
 
     await act(async () => {
@@ -2134,7 +2144,7 @@ describe('SettingsPage', () => {
     await setFieldValue(quotaInputs[1], '300')
 
     const saveButton = findButton('Save Project Governance')
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
 
     await act(async () => {
@@ -2264,7 +2274,7 @@ describe('SettingsPage', () => {
     await setFieldValue(quotaInputs[1], '300')
 
     const saveButton = findButton('Save Project Governance')
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
 
     await act(async () => {
@@ -2315,7 +2325,7 @@ describe('SettingsPage', () => {
     if (!projectSection) return
 
     const newProjectInput = Array.from(projectSection.querySelectorAll('input')).find(input => input.placeholder?.includes('Create project')) as HTMLInputElement | undefined
-    expect(newProjectInput).toBeDefined()
+    expect(newProjectInput).toBeTruthy()
     if (!newProjectInput) return
     await setFieldValue(newProjectInput, 'Restricted Project')
 
@@ -2354,7 +2364,7 @@ describe('SettingsPage', () => {
     const projectSection = container.querySelector('#settings-section-projects')
     const input = Array.from(projectSection?.querySelectorAll('input') || [])
       .find(candidate => candidate.placeholder?.includes('Create project')) as HTMLInputElement | undefined
-    expect(input).toBeDefined()
+    expect(input).toBeTruthy()
     if (!input) return
 
     await setFieldValue(input, 'New Project')
@@ -2493,12 +2503,14 @@ describe('SettingsPage', () => {
     await flushPromises()
     await selectTopLevelSettingsTab('Projects & compliance')
     const projectSection = container.querySelector('#settings-section-projects')
+    expect(projectSection).toBeTruthy()
     if (!projectSection) return
     const secondaryButton = Array.from(projectSection.querySelectorAll<HTMLButtonElement>('.settings-app-card'))
       .find(button => button.textContent?.includes(secondary.name))
     await act(async () => secondaryButton?.click())
     await selectSettingsSubnav(projectSection, 'Limits')
     const nameInput = findSettingInput(projectSection, 'Selected Project')
+    expect(nameInput).toBeTruthy()
     if (!nameInput) return
     await setFieldValue(nameInput, updated.name)
     await act(async () => findButton('Save Project Governance')?.click())
@@ -2545,6 +2557,7 @@ describe('SettingsPage', () => {
     await flushPromises()
     await selectTopLevelSettingsTab('Projects & compliance')
     const projectSection = container.querySelector('#settings-section-projects')
+    expect(projectSection).toBeTruthy()
     if (!projectSection) return
     const pooledProject = Array.from(projectSection.querySelectorAll<HTMLButtonElement>('.settings-app-card'))
       .find(button => button.textContent?.includes(original.name))
@@ -2596,6 +2609,7 @@ describe('SettingsPage', () => {
 		await flushPromises()
 		await selectTopLevelSettingsTab('Projects & compliance')
 		const projectSection = container.querySelector('#settings-section-projects')
+		expect(projectSection).toBeTruthy()
 		if (!projectSection) return
 		await selectSettingsSubnav(projectSection, 'Limits')
 
@@ -2638,7 +2652,7 @@ describe('SettingsPage', () => {
 
     await selectSettingsSubnav(projectSection, 'Redaction rules')
     const addRuleButton = findButton('Add Rule')
-    expect(addRuleButton).toBeDefined()
+    expect(addRuleButton).toBeTruthy()
     if (!addRuleButton) return
 
     await act(async () => {
@@ -2655,7 +2669,7 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     const saveButton = findButton('Save redaction rules')
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
 
     expect(saveButton.disabled).toBe(true)
@@ -2695,7 +2709,7 @@ describe('SettingsPage', () => {
     await setFieldValue(trustedProxyCIDRs, '10.0.0.0/8')
 
     const saveButton = findButton('Save pending settings')
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2769,7 +2783,7 @@ describe('SettingsPage', () => {
     expect(generalSection.querySelector('[data-testid="auth-mode-restart-pending"]')).toBeNull()
 
     const saveButton = findButton('Save pending settings')
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2964,7 +2978,7 @@ describe('SettingsPage', () => {
     await setFieldValue(redirectURLInput, 'https://apexload.example.test/api/v1/auth/callback')
 
     const saveButton = findButton('Save pending settings')
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
 
     await act(async () => {
@@ -3022,7 +3036,7 @@ describe('SettingsPage', () => {
     await setFieldValue(redirectURLInput, 'https://apexload.example.test/api/v1/auth/callback')
 
     const entraPresetButton = findButton('Microsoft Entra ID OIDC')
-    expect(entraPresetButton).toBeDefined()
+    expect(entraPresetButton).toBeTruthy()
     if (!entraPresetButton) return
 
     await act(async () => {
@@ -3145,7 +3159,7 @@ describe('SettingsPage', () => {
     expect(generalSection.querySelector('#settings-governance-panel-service-account-apis')?.hasAttribute('hidden')).toBe(false)
 
     const openAccessButton = findButton('Open Access & API Keys')
-    expect(openAccessButton).toBeDefined()
+    expect(openAccessButton).toBeTruthy()
     if (!openAccessButton) return
 
     await act(async () => {
@@ -3180,7 +3194,7 @@ describe('SettingsPage', () => {
     }))
 
     const exportAuditButton = Array.from(auditPanel?.querySelectorAll('button') || []).find(button => button.textContent?.trim() === 'Export CSV') as HTMLButtonElement | undefined
-    expect(exportAuditButton).toBeDefined()
+    expect(exportAuditButton).toBeTruthy()
     if (!exportAuditButton) return
     downloadBlobMock.mockResolvedValueOnce('cancelled')
     await act(async () => {
@@ -3463,7 +3477,7 @@ describe('SettingsPage', () => {
 
     await selectSettingsSubnav(integrationsSection, 'Notifications')
     const addWebhookButton = findButton('Add Webhook')
-    expect(addWebhookButton).toBeDefined()
+    expect(addWebhookButton).toBeTruthy()
     if (!addWebhookButton) return
 
     await act(async () => {
@@ -3487,7 +3501,7 @@ describe('SettingsPage', () => {
     await setFieldValue(formatSelect, 'slack')
 
     const saveButton = findButton('Save pending settings')
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
 
     await act(async () => {
@@ -3567,7 +3581,7 @@ describe('SettingsPage', () => {
     expect(nameInput.value).toBe('Slack Alerts Updated')
 
     const saveButton = findButton('Save pending settings')
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
 
     await act(async () => {
@@ -3601,7 +3615,7 @@ describe('SettingsPage', () => {
 
     await selectSettingsSubnav(integrationsSection, 'Notifications')
     const addWebhookButton = findButton('Add Webhook')
-    expect(addWebhookButton).toBeDefined()
+    expect(addWebhookButton).toBeTruthy()
     if (!addWebhookButton) return
 
     await act(async () => {
@@ -3658,7 +3672,7 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     const saveButton = findButton('Save pending settings')
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -3720,7 +3734,7 @@ describe('SettingsPage', () => {
 
     await setFieldValue(nameInput, 'Renamed Dynatrace')
     const saveButton = findButton('Save pending settings')
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -3844,8 +3858,10 @@ describe('SettingsPage', () => {
 
     await selectTopLevelSettingsTab('Performance thresholds')
     const thresholdsSection = container.querySelector('#settings-section-thresholds')
+    expect(thresholdsSection).toBeTruthy()
     if (!thresholdsSection) return
     const p99Input = findSettingInput(thresholdsSection, 'Max Response Time (P99 ms)')
+    expect(p99Input).toBeTruthy()
     if (!p99Input) return
     await setFieldValue(p99Input, '-5')
 
@@ -3874,6 +3890,7 @@ describe('SettingsPage', () => {
     if (!capacitySection) return
     await selectSettingsSubnav(capacitySection, 'Generator profile')
     const cpuInput = findSettingInput(capacitySection, 'Generator CPU (cores)')
+    expect(cpuInput).toBeTruthy()
     if (!cpuInput) return
     await setFieldValue(cpuInput, '0')
 
@@ -3890,6 +3907,7 @@ describe('SettingsPage', () => {
 
     await selectTopLevelSettingsTab('Capacity planning')
     const capacitySection = container.querySelector('#settings-section-capacity')
+    expect(capacitySection).toBeTruthy()
     if (!capacitySection) return
     await selectSettingsSubnav(capacitySection, 'Availability')
     const configuredInput = findSettingInput(capacitySection, 'Configured Available Generators')
@@ -3927,9 +3945,11 @@ describe('SettingsPage', () => {
 
     await selectTopLevelSettingsTab('Capacity planning')
     const capacitySection = container.querySelector('#settings-section-capacity')
+    expect(capacitySection).toBeTruthy()
     if (!capacitySection) return
     await selectSettingsSubnav(capacitySection, 'Availability')
     const configuredInput = findSettingInput(capacitySection, 'Configured Available Generators')
+    expect(configuredInput).toBeTruthy()
     if (!configuredInput) return
     await setFieldValue(configuredInput, '')
 
@@ -3954,9 +3974,11 @@ describe('SettingsPage', () => {
 
     await selectTopLevelSettingsTab('Capacity planning')
     const capacitySection = container.querySelector('#settings-section-capacity')
+    expect(capacitySection).toBeTruthy()
     if (!capacitySection) return
     await selectSettingsSubnav(capacitySection, 'Availability')
     const configuredInput = findSettingInput(capacitySection, 'Configured Available Generators')
+    expect(configuredInput).toBeTruthy()
     if (!configuredInput) return
 
     await setFieldValue(configuredInput, '4')
@@ -3994,6 +4016,7 @@ describe('SettingsPage', () => {
 
     await selectTopLevelSettingsTab('Performance thresholds')
     const thresholdsSection = container.querySelector('#settings-section-thresholds')
+    expect(thresholdsSection).toBeTruthy()
     if (!thresholdsSection) return
     const errorRateInput = findSettingInput(thresholdsSection, 'Max Error Rate (%)')
     // Fieldset-inherited disabling: the input's own attribute stays false, so
@@ -4002,6 +4025,7 @@ describe('SettingsPage', () => {
 
     await selectTopLevelSettingsTab('Capacity planning')
     const capacitySection = container.querySelector('#settings-section-capacity')
+    expect(capacitySection).toBeTruthy()
     if (!capacitySection) return
     await selectSettingsSubnav(capacitySection, 'Generator profile')
     const cpuInput = findSettingInput(capacitySection, 'Generator CPU (cores)')
@@ -4048,6 +4072,7 @@ describe('SettingsPage', () => {
     await selectTopLevelSettingsTab('Performance thresholds')
     let errorRateInput = findSettingInput(container, 'Max Error Rate (%)')
     expect(errorRateInput?.closest('fieldset')?.disabled).toBe(false)
+    expect(errorRateInput).toBeTruthy()
     if (!errorRateInput) return
     await setFieldValue(errorRateInput, '5')
     expect(findButton('Save pending settings')?.disabled).toBe(false)
@@ -4083,6 +4108,7 @@ describe('SettingsPage', () => {
     expect(retryButton).toBeTruthy()
     await selectTopLevelSettingsTab('Performance thresholds')
     const thresholdsSection = container.querySelector('#settings-section-thresholds')
+    expect(thresholdsSection).toBeTruthy()
     if (!thresholdsSection) return
     const errorRateInput = findSettingInput(thresholdsSection, 'Max Error Rate (%)')
     expect(errorRateInput?.closest('fieldset')?.disabled).toBe(true)
@@ -4171,8 +4197,10 @@ describe('SettingsPage', () => {
 
     await selectTopLevelSettingsTab('Performance thresholds')
     const thresholdsSection = container.querySelector('#settings-section-thresholds')
+    expect(thresholdsSection).toBeTruthy()
     if (!thresholdsSection) return
     const p99Input = findSettingInput(thresholdsSection, 'Max Response Time (P99 ms)')
+    expect(p99Input).toBeTruthy()
     if (!p99Input) return
     await setFieldValue(p99Input, '1500')
 
@@ -4268,6 +4296,9 @@ describe('SettingsPage', () => {
     const projectInput = container.querySelector<HTMLInputElement>('input[placeholder="Create project, e.g. Customer Portal"]')
     const poolInput = container.querySelector<HTMLInputElement>('input[placeholder="Pool name, e.g. Customer Accounts"]')
     expect(applicationInput && projectInput && poolInput).toBeTruthy()
+    expect(poolInput).toBeTruthy()
+    expect(projectInput).toBeTruthy()
+    expect(applicationInput).toBeTruthy()
     if (!applicationInput || !projectInput || !poolInput) return
     await setFieldValue(applicationInput, 'New Application')
     await setFieldValue(projectInput, 'New Project')
@@ -4306,15 +4337,19 @@ describe('SettingsPage', () => {
     await flushPromises()
     await selectTopLevelSettingsTab('Domains')
     const domainSection = container.querySelector('#settings-section-domains')
+    expect(domainSection).toBeTruthy()
     if (!domainSection) return
     const retailButton = Array.from(domainSection.querySelectorAll('.settings-app-card')).find(button => button.textContent?.includes('Retail')) as HTMLButtonElement | undefined
     const defaultButton = Array.from(domainSection.querySelectorAll('.settings-app-card')).find(button => button.textContent?.includes(defaultDomain.name)) as HTMLButtonElement | undefined
     expect(retailButton && defaultButton).toBeTruthy()
+    expect(defaultButton).toBeTruthy()
+    expect(retailButton).toBeTruthy()
     if (!retailButton || !defaultButton) return
     await act(async () => retailButton.click())
 
     const selectedRow = Array.from(domainSection.querySelectorAll('.setting-row')).find(row => row.textContent?.includes('Selected Domain'))
     const nameInput = selectedRow?.querySelector('input') as HTMLInputElement | null
+    expect(nameInput).toBeTruthy()
     if (!nameInput) return
     await setFieldValue(nameInput, 'Retail draft')
     await act(async () => defaultButton.click())
@@ -4368,6 +4403,7 @@ describe('SettingsPage', () => {
     await flushPromises()
     await selectTopLevelSettingsTab('Projects & compliance')
     const projectSection = container.querySelector('#settings-section-projects')
+    expect(projectSection).toBeTruthy()
     if (!projectSection) return
     await selectSettingsSubnav(projectSection, 'Limits')
     const nameInput = findSettingInput(projectSection, 'Selected Project')
@@ -4409,6 +4445,7 @@ describe('SettingsPage', () => {
     await flushPromises()
     await selectTopLevelSettingsTab('Projects & compliance')
     const projectSection = container.querySelector('#settings-section-projects')
+    expect(projectSection).toBeTruthy()
     if (!projectSection) return
 
     const payments = Array.from(projectSection.querySelectorAll('.settings-app-card'))
@@ -4438,6 +4475,7 @@ describe('SettingsPage', () => {
     await flushPromises()
     await selectTopLevelSettingsTab('Projects & compliance')
     const projectSection = container.querySelector('#settings-section-projects')
+    expect(projectSection).toBeTruthy()
     if (!projectSection) return
 
     const payments = Array.from(projectSection.querySelectorAll('.settings-app-card'))
@@ -4476,11 +4514,14 @@ describe('SettingsPage', () => {
     await flushPromises()
     await selectTopLevelSettingsTab('Applications & releases')
     const applicationSection = container.querySelector('#settings-section-applications')
+    expect(applicationSection).toBeTruthy()
     if (!applicationSection) return
 
     const nameInput = applicationSection.querySelector<HTMLInputElement>('input[placeholder="Create application, e.g. ACC"]')
     const projectSelect = applicationSection.querySelector<HTMLSelectElement>('select[aria-label="Project for the new application"]')
     expect(nameInput && projectSelect).toBeTruthy()
+    expect(projectSelect).toBeTruthy()
+    expect(nameInput).toBeTruthy()
     if (!nameInput || !projectSelect) return
     expect(projectSelect.value).toBe('project-1')
     expect(Array.from(projectSelect.options).map(option => option.textContent)).toEqual(['Customer Portal', 'Payments'])
@@ -4517,6 +4558,7 @@ describe('SettingsPage', () => {
     await flushPromises()
     await selectTopLevelSettingsTab('Applications & releases')
     const applicationSection = container.querySelector('#settings-section-applications')
+    expect(applicationSection).toBeTruthy()
     if (!applicationSection) return
 
     expect(applicationSection.querySelector('input[placeholder="Create application, e.g. ACC"]')).toBeNull()
@@ -4586,6 +4628,7 @@ describe('SettingsPage', () => {
     const domainSection = container.querySelector('#settings-section-domains')
     const nameInput = domainSection?.querySelector<HTMLInputElement>('input[placeholder="Create domain, e.g. Retail"]')
     expect(nameInput).toBeTruthy()
+    expect(domainSection).toBeTruthy()
     if (!nameInput || !domainSection) return
     await setFieldValue(nameInput, 'Retail')
     const addButton = Array.from(domainSection.querySelectorAll('button'))
@@ -4637,6 +4680,7 @@ describe('SettingsPage', () => {
     const domainSection = container.querySelector('#settings-section-domains')
     const nameInput = domainSection?.querySelector<HTMLInputElement>('input[placeholder="Create domain, e.g. Retail"]')
     expect(nameInput).toBeTruthy()
+    expect(domainSection).toBeTruthy()
     if (!nameInput || !domainSection) return
     await setFieldValue(nameInput, 'Retail')
     const addButton = Array.from(domainSection.querySelectorAll('button'))
@@ -4774,6 +4818,8 @@ describe('SettingsPage', () => {
     await selectTopLevelSettingsTab('Applications & releases')
     const applicationSection = container.querySelector('#settings-section-applications')
     const nameInput = applicationSection?.querySelector<HTMLInputElement>('input[placeholder="Create application, e.g. ACC"]')
+    expect(nameInput).toBeTruthy()
+    expect(applicationSection).toBeTruthy()
     if (!applicationSection || !nameInput) return
     await setFieldValue(nameInput, 'Wallet')
 
@@ -4860,9 +4906,11 @@ describe('SettingsPage', () => {
     await flushPromises()
     await selectTopLevelSettingsTab('Projects & compliance')
     const projectSection = container.querySelector('#settings-section-projects')
+    expect(projectSection).toBeTruthy()
     if (!projectSection) return
     await selectSettingsSubnav(projectSection, 'Limits')
     const quotaInput = projectSection.querySelector<HTMLInputElement>('.pp-row input[type="number"]')
+    expect(quotaInput).toBeTruthy()
     if (!quotaInput) return
     await setFieldValue(quotaInput, '250')
 
@@ -4923,6 +4971,7 @@ describe('SettingsPage', () => {
     await act(async () => rename?.click())
     const renameInput = releaseRow?.querySelector('input') as HTMLInputElement | null
     expect(renameInput).toBeTruthy()
+    expect(applicationSection).toBeTruthy()
     if (!renameInput || !applicationSection) return
     await setFieldValue(renameInput, renamedReleaseA.name)
 
@@ -5027,6 +5076,7 @@ describe('SettingsPage', () => {
     await act(async () => rename?.click())
     const renameInput = releaseRow?.querySelector('input') as HTMLInputElement | null
     expect(renameInput).toBeTruthy()
+    expect(applicationSection).toBeTruthy()
     if (!renameInput || !applicationSection) return
     await setFieldValue(renameInput, '1.0 Draft')
 
@@ -5062,6 +5112,7 @@ describe('SettingsPage', () => {
     await flushPromises()
     await selectTopLevelSettingsTab('Applications & releases')
     const applicationSection = container.querySelector('#settings-section-applications')
+    expect(applicationSection).toBeTruthy()
     if (!applicationSection) return
     await act(async () => findButton('Edit')?.click())
 
@@ -5152,6 +5203,7 @@ describe('SettingsPage', () => {
     const currentRow = Array.from(applicationSection?.querySelectorAll('.setting-row') || []).find(row => row.textContent?.includes('Current Application'))
     const deleteButton = Array.from(currentRow?.querySelectorAll('button') || []).find(button => button.textContent === 'Delete') as HTMLButtonElement | undefined
     expect(deleteButton).toBeTruthy()
+    expect(applicationSection).toBeTruthy()
     if (!deleteButton || !applicationSection) return
     await act(async () => deleteButton.click())
     const confirm = Array.from(container.querySelectorAll('[role="dialog"] button')).find(button => button.textContent === 'Delete Application') as HTMLButtonElement | undefined
@@ -5197,6 +5249,8 @@ describe('SettingsPage', () => {
     const releaseRow = applicationSection?.querySelector('.settings-release-row')
     const renameButton = Array.from(releaseRow?.querySelectorAll('button') || []).find(button => button.textContent === 'Edit') as HTMLButtonElement | undefined
     expect(renameButton).toBeTruthy()
+    expect(applicationSection).toBeTruthy()
+    expect(releaseRow).toBeTruthy()
     if (!renameButton || !releaseRow || !applicationSection) return
     await act(async () => renameButton.click())
     const renameInput = releaseRow.querySelector('input') as HTMLInputElement | null
@@ -5251,6 +5305,7 @@ describe('SettingsPage', () => {
     await act(async () => rename?.click())
     const renameInput = releaseRow?.querySelector('input') as HTMLInputElement | null
     expect(renameInput).toBeTruthy()
+    expect(releaseRow).toBeTruthy()
     if (!renameInput || !releaseRow) return
     await setFieldValue(renameInput, committed.name)
     const save = Array.from(releaseRow.querySelectorAll('button'))
@@ -5492,6 +5547,7 @@ describe('SettingsPage', () => {
 
     await selectTopLevelSettingsTab('Performance thresholds')
     const thresholdsSection = container.querySelector('#settings-section-thresholds')
+    expect(thresholdsSection).toBeTruthy()
     if (!thresholdsSection) return
     const sampleAgeInput = findSettingInput(thresholdsSection, 'Max Telemetry Sample Age (ms)')
     expect(sampleAgeInput).toBeTruthy()
@@ -5523,9 +5579,11 @@ describe('SettingsPage', () => {
 
     await selectTopLevelSettingsTab('Performance thresholds')
     const thresholdsSection = container.querySelector('#settings-section-thresholds')
+    expect(thresholdsSection).toBeTruthy()
     if (!thresholdsSection) return
     const samplesInput = findSettingInput(thresholdsSection, 'P99 Stop After Breached Samples')
     expect(samplesInput?.min).toBe('0')
+    expect(samplesInput).toBeTruthy()
     if (!samplesInput) return
 
     await setFieldValue(samplesInput, '0')
@@ -5540,9 +5598,12 @@ describe('SettingsPage', () => {
 
     await selectTopLevelSettingsTab('Performance thresholds')
     const thresholdsSection = container.querySelector('#settings-section-thresholds')
+    expect(thresholdsSection).toBeTruthy()
     if (!thresholdsSection) return
     const constrainedInput = findSettingInput(thresholdsSection, 'Fleet Constrained Free Slots')
     const saturatedInput = findSettingInput(thresholdsSection, 'Fleet Saturated Free Slots')
+    expect(saturatedInput).toBeTruthy()
+    expect(constrainedInput).toBeTruthy()
     if (!constrainedInput || !saturatedInput) return
 
     await setFieldValue(constrainedInput, '5')
@@ -6707,18 +6768,22 @@ describe('SettingsPage', () => {
 
     await selectTopLevelSettingsTab('Capacity planning')
     const capacitySection = container.querySelector('#settings-section-capacity')
+    expect(capacitySection).toBeTruthy()
     if (!capacitySection) return
     await selectSettingsSubnav(capacitySection, 'Standing allocations')
 
     const reservationSection = container.querySelector('[data-testid="capacity-reservations"]')
+    expect(reservationSection).toBeTruthy()
     if (!reservationSection) return
     const addButton = Array.from(reservationSection.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Add standing allocation')
+    expect(addButton).toBeTruthy()
     if (!addButton) return
     await act(async () => {
       addButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     const projectInput = reservationSection.querySelector('select[aria-label="Reservation project"]') as HTMLSelectElement | null
+    expect(projectInput).toBeTruthy()
     if (!projectInput) return
     await setFieldValue(projectInput, 'project-1')
 
@@ -6743,12 +6808,15 @@ describe('SettingsPage', () => {
 
     await selectTopLevelSettingsTab('Capacity planning')
     const capacitySection = container.querySelector('#settings-section-capacity')
+    expect(capacitySection).toBeTruthy()
     if (!capacitySection) return
     await selectSettingsSubnav(capacitySection, 'Standing allocations')
 
     const reservationSection = container.querySelector('[data-testid="capacity-reservations"]')
+    expect(reservationSection).toBeTruthy()
     if (!reservationSection) return
     const addButton = Array.from(reservationSection.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Add standing allocation')
+    expect(addButton).toBeTruthy()
     if (!addButton) return
     await act(async () => {
       addButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -6756,6 +6824,8 @@ describe('SettingsPage', () => {
 
     const projectInput = reservationSection.querySelector('select[aria-label="Reservation project"]') as HTMLSelectElement | null
     const generatorsInput = reservationSection.querySelector('input[aria-label="Reserved generators"]') as HTMLInputElement | null
+    expect(generatorsInput).toBeTruthy()
+    expect(projectInput).toBeTruthy()
     if (!projectInput || !generatorsInput) return
     await setFieldValue(projectInput, 'project-1')
     await setFieldValue(generatorsInput, '4')
@@ -6837,8 +6907,10 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     const generalSection = container.querySelector('#settings-section-general')
+    expect(generalSection).toBeTruthy()
     if (!generalSection) return
     const maxConcurrentInput = findSettingInput(generalSection, 'Max Concurrent Tests')
+    expect(maxConcurrentInput).toBeTruthy()
     if (!maxConcurrentInput) return
     await setFieldValue(maxConcurrentInput, '12')
 
@@ -6864,12 +6936,15 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     const generalSection = container.querySelector('#settings-section-general')
+    expect(generalSection).toBeTruthy()
     if (!generalSection) return
     const maxConcurrentInput = findSettingInput(generalSection, 'Max Concurrent Tests')
+    expect(maxConcurrentInput).toBeTruthy()
     if (!maxConcurrentInput) return
     await setFieldValue(maxConcurrentInput, '12')
 
     const saveButton = findButton('Save pending settings')
+    expect(saveButton).toBeTruthy()
     if (!saveButton) return
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -6894,12 +6969,15 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     const generalSection = container.querySelector('#settings-section-general')
+    expect(generalSection).toBeTruthy()
     if (!generalSection) return
     const maxConcurrentInput = findSettingInput(generalSection, 'Max Concurrent Tests')
+    expect(maxConcurrentInput).toBeTruthy()
     if (!maxConcurrentInput) return
     await setFieldValue(maxConcurrentInput, '12')
 
     const resetButton = findButton('Reset All Settings to Defaults')
+    expect(resetButton).toBeTruthy()
     if (!resetButton) return
     await act(async () => resetButton.click())
     const dialog = container.querySelector('[role="dialog"]')

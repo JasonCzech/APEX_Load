@@ -78,6 +78,7 @@ describe('thresholdAlerts', () => {
     entries = acknowledgeThresholdAlert(entries, first.key)
 
     const repeat = thresholdAlertFromMessage(breachMessage({ value: 2100, timestamp: '2026-07-30T12:00:05Z' }))
+    expect(repeat).toBeTruthy()
     if (!repeat) return
     entries = upsertThresholdAlert(entries, repeat)
 
@@ -88,6 +89,7 @@ describe('thresholdAlerts', () => {
     expect(entries[0].acknowledged).toBe(true)
 
     const otherTransaction = thresholdAlertFromMessage(breachMessage({ metric: 'avg_transfer_ms', transaction: 'cart_update' }))
+    expect(otherTransaction).toBeTruthy()
     if (!otherTransaction) return
     entries = upsertThresholdAlert(entries, otherTransaction)
     expect(entries).toHaveLength(2)
@@ -96,6 +98,7 @@ describe('thresholdAlerts', () => {
 
   it('resolves alerts after one missed metrics sample and starts a re-breach as unacknowledged', () => {
     const entry = thresholdAlertFromMessage(breachMessage())
+    expect(entry).toBeTruthy()
     if (!entry) return
     const acknowledged = acknowledgeThresholdAlert([entry], entry.key)
 
@@ -106,6 +109,7 @@ describe('thresholdAlerts', () => {
     expect(resolved[0]).toEqual(expect.objectContaining({ active: false, acknowledged: true }))
 
     const rebreach = thresholdAlertFromMessage(breachMessage({ timestamp: '2026-07-30T12:00:05Z', value: 2200 }))
+    expect(rebreach).toBeTruthy()
     if (!rebreach) return
     const restarted = upsertThresholdAlert(resolved, rebreach)
     expect(restarted[0]).toEqual(expect.objectContaining({
@@ -119,6 +123,8 @@ describe('thresholdAlerts', () => {
   it('resolves only the target run within its project and recognizes terminal run states', () => {
     const first = thresholdAlertFromMessage(breachMessage())
     const second = thresholdAlertFromMessage(breachMessage({ test_id: 'test-2' }))
+    expect(second).toBeTruthy()
+    expect(first).toBeTruthy()
     if (!first || !second) return
     const byProject = { 'project-1': [first, second] }
 
@@ -139,6 +145,7 @@ describe('thresholdAlerts', () => {
     let entries: ThresholdAlertEntry[] = []
     for (let i = 0; i < MAX_THRESHOLD_ALERTS + 5; i++) {
       const entry = thresholdAlertFromMessage(breachMessage({ test_id: `test-${i}` }))
+      expect(entry).toBeTruthy()
       if (!entry) continue
       entries = upsertThresholdAlert(entries, entry)
     }
@@ -155,10 +162,12 @@ describe('thresholdAlerts', () => {
         test_id: `test-${i}`,
         timestamp: `2026-07-30T12:00:${String(i % 60).padStart(2, '0')}.${String(i).padStart(3, '0')}Z`,
       }))
+      expect(entry).toBeTruthy()
       if (!entry) continue
       entries = upsertThresholdAlert(entries, entry)
     }
     const overflow = thresholdAlertFromMessage(breachMessage({ test_id: 'test-overflow', timestamp: '2026-07-30T12:05:00Z' }))
+    expect(overflow).toBeTruthy()
     if (!overflow) return
     entries = upsertThresholdAlert(entries, overflow)
 
@@ -170,6 +179,7 @@ describe('thresholdAlerts', () => {
 
   it('appendProjectThresholdAlert scopes entries by project', () => {
     const entry = thresholdAlertFromMessage(breachMessage())
+    expect(entry).toBeTruthy()
     if (!entry) return
     const byProject = appendProjectThresholdAlert({}, 'project-1', entry)
     expect(thresholdAlertsForProject(byProject, 'project-1')).toHaveLength(1)

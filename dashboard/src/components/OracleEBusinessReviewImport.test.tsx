@@ -59,14 +59,14 @@ describe('OracleEBusinessReviewImport', () => {
     expect(container.textContent).toContain('Oracle E-Business / Siebel Review')
 
     const textarea = container.querySelector('textarea') as HTMLTextAreaElement | null
-    expect(textarea).not.toBeNull()
+    expect(textarea).toBeTruthy()
     if (!textarea) return
     await act(async () => {
       setTextareaValue(textarea, 'GET /OA_HTML/OA.jsp?page=checkout')
     })
 
     const runButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Run Review'))
-    expect(runButton).toBeDefined()
+    expect(runButton).toBeTruthy()
     if (!runButton) return
     await act(async () => {
       runButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -147,13 +147,13 @@ describe('OracleEBusinessReviewImport', () => {
     await flushPromises()
 
     const textarea = container.querySelector('textarea') as HTMLTextAreaElement | null
-    expect(textarea).not.toBeNull()
+    expect(textarea).toBeTruthy()
     if (!textarea) return
     await act(async () => {
       setTextareaValue(textarea, 'notes only')
     })
     const runButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Run Review'))
-    expect(runButton).toBeDefined()
+    expect(runButton).toBeTruthy()
     if (!runButton) return
     await act(async () => {
       runButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -170,7 +170,7 @@ describe('OracleEBusinessReviewImport', () => {
     await flushPromises()
 
     const input = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(input).not.toBeNull()
+    expect(input).toBeTruthy()
     if (!input) return
 
     const makeFiles = (name: string, content: string) => {

@@ -406,7 +406,7 @@ describe('ScriptsAuthoringShell', () => {
     expect(container.querySelector('.script-create-existing-table tbody tr td:first-child')?.classList.contains('cell-name')).toBe(true)
 
     const searchInput = container.querySelector('input[aria-label="Search existing scripts"]') as HTMLInputElement | null
-    expect(searchInput).not.toBeNull()
+    expect(searchInput).toBeTruthy()
     if (!searchInput) return
 
     await act(async () => {
@@ -420,7 +420,7 @@ describe('ScriptsAuthoringShell', () => {
     await clickButton('Reset')
 
     const protocolSelect = container.querySelector('select[aria-label="Filter existing scripts by protocol"]') as HTMLSelectElement | null
-    expect(protocolSelect).not.toBeNull()
+    expect(protocolSelect).toBeTruthy()
     if (!protocolSelect) return
 
     await act(async () => {
@@ -436,7 +436,7 @@ describe('ScriptsAuthoringShell', () => {
     })
 
     const usageSort = Array.from(container.querySelectorAll('th button')).find(button => button.textContent?.includes('Usage'))
-    expect(usageSort).toBeDefined()
+    expect(usageSort).toBeTruthy()
     if (!usageSort) return
 
     await act(async () => {
@@ -678,7 +678,7 @@ describe('ScriptsAuthoringShell', () => {
 
   async function clickButton(label: string) {
     const button = Array.from(container.querySelectorAll('button')).find(element => (['Create','Import','Record','Use existing'].includes(label) ? element.querySelector('strong')?.textContent === label : element.textContent?.includes(label)))
-    expect(button).toBeDefined()
+    expect(button).toBeTruthy()
     if (!button) {
       return
     }

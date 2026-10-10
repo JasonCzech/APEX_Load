@@ -84,7 +84,7 @@ describe('access stylesheet ownership and preservation', () => {
         ts.forEachChild(node, visit)
       }
       visit(source)
-      if (!usesAccessClass) continue
+      if (!usesAccessClass) continue // only files that use an access class must import Access.css
       found.push(file.replace(/\.tsx$/, ''))
       expect(source.statements.filter(statement => ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier) && statement.moduleSpecifier.text === './Access.css'), file).toHaveLength(1)
     }

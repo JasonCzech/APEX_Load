@@ -472,6 +472,8 @@ describe('NewTestPage', () => {
     const maximum = findControlByLabel<HTMLInputElement>(modal, 'Maximum delay (seconds)', 'input')
     expect(minimum?.value).toBe('1')
     expect(maximum?.value).toBe('1')
+    expect(maximum).toBeTruthy()
+    expect(minimum).toBeTruthy()
     if (!minimum || !maximum) return
     await act(async () => {
       setInputValue(minimum, '0.25')
@@ -691,7 +693,7 @@ describe('NewTestPage', () => {
     await flushPromises()
 
     const runNameInput = container.querySelector<HTMLInputElement>('[aria-labelledby="new-test-run-name-label"]')
-    expect(runNameInput).toBeDefined()
+    expect(runNameInput).toBeTruthy()
     if (!runNameInput) return
 
     await act(async () => {
@@ -1376,7 +1378,7 @@ describe('NewTestPage', () => {
     expect(vusersHeader?.closest('th')?.getAttribute('aria-sort')).toBe('descending')
 
     const searchInput = Array.from(container.querySelectorAll('input[type="search"]')).find(input => input.getAttribute('placeholder')?.includes('Find by scenario')) as HTMLInputElement | undefined
-    expect(searchInput).toBeDefined()
+    expect(searchInput).toBeTruthy()
     if (!searchInput) return
 
     await act(async () => {
@@ -1388,7 +1390,7 @@ describe('NewTestPage', () => {
     expect(container.querySelectorAll('.new-test-scenario-table-row')).toHaveLength(1)
 
     const javaRow = Array.from(container.querySelectorAll('.new-test-scenario-table-row')).find(row => row.textContent?.includes('Java Batch Review'))
-    expect(javaRow).toBeDefined()
+    expect(javaRow).toBeTruthy()
     if (!javaRow) return
 
     await act(async () => {
@@ -1491,6 +1493,7 @@ describe('NewTestPage', () => {
     const runOnlyNotice = container.querySelector('.new-test-run-only-callout')
     expect(runOnlyNotice?.textContent).toContain('Note: Changes on this page only override the default settings for the current run.')
     expect(runOnlyNotice?.textContent).toContain('To change scenario defaults, edit the scenario through the Scenario Editor.')
+    expect(runOnlyNotice).toBeTruthy()
     if (!runOnlyNotice) return
     expect(scenarioHeader.compareDocumentPosition(runOnlyNotice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(runOnlyNotice.compareDocumentPosition(setupHeader) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -2367,6 +2370,8 @@ describe('NewTestPage', () => {
     const headless = findControlByLabel<HTMLSelectElement>(modal, 'Headless', 'select')
     expect(deviceProfile?.value).toBe('iPhone 14 Pro')
     expect(headless?.value).toBe('true')
+    expect(headless).toBeTruthy()
+    expect(deviceProfile).toBeTruthy()
     if (!deviceProfile || !headless) return
 
     await act(async () => {
@@ -2471,6 +2476,8 @@ describe('NewTestPage', () => {
     const headless = findControlByLabel<HTMLSelectElement>(modal, 'Headless', 'select')
     expect(deviceProfile?.value).toBe('iPhone 14 Pro')
     expect(headless?.value).toBe('true')
+    expect(headless).toBeTruthy()
+    expect(deviceProfile).toBeTruthy()
     if (!deviceProfile || !headless) return
 
     await act(async () => {
@@ -2635,6 +2642,8 @@ describe('NewTestPage', () => {
     const snapshotSelect = findControlByLabel<HTMLSelectElement>(modal, 'Snapshot on error', 'select')
     expect(continueSelect?.value).toBe('true')
     expect(snapshotSelect?.value).toBe('false')
+    expect(snapshotSelect).toBeTruthy()
+    expect(continueSelect).toBeTruthy()
     if (!continueSelect || !snapshotSelect) return
     // The group itself pins nothing, so the option is available and names the level that wins.
     const inheritOption = Array.from(continueSelect.options).find(option => option.value === '')
@@ -2726,6 +2735,8 @@ describe('NewTestPage', () => {
     const snapshotSelect = findControlByLabel<HTMLSelectElement>(modal, 'Snapshot on error', 'select')
     expect(continueSelect?.value).toBe('true')
     expect(snapshotSelect?.value).toBe('true')
+    expect(snapshotSelect).toBeTruthy()
+    expect(continueSelect).toBeTruthy()
     if (!continueSelect || !snapshotSelect) return
     const inheritOption = Array.from(continueSelect.options).find(option => option.value === '')
     expect(inheritOption?.disabled).toBe(false)
@@ -2813,6 +2824,8 @@ describe('NewTestPage', () => {
     if (!modal) return
     const continueSelect = findControlByLabel<HTMLSelectElement>(modal, 'Continue on error', 'select')
     const snapshotSelect = findControlByLabel<HTMLSelectElement>(modal, 'Snapshot on error', 'select')
+    expect(snapshotSelect).toBeTruthy()
+    expect(continueSelect).toBeTruthy()
     if (!continueSelect || !snapshotSelect) return
 
     await act(async () => {
@@ -2906,6 +2919,7 @@ describe('NewTestPage', () => {
     const modeSelect = findControlByLabel<HTMLSelectElement>(modal, 'Think time mode', 'select')
     expect(modeSelect?.value).toBe('gaussian')
     expect(findControlByLabel<HTMLInputElement>(modal, 'Think time mean (ms)', 'input')?.value).toBe('900')
+    expect(modeSelect).toBeTruthy()
     if (!modeSelect) return
 
     await act(async () => {
@@ -3125,6 +3139,7 @@ describe('NewTestPage', () => {
     if (!modal) return
     const pacingSelect = findControlByLabel<HTMLSelectElement>(modal, 'Pacing', 'select')
     expect(pacingSelect?.value).toBe('fixed_delay')
+    expect(pacingSelect).toBeTruthy()
     if (!pacingSelect) return
 
     await act(async () => {
@@ -3204,6 +3219,8 @@ describe('NewTestPage', () => {
     const maximum = findControlByLabel<HTMLInputElement>(modal, 'Maximum interval (seconds)', 'input')
     expect(minimum?.value).toBe('1')
     expect(maximum?.value).toBe('1')
+    expect(maximum).toBeTruthy()
+    expect(minimum).toBeTruthy()
     if (!minimum || !maximum) return
     await act(async () => {
       setInputValue(minimum, '2.5')
@@ -3364,6 +3381,7 @@ describe('NewTestPage', () => {
     const saveButton = Array.from(modal.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Save For This Run')
     expect(vusersInput?.max).toBe('10')
     expect(saveButton).toBeTruthy()
+    expect(vusersInput).toBeTruthy()
     if (!vusersInput || !saveButton) return
 
     await act(async () => setInputValue(vusersInput, '11'))

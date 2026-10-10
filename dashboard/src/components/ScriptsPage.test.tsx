@@ -771,7 +771,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('0 scenarios')
 
     const existingRow = Array.from(container.querySelectorAll('tr')).find(row => row.textContent?.includes('Existing Script'))
-    expect(existingRow).toBeDefined()
+    expect(existingRow).toBeTruthy()
     if (!existingRow) {
       return
     }
@@ -797,7 +797,7 @@ describe('ScriptsPage', () => {
     await clickButton('Blank & Assisted Editors')
 
     const sampleButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Build From Sample'))
-    expect(sampleButton).toBeDefined()
+    expect(sampleButton).toBeTruthy()
     if (!sampleButton) {
       return
     }
@@ -813,7 +813,7 @@ describe('ScriptsPage', () => {
     expect(container.querySelector('[data-testid="sample-import"]')).not.toBeNull()
 
     const sampleEditButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-sample-edit'))
-    expect(sampleEditButton).toBeDefined()
+    expect(sampleEditButton).toBeTruthy()
     if (!sampleEditButton) {
       return
     }
@@ -827,7 +827,7 @@ describe('ScriptsPage', () => {
 
     apiMock.getScript.mockResolvedValueOnce({ script: { name: 'Canonical saved script', protocol: 'http', actions: [] } })
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-save'))
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) {
       return
     }
@@ -1544,7 +1544,7 @@ describe('ScriptsPage', () => {
     await clickButton('Script Library')
 
     const searchInput = container.querySelector('input[type="search"]') as HTMLInputElement | null
-    expect(searchInput).not.toBeNull()
+    expect(searchInput).toBeTruthy()
     if (!searchInput) {
       return
     }
@@ -1693,7 +1693,7 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     const editButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Edit')
-    expect(editButton).toBeDefined()
+    expect(editButton).toBeTruthy()
     if (!editButton) return
 
     await act(async () => {
@@ -1791,7 +1791,7 @@ describe('ScriptsPage', () => {
     await clickButton('Import')
 
     const jmeterButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import JMeter'))
-    expect(jmeterButton).toBeDefined()
+    expect(jmeterButton).toBeTruthy()
     if (!jmeterButton) {
       return
     }
@@ -1803,7 +1803,7 @@ describe('ScriptsPage', () => {
     expect(container.querySelector('[data-testid="jmeter-import"]')).not.toBeNull()
 
     const jmeterEditButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-jmeter-edit'))
-    expect(jmeterEditButton).toBeDefined()
+    expect(jmeterEditButton).toBeTruthy()
     if (!jmeterEditButton) {
       return
     }
@@ -1827,7 +1827,7 @@ describe('ScriptsPage', () => {
     await clickButton('Import')
 
     const jmeterButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import JMeter'))
-    expect(jmeterButton).toBeDefined()
+    expect(jmeterButton).toBeTruthy()
     if (!jmeterButton) {
       return
     }
@@ -1837,7 +1837,7 @@ describe('ScriptsPage', () => {
     })
 
     const importSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-jmeter-save'))
-    expect(importSaveButton).toBeDefined()
+    expect(importSaveButton).toBeTruthy()
     if (!importSaveButton) {
       return
     }
@@ -1866,7 +1866,7 @@ describe('ScriptsPage', () => {
     await clickButton('Import')
 
     const enterpriseArchiveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import Loadrunner Script Archive'))
-    expect(enterpriseArchiveButton).toBeDefined()
+    expect(enterpriseArchiveButton).toBeTruthy()
     if (!enterpriseArchiveButton) {
       return
     }
@@ -1878,7 +1878,7 @@ describe('ScriptsPage', () => {
     expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull()
 
     const importSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-enterprise-archive-save'))
-    expect(importSaveButton).toBeDefined()
+    expect(importSaveButton).toBeTruthy()
     if (!importSaveButton) {
       return
     }
@@ -1978,7 +1978,7 @@ describe('ScriptsPage', () => {
     await clickButton('Import')
 
     const enterpriseArchiveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import Loadrunner Script Archive'))
-    expect(enterpriseArchiveButton).toBeDefined()
+    expect(enterpriseArchiveButton).toBeTruthy()
     if (!enterpriseArchiveButton) {
       return
     }
@@ -1991,7 +1991,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).not.toContain('Back to Create Script')
 
     const closeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-enterprise-archive-close'))
-    expect(closeButton).toBeDefined()
+    expect(closeButton).toBeTruthy()
     if (!closeButton) {
       return
     }
@@ -2016,7 +2016,7 @@ describe('ScriptsPage', () => {
     await clickButton('Import')
 
     const enterpriseArchiveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import Loadrunner Script Archive'))
-    expect(enterpriseArchiveButton).toBeDefined()
+    expect(enterpriseArchiveButton).toBeTruthy()
     if (!enterpriseArchiveButton) {
       return
     }
@@ -2027,7 +2027,7 @@ describe('ScriptsPage', () => {
 
     expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull()
     const preservedInput = container.querySelector('input[aria-label="mock-enterprise-archive-state"]') as HTMLInputElement | null
-    expect(preservedInput).not.toBeNull()
+    expect(preservedInput).toBeTruthy()
     if (!preservedInput) {
       return
     }
@@ -2205,7 +2205,7 @@ describe('ScriptsPage', () => {
     await clickButton('Import')
 
     const jmeterButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import JMeter'))
-    expect(jmeterButton).toBeDefined()
+    expect(jmeterButton).toBeTruthy()
     if (!jmeterButton) {
       return
     }
@@ -2218,7 +2218,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).not.toContain('Back to Create Script')
 
     const closeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-jmeter-close'))
-    expect(closeButton).toBeDefined()
+    expect(closeButton).toBeTruthy()
     if (!closeButton) {
       return
     }
@@ -2250,7 +2250,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('embedded or sidecar helper execution')
 
     const soapButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Web Services (SOAP)'))
-    expect(soapButton).toBeDefined()
+    expect(soapButton).toBeTruthy()
     if (!soapButton) {
       return
     }
@@ -2263,7 +2263,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('editor:blank')
 
     const closeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-close'))
-    expect(closeButton).toBeDefined()
+    expect(closeButton).toBeTruthy()
     if (!closeButton) {
       return
     }
@@ -2273,7 +2273,7 @@ describe('ScriptsPage', () => {
     })
 
     const createButtonAgain = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Script Builder'))
-    expect(createButtonAgain).toBeDefined()
+    expect(createButtonAgain).toBeTruthy()
     if (!createButtonAgain) {
       return
     }
@@ -2286,7 +2286,7 @@ describe('ScriptsPage', () => {
     await clickButton('Blank & Assisted Editors')
 
     const javaButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Java over HTTP'))
-    expect(javaButton).toBeDefined()
+    expect(javaButton).toBeTruthy()
     if (!javaButton) {
       return
     }
@@ -2354,7 +2354,7 @@ describe('ScriptsPage', () => {
     await clickButton('Starter Templates')
 
     const templateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Browser Checkout Canary'))
-    expect(templateButton).toBeDefined()
+    expect(templateButton).toBeTruthy()
     if (!templateButton) {
       return
     }
@@ -2396,7 +2396,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('OAuth Bearer Token Flow')
 
     const componentButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('OAuth Bearer Token Flow'))
-    expect(componentButton).toBeDefined()
+    expect(componentButton).toBeTruthy()
     if (!componentButton) {
       return
     }
@@ -2463,7 +2463,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Review validation warnings before promotion.')
 
     const resumeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Resume'))
-    expect(resumeButton).toBeDefined()
+    expect(resumeButton).toBeTruthy()
     if (!resumeButton) {
       return
     }
@@ -2476,7 +2476,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('editor:Migrated checkout review')
 
     const closeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-close'))
-    expect(closeButton).toBeDefined()
+    expect(closeButton).toBeTruthy()
     if (!closeButton) {
       return
     }
@@ -2488,7 +2488,7 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     const approveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Approve'))
-    expect(approveButton).toBeDefined()
+    expect(approveButton).toBeTruthy()
     if (!approveButton) {
       return
     }
@@ -2537,7 +2537,7 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     const approveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Approve'))
-    expect(approveButton).toBeDefined()
+    expect(approveButton).toBeTruthy()
     if (!approveButton) {
       return
     }
@@ -2696,7 +2696,7 @@ describe('ScriptsPage', () => {
     })
 
     const previewButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Preview Repair'))
-    expect(previewButton).toBeDefined()
+    expect(previewButton).toBeTruthy()
     if (!previewButton) {
       return
     }
@@ -2719,7 +2719,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('actions[1].body')
 
     const applyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Apply Repair'))
-    expect(applyButton).toBeDefined()
+    expect(applyButton).toBeTruthy()
     if (!applyButton) {
       return
     }
@@ -2746,7 +2746,7 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     const sampleImportButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Request / Response Sample'))
-    expect(sampleImportButton).toBeDefined()
+    expect(sampleImportButton).toBeTruthy()
     if (!sampleImportButton) {
       return
     }
@@ -2890,7 +2890,7 @@ function setSelectValue(select: HTMLSelectElement, value: string) {
 
 async function clickButton(label: string) {
   const button = Array.from(document.querySelectorAll('button')).find(element => (['Create','Import','Record','Use existing'].includes(label) ? element.querySelector('strong')?.textContent === label : element.textContent?.includes(label)))
-  expect(button).toBeDefined()
+  expect(button).toBeTruthy()
   if (!button) {
     return
   }

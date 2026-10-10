@@ -93,6 +93,7 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
     const distribution = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
       .find(select => select.parentElement?.textContent?.includes('Distribution'))
     act(() => {
+      expect(distribution).toBeTruthy()
       if (!distribution) return
       const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set
       setter?.call(distribution, 'recorded')
@@ -472,6 +473,7 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
     expect(version?.querySelector('option[value="1.0"]')).toBeNull()
     expect(container.textContent).toContain('required HTTP/2 never falls back to HTTP/1.1')
     act(() => {
+      expect(version).toBeTruthy()
       if (!version) return
       const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set
       setter?.call(version, '')

@@ -242,8 +242,9 @@ paths:
     expect(container.textContent).toContain('Conditional auth')
 
     const firstDetails = container.querySelector('.swagger-operation-card') as HTMLDetailsElement | null
-    expect(firstDetails).not.toBeNull()
+    expect(firstDetails).toBeTruthy()
     await act(async () => {
+      expect(firstDetails).toBeTruthy()
       if (!firstDetails) return
       firstDetails.open = true
       firstDetails.dispatchEvent(new Event('toggle', { bubbles: true }))
@@ -257,6 +258,7 @@ paths:
     expect(ciRunSummary).toBeDefined()
     await act(async () => {
       const details = ciRunSummary?.closest('details') as HTMLDetailsElement | null
+      expect(details).toBeTruthy()
       if (!details) return
       details.open = true
       details.dispatchEvent(new Event('toggle', { bubbles: true }))
@@ -265,13 +267,14 @@ paths:
     expect(container.textContent).toContain('project_id')
 
     const categorySelect = container.querySelector('.swagger-docs-controls select') as HTMLSelectElement | null
-    expect(categorySelect).not.toBeNull()
+    expect(categorySelect).toBeTruthy()
     expect(Array.from(categorySelect?.options || []).map(option => option.textContent)).toContain('Script Authoring')
     expect(Array.from(container.querySelectorAll('.swagger-docs-tag-group h4')).map(heading => heading.textContent)).not.toContain('Other')
 
     const searchInput = container.querySelector('input[placeholder^="Search method"]') as HTMLInputElement | null
-    expect(searchInput).not.toBeNull()
+    expect(searchInput).toBeTruthy()
     await act(async () => {
+      expect(searchInput).toBeTruthy()
       if (!searchInput) return
       setInputValue(searchInput, 'health')
     })
@@ -280,6 +283,7 @@ paths:
     expect(container.textContent).not.toContain('Create Domain')
 
     await act(async () => {
+      expect(categorySelect).toBeTruthy()
       if (!categorySelect) return
       setInputValue(searchInput as HTMLInputElement, '')
       categorySelect.value = 'Test Execution'
@@ -303,8 +307,9 @@ paths:
     expect(container.textContent).toContain('Not in my access')
 
     const accessCheckbox = container.querySelector('.swagger-docs-access-filter input[type="checkbox"]') as HTMLInputElement | null
-    expect(accessCheckbox).not.toBeNull()
+    expect(accessCheckbox).toBeTruthy()
     await act(async () => {
+      expect(accessCheckbox).toBeTruthy()
       if (!accessCheckbox) return
       accessCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
