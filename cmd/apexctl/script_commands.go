@@ -25,6 +25,9 @@ type scriptValidationResult struct {
 	Script   string   `json:"script,omitempty"`
 	Protocol string   `json:"protocol,omitempty"`
 	Issues   []string `json:"issues"`
+	// HTTP3 says what the script's HTTP/3 policies need to run; it is not
+	// a validation issue.
+	HTTP3 string `json:"http3,omitempty"`
 }
 
 type scriptExplainResult struct {
@@ -127,6 +130,7 @@ func validateScriptFile(path string) scriptValidationResult {
 		Script:   script.Name,
 		Protocol: script.Protocol,
 		Issues:   issuesOrEmpty(issues),
+		HTTP3:    scriptHTTP3Note(script),
 	}
 }
 
@@ -183,6 +187,9 @@ func writeScriptValidation(args scriptArgs, result scriptValidationResult) {
 		fmt.Printf("Protocol: %s\n", result.Protocol)
 	}
 	fmt.Printf("Status:   %s\n", status)
+	if result.HTTP3 != "" {
+		fmt.Printf("HTTP/3:   %s\n", result.HTTP3)
+	}
 	for _, issue := range result.Issues {
 		fmt.Printf("  - %s\n", issue)
 	}

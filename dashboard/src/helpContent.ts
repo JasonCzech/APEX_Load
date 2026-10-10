@@ -11,6 +11,7 @@ const sources = import.meta.glob<string>([
   '../../docs/PROTOCOL_SUPPORT.md',
   '../../docs/guides/BROWSER_DOCUMENT_EVIDENCE.md',
   '../../docs/guides/RETAINED_RESOURCE_INSPECTION.md',
+  '../../docs/guides/HTTP3_AND_QUIC.md',
   '../../docs/guides/TELEMETRY_POLICY_RECEIPTS.md',
   '../../docs/guides/AUTHORING_SCENARIO_FIDELITY.md',
   '../../docs/OBSERVABILITY_INTEGRATIONS.md',

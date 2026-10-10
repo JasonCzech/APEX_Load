@@ -14,6 +14,7 @@ kept for planning or audit context only.
 | [README.md](../README.md) | Current | Project overview, quick start, and primary links |
 | [APPLICATION_USER_GUIDE.md](APPLICATION_USER_GUIDE.md) | Current | End-user guide to the dashboard application |
 | [Browser document evidence](guides/BROWSER_DOCUMENT_EVIDENCE.md) | Current | Opt-in capture, lifecycle populations, bounded live/archive inspection and qualification limits |
+| [HTTP/3 and QUIC](guides/HTTP3_AND_QUIC.md) | Preview | Version policies, QUIC settings, import mapping, results, and operator enablement, egress and buffers |
 | [Retained resource inspection](guides/RETAINED_RESOURCE_INSPECTION.md) | Current | Authorized bounded archive resource pages, exact filters, native availability and CLI inspection |
 | [Native HAR working-file ownership](guides/BROWSER_HAR_WORKING_OWNERSHIP.md) | Current | Private staging, joined native close, protected retirement and remaining transfer/platform limits |
 | [Browser interaction evidence](guides/BROWSER_INTERACTION_EVIDENCE.md) | Current | Opt-in gesture evidence: dispatched points, keyboard targets, layout revision, transport and bounds |

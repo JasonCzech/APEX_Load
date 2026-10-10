@@ -490,6 +490,7 @@ func (c *ApiClient) pollTestContext(ctx context.Context, testID string, format s
 				res.FinalSnapshot = engine.MetricsSnapshot{
 					Transactions: test.LiveMetrics.TotalTx,
 					TPS:          test.LiveMetrics.TPS,
+					HTTPVersions: httpVersionsFromLive(test.LiveMetrics),
 				}
 			}
 			if expectSLA {
@@ -661,6 +662,7 @@ func (c *ApiClient) resolveTestResultContext(ctx context.Context, testID string,
 		res.FinalSnapshot = engine.MetricsSnapshot{
 			Transactions: test.LiveMetrics.TotalTx,
 			TPS:          test.LiveMetrics.TPS,
+			HTTPVersions: httpVersionsFromLive(test.LiveMetrics),
 		}
 	}
 	sla, err := c.GetSLAStatusContext(ctx, testID)

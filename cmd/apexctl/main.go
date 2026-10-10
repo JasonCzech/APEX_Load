@@ -193,6 +193,9 @@ func runTest() {
 			out["transactions"] = result.TotalTransactions
 			out["errors"] = result.TotalErrors
 			out["tps"] = result.FinalSnapshot.TPS
+			if versions := httpVersionSummaryJSON(result.FinalSnapshot.HTTPVersions); versions != nil {
+				out["http_versions"] = versions
+			}
 		} else if apiResult != nil {
 			if apiResult.TestID != "" {
 				out["test_id"] = apiResult.TestID
@@ -204,6 +207,9 @@ func runTest() {
 			out["transactions"] = apiResult.TotalTransactions
 			out["errors"] = apiResult.TotalErrors
 			out["tps"] = apiResult.FinalSnapshot.TPS
+			if versions := httpVersionSummaryJSON(apiResult.FinalSnapshot.HTTPVersions); versions != nil {
+				out["http_versions"] = versions
+			}
 		}
 
 		b, _ := json.MarshalIndent(out, "", "  ")
@@ -238,6 +244,9 @@ func runTest() {
 		if snap.Transactions > 0 {
 			fmt.Printf("  TPS:          %.1f\n", snap.TPS)
 		}
+		for _, line := range httpVersionSummaryLines(snap.HTTPVersions) {
+			fmt.Println(line)
+		}
 	} else if apiResult != nil {
 		fmt.Printf("  Duration:     %s\n", apiResult.Duration.Round(time.Millisecond))
 		fmt.Printf("  Transactions: %d\n", apiResult.TotalTransactions)
@@ -247,6 +256,9 @@ func runTest() {
 			fmt.Printf("  Error Rate:   %.2f%%\n", errorPct)
 		}
 		fmt.Printf("  TPS:          %.1f\n", apiResult.FinalSnapshot.TPS)
+		for _, line := range httpVersionSummaryLines(apiResult.FinalSnapshot.HTTPVersions) {
+			fmt.Println(line)
+		}
 	}
 	if slaSummary != nil && slaSummary.Evaluated {
 		status := "passing"

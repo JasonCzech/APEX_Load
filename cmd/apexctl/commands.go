@@ -215,6 +215,9 @@ func waitCmd() {
 			out["transactions"] = result.TotalTransactions
 			out["errors"] = result.TotalErrors
 			out["tps"] = result.FinalSnapshot.TPS
+			if versions := httpVersionSummaryJSON(result.FinalSnapshot.HTTPVersions); versions != nil {
+				out["http_versions"] = versions
+			}
 		}
 		b, _ := json.MarshalIndent(out, "", "  ")
 		fmt.Println(string(b))
@@ -224,6 +227,9 @@ func waitCmd() {
 		fmt.Printf("  Duration:     %s\n", result.Duration.Round(time.Millisecond))
 		fmt.Printf("  Transactions: %d\n", result.TotalTransactions)
 		fmt.Printf("  Errors:       %d\n", result.TotalErrors)
+		for _, line := range httpVersionSummaryLines(result.FinalSnapshot.HTTPVersions) {
+			fmt.Println(line)
+		}
 		if sla != nil && sla.Evaluated {
 			status := "passing"
 			if sla.Breached {

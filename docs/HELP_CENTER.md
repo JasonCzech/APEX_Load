@@ -89,6 +89,7 @@ Import recognition, authoring, runtime execution and production adapter availabi
 | Capability | Current boundary | What to check |
 | --- | --- | --- |
 | HTTP, SOAP, WebSocket, gRPC, database and network | Compiled protocol implementations; individual operations have protocol-specific contracts | DSL action reference, dependencies and target connectivity |
+| HTTP/3 (QUIC) | Preview: scripts save everywhere; runs need `APEXLOAD_HTTP3=true` on the controller and every generator | [HTTP/3 and QUIC](guides/HTTP3_AND_QUIC.md) and the editor's capability note |
 | Browser replay and observer canaries | Requires the browser runtime and permitted execution environment | Browser & mobile support and pool readiness |
 | Kafka | Default in-memory mock; real network adapter requires kafka_real build | Messaging support and deployment build |
 | Azure Event Hubs | Default in-memory mock; real AMQP adapter requires eventhubs_real build | Producer/observer-probe semantics and deployment build |
@@ -121,6 +122,7 @@ Use the [matrix results and logs](https://github.com/JasonCzech/APEX_Load/blob/m
 - [DSL action reference](DSL_ACTION_REFERENCE.md)
 - [Messaging support](PROTOCOL_SUPPORT.md#broker-and-messaging-support)
 - [Browser & mobile support](PROTOCOL_SUPPORT.md#browser-execution-and-mobile-emulation)
+- [HTTP/3 and QUIC](guides/HTTP3_AND_QUIC.md)
 - [Java VUser runtime](PROTOCOL_SUPPORT.md#java-vuser-execution)
 - [Runtime settings support](RUNTIME_SETTINGS_PARITY.md)
 - [OpenTelemetry traces](OBSERVABILITY_INTEGRATIONS.md#opentelemetry-tracing)
@@ -166,6 +168,12 @@ Project owners can check scope, script configuration and test data. Administrato
 ## Documentation version notes
 
 This documentation ships with the dashboard build shown below each article. It describes this checkout's capabilities; a remote controller or generator may run another version. Use the sidebar build information and current API capability responses to compare them.
+
+### October 10, 2026 HTTP/3 and QUIC (preview)
+
+- Added [HTTP/3 and QUIC](guides/HTTP3_AND_QUIC.md): the `auto+h3` (upgrade when advertised) and `3` (require HTTP/3) policies with worked examples, the QUIC settings panel, what stays on TCP, importing captured HTTP/3, and reading the HTTP version mix in replay, reports, the live run and Power BI.
+- Operators enable execution with `APEXLOAD_HTTP3=true` on the controller and every generator; [HTTP/3 (QUIC) execution](guides/HTTP3_AND_QUIC.md#enable-http-3-execution) covers the QUIC limits, UDP egress and buffer sizing.
+- Power BI datasets move to schema version 2 (HTTP version mix columns); recreate an existing dataset before publishing.
 
 ### October 9, 2026 root-cause analysis across the dashboard
 

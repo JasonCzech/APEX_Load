@@ -182,6 +182,18 @@
     "group": "Runbooks"
   },
   {
+    "id": "http3-operations",
+    "area": "admin-guide",
+    "title": "HTTP/3 (QUIC) execution",
+    "path": "docs/guides/HTTP3_AND_QUIC.md",
+    "owner": "APEX Load maintainers",
+    "group": "Runbooks",
+    "sections": [
+      "Enable HTTP/3 execution",
+      "Network egress and UDP buffers"
+    ]
+  },
+  {
     "id": "identity",
     "area": "admin-guide",
     "title": "Identity & access runbook",
@@ -606,5 +618,22 @@
     "path": "docs/guides/RETAINED_RESOURCE_INSPECTION.md",
     "owner": "APEX Load maintainers",
     "group": "Analysis and evidence"
+  },
+  {
+    "id": "http3-quic",
+    "area": "user-guide",
+    "title": "HTTP/3 and QUIC",
+    "path": "docs/guides/HTTP3_AND_QUIC.md",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Choose a policy",
+      "Worked examples",
+      "QUIC settings",
+      "What stays on TCP",
+      "Import captured HTTP/3",
+      "Read the results",
+      "Browser VUsers",
+      "Troubleshooting"
+    ]
   }
 ]
