@@ -150,6 +150,26 @@ export interface ApplyParameterizationRequest {
   confirm_high_risk?: boolean
 }
 
+/** One request change the Transport panel reviewed (path, origin, current and new leaf policy; '' inherits). */
+export interface ImportTransportEdit {
+  path: string
+  origin: string
+  from: string
+  to: string
+}
+
+export interface ApplyImportTransportRequest {
+  script: ScriptDefinition
+  edits: ImportTransportEdit[]
+}
+
+export interface ApplyImportTransportResponse {
+  script: ScriptDefinition
+  changes: Array<ImportTransportEdit & { resolved?: string[] }>
+  warnings?: string[]
+  import_draft_expires_at?: string
+}
+
 export interface ApplyParameterizationResponse {
   script: ScriptDefinition
   diffs: ParameterizationDiff[]

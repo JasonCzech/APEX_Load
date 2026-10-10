@@ -84,6 +84,7 @@ Every script import route that accepts a POST has a row; a route without one fai
 | `/api/v1/scripts/import/secrets/migrate` | shared review | Template/component/clone | `import_candidate_credentials_test.go` |
 | `/api/v1/scripts/import/settings` | shared review | Every import launcher | `handlers_import_settings_test.go`, `workflow-import-source.spec.ts` |
 | `/api/v1/scripts/import/shared-values/apply` | shared review | Multi-script imports | `handlers_import_shared_values_test.go` |
+| `/api/v1/scripts/import/transport/apply` | shared review | Every import launcher | `handlers_import_transport_test.go`, `workflow-import-transport.spec.ts` |
 | `/api/v1/scripts/import/wsdl` | launcher | Every import launcher | `handlers_web_api_imports_test.go` |
 | `/api/v1/scripts/import/{id}/assets/upload` | assets | Every import launcher | `handlers_import_assets_test.go` |
 | `/api/v1/scripts/import/{id}/java-classpath/upload` | assets | Every import launcher | `workflow-loadrunner-review.spec.ts` |

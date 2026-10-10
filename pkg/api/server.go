@@ -1288,6 +1288,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/scripts/import/broker-config/support-matrix", cors(log(auth(http.HandlerFunc(s.handleBrokerConfigSupportMatrix)))))
 	s.mux.Handle("POST /api/v1/scripts/import/settings", cors(log(auth(http.HandlerFunc(s.handleImportSettings)))))
 	s.mux.Handle("POST /api/v1/scripts/import/parameterize/apply", cors(log(auth(http.HandlerFunc(s.handleApplyImportParameterization)))))
+	s.mux.Handle("POST /api/v1/scripts/import/transport/apply", cors(log(auth(http.HandlerFunc(s.handleApplyImportTransport)))))
 	s.mux.Handle("POST /api/v1/scripts/import/shared-values/apply", cors(log(auth(http.HandlerFunc(s.handleApplyImportSharedValues)))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/parameterize/suggest", cors(log(auth(http.HandlerFunc(s.handleSuggestScriptParameterization)))))
 

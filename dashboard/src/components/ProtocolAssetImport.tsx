@@ -1896,6 +1896,22 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     }
   }
 
+  const handleTransportApplied = (updated: ScriptDefinition, importDraftExpiresAt?: string) => {
+    if (!result) return
+    if (importDraftHasExpired(result)) {
+      setMessageError(IMPORT_DRAFT_EXPIRED_MESSAGE)
+      return
+    }
+    advanceReviewGeneration()
+    const scripts = generatedScripts.length ? generatedScripts.map((entry, index) => index === selectedScriptIndex ? updated : entry) : [updated]
+    commitReviewMutation({
+      ...result,
+      script: scripts[0],
+      scripts,
+      ...(importDraftExpiresAt ? { import_draft_expires_at: importDraftExpiresAt } : {}),
+    } as ProtocolImportResult, 'HTTP version choices applied. Run replay validation again before saving normally.')
+  }
+
   const handleParameterizationApplied = (
     parameterizedScript: ScriptDefinition,
     _diffs: unknown[],
@@ -2417,6 +2433,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             reviewSections={result.review_sections}
             parameterization={asyncAPISelectedScriptSaved ? undefined : result.parameterization}
             onParameterizationApplied={handleParameterizationApplied}
+            onTransportApplied={savedResult || asyncAPISelectedScriptSaved ? undefined : handleTransportApplied}
             onSettingsBusyChange={setSettingsEditing}
             onSettingsApplied={updated => {
               if (!result) return

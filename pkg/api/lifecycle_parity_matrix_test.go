@@ -317,6 +317,7 @@ var lifecycleImportRoutes = map[string]lifecycleImportRoute{
 	"/api/v1/scripts/import/recorder/validate":                  {"validate", "Recording", []string{"handlers_recorder_import_test.go"}},
 	"/api/v1/scripts/import/recorder/replay":                    {"validate", "Recording", []string{"handlers_recorder_import_test.go"}},
 	"/api/v1/scripts/import/parameterize/apply":                 {"shared review", "Every import launcher", []string{"handlers_import_paramize_test.go", "workflow-aura-outcomes.spec.ts"}},
+	"/api/v1/scripts/import/transport/apply":                    {"shared review", "Every import launcher", []string{"handlers_import_transport_test.go", "workflow-import-transport.spec.ts"}},
 	"/api/v1/scripts/import/repairs/apply":                      {"shared review", "Every import launcher", []string{"workflow-jmeter-fidelity.spec.ts"}},
 	"/api/v1/scripts/import/repairs/preview":                    {"shared review", "Every import launcher", []string{"import_repairs_test.go", "workflow-jmeter-fidelity.spec.ts"}},
 	"/api/v1/scripts/import/shared-values/apply":                {"shared review", "Multi-script imports", []string{"handlers_import_shared_values_test.go"}},

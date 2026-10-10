@@ -22,6 +22,7 @@ import { type ScriptDefinition } from '../types/scripts'
 import { isSensitiveCredentialPreviewKey, normalizeCredentialPreviewName } from './credentialPreviewPolicy'
 import { importActionEntries } from './importReviewIssues'
 import ParameterizationReview from './ParameterizationReview'
+import { ImportTransportPanel } from './ImportTransportPanel'
 import SharedImportValues from './SharedImportValues'
 import { importDraftExpiryStatus, protectedImportExpiryLabel } from './protectedImportSession'
 import SecretBindingReview, {
@@ -461,6 +462,14 @@ interface Props {
     importDraftExpiresAt?: (string | null)[],
   ) => void
   parameterization?: Parameterization
+  /**
+   * Applies Transport panel choices (HTTP version per origin). The panel shows
+   * for HTTP-family drafts only when this is set; the callback receives the
+   * server-edited draft and its rotated import-draft expiry.
+   */
+  onTransportApplied?: (script: ScriptDefinition, importDraftExpiresAt?: string) => void
+  /** Findings the Transport panel reads (origin_advertises_h3); defaults to diagnostics. */
+  transportDiagnostics?: ReadonlyArray<{ code?: string; location?: string }>
   onParameterizationApplied?: (
     script: ScriptDefinition,
     diffs: ParameterizationDiff[],
@@ -536,6 +545,8 @@ export default function ScriptImportReview({
   sharedValueScripts,
   onSharedValuesApplied,
   parameterization,
+  onTransportApplied,
+  transportDiagnostics,
   onParameterizationApplied,
   secretBindingRequirements = EMPTY_REQUIREMENTS,
   sourceMigrationRequirements,
@@ -612,12 +623,14 @@ export default function ScriptImportReview({
   const [credentialAction, setCredentialAction] = useState<CredentialAction | null>(null)
   const [parameterizationApplying, setParameterizationApplying] = useState(false)
   const [sharedValuesApplying, setSharedValuesApplying] = useState(false)
+  const [transportApplying, setTransportApplying] = useState(false)
   const [importDraftExpiryGeneration, setImportDraftExpiryGeneration] = useState(0)
   const [previewExportError, setPreviewExportError] = useState('')
   const [configuredCredentialReviewIdentity, setConfiguredCredentialReviewIdentity] = useState('')
   const saveDisabledReasonId = useId()
   const parameterizationApplyingRef = useRef(false)
   const sharedValuesApplyingRef = useRef(false)
+  const transportApplyingRef = useRef(false)
   const credentialActionRequestRef = useRef<CredentialActionRequest | null>(null)
   const credentialActionRequestIdRef = useRef(0)
   const reviewIdentity = String(reviewGeneration)
@@ -661,11 +674,12 @@ export default function ScriptImportReview({
     ? `${editLabel} with ${configureLaterCount} secret${configureLaterCount === 1 ? '' : 's'} to configure`
     : editLabel
 
-  const reportInternalReviewBusy = useCallback((options?: { parameterization?: boolean; credentials?: boolean; sharedValues?: boolean }) => {
+  const reportInternalReviewBusy = useCallback((options?: { parameterization?: boolean; credentials?: boolean; sharedValues?: boolean; transport?: boolean }) => {
     const parameterizationBusy = options?.parameterization ?? parameterizationApplyingRef.current
     const credentialsBusy = options?.credentials ?? credentialActionRequestRef.current !== null
     const sharedValuesBusy = options?.sharedValues ?? sharedValuesApplyingRef.current
-    onReviewBusyChange?.(parameterizationBusy || credentialsBusy || sharedValuesBusy || settingsBusyRef.current || credentialEditingRef.current)
+    const transportBusy = options?.transport ?? transportApplyingRef.current
+    onReviewBusyChange?.(parameterizationBusy || credentialsBusy || sharedValuesBusy || transportBusy || settingsBusyRef.current || credentialEditingRef.current)
   }, [onReviewBusyChange])
 
   const handleSettingsBusyChange = useCallback((busy: boolean) => { settingsBusyRef.current = busy; setSettingsBusy(busy); onSettingsBusyChange?.(busy || credentialEditingRef.current); reportInternalReviewBusy() }, [reportInternalReviewBusy, onSettingsBusyChange])
@@ -687,6 +701,12 @@ export default function ScriptImportReview({
     parameterizationApplyingRef.current = applying
     setParameterizationApplying(applying)
     reportInternalReviewBusy({ parameterization: applying })
+  }, [reportInternalReviewBusy])
+
+  const handleTransportApplyingChange = useCallback((applying: boolean) => {
+    transportApplyingRef.current = applying
+    setTransportApplying(applying)
+    reportInternalReviewBusy({ transport: applying })
   }, [reportInternalReviewBusy])
 
   const handleSharedValuesApplyingChange = useCallback((applying: boolean) => {
@@ -750,6 +770,7 @@ export default function ScriptImportReview({
     credentialActionRequestRef.current = null
     parameterizationApplyingRef.current = false
     sharedValuesApplyingRef.current = false
+    transportApplyingRef.current = false
     onReviewBusyChange?.(false)
   }, [onReviewBusyChange])
 
@@ -781,7 +802,7 @@ export default function ScriptImportReview({
   }, [onSecretBindingsApply, reportInternalReviewBusy, reviewIdentity])
 
   const runAction = async (action: CredentialAction) => {
-    if (credentialEditingRef.current || settingsBusyRef.current || importDraftExpired || parameterizationApplyingRef.current || sharedValuesApplyingRef.current || reviewBusy) return
+    if (credentialEditingRef.current || settingsBusyRef.current || importDraftExpired || parameterizationApplyingRef.current || sharedValuesApplyingRef.current || transportApplyingRef.current || reviewBusy) return
     if (!hasUnresolvedSecretBindings) {
       if (action === 'save') onSave?.()
       if (action === 'edit') onEdit?.()
@@ -1014,7 +1035,7 @@ export default function ScriptImportReview({
             <button
               className="btn btn-secondary"
               onClick={() => { void runAction('edit') }}
-              disabled={credentialEditing || settingsBusy || importDraftExpired || parameterizationApplying || sharedValuesApplying || reviewBusy || !credentialsValid || credentialHandlerUnavailable || credentialAction !== null}
+              disabled={credentialEditing || settingsBusy || importDraftExpired || parameterizationApplying || sharedValuesApplying || transportApplying || reviewBusy || !credentialsValid || credentialHandlerUnavailable || credentialAction !== null}
               title={importDraftExpired
                 ? 'Re-run the import to obtain a fresh credential-preserving draft before editing.'
                 : !credentialsValid
@@ -1030,7 +1051,7 @@ export default function ScriptImportReview({
             <button
               className={compactReview ? "btn btn-secondary" : "btn btn-primary"}
               onClick={() => { void runAction('save') }}
-              disabled={credentialEditing || settingsBusy || importDraftExpired || saving || saveDisabled || parameterizationApplying || sharedValuesApplying || reviewBusy || !credentialsValid || credentialHandlerUnavailable || credentialAction !== null}
+              disabled={credentialEditing || settingsBusy || importDraftExpired || saving || saveDisabled || parameterizationApplying || sharedValuesApplying || transportApplying || reviewBusy || !credentialsValid || credentialHandlerUnavailable || credentialAction !== null}
               aria-describedby={visibleSaveDisabledReason ? saveDisabledReasonId : undefined}
               title={importDraftExpired
                 ? 'Re-run the import to obtain a fresh credential-preserving draft before saving.'
@@ -1080,8 +1101,9 @@ export default function ScriptImportReview({
       {!tabbed && onSettingsApplied && <div hidden={!showDataReview}><ImportParameterInventory script={script} /></div>}
       {showOriginalDiagnostics && actionableReviewIssues.length > 0 && <div hidden={tabbed && activeReviewTab !== 'review'}><ImportIssueWorkspace normalizedEvidence={Boolean(normalizedDiagnostics)} issues={actionableReviewIssues} onNavigate={(tab, issue) => { if (tab === 'source' && issue) focusIssueSource(issue); setActiveReviewTab(tab) }} onSourceSelect={focusIssueSource} /></div>}
       <div hidden={tabbed && activeReviewTab !== 'review'}>{children}</div>
-      {tabbed && <div hidden={activeReviewTab !== 'runtime'}>{runtimeContent}{onSettingsApplied && <ImportRuntimeSettingsTable script={script} />}{!runtimeContent && !onSettingsApplied && <p className="import-review-empty">No editable runtime settings were supplied by this importer. Review effective settings in the saved script before debugging.</p>}</div>}
+      {tabbed && <div hidden={activeReviewTab !== 'runtime'}>{onTransportApplied && <ImportTransportPanel script={script} diagnostics={transportDiagnostics ?? diagnostics} disabled={credentialEditing || settingsBusy || importDraftExpired || saving || parameterizationApplying || sharedValuesApplying || reviewBusy || credentialAction !== null} onApplyingChange={handleTransportApplyingChange} onApplied={onTransportApplied} />}{runtimeContent}{onSettingsApplied && <ImportRuntimeSettingsTable script={script} />}{!runtimeContent && !onSettingsApplied && !onTransportApplied && <p className="import-review-empty">No editable runtime settings were supplied by this importer. Review effective settings in the saved script before debugging.</p>}</div>}
       {!tabbed && runtimeContent}
+      {!tabbed && onTransportApplied && <ImportTransportPanel script={script} diagnostics={transportDiagnostics ?? diagnostics} disabled={credentialEditing || settingsBusy || importDraftExpired || saving || parameterizationApplying || sharedValuesApplying || reviewBusy || credentialAction !== null} onApplyingChange={handleTransportApplyingChange} onApplied={onTransportApplied} />}
 
       <ImportCredentialPlacement target={credentialTarget} visible={showCredentials}>
       {tabbed && !hasUnresolvedSecretBindings && <p className="import-review-empty">No unresolved credential bindings were reported for this draft. Runtime credentials are verified when debugging starts.</p>}
@@ -1104,7 +1126,7 @@ export default function ScriptImportReview({
           onErrorChange={onSecretBindingsErrorChange}
           onPreparedChange={setPreparedSecrets}
           onProjectSecretsConfigured={handleProjectSecretsConfigured}
-          disabled={settingsBusy || importDraftExpired || saving || parameterizationApplying || sharedValuesApplying || reviewBusy}
+          disabled={settingsBusy || importDraftExpired || saving || parameterizationApplying || sharedValuesApplying || transportApplying || reviewBusy}
         />
       )}
 
@@ -1167,5 +1189,5 @@ export default function ScriptImportReview({
     </div>
   )
   const reviewContent = tabbed ? <>{batchControls}<ImportReviewTabs active={activeReviewTab} onChange={setActiveReviewTab} counts={{ review: groupedReviewIssueCount, credentials: secretBindingRequirements.length }}>{content}</ImportReviewTabs></> : content
-  return <ImportSourceIssueFocusContext.Provider value={sourceIssueFocus}><ImportSettingsProvider script={script} disabled={credentialEditing || settingsDisabled || saving || reviewBusy || importDraftExpired || parameterizationApplying || sharedValuesApplying || credentialAction !== null} onApplied={onSettingsApplied} onBusyChange={handleSettingsBusyChange}>{reviewContent}</ImportSettingsProvider></ImportSourceIssueFocusContext.Provider>
+  return <ImportSourceIssueFocusContext.Provider value={sourceIssueFocus}><ImportSettingsProvider script={script} disabled={credentialEditing || settingsDisabled || saving || reviewBusy || importDraftExpired || parameterizationApplying || sharedValuesApplying || transportApplying || credentialAction !== null} onApplied={onSettingsApplied} onBusyChange={handleSettingsBusyChange}>{reviewContent}</ImportSettingsProvider></ImportSourceIssueFocusContext.Provider>
 }

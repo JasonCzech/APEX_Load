@@ -1365,6 +1365,8 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
             reviewSections={result.review_sections}
             parameterization={result.parameterization}
             onParameterizationApplied={handleParameterizationApplied}
+            onTransportApplied={savedResult ? undefined : (updated, importDraftExpiresAt) => handleParameterizationApplied(updated, [], [], importDraftExpiresAt)}
+            transportDiagnostics={result.diagnostics}
             onSettingsBusyChange={setSettingsEditing}
             onSettingsApplied={updated => handleParameterizationApplied(updated.script, [], [], updated.import_draft_expires_at, updated.secret_binding_requirements || [])}
             settingsDisabled={Boolean(savedResult)}

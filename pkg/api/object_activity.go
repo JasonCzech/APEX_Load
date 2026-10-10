@@ -151,7 +151,7 @@ func (s *Server) recordObjectActivity(r *http.Request, action, status, kind, id,
 		return
 	}
 	// These operations change protected import drafts, rather than stored scripts.
-	if action == "script.import.parameterize.apply" || action == "script.import.settings" {
+	if action == "script.import.parameterize.apply" || action == "script.import.settings" || action == "script.import.transport.apply" {
 		return
 	}
 	parentSection := ""

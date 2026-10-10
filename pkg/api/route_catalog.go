@@ -330,6 +330,7 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/browser-recorder/attest", editorImportAccess(resolveBridgedBrowserImportProjectID, webAPIImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/settings", editorProjectAccess(resolveParameterizeApplyProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/parameterize/apply", editorProjectAccess(resolveParameterizeApplyProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/import/transport/apply", editorProjectAccess(resolveParameterizeApplyProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/shared-values/apply", editorProjectAccess(resolveSharedValuesApplyProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/{id}/parameterize/suggest", editorProjectAccess(resolveScriptProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/asyncapi/commit", editorProjectAccessWithBodyLimit(resolveAsyncAPICommitProjectID, webAPIImportCommitMaxBodyBytes)),

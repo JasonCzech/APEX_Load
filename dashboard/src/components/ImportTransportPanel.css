@@ -1,0 +1,129 @@
+.import-transport-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+
+.import-transport-panel h4,
+.import-transport-panel h5,
+.import-transport-panel p {
+  margin: 0;
+}
+
+.import-transport-panel > p {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.import-transport-status:empty {
+  display: none;
+}
+
+.import-transport-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.import-transport-table th,
+.import-transport-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.import-transport-table thead th {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.import-transport-table tbody th code {
+  overflow-wrap: break-word;
+}
+
+.import-transport-table select {
+  max-width: 100%;
+}
+
+.import-transport-table td small {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-secondary);
+}
+
+.import-transport-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.import-transport-preview ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+.import-transport-preview code {
+  overflow-wrap: break-word;
+}
+
+.import-transport-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Narrow layouts stack each origin row as a labeled card. */
+@media (max-width: 720px) {
+  .import-transport-table thead {
+    display: none;
+  }
+
+  .import-transport-table,
+  .import-transport-table tbody {
+    display: block;
+  }
+
+  .import-transport-table th > *,
+  .import-transport-table td > * {
+    min-width: 0;
+  }
+
+  /* Card labels give origins a narrow column; let them break anywhere. */
+  .import-transport-table tbody th code {
+    overflow-wrap: anywhere;
+  }
+
+  .import-transport-table tr {
+    display: block;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .import-transport-table th,
+  .import-transport-table td {
+    display: grid;
+    grid-template-columns: minmax(96px, 35%) minmax(0, 1fr);
+    gap: 8px;
+    border-bottom: none;
+    padding: 3px 0;
+  }
+
+  .import-transport-table select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .import-transport-table th::before,
+  .import-transport-table td::before {
+    content: attr(data-label);
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+}
