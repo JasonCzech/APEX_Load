@@ -930,7 +930,7 @@ func buildRunArchiveReportProfiles() []RunArchiveReportProfile {
 	return []RunArchiveReportProfile{
 		{
 			ID:            "executive",
-			Label:         "Executive Summary",
+			Label:         "Executive",
 			Description:   "Decision-focused summary with analyst commentary, supporting graphs, SLA verdict, error rate, throughput, release trend, and run context.",
 			Audience:      "Business stakeholders, release owners, and sign-off authorities.",
 			BestFor:       "Ship/no-ship decisions, business risk, SLA posture, and executive sign-off.",
@@ -947,7 +947,7 @@ func buildRunArchiveReportProfiles() []RunArchiveReportProfile {
 		},
 		{
 			ID:               "engineer",
-			Label:            "Detailed Technical",
+			Label:            "Engineer",
 			Description:      "Engineering drilldown with analyst commentary, supporting graphs, timelines, action stats, browser diagnostics, resource peaks, and error patterns.",
 			Audience:         "Performance engineers, SREs, developers, and test analysts.",
 			BestFor:          "Bottleneck isolation, regression diagnosis, resource saturation, and remediation planning.",

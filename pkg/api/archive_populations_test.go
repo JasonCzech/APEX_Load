@@ -112,7 +112,7 @@ func TestArchivePopulationReconciliationSurvivesReportRendering(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, required := range []string{"Not assessed", "Requests / actions", "Named transactions", "Not provided", "Checkout release", `Execution <span class="mono">Finished</span>`} {
+	for _, required := range []string{"Not assessed", "Requests / actions", "Named transactions", "No analyst assessment has been recorded.", "Checkout release", `Execution <span class="mono">Finished</span>`} {
 		if !strings.Contains(string(html), required) {
 			t.Errorf("missing %s", required)
 		}

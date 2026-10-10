@@ -1069,12 +1069,15 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     : !scheduleDraft.cron_expr.trim() ? 'Enter a schedule frequency or cron expression.'
       : currentSchedulePreview?.error || ''
 
+  // A role that cannot create runs or schedules is not asked for estimates,
+  // readiness or schedule previews the controller refuses; the page says why.
+  const canManageTests = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_tests'), [effectiveAuthAccessResources])
   // Live "next runs" preview: re-fetch (debounced) from the backend so the
   // shown fire times use the exact production cron evaluator (tz/DST/windows/
   // pause/Quartz specifiers) and cannot diverge from what the scheduler will do.
   useEffect(() => {
     const cron = scheduleDraft.cron_expr.trim()
-    if (!scenarioId || !cron || typeof api.previewScenarioSchedule !== 'function') {
+    if (!scenarioId || !cron || !canManageTests || typeof api.previewScenarioSchedule !== 'function') {
       setSchedulePreview(null)
       return
     }
@@ -1098,7 +1101,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       })
     }, 400)
     return () => { cancelled = true; window.clearTimeout(handle) }
-  }, [api, schedulePreviewKey, scenarioId, scheduleDraft.cron_expr, scheduleDraft.timezone, scheduleDraft.blackout_windows, scheduleDraft.maintenance_windows, scheduleDraft.availability_windows, scheduleDraft.disabled_from, scheduleDraft.disabled_until])
+  }, [api, canManageTests, schedulePreviewKey, scenarioId, scheduleDraft.cron_expr, scheduleDraft.timezone, scheduleDraft.blackout_windows, scheduleDraft.maintenance_windows, scheduleDraft.availability_windows, scheduleDraft.disabled_from, scheduleDraft.disabled_until])
 
   const release = useMemo(() => releases.find(item => item.id === releaseId), [releases, releaseId])
   const effectiveRunDuration = useMemo(() => getEffectiveRunDuration(scenario, runDefaultOverrides), [scenario, runDefaultOverrides])
@@ -1312,6 +1315,12 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     const launchBlocked = Boolean(immediatePreflight?.blocking_conflicts?.length)
     const capacityValue = !scenario
       ? 'Select a scenario'
+      : !effectiveAccessLoaded
+        ? 'Checking your access…'
+      : effectiveAccessError
+        ? 'Not checked: permissions could not be verified'
+      : !canManageTests
+        ? 'Not checked: your role cannot start runs in this project'
       : immediatePreflightLoading || estimateLoading
         ? 'Refreshing estimate…'
         : capacityAdvisory
@@ -1319,7 +1328,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
           : estimateUnavailable
             ? 'Estimate unavailable. Use Refresh host inventory to retry.'
             : 'Pending estimate'
-    const bottleneckValue = !scenario
+    const bottleneckValue = !scenario || !canManageTests
       ? 'Not available'
       : immediatePreflightLoading || estimateLoading
         ? 'Refreshing…'
@@ -1345,7 +1354,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       { label: 'Conflicts', value: launchConflict ? launchConflict.message : 'None', tone: launchConflict ? 'warning' : 'normal' },
       { label: 'Next Blocking Event', value: formatNextBlockingEvent(immediatePreflight), tone: launchBlocked ? 'warning' : 'normal' },
     ]
-  }, [estimateCheckedAt, preflightCheckedAt, draftEstimate?.capacity_advisory, effectiveRunDuration, effectiveScenarioGroups.length, estimateFailed, estimateLoading, groupRunOverrides, immediatePreflight, immediatePreflightError, immediatePreflightLoading, protocols, release?.name, runName, runOverridesCount, scenario, totalVUsers])
+  }, [canManageTests, effectiveAccessError, effectiveAccessLoaded, estimateCheckedAt, preflightCheckedAt, draftEstimate?.capacity_advisory, effectiveRunDuration, effectiveScenarioGroups.length, estimateFailed, estimateLoading, groupRunOverrides, immediatePreflight, immediatePreflightError, immediatePreflightLoading, protocols, release?.name, runName, runOverridesCount, scenario, totalVUsers])
   const readiness = useMemo(() => {
     const checks = [
       { label: activeApplication ? `Application: ${activeApplication.name}` : 'Select an application', ready: !!activeApplication },
@@ -1355,7 +1364,6 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     ]
     return checks
   }, [activeApplication, release, scenario])
-  const canManageTests = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_tests'), [effectiveAuthAccessResources])
   const canManageSchedules = canManageTests && !scenario?.archived_at
   const canManageProjects = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_projects'), [effectiveAuthAccessResources])
   const timeslotValidationError = selectedTimeslotId && !bindableTimeslots.some(slot => slot.id === selectedTimeslotId) ? 'The saved capacity reservation is unavailable. Refresh capacity or explicitly choose another reservation before launching.' : ''
@@ -1440,7 +1448,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   }, [editingScheduleId, releaseId, replaceScheduleDraft, scenario, scheduleDefaults])
 
   useEffect(() => {
-    if (!runCreatePayload) {
+    if (!runCreatePayload || !canManageTests) {
       setDraftEstimate(null)
       return
     }
@@ -1458,10 +1466,10 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       }
     }, 400)
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [api, runCreatePayload, inventoryRefresh])
+  }, [api, canManageTests, runCreatePayload, inventoryRefresh])
 
   useEffect(() => {
-    if (!runCreatePayload) {
+    if (!runCreatePayload || !canManageTests) {
       setImmediatePreflightError('')
       setImmediatePreflight(null)
       setImmediatePreflightLoading(false)
@@ -1485,10 +1493,10 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       }
     }, 400)
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [api, runCreatePayload, inventoryRefresh])
+  }, [api, canManageTests, runCreatePayload, inventoryRefresh])
 
   useEffect(() => {
-    if (!runCreatePayload || !scheduledStartISO) {
+    if (!runCreatePayload || !scheduledStartISO || !canManageTests) {
       setScheduledPreflight(null)
       setScheduledPreflightLoading(false)
       return
@@ -1506,7 +1514,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       }
     }, 400)
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [api, runCreatePayload, scheduledStartISO])
+  }, [api, canManageTests, runCreatePayload, scheduledStartISO])
 
   const step1Complete = Boolean(scenario && scenario.scripts.length > 0)
   const step2Complete = Boolean(activeApplication && release && runName.trim())
@@ -2755,7 +2763,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
 
       <div className="new-test-draft-toolbar">
         <span>Run Setup and Schedules keep your edits when switching tabs.</span>
-        <button type="button" className="btn btn-secondary" onClick={() => saveDraftRef.current()} disabled={!scenario}>Save draft</button>
+        <button type="button" className="btn btn-secondary" onClick={() => saveDraftRef.current()} disabled={!scenario || !canManageTests} title={canManageTests ? undefined : 'Your role cannot create runs in this project.'}>Save draft</button>
         {savedDraft && <button type="button" className="btn btn-secondary" disabled={!scenarioCatalogReady} aria-describedby={!scenarioCatalogReady ? 'new-test-restore-help' : undefined} onClick={() => runGuarded(() => {
           if (!scenarios.some(item => item.id === savedDraft.scenarioId && (item.updated_at || '') === savedDraft.scenarioUpdatedAt)) {
             setError('The saved scenario has changed or is no longer available. Select it again and review its current settings.')
@@ -3249,7 +3257,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                         type="search"
                         value={scenarioQuery}
                         onChange={(event) => setScenarioQuery(event.target.value)}
-                        placeholder="Find by scenario, script, protocol, release, or data pool..."
+                        placeholder="Find by scenario, script, protocol, release, or data pool…"
                       />
                     </label>
                     <label className="library-filter"><span>Sort scenarios</span><select aria-label="Sort scenarios" value={scenarioSortField} onChange={event => setScenarioSortField(event.target.value as ScenarioSortField)}>

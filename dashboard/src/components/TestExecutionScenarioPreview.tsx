@@ -12,6 +12,7 @@ import type { ScenarioSnapshotSource } from './useExecutionScenarioPreviewModel'
 import { formatTimeCompact } from '../utils/timeUtils'
 import { formatScriptHTTPVersion } from './httpVersionModel'
 import { formatPacingTiming } from './runtimeTiming'
+import { formatDateTime } from '../utils/dateTime'
 
 interface Props {
   test: TestSummary
@@ -294,7 +295,7 @@ export default function TestExecutionScenarioPreview({
               {test.pending_reason || 'Waiting for an available project slot.'}
             </p>
             {test.pending_since && (
-              <p className="scenario-alert-message secondary">Waiting since {new Date(test.pending_since).toLocaleString()}.</p>
+              <p className="scenario-alert-message secondary">Waiting since {formatDateTime(test.pending_since, { seconds: true })}.</p>
             )}
           </div>
         </div>

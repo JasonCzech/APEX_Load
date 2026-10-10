@@ -1762,6 +1762,8 @@ export interface RunArchiveReport {
   manifest: RunArchiveManifest
   overview: RunArchiveOverview
   verdict?: RunArchiveVerdict
+  /** F-01… findings derived from the archive: what the exports list when no analyst findings were saved. */
+  generated_findings?: ReportFinding[]
   sla_rows?: Record<string, RunArchiveSLARow>
 	transaction_response_time_sla_results?: TransactionResponseTimeSLAResult[]
   sla_rollup?: RunArchiveSLARollup

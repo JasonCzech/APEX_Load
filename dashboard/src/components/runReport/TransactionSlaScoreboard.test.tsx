@@ -35,9 +35,10 @@ describe('TransactionSlaScoreboard', () => {
       root.render(<TransactionSlaScoreboard rows={[{ ...rows[0], min_ms: 120, p50_ms: 310, p90_ms: 640, p99_ms: 980, max_ms: 1450 }, rows[1]]} />)
     })
     const headers = Array.from(container.querySelectorAll('.run-report-table thead th')).map(th => th.textContent?.replace(/[↑↓]/g, '').trim())
-    expect(headers).toEqual(['Transaction', 'Volume', 'Min', 'P50', 'P90', 'P95', 'P99', 'Max', 'SLA', 'Errors', 'Result'])
+    // Units sit in the headers, as in the Action summary beside it; cells are numbers.
+    expect(headers).toEqual(['Transaction', 'Count', 'Min (ms)', 'P50 (ms)', 'P90 (ms)', 'P95 (ms)', 'P99 (ms)', 'Max (ms)', 'SLA (ms)', 'Error rate', 'Result'])
     const checkout = Array.from(container.querySelectorAll('.run-report-table tbody tr')).find(row => row.textContent?.startsWith('Checkout'))!
-    expect(Array.from(checkout.querySelectorAll('td')).slice(2, 8).map(cell => cell.textContent)).toEqual(['120 ms', '310 ms', '640 ms', '750 ms', '980 ms', '1,450 ms'])
+    expect(Array.from(checkout.querySelectorAll('td')).slice(2, 8).map(cell => cell.textContent)).toEqual(['120', '310', '640', '750', '980', '1,450'])
     const search = Array.from(container.querySelectorAll('.run-report-table tbody tr')).find(row => row.textContent?.startsWith('Search'))!
     expect(search.querySelectorAll('td')[3].textContent).toBe('—')
   })

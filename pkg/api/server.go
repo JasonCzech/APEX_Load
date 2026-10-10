@@ -1596,9 +1596,11 @@ func serveDashboardBuildMissing(w http.ResponseWriter) {
 	w.Write([]byte("<!DOCTYPE html><html><body><h1>APEX Load</h1><p>Dashboard not built. Run: cd dashboard && npm run build</p></body></html>"))
 }
 
+// setDashboardStaticHeaders lets the dashboard write to the clipboard. Only
+// Permissions-Policy is sent: browsers that read it warn on every page when
+// the legacy Feature-Policy names the same feature.
 func setDashboardStaticHeaders(w http.ResponseWriter) {
 	w.Header().Set("Permissions-Policy", "clipboard-write=(self)")
-	w.Header().Set("Feature-Policy", "clipboard-write 'self'")
 }
 
 // enforceAuthPosture fails closed when the server is configured for production

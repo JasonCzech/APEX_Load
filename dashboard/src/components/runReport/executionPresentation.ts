@@ -1,4 +1,5 @@
-import { formatTimeLong } from '../../utils/timeUtils'
+import { formatDateTime } from '../../utils/dateTime'
+import { formatDurationDisplay, formatTimeLong } from '../../utils/timeUtils'
 import type { MetricsHistoryPoint, RunArchiveReport, TestRunManifest, TestSummary } from '../../types'
 
 export function recordedTime(value?: string): number | undefined {
@@ -9,7 +10,7 @@ export function recordedTime(value?: string): number | undefined {
 
 export function executionDate(value?: string): string {
   const time = recordedTime(value)
-  return time === undefined ? 'Not recorded' : new Date(time).toLocaleString()
+  return time === undefined ? 'Not recorded' : formatDateTime(time, { seconds: true })
 }
 
 export function recordedNumber(value?: number): string {
@@ -39,12 +40,12 @@ export function executionFacts(test: TestSummary, report?: RunArchiveReport | nu
   return {
     immutable,
     lifecycleElapsed: formatElapsedSeconds(lifecycleElapsedSeconds(test)),
-    duration: immutable ? config?.duration : test.duration,
+    duration: formatDurationDisplay(immutable ? config?.duration : test.duration) || undefined,
     vusers: immutable ? config?.total_vusers : test.total_vusers,
     groups: (immutable ? config?.groups : test.groups) ?? [],
     started,
     ended,
-    elapsed: elapsed === undefined ? 'Not recorded' : `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`,
+    elapsed: formatElapsedSeconds(elapsed),
     peak: recordedNumber(report?.overview?.peak_active_vusers),
     reason: report?.manifest?.error || test.error,
   }

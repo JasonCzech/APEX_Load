@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { request } from '../hooks/apiClient'
 import { settingsHref } from './settingsNavigation'
+import { formatDateTime } from '../utils/dateTime'
 
 export default function ConnectionDiagnostics({ provider, revision, saved }: { provider: string; revision?: string; saved: boolean }) {
   const [result, setResult] = useState<{ revision?: string; message: string } | null>(null)
@@ -9,7 +10,7 @@ export default function ConnectionDiagnostics({ provider, revision, saved }: { p
     setBusy(true)
     try {
       const response = await request<{ message: string; checked_at: string }>('/system/settings/connections/test', { method: 'POST', body: JSON.stringify({ provider, expected_revision: revision }) })
-      setResult({ revision, message: `${response.message} Checked ${new Date(response.checked_at).toLocaleString()}` })
+      setResult({ revision, message: `${response.message} Checked ${formatDateTime(response.checked_at, { seconds: true })}` })
     } catch (error) { setResult({ revision, message: `${error instanceof Error ? error.message : 'Connection test failed'}. Check the saved URL, controller credential environment, TLS and provider read permissions.` }) }
     finally { setBusy(false) }
   }

@@ -43,12 +43,12 @@ func TestControllerFailoverReportSectionRendersAllFormats(t *testing.T) {
 		{PriorGeneration: 1, Generation: 2, AdoptedAt: adopted, GapSeconds: 36.4, AdoptedGenerators: 2},
 		{PriorGeneration: 2, Generation: 3, AdoptedAt: adopted.Add(time.Minute), GapSeconds: 31, AdoptedGenerators: 1, CompletedGenerators: 1},
 	}})
-	for _, want := range []string{"Controller Failover", "survived 2 HA controller failover", "1 → 2", "2 → 3", "complete"} {
+	for _, want := range []string{"Controller failover", "survived 2 HA controller failover", "1 → 2", "2 → 3", "complete"} {
 		if !strings.Contains(html, want) {
 			t.Errorf("HTML missing %q:\n%s", want, html)
 		}
 	}
-	for _, want := range []string{"Recorded 2 controller failover(s)", "Unobserved controller time: 67.4 s", "generation 1 -> 2", "1 finished during the gap"} {
+	for _, want := range []string{"Recorded 2 controller failovers", "Unobserved controller time: 67.4 s", "generation 1 -> 2", "1 finished during the gap"} {
 		if !strings.Contains(pdf, want) {
 			t.Errorf("PDF missing %q:\n%s", want, pdf)
 		}

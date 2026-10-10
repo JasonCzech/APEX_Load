@@ -8,6 +8,7 @@ import { getErrorMessage } from '../utils/errorUtils'
 import { TestNote } from '../types'
 import MarkdownRenderer from './MarkdownRenderer'
 import './TestNotesDialog.css'
+import { formatDateTime } from '../utils/dateTime'
 
 const NOTE_BODY_MAX_LENGTH = 64000
 
@@ -226,8 +227,8 @@ export default function TestNotesDialog({ testId, testName, onClose, initialDraf
                   onClick={() => selectNote(note)}
                 >
                   <strong>{noteTitle(note)}</strong>
-                  <span>Created {formatDateTime(note.created_at)}</span>
-                  <span>Updated {formatDateTime(note.updated_at)}</span>
+                  <span>Created {formatNoteTime(note.created_at)}</span>
+                  <span>Updated {formatNoteTime(note.updated_at)}</span>
                 </button>
               ))}
             </div>
@@ -297,8 +298,8 @@ export default function TestNotesDialog({ testId, testName, onClose, initialDraf
 function NoteMeta({ note }: { note: TestNote }) {
   return (
     <div className="test-notes-meta">
-      <span>Created {formatDateTime(note.created_at)}{note.created_by ? ` by ${note.created_by}` : ''}</span>
-      <span>Updated {formatDateTime(note.updated_at)}{note.updated_by ? ` by ${note.updated_by}` : ''}</span>
+      <span>Created {formatNoteTime(note.created_at)}{note.created_by ? ` by ${note.created_by}` : ''}</span>
+      <span>Updated {formatNoteTime(note.updated_at)}{note.updated_by ? ` by ${note.updated_by}` : ''}</span>
     </div>
   )
 }
@@ -329,9 +330,9 @@ function noteDeleteTarget(note: TestNote) {
   return label.length > 40 ? `${label.slice(0, 37)}...` : label
 }
 
-function formatDateTime(value?: string) {
+function formatNoteTime(value?: string) {
   if (!value) return 'Not recorded'
   const date = new Date(value)
   if (!Number.isFinite(date.getTime())) return 'Not recorded'
-  return date.toLocaleString()
+  return formatDateTime(date, { seconds: true })
 }

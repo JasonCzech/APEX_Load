@@ -22,6 +22,7 @@ import { isReportLens, type ReportLens } from '../appRouting'
 import { useApi } from '../hooks/useApi'
 import type { ReportAnnotations, RunArchiveErrorPattern, RunArchiveReport, TestSummary } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
+import { formatFixed } from '../utils/numberFormat'
 import { isCompletedTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
 import { useExecutionArchiveModel } from './useExecutionArchiveModel'
 import { useExecutionArchiveResourceHistory } from './useExecutionArchiveResourceHistory'
@@ -143,7 +144,8 @@ export default function RunReportPage({
   const completed = isCompletedTestStatus(resolvedStatus)
   const archivedTest = useMemo(() => archiveReadyTest(test, resolvedStatus), [resolvedStatus, test])
   const manifestModel = useExecutionTestManifest(archivedTest)
-  const archiveModel = useExecutionArchiveModel(archivedTest, false, compareId, populationChoice)
+  // The report's release trend feeds Release readiness (and the exports read it too), so it is requested here.
+  const archiveModel = useExecutionArchiveModel(archivedTest, true, compareId, populationChoice)
   const { archiveSummaryHistory, archiveSummaryError, archiveSummariesLoading } = useExecutionArchiveSummaryHistory(archivedTest)
   const { archiveResourceHistory, archiveResourceError, archiveResourcesLoading } = useExecutionArchiveResourceHistory(archivedTest)
   const rootCause = useRootCauseAnalysis(testId, initialRootCause?.analysis, Boolean(archivedTest?.archive))
@@ -671,7 +673,7 @@ export default function RunReportPage({
           return <option key={key} value={key} disabled={records === 0 && key !== population}>{label}{records !== undefined ? ` (${records.toLocaleString()} records)` : ''}</option>
         })}</select></label>
         {report?.metric_populations?.[population]?.transactions === 0 && <p role="status"><strong>No records in this population.</strong> Choose another population to see results.</p>}
-        {report && <p>{populationLabels[population]} · {report.metric_populations?.[population]?.transactions ?? 'Unknown'} samples · Whole captured run. {(report?.metric_populations?.transaction?.transactions || 0) > 0 ? 'Interval graphs show named transaction metrics.' : 'Legacy interval graphs have no identified named transaction population; their values are separate from these KPIs.'} Resource curves show the load generators.</p>}
+        {report && <p>{populationLabels[population]} · {report.metric_populations?.[population]?.transactions?.toLocaleString() ?? 'Unknown'} samples · Whole captured run. {(report?.metric_populations?.transaction?.transactions || 0) > 0 ? 'Interval graphs show named transaction metrics.' : 'Legacy interval graphs have no identified named transaction population; their values are separate from these KPIs.'} Resource curves show the load generators.</p>}
       </section>}
       {showCompare && hasArchive && <RunReportCompareBar compareId={effectiveCompareId} suggestedCompareId={suggestedCompareId} baselineName={baselineTest?.name} options={baselineOptions} optionsLoading={baselineOptionsLoading}
         deltas={baselineDiff} loading={baselineLoading} error={baselineError || baselineOptionsError || (effectiveCompareId && report && baselineReport && (!reportPopulationOverview(report, population) || !reportPopulationOverview(baselineReport, population)) ? 'No comparable samples for the selected population.' : '')}
@@ -689,7 +691,7 @@ export default function RunReportPage({
       <MessagingDiagnostics series={Object.entries(report?.by_action || {}).map(([name, stats]) => ({ name, messaging: stats.messaging }))} />
       <RunAnnotations key={`annotations-${testId}`} testId={testId} startedAt={test.started_at} canEdit={canPublishConfluence} onAnnotationsChange={setTimelineAnnotations} reloadKey={annotationReload} />
       <TabList className="run-report-areas" role="tablist" aria-label="Result sections">{areas.map((name,index) => <button key={name} type="button" role="tab" id={`result-tab-${name}`} aria-controls={area === name ? `result-panel-${name}` : undefined} aria-selected={area === name} tabIndex={area === name ? 0 : -1}
-        onClick={() => setArea(name)} onKeyDown={e => { const next = e.key === 'ArrowRight' ? (index+1)%areas.length : e.key === 'ArrowLeft' ? (index+areas.length-1)%areas.length : e.key === 'Home' ? 0 : e.key === 'End' ? areas.length-1 : -1; if(next >= 0){e.preventDefault();setArea(areas[next]);document.getElementById(`result-tab-${areas[next]}`)?.focus()} }}>{name === 'Comparison' ? 'Baseline Comparison' : name}</button>)}</TabList>
+        onClick={() => setArea(name)} onKeyDown={e => { const next = e.key === 'ArrowRight' ? (index+1)%areas.length : e.key === 'ArrowLeft' ? (index+areas.length-1)%areas.length : e.key === 'Home' ? 0 : e.key === 'End' ? areas.length-1 : -1; if(next >= 0){e.preventDefault();setArea(areas[next]);document.getElementById(`result-tab-${areas[next]}`)?.focus()} }}>{name === 'Comparison' ? 'Baseline comparison' : name}</button>)}</TabList>
       <section role="tabpanel" id={`result-panel-${area}`} aria-labelledby={`result-tab-${area}`} className="run-report-area-content">
         {archiveModel.archiveLoading && <p role="status">Loading archived results…</p>}
         {archiveModel.archiveError && <section className="run-report-panel" aria-label="Report unavailable">
@@ -699,15 +701,16 @@ export default function RunReportPage({
           <button type="button" className="btn btn-secondary" onClick={archiveModel.retryArchiveReport} disabled={archiveModel.archiveLoading}>Retry report</button>
           <button type="button" className="btn btn-ghost" onClick={() => setArea('Execution')}>View execution details</button>
         </section>}
-        {hasArchive && <div hidden={area !== 'Comparison'}>{(area === 'Comparison' || initialComparisonId) && <BaselineComparisonWorkspace key={`${test.id}/${initialCompare || ''}`} test={test} initialBaseline={initialCompare} comparisonId={initialComparisonId} canEditPolicy={canPublishConfluence} onSnapshot={id => onNavigateReport({ section: 'comparison', comparisonId: id, lens: activeLens })} onAnalyzeRootCause={analyzeAgainstBaseline} />}</div>}
+        {hasArchive && <div hidden={area !== 'Comparison'}>{(area === 'Comparison' || initialComparisonId) && <BaselineComparisonWorkspace key={`${test.id}/${initialCompare || ''}`} test={test} initialBaseline={initialCompare} comparisonId={initialComparisonId} canEditPolicy={canPublishConfluence} lens={activeLens} onSnapshot={id => onNavigateReport({ section: 'comparison', comparisonId: id, lens: activeLens })} onAnalyzeRootCause={analyzeAgainstBaseline} />}</div>}
         {area === 'Summary' && hasArchive && !archiveModel.archiveError && <>
           {report && <RunOutcomeSummary report={report} showPopulations={false} rootCauseSummary={liveRootCause} onRootCause={openRootCause} />}
           <ReleaseReadinessSummary report={report} findings={annotations?.findings} />
           {/* KPI values wait for the report: "—" would read as a measured gap. */}
           {report && <RunReportKpiScorecard kpis={kpis} />}
-          <section className="run-report-panel"><h2>Findings and next steps</h2>
-            {report?.error_patterns?.length ? <><p>{report.error_patterns.length} error patterns were captured across all populations.</p><button className="btn btn-secondary" onClick={() => setArea('Diagnostics')}>Investigate errors</button></> : <p>{report ? 'No recurring error patterns were captured across all populations.' : 'Findings will appear when the report loads.'}</p>}
-            {report?.completeness && report.completeness.score_pct < 100 && <p>Evidence coverage is {report.completeness.score_pct}%. <button className="btn btn-ghost" onClick={() => setArea('Evidence')}>Review evidence gaps</button></p>}
+          <section className="run-report-panel run-report-next-steps"><h2>Findings and next steps</h2>
+            {/* Each finding is a line with its one action, styled alike. */}
+            {report?.error_patterns?.length ? <p>{report.error_patterns.length === 1 ? 'One error pattern was' : `${report.error_patterns.length.toLocaleString()} error patterns were`} captured across all populations. <button type="button" className="btn btn-secondary btn-sm" onClick={() => setArea('Diagnostics')}>Investigate errors</button></p> : <p>{report ? 'No recurring error patterns were captured across all populations.' : 'Findings will appear when the report loads.'}</p>}
+            {report?.completeness && report.completeness.score_pct < 100 && <p>Evidence coverage is {formatFixed(report.completeness.score_pct, 0)}%. <button type="button" className="btn btn-secondary btn-sm" onClick={() => setArea('Evidence')}>Review evidence gaps</button></p>}
           </section>
           {annotationsError && <p className="run-report-error" role="alert">{annotationsError}</p>}
           <details><summary>Analyst assessment (shared by every report audience)</summary><RunReportVerdictBanner report={report} annotations={annotations} status={verdictDraft.status} explanation={verdictDraft.explanation} saving={savingAnnotations || annotationsLoading} disabled={!annotations} onStatusChange={updateVerdictStatus} onExplanationChange={updateVerdictExplanation} onSaveOverride={saveOverride} /></details>
@@ -720,7 +723,7 @@ export default function RunReportPage({
           {(report?.transaction_response_time_sla_results?.length ?? 0) > 0 ? (
             <TransactionResponseTimeSLATable
               rows={report?.transaction_response_time_sla_results ?? []}
-              title="Transaction SLA Scoreboard"
+              title="Transaction SLA scoreboard"
               selectedGroup={population === 'transaction' ? archiveModel.selectedArchiveGroup : ''}
               selectedTransaction={population === 'transaction' ? archiveModel.selectedArchiveAction : ''}
               drilldownTransactions={population === 'transaction' ? archiveModel.archiveTransactions : []}

@@ -51,9 +51,9 @@ export default function TelemetryStageDistributions({ stages, startedAt }: { sta
           <tr>
             <th scope="col">Stage</th>
             <th scope="col">Samples</th>
-            <th scope="col">p50</th>
-            <th scope="col">p95</th>
-            <th scope="col">p99</th>
+            <th scope="col">P50</th>
+            <th scope="col">P95</th>
+            <th scope="col">P99</th>
             <th scope="col">Max</th>
             <th scope="col">Notes</th>
           </tr>
@@ -69,7 +69,7 @@ export default function TelemetryStageDistributions({ stages, startedAt }: { sta
             return (
               <tr key={stage.stage} data-stage={stage.stage}>
                 <td><strong>{STAGE_LABELS[stage.stage] || stage.stage}</strong></td>
-                <td>{stage.samples}</td>
+                <td>{stage.samples.toLocaleString()}</td>
                 <td>{measured ? formatStageMs(stage.p50_ms) : '—'}</td>
                 <td>{measured ? formatStageMs(stage.p95_ms) : '—'}</td>
                 <td>{measured ? formatStageMs(stage.p99_ms) : '—'}</td>

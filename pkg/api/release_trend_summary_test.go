@@ -117,9 +117,9 @@ func TestRenderExecutiveHTMLReportRendersReleaseTrend(t *testing.T) {
 	// html/template renders a leading "+" as the &#43; entity (a browser shows "+"),
 	// so assert on the unescaped tail of each delta rather than the literal sign.
 	for _, want := range []string{
-		"Release Trend",
+		"Release trend",
 		"run-early",            // baseline run name (fixture names match the id)
-		"2.0 pp",               // error rate delta (rendered &#43;2.0 pp)
+		"2.0 pts",              // error rate delta (rendered &#43;2.0 pts)
 		"error rate regressed", // regression flag
 		"Prior run",            // table header
 	} {
@@ -127,7 +127,7 @@ func TestRenderExecutiveHTMLReportRendersReleaseTrend(t *testing.T) {
 			t.Fatalf("executive HTML missing %q:\n%s", want, body)
 		}
 	}
-	if !strings.Contains(body, "&#43;2.0 pp") {
+	if !strings.Contains(body, "&#43;2.0 pts") {
 		t.Fatalf("executive HTML should render the signed error-rate delta, got:\n%s", body)
 	}
 }
@@ -145,8 +145,8 @@ func TestRenderExecutiveHTMLReportReleaseTrendNoBaseline(t *testing.T) {
 		t.Fatalf("render executive html: %v", err)
 	}
 	body := string(html)
-	if !strings.Contains(body, "Release Trend") {
-		t.Fatalf("expected Release Trend heading, got:\n%s", body)
+	if !strings.Contains(body, "Release trend") {
+		t.Fatalf("expected Release trend heading, got:\n%s", body)
 	}
 	if !strings.Contains(body, "First archived run for this release") {
 		t.Fatalf("expected no-baseline note, got:\n%s", body)
@@ -165,8 +165,8 @@ func TestRenderExecutiveHTMLReportReleaseTrendUnavailable(t *testing.T) {
 		t.Fatalf("render executive html: %v", err)
 	}
 	body := string(html)
-	if !strings.Contains(body, "Release Trend") {
-		t.Fatalf("executive report should still render the Release Trend heading, got:\n%s", body)
+	if !strings.Contains(body, "Release trend") {
+		t.Fatalf("executive report should still render the Release trend heading, got:\n%s", body)
 	}
 	if !strings.Contains(body, "not associated with a release") {
 		t.Fatalf("expected the unavailable note, got:\n%s", body)
@@ -181,7 +181,7 @@ func TestEngineerHTMLReportOmitsReleaseTrend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("render engineer html: %v", err)
 	}
-	if strings.Contains(string(html), "Release Trend") {
+	if strings.Contains(string(html), "Release trend") {
 		t.Fatalf("engineer profile should omit the executive-only Release Trend section")
 	}
 }
@@ -196,7 +196,7 @@ func TestWriteExecutiveReleaseTrendPDFAndCSV(t *testing.T) {
 	}
 	pdfBody := pdf.String()
 	// The PDF content stream escapes "(" and ")", so assert on paren-free fragments.
-	for _, want := range []string{"Release Trend", "run-early", "Regressions vs prior run"} {
+	for _, want := range []string{"Release trend", "run-early", "Regressions vs prior run"} {
 		if !strings.Contains(pdfBody, want) {
 			t.Fatalf("executive pdf missing %q", want)
 		}

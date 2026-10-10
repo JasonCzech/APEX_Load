@@ -137,8 +137,8 @@ The **Dashboard** is your landing page and live overview. Use it to:
 - Find completed runs by name or reference and filter by period, execution,
   evidence availability, or acceptance. At narrow widths, expand **Run details**
   for configured load, duration, and archive record counts.
-- Use **Load Comparison** for selected series at matching load levels and
-  **Release Trend Analysis** for named transaction attempts. The page explains
+- Use **Load comparison** for selected series at matching load levels and
+  **Release trend analysis** for named transaction attempts. The page explains
   missing samples and baseline requirements; one run cannot establish a trend.
 - Jump straight into a run's **Command Center** or open a finished run's report.
 
@@ -760,20 +760,45 @@ For baseline comparisons, hold target environment, release context, script versi
 
 The run's validity verdict does that check: `suspect` when a load generator stayed saturated at a steady load, `invalid` when results were lost (an OOM-killed generator, dropped results, shed arrivals), and `unknown` when generator statistics are missing. A closed-model run whose throughput falls while latency rises stays valid; that is the system under test, reported as an anomaly. See [run validity](ANALYSIS_WORKFLOWS.md#run-validity) for the rules.
 
-### Report Profiles
+### Report audiences
 
-A report is assembled from a registry of sections, selected by profile:
+A report is assembled from a registry of sections, selected by audience. The
+run report's **Report audience** control (Executive, Engineer, Audit) chooses
+the audience for the page and for every export from it, including a baseline
+comparison's exports; the page opens on Executive. API and `apexctl` requests
+that name no profile get the Engineer report (`profile=engineer`).
 
-| Profile | Contains | Export formats |
+| Audience | Contains | Export formats |
 | --- | --- | --- |
-| **Executive Summary** | Verdict, overview, graphs, dashboard panels, SLA rollup, release trend, risk summary, generated root cause (leading hypothesis), run context, recommendations, sign-off | HTML, JSON, CSV, analysis ZIP, PDF, DOCX |
-| **Detailed Technical** (default) | Generated root-cause analysis, findings, raw exports, generator manifest, completeness, schema compatibility, errors, resources, actions, browser evidence, SOAP, network phases and more | HTML, JSON, CSV, analysis ZIP, PDF, DOCX, JSONL, Parquet |
-| **Audit** | Official outcome, audit identity, authorization, governance, provenance, evidence tiers, completeness, change attribution, artifact integrity, report authorship | HTML, JSON, CSV, analysis ZIP, PDF, DOCX |
+| **Executive** | Acceptance assessment, executive summary, performance analysis, imported dashboard panels, SLA scorecard, release trend, top risks, generated root cause (leading hypothesis), run context and confidence, recommendations, sign-off | HTML, JSON, CSV, analysis ZIP, PDF, DOCX |
+| **Engineer** (API default) | Generated root-cause analysis, findings, data sources and glossary, generator assignment manifest, evidence coverage, schema compatibility, errors, resources, actions, browser evidence, SOAP, network phases and more | HTML, JSON, CSV, analysis ZIP, PDF, DOCX, JSONL, Parquet |
+| **Audit** | Acceptance assessment, run identity, authorization and sign-off, governance and provenance, evidence tiers, evidence coverage, change attribution, artifact integrity, report authorship | HTML, JSON, CSV, analysis ZIP, PDF, DOCX |
+
+Section names are the same in every format and audience. A section that does
+not apply to the run (browser evidence for a run without browser VUsers, say)
+is left out of the HTML, PDF and Word documents and named under **Not
+captured for this run** in the contents; the CSV keeps every section.
+
+The Export panel offers **Navigable HTML**, **Print-ready PDF**, **Editable
+Word**, **Data CSV** and **Analysis tables (ZIP)**.
 
 PDF is offered only for profiles that declare it; a PDF request against a profile
 without it is refused rather than silently downgraded.
 
-The generated root cause (**Root-Cause Analysis**) and the **Findings** are
+### Release readiness and root cause on the report
+
+A run without acceptance criteria has no pass/fail verdict, so the report's
+Summary shows **Release readiness** instead: how the run compares with the
+previous run in its release (the release trend), its top risks (your saved
+findings, or the ones derived from the run), and its evidence coverage.
+
+Where the project presents root cause, the Summary's root-cause line names the
+leading hypothesis with its confidence; **Investigate root cause** opens it in
+Diagnostics, and **Review changes** opens the run's **Largest changes** when no
+cause is supported. In a baseline comparison, **Analyze root cause against
+this baseline** re-analyzes the run against the one selected baseline.
+
+The generated root cause (**Root-cause analysis**) and the **Findings** are
 separate sections. Findings are yours: the ones you curate in the report
 composer, or the ones derived from the run when you curate none. The
 root-cause section is generated: a project that presents root-cause v2 shows
@@ -782,9 +807,10 @@ evidence that would contradict or disprove each, and its limitations;
 otherwise it shows the v1 summary. Every format renders it from the same
 model, and the analysis ZIP adds `root_cause_hypotheses.csv`.
 
-The Executive Summary and Detailed Technical HTML, PDF, and Word exports include
-the archived throughput, p95 latency, error-rate, active-VUser, and action-latency
-charts when those data are available. The printable files also include a compact
+The Executive and Engineer HTML, PDF, and Word exports include the archived
+throughput, P95 latency, error-rate, active-VUser, and action-latency charts
+when those data are available; the action-latency chart draws the 20 busiest
+actions and says so when a run has more. The printable files also include a compact
 interval table. Audit exports omit performance charts by profile design.
 
 `JSONL` and `Parquet` are not rendered report documents — they are the run's raw
@@ -792,7 +818,7 @@ archive datasets (transactions, resource samples, interval summaries), downloade
 artifact for analysis in your own tooling.
 
 The **Analysis tables** ZIP contains row-based CSV files with stable `run_id` fields
-and a data guide. Executive and Technical profiles include run summary,
+and a data guide. Executive and Engineer reports include run summary,
 transaction SLA, findings, and evidence-gap tables; Audit includes run summary,
 artifact integrity, and evidence-gap tables. The existing four-column CSV
 (`section,key,metric,value`) remains available for integrations using that contract.

@@ -742,7 +742,7 @@ export default function ScriptCreateOptions({
                   aria-label="Search existing scripts"
                   value={existingScriptQuery}
                   onChange={event => setExistingScriptQuery(event.target.value)}
-                  placeholder="Find by script, protocol, release, health, or version..."
+                  placeholder="Find by script, protocol, release, health, or version…"
                 />
               </label>
               <label>

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { request } from '../hooks/apiClient'
+import { formatDateTime } from '../utils/dateTime'
 
 export default function NotificationDiagnostics({ format, index, revision, saved, eventType = 'test_complete' }: { format: string; index: number; revision?: string; saved: boolean; eventType?: string }) {
   const [preview, setPreview] = useState<{ key: string; payload: unknown } | null>(null)
@@ -23,6 +24,6 @@ export default function NotificationDiagnostics({ format, index, revision, saved
     <p>Testing sends an explicitly marked sample to the enabled, saved route. Save or discard changes first. History covers this controller’s latest 50 completed attempts and clears on restart.</p>
     {message && <p role="status">{message}</p>}
     {preview?.key === previewKey && <details open><summary>Sample payload</summary><pre>{JSON.stringify(preview?.payload, null, 2)}</pre></details>}
-    {deliveries && <ul>{deliveries.length ? deliveries.map((row, position) => <li key={position}>{row.name || 'Unnamed route'}: {row.status} · {new Date(row.finished_at).toLocaleString()}</li>) : <li>No completed deliveries on this controller.</li>}</ul>}
+    {deliveries && <ul>{deliveries.length ? deliveries.map((row, position) => <li key={position}>{row.name || 'Unnamed route'}: {row.status} · {formatDateTime(row.finished_at, { seconds: true })}</li>) : <li>No completed deliveries on this controller.</li>}</ul>}
   </div>
 }

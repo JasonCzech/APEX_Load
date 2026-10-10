@@ -10,6 +10,10 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
+// protocolReportNoSamples is the line a run without protocol diagnostics gets;
+// its section is then left out of the report.
+const protocolReportNoSamples = "No typed messaging, gRPC or WebSocket diagnostic samples were captured."
+
 func protocolReportLines(report *RunArchiveReport) []string {
 	lines := []string{"Client-observed measurements; unavailable phases are not inferred. Histogram percentiles are approximate. Findings are advisory."}
 	if progress := report.MessagingProgress; progress != nil {
@@ -131,7 +135,7 @@ func protocolReportLines(report *RunArchiveReport) []string {
 		}
 	}
 	if len(lines) == 1 {
-		lines = append(lines, "No typed messaging, gRPC or WebSocket diagnostic samples were captured.")
+		lines = append(lines, protocolReportNoSamples)
 	}
 	if len(lines) > 200 {
 		lines = append(lines[:200], "Additional protocol diagnostics remain available in the structured report.")
@@ -143,7 +147,7 @@ func protocolDiagnosticReportSection() reportSectionRenderer {
 	return reportSectionRenderer{ID: "protocol_diagnostics", Label: "Protocol Diagnostics",
 		HTML: func(d *runArchiveHTMLReportData) (template.HTML, error) {
 			var b strings.Builder
-			b.WriteString("<h2>Protocol Diagnostics</h2><ul>")
+			b.WriteString("<h2>" + template.HTMLEscapeString(reportSectionTitle("protocol_diagnostics")) + "</h2><ul>")
 			for _, line := range protocolReportLines(d.Report) {
 				b.WriteString("<li>" + template.HTMLEscapeString(line) + "</li>")
 			}
@@ -151,7 +155,7 @@ func protocolDiagnosticReportSection() reportSectionRenderer {
 			return template.HTML(b.String()), nil
 		},
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Protocol Diagnostics")
+			pdfHeading(lines, reportSectionTitle("protocol_diagnostics"))
 			*lines = append(*lines, protocolReportLines(d.Report)...)
 			*lines = append(*lines, "")
 		},

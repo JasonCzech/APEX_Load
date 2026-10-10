@@ -8,7 +8,7 @@ import type { RootCauseRouteState } from '../../appRouting'
 import type { RunArchiveReport } from '../../types'
 import type { ExemplarPage, RcaAnalysisResponse } from '../../types/rca'
 import RootCausePanel from './RootCausePanel'
-import { normalizeRcaAssessment } from './rcaModel'
+import { formatRcaClock, formatRcaTime, normalizeRcaAssessment } from './rcaModel'
 import { rcaTestResponse, rcaTestSummary } from './rcaTestFixture'
 import type { RcaHypothesisActions } from './RootCausePanel'
 import type { RootCauseAnalysisModel } from './useRootCauseAnalysis'
@@ -71,7 +71,8 @@ describe('RootCausePanel', () => {
   it('presents the ranked hypotheses with what would disprove each', async () => {
     await render(model(rcaTestResponse()))
     const text = container.textContent || ''
-    expect(text).toContain('Supported hypotheses')
+    // The outcome counts the hypotheses and says how confident the leading one is.
+    expect(text).toContain('2 supported hypotheses · #1 has medium confidence')
     expect(text).toContain('Validity unknown')
     expect(text).toContain('no load generator statistics were archived')
     const cards = container.querySelectorAll('.rca-hypothesis')
@@ -99,16 +100,16 @@ describe('RootCausePanel', () => {
       expect.objectContaining({ signal: expect.anything() }))
     const investigation = container.querySelector('.rca-investigation')!
     const text = investigation.textContent || ''
-    expect(text).toContain('Symptom: Checkout · p95 latency rose +300 ms from 2026-10-05 12:03:20 UTC ± 10 s')
+    expect(text).toContain(`Symptom: Checkout · p95 latency rose +300 ms from ${formatRcaTime('2026-10-05T12:03:20Z')} ± 10 s`)
     expect(text).toContain('Cause: builtin:service.cpu.time · Dynatrace rose +60 pts')
     // Without archived phase events, the load steps are inferred from the
     // detection levels: the first is before the window, the second inside.
-    expect(text).toContain('Load step to 20 VUsers at 2026-10-05 12:02:00 UTC')
+    expect(text).toContain(`Load step to 20 VUsers at ${formatRcaTime('2026-10-05T12:02:00Z')}`)
     expect(text).not.toContain('Load step to 10 VUsers')
     expect(text).toContain('the load steps are inferred from its steady load levels')
     expect(mocks.api.downloadTestArchiveArtifact).not.toHaveBeenCalled()
     expect(text).toContain('Components: cart-service')
-    expect(text).toContain('Suspect run from 2026-10-05 12:04:30 UTC to 2026-10-05 12:04:40 UTC')
+    expect(text).toContain(`Suspect run from ${formatRcaTime('2026-10-05T12:04:30Z')} to ${formatRcaTime('2026-10-05T12:04:40Z')}`)
     const traces = Array.from(investigation.querySelectorAll('a.rca-trace-link')).map(a => a.getAttribute('href'))
     expect(traces).toEqual(['https://dt.example/trace/trace-in-1', 'https://dt.example/trace/trace-in-2'])
     expect(investigation.querySelector('a.rca-trace-link')!.getAttribute('rel')).toBe('noopener noreferrer')
@@ -136,7 +137,7 @@ describe('RootCausePanel', () => {
     expect(container.querySelector('.rca-investigation')!.textContent).not.toContain('Load step')
     await act(async () => release(new Blob(['{"kind":"level_change","level":20,"target":"checkout","at":"2026-10-05T12:02:05Z"}\n'])))
     const text = container.querySelector('.rca-investigation')!.textContent || ''
-    expect(text).toContain('checkout stepped to 20 VUsers at 2026-10-05 12:02:05 UTC')
+    expect(text).toContain(`checkout stepped to 20 VUsers at ${formatRcaTime('2026-10-05T12:02:05Z')}`)
     expect(text).not.toContain('Load step to 20 VUsers')
     expect(text).not.toContain('inferred')
     expect(text).toContain('later ones are missing')
@@ -225,8 +226,8 @@ describe('RootCausePanel', () => {
     const overview = container.querySelector('[aria-label="Largest changes"]')!
     expect(overview.getAttribute('data-report-focus')).toBe('rca-changes')
     expect(overview.textContent).toContain('Change: Checkout · p95 latency rose +300 ms')
-    expect(overview.textContent).toContain('Suspect run from 2026-10-05 12:04:30 UTC')
-    await act(async () => Array.from(overview.querySelectorAll('button')).find(b => b.textContent === 'Focus Checkout · p95 latency')!.click())
+    expect(overview.textContent).toContain(`Suspect run from ${formatRcaTime('2026-10-05T12:04:30Z')}`)
+    await act(async () => Array.from(overview.querySelectorAll('button')).find(b => b.textContent === `Focus Checkout · p95 latency at ${formatRcaClock('2026-10-05T12:03:20Z')}`)!.click())
     expect(onRouteChange).toHaveBeenLastCalledWith({ analysis: 'rca-1', rev: '2', hypothesis: undefined, window: '2026-10-05T12:03:10.000Z~2026-10-05T12:06:00.000Z' })
     // A run whose hypotheses none support still shows what moved.
     await render(model(rcaTestResponse({ assessment: { ...rcaTestResponse().assessment!, outcome: 'no_supported_hypothesis', hypotheses: [] } })))
@@ -266,10 +267,10 @@ describe('RootCausePanel', () => {
       root.render(<RootCausePanel testId="run-1" model={model(rcaTestResponse({ presented: false }))} report={report} history={[]} canAnalyze route={{}} onRouteChange={onRouteChange} settingsHref="#/settings?setting=analysis" />)
     })
     const link = container.querySelector('[role="note"] a')!
-    expect(link.textContent).toBe('Settings › Project › Analysis')
+    expect(link.textContent).toBe('Settings › Workspaces › Project analysis')
     expect(link.getAttribute('href')).toBe('#/settings?setting=analysis')
     await render(model(rcaTestResponse({ presented: false })))
-    expect(container.textContent).toContain('A project administrator turns it on in Settings › Project › Analysis.')
+    expect(container.textContent).toContain('A project administrator turns it on in Settings › Workspaces › Project analysis.')
   })
 
   it('names the monitor sources behind a coverage gap with links to their evidence', async () => {
@@ -303,7 +304,7 @@ describe('RootCausePanel', () => {
     expect(first.querySelector('[role="alert"]')!.textContent).toBe('This hypothesis has no onset to place on the timeline.')
     await act(async () => action('Add test note').click())
     expect(actions.addNote).toHaveBeenCalled()
-    expect(button('Copy link')).toBeDefined()
+    expect(button('Copy analysis link')).toBeDefined()
     // Viewers get none of them.
     await render(model(rcaTestResponse()))
     expect(container.querySelector('.rca-hypothesis-actions')).toBeNull()

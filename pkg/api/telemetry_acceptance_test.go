@@ -344,13 +344,13 @@ func TestTelemetryAcceptanceReportLabelsAdvisoryCriteria(t *testing.T) {
 	report := &RunArchiveReport{Manifest: manifest, TelemetryAcceptance: telemetryAcceptanceForManifest(manifest)}
 	data := &runArchiveHTMLReportData{Report: report}
 	section := reportSectionRegistry["telemetry_acceptance"]
-	const label = "fail (advisory, never decides)"
+	const label = "Fail (advisory, never decides)"
 	if html, err := section.HTML(data); err != nil || !strings.Contains(string(html), label) {
 		t.Fatalf("HTML = %s %v", html, err)
 	}
 	var lines []string
 	section.PDF(data, &lines)
-	if joined := strings.Join(lines, "\n"); !strings.Contains(joined, "stage_lag:browser_render/p95: "+label) {
+	if joined := strings.Join(lines, "\n"); !strings.Contains(joined, "Browser render lag, P95 (maximum): "+label) {
 		t.Fatalf("PDF lines = %s", joined)
 	}
 	var buffer bytes.Buffer
@@ -361,7 +361,7 @@ func TestTelemetryAcceptanceReportLabelsAdvisoryCriteria(t *testing.T) {
 		t.Fatal(err)
 	}
 	writer.Flush()
-	if text := buffer.String(); !strings.Contains(text, `telemetry_acceptance_criterion,stage_lag:browser_render/p95,outcome,"`+label+`"`) {
+	if text := buffer.String(); !strings.Contains(text, `telemetry_acceptance_criterion,stage_lag:browser_render/p95,outcome,"fail (advisory, never decides)"`) {
 		t.Fatalf("CSV = %s", text)
 	}
 }
@@ -392,7 +392,7 @@ func TestTelemetryAcceptanceReportCoverageSourcesAndLostObserver(t *testing.T) {
 	if !strings.Contains(view.Coverage, "a controller adopted the run and observed it only from then") {
 		t.Fatalf("coverage = %s", view.Coverage)
 	}
-	if len(view.Sources) != 1 || view.Sources[0].Observed != "40000 ms observed; required for 100000 ms, unknown 60000 ms" {
+	if len(view.Sources) != 1 || view.Sources[0].Observed != "40,000 ms observed; required for 100,000 ms, unknown 60,000 ms" {
 		t.Fatalf("sources = %+v", view.Sources)
 	}
 	// Coverage recorded before source requirements lists each source's
@@ -405,7 +405,7 @@ func TestTelemetryAcceptanceReportCoverageSourcesAndLostObserver(t *testing.T) {
 	for _, source := range buildTelemetryAcceptanceReportView(manifest, nil).Sources {
 		lines[source.Source] = source.Observed
 	}
-	if lines["generator-old"] != "30000 of 100000 ms" || lines["generator-silent"] != "0 of 100000 ms" {
+	if lines["generator-old"] != "30,000 of 100,000 ms" || lines["generator-silent"] != "0 of 100,000 ms" {
 		t.Fatalf("legacy sources = %v", lines)
 	}
 	manifest.TelemetryCoverage.Coverage.ObserverLost = telemetryCoverageLedgerLost
@@ -428,14 +428,14 @@ func TestTelemetryAcceptanceReportSectionRendersEveryFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Telemetry verdict FAIL under Gate revision 3", "min_wall_time_coverage", "≥ 4", "lower_bound", "clock_unqualified 2", "5 generator clock observations", "generator-a", "shedded_arrivals"} {
+	for _, want := range []string{"Telemetry verdict FAIL under Gate revision 3", "Wall-time coverage (minimum)", "≥ 4", "Lower bound", "clock not qualified 2", "5 generator clock observations", "generator-a", "Shed arrivals", "70,000 of 100,000"} {
 		if !strings.Contains(string(html), want) {
 			t.Fatalf("HTML lacks %q: %s", want, html)
 		}
 	}
 	var lines []string
 	section.PDF(data, &lines)
-	if joined := strings.Join(lines, "\n"); !strings.Contains(joined, "min_wall_time_coverage: fail") || !strings.Contains(joined, "Loss dropped_results: ≥ 4 (lower_bound)") {
+	if joined := strings.Join(lines, "\n"); !strings.Contains(joined, "Wall-time coverage (minimum): Fail") || !strings.Contains(joined, "Loss Dropped results: ≥ 4 (Lower bound)") {
 		t.Fatalf("PDF lines = %s", joined)
 	}
 	var buffer bytes.Buffer

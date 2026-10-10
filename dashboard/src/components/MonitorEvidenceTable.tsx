@@ -1,5 +1,6 @@
 import { safeMonitorEvidenceLink } from './monitorArchiveModel'
 import type { MonitorEvidence } from '../types/runMonitoring'
+import { formatDateTime } from '../utils/dateTime'
 
 export default function MonitorEvidenceTable({ evidence, provider = 'AppDynamics' }: { evidence: MonitorEvidence[]; provider?: 'AppDynamics' | 'Dynatrace' | 'Monitoring' }) {
   if (!evidence.length) return <p>No retained matching {provider} evidence.</p>
@@ -8,7 +9,7 @@ export default function MonitorEvidenceTable({ evidence, provider = 'AppDynamics
     const requestGuid = record.properties?.requestguid || record.properties?.request_guid
     const correlation = record.properties?.correlation || record.correlation_strength || record.correlation || 'unmatched'
     return <tr key={`${record.source_id || ''}:${record.id || index}:${record.timestamp_utc}`}>
-      <td>{record.timestamp_utc || record.timestamp ? new Date(record.timestamp_utc || record.timestamp || '').toLocaleString() : '—'}</td>
+      <td>{record.timestamp_utc || record.timestamp ? formatDateTime(record.timestamp_utc || record.timestamp || '', { seconds: true }) : '—'}</td>
       <td>{record.source_id ? `${record.source_id} · ` : ''}{record.kind || record.type || '—'}</td>
       <td>{[record.severity, record.status].filter(Boolean).join(' · ') || '—'}</td>
       <td>{record.summary || record.title || record.message || '—'}{record.properties?.duration_ms && <span> · {record.properties.duration_ms} ms</span>}{record.properties?.experience && <span> · {record.properties.experience}</span>}{record.properties?.error === 'true' && <span> · error</span>}{record.properties?.evidence_scope === 'sampled_span' && <span> · Sampled span summary</span>}</td>

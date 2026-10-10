@@ -393,9 +393,11 @@
 }
 
 .load-impact-cell span {
-  color: var(--text-muted);
+  /* Muted text fails contrast on the stronger fills; size and weight set the
+     interval count apart instead. */
+  color: inherit;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .load-impact-cell-constant {

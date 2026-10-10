@@ -34,9 +34,21 @@ func TestRunArchiveReportDOCXProfilesUseSharedSectionRegistry(t *testing.T) {
 			if !strings.Contains(text, report.Manifest.TestName) || !strings.Contains(text, profile.Label) {
 				t.Fatalf("DOCX document is missing report identity: %s", text)
 			}
-			// The DOCX is the HTML report converted, so every registry section must
-			// appear as a bookmarked block listed by label in the contents.
-			for _, section := range reportSectionsForProfile(profile) {
+			// The DOCX is the HTML report converted, so every registry section that
+			// applies to the run must appear as a bookmarked block listed by label
+			// in the contents; the rest are named as not captured.
+			data := buildRunArchiveReportRenderData(report, profile, nil, manifest)
+			sections, notCaptured := reportApplicableSections(profile, &data)
+			for _, label := range notCaptured {
+				var escaped bytes.Buffer
+				if err := xml.EscapeText(&escaped, []byte(label)); err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(text, escaped.String()) {
+					t.Fatalf("DOCX profile %q does not name not-captured section %q", profile.ID, label)
+				}
+			}
+			for _, section := range sections {
 				var escaped bytes.Buffer
 				if err := xml.EscapeText(&escaped, []byte(section.Label)); err != nil {
 					t.Fatal(err)

@@ -155,7 +155,7 @@ describe('ReportComposer test notes source panel', () => {
     expect(container.textContent).toContain('Analyst note')
     expect(container.querySelector('.report-note-source-markdown strong')?.textContent).toBe('spike')
 
-    await click(button('Append to Executive Summary'))
+    await click(button('Append to Executive summary'))
     expect((container.querySelector('.report-narrative') as HTMLTextAreaElement).value).toContain('Observed **spike**')
 
     await click(button('Append to Section'))
@@ -232,17 +232,17 @@ describe('ReportComposer test notes source panel', () => {
     await renderComposer('audit')
 
     expect(apiMock.getTestReportAnnotations).toHaveBeenCalledWith('test-1', 'audit')
-    expect(container.textContent).toContain('Audit Evidence')
-    expect(container.textContent).toContain('Audit Summary')
+    expect(container.textContent).toContain('Audit evidence')
+    expect(container.textContent).toContain('Audit summary')
     expect(container.textContent).toContain('Creator User (user:creator)')
     expect(container.textContent).toContain('Stopper User (user:stopper)')
     expect(container.textContent).toContain('approved · user:approver · release gate approved')
-    expect(container.textContent).toContain('Artifact Integrity')
+    expect(container.textContent).toContain('Artifact integrity')
     expect(container.textContent).toContain('transactions.jsonl')
     expect(container.textContent).toContain('sha-transaction')
     expect(container.textContent).not.toContain('Report charts')
-    expect(container.textContent).not.toContain('Action Summary')
-    expect(container.textContent).not.toContain('Network Phase Breakdown')
+    expect(container.textContent).not.toContain('Action summary')
+    expect(container.textContent).not.toContain('Network phase breakdown')
   })
 
   it('renders a passing integrity banner when the archive verifies', async () => {
@@ -335,8 +335,8 @@ describe('ReportComposer test notes source panel', () => {
 
     await renderComposer('engineer')
 
-    expect(container.textContent).toContain('Action Summary')
-    expect(container.textContent).not.toContain('Network Phase Breakdown')
+    expect(container.textContent).toContain('Action summary')
+    expect(container.textContent).not.toContain('Network phase breakdown')
   })
 
   it('previews headline metrics from the same population as the on-screen KPIs', async () => {
@@ -368,7 +368,7 @@ describe('ReportComposer test notes source panel', () => {
     expect(section.textContent).toContain('Would disprove it: CPU stays below saturation while latency rises')
     // The executive report ranks only the leading hypothesis.
     expect(section.textContent).not.toContain('Garbage collection (low confidence)')
-    expect(section.textContent).toContain('1 more ranked in the Detailed Technical report.')
+    expect(section.textContent).toContain('1 more ranked in the Engineer report.')
     expect(section.textContent).not.toContain('F-0n')
   })
 
@@ -400,7 +400,7 @@ describe('ReportComposer test notes source panel', () => {
 
     await renderComposer('executive')
 
-    expect(container.textContent).toContain('Release Trend')
+    expect(container.textContent).toContain('Release trend')
     expect(container.textContent).toContain('Prior Build') // baseline run name
     expect(container.textContent).toContain('+2.0 pp') // signed error-rate delta
     expect(container.textContent).toContain('Regressions vs prior run')
@@ -422,7 +422,7 @@ describe('ReportComposer test notes source panel', () => {
 
     await renderComposer('executive')
 
-    expect(container.textContent).toContain('Release Trend')
+    expect(container.textContent).toContain('Release trend')
     expect(container.textContent).toContain('First archived run for this release')
     // No baseline => no comparison table header.
     expect(container.textContent).not.toContain('Prior run')
@@ -438,7 +438,7 @@ describe('ReportComposer test notes source panel', () => {
 
 		await renderComposer('engineer')
 
-		expect(container.textContent).toContain('Transaction SLA Rules')
+		expect(container.textContent).toContain('Transaction SLA rules')
 		expect(container.textContent).toContain('Checkout')
 		expect(container.textContent).toContain('p95_duration_ms')
 		expect(container.textContent).toContain('912')

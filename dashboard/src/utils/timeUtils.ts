@@ -138,6 +138,17 @@ function parseDurationTokens(input?: string, allowZero = false): ParsedDuration 
   }
 }
 
+/**
+ * A configured duration ("6m0s", "2h30m0s") in the display form
+ * formatTimeLong uses ("6m", "2h 30m"); text that is not a duration is shown
+ * as written.
+ */
+export function formatDurationDisplay(input?: string): string {
+  if (!input) return ''
+  const parsed = parseDurationTokens(input)
+  return parsed.valid ? formatTimeLong(parsed.seconds) : input
+}
+
 export function parseDurationToSeconds(input?: string): number {
   const parsed = parseDurationTokens(input)
   return parsed.valid ? parsed.seconds : 0

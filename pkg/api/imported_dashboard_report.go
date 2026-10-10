@@ -125,7 +125,7 @@ func summarizeDashboardPanel(panel DashboardPanel) RunArchiveDashboardPanel {
 // dashboardPanelsPDF renders the imported dashboard digest into the PDF line buffer,
 // falling back to a graceful note when no dashboards were captured.
 func dashboardPanelsPDF(d *runArchiveHTMLReportData, lines *[]string) {
-	pdfHeading(lines, "Imported Dashboard Panels")
+	pdfHeading(lines, reportSectionTitle("dashboard_panels"))
 	panels := d.Report.DashboardPanels
 	if panels == nil || len(panels.Dashboards) == 0 {
 		*lines = append(*lines, "No imported Grafana dashboards were captured for this run.", "")

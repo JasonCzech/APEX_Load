@@ -604,6 +604,7 @@ type RunArchiveReport struct {
 	Manifest                          *RunArchiveManifest                    `json:"manifest"`
 	Overview                          RunArchiveOverview                     `json:"overview"`
 	Verdict                           *ReportVerdict                         `json:"verdict,omitempty"`
+	GeneratedFindings                 []ReportFinding                        `json:"generated_findings,omitempty"` // the derived F-01… list the exports show without analyst findings
 	SLARows                           map[string]SLAComplianceRow            `json:"sla_rows,omitempty"`
 	TransactionResponseTimeSLAResults []TransactionResponseTimeSLAResult     `json:"transaction_response_time_sla_results,omitempty"`
 	SLARollup                         *RunArchiveSLARollup                   `json:"sla_rollup,omitempty"`

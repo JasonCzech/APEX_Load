@@ -1,6 +1,8 @@
 // Journey accounting for a finalized run (E5): GET
 // /tests/{id}/archive/journeys. Weighted test-journey risk, never revenue.
 
+import { formatPercentValue } from '../../utils/numberFormat'
+
 export interface JourneyBoundary {
   transaction?: string
   action?: string
@@ -91,5 +93,5 @@ export function formatJourneyBoundary(boundary: JourneyBoundary): string {
 }
 
 export function formatJourneyFraction(value?: number): string {
-  return value === undefined || value === null || !Number.isFinite(value) ? '—' : `${(value * 100).toFixed(1)}%`
+  return value === undefined || value === null || !Number.isFinite(value) ? '—' : formatPercentValue(value * 100)
 }

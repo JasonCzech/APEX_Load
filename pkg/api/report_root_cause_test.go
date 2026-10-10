@@ -146,7 +146,7 @@ func TestRootCauseSectionRendersOneModelInEveryFormat(t *testing.T) {
 
 			profile, _ := lookupRunArchiveReportProfile("engineer")
 			pdf := strings.Join(buildRunArchiveReportPDFLines(report, profile, annotations, manifest), "\n")
-			if !strings.Contains(pdf, "Root-Cause Analysis (generated)") || !strings.Contains(pdf, title) {
+			if !strings.Contains(pdf, "Root-cause analysis") || !strings.Contains(pdf, title) {
 				t.Fatalf("pdf lacks the root cause")
 			}
 			for _, want := range tc.extra {
@@ -207,7 +207,7 @@ func TestExecutiveRootCauseShowsTheLeadingHypothesis(t *testing.T) {
 		t.Fatal(err)
 	}
 	section := rcaSectionHTML(t, string(html), "rca")
-	if !strings.Contains(section, "Resource pressure") || strings.Contains(section, "GC pauses stay flat") || !strings.Contains(section, "1 more ranked in the Detailed Technical report") {
+	if !strings.Contains(section, "Resource pressure") || strings.Contains(section, "GC pauses stay flat") || !strings.Contains(section, "1 more ranked in the Engineer report") {
 		t.Fatalf("executive rca section: %s", section)
 	}
 	// A report without an attached view renders v1, so the section is never

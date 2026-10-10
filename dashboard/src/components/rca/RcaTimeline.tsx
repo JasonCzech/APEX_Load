@@ -1,8 +1,9 @@
-import { useMemo } from 'react'
+import { useId, useMemo } from 'react'
 import { CartesianGrid, ComposedChart, Line, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import type { MetricsHistoryPoint } from '../../types'
 import type { RcaValidityWindow } from '../../types/rca'
+import { formatTimeOfDay } from '../../utils/dateTime'
 import { chartTooltipContentStyle, chartTooltipLabelStyle } from '../chartTooltipTheme'
 import {
   formatRcaDuration,
@@ -31,7 +32,14 @@ interface Props {
   loading?: boolean
 }
 
-const clock = (value: number) => new Date(value).toISOString().slice(11, 19)
+const clock = (value: number) => formatTimeOfDay(value)
+
+// The timeline's measures, one panel each on a shared time axis, so neither
+// is read against the other's scale.
+const MEASURES = [
+  { key: 'tps', title: 'Throughput (TPS)', color: 'var(--chart-1)' },
+  { key: 'p95', title: 'P95 latency (ms)', color: 'var(--chart-2)' },
+] as const
 
 // A symptom is the hypothesis's effect, a cause what its chain cites, and a
 // change one of the run's anomalies that no selected hypothesis cites.
@@ -40,9 +48,11 @@ const roleLabel: Record<RcaAnomalyRole, string> = { symptom: 'Symptom', cause: '
 
 // RcaTimeline draws one hypothesis on the run's timeline: its symptom and
 // cause anomaly windows, each onset's uncertainty band, the load phases and
-// the spans the run was not valid, over the run's throughput and p95
-// latency. The list below the chart says the same in text.
+// the spans the run was not valid, over the run's throughput and P95
+// latency, each in its own titled panel. The list below the chart says the
+// same in text.
 export default function RcaTimeline({ history, anomalies, phases, phasesInferred, validity, window, loading }: Props) {
+  const syncId = useId()
   const rows = useMemo(() => rcaTimelineRows(history, window), [history, window])
   const domain = useMemo<[number, number] | null>(() => {
     if (window) return [window.start, window.end]
@@ -59,32 +69,33 @@ export default function RcaTimeline({ history, anomalies, phases, phasesInferred
     <figure className="rca-timeline" aria-label="Hypothesis timeline">
       {loading && <p role="status">Loading the run timeline…</p>}
       {!loading && rows.length === 0 && <p className="run-report-muted">No archived intervals fall in this window; the markers below still apply.</p>}
-      {rows.length > 0 && domain && (
-        <ResponsiveContainer width="100%" height={220}>
-          <ComposedChart data={rows} margin={{ top: 18, right: 16, bottom: 8, left: 4 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-            <XAxis dataKey="t" type="number" scale="time" domain={domain} allowDataOverflow tickFormatter={clock} stroke="var(--text-muted)" fontSize={11} minTickGap={28} />
-            <YAxis yAxisId="tps" stroke="var(--text-muted)" fontSize={11} width={44} domain={[0, 'auto']} />
-            <YAxis yAxisId="ms" orientation="right" stroke="var(--text-muted)" fontSize={11} width={52} domain={[0, 'auto']} />
-            {anomalies.map(({ anomaly, role }) => {
-              const w = rcaAnomalyWindow(anomaly)
-              const onset = Date.parse(anomaly.onset)
-              return [
-                <ReferenceArea key={`${anomaly.id}-window`} yAxisId="tps" x1={onset} x2={w.end} ifOverflow="hidden"
-                  fill={roleColor[role]} fillOpacity={0.14} />,
-                anomaly.onset_uncertainty_ns > 0 && <ReferenceArea key={`${anomaly.id}-band`} yAxisId="tps" x1={w.start} x2={onset + anomaly.onset_uncertainty_ns / 1e6} ifOverflow="hidden"
-                  fill="var(--accent)" fillOpacity={0.12} stroke="var(--accent)" strokeOpacity={0.35} strokeDasharray="2 3" />,
-                <ReferenceLine key={`${anomaly.id}-onset`} yAxisId="tps" x={onset} ifOverflow="hidden" stroke={roleColor[role]} strokeWidth={1.5} />,
-              ]
-            })}
-            {concerns.map(c => <ReferenceArea key={`validity-${c.start}`} yAxisId="tps" x1={c.start} x2={c.end} ifOverflow="hidden" fill="var(--text-muted)" fillOpacity={0.18} stroke="var(--text-muted)" strokeDasharray="1 3" />)}
-            {steps.map((step, i) => <ReferenceLine key={`phase-${i}`} yAxisId="tps" x={step.at} ifOverflow="hidden" stroke="var(--text-muted)" strokeDasharray="5 4" />)}
-            <Line yAxisId="tps" type="monotone" dataKey="tps" name="Throughput (TPS)" stroke="var(--chart-1)" dot={false} isAnimationActive={false} connectNulls />
-            <Line yAxisId="ms" type="monotone" dataKey="p95" name="p95 latency (ms)" stroke="var(--chart-2)" dot={false} isAnimationActive={false} connectNulls />
-            <Tooltip labelFormatter={value => formatRcaTime(Number(value))} contentStyle={chartTooltipContentStyle} labelStyle={chartTooltipLabelStyle} />
-          </ComposedChart>
-        </ResponsiveContainer>
-      )}
+      {rows.length > 0 && domain && MEASURES.map((measure, index) => (
+        <div key={measure.key} className="rca-timeline-panel">
+          <p className="rca-timeline-axis" aria-hidden="true">{measure.title}</p>
+          <ResponsiveContainer width="100%" height={index === MEASURES.length - 1 ? 140 : 118}>
+            <ComposedChart data={rows} syncId={syncId} margin={{ top: 6, right: 16, bottom: 4, left: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis dataKey="t" type="number" scale="time" domain={domain} allowDataOverflow tickFormatter={clock} stroke="var(--text-muted)" fontSize={11} minTickGap={36} hide={index !== MEASURES.length - 1} />
+              <YAxis stroke="var(--text-muted)" fontSize={11} width={52} domain={[0, 'auto']} />
+              {anomalies.map(({ anomaly, role }) => {
+                const w = rcaAnomalyWindow(anomaly)
+                const onset = Date.parse(anomaly.onset)
+                return [
+                  <ReferenceArea key={`${anomaly.id}-window`} x1={onset} x2={w.end} ifOverflow="hidden"
+                    fill={roleColor[role]} fillOpacity={0.14} />,
+                  anomaly.onset_uncertainty_ns > 0 && <ReferenceArea key={`${anomaly.id}-band`} x1={w.start} x2={onset + anomaly.onset_uncertainty_ns / 1e6} ifOverflow="hidden"
+                    fill="var(--accent)" fillOpacity={0.12} stroke="var(--accent)" strokeOpacity={0.35} strokeDasharray="2 3" />,
+                  <ReferenceLine key={`${anomaly.id}-onset`} x={onset} ifOverflow="hidden" stroke={roleColor[role]} strokeWidth={1.5} />,
+                ]
+              })}
+              {concerns.map(c => <ReferenceArea key={`validity-${c.start}`} x1={c.start} x2={c.end} ifOverflow="hidden" fill="var(--text-muted)" fillOpacity={0.18} stroke="var(--text-muted)" strokeDasharray="1 3" />)}
+              {steps.map((step, i) => <ReferenceLine key={`phase-${i}`} x={step.at} ifOverflow="hidden" stroke="var(--text-muted)" strokeDasharray="5 4" />)}
+              <Line type="monotone" dataKey={measure.key} name={measure.title} stroke={measure.color} dot={false} isAnimationActive={false} connectNulls />
+              <Tooltip labelFormatter={value => formatRcaTime(Number(value))} contentStyle={chartTooltipContentStyle} labelStyle={chartTooltipLabelStyle} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      ))}
       <figcaption>
         <ul className="rca-timeline-markers">
           {anomalies.map(({ anomaly, role }) => (

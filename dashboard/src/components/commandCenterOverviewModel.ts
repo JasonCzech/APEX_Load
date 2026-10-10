@@ -2,6 +2,7 @@ import type { TestSummary } from '../types'
 import { isPendingTestStatus, normalizeTestStatus } from '../utils/testStatusUtils'
 import { parseDurationToSeconds } from '../utils/timeUtils'
 import { recordedTime, formatElapsedSeconds } from './runReport/executionPresentation'
+import { formatDateTime } from '../utils/dateTime'
 
 export function commandRunWaiting(run: TestSummary): boolean {
   return isPendingTestStatus(run.status) || normalizeTestStatus(run.status) === 'SHAKEOUT_REVIEW'
@@ -45,7 +46,7 @@ export function commandRunWaitReason(run: TestSummary): string {
   if (run.pending_reason) return `${run.queue_position ? `Queue #${run.queue_position} · ` : ''}${run.pending_reason}`
   if (run.status === 'SCHEDULED') {
     const time = recordedTime(run.scheduled_start_at)
-    return time === undefined ? 'Awaiting scheduled start' : `Scheduled ${new Date(time).toLocaleString()}`
+    return time === undefined ? 'Awaiting scheduled start' : `Scheduled ${formatDateTime(time, { seconds: true })}`
   }
   if (run.status === 'QUEUED') return 'Ready for manual start'
   if (run.status === 'RESERVED') return 'Capacity reserved; awaiting dispatch'

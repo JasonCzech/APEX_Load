@@ -118,7 +118,7 @@ describe('TestExecutionStatusPanels', () => {
     })
     expect(card?.textContent).toContain('Protocol Mix above expectation')
     expect(card?.textContent).toContain('HTTP/2 25% · HTTP/3 75%')
-    expect(card?.textContent).toContain('Fell back to TCP12.0%12 of 100 upgrade-eligible actions')
+    expect(card?.textContent).toContain('Fell back to TCP12.00%12 of 100 upgrade-eligible actions')
     expect(card?.querySelector('[role="note"]')?.textContent).toContain('expected at most 5.0%')
     card = await render({ actions: 5, by_version: { '3': 5 }, http3_policies: 5, quic_attempted: 5, fallback_ratio: ratio(0, 0), quic_failure_ratio: ratio(0, 5) })
     expect(card?.textContent).toContain('Within expectation')

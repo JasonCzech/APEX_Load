@@ -336,17 +336,17 @@ describe('DashboardPage', () => {
     expect(applicationState.setActiveRelease).toHaveBeenCalledWith(expect.objectContaining({ id: 'rel-2', name: 'Sprint 23' }))
     const dashboardTabs = Array.from(container.querySelectorAll<HTMLButtonElement>('.dash-tab'))
     expect(dashboardTabs.map(tab => tab.textContent?.trim())).toEqual([
-      'Recent Runs3',
-      'Active Tests1',
-      'Load Comparison2',
-      'Release Trend Analysis2',
+      'Recent runs3',
+      'Active tests1',
+      'Load comparison2',
+      'Release trend analysis2',
     ])
-    expect(getTabByText('Recent Runs').getAttribute('aria-selected')).toBe('true')
+    expect(getTabByText('Recent runs').getAttribute('aria-selected')).toBe('true')
     expect(container.textContent).toContain('Payments Failure Drill')
 
-    clickButtonByText('Load Comparison')
+    clickButtonByText('Load comparison')
     await flushDashboard()
-    expect(getTabByText('Load Comparison').getAttribute('aria-selected')).toBe('true')
+    expect(getTabByText('Load comparison').getAttribute('aria-selected')).toBe('true')
     const performancePanelText = container.querySelector('.dash-performance-trend')?.textContent || ''
     expect(performancePanelText).toContain('Successful throughput')
     expect(performancePanelText).toContain('Error rate')
@@ -365,9 +365,9 @@ describe('DashboardPage', () => {
     expect(container.textContent).toContain('pixel_8 · Landscape · Touch enabled · Headless')
     expect(container.querySelector('[data-testid="release-trend-panel"]')).toBeNull()
 
-    clickButtonByText('Release Trend Analysis')
+    clickButtonByText('Release trend analysis')
     await flushDashboard()
-    expect(getTabByText('Release Trend Analysis').getAttribute('aria-selected')).toBe('true')
+    expect(getTabByText('Release trend analysis').getAttribute('aria-selected')).toBe('true')
     expect(apiMock.getReleaseTrend).toHaveBeenCalledWith('rel-1')
     expect(container.querySelector('[data-testid="release-trend-panel"]')).toBeTruthy()
     expect(container.textContent).toContain('No archived runs yet for this release.')
@@ -378,10 +378,10 @@ describe('DashboardPage', () => {
     clickButtonByText('Payments Failure Drill failed')
     expect(onSelectTest).toHaveBeenCalledWith('test-failed')
 
-    clickButtonByText('Latest Result')
+    clickButtonByText('Latest result')
     expect(onSelectTest).toHaveBeenCalledWith('test-failed')
 
-    clickButtonByText('Failed Runs')
+    clickButtonByText('Failed runs')
     expect(onNavigate).toHaveBeenCalledWith('results')
 
     clickButtonByText('Current TPS')
@@ -394,7 +394,7 @@ describe('DashboardPage', () => {
     clickButtonByText('Active Now')
     expect(onSelectTest).toHaveBeenCalledWith('test-active')
 
-    clickButtonByText('Release Trend Analysis')
+    clickButtonByText('Release trend analysis')
     clickButtonByText('Export complete release CSV')
     await act(async () => {
       await Promise.resolve()
@@ -403,8 +403,8 @@ describe('DashboardPage', () => {
     expect(downloadBlob).toHaveBeenCalledTimes(1)
     expect(vi.mocked(downloadBlob).mock.calls[0][1]).toBe('sprint-24-rel-1-trend.csv')
 
-    clickButtonByText('Active Tests')
-    expect(getTabByText('Active Tests').getAttribute('aria-selected')).toBe('true')
+    clickButtonByText('Active tests')
+    expect(getTabByText('Active tests').getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('.dash-release-panel.is-collapsed')).toBeTruthy()
     expect(container.textContent).toContain('iphone_se · Portrait · Touch enabled · Headed')
 
@@ -438,7 +438,7 @@ describe('DashboardPage', () => {
 
     expect(apiMock.listTests).toHaveBeenNthCalledWith(1, { application_id: 'app-1', limit: 1000, offset: 0, project_id: 'project-1', summary: true })
     expect(apiMock.listTests).toHaveBeenNthCalledWith(2, { application_id: 'app-1', limit: 1000, offset: 1, project_id: 'project-1', summary: true })
-    expect(getTabByText('Recent Runs').textContent).toContain('2')
+    expect(getTabByText('Recent runs').textContent).toContain('2')
     expect(container.textContent).toContain('Newest Run')
     expect(container.textContent).toContain('Oldest Run')
 
@@ -527,7 +527,7 @@ describe('DashboardPage', () => {
     })
 
     await flushDashboard()
-    clickButtonByText('Release Trend Analysis')
+    clickButtonByText('Release trend analysis')
     clickButtonByText('Export complete release CSV')
     await flushDashboard()
 
@@ -552,7 +552,7 @@ describe('DashboardPage', () => {
     await flushDashboard()
 
     const panelText = releasePanelText()
-    expect(panelText).toContain('Operations Snapshot')
+    expect(panelText).toContain('Operations snapshot')
     expect(panelText).toContain('Operations Activity')
     expect(panelText).toContain('Load generators ready')
     expect(panelText).toContain('2/2')
@@ -893,15 +893,15 @@ describe('DashboardPage', () => {
 
     await flushDashboard()
 
-    expect(getTabByText('Load Comparison').textContent).toContain('2')
-    expect(getTabByText('Active Tests').textContent).toContain('1')
-    expect(getTabByText('Recent Runs').textContent).toContain('3')
-    expect(getTabByText('Release Trend Analysis').textContent).toContain('2')
-    expect(getTabByText('Recent Runs').getAttribute('aria-selected')).toBe('true')
+    expect(getTabByText('Load comparison').textContent).toContain('2')
+    expect(getTabByText('Active tests').textContent).toContain('1')
+    expect(getTabByText('Recent runs').textContent).toContain('3')
+    expect(getTabByText('Release trend analysis').textContent).toContain('2')
+    expect(getTabByText('Recent runs').getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('.dash-release-panel')).toBeTruthy()
 
-    clickButtonByText('Load Comparison')
-    expect(getTabByText('Load Comparison').getAttribute('aria-selected')).toBe('true')
+    clickButtonByText('Load comparison')
+    expect(getTabByText('Load comparison').getAttribute('aria-selected')).toBe('true')
     expect(currentTableRunNames()).toEqual(['Release Smoke', 'Checkout Archive'])
 
     clickSortButton('Run')
@@ -915,8 +915,8 @@ describe('DashboardPage', () => {
     expect(onSelectTest).toHaveBeenCalledWith('test-complete-2')
     onSelectTest.mockClear()
 
-    clickButtonByText('Recent Runs')
-    expect(getTabByText('Recent Runs').getAttribute('aria-selected')).toBe('true')
+    clickButtonByText('Recent runs')
+    expect(getTabByText('Recent runs').getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('.dash-release-panel')).toBeTruthy()
     expect(currentTableRunNames()).toEqual(['Payments Failure Drill', 'Release Smoke', 'Checkout Archive'])
 
@@ -946,7 +946,7 @@ describe('DashboardPage', () => {
 
     await flushDashboard()
 
-    clickButtonByText('Load Comparison')
+    clickButtonByText('Load comparison')
     await flushDashboard()
 
     expect(apiMock.getLoadComparison).toHaveBeenLastCalledWith('app-1', 'transaction', '', { population: 'action', testIds: ['test-complete', 'test-complete-2'] })
@@ -990,7 +990,7 @@ describe('DashboardPage', () => {
     expect(onOpenTestArchive).toHaveBeenCalledWith('test-complete')
     expect(onSelectTest).not.toHaveBeenCalled()
 
-    clickButtonByText('Load Comparison')
+    clickButtonByText('Load comparison')
     await flushDashboard()
 
     const performanceRow = tableRowContaining('Checkout Archive')
@@ -1092,7 +1092,7 @@ describe('DashboardPage', () => {
     })
 
     await flushDashboard()
-    clickButtonByText('Active Tests')
+    clickButtonByText('Active tests')
 
     const card = container.querySelector<HTMLElement>('.dash-active-card')
     expect(card?.textContent).toContain('Checkout Multi')
@@ -1161,14 +1161,14 @@ describe('DashboardPage', () => {
     await flushDashboard()
     await flushDashboard()
 
-    expect(getTabByText('Recent Runs').getAttribute('aria-selected')).toBe('true')
-    expect(getTabByText('Recent Runs').textContent).toContain('12')
+    expect(getTabByText('Recent runs').getAttribute('aria-selected')).toBe('true')
+    expect(getTabByText('Recent runs').textContent).toContain('12')
     expect(currentTableRunNames()).toHaveLength(12)
 
-    clickButtonByText('Load Comparison')
+    clickButtonByText('Load comparison')
     await flushDashboard()
 
-    expect(getTabByText('Load Comparison').textContent).toContain('12')
+    expect(getTabByText('Load comparison').textContent).toContain('12')
     expect(apiMock.getTestArchiveReport).toHaveBeenCalledTimes(12)
     expect(currentTableRunNames()).toHaveLength(12)
     expect(container.textContent).not.toContain('View 7 more archived')
@@ -1367,7 +1367,7 @@ describe('DashboardPage', () => {
     })
 
     await flushDashboard()
-    clickButtonByText('Active Tests')
+    clickButtonByText('Active tests')
 
     const activeTestsEmptyState = Array.from(container.querySelectorAll('.dash-empty.compact'))
       .find(element => element.textContent?.includes('No tests currently running'))
@@ -1531,9 +1531,9 @@ describe('DashboardPage', () => {
     expect(apiMock.getTestArchiveReports.mock.calls.every(call => call[1] === 'project-1')).toBe(true)
     expect(apiMock.getTestArchiveReport).not.toHaveBeenCalled()
 
-    clickButtonByText('Load Comparison')
+    clickButtonByText('Load comparison')
     await flushDashboard()
-    expect(getTabByText('Load Comparison').textContent).toContain('50')
+    expect(getTabByText('Load comparison').textContent).toContain('50')
     expect(container.textContent).toContain('1 archived performance report could not be loaded.')
     expect(currentTableRunNames()).toHaveLength(50)
 
@@ -1563,7 +1563,7 @@ describe('DashboardPage', () => {
     expect(apiMock.getTestArchiveReports).toHaveBeenCalledTimes(4)
     expect(apiMock.getTestArchiveReports.mock.calls[3][0]).toHaveLength(1)
     expect(container.textContent).not.toContain('archived performance report could not be loaded')
-    expect(getTabByText('Load Comparison').textContent).toContain('52')
+    expect(getTabByText('Load comparison').textContent).toContain('52')
     expect(currentTableRunNames()).toHaveLength(52)
   })
 
@@ -1614,13 +1614,13 @@ describe('DashboardPage', () => {
     })
 
     await flushDashboard()
-    clickButtonByText('Active Tests')
+    clickButtonByText('Active tests')
 
-    expect(getTabByText('Active Tests').textContent).toContain('0')
+    expect(getTabByText('Active tests').textContent).toContain('0')
     expect(container.querySelector('.dash-active-card')).toBeNull()
     expect(container.textContent).toContain('No tests currently running')
 
-    clickButtonByText('Recent Runs')
+    clickButtonByText('Recent runs')
     expect(container.textContent).toContain('web test')
     expect(container.textContent).toContain('FAILED')
     expect(container.textContent).toContain('COMPLETE')
@@ -1633,7 +1633,7 @@ describe('DashboardPage', () => {
     expect(container.textContent).toContain('1 active (running or paused)')
     expect(getButtonByText('Current TPS').textContent).toContain('—')
     expect(getButtonByText('Live error rate (active runs)').textContent).toContain('—')
-    await act(async () => { getTabByText('Active Tests').click() })
+    await act(async () => { getTabByText('Active tests').click() })
     expect(container.textContent).toContain('Paused checkout')
   })
 
@@ -1664,11 +1664,11 @@ describe('DashboardPage', () => {
     await flushDashboard()
     expect(container.textContent).toContain('First release')
     expect(container.textContent).not.toContain('Second release')
-    expect(getTabByText('Active Tests').textContent).toContain('0')
+    expect(getTabByText('Active tests').textContent).toContain('0')
     applicationState.activeRelease = { ...applicationState.activeRelease, id: 'rel-2', name: 'Sprint 23' }
     await act(async () => { render() })
     expect(container.textContent).not.toContain('First release')
-    expect(getTabByText('Active Tests').textContent).toContain('1')
+    expect(getTabByText('Active tests').textContent).toContain('1')
     expect(container.querySelector('[aria-label="Release readiness and attention"]')?.textContent).toContain('0 of 0')
   })
 

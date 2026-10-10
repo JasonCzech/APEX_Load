@@ -143,36 +143,36 @@ func TestRenderRunArchiveHTMLReportIncludesBrowserAndSOAPSections(t *testing.T) 
 	body := string(html)
 	checks := []string{
 		"Checkout Flow",
-		"Detailed Technical Report",
+		"Engineer report",
 		"Performance results for <strong>Checkout Flow</strong>",
 		"@media print",
 		"@page",
 		"break-inside: avoid",
-		"Summary Timeline",
-		"Completeness Score",
+		"Summary timeline",
+		"Evidence coverage",
 		"Telemetry was degraded",
-		"Schema Compatibility",
-		"Change Attribution",
+		"Schema compatibility",
+		"Change attribution",
 		"perf-lab",
 		runArchiveReportSchemaVersion,
-		"Error Patterns",
+		"Error patterns",
 		"soap fault: Request validation failed for order 1001",
 		"retained",
-		"2026-05-15T12:30:00Z",
-		"410.5",
-		"Browser Metrics",
-		"Network Phase Breakdown",
-		"Engine Rollup",
-		"Platform Rollup",
+		"May 15, 2026, 12:30:00 PM UTC",
+		">410<", // P95 410.5 ms in a "(ms)" column: whole milliseconds from 100
+		"Browser metrics",
+		"Network phase breakdown",
+		"Engine rollup",
+		"Platform rollup",
 		"iphone-se",
-		"SOAP Diagnostics",
-		"SOAP Operation Summary",
+		"SOAP diagnostics",
+		"SOAP operation summary",
 		"CreateOrder",
-		"SOAP Fault Categories",
+		"SOAP fault categories",
 		"client",
-		"SOAP Fault Timeline",
+		"SOAP fault timeline",
 		"env:Sender (2)",
-		"SOAP Payload Timeline",
+		"SOAP payload timeline",
 		"Latency breached",
 	}
 	for _, check := range checks {
@@ -198,7 +198,7 @@ func TestRenderRunArchiveHTMLReportSupportsProfiles(t *testing.T) {
 		t.Fatalf("renderRunArchiveHTMLReportWithProfile returned error: %v", err)
 	}
 	body := string(html)
-	if !strings.Contains(body, "Executive Summary Report") {
+	if !strings.Contains(body, "Executive report") {
 		t.Fatalf("expected executive profile label in HTML, got %q", string(html))
 	}
 	// The executive profile declares neither the actions nor the
@@ -217,10 +217,10 @@ func TestRenderRunArchiveHTMLReportSupportsProfiles(t *testing.T) {
 	}
 	// Executive declares completeness + change_attribution; they render as the compact
 	// Run Context block, not as engineer-only drilldowns or the network-phase section.
-	if !strings.Contains(body, "Run Context &amp; Confidence") {
+	if !strings.Contains(body, "Run context and confidence") {
 		t.Fatalf("executive profile should render the Run Context block, got %q", body)
 	}
-	if strings.Contains(body, "Network Phase Breakdown") {
+	if strings.Contains(body, "Network phase breakdown") {
 		t.Fatalf("executive profile should omit the engineer-only network-phase section, got %q", body)
 	}
 
@@ -229,10 +229,10 @@ func TestRenderRunArchiveHTMLReportSupportsProfiles(t *testing.T) {
 		t.Fatalf("renderRunArchiveHTMLReportWithProfile audit returned error: %v", err)
 	}
 	auditBody := string(auditHTML)
-	if !strings.Contains(auditBody, "Audit Report") || !strings.Contains(auditBody, "Run Identity") || !strings.Contains(auditBody, "Artifact Integrity") {
+	if !strings.Contains(auditBody, "Audit report") || !strings.Contains(auditBody, "Run identity") || !strings.Contains(auditBody, "Artifact integrity") {
 		t.Fatalf("audit profile should render audit evidence sections, got %q", auditBody)
 	}
-	if strings.Contains(auditBody, "Action Summary") || strings.Contains(auditBody, `data-report-section="actions"`) {
+	if strings.Contains(auditBody, "Action summary") || strings.Contains(auditBody, `data-report-section="actions"`) {
 		t.Fatalf("audit profile should omit technical drilldown, got %q", auditBody)
 	}
 
@@ -278,7 +278,7 @@ func TestRenderRunArchiveHTMLReportIncludesManifestAppendix(t *testing.T) {
 	// An SLA breach yields a Fail verdict; the manifest appendix renders the
 	// assignment, shards, inventory, and scripts pulled from the manifest.
 	for _, want := range []string{
-		"Appendix C — Generator assignment manifest",
+		"Generator assignment manifest",
 		"gen-pod-1",         // shard + inventory target
 		"capacity_weighted", // assignment strategy
 		"oms-order-flows",   // scripts & groups
@@ -305,7 +305,7 @@ func TestRenderRunArchiveHTMLReportHandlesNilManifest(t *testing.T) {
 		t.Fatalf("render with nil manifest returned error: %v", err)
 	}
 	body := string(html)
-	if !strings.Contains(body, "Appendix C — Generator assignment manifest") {
+	if !strings.Contains(body, "Generator assignment manifest") {
 		t.Fatal("expected manifest appendix heading even with nil manifest")
 	}
 	if !strings.Contains(body, "generator assignment manifest was not available") {
@@ -342,7 +342,7 @@ func TestRenderRunArchiveHTMLReportHonorsIncludedSections(t *testing.T) {
 	}
 	body := string(html)
 	for _, want := range []string{
-		"Network Phase Breakdown", "Browser Metrics", "Action Summary",
+		"Network phase breakdown", "Browser metrics", "Action summary",
 		`data-report-section="network_phases"`, `data-report-section="browser"`, `data-report-section="actions"`,
 	} {
 		if !strings.Contains(body, want) {
@@ -359,7 +359,7 @@ func TestRenderRunArchiveHTMLReportHonorsIncludedSections(t *testing.T) {
 	}
 	execBody := string(execHTML)
 	for _, absent := range []string{
-		"Network Phase Breakdown", "Browser Metrics", "Action Summary",
+		"Network phase breakdown", "Browser metrics", "Action summary",
 		`data-report-section="network_phases"`, `data-report-section="browser"`, `data-report-section="actions"`,
 	} {
 		if strings.Contains(execBody, absent) {

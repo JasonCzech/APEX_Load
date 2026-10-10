@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -26,6 +27,11 @@ type reportSectionRenderer struct {
 	// wrapper, which the shell template adds along with the data-report-section
 	// marker). It always emits at least a heading so the section is never blank.
 	HTML func(d *runArchiveHTMLReportData) (template.HTML, error)
+	// Applies, when set, says whether the run produced anything for the
+	// section. A section that does not apply is left out of the HTML, PDF and
+	// Word reports and named once under the contents; the CSV keeps every
+	// section so its rows stay a complete data export.
+	Applies func(d *runArchiveHTMLReportData) bool
 	// PDF appends the section's text lines (always including a heading line).
 	PDF func(d *runArchiveHTMLReportData, lines *[]string)
 	// CSV writes the section's rows (always at least one row, falling back to a
@@ -45,6 +51,8 @@ type renderedReportSection struct {
 type reportShellData struct {
 	Data     *runArchiveHTMLReportData
 	Sections []renderedReportSection
+	// NotCaptured names the profile's sections that do not apply to the run.
+	NotCaptured []string
 }
 
 // reportSectionRegistry holds every renderable report section keyed by its
@@ -228,7 +236,7 @@ func pdfRootCauseLines(lines *[]string, view *ReportRootCause, hypotheses []Repo
 		}
 	}
 	if omitted := len(view.Hypotheses) - len(hypotheses); omitted > 0 {
-		*lines = append(*lines, fmt.Sprintf("%d more ranked in the Detailed Technical report.", omitted))
+		*lines = append(*lines, fmt.Sprintf("%d more ranked in the Engineer report.", omitted))
 	}
 	if b := view.BrowserBaseline; b != nil {
 		*lines = append(*lines, b.Summary)
@@ -477,20 +485,119 @@ func firstNonEmptyReportText(values ...string) string {
 	return ""
 }
 
+// reportSectionLabels is the one name of each report section: the contents
+// list, the section heading in every format and the PDF fallback all read it,
+// so a section never reads differently from its entry in the contents.
+var reportSectionLabels = map[string]string{
+	"verdict":              "Acceptance assessment",
+	"official_outcome":     "Acceptance assessment",
+	"executive_overview":   "Executive summary",
+	"technical_overview":   "Executive summary",
+	"sla_rollup":           "SLA scorecard",
+	"sla_detail":           "SLA compliance",
+	"graphs":               "Performance analysis",
+	"dashboard_panels":     "Imported dashboard panels",
+	"risk_summary":         "Top risks",
+	"rca":                  "Root-cause analysis",
+	"root_cause":           "Findings",
+	"recommendations":      "Recommendations",
+	"signoff":              "Sign-off",
+	"release_trend":        "Release trend",
+	"run_context":          "Run context and confidence",
+	"telemetry_acceptance": "Telemetry acceptance",
+	"browser_findings":     "Browser findings",
+	"interaction_map":      "Interaction patterns and heatmaps",
+	"journey_risk":         "Journey risk",
+	"completeness":         "Evidence coverage",
+	"controller_failover":  "Controller failover",
+	"change_attribution":   "Change attribution",
+	"schema_compatibility": "Schema compatibility",
+	"summary_timeline":     "Summary timeline",
+	"actions":              "Action summary",
+	"network_phases":       "Network phase breakdown",
+	"errors":               "Error patterns",
+	"resources":            "Resource peaks",
+	"browser":              "Browser metrics",
+	"soap":                 "SOAP diagnostics",
+	"web2_migration":       "Web 2.0 migration",
+	"test_setup":           "Test setup",
+	"raw_exports":          "Data sources and glossary",
+	"generator_manifest":   "Generator assignment manifest",
+	"audit_identity":       "Run identity",
+	"authorization":        "Authorization and sign-off",
+	"governance":           "Governance and provenance",
+	"provenance":           "Run configuration and provenance",
+	"evidence_tiers":       "Evidence tiers",
+	"artifact_integrity":   "Artifact integrity",
+	"report_authorship":    "Report authorship",
+	"protocol_diagnostics": "Protocol diagnostics",
+}
+
+// reportSectionTitle is a section's name, falling back to its id.
+func reportSectionTitle(id string) string {
+	if label, ok := reportSectionLabels[id]; ok {
+		return label
+	}
+	return id
+}
+
+// reportApplicableSections is the profile's sections that apply to the run,
+// in order, and the names of those that do not.
+func reportApplicableSections(profile RunArchiveReportProfile, d *runArchiveHTMLReportData) ([]reportSectionRenderer, []string) {
+	var applicable []reportSectionRenderer
+	var notCaptured []string
+	for _, section := range reportSectionsForProfile(profile) {
+		if section.Applies != nil && !section.Applies(d) {
+			notCaptured = append(notCaptured, section.Label)
+			continue
+		}
+		applicable = append(applicable, section)
+	}
+	return applicable, notCaptured
+}
+
+// reportSectionApplies holds the applicability of the sections that only some
+// runs produce.
+var reportSectionApplies = map[string]func(d *runArchiveHTMLReportData) bool{
+	"dashboard_panels": func(d *runArchiveHTMLReportData) bool {
+		return d.Report.DashboardPanels != nil && len(d.Report.DashboardPanels.Dashboards) > 0
+	},
+	"controller_failover": func(d *runArchiveHTMLReportData) bool {
+		return d.Report.Manifest != nil && d.Report.Manifest.Continuity != nil && len(d.Report.Manifest.Continuity.Failovers) > 0
+	},
+	"browser":        func(d *runArchiveHTMLReportData) bool { return d.Report.Overview.Browser != nil },
+	"web2_migration": func(d *runArchiveHTMLReportData) bool { return d.Report.Web2Migration != nil },
+	"soap": func(d *runArchiveHTMLReportData) bool {
+		return len(d.SOAPOperationRows)+len(d.SOAPFaultCodeRows)+len(d.SOAPFaultBuckets)+len(d.SOAPPayloadBuckets) > 0
+	},
+	"protocol_diagnostics": func(d *runArchiveHTMLReportData) bool {
+		return !slices.Contains(protocolReportLines(d.Report), protocolReportNoSamples)
+	},
+	reportSectionBrowserFindings: func(d *runArchiveHTMLReportData) bool { return !d.BrowserFindingsView().NotCaptured },
+	reportSectionInteractionMap:  func(d *runArchiveHTMLReportData) bool { return !d.InteractionMapView().NotCaptured },
+	reportSectionJourneyRisk:     func(d *runArchiveHTMLReportData) bool { return !d.JourneyRiskView().NotCaptured },
+}
+
 // buildReportSectionRegistry constructs the registry. Each entry ports the
 // markup/lines from the previously-bespoke per-profile renderers into a single
 // shared, profile-agnostic fragment.
 func buildReportSectionRegistry() map[string]reportSectionRenderer {
-	reg := map[string]reportSectionRenderer{"protocol_diagnostics": protocolDiagnosticReportSection()}
+	reg := map[string]reportSectionRenderer{}
+	protocol := protocolDiagnosticReportSection()
+	protocol.Label = reportSectionTitle(protocol.ID)
+	protocol.Applies = reportSectionApplies[protocol.ID]
+	reg[protocol.ID] = protocol
 	add := func(r reportSectionRenderer) {
 		r.HTML = htmlSectionRenderer(r.ID)
+		r.Label = reportSectionTitle(r.ID)
+		r.Applies = reportSectionApplies[r.ID]
 		reg[r.ID] = r
 	}
 
 	// --- Verdict / outcome -------------------------------------------------
 	add(reportSectionRenderer{ID: "verdict", Label: "Verdict",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Verdict")
+			pdfHeading(lines, reportSectionTitle("verdict"))
 			*lines = append(*lines, fmt.Sprintf("%s - %s", d.Verdict.Status, d.Verdict.Explanation))
 			if d.AnalystAssessmentInVerdict() {
 				*lines = append(*lines, "Analyst assessment: "+d.Annotations.VerdictOverride+" - "+reportProvidedValue(d.Annotations.VerdictExplanation), "Assessment author: "+reportProvidedValue(d.Annotations.VerdictAuthor()))
@@ -505,7 +612,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 		}})
 	add(reportSectionRenderer{ID: "official_outcome", Label: "Official Outcome",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Official Outcome")
+			pdfHeading(lines, reportSectionTitle("official_outcome"))
 			*lines = append(*lines, fmt.Sprintf("%s - %s", d.Verdict.Status, d.Verdict.Explanation), "")
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
@@ -591,7 +698,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- SLA ---------------------------------------------------------------
 	add(reportSectionRenderer{ID: "sla_rollup", Label: "SLA Scorecard",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "SLA Scorecard")
+			pdfHeading(lines, reportSectionTitle("sla_rollup"))
 			pdfSLALines(lines, d.SLARows)
 			pdfTransactionResponseTimeSLALines(lines, d.TransactionResponseTimeSLAResults)
 			pdfTransactionSLARuleLines(lines, d.TransactionRuleResults)
@@ -608,7 +715,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 		}})
 	add(reportSectionRenderer{ID: "sla_detail", Label: "SLA Compliance",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "SLA Compliance")
+			pdfHeading(lines, reportSectionTitle("sla_detail"))
 			pdfSLALines(lines, d.SLARows)
 			pdfTransactionResponseTimeSLALines(lines, d.TransactionResponseTimeSLAResults)
 			pdfTransactionSLARuleLines(lines, d.TransactionRuleResults)
@@ -627,7 +734,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- Performance graphs ------------------------------------------------
 	add(reportSectionRenderer{ID: "graphs", Label: "Performance Analysis",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Performance Analysis")
+			pdfHeading(lines, reportSectionTitle("graphs"))
 			for _, chart := range reportDocumentChartSpecs(d.Report) {
 				*lines = append(*lines, reportDocumentChartMarker+chart.ID)
 			}
@@ -644,7 +751,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- Risks / findings / root cause ------------------------------------
 	add(reportSectionRenderer{ID: "risk_summary", Label: "Top Risks",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Top Risks")
+			pdfHeading(lines, reportSectionTitle("risk_summary"))
 			pdfFindingsLines(lines, d.Findings)
 			*lines = append(*lines, "")
 		},
@@ -656,7 +763,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// generated analysis.
 	add(reportSectionRenderer{ID: "rca", Label: "Root-Cause Analysis",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Root-Cause Analysis (generated)")
+			pdfHeading(lines, reportSectionTitle("rca"))
 			pdfRootCauseLines(lines, d.RootCause, d.RootCauseHypotheses)
 			*lines = append(*lines, "")
 		},
@@ -665,7 +772,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 		}})
 	add(reportSectionRenderer{ID: "root_cause", Label: "Findings",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Findings")
+			pdfHeading(lines, reportSectionTitle("root_cause"))
 			pdfFindingsLines(lines, d.Findings)
 			*lines = append(*lines, "")
 		},
@@ -676,7 +783,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- Recommendations / sign-off ---------------------------------------
 	add(reportSectionRenderer{ID: "recommendations", Label: "Recommendations",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Recommendations")
+			pdfHeading(lines, reportSectionTitle("recommendations"))
 			text := strings.TrimSpace(d.Annotations.SectionComments["recommendations"])
 			if text == "" {
 				text = "Document recommended follow-up actions, owners, and retest scope here."
@@ -692,7 +799,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 		}})
 	add(reportSectionRenderer{ID: "signoff", Label: "Recommendation & Sign-Off",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Sign-Off")
+			pdfHeading(lines, reportSectionTitle("signoff"))
 			*lines = append(*lines, "Prepared by: "+reportProvidedValue(d.Annotations.PreparedBy), "Analyst assessment: "+reportProvidedValue(d.Annotations.VerdictOverride), "Rationale: "+reportProvidedValue(d.Annotations.VerdictExplanation), "Assessment author: "+reportProvidedValue(d.Annotations.VerdictAuthor()), "")
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
@@ -710,7 +817,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	add(reportSectionRenderer{ID: "release_trend", Label: "Release Trend",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
 			if d.Report.ReleaseTrend == nil {
-				pdfHeading(lines, "Release Trend")
+				pdfHeading(lines, reportSectionTitle("release_trend"))
 				*lines = append(*lines, "This run is not associated with a release, so release-over-release trend analysis is unavailable.", "")
 				return
 			}
@@ -726,7 +833,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- Run context & confidence (executive completeness + change context) -
 	add(reportSectionRenderer{ID: "run_context", Label: "Run Context & Confidence",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Run Context & Confidence")
+			pdfHeading(lines, reportSectionTitle("run_context"))
 			*lines = append(*lines,
 				fmt.Sprintf("Data completeness: %.0f%% (%s)", d.Report.Completeness.ScorePct, d.Report.Completeness.Status),
 			)
@@ -756,7 +863,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	add(reportSectionRenderer{ID: reportSectionJourneyRisk, Label: "Journey Risk", PDF: journeyRiskReportPDF, CSV: journeyRiskReportCSV})
 	add(reportSectionRenderer{ID: "completeness", Label: "Completeness Score",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Completeness")
+			pdfHeading(lines, reportSectionTitle("completeness"))
 			*lines = append(*lines, fmt.Sprintf("Score: %.0f%% (%s)", d.Report.Completeness.ScorePct, d.Report.Completeness.Status))
 			for _, finding := range d.Report.Completeness.Findings {
 				*lines = append(*lines, fmt.Sprintf("- %s: %s", finding.Dimension, finding.Message))
@@ -804,16 +911,16 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- Controller failover (HA run continuity) ---------------------------
 	add(reportSectionRenderer{ID: "controller_failover", Label: "Controller Failover",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Controller Failover")
+			pdfHeading(lines, reportSectionTitle("controller_failover"))
 			continuity := d.Report.Manifest.Continuity
 			if continuity == nil || len(continuity.Failovers) == 0 {
 				*lines = append(*lines, "No controller failover occurred during this run.", "")
 				return
 			}
-			*lines = append(*lines, fmt.Sprintf("Recorded %d controller failover(s). Archive source coverage and measurement completeness are reported separately. Unobserved controller time: %.1f s.", len(continuity.Failovers), failoverGapTotalSeconds(continuity)))
+			*lines = append(*lines, fmt.Sprintf("Recorded %s. Archive source coverage and measurement completeness are reported separately. Unobserved controller time: %.1f s.", reportCountNoun(int64(len(continuity.Failovers)), "controller failover", "controller failovers"), failoverGapTotalSeconds(continuity)))
 			for _, failover := range continuity.Failovers {
-				*lines = append(*lines, fmt.Sprintf("- %s: generation %d -> %d, gap %.1f s, %d generator(s) adopted, %d finished during the gap",
-					failover.AdoptedAt.UTC().Format(time.RFC3339), failover.PriorGeneration, failover.Generation, failover.GapSeconds, failover.AdoptedGenerators, failover.CompletedGenerators))
+				*lines = append(*lines, fmt.Sprintf("- %s: generation %d -> %d, gap %.1f s, %s adopted, %d finished during the gap",
+					formatReportDateTime(failover.AdoptedAt), failover.PriorGeneration, failover.Generation, failover.GapSeconds, reportCountNoun(int64(failover.AdoptedGenerators), "load generator", "load generators"), failover.CompletedGenerators))
 			}
 			*lines = append(*lines, "")
 		},
@@ -853,7 +960,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- Change attribution ------------------------------------------------
 	add(reportSectionRenderer{ID: "change_attribution", Label: "Change Attribution",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Change Attribution")
+			pdfHeading(lines, reportSectionTitle("change_attribution"))
 			attribution := d.Report.ChangeAttribution
 			appendPDFValueLine(lines, "Scenario revision", attribution.ScenarioRevision)
 			appendPDFValueLine(lines, "Environment", reportEnvironment(d.Report))
@@ -872,7 +979,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- Schema compatibility ---------------------------------------------
 	add(reportSectionRenderer{ID: "schema_compatibility", Label: "Schema Compatibility",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Schema Compatibility")
+			pdfHeading(lines, reportSectionTitle("schema_compatibility"))
 			*lines = append(*lines,
 				"Status: "+d.Report.Compatibility.Status,
 				"Report schema: "+d.Report.Compatibility.ReportSchemaVersion,
@@ -913,7 +1020,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- Summary timeline --------------------------------------------------
 	add(reportSectionRenderer{ID: "summary_timeline", Label: "Summary Timeline",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Summary Timeline")
+			pdfHeading(lines, reportSectionTitle("summary_timeline"))
 			if len(d.Report.SummaryTimeline) == 0 {
 				*lines = append(*lines, "No interval timeline was captured for this run.", "")
 				return
@@ -928,10 +1035,10 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 					p95 = fmt.Sprintf("%.1f ms", point.P95Ms)
 				}
 				*lines = append(*lines, fmt.Sprintf("- %s: %s VUsers, %.1f TPS, p95 %s, %s errors",
-					formatPDFTime(point.Timestamp), formatPDFInt(point.ActiveVUsers), point.TPS, p95, formatReportPercentage(point.ErrorPct)))
+					formatPDFDisplayTime(point.Timestamp), formatReportCount(point.ActiveVUsers), point.TPS, p95, formatReportPercentage(point.ErrorPct)))
 			}
 			if len(d.Report.SummaryTimeline) > limit {
-				*lines = append(*lines, fmt.Sprintf("... %d additional interval(s) omitted from the PDF profile.", len(d.Report.SummaryTimeline)-limit))
+				*lines = append(*lines, fmt.Sprintf("... %s omitted from the PDF profile.", reportCountNoun(int64(len(d.Report.SummaryTimeline)-limit), "additional interval", "additional intervals")))
 			}
 			*lines = append(*lines, "")
 		},
@@ -969,11 +1076,11 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	add(reportSectionRenderer{ID: "actions", Label: "Action Summary",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
 			if len(d.Report.ByAction) == 0 {
-				pdfHeading(lines, "Top Actions")
+				pdfHeading(lines, reportSectionTitle("actions"))
 				*lines = append(*lines, "No action-level archive data was recorded.", "")
 				return
 			}
-			appendPDFStatsSection(lines, "Top Actions", d.Report.ByAction, 12)
+			appendPDFStatsSection(lines, "Top actions", d.Report.ByAction, 12)
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
 			names := sortedArchiveReportStatKeys(d.Report.ByAction)
@@ -991,7 +1098,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- Network phases ----------------------------------------------------
 	add(reportSectionRenderer{ID: "network_phases", Label: "Network Phase Breakdown",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Network Phase Breakdown")
+			pdfHeading(lines, reportSectionTitle("network_phases"))
 			overall := d.Report.NetworkPhases.Overall
 			if d.Report.NetworkPhases.Samples == 0 {
 				*lines = append(*lines, "No network-phase timing was captured for this run.")
@@ -1046,13 +1153,13 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- Errors ------------------------------------------------------------
 	add(reportSectionRenderer{ID: "errors", Label: "Error Patterns",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Error Patterns")
+			pdfHeading(lines, reportSectionTitle("errors"))
 			if len(d.Report.ErrorPatterns) == 0 {
 				*lines = append(*lines, "No clustered error patterns were recorded.", "")
 				return
 			}
 			for _, pattern := range d.Report.ErrorPatterns {
-				*lines = append(*lines, fmt.Sprintf("- %s (%d occurrence(s))", pattern.Sample, pattern.Count))
+				*lines = append(*lines, fmt.Sprintf("- %s (%s)", pattern.Sample, reportCountNoun(int64(pattern.Count), "occurrence", "occurrences")))
 			}
 			*lines = append(*lines, "")
 		},
@@ -1083,7 +1190,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- Resources ---------------------------------------------------------
 	add(reportSectionRenderer{ID: "resources", Label: "Resource Peaks",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Resource Peaks")
+			pdfHeading(lines, reportSectionTitle("resources"))
 			peaks := d.Report.ResourcePeaks
 			*lines = append(*lines,
 				fmt.Sprintf("CPU process: %.1f%%", peaks.CPUProcessPct),
@@ -1110,7 +1217,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- Browser -----------------------------------------------------------
 	add(reportSectionRenderer{ID: "browser", Label: "Browser Metrics",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Browser Metrics")
+			pdfHeading(lines, reportSectionTitle("browser"))
 			browser := d.Report.Overview.Browser
 			if browser == nil {
 				*lines = append(*lines, "No browser metrics were captured for this run.", "")
@@ -1149,14 +1256,14 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- SOAP --------------------------------------------------------------
 	add(reportSectionRenderer{ID: "soap", Label: "SOAP Diagnostics",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "SOAP Diagnostics")
+			pdfHeading(lines, reportSectionTitle("soap"))
 			if len(d.Report.BySOAPOperation) == 0 && len(d.Report.BySOAPFaultCode) == 0 {
 				*lines = append(*lines, "No SOAP diagnostics were captured for this run.", "")
 				return
 			}
 			*lines = append(*lines, "")
 			if len(d.Report.BySOAPOperation) > 0 {
-				appendPDFStatsSection(lines, "SOAP Operations", d.Report.BySOAPOperation, 8)
+				appendPDFStatsSection(lines, "SOAP operations", d.Report.BySOAPOperation, 8)
 			}
 			for _, row := range buildHTMLCountRows(d.Report.BySOAPFaultCode) {
 				*lines = append(*lines, fmt.Sprintf("- fault %s: %d", row.Name, row.Count))
@@ -1184,7 +1291,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- Web2 migration ----------------------------------------------------
 	add(reportSectionRenderer{ID: "web2_migration", Label: "Web 2.0 Migration",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Web 2.0 Migration")
+			pdfHeading(lines, reportSectionTitle("web2_migration"))
 			migration := d.Report.Web2Migration
 			if migration == nil {
 				*lines = append(*lines, "No TruClient/Web 2.0 migration evidence is present.", "")
@@ -1230,7 +1337,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- Test setup --------------------------------------------------------
 	add(reportSectionRenderer{ID: "test_setup", Label: "Test Setup",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Test Setup")
+			pdfHeading(lines, reportSectionTitle("test_setup"))
 			attribution := d.Report.ChangeAttribution
 			appendPDFValueLine(lines, "Environment", reportEnvironment(d.Report))
 			appendPDFValueLine(lines, "Scenario revision", attribution.ScenarioRevision)
@@ -1265,7 +1372,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- Raw exports / data sources ---------------------------------------
 	add(reportSectionRenderer{ID: "raw_exports", Label: "Data Sources & Raw Exports",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Data Sources & Raw Exports")
+			pdfHeading(lines, reportSectionTitle("raw_exports"))
 			*lines = append(*lines,
 				fmt.Sprintf("Archive records captured: %s", formatPDFInt(d.Report.Overview.Transactions)),
 				fmt.Sprintf("Interval summaries: %d", d.Report.Overview.IntervalSummaries),
@@ -1285,7 +1392,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- Generator assignment manifest ------------------------------------
 	add(reportSectionRenderer{ID: "generator_manifest", Label: "Generator Assignment Manifest",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Generator Assignment Manifest")
+			pdfHeading(lines, reportSectionTitle("generator_manifest"))
 			if d.Manifest == nil {
 				*lines = append(*lines, "The generator assignment manifest was not available for this run.", "")
 				return
@@ -1330,12 +1437,12 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- Audit identity ----------------------------------------------------
 	add(reportSectionRenderer{ID: "audit_identity", Label: "Run Identity",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Run Identity and Authorization")
+			pdfHeading(lines, reportSectionTitle("audit_identity"))
 			report := d.Report
 			appendPDFValueLine(lines, "Test ID", report.Manifest.TestID)
 			appendPDFValueLine(lines, "Run name", report.Manifest.TestName)
 			appendPDFValueLine(lines, "Status", report.Manifest.Status)
-			appendPDFValueLine(lines, "Completed", formatPDFTime(report.Manifest.CompletedAt))
+			appendPDFValueLine(lines, "Completed", formatPDFDisplayTime(report.Manifest.CompletedAt))
 			provenance := report.Manifest.Provenance
 			appendPDFValueLine(lines, "Project", identityName(report.IdentityNames.Project, provenance.ProjectID))
 			appendPDFValueLine(lines, "Release", identityName(report.IdentityNames.Release, provenance.ReleaseID))
@@ -1367,12 +1474,14 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- Authorization -----------------------------------------------------
 	add(reportSectionRenderer{ID: "authorization", Label: "Authorization & Sign-off",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Authorization")
+			pdfHeading(lines, reportSectionTitle("authorization"))
 			provenance := d.Report.Manifest.Provenance
 			appendPDFValueLine(lines, "Created by", actorPDFValue(provenance.CreatedByDisplayName, provenance.CreatedBySubject))
 			appendPDFValueLine(lines, "Started by", actorPDFValue(provenance.StartedByDisplayName, provenance.StartedBySubject))
 			appendPDFValueLine(lines, "Stopped by", actorPDFValue(provenance.StoppedByDisplayName, provenance.StoppedBySubject))
-			appendPDFValueLine(lines, "Scheduled start", formatPDFTimePtr(provenance.ScheduledStartAt))
+			if provenance.ScheduledStartAt != nil {
+				appendPDFValueLine(lines, "Scheduled start", formatPDFDisplayTime(*provenance.ScheduledStartAt))
+			}
 			*lines = append(*lines, "")
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
@@ -1403,7 +1512,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- Governance --------------------------------------------------------
 	add(reportSectionRenderer{ID: "governance", Label: "Governance & Provenance",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Governance")
+			pdfHeading(lines, reportSectionTitle("governance"))
 			governance := d.Report.Manifest.Provenance.Governance
 			if governance == nil {
 				*lines = append(*lines, "No governance provenance was captured for this run.", "")
@@ -1464,7 +1573,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- Provenance / run configuration -----------------------------------
 	add(reportSectionRenderer{ID: "provenance", Label: "Run Configuration & Provenance",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Run Configuration")
+			pdfHeading(lines, reportSectionTitle("provenance"))
 			if d.Report.Manifest == nil {
 				*lines = append(*lines, "No run provenance was captured.", "")
 				return
@@ -1486,7 +1595,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- Evidence tiers ----------------------------------------------------
 	add(reportSectionRenderer{ID: "evidence_tiers", Label: "Evidence Tiers",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Evidence Tiers")
+			pdfHeading(lines, reportSectionTitle("evidence_tiers"))
 			if len(d.Report.EvidenceTiers) == 0 {
 				*lines = append(*lines, "No evidence tiers were declared for this run.", "")
 				return
@@ -1514,7 +1623,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- Artifact integrity ------------------------------------------------
 	add(reportSectionRenderer{ID: "artifact_integrity", Label: "Artifact Integrity",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Artifact Integrity")
+			pdfHeading(lines, reportSectionTitle("artifact_integrity"))
 			if d.Report.Integrity != nil {
 				verdict := "VERIFIED"
 				if !d.Report.Integrity.Verified {
@@ -1551,7 +1660,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	// --- Report authorship -------------------------------------------------
 	add(reportSectionRenderer{ID: "report_authorship", Label: "Report Authorship",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
-			pdfHeading(lines, "Report Authorship")
+			pdfHeading(lines, reportSectionTitle("report_authorship"))
 			appendPDFValueLine(lines, "Prepared by", d.Annotations.PreparedBy)
 			appendPDFValueLine(lines, "Updated by", d.Annotations.UpdatedBy)
 			if strings.TrimSpace(d.Annotations.VerdictOverride) != "" {

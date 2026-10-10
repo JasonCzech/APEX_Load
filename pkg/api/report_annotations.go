@@ -112,7 +112,7 @@ func reportAnnotationsSettingKey(testID, profile string) string {
 }
 
 // normalizeReportProfileID resolves an incoming profile id to a known report
-// profile id, defaulting to the engineer (Detailed Technical) profile to match
+// profile id, defaulting to the engineer profile to match
 // lookupRunArchiveReportProfile.
 func normalizeReportProfileID(profile string) string {
 	resolved, ok := lookupRunArchiveReportProfile(profile)
@@ -304,7 +304,9 @@ func resolveProfileReportAnnotations(store storage.Store, report *RunArchiveRepo
 		saved.SectionComments = map[string]string{}
 	}
 	for id, text := range defaults.SectionComments {
-		if strings.TrimSpace(saved.SectionComments[id]) == "" {
+		// Earlier defaults stored the placeholder "Not provided" as text;
+		// it reads as content in an export, so it counts as empty.
+		if current := strings.TrimSpace(saved.SectionComments[id]); current == "" || current == reportNotProvided {
 			saved.SectionComments[id] = text
 		}
 	}
@@ -338,7 +340,7 @@ func defaultReportAnnotations(report *RunArchiveReport, testID, profile string) 
 	ann := &ReportAnnotations{
 		TestID:          testID,
 		Profile:         profileID,
-		Title:           fmt.Sprintf("%s — %s Report", testName, label),
+		Title:           fmt.Sprintf("%s — %s report", testName, label),
 		SectionComments: map[string]string{},
 	}
 
@@ -368,37 +370,50 @@ func defaultReportAnnotations(report *RunArchiveReport, testID, profile string) 
 	case "executive":
 		ann.ExecutiveNarrative = fmt.Sprintf(
 			"This run reached %s active VUsers, peaked at %.1f attempts/s, recorded a %s error rate (%s), and %s.",
-			formatPDFInt(ov.PeakActiveVUsers), headline.PeakTPS, formatReportPercentage(headline.ErrorPct), headline.Label, verdict,
+			formatReportCount(ov.PeakActiveVUsers), headline.PeakTPS, formatReportPercentage(headline.ErrorPct), headline.Label, verdict,
 		)
-		ann.SectionComments["decision"] = "Not provided"
+		ann.SectionComments["decision"] = ""
 		ann.SectionComments["business_impact"] = fmt.Sprintf("%s: %s error rate and %s average response time.", headline.Label, formatReportPercentage(headline.ErrorPct), formatReportMs(headline.AvgResponseMs))
 		ann.SectionComments["sla"] = deriveReportVerdict(report).Explanation
 		ann.SectionComments["risks"] = defaultRiskComment(report)
-		ann.SectionComments["recommendations"] = "Not provided"
+		ann.SectionComments["recommendations"] = ""
 	case "audit":
 		ann.ExecutiveNarrative = fmt.Sprintf(
-			"Audit package for %s. The run archived %s archive record(s), %s resource sample(s), and %s interval summary record(s); evidence completeness is %.0f%% (%s).",
-			testName, formatPDFInt(ov.Transactions), formatPDFInt(ov.ResourceSamples), formatPDFInt(ov.IntervalSummaries), report.Completeness.ScorePct, report.Completeness.Status,
+			"Audit package for %s. The run archived %s, %s and %s; evidence coverage is %.0f%% (%s).",
+			testName, reportCountNoun(ov.Transactions, "archive record", "archive records"), reportCountNoun(ov.ResourceSamples, "resource sample", "resource samples"), reportCountNoun(ov.IntervalSummaries, "interval summary record", "interval summary records"), report.Completeness.ScorePct, reportTokenLabel(report.Completeness.Status),
 		)
-		ann.SectionComments["audit_scope"] = "Not provided"
-		ann.SectionComments["exceptions"] = "Not provided"
+		ann.SectionComments["audit_scope"] = ""
+		ann.SectionComments["exceptions"] = ""
 		ann.SectionComments["evidence_notes"] = deriveReportVerdict(report).Explanation
-		ann.SectionComments["integrity_notes"] = fmt.Sprintf("Evidence completeness scored %.0f%% with %d completeness finding(s).", report.Completeness.ScorePct, len(report.Completeness.Findings))
-		ann.SectionComments["approvals"] = "Not provided"
+		ann.SectionComments["integrity_notes"] = fmt.Sprintf("Evidence coverage scored %.0f%% with %s.", report.Completeness.ScorePct, reportCountNoun(int64(len(report.Completeness.Findings)), "coverage finding", "coverage findings"))
+		ann.SectionComments["approvals"] = ""
 	default:
 		ann.ExecutiveNarrative = fmt.Sprintf(
-			"This run captured %s archive record(s). %s peaked at %.1f attempts/s with a %s error rate and a %s average response time, reaching %s active VUsers. The test %s.",
-			formatPDFInt(ov.Transactions), headline.Label, headline.PeakTPS, formatReportPercentage(headline.ErrorPct), formatReportMs(headline.AvgResponseMs), formatPDFInt(ov.PeakActiveVUsers), verdict,
+			"This run captured %s. %s peaked at %.1f attempts/s with a %s error rate and a %s average response time, reaching %s active VUsers. The test %s.",
+			reportCountNoun(ov.Transactions, "archive record", "archive records"), headline.Label, headline.PeakTPS, formatReportPercentage(headline.ErrorPct), formatReportMs(headline.AvgResponseMs), formatReportCount(ov.PeakActiveVUsers), verdict,
 		)
-		ann.SectionComments["overview"] = fmt.Sprintf("%s archive record(s) were captured; %s had a %s error rate.", formatPDFInt(ov.Transactions), headline.Label, formatReportPercentage(headline.ErrorPct))
+		// The narrative already states the record count and error rate.
+		ann.SectionComments["overview"] = ""
 		ann.SectionComments["performance"] = fmt.Sprintf("Throughput peaked at %.1f attempts/s and response time ranged from %.1f ms to %.1f ms (avg %s; %s).", headline.PeakTPS, headline.MinResponseMs, headline.MaxResponseMs, formatReportMs(headline.AvgResponseMs), headline.Label)
 		ann.SectionComments["sla"] = deriveReportVerdict(report).Explanation
-		ann.SectionComments["bottlenecks"] = "Not provided"
+		ann.SectionComments["bottlenecks"] = ""
 		ann.SectionComments["errors"] = defaultRiskComment(report)
-		ann.SectionComments["recommendations"] = "Not provided"
+		ann.SectionComments["recommendations"] = ""
 	}
 
 	return ann
+}
+
+// reportNotProvided is the placeholder older default commentary stored.
+const reportNotProvided = "Not provided"
+
+// reportCountNoun states a count with its noun in the right number:
+// "1 archive record", "15,940 archive records".
+func reportCountNoun(n int64, singular, plural string) string {
+	if n == 1 {
+		return "1 " + singular
+	}
+	return formatReportCount(n) + " " + plural
 }
 
 func defaultSLAComment(slaBreached bool, slaDetails []string) string {
@@ -433,7 +448,7 @@ func defaultRiskComment(report *RunArchiveReport) string {
 	}
 	if len(report.ErrorPatterns) > 0 {
 		top := report.ErrorPatterns[0]
-		risks = append(risks, fmt.Sprintf("%d distinct error pattern(s) were observed; the most frequent was %q (%d occurrence(s)).", len(report.ErrorPatterns), top.Sample, top.Count))
+		risks = append(risks, fmt.Sprintf("%s observed; the most frequent was %q (%s).", reportCountNoun(int64(len(report.ErrorPatterns)), "distinct error pattern was", "distinct error patterns were"), top.Sample, reportCountNoun(int64(top.Count), "occurrence", "occurrences")))
 	} else {
 		risks = append(risks, "No significant error patterns were recorded during the run. Absence of recorded errors does not establish low risk.")
 	}

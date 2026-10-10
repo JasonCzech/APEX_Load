@@ -15,13 +15,12 @@ import { downloadBlob } from '../utils/fileUtils'
 import { getErrorMessage } from '../utils/errorUtils'
 import { ReportAnnotations, ReportCommentarySection, ReportFinding, RunArchiveIntegrityReport, RunArchiveReleaseTrendSummary, RunArchiveReport, RunArchiveReportProfile, TestNote } from '../types'
 import type { ReportProfileId } from './reportTypeOptions'
+import { REPORT_LENS_LABELS } from './runReport/reportLensLabels'
 import './ReportComposer.css'
+import { formatDateTime } from '../utils/dateTime'
 
-const PROFILE_LABEL: Record<string, string> = {
-  executive: 'Executive Summary',
-  engineer: 'Detailed Technical',
-  audit: 'Audit',
-}
+// The audience names the run report's lens switcher shows.
+const PROFILE_LABEL: Record<string, string> = REPORT_LENS_LABELS
 
 interface Props {
   comparisonId?: string
@@ -205,7 +204,7 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
   persistRef.current = persist
   const navigationGuard = useMemo<NavigationGuard>(() => ({
     id: `report-composer-${testId}-${profile}`,
-    label: `${PROFILE_LABEL[profile] || profile} Report`,
+    label: `${PROFILE_LABEL[profile] || profile} report`,
     isDirty: () => isDirtyRef.current,
     save: () => persistRef.current(),
     discard: () => undefined,
@@ -284,10 +283,8 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
   // Narrative/summary heading derived from declared sections (falling back to the
   // profile id) so it stays correct for profiles beyond the built-in three.
   const summaryLabel = has('audit_identity', isAudit) || has('official_outcome', isAudit)
-    ? 'Audit Summary'
-    : has('technical_overview', isEngineer)
-      ? 'Technical Summary'
-      : 'Executive Summary'
+    ? 'Audit summary'
+    : 'Executive summary'
   const executionPlanApproval = manifest?.provenance?.governance?.execution_plan_approval
   const executionPlanApprovalSummary = executionPlanApproval
     ? [
@@ -389,7 +386,7 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
                 <Logo size={40} />
                 <span className="report-brand-name">APEX Load</span>
               </div>
-              <p className="report-eyebrow">{profileLabel} Report</p>
+              <p className="report-eyebrow">{profileLabel} report</p>
               <textarea
                 rows={2}
                 className="report-title-input"
@@ -468,21 +465,21 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
 
             {has('graphs', !isAudit) && (
               <section className="report-section report-graphs">
-                <h2>{isExecutive ? 'Headline Performance' : 'Performance Graphs'}</h2>
+                <h2>Performance analysis</h2>
                 <ReportCharts report={report} />
               </section>
             )}
 
             {has('release_trend', isExecutive) && report.release_trend && (
               <section className="report-section">
-                <h2>Release Trend</h2>
+                <h2>Release trend</h2>
                 <ReleaseTrendSummaryView trend={report.release_trend} />
               </section>
             )}
 
             {slaBreached && (manifest?.sla_details?.length ?? 0) > 0 && (
               <section className="report-section">
-                <h2>SLA Findings</h2>
+                <h2>SLA findings</h2>
                 <ul className="report-list">
                   {manifest?.sla_details?.map((detail, index) => (
                     <li key={index}>{detail}</li>
@@ -493,7 +490,7 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
 
 			{(manifest?.transaction_rule_results?.length ?? 0) > 0 && (
 			  <section className="report-section">
-				<h2>Transaction SLA Rules</h2>
+				<h2>Transaction SLA rules</h2>
 				<table className="report-table">
 				  <thead><tr><th>Transaction</th><th>Metric</th><th>Expectation</th><th>Observed</th><th>Severity</th><th>Result</th></tr></thead>
 				  <tbody>
@@ -514,7 +511,7 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
 
             {has('actions', isEngineer) && topActions.length > 0 && (
               <section className="report-section">
-                <h2>Action Summary</h2>
+                <h2>Action summary</h2>
                 <table className="report-table">
                   <thead>
                     <tr>
@@ -544,7 +541,7 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
 
             {has('network_phases', isEngineer) && report.network_phases?.overall && (
               <section className="report-section">
-                <h2>Network Phase Breakdown</h2>
+                <h2>Network phase breakdown</h2>
                 <div className="report-metrics">
                   <Metric label="DNS Avg" value={`${formatNum(report.network_phases.overall.avg_dns_ms)} ms`} />
                   <Metric label="Connect Avg" value={`${formatNum(report.network_phases.overall.avg_connect_ms)} ms`} />
@@ -556,13 +553,13 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
 
             {has('errors', isEngineer) && (report.error_patterns?.length ?? 0) > 0 && (
               <section className="report-section">
-                <h2>Error Patterns</h2>
+                <h2>Error patterns</h2>
                 <table className="report-table">
                   <thead>
                     <tr>
                       <th>Pattern</th>
                       <th>Occurrences</th>
-                      <th>First Seen</th>
+                      <th>First seen</th>
                       <th>Latest Seen</th>
                     </tr>
                   </thead>
@@ -582,7 +579,7 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
 
             {has('resources', isEngineer) && report.resource_peaks && (
               <section className="report-section">
-                <h2>Resource Peaks</h2>
+                <h2>Resource peaks</h2>
                 <div className="report-metrics">
                   <Metric label="CPU Peak" value={`${formatNum(report.resource_peaks.cpu_process_pct)}%`} />
                   <Metric label="Memory Peak" value={`${formatNum(report.resource_peaks.mem_process_mb)} MB`} />
@@ -594,7 +591,7 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
 
             {has('evidence_tiers', isAudit) && (
               <section className="report-section">
-                <h2>Audit Evidence</h2>
+                <h2>Audit evidence</h2>
                 <table className="report-table">
                   <tbody>
                     <tr><th>Manifest Schema</th><td>{report.manifest.schema_version}</td></tr>
@@ -608,7 +605,7 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
                     <tr><th>Runtime Overrides</th><td>{report.change_attribution?.runtime_overrides ? (report.change_attribution.runtime_override_fields || []).join(', ') || 'Yes' : 'No'}</td></tr>
                   </tbody>
                 </table>
-                <h3>Artifact Integrity</h3>
+                <h3>Artifact integrity</h3>
                 {integrity && (
                   <div
                     className={`report-integrity-banner ${integrity.status === 'verified' ? 'pass' : integrity.status === 'verified_partial' ? 'caution' : 'fail'}`}
@@ -648,7 +645,7 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
 
             {has('rca', isExecutive || isEngineer) && report.root_cause_view && (
               <section className="report-section" aria-label="Root-cause analysis (generated)">
-                <h2>Root-Cause Analysis <small>Generated</small></h2>
+                <h2>Root-cause analysis</h2>
                 <ReportRootCauseView view={report.root_cause_view} limit={report.report_profiles?.find(entry => entry.id === profile)?.root_cause_hypothesis_limit} />
               </section>
             )}
@@ -734,7 +731,7 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
             </section>
 
             <section className="report-section">
-              <h2>Analyst Commentary</h2>
+              <h2>Analyst commentary</h2>
               <p className="report-hint no-print">Edit the commentary below — it is saved with the report and appears in the downloaded HTML.</p>
               <div className="report-notes-source no-print">
                 {testNotesError ? (
@@ -878,7 +875,7 @@ function formatTime(value: string | undefined): string {
   if (!value) return 'n/a'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'n/a'
-  return date.toLocaleString()
+  return formatDateTime(date, { seconds: true })
 }
 
 function formatActor(displayName?: string, subject?: string): string {

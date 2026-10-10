@@ -32,7 +32,7 @@ func TestDefaultReportAnnotationsSeedsBreachText(t *testing.T) {
 	if ann.Profile != "executive" {
 		t.Fatalf("profile = %q, want executive", ann.Profile)
 	}
-	if !strings.Contains(ann.Title, "Executive Summary") {
+	if !strings.Contains(ann.Title, "Executive report") {
 		t.Fatalf("title = %q, want it to mention the profile label", ann.Title)
 	}
 	if !strings.Contains(ann.ExecutiveNarrative, "breached") {

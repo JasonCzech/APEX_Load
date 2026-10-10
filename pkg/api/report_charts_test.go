@@ -38,10 +38,10 @@ func TestBuildReportChartsWithTimelineAndActions(t *testing.T) {
 			t.Fatalf("throughput chart missing %q: %s", want, throughput)
 		}
 	}
-	if !strings.Contains(string(charts.ResponseTime), "Response Time (p95, ms)") {
+	if !strings.Contains(string(charts.ResponseTime), "Response time (P95, ms)") {
 		t.Fatalf("response-time chart missing title: %s", charts.ResponseTime)
 	}
-	if !strings.Contains(string(charts.ErrorRate), "Error Rate") {
+	if !strings.Contains(string(charts.ErrorRate), "Error rate") {
 		t.Fatalf("error-rate chart missing title: %s", charts.ErrorRate)
 	}
 	if !strings.Contains(string(charts.VUsers), "Active VUsers") {
@@ -49,7 +49,7 @@ func TestBuildReportChartsWithTimelineAndActions(t *testing.T) {
 	}
 
 	action := string(charts.ActionLatency)
-	for _, want := range []string{"<svg", "Average Response Time by Action", "checkout", "<rect"} {
+	for _, want := range []string{"<svg", "Average response time by action", "checkout", "<rect"} {
 		if !strings.Contains(action, want) {
 			t.Fatalf("action chart missing %q: %s", want, action)
 		}

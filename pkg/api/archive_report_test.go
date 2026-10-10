@@ -570,8 +570,23 @@ func TestRunArchiveReportProfilesAreConsistentAndRenderable(t *testing.T) {
 				t.Fatalf("profile %q HTML render error: %v", profile.ID, err)
 			}
 			full := string(htmlBytes)
+			// A section that does not apply to the run is named under "Not
+			// captured for this run" instead of rendered.
+			applicable, notCaptured := reportApplicableSections(profile, &data)
+			rendered := map[string]bool{}
+			for _, section := range applicable {
+				rendered[section.ID] = true
+			}
+			for _, label := range notCaptured {
+				if !strings.Contains(full, label) {
+					t.Fatalf("profile %q does not name not-captured section %q", profile.ID, label)
+				}
+			}
 			lastIdx := -1
 			for _, id := range profile.SectionOrder {
+				if !rendered[id] {
+					continue
+				}
 				marker := fmt.Sprintf("data-report-section=%q", id)
 				idx := strings.Index(full, marker)
 				if idx < 0 {

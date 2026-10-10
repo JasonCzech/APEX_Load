@@ -15,8 +15,9 @@ import (
 // comparisonNumber prints a comparison value in plain decimal notation: whole
 // numbers from 100, one decimal from 10, up to three below that, and three
 // significant digits under 1 so a small change never reads as zero; trailing
-// zeros trimmed. %.3g printed 1406 as "1.41e+03" next to tables of "1,406 ms".
-// The "+" flag (%+v) keeps the sign on non-negative changes.
+// zeros trimmed, and thousands grouped as the dashboard groups them. %.3g
+// printed 1406 as "1.41e+03" next to tables of "1,406 ms". The "+" flag (%+v)
+// keeps the sign on non-negative changes.
 type comparisonNumber float64
 
 func (n comparisonNumber) Format(state fmt.State, _ rune) {
@@ -36,6 +37,11 @@ func (n comparisonNumber) Format(state fmt.State, _ rune) {
 	}
 	if text == "-0" {
 		text = "0"
+	}
+	whole, fraction, hasFraction := strings.Cut(text, ".")
+	text = groupThousands(whole)
+	if hasFraction {
+		text += "." + fraction
 	}
 	if state.Flag('+') && !strings.HasPrefix(text, "-") {
 		text = "+" + text

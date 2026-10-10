@@ -432,7 +432,7 @@ export function LoadComparisonPanel({
     >
       <div className="load-comparison-header">
         <div>
-          <h3 className="dash-section-title">Load Comparison</h3>
+          <h3 className="dash-section-title">Load comparison</h3>
           <p>
             Compare latency, successful throughput, and errors at observed load.
           </p>

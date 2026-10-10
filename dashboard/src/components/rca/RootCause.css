@@ -23,6 +23,13 @@
   margin: 4px 0 0;
 }
 
+.rca-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .rca-panel-actions {
   display: flex;
   align-items: center;
@@ -218,6 +225,16 @@
   margin: 0;
 }
 
+.rca-timeline-panel + .rca-timeline-panel {
+  margin-top: 2px;
+}
+
+.rca-timeline-axis {
+  margin: 0 0 2px 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
 .rca-timeline-markers {
   margin: 8px 0 0;
   padding: 0;
@@ -254,6 +271,11 @@
 .rca-provenance {
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+
+.rca-provenance summary {
+  color: var(--text-muted);
+  cursor: pointer;
 }
 
 @media (max-width: 640px) {

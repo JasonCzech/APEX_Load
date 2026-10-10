@@ -31,6 +31,10 @@ const (
 	reportInteractionHeatmapLimit = 12
 )
 
+// journeyRiskNotPinned is why a run without a pinned journey policy has no
+// journey accounting; its section is left out of the report.
+const journeyRiskNotPinned = "The run pinned no journey policy."
+
 var browserIntelligenceReportSections = []string{reportSectionBrowserFindings, reportSectionInteractionMap, reportSectionJourneyRisk}
 
 // ReportBrowserIntelligence holds the browser intelligence results a report
@@ -133,7 +137,7 @@ func (s *Server) runJourneyRisk(ctx context.Context, testID, project string) (*J
 		return nil, "The run's pinned journey policy could not be used: " + err.Error(), nil
 	}
 	if !found {
-		return nil, "The run pinned no journey policy.", nil
+		return nil, journeyRiskNotPinned, nil
 	}
 	journeys, err := accountJourneys(ctx, record, manifest, policy, ref)
 	if err != nil {
@@ -145,10 +149,14 @@ func (s *Server) runJourneyRisk(ctx context.Context, testID, project string) (*J
 // ---- Views -----------------------------------------------------------------
 
 type reportBrowserFindingsView struct {
-	Summary  string
-	Findings []reportBrowserFindingRow
-	More     int
-	Notes    []string
+	Summary string
+	// NotCaptured marks a run that produced nothing for this section (no
+	// evaluation, interactions or pinned policy): the section is left out of
+	// the report and named once under its contents.
+	NotCaptured bool
+	Findings    []reportBrowserFindingRow
+	More        int
+	Notes       []string
 }
 
 type reportBrowserFindingRow struct {
@@ -156,12 +164,16 @@ type reportBrowserFindingRow struct {
 }
 
 type reportInteractionMapView struct {
-	Summary  string
-	Patterns []reportInteractionPatternRow
-	More     int
-	Heatmaps []reportInteractionHeatmapRow
-	MoreMaps int
-	Notes    []string
+	Summary string
+	// NotCaptured marks a run that produced nothing for this section (no
+	// evaluation, interactions or pinned policy): the section is left out of
+	// the report and named once under its contents.
+	NotCaptured bool
+	Patterns    []reportInteractionPatternRow
+	More        int
+	Heatmaps    []reportInteractionHeatmapRow
+	MoreMaps    int
+	Notes       []string
 }
 
 type reportInteractionPatternRow struct {
@@ -173,9 +185,13 @@ type reportInteractionHeatmapRow struct {
 }
 
 type reportJourneyRiskView struct {
-	Summary  string
-	Journeys []reportJourneyRow
-	Notes    []string
+	Summary string
+	// NotCaptured marks a run that produced nothing for this section (no
+	// evaluation, interactions or pinned policy): the section is left out of
+	// the report and named once under its contents.
+	NotCaptured bool
+	Journeys    []reportJourneyRow
+	Notes       []string
 }
 
 type reportJourneyRow struct {
@@ -229,7 +245,7 @@ func (d *runArchiveHTMLReportData) BrowserFindingsView() reportBrowserFindingsVi
 			// job to those who may see it).
 			return reportBrowserFindingsView{Summary: "The run's browser evaluation failed. Its findings were not produced; evaluate the run again."}
 		default:
-			return reportBrowserFindingsView{Summary: "This run has no browser evaluation. A run that pins a browser policy and captures document evidence is evaluated when its archive is finalized; the run report offers editors an evaluation under the run's pinned browser policy. An evaluation under a named policy revision (API or apexctl) is read from that evaluation and never becomes the run's findings."}
+			return reportBrowserFindingsView{Summary: "This run has no browser evaluation. A run that pins a browser policy and captures document evidence is evaluated when its archive is finalized.", NotCaptured: true}
 		}
 	}
 	result := response.Result
@@ -276,7 +292,7 @@ func (d *runArchiveHTMLReportData) InteractionMapView() reportInteractionMapView
 	analysis := intelligence.Interactions
 	switch analysis.Status {
 	case "not_captured":
-		return reportInteractionMapView{Summary: "This run captured no interaction evidence."}
+		return reportInteractionMapView{Summary: "This run captured no interaction evidence.", NotCaptured: true}
 	case "unavailable":
 		return reportInteractionMapView{Summary: "This run captured interactions, but none reached the archive.", Notes: append([]string(nil), analysis.Limitations...)}
 	}
@@ -311,7 +327,7 @@ func (d *runArchiveHTMLReportData) JourneyRiskView() reportJourneyRiskView {
 		if reason == "" {
 			reason = "The run's journeys were not accounted."
 		}
-		return reportJourneyRiskView{Summary: reason}
+		return reportJourneyRiskView{Summary: reason, NotCaptured: reason == journeyRiskNotPinned}
 	}
 	journeys := intelligence.Journeys
 	if journeys.Availability != "available" {
@@ -351,7 +367,7 @@ func nonEmptyStrings(values ...string) []string {
 
 func browserFindingsReportPDF(d *runArchiveHTMLReportData, lines *[]string) {
 	view := d.BrowserFindingsView()
-	pdfHeading(lines, "Browser Findings")
+	pdfHeading(lines, reportSectionTitle(reportSectionBrowserFindings))
 	*lines = append(*lines, view.Summary)
 	for _, finding := range view.Findings {
 		*lines = append(*lines, fmt.Sprintf("- %s: %s %s; observed %s. %s", finding.Title, finding.State, finding.Severity, finding.Observed, finding.Summary))
@@ -379,7 +395,7 @@ func browserFindingsReportCSV(d *runArchiveHTMLReportData, write reportCSVWriteF
 
 func interactionMapReportPDF(d *runArchiveHTMLReportData, lines *[]string) {
 	view := d.InteractionMapView()
-	pdfHeading(lines, "Interaction Patterns and Heatmaps")
+	pdfHeading(lines, reportSectionTitle(reportSectionInteractionMap))
 	*lines = append(*lines, view.Summary)
 	for _, pattern := range view.Patterns {
 		*lines = append(*lines, fmt.Sprintf("- %s (%s) on %s, %s: %s gestures. %s", pattern.Kind, pattern.Provenance, firstNonEmpty(pattern.Route, "an unrecorded route"), firstNonEmpty(pattern.Action, "no action"), pattern.Count, pattern.Detail))
@@ -423,7 +439,7 @@ func interactionMapReportCSV(d *runArchiveHTMLReportData, write reportCSVWriteFu
 
 func journeyRiskReportPDF(d *runArchiveHTMLReportData, lines *[]string) {
 	view := d.JourneyRiskView()
-	pdfHeading(lines, "Journey Risk")
+	pdfHeading(lines, reportSectionTitle(reportSectionJourneyRisk))
 	*lines = append(*lines, view.Summary)
 	for _, journey := range view.Journeys {
 		*lines = append(*lines, fmt.Sprintf("- %s (%s): %s eligible, %s completed, %s failed, %s aborted, %s skipped, %s censored; failure rate %s", journey.Name, journey.ID, journey.Eligible, journey.Completed, journey.Failed, journey.Aborted, journey.Skipped, journey.Censored, journey.FailureRate))

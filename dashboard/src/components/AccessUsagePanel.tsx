@@ -227,9 +227,11 @@ export default function AccessUsagePanel({
                   ).map(([key, label]) => (
                     <th
                       key={key}
+                      className="sortable"
                       aria-sort={sort === key ? (ascending ? 'ascending' : 'descending') : 'none'}
                     >
                       <button
+                        type="button"
                         onClick={() => {
                           setSort(key)
                           setAscending(sort === key ? !ascending : key === 'user')

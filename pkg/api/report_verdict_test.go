@@ -308,7 +308,7 @@ func TestReportVerdictTreatsUnscoredTelemetryAsAConcern(t *testing.T) {
 	r := passing()
 	r.Overview.Telemetry.UnscoredIntervals = 3
 	got := deriveReportVerdict(r)
-	if got.Status != reportVerdictConditional || !strings.Contains(strings.Join(reportConditionalConcerns(r), ";"), "could not be scored for 3 interval(s)") {
+	if got.Status != reportVerdictConditional || !strings.Contains(strings.Join(reportConditionalConcerns(r), ";"), "could not be scored for 3 intervals") {
 		t.Fatalf("unscored telemetry verdict %#v concerns %v", got, reportConditionalConcerns(r))
 	}
 }

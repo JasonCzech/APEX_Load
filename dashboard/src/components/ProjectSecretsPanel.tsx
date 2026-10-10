@@ -576,7 +576,7 @@ export default function ProjectSecretsPanel({
       <div className="settings-subsection">
         <div className="settings-manager-summary">
           <div>
-            <span className="setting-label">Create Secret</span>
+            <span className="setting-label">Create secret</span>
             <span className="setting-desc">Creating is safe for editors because existing names cannot be overwritten. Rotation remains an administrator action.</span>
           </div>
         </div>
@@ -616,7 +616,7 @@ export default function ProjectSecretsPanel({
             onClick={() => { void createSecret() }}
             disabled={!canCreate || !writable || !createSupported || !normalizedNewName || !newValue || Boolean(nameError) || Boolean(busyName)}
           >
-            {busyName && busyName === normalizedNewName ? 'Creating…' : 'Create Secret'}
+            {busyName && busyName === normalizedNewName ? 'Creating…' : 'Create secret'}
           </button>
         </div>
         {nameError && <p id={nameErrorId} className="settings-error-inline" role="alert">{nameError}</p>}

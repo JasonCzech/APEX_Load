@@ -11,6 +11,7 @@ import { isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils
 import { maxVUsersForRole } from './observerGroupModel'
 import { proportionalVUserTargets } from './runtimeAdjustmentModel'
 import './RuntimeAdjustmentDialog.css'
+import { formatDateTime } from '../utils/dateTime'
 
 interface Props {
   test: TestSummary
@@ -239,7 +240,7 @@ export default function RuntimeAdjustmentDialog({ test, onClose, onApplied, retu
                 <td><strong>{group.name}</strong>{group.role === 'observer' && <small>Observer · max {maxVUsersForRole(group.role)} VUs</small>}{group.stageDriven && <small>Future stages may replace a manual load target.</small>}</td>
                 <td><input aria-label={`${group.name} target duration`} value={group.duration} disabled={!group.selected} aria-invalid={(group.selected && !isValidDurationInput(group.duration)) || undefined} onChange={event => { setGroups(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, duration: event.target.value } : item)); setPreview(null) }} /></td>
                 <td><input type="number" min={goalMode ? 0.1 : 0} max={goalMode ? 100000 : maxVUsersForRole(group.role)} step={goalMode ? 0.1 : 1} aria-label={`${group.name} ${goalMode ? 'target TPS' : 'target VUsers'}`} value={goalMode ? group.targetTps ?? '' : group.vusers} disabled={!group.selected} aria-invalid={groupFieldInvalid(group) || undefined} onChange={event => { const value = Number(event.target.value); setGroups(current => current.map((item, itemIndex) => itemIndex === index ? goalMode ? { ...item, targetTps: value } : { ...item, vusers: value } : item)); setPreview(null) }} /></td>
-                <td>{result?.effective_end_at ? new Date(result.effective_end_at).toLocaleString() : 'Preview required'}</td>
+                <td>{result?.effective_end_at ? formatDateTime(result.effective_end_at, { seconds: true }) : 'Preview required'}</td>
               </tr>
             })}</tbody>
           </table>
@@ -255,7 +256,7 @@ export default function RuntimeAdjustmentDialog({ test, onClose, onApplied, retu
         {error && <p className="runtime-adjustment-error" role="alert">{error}</p>}
         {preview && <section className={`runtime-adjustment-impact ${preview.decision}`} aria-label="Runtime adjustment impact">
           <strong>{preview.decision === 'allowed' ? 'Ready to apply' : 'Adjustment conflicts with scheduled capacity'}</strong>
-          <p>Scenario duration {preview.impact.scenario_duration} · peak {preview.impact.peak_vusers.toLocaleString()} VUsers · {preview.impact.recommended_generators} generators · ends {preview.impact.scenario_end_at ? new Date(preview.impact.scenario_end_at).toLocaleString() : 'n/a'}.</p>
+          <p>Scenario duration {preview.impact.scenario_duration} · peak {preview.impact.peak_vusers.toLocaleString()} VUsers · {preview.impact.recommended_generators} generators · ends {preview.impact.scenario_end_at ? formatDateTime(preview.impact.scenario_end_at, { seconds: true }) : 'n/a'}.</p>
           {preview.conflicts?.map(conflict => <p key={`${conflict.code}-${conflict.message}`}>{conflict.message}</p>)}
           {preview.decision === 'blocked' && preview.safe_proposal && <button type="button" className="btn btn-sm btn-secondary" onClick={useSafeMaximum}>Use safe maximum</button>}
         </section>}

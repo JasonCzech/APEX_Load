@@ -3818,10 +3818,10 @@ export default function SettingsPage({
                   </div>
                   <div className="setting-row">
                     <div className="setting-info">
-                      <span className="setting-label">Display Name Header</span>
+                      <span className="setting-label">Display name Header</span>
                       <span className="setting-desc">Optional friendly name forwarded into the request context for future UI and audit use.</span>
                     </div>
-                    <input aria-label="Display Name Header"
+                    <input aria-label="Display name Header"
                       className="settings-input cell-mono"
                       value={settings.auth.name_header}
                       onChange={(e) => updateAuth('name_header', e.target.value)}
@@ -3921,7 +3921,7 @@ export default function SettingsPage({
                         </div>
                         <div className="setting-row">
                           <div className="setting-info">
-                            <span className="setting-label">Display Name</span>
+                            <span className="setting-label">Display name</span>
                             <span className="setting-desc">Friendly identity label if the proxy forwards one.</span>
                           </div>
                           <span className="settings-value-display">{authStatus.user.display_name || 'Not provided'}</span>
@@ -5218,7 +5218,7 @@ export default function SettingsPage({
                   onClick={() => runGuarded(() => { void createDomain() })}
                   disabled={!newDomainName.trim() || !canManageDomains}
                 >
-                  Add Domain
+                  Add domain
                 </button>
               </div>
             </div>
@@ -6320,7 +6320,7 @@ export default function SettingsPage({
                             <td className="cell-mono">{JSON.stringify(row.data)}</td>
                             <td>{row.status || 'active'}</td>
                             <td>{row.version}</td>
-                            <td>{new Date(row.updated_at).toLocaleString()}</td>
+                            <td>{formatDateTime(row.updated_at)}</td>
                         <td aria-label="Data pool actions">
                               <div className="settings-inline-actions">
                                 <button className="btn btn-sm btn-secondary" type="button" disabled={dataPoolRowSaveBusy || dataPoolRowDeleteBusy} onClick={() => editDataPoolRow(row)}>

@@ -72,7 +72,7 @@ test('stopped outcomes and report drill-down agree across populations', async ({
   await page.getByRole('tab', { name: 'Performance', exact: true }).click()
   await page.locator('.run-report-scoreboard .run-report-table tbody tr').filter({ hasText: 'Crosscut_population' }).click()
   await expect(page.getByRole('combobox', { name: 'Metric population', exact: true })).toHaveValue('transaction')
-  await expect(page.getByRole('heading', { name: 'Named Transaction Summary', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Named transaction summary', exact: true })).toBeVisible()
   await page.getByRole('tab', { name: 'Diagnostics', exact: true }).click()
   const selector = page.getByRole('combobox', { name: 'Archived named transaction' })
   await expect(selector).toBeVisible()

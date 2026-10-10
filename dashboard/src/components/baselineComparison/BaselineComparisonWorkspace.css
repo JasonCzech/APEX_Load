@@ -11,3 +11,4 @@
 .bc-document-tuple{display:block;margin-top:4px;color:var(--text-secondary);font-size:11px;font-weight:400}
 
 .bc-header-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px}
+.bc-value{white-space:nowrap}.bc-saved li{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.bc-verdict-blockers{border-left:3px solid var(--warning,#c89020);padding:4px 12px}.bc-verdict-blockers ul{margin:6px 0;padding-left:20px}

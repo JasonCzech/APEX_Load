@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { RootCauseRouteState } from '../../appRouting'
 import type { MetricsHistoryPoint, RunArchiveReport } from '../../types'
@@ -10,17 +10,21 @@ import RcaBrowserBaselineSection from './RcaBrowserBaseline'
 import RcaTimeline from './RcaTimeline'
 import {
   formatRcaDuration,
+  formatRcaClock,
   formatRcaEffect,
   formatRcaTime,
   formatRcaWindow,
   parseRcaWindow,
   rcaAnomalyWindow,
+  rcaCollapseLabels,
   rcaConfidenceLabel,
   rcaHypothesisWindow,
   rcaLargestChanges,
   rcaLimitationLabel,
+  rcaLimitationText,
   rcaOriginLabel,
   rcaOutcomeLabel,
+  rcaSentence,
   rcaSeriesLabel,
   rcaSignatureLabel,
   rcaStatusLabel,
@@ -96,6 +100,13 @@ function HypothesisCard({ assessment, hypothesis, selected, onInvestigate, onClo
 }) {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null)
+  // Opening a hypothesis (here, from the run summary or from a link) moves
+  // focus to it: its Investigate button is replaced, and the investigation
+  // it opens follows it.
+  const itemRef = useRef<HTMLLIElement>(null)
+  useEffect(() => {
+    if (selected) itemRef.current?.focus()
+  }, [selected])
   const act = async (run: () => Promise<string>) => {
     setBusy(true)
     setMessage(null)
@@ -110,28 +121,38 @@ function HypothesisCard({ assessment, hypothesis, selected, onInvestigate, onClo
   const anomaly = (id: string) => assessment.anomalies.find(a => a.id === id)
   const label = (id: string) => { const a = anomaly(id); return a ? rcaSeriesLabel(a.series) : id }
   const title = rcaSignatureLabel(hypothesis.signature)
+  // One line per cause and relation: a cause that preceded several changes
+  // (or the same series' changes at different onsets) is read once.
+  const chainGroups = new Map<string, { cause: string; relation: string; effects: string[] }>()
+  for (const step of hypothesis.chain) {
+    const cause = anomaly(step.from)
+    const causeText = `${label(step.from)}${cause ? ` (${formatRcaEffect(cause)})` : ''}`
+    const relation = RELATION_LABELS[step.relation] || step.relation.replace(/_/g, ' ')
+    const key = `${causeText}\u0000${relation}`
+    const group = chainGroups.get(key) || { cause: causeText, relation, effects: [] }
+    group.effects.push(label(step.to))
+    chainGroups.set(key, group)
+  }
+  const chain = [...chainGroups].map(([key, g]) => ({ key, text: `${g.cause} ${g.relation} ${rcaCollapseLabels(g.effects).join(', ')}` }))
   return (
-    <li className={`rca-hypothesis${selected ? ' rca-hypothesis-selected' : ''}`} aria-label={`Hypothesis ${hypothesis.rank}: ${title}`}>
+    <li ref={itemRef} tabIndex={selected ? -1 : undefined} className={`rca-hypothesis${selected ? ' rca-hypothesis-selected' : ''}`} aria-label={`Hypothesis ${hypothesis.rank}: ${title}`}>
       <div className="rca-hypothesis-heading">
         <h4><span className="rca-rank">#{hypothesis.rank}</span> {title}</h4>
-        <span title={hypothesis.confidence_reasons[0] || undefined}><Badge tone={rcaTone(hypothesis.confidence)}>{rcaConfidenceLabel(hypothesis.confidence)}</Badge></span>
+        <span title={hypothesis.confidence_reasons[0] ? rcaSentence(hypothesis.confidence_reasons[0]) : undefined}><Badge tone={rcaTone(hypothesis.confidence)}>{rcaConfidenceLabel(hypothesis.confidence)}</Badge></span>
         {selected
           ? <button type="button" className="btn btn-sm btn-ghost" onClick={onClose}>Close investigation</button>
           : <button type="button" className="btn btn-sm btn-secondary" onClick={onInvestigate}>Investigate</button>}
       </div>
-      <p><strong>Explains:</strong> {hypothesis.symptoms.map(label).join('; ') || 'No symptom recorded'}</p>
-      {hypothesis.chain.length > 0 && <ul className="rca-chain" aria-label="Evidence chain">{hypothesis.chain.map(step => {
-        const cause = anomaly(step.from)
-        return <li key={`${step.from}>${step.to}`}>{label(step.from)}{cause ? ` (${formatRcaEffect(cause)})` : ''} {RELATION_LABELS[step.relation] || step.relation.replace(/_/g, ' ')} {label(step.to)}</li>
-      })}</ul>}
+      <p><strong>Explains:</strong> {rcaCollapseLabels(hypothesis.symptoms.map(label)).join('; ') || 'No symptom recorded'}</p>
+      {chain.length > 0 && <ul className="rca-chain" aria-label="Evidence chain">{chain.map(line => <li key={line.key}>{line.text}</li>)}</ul>}
       <details>
         <summary>Why {rcaConfidenceLabel(hypothesis.confidence).toLowerCase()}</summary>
-        <ul>{hypothesis.confidence_reasons.map((reason, i) => <li key={i}>{reason}</li>)}</ul>
+        <ul>{hypothesis.confidence_reasons.map((reason, i) => <li key={i}>{rcaSentence(reason)}</li>)}</ul>
       </details>
       <p><strong>Contradicting evidence:</strong> {hypothesis.contradicting.length ? hypothesis.contradicting.map((ref, i) => <code key={i} className="rca-locator">{ref.locator}</code>) : 'None found.'}</p>
       {hypothesis.competing.length > 0 && <p><strong>Also supported:</strong> {hypothesis.competing.map(rcaSignatureLabel).join(', ')}</p>}
       <p className="rca-falsification"><strong>Would disprove it:</strong> {hypothesis.falsification || 'No falsification check is defined for this signature.'}</p>
-      {hypothesis.limitations.length > 0 && <ul className="rca-limitations" aria-label="Hypothesis limitations">{hypothesis.limitations.map((item, i) => <li key={i}>{item}</li>)}</ul>}
+      {hypothesis.limitations.length > 0 && <ul className="rca-limitations" aria-label="Hypothesis limitations">{hypothesis.limitations.map((item, i) => <li key={i}>{rcaLimitationText(item)}</li>)}</ul>}
       {actions && <div className="rca-hypothesis-actions" role="group" aria-label={`Use hypothesis ${hypothesis.rank}`}>
         <button type="button" className="btn btn-sm btn-ghost" disabled={busy} onClick={() => void act(() => actions.recordFinding(hypothesis, assessment))}>Record as finding</button>
         <button type="button" className="btn btn-sm btn-ghost" disabled={busy} onClick={() => void act(() => actions.annotate(hypothesis, assessment))}>Annotate timeline</button>
@@ -195,7 +216,7 @@ function RcaOverview({ testId, assessment, report, history, historyLoading, wind
           <span className="run-report-muted">Window: {window ? `${formatRcaTime(window.start)} to ${formatRcaTime(window.end)}` : 'Whole run'}</span>
           {changes.map(anomaly => {
             const w = rcaAnomalyWindow(anomaly)
-            return <button key={anomaly.id} type="button" className="btn btn-sm btn-ghost" aria-pressed={sameRcaWindow(window, w)} onClick={() => onWindowChange(w)}>Focus {rcaSeriesLabel(anomaly.series)}</button>
+            return <button key={anomaly.id} type="button" className="btn btn-sm btn-ghost" aria-pressed={sameRcaWindow(window, w)} onClick={() => onWindowChange(w)}>Focus {rcaSeriesLabel(anomaly.series)} at {formatRcaClock(anomaly.onset)}</button>
           })}
           <button type="button" className="btn btn-sm btn-ghost" aria-pressed={!window} onClick={() => onWindowChange(null)}>Whole run</button>
         </div>}
@@ -259,8 +280,8 @@ export default function RootCausePanel({ testId, model, report, history, history
     // see nothing.
     if (!canAnalyze) return null
     return <p className="run-report-muted" role="note">Root-cause analysis is not enabled for this project. {settingsHref
-      ? <>Turn it on in <a href={settingsHref}>Settings › Project › Analysis</a>.</>
-      : 'A project administrator turns it on in Settings › Project › Analysis.'}</p>
+      ? <>Turn it on in <a href={settingsHref}>Settings › Workspaces › Project analysis</a>.</>
+      : 'A project administrator turns it on in Settings › Workspaces › Project analysis.'}</p>
   }
   if (!response && !(route.analysis || route.hypothesis)) return null
   const assessment = response?.assessment
@@ -287,19 +308,31 @@ export default function RootCausePanel({ testId, model, report, history, history
     else onRouteChange({ analysis: next.analysis_id, rev: next.revision ? String(next.revision) : undefined, hypothesis: undefined, window: undefined })
   }
   const detection = assessment?.detection
+  // The outcome sits beside the heading. A supported outcome says how many
+  // hypotheses and how confident the leading one is, so one low-confidence
+  // hypothesis does not read as an established cause.
+  const leading = assessment?.hypotheses[0]
+  const outcomeText = assessment?.outcome === 'supported' && leading
+    ? assessment.hypotheses.length === 1
+      ? `One supported hypothesis · ${rcaConfidenceLabel(leading.confidence).toLowerCase()}`
+      : `${assessment.hypotheses.length.toLocaleString()} supported hypotheses · #1 has ${rcaConfidenceLabel(leading.confidence).toLowerCase()}`
+    : rcaOutcomeLabel(assessment?.outcome || '')
+  const outcomeTone = assessment?.outcome === 'supported' && leading ? rcaTone(leading.confidence) : 'warning'
   const judged = detection ? detection.series_evaluated + detection.series_excluded : 0
 
   return (
     <section className="run-report-panel rca-panel" aria-label="Root cause" data-report-focus="root-cause">
       <div className="run-report-section-heading rca-panel-heading">
         <div>
-          <h2>Root cause</h2>
+          <div className="rca-panel-title">
+            <h2>Root cause</h2>
+            {assessment && <Badge tone={outcomeTone}>{outcomeText}</Badge>}
+          </div>
           <p className="run-report-muted">Generated from the run's archived evidence{response?.revision ? ` · ${rcaOriginLabel(response.origin).toLowerCase()} analysis, revision ${response.revision}` : ''}{response?.completed_at ? ` · ${formatRcaTime(response.completed_at)}` : ''}.</p>
         </div>
         <div className="rca-panel-actions">
-          {assessment && <Badge tone={assessment.outcome === 'supported' ? 'success' : 'warning'}>{rcaOutcomeLabel(assessment.outcome)}</Badge>}
           {route.analysis && <button type="button" className="btn btn-sm btn-ghost" onClick={() => onRouteChange({ analysis: undefined, rev: undefined, hypothesis: undefined, window: undefined })}>Show latest analysis</button>}
-          {onCopyLink && response?.analysis_id && <button type="button" className="btn btn-sm btn-ghost" onClick={onCopyLink}>Copy link</button>}
+          {onCopyLink && response?.analysis_id && <button type="button" className="btn btn-sm btn-ghost" onClick={onCopyLink}>Copy analysis link</button>}
           {canAnalyze && !analysisEnabled && <span className="run-report-muted" role="note">New analyses are not enabled for this project; saved ones stay readable.</span>}
           {canAnalyze && analysisEnabled && <>
             <label className="rca-enrich" title="Freeze the archive, monitor sources and datasets as they are now, then analyze that copy. Use it after late monitoring evidence arrived."><input type="checkbox" checked={enrich} onChange={e => setEnrich(e.target.checked)} /> Capture evidence afresh</label>
@@ -371,7 +404,10 @@ export default function RootCausePanel({ testId, model, report, history, history
           <ul>{assessment.capacity!.map((c, i) => <li key={i}>{rcaSeriesLabel(c.series)}: {c.knee !== undefined ? `latency bends at about ${formatNumber(c.knee, 1)} ${c.load_unit}` : c.reason || 'no knee found'}</li>)}</ul>
         </details>}
         {response?.analysis_id && <RcaCritiques testId={testId} analysisId={response.analysis_id} />}
-        <p className="run-report-muted rca-provenance">Engine {assessment.inputs.engine} · evidence revision {assessment.inputs.evidence_revision}{assessment.inputs.baseline ? ' · with baseline' : ''}</p>
+        <details className="rca-provenance">
+          <summary>Engine and inputs</summary>
+          <p className="run-report-muted">Engine {assessment.inputs.engine} · evidence revision {assessment.inputs.evidence_revision}{assessment.inputs.baseline ? ' · with baseline' : ''}</p>
+        </details>
       </>}
     </section>
   )

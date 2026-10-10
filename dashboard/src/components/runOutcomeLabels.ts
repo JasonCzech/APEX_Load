@@ -1,4 +1,5 @@
 import type { RunArchiveReport } from '../types'
+import { formatTimeLong } from '../utils/timeUtils'
 
 export function runOutcomeLabels(manifest?: RunArchiveReport['manifest']) {
   const execution: Record<string, string> = { workload_completed: 'Finished', operator_stopped: 'Stopped by operator', stopped_early: 'Stopped early', aborted: 'Aborted', failed: 'Failed' }
@@ -6,6 +7,6 @@ export function runOutcomeLabels(manifest?: RunArchiveReport['manifest']) {
   const elapsed = start && manifest?.completed_at ? (Date.parse(manifest.completed_at) - Date.parse(start)) / 1000 : undefined
   return {
     execution: execution[manifest?.termination_reason || ''] || 'Unknown termination reason',
-    elapsed: elapsed !== undefined && Number.isFinite(elapsed) && elapsed >= 0 ? `${Math.round(elapsed)}s` : 'Unknown',
+    elapsed: elapsed !== undefined && Number.isFinite(elapsed) && elapsed >= 0 ? formatTimeLong(elapsed) : 'Unknown',
   }
 }

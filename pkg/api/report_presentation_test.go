@@ -33,9 +33,18 @@ func TestReportHTMLProvidesReviewSummaryAndSectionNavigation(t *testing.T) {
 				}
 			}
 			profile, _ := lookupRunArchiveReportProfile(profileID)
-			for _, section := range reportSectionsForProfile(profile) {
+			data := buildRunArchiveReportRenderData(report, profile, nil, nil)
+			sections, notCaptured := reportApplicableSections(profile, &data)
+			for _, section := range sections {
 				if !strings.Contains(body, `href="#report-`+section.ID+`"`) || !strings.Contains(body, `id="report-`+section.ID+`"`) {
 					t.Errorf("section %q has no linked destination", section.ID)
+				}
+			}
+			// A section that does not apply is named in the contents, not
+			// rendered as an empty placeholder.
+			for _, label := range notCaptured {
+				if !strings.Contains(body, label) {
+					t.Errorf("not-captured section %q is not named", label)
 				}
 			}
 			if profileID == "audit" && strings.Contains(body, `<b>Error rate</b><span>`) {
@@ -133,7 +142,7 @@ func TestReportPDFHasHierarchyBookmarksPageNumbersAndBalancedTail(t *testing.T) 
 	if err := writeRunArchiveReportPDFWithProfile(samplePDFRunArchiveReport(), &output, "executive"); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Review Summary", "Evidence gaps:", "/Outlines", "/PageMode /UseOutlines", "/Helvetica-Bold", "Page 1 of", "/Info ", "/Title (Checkout Evidence - Executive Summary Report)", `Time \(UTC\)`, "p95 ms"} {
+	for _, want := range []string{"Review summary", "Evidence gaps:", "/Outlines", "/PageMode /UseOutlines", "/Helvetica-Bold", "Page 1 of", "/Info ", "/Title (Checkout Evidence - Executive report)", `Time \(UTC\)`, "p95 ms"} {
 		if !strings.Contains(output.String(), want) {
 			t.Errorf("PDF missing %q", want)
 		}

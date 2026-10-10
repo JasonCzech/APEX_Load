@@ -10,8 +10,8 @@ export interface ReportTypeOption {
 }
 
 const FALLBACK_REPORT_TYPES: ReportTypeOption[] = [
-  { id: 'executive', label: 'Executive Summary', blurb: 'High-level verdict, key metrics, and release decision narrative for stakeholders.' },
-  { id: 'engineer', label: 'Detailed Technical', blurb: 'Full drilldown with per-action stats, timelines, errors, resources, and diagnostics.' },
+  { id: 'executive', label: 'Executive', blurb: 'High-level verdict, key metrics, and release decision narrative for stakeholders.' },
+  { id: 'engineer', label: 'Engineer', blurb: 'Full drilldown with per-action stats, timelines, errors, resources, and diagnostics.' },
   { id: 'audit', label: 'Audit', blurb: 'Governance evidence, provenance, completeness, and artifact integrity.' },
 ]
 

@@ -3118,6 +3118,15 @@ export interface operations {
               "status"?: string;
               "tier"?: string;
             }>;
+            "generated_findings"?: Array<{
+              "evidence"?: string;
+              "id"?: string;
+              "impact"?: string;
+              "observed"?: string;
+              "root_cause"?: string;
+              "severity"?: string;
+              "title"?: string;
+            }>;
             "host_network"?: Array<{
               "open_files"?: {
                 "available"?: boolean;
@@ -73071,6 +73080,15 @@ export interface operations {
               "reason"?: string;
               "status": string;
               "tier": string;
+            }>;
+            "generated_findings"?: Array<{
+              "evidence"?: string;
+              "id": string;
+              "impact"?: string;
+              "observed"?: string;
+              "root_cause"?: string;
+              "severity": string;
+              "title": string;
             }>;
             "host_network"?: Array<{
               "open_files": {

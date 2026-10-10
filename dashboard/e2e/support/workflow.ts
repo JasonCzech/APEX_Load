@@ -43,7 +43,7 @@ export async function createWorkspaceUI(page: Page, request: APIRequestContext, 
     response.request().method() === 'POST'
     && new URL(response.url()).pathname === '/api/v1/domains'
   ))
-  await page.getByRole('button', { name: 'Add Domain' }).click()
+  await page.getByRole('button', { name: 'Add domain' }).click()
   const domainPayload = await (await domainResponsePromise).json()
   const domainId = responseID(domainPayload, 'create domain', 'domain')
   responseID(domainPayload, 'provision application repository', 'application_repository')

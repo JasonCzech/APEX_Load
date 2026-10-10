@@ -11,7 +11,8 @@ func TestComparisonNumberNeverUsesExponentNotation(t *testing.T) {
 		value  float64
 		want   string
 	}{
-		{"%+v ms", 1406.2, "+1406 ms"},
+		{"%+v ms", 1406.2, "+1,406 ms"},
+		{"%+v ms", -21406.2, "-21,406 ms"},
 		{"%+v", -12.34, "-12.3"},
 		{"%v", 0.0042, "0.0042"},
 		{"%v", 2.5, "2.5"},
@@ -19,7 +20,7 @@ func TestComparisonNumberNeverUsesExponentNotation(t *testing.T) {
 		{"%v", -0.0001, "-0.0001"},
 		{"%+v", 0.0004, "+0.0004"},
 		{"%v", 0.12345, "0.123"},
-		{"%v", 1571.6, "1572"},
+		{"%v", 1571.6, "1,572"},
 	}
 	for _, tc := range cases {
 		if got := fmt.Sprintf(tc.format, comparisonNumber(tc.value)); got != tc.want {

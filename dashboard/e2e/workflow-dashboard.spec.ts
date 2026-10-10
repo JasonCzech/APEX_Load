@@ -59,10 +59,10 @@ test('Dashboard preserves queue routing, evidence truth, filters and narrow run 
   await expect(page.locator('main')).toContainText('Queued checkout')
 
   await page.getByRole('button', { name: 'Dashboard', exact: true }).click()
-  await page.getByRole('tab', { name: 'Recent Runs 1' }).focus()
+  await page.getByRole('tab', { name: 'Recent runs 1' }).focus()
   await page.keyboard.press('ArrowRight')
   await expect(page.getByRole('tab', { name: 'Active & Queued 2' })).toBeFocused()
-  await page.getByRole('tab', { name: 'Recent Runs 1' }).click()
+  await page.getByRole('tab', { name: 'Recent runs 1' }).click()
   await page.getByRole('searchbox', { name: 'Find a run' }).fill('no matching run')
   await expect(page.getByRole('status').filter({ hasText: 'No runs match these filters' })).toBeVisible()
   await page.getByRole('button', { name: 'Clear filters', exact: true }).click()

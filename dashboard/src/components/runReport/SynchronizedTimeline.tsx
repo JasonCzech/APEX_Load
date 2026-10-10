@@ -338,7 +338,7 @@ export default function SynchronizedTimeline({ data, annotations, overlays, onOv
     <section className="run-report-panel run-report-timeline" aria-label="Synchronized run timeline">
       <div className="run-report-section-heading">
         <div>
-          <h2>Synchronized Timeline</h2>
+          <h2>Synchronized timeline</h2>
           <p>Compare performance and resource signals on a shared time window.</p>
         </div>
         {zoomState.window && (

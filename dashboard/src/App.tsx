@@ -2976,12 +2976,19 @@ function AppShell({
   ]);
 
 
+  // A link to Access that the session's role cannot open lands on the
+  // Dashboard with a note, rather than silently somewhere else.
+  const [accessRedirectNotice, setAccessRedirectNotice] = useState(false);
+  useEffect(() => {
+    if (view.page !== "dashboard") setAccessRedirectNotice(false);
+  }, [view.page]);
   useEffect(() => {
     if (
       effectiveAccessLoaded &&
       view.page === "access" && !view.setting &&
       !canUseAccessWorkspace
     ) {
+      setAccessRedirectNotice(true);
       setView((current) =>
         scopeAppViewToWorkspace(
           { page: "dashboard" },
@@ -3345,6 +3352,12 @@ function AppShell({
           {activeTopbarContribution?.feedback && (
             <div className="main-topbar-feedback">
               {activeTopbarContribution.feedback}
+            </div>
+          )}
+          {accessRedirectNotice && view.page === "dashboard" && (
+            <div className="main-topbar-feedback" role="status">
+              <span>Access is for administrators. Your role in this workspace cannot open it, so the Dashboard opened instead.</span>
+              <button className="btn btn-sm btn-ghost" type="button" onClick={() => setAccessRedirectNotice(false)}>Dismiss</button>
             </div>
           )}
           {desktopImportError && (

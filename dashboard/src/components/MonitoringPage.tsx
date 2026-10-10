@@ -1,6 +1,7 @@
 import MonitoringEvidenceCard from './MonitoringEvidenceCard'
 import AnalysisWorkspace from './AnalysisWorkspace'
-import { request } from '../hooks/apiClient'
+import { ApiError, request } from '../hooks/apiClient'
+import { formatDateTime } from '../utils/dateTime'
 import { RunMonitorSources } from './RunMonitoring'
 import ThresholdIncidentPanel from './ThresholdIncidentPanel'
 import type { IncidentHealth } from './thresholdIncidentModel'
@@ -278,11 +279,14 @@ function groupedMonitorHeaderLabel(severity: MonitorSeverity): string {
 
 const SCHEDULE_SWEEP_STALE_MS = 2 * 60 * 1000
 
-function scheduleHealthPresentation(health: ScenarioScheduleHealth | null, now = Date.now()): {
+function scheduleHealthPresentation(health: ScenarioScheduleHealth | null, now = Date.now(), forbidden = false): {
   severity: MonitorSeverity
   label: string
   summary: string
 } {
+  if (!health && forbidden) {
+    return { severity: 'unknown', label: 'not shown', summary: 'Scheduler health is shown to workspace-wide viewers and administrators.' }
+  }
   if (!health) {
     return { severity: 'unknown', label: 'checking', summary: 'Schedule health is unavailable.' }
   }
@@ -341,13 +345,13 @@ function scheduleHealthPresentation(health: ScenarioScheduleHealth | null, now =
 
 type ApiCallResult<T> =
   | { ok: true; value: T }
-  | { ok: false }
+  | { ok: false; forbidden?: boolean }
 
 async function settleApiCall<T>(request: () => Promise<T>): Promise<ApiCallResult<T>> {
   try {
     return { ok: true, value: await request() }
-  } catch {
-    return { ok: false }
+  } catch (err) {
+    return { ok: false, forbidden: err instanceof ApiError && err.status === 403 }
   }
 }
 
@@ -371,7 +375,7 @@ function fullBuildTimeTitle(buildTime?: string): string | undefined {
   const raw = (buildTime || '').trim()
   if (!raw) return undefined
   const parsed = new Date(raw)
-  return Number.isNaN(parsed.getTime()) ? raw : parsed.toLocaleString()
+  return Number.isNaN(parsed.getTime()) ? raw : formatDateTime(parsed, { seconds: true })
 }
 
 function displayControllerInstanceName(id?: string): string {
@@ -464,6 +468,9 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   refreshScopeRef.current = activeProjectId
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [scheduleHealth, setScheduleHealth] = useState<ScenarioScheduleHealth | null>(null)
+  // A role the scheduler's health is not shown to is not asked again: each
+  // refresh would only repeat the refusal.
+  const [scheduleHealthForbidden, setScheduleHealthForbidden] = useState(false)
   const [runCalendar, setRunCalendar] = useState<RunCalendarResponse | null>(null)
   const [calendarView, setCalendarView] = useState<RunCalendarView>(() => readCalendarPreferences(activeProjectId).view)
   const [calendarAnchor, setCalendarAnchor] = useState<Date>(() => readCalendarPreferences(activeProjectId).anchor)
@@ -648,7 +655,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const fleetAuditHeaderLabel = canManageSystem
     ? fleetAuditEvents.length > 0 ? `${fleetAuditEvents.length} event${fleetAuditEvents.length === 1 ? '' : 's'}` : 'quiet'
     : 'admin only'
-  const schedulePresentation = scheduleHealthPresentation(scheduleHealth)
+  const schedulePresentation = scheduleHealthPresentation(scheduleHealth, Date.now(), scheduleHealthForbidden)
   const scheduleHeaderSeverity = schedulePresentation.severity
   const readinessReadyCount = systemReadiness?.checks.filter(check => check.status === 'ready').length ?? 0
   const readinessDegradedCount = systemReadiness?.checks.filter(check => check.status === 'degraded').length ?? 0
@@ -886,7 +893,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     }
 
     const [scheduleHealthRes, runCalendarRes] = await Promise.all([
-      settleApiCall(() => api.getScheduleHealth()),
+      scheduleHealthForbidden ? Promise.resolve<ApiCallResult<ScenarioScheduleHealth>>({ ok: false, forbidden: true }) : settleApiCall(() => api.getScheduleHealth()),
       settleApiCall(() => api.getRunCalendar({
         from: calendarRange.from.toISOString(),
         to: calendarRange.to.toISOString(),
@@ -897,10 +904,12 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     ])
     if (!isCurrent()) return
     if (scheduleHealthRes.ok) setScheduleHealth(scheduleHealthRes.value)
+    else if (scheduleHealthRes.forbidden) setScheduleHealthForbidden(true)
     if (runCalendarRes.ok) setRunCalendar(runCalendarRes.value)
-    recordCardFreshness([{ cardId: 'run-calendar', ok: scheduleHealthRes.ok && runCalendarRes.ok }])
+    // Health the role cannot see does not make the calendar stale.
+    recordCardFreshness([{ cardId: 'run-calendar', ok: (scheduleHealthRes.ok || Boolean(scheduleHealthRes.forbidden)) && runCalendarRes.ok }])
     if (scheduleHealthRes.ok || runCalendarRes.ok) setLastRefreshed(new Date())
-  }), [activeCategoryId, activeProjectId, api, calendarRange.from, calendarRange.to, canManageSystem, loadHealth, recordCardFreshness, refreshReadiness, runCoalescedRefresh])
+  }), [activeCategoryId, activeProjectId, api, calendarRange.from, calendarRange.to, canManageSystem, loadHealth, recordCardFreshness, refreshReadiness, runCoalescedRefresh, scheduleHealthForbidden])
 
   const refreshAllCategories = useCallback(async (): Promise<boolean> => {
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return false

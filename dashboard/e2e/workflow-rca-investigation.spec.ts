@@ -1,5 +1,6 @@
 import { test, expect, seedScript, json, idOf, login } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
+import { pageClock, pageDateTime } from './support/dates'
 import { rcaTestReportView, rcaTestResponse, rcaTestSummary } from '../src/components/rca/rcaTestFixture'
 
 // The run is real and authorized; its archive and root-cause analyses are
@@ -32,6 +33,9 @@ test('root-cause investigation opens from Summary, drills into a hypothesis and 
     return route.fulfill({ json: [mapping] })
   })
   await page.route('**/api/v1/projects/*/monitor-sources', route => route.fulfill({ json: [{ id: 'elastic-1', name: 'Order logs', pack: 'elastic-query', revision: 1, collector_id: '', interval_seconds: 30, enabled: true }] }))
+  // The lookup asks the project's gates first; this project has business keys on.
+  const gates = { root_cause: { enabled: true, present: true, auto_analyze: false, auto_enrich: false }, business_keys: { enabled: true } }
+  await page.route('**/api/v1/projects/*/analysis-settings', route => route.fulfill({ json: { project_id: workspace.projectId, settings: { ...gates, revision: 1 }, forced_by_env: { root_cause: { enabled: false, present: false, auto_analyze: false, auto_enrich: false }, business_keys: { enabled: false } }, effective: gates } }))
   let requested: unknown
   let rca2Polls = 0
   await page.route('**/api/v1/tests**', async route => {
@@ -114,7 +118,7 @@ test('root-cause investigation opens from Summary, drills into a hypothesis and 
   // Diagnostics shows acceptance, validity, the ranked hypotheses, the
   // contradictions and what would disprove each.
   const panel = page.getByRole('region', { name: 'Root cause', exact: true })
-  await expect(panel.getByText('Supported hypotheses', { exact: true })).toBeVisible()
+  await expect(panel.getByText('2 supported hypotheses · #1 has medium confidence', { exact: true })).toBeVisible()
   await expect(panel.getByText('Validity unknown', { exact: true })).toBeVisible()
   const first = panel.getByRole('listitem', { name: 'Hypothesis 1: Resource pressure' })
   await expect(first).toContainText('Would disprove it: CPU stays below saturation while latency rises')
@@ -126,10 +130,11 @@ test('root-cause investigation opens from Summary, drills into a hypothesis and 
   // matching errors.
   const investigation = panel.getByRole('region', { name: 'Investigation: Resource pressure' })
   await expect(investigation.locator('.recharts-surface').first()).toBeVisible()
-  await expect(investigation).toContainText('Symptom: Checkout · p95 latency rose +300 ms from 2026-10-05 12:03:20 UTC ± 10 s')
-  await expect(investigation).toContainText('Cause: builtin:service.cpu.time · Dynatrace rose +60 pts from 2026-10-05 12:02:30 UTC ± 10 s')
-  await expect(investigation).toContainText('checkout began ramping to 20 VUsers at 2026-10-05 12:01:40 UTC')
-  await expect(investigation).toContainText('checkout reached 20 VUsers at 2026-10-05 12:02:00 UTC')
+  const at = (iso: string) => pageDateTime(page, iso)
+  await expect(investigation).toContainText(`Symptom: Checkout · p95 latency rose +300 ms from ${await at('2026-10-05T12:03:20Z')} ± 10 s`)
+  await expect(investigation).toContainText(`Cause: builtin:service.cpu.time · Dynatrace rose +60 pts from ${await at('2026-10-05T12:02:30Z')} ± 10 s`)
+  await expect(investigation).toContainText(`checkout began ramping to 20 VUsers at ${await at('2026-10-05T12:01:40Z')}`)
+  await expect(investigation).toContainText(`checkout reached 20 VUsers at ${await at('2026-10-05T12:02:00Z')}`)
   await expect(investigation).not.toContainText('inferred from its steady load levels')
   await expect(investigation.getByRole('region', { name: 'Transaction populations' })).toContainText('12,000')
   const exemplars = investigation.getByRole('region', { name: 'Exemplars' })
@@ -137,7 +142,7 @@ test('root-cause investigation opens from Summary, drills into a hypothesis and 
   await expect(exemplars).not.toContainText('trace-late')
   expect(new URLSearchParams(exemplarQueries[0]).get('from')).toBe('2026-10-05T12:01:25.000Z')
   expect(new URLSearchParams(exemplarQueries[0]).get('population')).toBe('transaction')
-  await expect(investigation).toContainText('Suspect run from 2026-10-05 12:04:30 UTC to 2026-10-05 12:04:40 UTC')
+  await expect(investigation).toContainText(`Suspect run from ${await at('2026-10-05T12:04:30Z')} to ${await at('2026-10-05T12:04:40Z')}`)
   await expect(investigation.getByRole('region', { name: 'Cause evidence' })).toContainText('Components: cart-service')
   const errors = investigation.getByRole('region', { name: 'Errors' })
   await expect(errors).toContainText('HTTP 503 from /cart/checkout')
@@ -153,7 +158,9 @@ test('root-cause investigation opens from Summary, drills into a hypothesis and 
   await investigation.getByRole('button', { name: 'Whole run', exact: true }).click()
   await expect(page).not.toHaveURL(/window=/)
   await expect(exemplars).toContainText('trace-late')
-  await investigation.getByRole('button', { name: 'Focus cause: builtin:service.cpu.time · Dynatrace', exact: true }).click()
+  // Each focus control names its change's onset, so repeated series stay distinct.
+  const focusCause = `Focus cause: builtin:service.cpu.time · Dynatrace at ${await pageClock(page, '2026-10-05T12:02:30Z')}`
+  await investigation.getByRole('button', { name: focusCause, exact: true }).click()
   await expect.poll(() => decodeURIComponent(page.url())).toContain('window=2026-10-05T12:02:20.000Z~2026-10-05T12:06:00.000Z')
   const shared = page.url()
 
@@ -183,8 +190,8 @@ test('root-cause investigation opens from Summary, drills into a hypothesis and 
   await reopened.goto(shared)
   const reopenedInvestigation = reopened.getByRole('region', { name: 'Investigation: Resource pressure' })
   await expect(reopenedInvestigation).toBeVisible()
-  await expect(reopenedInvestigation.getByRole('button', { name: 'Focus cause: builtin:service.cpu.time · Dynatrace', exact: true })).toHaveAttribute('aria-pressed', 'true')
-  await expect(reopenedInvestigation).toContainText('Window: 2026-10-05 12:02:20 UTC to 2026-10-05 12:06:00 UTC')
+  await expect(reopenedInvestigation.getByRole('button', { name: focusCause, exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(reopenedInvestigation).toContainText(`Window: ${await pageDateTime(reopened, '2026-10-05T12:02:20Z')} to ${await pageDateTime(reopened, '2026-10-05T12:06:00Z')}`)
   expect(latestRead).toBe(false)
   await other.close()
   // The first page runs the analysis poll; make it the active page again so

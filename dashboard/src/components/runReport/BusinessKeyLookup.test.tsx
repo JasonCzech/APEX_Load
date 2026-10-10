@@ -83,7 +83,7 @@ describe('BusinessKeyLookup', () => {
     expect(container.querySelector('[role="note"]')?.textContent).toContain('not enabled for this project')
     expect(container.querySelector('textarea')).toBeNull()
     // A project administrator is pointed at the setting; others are told who changes it.
-    expect(container.querySelector('[role="note"]')?.textContent).toContain('A project administrator turns it on in Settings › Project › Analysis.')
+    expect(container.querySelector('[role="note"]')?.textContent).toContain('A project administrator turns it on in Settings › Workspaces › Project analysis.')
     await render({ settingsHref: '#/settings?setting=analysis' })
     expect(container.querySelector('[role="note"] a')?.getAttribute('href')).toBe('#/settings?setting=analysis')
     // Without lookup permission there is nothing to tell.

@@ -306,14 +306,14 @@ describe('ApplicationRepositoryPage', () => {
     expect(container.textContent).toContain('20 items selected')
     await act(async () => findButton(container, 'Select all 27 matching items')?.click())
     expect(container.textContent).toContain('27 items selected')
-    const search = container.querySelector('input[placeholder="Find by name, ID, project, release, protocol, status..."]') as HTMLInputElement
+    const search = container.querySelector('input[placeholder="Find by name, ID, project, release, protocol, status…"]') as HTMLInputElement
     await act(async () => setInputValue(search, 'Checkout 26'))
     expect(container.querySelectorAll('.repository-asset-table tbody tr')).toHaveLength(1)
     expect(container.textContent).toContain('1 item selected')
     await act(async () => root.render(null))
     await act(async () => render())
     await flushPromises()
-    expect((container.querySelector('input[placeholder="Find by name, ID, project, release, protocol, status..."]') as HTMLInputElement).value).toBe('Checkout 26')
+    expect((container.querySelector('input[placeholder="Find by name, ID, project, release, protocol, status…"]') as HTMLInputElement).value).toBe('Checkout 26')
     expect(container.querySelectorAll('.repository-asset-table tbody tr')).toHaveLength(1)
   })
 

@@ -6,6 +6,7 @@ import { analysisPoliciesApi, type AnalysisPolicyRecord, type EditableAnalysisPo
 import { formatDateTime } from '../../utils/dateTime'
 import { getErrorMessage } from '../../utils/errorUtils'
 import Notice from '../ux/Notice'
+import TabList from '../ux/TabList'
 import { confirmAction } from '../ux/confirmAction'
 import {
   BROWSER_POLICY_METRICS, browserDefinitionFromDraft, browserDraftFromDefinition, defaultBrowserPolicyDraft, defaultJourneyPolicyDraft,
@@ -153,11 +154,14 @@ export default function AnalysisPoliciesPanel({ projectId, canEdit }: { projectI
   }
 
   return <section className="settings-subsection analysis-policies" aria-label="Browser and journey policies">
-    <p>Browser policies score a run's document metrics and set how the root-cause browser baseline compares them; journey policies define the journeys whose attempts are accounted. The default policy of each kind is pinned when a run starts, and findings keep the revision they were evaluated under: editing a policy never rewrites a finished run's results.</p>
-    <div className="settings-inline-actions" role="group" aria-label="Policy kind">
-      {(Object.keys(KIND_LABELS) as EditableAnalysisPolicyKind[]).map(value => <button key={value} type="button" className={`btn btn-sm ${kind === value ? 'btn-primary' : 'btn-secondary'}`} aria-pressed={kind === value} onClick={() => runGuarded(() => { setKind(value); setEditing(null); setRevisionView(null); setPolicies(null); setDeleteError('') })}>{KIND_LABELS[value].plural}</button>)}
-      {canEdit && !editing && <button type="button" className="btn btn-sm btn-secondary" onClick={() => runGuarded(startNew)}>New {KIND_LABELS[kind].singular}</button>}
-    </div>
+    <h3>Browser &amp; journey policies</h3>
+    <p className="setting-desc">Browser policies score a run's document metrics and set how the root-cause browser baseline compares them; journey policies define the journeys whose attempts are accounted. The default policy of each kind is pinned when a run starts, and findings keep the revision they were evaluated under: editing a policy never rewrites a finished run's results.</p>
+    {/* The kind is a view of the list below, so it is a tab row; creating a
+        policy is an action, kept apart from it. */}
+    <TabList className="access-subtab-row" aria-label="Policy kind">
+      {(Object.keys(KIND_LABELS) as EditableAnalysisPolicyKind[]).map(value => <button key={value} type="button" role="tab" aria-selected={kind === value} tabIndex={kind === value ? 0 : -1} className={kind === value ? 'active' : ''} onClick={() => runGuarded(() => { setKind(value); setEditing(null); setRevisionView(null); setPolicies(null); setDeleteError('') })}>{KIND_LABELS[value].plural}</button>)}
+    </TabList>
+    {canEdit && !editing && <div className="settings-inline-actions"><button type="button" className="btn btn-sm btn-secondary" onClick={() => runGuarded(startNew)}>New {KIND_LABELS[kind].singular}</button></div>}
     {!canEdit && <p className="run-report-muted">Your role in this project can view policies but not change them.</p>}
     {deleteError && <Notice tone="error" title="The policy was not deleted">{deleteError}</Notice>}
     {loadError && <Notice tone="error" title="Policies could not be loaded" action={<button type="button" className="btn btn-secondary btn-sm" onClick={() => setReload(value => value + 1)}>Retry</button>}>{loadError}</Notice>}

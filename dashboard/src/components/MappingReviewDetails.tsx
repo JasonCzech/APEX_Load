@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'react'
 import type { ScriptDefinition, SourceReviewMapping } from '../types/scripts'
 import { useAuthApi } from '../hooks/api/useAuthApi'
 import { decisionMatches, rebindMapping, type MappingReviewState, type ResolvedMapping } from './sourceMappingReviewState'
+import { formatDateTime } from '../utils/dateTime'
 
 export function MappingReviewDetails({ mapping, script, state, resolution, onChange, dirty }: {
   mapping: SourceReviewMapping; script?: ScriptDefinition | null; state?: MappingReviewState; resolution?: ResolvedMapping
@@ -44,7 +45,7 @@ export function MappingReviewDetails({ mapping, script, state, resolution, onCha
   return <details className="mapping-review-details">
     <summary>Review &amp; mapping details · {decision ? current ? decision.outcome === 'acknowledged' ? 'Acknowledged' : 'Needs changes' : 'Decision needs renewed review' : 'Not reviewed'}</summary>
     <p>Review annotations are saved with the script. They do not change conversion status, runtime support, or execution approval.</p>
-    {decision && <p>{decision.reviewer} · {new Date(decision.reviewedAt).toLocaleString()} · {dirty ? 'Draft has unsaved changes' : 'Saved with script'}{!current && ' · Destination or import revision changed'}</p>}
+    {decision && <p>{decision.reviewer} · {formatDateTime(decision.reviewedAt, { seconds: true })} · {dirty ? 'Draft has unsaved changes' : 'Saved with script'}{!current && ' · Destination or import revision changed'}</p>}
     {decision?.note && <blockquote>{decision.note}</blockquote>}
     {state?.bindings[mapping.id]?.linkedBy && <p>Manually linked by {state.bindings[mapping.id].linkedBy} · {state.bindings[mapping.id].linkedAt}</p>}
     {onChange ? <fieldset disabled={busy || !state}>

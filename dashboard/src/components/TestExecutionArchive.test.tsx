@@ -485,7 +485,7 @@ describe('TestExecutionArchive', () => {
     })
 
     expect(container.querySelector('[data-testid="archive-by-region"]')).toBeTruthy()
-    expect(container.textContent).toContain('Region Summary')
+    expect(container.textContent).toContain('Region summary')
     expect(container.textContent).toContain('us-east')
     expect(container.querySelector('[data-testid="archive-by-network-profile"]')).toBeTruthy()
     expect(container.textContent).toContain('Network Profile Summary')
@@ -504,7 +504,7 @@ describe('TestExecutionArchive', () => {
     expect(container.querySelector('[data-testid="archive-analysis-nodes"]')).toBeTruthy()
     expect(container.querySelector('[data-testid="archive-analysis-edges"]')).toBeTruthy()
     expect(container.querySelector('[data-testid="archive-analysis-drilldown"]')).toBeTruthy()
-    expect(container.textContent).toContain('Archive Analysis')
+    expect(container.textContent).toContain('Archive analysis')
     expect(container.textContent).toContain('2 nodes')
     expect(container.textContent).toContain('1 link')
     expect(container.textContent).toContain('Baseline baseline-1')
@@ -583,7 +583,7 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Audit DOCX')
     expect(container.textContent).toContain('Engineer JSONL')
     expect(container.textContent).toContain('SLA rollup')
-    expect(container.textContent).toContain('Error Patterns')
+    expect(container.textContent).toContain('Error patterns')
     expect(container.textContent).toContain('soap fault: Request validation failed for order 1001')
     expect(container.textContent).toContain('CreateOrder')
     expect(container.textContent).toContain('retained')
@@ -1514,7 +1514,7 @@ describe('TestExecutionArchive', () => {
       )
     })
 
-    expect(container.textContent).toContain('SOAP Operation Summary')
+    expect(container.textContent).toContain('SOAP operation summary')
     expect(container.textContent).toContain('SOAP Fault Summary')
     expect(container.textContent).toContain('SOAP Fault Trend')
     expect(container.textContent).toContain('SOAP Payload Trend')
@@ -1546,11 +1546,11 @@ describe('TestExecutionArchive', () => {
 
     expect(container.textContent).toContain('Peak successful transaction TPS')
     expect(container.textContent).toContain('Named transaction volume')
-    expect(container.textContent).not.toContain('Error Patterns')
+    expect(container.textContent).not.toContain('Error patterns')
 
     await renderArchiveView('report-error-patterns')
 
-    expect(container.textContent).toContain('Error Patterns')
+    expect(container.textContent).toContain('Error patterns')
     expect(container.textContent).toContain('soap fault: Request validation failed for order 1001')
     expect(container.textContent).not.toContain('Peak successful transaction TPS')
 
@@ -1575,7 +1575,7 @@ describe('TestExecutionArchive', () => {
 
     expect(container.textContent).toContain('Download Report')
     expect(container.textContent).toContain('Download Transactions JSONL')
-    expect(container.textContent).not.toContain('Error Patterns')
+    expect(container.textContent).not.toContain('Error patterns')
   })
 
   it('reuses archive-derived data when unrelated props rerender', async () => {

@@ -1,5 +1,6 @@
 import type { MetricsHistoryPoint, RunArchiveActionStats, RunArchiveErrorPattern, RunArchiveReport } from '../../types'
 import type { TimelineOverlay } from '../runReport/timelineOverlays'
+import { formatDateTime, formatTimeOfDay } from '../../utils/dateTime'
 import type {
   RcaAnomaly,
   RcaAssessment,
@@ -203,7 +204,9 @@ export function formatRcaEffect(anomaly: Pick<RcaAnomaly, 'effect' | 'unit'>): s
   if (!Number.isFinite(value)) return 'Not recorded'
   const sign = value > 0 ? '+' : value < 0 ? '−' : ''
   const magnitude = Math.abs(value)
-  const digits = magnitude >= 100 ? 0 : magnitude >= 10 ? 1 : 2
+  // Two significant digits under 1, so a small change never reads as zero
+  // (Go rcaEffectText).
+  const digits = magnitude >= 100 ? 0 : magnitude >= 10 ? 1 : magnitude >= 1 || magnitude === 0 ? 2 : Math.min(Math.ceil(-Math.log10(magnitude)) + 1, 6)
   const amount = magnitude.toLocaleString(undefined, { maximumFractionDigits: digits })
   switch (anomaly.unit) {
     case 'ms':
@@ -406,9 +409,40 @@ export function rootCauseSourceLabel(view: ReportRootCause): string {
     : `Root-cause v1 summary (${view.schema_version})`
 }
 
+// formatRcaTime states a moment the way the rest of the app does, to the
+// second (onsets are judged to the second).
 export function formatRcaTime(value: string | number): string {
   const at = typeof value === 'number' ? value : Date.parse(value)
-  return Number.isFinite(at) ? new Date(at).toISOString().replace('T', ' ').replace(/\.\d+Z$/, 'Z').replace(/Z$/, ' UTC') : 'Not recorded'
+  return Number.isFinite(at) ? formatDateTime(at, { seconds: true }) : 'Not recorded'
+}
+
+// formatRcaClock is a time of day within the run, for labels that sit beside
+// a chart whose axis shows times of day.
+export function formatRcaClock(value: string | number): string {
+  return formatTimeOfDay(value, { fallback: 'Not recorded' })
+}
+
+// rcaCollapseLabels keeps each label once, in first-seen order; a series that
+// changed more than once is one entry with its count ("Login · error rate
+// (2 changes)"), not the same label repeated. The exports do the same.
+export function rcaCollapseLabels(labels: string[]): string[] {
+  const counts = new Map<string, number>()
+  for (const label of labels) counts.set(label, (counts.get(label) || 0) + 1)
+  return [...counts].map(([label, count]) => count > 1 ? `${label} (${count} changes)` : label)
+}
+
+// rcaSentence capitalizes the first letter of an engine phrase.
+export function rcaSentence(text: string): string {
+  const trimmed = text.trim()
+  return trimmed ? trimmed[0].toUpperCase() + trimmed.slice(1) : trimmed
+}
+
+// rcaLimitationText presents an engine limitation for people: the engine
+// names competing signatures by identifier ("competing resource_pressure
+// could not be judged"), which become their titles. Stored analyses keep the
+// engine's wording, so this covers old ones too.
+export function rcaLimitationText(text: string): string {
+  return rcaSentence(text.replace(/competing ([a-z][a-z0-9_]*) could not be judged/g, (_match, name: string) => `the competing cause ${rcaSignatureLabel(name)} could not be judged`))
 }
 
 export function formatRcaDuration(ns: number): string {
@@ -528,14 +562,14 @@ export function rcaTimelineOverlays(assessment: RcaAssessment, phases: RcaPhaseM
       cited.add(anomaly.id)
       const w = rcaAnomalyWindow(anomaly)
       out.push({ id: `anomaly-${anomaly.id}`, kind: 'anomaly', start: Date.parse(anomaly.onset), end: w.end, tone: role === 'symptom' ? 'danger' : 'warning',
-        label: `${role === 'symptom' ? 'Symptom' : 'Cause'}: ${rcaSeriesLabel(anomaly.series)} ${formatRcaEffect(anomaly)} (#${h.rank} ${rcaSignatureLabel(h.signature)})`, ref: `hypothesis:${h.id}` })
+        label: `${role === 'symptom' ? 'Symptom' : 'Cause'}: ${rcaSeriesLabel(anomaly.series)} ${formatRcaEffect(anomaly)} at ${formatRcaClock(anomaly.onset)} (#${h.rank} ${rcaSignatureLabel(h.signature)})`, ref: `hypothesis:${h.id}` })
     }
   }
   const uncited = rcaLargestChanges({ ...assessment, anomalies: assessment.anomalies.filter(a => !cited.has(a.id)) }, uncitedLimit)
   for (const anomaly of uncited) {
     const w = rcaAnomalyWindow(anomaly)
     out.push({ id: `anomaly-${anomaly.id}`, kind: 'anomaly', start: Date.parse(anomaly.onset), end: w.end, tone: 'accent',
-      label: `Change: ${rcaSeriesLabel(anomaly.series)} ${formatRcaEffect(anomaly)}`, ref: `window:${formatRcaWindow(w)}` })
+      label: `Change: ${rcaSeriesLabel(anomaly.series)} ${formatRcaEffect(anomaly)} at ${formatRcaClock(anomaly.onset)}`, ref: `window:${formatRcaWindow(w)}` })
   }
   for (const concern of rcaValidityConcerns(assessment.validity.windows)) {
     const start = Date.parse(concern.start)

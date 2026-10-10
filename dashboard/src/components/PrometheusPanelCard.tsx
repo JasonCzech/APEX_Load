@@ -7,6 +7,7 @@ import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltip
 import { thresholdAwareYAxisMax } from './prometheusPanelCardModel'
 import { prometheusChartData } from './testExecutionChartModel'
 import StatTile from './StatTile'
+import { formatDateTime } from '../utils/dateTime'
 
 const SERIES_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)']
 
@@ -78,7 +79,7 @@ export default function PrometheusPanelCard({ title, unit, kind, series = [], va
             <thead><tr><th>Series</th><th>Latest</th><th>Time</th></tr></thead>
             <tbody>{series.map(item => {
               const latest = item.values[item.values.length - 1]
-              return <tr key={item.key}><td>{item.label || item.key}</td><td>{latest ? `${latest.value}${unit ? ` ${unit}` : ''}` : '—'}</td><td>{latest ? new Date(latest.timestamp_ms).toLocaleString() : '—'}</td></tr>
+              return <tr key={item.key}><td>{item.label || item.key}</td><td>{latest ? `${latest.value}${unit ? ` ${unit}` : ''}` : '—'}</td><td>{latest ? formatDateTime(latest.timestamp_ms, { seconds: true }) : '—'}</td></tr>
             })}</tbody>
           </table>
         </div>

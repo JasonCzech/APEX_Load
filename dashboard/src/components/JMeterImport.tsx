@@ -663,7 +663,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
           {workingMode === 'validate' ? <><span className="spinner" /> Validating…</> : 'Validate Only'}
         </button></details>
         <button className="btn btn-primary btn-lg" onClick={handleImport} disabled={!file || workingMode !== null || saving}>
-          {workingMode === 'convert' ? <><span className="spinner" /> Converting...</> : 'Inspect & review'}
+          {workingMode === 'convert' ? <><span className="spinner" /> Converting…</> : 'Inspect & review'}
         </button>
       </div>
 

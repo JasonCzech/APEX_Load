@@ -443,7 +443,7 @@ describe('TestExecutionSummary', () => {
 		})
 
 		expect(container.textContent).toContain('Live HTTP Dependency Health')
-		expect(container.textContent).toContain('Live Error Patterns')
+		expect(container.textContent).toContain('Live Error patterns')
 		expect(container.textContent).toContain('HTTP 503 backend timeout')
 		expect(container.textContent).toContain('3 hits')
 		expect(container.textContent).toContain('POST /checkout')

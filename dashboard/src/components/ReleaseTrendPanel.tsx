@@ -38,6 +38,7 @@ import {
 } from './releaseTrendModel'
 import { chartTooltipContentStyle } from './chartTooltipTheme'
 import StatusBadge from './StatusBadge'
+import { formatDateTime } from '../utils/dateTime'
 
 interface Props {
   releaseId: string
@@ -393,7 +394,7 @@ export function ReleaseTrendPanel({
     >
       <div className="release-trend-header">
         <div>
-          <h3 className="release-trend-title">Release Trend Analysis</h3>
+          <h3 className="release-trend-title">Release trend analysis</h3>
           <p>
             Track changes against a visible baseline under comparable test
             conditions.
@@ -725,7 +726,7 @@ export function ReleaseTrendPanel({
           {analysis.some((item) => !item.row.stats?.transactions) && (
             <p className="analysis-warning">
               Some runs have no samples in this population. Request / action
-              samples in Load Comparison do not establish named transaction
+              samples in Load comparison do not establish named transaction
               attempts. Choose Requests / actions to inspect protocol evidence,
               or open the full report to check instrumentation.
             </p>
@@ -794,7 +795,7 @@ export function ReleaseTrendPanel({
                     <Tooltip
                       contentStyle={chartTooltipContentStyle}
                       labelFormatter={(value) =>
-                        new Date(Number(value)).toLocaleString()
+                        formatDateTime(Number(value), { seconds: true })
                       }
                       formatter={(value) => displayNumber(Number(value))}
                     />
@@ -886,7 +887,7 @@ export function ReleaseTrendPanel({
                         )?.name || runsById[row.point.run_id]?.release_id}
                       </small>
                       <small className="analysis-id">
-                        {new Date(row.point.completed_at).toLocaleString()} ·{' '}
+                        {formatDateTime(row.point.completed_at, { seconds: true })} ·{' '}
                         {scenarioNames[
                           runsById[row.point.run_id]?.scenario_id || ''
                         ] ||

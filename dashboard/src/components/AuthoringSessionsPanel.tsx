@@ -1,5 +1,6 @@
 import { type Dispatch, type SetStateAction, useState } from 'react'
 import { type AuthoringCorrelationPreviewRequest, type AuthoringCorrelationPreviewResponse, type AuthoringSession } from '../types'
+import { formatDateTime } from '../utils/dateTime'
 
 interface Props {
   sessions: AuthoringSession[]
@@ -245,7 +246,7 @@ function formatDate(value: string): string {
   if (Number.isNaN(date.getTime())) {
     return 'unknown'
   }
-  return date.toLocaleString()
+  return formatDateTime(date, { seconds: true })
 }
 
 function formatReviewValue(value: unknown): string {

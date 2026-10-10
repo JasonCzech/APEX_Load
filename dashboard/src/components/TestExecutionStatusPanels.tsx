@@ -10,6 +10,7 @@ import BrowserComparisonTable from './runReport/BrowserComparisonTable'
 import type { BrowserDocumentSummary } from '../types/browserDocumentEvidence'
 import { MISSING_VALUE } from './runReport/reportPresentation'
 import { ratioParts, usedHTTP3, versionMixHeadline } from './runReport/httpVersionMixModel'
+import { formatDateTime } from '../utils/dateTime'
 
 interface LiveMetricsSummary {
   browser_documents?: BrowserDocumentSummary | null
@@ -58,7 +59,7 @@ function formatTelemetryTime(value?: string): string {
   if (!value) return 'unknown'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'unknown'
-  return date.toLocaleString()
+  return formatDateTime(date, { seconds: true })
 }
 
 function formatBrowserMetric(value: number | undefined, suffix = '', digits = 1): string {

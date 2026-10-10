@@ -110,7 +110,7 @@ it('leads with the HTTP version mix only when HTTP/3 was in play', () => {
   const report = { network_phases: { version_mix: mix } } as unknown as RunArchiveReport
   act(() => root.render(<RunOutcomeSummary report={report} />))
   expect(container.textContent).toContain('HTTP versionsHTTP/2 25% · HTTP/3 75%')
-  expect(container.textContent).toContain('Fell back to TCP: 16.7% (6 of 36 upgrade-eligible auto+h3 actions)')
+  expect(container.textContent).toContain('Fell back to TCP: 16.67% (6 of 36 upgrade-eligible auto+h3 actions)')
   expect(container.textContent).toContain('Protocol Mix: above the expected ratio. See Diagnostics.')
   const tcpOnly = { actions: 10, by_version: { '2': 10 }, fallback_ratio: { numerator: 0, denominator: 0, value: 0 }, quic_failure_ratio: { numerator: 0, denominator: 0, value: 0 } }
   act(() => root.render(<RunOutcomeSummary report={{ network_phases: { version_mix: tcpOnly } } as unknown as RunArchiveReport} />))

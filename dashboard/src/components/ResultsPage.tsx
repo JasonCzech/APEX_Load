@@ -299,7 +299,7 @@ function formatComparisonRunLabel(test: TestSummary) {
 }
 
 function formatBaselinePin(value?: string) {
-  return value ? new Date(value).toLocaleString() : 'Pinned baseline'
+  return value ? formatDisplayDateTime(value, { seconds: true }) : 'Pinned baseline'
 }
 
 function comparisonFilenameToken(value: string) {
@@ -1796,7 +1796,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
                     type="search"
                     value={search}
                     onChange={event => setSearch(event.target.value)}
-                    placeholder="Find runs by name, reference or scenario..."
+                    placeholder="Find runs by name, reference or scenario…"
                   />
                 </label>)}
             filterControls={(

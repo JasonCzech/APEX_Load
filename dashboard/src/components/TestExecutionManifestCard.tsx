@@ -11,6 +11,7 @@ import {
 } from '../types'
 import { copyTextToClipboard } from '../utils/clipboardUtils'
 import { downloadBlob } from '../utils/fileUtils'
+import { formatDateTime } from '../utils/dateTime'
 
 interface Props {
   /** Keeps high-value diffs visible; raw source remains available on demand. */
@@ -29,7 +30,7 @@ function formatDate(value?: string | null): string {
   if (!value) return 'Not set'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString()
+  return formatDateTime(date, { seconds: true })
 }
 
 function formatBoolean(value?: boolean): string {

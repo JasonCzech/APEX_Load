@@ -10,6 +10,7 @@ import { useRcaPhases } from './useRcaPhases'
 import {
   formatRcaDuration,
   formatRcaEffect,
+  formatRcaClock,
   formatRcaTime,
   rcaAnomalyWindow,
   rcaErrorPatternAnchor,
@@ -115,7 +116,7 @@ export default function RootCauseInvestigation({ testId, assessment, hypothesis,
           {span && <button type="button" className="btn btn-sm btn-ghost" aria-pressed={sameRcaWindow(window, span)} onClick={() => onWindowChange(span)}>Hypothesis span</button>}
           {involved.map(({ anomaly, role }) => {
             const w = rcaAnomalyWindow(anomaly)
-            return <button key={anomaly.id} type="button" className="btn btn-sm btn-ghost" aria-pressed={sameRcaWindow(window, w)} onClick={() => onWindowChange(w)}>Focus {role}: {rcaSeriesLabel(anomaly.series)}</button>
+            return <button key={anomaly.id} type="button" className="btn btn-sm btn-ghost" aria-pressed={sameRcaWindow(window, w)} onClick={() => onWindowChange(w)}>Focus {role}: {rcaSeriesLabel(anomaly.series)} at {formatRcaClock(anomaly.onset)}</button>
           })}
           <button type="button" className="btn btn-sm btn-ghost" aria-pressed={!window} onClick={() => onWindowChange(null)}>Whole run</button>
         </div>

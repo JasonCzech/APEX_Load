@@ -35,6 +35,7 @@ import {
   statusCategory,
 } from './sourceMappingModel'
 import './SourceMappingReview.css'
+import { formatDateTime } from '../utils/dateTime'
 
 // CodeMirror is only needed inside this review surface, so keep it out of the
 // main bundle.
@@ -810,7 +811,7 @@ export default function SourceMappingReview({
       </div>
       </details>
       </div>
-      {!sourceOnly && destinationView === 'baseline' && <p>Review baseline captured {identity.state?.capturedAt ? new Date(identity.state.capturedAt).toLocaleString() : 'when this script was opened'}. This is a review reference, not a verified original import snapshot.</p>}
+      {!sourceOnly && destinationView === 'baseline' && <p>Review baseline captured {identity.state?.capturedAt ? formatDateTime(identity.state.capturedAt, { seconds: true }) : 'when this script was opened'}. This is a review reference, not a verified original import snapshot.</p>}
       {identity.error && <p role="alert">{identity.error}</p>}
 
       {!sourceOnly && showNoOrigin && !identity.checking && <div className="source-map-origin-list" aria-label="Destination items without source origin">{dslStatus.withoutOrigin.length ? dslStatus.withoutOrigin.map(path => <button className="btn btn-sm btn-ghost" type="button" key={path} onClick={() => { setNoOriginTarget(path); setRevealRequestId(value => value + 1) }}>{path}</button>) : <p>Every tracked destination item has a source mapping.</p>}</div>}

@@ -37,6 +37,7 @@ import { ImportSourceIssueFocusContext, type ImportSourceIssueFocus } from './Im
 import LinkedCodePane from './LinkedCodePane'
 import './ScriptImportReview.css'
 import ImportReviewTabs, { type ImportReviewTab } from './ImportReviewTabs'
+import { formatDateTime } from '../utils/dateTime'
 
 const severityRank: Record<string, number> = {
   blocker: 0,
@@ -1081,7 +1082,7 @@ export default function ScriptImportReview({
 
       {importDraftExpiry && (
         <div className="script-import-review-session" role={importDraftExpiry.expired ? 'alert' : 'status'}>
-          {compactReview && !importDraftExpiry.expired ? `Draft repair session expires ${new Date(importDraftExpiresAt!).toLocaleString()}.` : importDraftExpiry.label}
+          {compactReview && !importDraftExpiry.expired ? `Draft repair session expires ${formatDateTime(importDraftExpiresAt!, { seconds: true })}.` : importDraftExpiry.label}
         </div>
       )}
 

@@ -5,6 +5,7 @@ import { GroupLiveMetrics, TestSummary } from '../types'
 import { formatRunClock } from '../utils/timeUtils'
 import { formatFixed } from '../utils/numberFormat'
 import { MISSING_VALUE } from './runReport/reportPresentation'
+import { formatDateTime } from '../utils/dateTime'
 
 interface Props {
   test: TestSummary
@@ -31,7 +32,7 @@ export default function TestExecutionRunState({ test, groupMetrics, remainingSec
   const historical = observation === 'historical'
   const retained = historical || observation === 'stale'
   const observedAt = test.live_metrics?.timestamp ? Date.parse(test.live_metrics.timestamp) : NaN
-  const sampleTime = Number.isFinite(observedAt) ? new Date(observedAt).toLocaleString() : 'Time unavailable'
+  const sampleTime = Number.isFinite(observedAt) ? formatDateTime(observedAt, { seconds: true }) : 'Time unavailable'
   // A live run is still producing data; only a finished run has a true gap.
   const pending = terminal || retained ? MISSING_VALUE : 'Awaiting data'
   const remaining = terminal ? 'Run ended' : remainingSeconds > 0 ? formatRunClock(remainingSeconds) : pending

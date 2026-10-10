@@ -26,6 +26,7 @@ import {
 import './parityPanels.css'
 import LoadingState from './ux/LoadingState'
 import EmptyState from './ux/EmptyState'
+import { formatDateTime } from '../utils/dateTime'
 
 interface Props {
   resourceId?: string
@@ -284,7 +285,7 @@ export default function ClustersCard({ canManage = false, resourceId = '' }: Pro
                   {connection.api_server_url ? <span>{connection.api_server_url}</span> : null}
                   <span>{describeCredentialSource(connection)}</span>
                   {connection.last_checked_at ? (
-                    <span>checked {new Date(connection.last_checked_at).toLocaleString()}</span>
+                    <span>checked {formatDateTime(connection.last_checked_at, { seconds: true })}</span>
                   ) : null}
                 </div>
                 {testResult?.id === connection.id && (

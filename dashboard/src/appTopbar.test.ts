@@ -17,7 +17,7 @@ describe('app topbar helpers', () => {
     expect(pageTitleForView({ page: 'docs' })).toBe('Help & documentation')
     expect(pageTitleForView({ page: 'command-center' })).toBe('Command Center')
     expect(pageTitleForView({ page: 'scripts', mode: 'create' })).toBe('Create script')
-    expect(pageTitleForView({ page: 'report', testId: 'run-1' })).toBe('Run Results')
+    expect(pageTitleForView({ page: 'report', testId: 'run-1' })).toBe('Run results')
     expect(pageTitleForView({ page: 'activity' })).toBe('Activity')
     expect(pageTitleForView({ page: 'test', testId: 'run-1' }, { testName: 'Checkout Peak' })).toBe('Checkout Peak')
   })

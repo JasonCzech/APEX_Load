@@ -19,6 +19,7 @@ import {
 } from '../types/scriptImports'
 import type { ImportCorrelationSuggestion } from './scriptEditorImportModel'
 import { browserResourceProtocolShortLabel } from './browserResourceEvidenceModel'
+import { formatDateTime } from '../utils/dateTime'
 
 type Action = ScriptActionDefinition
 type DataSourceConfig = ScriptDataSource
@@ -654,7 +655,7 @@ export function findJsonStringOccurrences(
 
 export function formatReplayTime(value?: string): string {
   if (!value) return 'n/a'
-  return new Date(value).toLocaleString()
+  return formatDateTime(value, { seconds: true })
 }
 
 export function formatReplayHeaders(headers?: Record<string, string>): string {

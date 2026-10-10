@@ -117,14 +117,15 @@ body :is(.repository-tab-row, .access-subtab-row) > button > strong {
   padding: 1px 7px;
   border-radius: 999px;
   background: var(--subtle-fill-strong);
-  color: inherit;
+  /* Neutral text: the tab's link colour falls under 4.5:1 on the count fill. */
+  color: var(--text-primary);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   line-height: 1.4;
   text-align: center;
 }
 
-/* Run Results section tabs already underline; use the same indicator colour. */
+/* Run results section tabs already underline; use the same indicator colour. */
 body .run-report-areas button[aria-selected='true'] {
   border-bottom-color: var(--brand-highlight, var(--accent));
   color: var(--text-primary);

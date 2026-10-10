@@ -1,4 +1,5 @@
 import type { TestSummary } from '../types'
+import { formatTimeOfDay } from '../utils/dateTime'
 import { runReference, summarizeAcceptance, type DashboardAttentionItem, type DashboardReports } from './dashboardLandingModel'
 
 interface Props {
@@ -11,13 +12,16 @@ interface Props {
   updatedAt: number | null
   stale: boolean
   attention: DashboardAttentionItem[]
+  // attentionLoading says completed runs' reports are still loading, so
+  // their attention items may not be listed yet.
+  attentionLoading?: boolean
   onAttention: (item: DashboardAttentionItem) => void
   onDismissAttention: (item: DashboardAttentionItem) => void
   onQueue: () => void
   onResults: () => void
 }
 
-export default function DashboardLandingSummary({ compact = false, releaseName, completed, reports, activeCount, queuedCount, updatedAt, stale, attention, onAttention, onDismissAttention, onQueue, onResults }: Props) {
+export default function DashboardLandingSummary({ compact = false, releaseName, completed, reports, activeCount, queuedCount, updatedAt, stale, attention, attentionLoading = false, onAttention, onDismissAttention, onQueue, onResults }: Props) {
   const counts = summarizeAcceptance(completed, reports)
   const archived = completed.filter(test => test.archive).length
   const latest = completed[0]
@@ -53,11 +57,12 @@ export default function DashboardLandingSummary({ compact = false, releaseName, 
         <p>{latest ? `Latest completed run: ${latest.name} · ${runReference(latest)}` : 'No completed runs in this release.'}</p>
         {latest && <p>{latestReportLoading ? 'Loading latest report completeness and comparison baseline…' : `Latest report completeness: ${completenessLabel} · ${baselineLabel}`}</p>}
         <div className="dashboard-workload-state"><span>{activeCount ? `${activeCount} active (running or paused)` : 'Idle — no active runs'}</span>{queuedCount > 0 && <button type="button" className="btn btn-secondary btn-sm" onClick={onQueue}>View queued tests ({queuedCount})</button>}</div>
-        <p className="dashboard-freshness">Run data: {stale ? 'Stale · ' : ''}{updatedAt ? `last updated ${new Date(updatedAt).toLocaleTimeString()}` : 'No successful update yet'}</p>
+        <p className="dashboard-freshness">Run data: {stale ? 'Stale · ' : ''}{updatedAt ? `last updated ${formatTimeOfDay(updatedAt)}` : 'No successful update yet'}</p>
       </div>
       <div className="dashboard-priority" aria-label="Needs attention">
         <h2>Needs attention <span>({attention.length})</span></h2>
-        {attention.length === 0 ? <p>No current attention items. Acceptance and evidence coverage are shown separately.</p> : <>
+        {attentionLoading && <p role="status">Checking completed runs' reports…</p>}
+        {attention.length === 0 ? !attentionLoading && <p>No current attention items. Acceptance and evidence coverage are shown separately.</p> : <>
           {attention.slice(0, 2).map(attentionRow)}
           {attention.length > 2 && <details><summary>View all attention items ({attention.length})</summary>{attention.slice(2).map(attentionRow)}</details>}
         </>}

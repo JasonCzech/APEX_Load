@@ -108,7 +108,7 @@ func TestArchiveReportAttachesReleaseTrend(t *testing.T) {
 			t.Fatalf("html report status = %d, body = %s", rr.Code, rr.Body.String())
 		}
 		body := rr.Body.String()
-		if !strings.Contains(body, "Release Trend") {
+		if !strings.Contains(body, "Release trend") {
 			t.Fatalf("executive html missing Release Trend heading:\n%s", body)
 		}
 		if !strings.Contains(body, "Early Run") {

@@ -5,7 +5,13 @@ describe('baseline comparison presentation', () => {
   it('does not invent a percentage for zero or missing baselines', () => {
     expect(difference(10, 0)).toBe('+10 · baseline zero')
     expect(difference(10, undefined)).toBe('Unavailable')
-    expect(difference(50, 100)).toBe('-50 (-50%)')
+    expect(difference(50, 100)).toBe('-50 (-50.0%)')
+    // The findings' precision and units: grouped whole milliseconds from 100,
+    // percentages to one decimal, error-rate changes in points.
+    expect(difference(2169.76, 334.41, 'ms')).toBe('+1,835 ms (+548.8%)')
+    expect(difference(10.43, 8.7, '%')).toBe('+1.73 pts (+19.9%)')
+    expect(number(1406.2)).toBe('1,406')
+    expect(number(0.12345)).toBe('0.123')
     expect(number(Number.NaN)).toBe('Unavailable')
   })
   it('does not present missing successful latency as zero', () => {

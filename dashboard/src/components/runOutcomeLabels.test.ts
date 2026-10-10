@@ -8,7 +8,7 @@ describe('run outcome headline', () => {
   })
   it('keeps observed elapsed time separate from planned duration', () => {
     const manifest = { termination_reason: 'operator_stopped', completed_at: '2026-09-09T10:04:37Z', provenance: { started_at: '2026-09-09T10:00:00Z', duration: '20m' } } as RunArchiveReport['manifest']
-    expect(runOutcomeLabels(manifest)).toEqual({ execution: 'Stopped by operator', elapsed: '277s' })
+    expect(runOutcomeLabels(manifest)).toEqual({ execution: 'Stopped by operator', elapsed: '4m 37s' })
     expect(runOutcomeLabels({ ...manifest, completed_at: '2026-09-09T09:00:00Z' }).elapsed).toBe('Unknown')
   })
 })

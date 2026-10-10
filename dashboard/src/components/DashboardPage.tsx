@@ -5,6 +5,8 @@ import type { AnalysisReportContext } from './dashboardAnalysisModel'
 import TabList from './ux/TabList'
 import DashboardLandingSummary from './DashboardLandingSummary'
 import { buildDashboardAttention, dashboardAcceptance, emptyRunFilters, filterDashboardRuns, pendingRunDetail, runReference, type RunFilters } from './dashboardLandingModel'
+import { rcaSummaryLine, rcaValidityLabel } from './rca/rcaModel'
+import { formatDurationDisplay } from '../utils/timeUtils'
 import PanelToggle from "./ux/PanelToggle"
 import { handleTabKey } from './tabKeyboard'
 import { MISSING_VALUE, reportAcceptance, formatReportPercent } from './runReport/reportPresentation'
@@ -34,6 +36,7 @@ import { aggregateDashboardTpsHistory } from './dashboardAggregateHistory'
 import { recentMetricAverages } from './testExecutionMetricsModel'
 import { formatFixed } from '../utils/numberFormat'
 import { metricHeader } from '../metricLabels'
+import { formatDateTime as formatSharedDateTime } from '../utils/dateTime'
 
 interface Props {
   testStatuses: Record<string, string>
@@ -170,10 +173,10 @@ const graphMetricOptions: { key: CardMetricKey; label: string; color: string; di
 ]
 
 const dashboardTabs: { id: DashboardTabKey; label: string }[] = [
-  { id: 'activity', label: 'Recent Runs' },
-  { id: 'active', label: 'Active Tests' },
-  { id: 'performance', label: 'Load Comparison' },
-  { id: 'releaseTrend', label: 'Release Trend Analysis' },
+  { id: 'activity', label: 'Recent runs' },
+  { id: 'active', label: 'Active tests' },
+  { id: 'performance', label: 'Load comparison' },
+  { id: 'releaseTrend', label: 'Release trend analysis' },
 ]
 
 const performanceSortDefaults: Record<PerformanceSortField, SortDirection> = {
@@ -223,7 +226,7 @@ function formatOptionalCount(value?: number) {
 }
 
 function formatDateTime(value?: string) {
-  return value ? new Date(value).toLocaleString() : 'Never'
+  return value ? formatSharedDateTime(value, { seconds: true }) : 'Never'
 }
 
 function finiteMetric(value: unknown): number | undefined {
@@ -318,12 +321,13 @@ function deriveSelectedIds(current: Set<string>, previousIds: string[], validIds
 }
 
 // dashboardRootCauseText is a recent run's validity and, where the project
-// presents root cause, its leading hypothesis, appended to its evidence line.
+// presents root cause, its leading hypothesis, appended to its evidence line
+// in the words Results and the run's report use.
 function dashboardRootCauseText(report: RunArchiveReport | null | undefined): string {
   const validity = report?.validity?.verdict
   const summary = report?.root_cause_summary
-  const parts = validity && validity !== 'unknown' ? [` · Validity: ${validity}`] : []
-  if (summary?.presented && summary.outcome === 'supported' && summary.top_hypothesis) parts.push(` · Cause: ${summary.top_hypothesis.title}`)
+  const parts = validity && validity !== 'unknown' ? [` · ${rcaValidityLabel(validity)}`] : []
+  if (summary?.presented && summary.outcome === 'supported' && summary.top_hypothesis) parts.push(` · Root cause: ${rcaSummaryLine(summary)?.text || summary.top_hypothesis.title}`)
   return parts.join('')
 }
 
@@ -505,7 +509,7 @@ function ReleaseSnapshotPanel({
     ? `${effectiveGenerators}/${configuredGenerators ?? effectiveGenerators}`
     : '—'
   const releaseName = activeRelease?.name || 'All releases'
-  const panelModeLabel = audience === 'admin' ? 'Operations Snapshot' : 'Release Quality'
+  const panelModeLabel = audience === 'admin' ? 'Operations snapshot' : 'Release Quality'
   const latestStatus = latestReleaseRun ? `${latestReleaseRun.name} · ${latestReleaseRun.status}` : 'No completed runs'
   const qualityTone = releaseStats.failed > 0 || releaseTrendStats.slaBreaches > 0 ? 'warning' : 'success'
 
@@ -542,9 +546,9 @@ function ReleaseSnapshotPanel({
 
         {testDataReady && (
           <div className="release-panel-stat-grid shared">
-            <SnapshotStat label="Latest Result" value={latestReleaseRun ? latestReleaseRun.name : 'No runs'} tone="accent" onClick={onLatestResult} />
-            <SnapshotStat label="Failed Runs" value={releaseStats.failed} tone={releaseStats.failed > 0 ? 'danger' : 'success'} onClick={onResults} />
-            <SnapshotStat label="Archives Ready" value={archivesReady} onClick={onResults} />
+            <SnapshotStat label="Latest result" value={latestReleaseRun ? latestReleaseRun.name : 'No runs'} tone="accent" onClick={onLatestResult} />
+            <SnapshotStat label="Failed runs" value={releaseStats.failed} tone={releaseStats.failed > 0 ? 'danger' : 'success'} onClick={onResults} />
+            <SnapshotStat label="Archives ready" value={archivesReady} onClick={onResults} />
             <SnapshotStat label="Archive records" value={releaseStats.totalTx.toLocaleString()} onClick={onResults} />
             <SnapshotStat label="Current TPS" value={dashboardStats.active ? formatOptionalNumber(dashboardStats.activeTps, 1) : 'Idle'} onClick={onPrimaryActiveRun} />
             {/* A rate, not a status: with nothing running there is no value to show. */}
@@ -1429,6 +1433,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         releaseName={activeRelease?.name || 'All releases'} completed={releaseCompleted} reports={archiveReports}
         activeCount={activeTests.length} queuedCount={pendingTests.length} updatedAt={testListUpdatedAt}
         stale={Boolean(testListState.error)} attention={visibleAttentionItems}
+        attentionLoading={releaseCompleted.some(test => test.archive && !(test.id in archiveReports))}
         onQueue={() => { setActiveDashboardTab('active') }} onResults={navigateToResults}
         onDismissAttention={item => dismissAttentionItem(item.id)}
         onAttention={item => {
@@ -1578,7 +1583,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         {testListState.ready && activeDashboardTab === 'active' && (
           <section className="dash-section">
             <h3 className="dash-section-title">
-              Active Tests
+              Active tests
               {stats.active > 0 && <span className="dash-badge pulse">{stats.active}</span>}
             </h3>
             {pendingTests.length > 0 && <section className="dashboard-queue" aria-label="Queued runs">
@@ -1710,7 +1715,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                       )}
                       <div className="dac-footer">
                         <span className="dac-detail">{test.total_vusers} VUsers · {test.groups?.length || 1} group{(test.groups?.length || 1) > 1 ? 's' : ''}</span>
-                        <span className="dac-detail">{test.duration}{runtimeSummary ? ` · ${runtimeSummary}` : ''}</span>
+                        <span className="dac-detail">{formatDurationDisplay(test.duration)}{runtimeSummary ? ` · ${runtimeSummary}` : ''}</span>
                       </div>
                     </div>
                   )
@@ -1791,7 +1796,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                             <span className="dashboard-evidence" title={test.archive ? 'A saved archive is available. Acceptance is assessed separately.' : 'Saved archive unavailable; publication progress is unknown.'}>{test.archive ? 'Archive available' : 'Archive unavailable'} · Acceptance: {dashboardAcceptance(test, archiveReports)}{dashboardRootCauseText(archiveReports[test.id])}</span>
                             <details className="dashboard-run-details" onClick={event => event.stopPropagation()}>
                               <summary>Run details<span className="dashboard-sr-only"> for {test.name} ({runReference(test)})</span></summary>
-                              <dl><div><dt>Configured VUsers</dt><dd>{test.total_vusers}</dd></div><div><dt>Configured duration</dt><dd>{test.duration}</dd></div><div><dt>Archive records</dt><dd>{test.archive ? test.archive.transaction_count.toLocaleString() : 'Unavailable — publication progress unknown'}</dd></div></dl>
+                              <dl><div><dt>Configured VUsers</dt><dd>{test.total_vusers}</dd></div><div><dt>Configured duration</dt><dd>{formatDurationDisplay(test.duration) || 'Not recorded'}</dd></div><div><dt>Archive records</dt><dd>{test.archive ? test.archive.transaction_count.toLocaleString() : 'Unavailable — publication progress unknown'}</dd></div></dl>
                             </details>
                             {(test.script_name || runtimeSummary) && (
                               <span className="trend-run-meta">{[test.script_name, runtimeSummary].filter(Boolean).join(' · ')}</span>
@@ -1799,7 +1804,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                           </td>
                           <td><StatusBadge status={test.status} stoppedByOperator={Boolean(test.stopped_by_subject)} /></td>
                           <td className="num">{test.total_vusers}</td>
-                          <td className="num">{test.duration}</td>
+                          <td className="num">{formatDurationDisplay(test.duration)}</td>
                           <td className="num">{test.archive ? test.archive.transaction_count.toLocaleString() : '—'}</td>
                           <td>{formatDateTime(test.ended_at || test.start_time || test.created_at)}</td>
                           {onOpenCommandCenter && (

@@ -4,6 +4,7 @@ import { useCapacityApi } from '../hooks/api/useCapacityApi'
 import type { CapacityReservation, CapacityTimeslot } from '../types'
 import { listAllCapacityTimeslots } from './schedulingCatalogModel'
 import { settingsHref, workspaceHref } from './settingsNavigation'
+import { formatDateTime } from '../utils/dateTime'
 
 export function CapacityCommitments({ reservations, projectId, projects, pools = [] }: { reservations: CapacityReservation[]; projectId?: string; projects: { id: string; name: string }[]; pools?: { id: string; name: string }[] }) {
   const { listTimeslots } = useCapacityApi()
@@ -25,7 +26,7 @@ export function CapacityCommitments({ reservations, projectId, projects, pools =
     <label>Capacity pool<select value={poolId} onChange={e => setPoolId(e.target.value)}><option value="">All pools</option><option value="global">Global envelope</option>{pools.map(pool => <option key={pool.id} value={pool.id}>{pool.name}</option>)}</select></label>
     <div className="settings-inline-actions"><button type="button" className="btn btn-secondary" onClick={() => setRefresh(value => value + 1)}>Refresh bookings</button> <a href={workspaceHref('schedules', window.location.hash, projectId)}>Manage scheduled bookings</a></div>
     {loading && <p role="status">Loading bookings…</p>}{error && <p role="alert">{error}</p>}
-    {rows.length > 0 && <div className="access-table-wrap"><table className="access-data-table"><thead><tr>{['Type', 'Project', 'Pool', 'Window (local time)', 'Capacity', 'Status'].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead><tbody>{rows.map(row => <tr key={row.id}><td>{row.kind}</td><td>{projects.find(item => item.id === row.project)?.name || row.project}</td><td>{row.pool ? <a href={settingsHref('pools', window.location.hash, row.pool)}>{pools.find(item => item.id === row.pool)?.name || row.pool}</a> : 'Global envelope'}</td><td>{row.start ? `${new Date(row.start).toLocaleString()} – ${row.end ? new Date(row.end).toLocaleString() : 'No end'}` : 'Always active'}</td><td>{row.amount}</td><td>{row.status}</td></tr>)}</tbody></table></div>}
+    {rows.length > 0 && <div className="access-table-wrap"><table className="access-data-table"><thead><tr>{['Type', 'Project', 'Pool', 'Window (local time)', 'Capacity', 'Status'].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead><tbody>{rows.map(row => <tr key={row.id}><td>{row.kind}</td><td>{projects.find(item => item.id === row.project)?.name || row.project}</td><td>{row.pool ? <a href={settingsHref('pools', window.location.hash, row.pool)}>{pools.find(item => item.id === row.pool)?.name || row.pool}</a> : 'Global envelope'}</td><td>{row.start ? `${formatDateTime(row.start, { seconds: true })} – ${row.end ? formatDateTime(row.end, { seconds: true }) : 'No end'}` : 'Always active'}</td><td>{row.amount}</td><td>{row.status}</td></tr>)}</tbody></table></div>}
     {!loading && !error && !rows.length && <p>No commitments match this scope.</p>}
   </section>
 }

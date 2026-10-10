@@ -25,6 +25,7 @@ import {
 } from './loadImpactHeatmapUtils'
 import './LoadImpactHeatmap.css'
 import LoadingState from './ux/LoadingState'
+import { formatDateTime } from '../utils/dateTime'
 
 const LoadImpact3DHeatmap = lazy(() => import('./LoadImpact3DHeatmap'))
 
@@ -46,7 +47,7 @@ interface Props {
 
 function formatPointTimestamp(point: MetricsHistoryPoint) {
   if (typeof point.timestampMs === 'number') {
-    return new Date(point.timestampMs).toLocaleString()
+    return formatDateTime(point.timestampMs, { seconds: true })
   }
   return point.time || 'n/a'
 }
@@ -442,7 +443,8 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
                         {row.cells.map(cell => {
                           const selected = selectedCellKey === loadImpactCellKey(cell)
                           const isConstant = cell.sampleCount > 0 && !hasVariation
-                          const alpha = cell.sampleCount > 0 ? hasVariation ? 0.12 + cell.intensity * 0.68 : 0.1 : 0
+                          // Capped at 0.7 so the cell's text keeps 4.5:1 on the strongest fill.
+                          const alpha = cell.sampleCount > 0 ? hasVariation ? 0.12 + cell.intensity * 0.58 : 0.1 : 0
                           const title = formatLoadImpactCellTitle(cell)
                           return (
                             <td

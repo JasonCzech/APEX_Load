@@ -14,7 +14,7 @@ test('application settings show the shared secret vault in both auth profiles', 
   await expect(vault.getByText('Scripts in this application share its secret names and fall back to project values.', { exact: false })).toBeVisible()
   await expect(vault.getByText('Loading secret metadata…')).toBeHidden()
   await expect(vault.locator('input[type="password"]')).toHaveCount(1)
-  const create = vault.getByRole('button', { name: 'Create Secret' })
+  const create = vault.getByRole('button', { name: 'Create secret' })
   if (process.env.APEXLOAD_WRAPPING_MASTER_KEY) {
     await expect(vault.getByLabel('Secret name')).toBeVisible()
   }

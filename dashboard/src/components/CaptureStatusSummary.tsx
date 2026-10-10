@@ -1,10 +1,11 @@
 import type { ELKCaptureStatus, DynatraceCaptureStatus } from '../types/monitoring'
+import { formatDateTime } from '../utils/dateTime'
 
 export function CaptureStatusSummary({ capture }: { capture: ELKCaptureStatus | DynatraceCaptureStatus }) {
   const labels: Record<string, string> = { pending: 'Waiting for first collection', connected: 'Connected', partial: 'Partial capture', unavailable: 'Capture unavailable' }
   return <div>
     <p role="status">{labels[capture.status] || capture.status}{capture.message ? ` — ${capture.message}` : ''}</p>
-    <p>Last poll attempt: {capture.last_polled_at ? new Date(capture.last_polled_at).toLocaleString() : 'Not yet polled'}. Last fully successful collection: {capture.last_successful_at ? new Date(capture.last_successful_at).toLocaleString() : 'Not recorded'}.</p>
+    <p>Last poll attempt: {capture.last_polled_at ? formatDateTime(capture.last_polled_at, { seconds: true }) : 'Not yet polled'}. Last fully successful collection: {capture.last_successful_at ? formatDateTime(capture.last_successful_at, { seconds: true }) : 'Not recorded'}.</p>
     {(capture.status === 'partial' || capture.status === 'unavailable') && <p>Some displayed values may be from an earlier successful collection. Polling retries automatically while the test runs; ask a project administrator to check connection permissions and diagnostics. Test execution is unaffected.</p>}
     {'capabilities' in capture && capture.capabilities && <ul aria-label="Capture capability diagnostics">{Object.entries(capture.capabilities).map(([name, health]) => <li key={name}>{name}: {health.status}{health.message ? ` — ${health.message}` : ''}</li>)}</ul>}
   </div>

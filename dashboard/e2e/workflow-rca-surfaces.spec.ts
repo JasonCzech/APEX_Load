@@ -1,5 +1,6 @@
 import { test, expect, seedScript, json, idOf, login } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
+import { pageClock } from './support/dates'
 import { rcaTestReportView, rcaTestResponse, rcaTestSummary } from '../src/components/rca/rcaTestFixture'
 
 // A project administrator turns root-cause analysis on against the real
@@ -14,7 +15,7 @@ test('root cause is turned on in Settings and follows a run from Summary to Diag
   const scriptId = await seedScript(request, workspace)
   const runId = idOf(await json(await request.post('/api/v1/tests', { data: { project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId, name: 'Checkout soak', duration: '10m', groups: [{ name: 'checkout', script_id: scriptId, vusers: 20 }] } })))
 
-  // Settings › Project › Analysis saves against the revision it read.
+  // Settings › Workspaces › Project analysis saves against the revision it read.
   await page.goto(`/#/settings?setting=analysis&${scopeQuery(workspace)}`)
   // A session that signed in before the workspace existed reloads its
   // project list.
@@ -103,7 +104,7 @@ test('root cause is turned on in Settings and follows a run from Summary to Diag
   // hypothesis.
   await page.getByRole('tab', { name: 'Performance', exact: true }).click()
   const markers = page.getByRole('list', { name: 'Root-cause markers', exact: true })
-  await expect(markers).toContainText('Symptom: Checkout · p95 latency +300 ms (#1 Resource pressure)')
+  await expect(markers).toContainText(`Symptom: Checkout · p95 latency +300 ms at ${await pageClock(page, '2026-10-05T12:03:20Z')} (#1 Resource pressure)`)
   await markers.screenshot({ path: testInfo.outputPath('performance-root-cause-markers.png') })
   await markers.getByRole('button', { name: /^Symptom: Checkout/ }).click()
   await expect(page).toHaveURL(/section=diagnostics/)

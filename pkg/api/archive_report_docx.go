@@ -40,7 +40,7 @@ func writeRunArchiveReportDOCXWithProfileAndAnnotations(report *RunArchiveReport
 		return err
 	}
 	if title == "" {
-		title = profile.Label + " Report"
+		title = profile.Label + " report"
 	}
 	return writeReportDOCXPackage(writer, profile, title, buildDOCXDocumentXMLFromBody(bodyXML), charts)
 }
@@ -68,8 +68,15 @@ func writeReportDOCXPackage(writer io.Writer, profile RunArchiveReportProfile, t
 		{name: "word/document.xml", body: documentXML},
 		{name: "word/_rels/document.xml.rels", body: []byte(buildDOCXDocumentRelationshipsXML(charts))},
 		{name: "word/styles.xml", body: []byte(docxStylesXML)},
-		{name: "word/header1.xml", body: []byte(buildDOCXHeaderXML(profile))},
+		{name: "word/header1.xml", body: []byte(buildDOCXHeaderXML(profile, len(reportLogoPNG()) > 0))},
+		{name: "word/_rels/header1.xml.rels", body: []byte(docxHeaderRelationshipsXML)},
 		{name: "word/footer1.xml", body: []byte(docxFooterXML)},
+	}
+	if logo := reportLogoPNG(); len(logo) > 0 {
+		parts = append(parts, struct {
+			name string
+			body []byte
+		}{name: "word/media/logo.png", body: logo})
 	}
 	for index, chart := range charts {
 		parts = append(parts, struct {
@@ -141,11 +148,22 @@ func buildDOCXDocumentRelationshipsXML(charts []reportDocumentChart) string {
 	return body.String()
 }
 
-func buildDOCXHeaderXML(profile RunArchiveReportProfile) string {
+// buildDOCXHeaderXML is the Word header: the APEX Load mark (as the HTML and
+// PDF masthead show it) and the report's audience.
+func buildDOCXHeaderXML(profile RunArchiveReportProfile, withLogo bool) string {
 	var label bytes.Buffer
-	writeDOCXEscaped(&label, "APEX Load  /  "+profile.Label)
-	return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="6" w:color="D8CFC2"/></w:pBdr></w:pPr><w:r><w:rPr><w:b/><w:color w:val="0F766E"/><w:sz w:val="18"/></w:rPr><w:t>` + label.String() + `</w:t></w:r></w:p></w:hdr>`
+	writeDOCXEscaped(&label, "APEX Load  /  "+profile.Label+" report")
+	logo := ""
+	if withLogo {
+		// 0.3-inch square, inline before the label.
+		const sideEMU = 274320
+		logo = fmt.Sprintf(`<w:r><w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><wp:extent cx="%[1]d" cy="%[1]d"/><wp:docPr id="1000" name="APEX Load" descr="APEX Load"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="1000" name="logo.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdLogo"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="%[1]d" cy="%[1]d"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r><w:r><w:t xml:space="preserve">  </w:t></w:r>`, sideEMU)
+	}
+	return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="6" w:color="D8CFC2"/></w:pBdr></w:pPr>` + logo + `<w:r><w:rPr><w:b/><w:color w:val="0F766E"/><w:sz w:val="18"/></w:rPr><w:t>` + label.String() + `</w:t></w:r></w:p></w:hdr>`
 }
+
+// docxHeaderRelationshipsXML links the header's logo image.
+const docxHeaderRelationshipsXML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdLogo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/logo.png"/></Relationships>`
 
 func buildDOCXCoreProperties(reportTitle string) string {
 	var title bytes.Buffer

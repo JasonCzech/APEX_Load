@@ -105,7 +105,7 @@ describe('ReleaseTrendPanel', () => {
     trend.points = [{ ...trend.points[0], metric_population: 'transaction', transactions: 0 }]
     await act(async () => { root.render(<ReleaseTrendPanel releaseId="rel-1" getReleaseTrend={vi.fn().mockResolvedValue(trend)} />) })
     await flush()
-    expect(container.textContent).toContain('Request / action samples in Load Comparison do not establish named transaction attempts')
+    expect(container.textContent).toContain('Request / action samples in Load comparison do not establish named transaction attempts')
     expect(container.textContent).toContain('A trend needs at least two comparable runs')
     expect(container.textContent).toContain('No samples')
   })
@@ -171,7 +171,7 @@ describe('ReleaseTrendPanel', () => {
     await flush()
 
     expect(getReleaseTrend).toHaveBeenCalledWith('rel-1')
-    expect(container.textContent).toContain('Release Trend Analysis')
+    expect(container.textContent).toContain('Release trend analysis')
     expect(container.textContent).toContain('Run A')
     expect(container.textContent).toContain('Run B')
     const select = selectByLabel('Latency statistic')

@@ -83,6 +83,7 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
     .report-contents h2 { margin: 0 0 10px; border: 0; padding: 0; }
     .report-contents ol { columns: 2; column-gap: 32px; padding-left: 20px; }
     .report-contents li { break-inside: avoid; margin: 0 0 5px; }
+    .not-captured { margin: 10px 0 0; font-size: 12.5px; color: var(--slate); }
     .report-contents a, .back-link { color: var(--blue2); text-decoration: underline; text-underline-offset: 2px; }
     .report-contents a:focus-visible, .back-link:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
     .report-block { scroll-margin-top: 20px; }
@@ -115,11 +116,11 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
     table { width: 100%; table-layout: auto; border-collapse: collapse; border: 1px solid var(--line); margin: 6px 0 14px; font-size: 13px; }
     caption { caption-side: top; text-align: left; font-size: 11px; color: var(--slate); padding: 0 0 6px; font-style: italic; }
     th, td { overflow-wrap: anywhere; min-width: 0; padding: 9px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
-    th { background: var(--silver); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--slate); }
+    th { overflow-wrap: break-word; background: var(--silver); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--slate); }
     td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     td.nowrap, th.nowrap { overflow-wrap: normal; white-space: nowrap; }
     tr:last-child td { border-bottom: 0; }
-    .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+    .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; }
     .pill.pass, .pill.good { background: var(--good-bg); color: var(--good); }
     .pill.warn { background: var(--warn-bg); color: var(--warn); }
     .pill.fail, .pill.bad { background: var(--bad-bg); color: var(--bad); }
@@ -145,6 +146,8 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
     .metric { border: 1px solid var(--line); padding: 12px 14px; background: var(--silver); }
     .metric-label { display: block; color: var(--slate); font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
     .metric-value { display: block; margin-top: 6px; font-size: 20px; font-weight: 700; color: var(--navy); }
+    /* Names and identifiers in a metric tile read as text, not as a figure. */
+    .metric-text { display: block; margin-top: 6px; font-size: 13px; font-weight: 600; color: var(--navy); overflow-wrap: anywhere; }
     .charts { display: grid; grid-template-columns: 1fr; gap: 16px; margin: 8px 0 14px; }
     .page-footer { display: flex; justify-content: space-between; gap: 16px; padding: 16px 52px; border-top: 1px solid var(--line); color: var(--slate); font-size: 11px; }
     @page { size: auto; margin: 14mm; }
@@ -199,7 +202,7 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
 
 <main class="content" id="report-main">
 
-<div class="eyebrow">{{.Data.Profile.Label}} Report</div>
+<div class="eyebrow">{{.Data.Profile.Label}} report</div>
 <h1>{{if .Data.Annotations.Title}}{{.Data.Annotations.Title}}{{else}}{{.Data.Report.Manifest.TestName}}{{end}}</h1>
 <p class="subtitle">Performance results for <strong>{{reportRunName .Data.Report}}</strong>.{{if .Data.Annotations.PreparedBy}} Prepared by {{.Data.Annotations.PreparedBy}}.{{end}}</p>
 
@@ -217,7 +220,7 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
   <div class="review-summary-grid">
     <div><b>Run</b><span>{{reportRunName .Data.Report}}</span></div>
     <div><b>Environment</b><span>{{reportEnvironment .Data.Report}}</span></div>
-    <div><b>Evidence completeness</b><span>{{f0 .Data.Report.Completeness.ScorePct}}% · {{tokenLabel .Data.Report.Completeness.Status}}</span></div>
+    <div><b>Evidence coverage</b><span>{{f0 .Data.Report.Completeness.ScorePct}}% · {{tokenLabel .Data.Report.Completeness.Status}}</span></div>
     {{if eq .Data.Profile.ID "audit"}}<div><b>Artifact integrity</b><span>{{if .Data.Report.Integrity}}{{.Data.Report.Integrity.Status}}{{else}}Not verified{{end}}</span></div>{{end}}
     {{if ne .Data.Profile.ID "audit"}}
     {{with headline .Data.Report}}<div><b>Error rate</b><span>{{formatPercent .ErrorPct}} · {{hint .Errors}} of {{hint .Transactions}} ({{.Label}})</span></div>{{end}}
@@ -236,6 +239,7 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
 <nav class="report-contents" id="report-contents" aria-label="Report contents">
   <h2>Contents</h2>
   <ol>{{range .Sections}}<li><a href="#report-{{.ID}}">{{.Label}}</a></li>{{end}}</ol>
+  {{if .NotCaptured}}<p class="not-captured">Not captured for this run: {{join .NotCaptured}}.</p>{{end}}
 </nav>
 
 {{range .Sections}}<section class="report-block" id="report-{{.ID}}" data-report-section="{{.ID}}">{{.Body}}<a class="back-link" href="#report-contents">Back to contents</a></section>
@@ -257,9 +261,9 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
 // heading, so no profile-selected section ever renders blank.
 var reportSectionTemplates = template.Must(template.New("run-archive-report-sections").Funcs(profileHTMLFuncMap).Parse(`
 {{define "verdict"}}
-<h2>Computed acceptance assessment</h2>
-{{if .Report.MetricPopulations}}<table><thead><tr><th>Population</th><th>Count</th><th>Errors</th><th>p95 (ms)</th><th>Average / second (elapsed run)</th></tr></thead><tbody>
-{{range $kind, $metrics := .Report.MetricPopulations}}<tr><td>{{if eq $kind "action"}}Requests / actions{{else if eq $kind "transaction"}}Named transactions{{else}}Unclassified legacy records{{end}}</td><td>{{$metrics.Transactions}}</td><td>{{$metrics.Errors}}</td><td>{{if gt $metrics.Transactions 0}}{{printf "%.1f" $metrics.P95Ms}}{{else}}No samples{{end}}</td><td>{{populationRate $metrics.AverageRate}}</td></tr>{{end}}
+<h2>{{sectionTitle "verdict"}}</h2>
+{{if .Report.MetricPopulations}}<table><thead><tr><th>Population</th><th class="num">Count</th><th class="num">Errors</th><th class="num">P95 (ms)</th><th class="num">Average attempts/s (elapsed run)</th></tr></thead><tbody>
+{{range $kind, $metrics := .Report.MetricPopulations}}<tr><td>{{if eq $kind "action"}}Requests / actions{{else if eq $kind "transaction"}}Named transactions{{else}}Unclassified legacy records{{end}}</td><td class="num">{{hint $metrics.Transactions}}</td><td class="num">{{hint $metrics.Errors}}</td><td class="num">{{if gt $metrics.Transactions 0}}{{f0 $metrics.P95Ms}}{{else}}No samples{{end}}</td><td class="num">{{populationRate $metrics.AverageRate}}</td></tr>{{end}}
 </tbody></table>{{end}}
 <p>Execution: {{executionLabel .Report.Manifest.TerminationReason}}. Planned duration: {{.Report.Manifest.Provenance.Duration}}. Elapsed: {{elapsedDuration .Report.Manifest}}. Planned load: {{.Report.Manifest.Provenance.TotalVUsers}} VUsers; observed peak: {{.Report.Overview.PeakActiveVUsers}}. Archive coverage applies to the captured period, not completion of the planned workload.</p>
 <div class="verdict">
@@ -270,12 +274,12 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "official_outcome"}}
-<h2>Official Outcome</h2>
+<h2>{{sectionTitle "official_outcome"}}</h2>
 <p><span class="outcome-pill {{if .Verdict.Failed}}fail{{else if .Verdict.Conditional}}conditional{{end}}">{{.Verdict.Status}}</span> {{.Verdict.Explanation}}</p>
 {{end}}
 
 {{define "executive_overview"}}
-<h2>Executive Summary</h2>
+<h2>{{sectionTitle "executive_overview"}}</h2>
 {{with headline .Report}}<p class="kpi-basis">Headline metrics: {{.Label}}</p>
 <div class="kpis">
   <div class="kpi"><b>Peak TPS (attempts/s)</b><div class="v">{{formatFloat .PeakTPS}}</div></div>
@@ -291,7 +295,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "technical_overview"}}
-<h2>Executive summary</h2>
+<h2>{{sectionTitle "technical_overview"}}</h2>
 <div class="analyst">
   {{if .Annotations.ExecutiveNarrative}}<p>{{.Annotations.ExecutiveNarrative}}</p>{{end}}
   {{with index .Annotations.SectionComments "overview"}}<p>{{.}}</p>{{end}}
@@ -308,15 +312,15 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 <caption>Table — Run summary ({{.Label}})</caption>
 <thead><tr><th>Metric</th><th class="num">Value</th><th>Metric</th><th class="num">Value</th></tr></thead>
 <tbody>
-<tr><td>p50 / p90 / p99</td><td class="num">{{f0 .P50Ms}} / {{f0 .P90Ms}} / {{f0 .P99Ms}} ms</td><td>Peak concurrent VUsers</td><td class="num">{{$.Report.Overview.PeakActiveVUsers}}</td></tr>
-<tr><td>Peak TPS (attempts/s)</td><td class="num">{{formatFloat .PeakTPS}}</td><td>Load generators</td><td class="num">{{if gt $.GeneratorCount 0}}{{$.GeneratorCount}}{{else}}n/a{{end}}</td></tr>
-<tr><td>Response range</td><td class="num">{{f0 .MinResponseMs}}–{{f0 .MaxResponseMs}} ms</td><td>Data completeness</td><td class="num">{{formatFloat $.Report.Completeness.ScorePct}}%</td></tr>
-<tr><td>Interval summaries</td><td class="num">{{$.Report.Overview.IntervalSummaries}}</td><td>Resource samples</td><td class="num">{{$.Report.Overview.ResourceSamples}}</td></tr>
+<tr><td>P50 / P90 / P99</td><td class="num">{{f0 .P50Ms}} / {{f0 .P90Ms}} / {{f0 .P99Ms}} ms</td><td>Peak concurrent VUsers</td><td class="num">{{$.Report.Overview.PeakActiveVUsers}}</td></tr>
+<tr><td>Peak TPS (attempts/s)</td><td class="num">{{formatFloat .PeakTPS}}</td><td>Load generators</td><td class="num">{{if gt $.GeneratorCount 0}}{{$.GeneratorCount}}{{else}}Not recorded{{end}}</td></tr>
+<tr><td>Response range</td><td class="num">{{f0 .MinResponseMs}}–{{f0 .MaxResponseMs}} ms</td><td>Evidence coverage</td><td class="num">{{f0 $.Report.Completeness.ScorePct}}%</td></tr>
+<tr><td>Interval summaries</td><td class="num">{{hint $.Report.Overview.IntervalSummaries}}</td><td>Resource samples</td><td class="num">{{hint $.Report.Overview.ResourceSamples}}</td></tr>
 </tbody></table>{{end}}
 {{end}}
 
 {{define "sla_rollup"}}
-<h2>SLA Scorecard</h2>
+<h2>{{sectionTitle "sla_rollup"}}</h2>
 {{if .TransactionResponseTimeSLAResults}}
 <table>
   <caption>Transaction response-time SLA (95% of successful samples required)</caption>
@@ -325,10 +329,10 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 </table>
 {{end}}
 <table>
-  <thead><tr><th>Transaction</th><th class="num">Volume</th><th class="num">p95</th><th class="num">SLA</th><th>Result</th></tr></thead>
+  <thead><tr><th>Transaction</th><th class="num">Volume</th><th class="num">P95 (ms)</th><th class="num">SLA (ms)</th><th>Result</th></tr></thead>
   <tbody>
   {{range .SLARows}}
-  <tr><td>{{.Name}}</td><td class="num">{{hint .Volume}}</td><td class="num">{{f0 .P95Ms}} ms</td><td class="num">{{if .HasSLA}}{{f0 .SLAMs}} ms{{else}}—{{end}}</td><td><span class="pill {{.ResultKind}}">{{.Result}}</span></td></tr>
+  <tr><td>{{.Name}}</td><td class="num">{{hint .Volume}}</td><td class="num">{{f0 .P95Ms}}</td><td class="num">{{if .HasSLA}}{{f0 .SLAMs}}{{else}}—{{end}}</td><td><span class="pill {{.ResultKind}}">{{.Result}}</span></td></tr>
   {{else}}<tr><td colspan="5" class="muted">No per-transaction SLA evidence was archived.</td></tr>{{end}}
   </tbody>
 </table>
@@ -343,7 +347,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "sla_detail"}}
-<h2>SLA compliance</h2>
+<h2>{{sectionTitle "sla_detail"}}</h2>
 {{if .TransactionResponseTimeSLAResults}}
 <table>
 <caption>Transaction response-time SLA by group and named business transaction</caption>
@@ -352,8 +356,8 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 </table>
 {{end}}
 <table>
-<caption>SLA evaluation by transaction (p95 vs configured latency SLA; full results in run archive)</caption>
-<thead><tr><th>Transaction</th><th class="num">Volume</th><th class="num">p95 (ms)</th><th class="num">SLA (ms)</th><th class="num">Error %</th><th>Result</th></tr></thead>
+<caption>SLA evaluation by transaction (P95 vs configured latency SLA; full results in run archive)</caption>
+<thead><tr><th>Transaction</th><th class="num">Volume</th><th class="num">P95 (ms)</th><th class="num">SLA (ms)</th><th class="num">Error rate</th><th>Result</th></tr></thead>
 <tbody>
 {{range .SLARows}}
 <tr><td>{{.Name}}</td><td class="num">{{hint .Volume}}</td><td class="num">{{f0 .P95Ms}}</td><td class="num">{{if .HasSLA}}{{f0 .SLAMs}}{{else}}—{{end}}</td><td class="num">{{formatPercent .ErrorPct}}</td><td><span class="pill {{.ResultKind}}">{{.Result}}</span></td></tr>
@@ -372,7 +376,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "graphs"}}
-<h2>Performance analysis</h2>
+<h2>{{sectionTitle "graphs"}}</h2>
 {{if or .Charts.HasTimeline .Charts.HasActions}}
 <div class="charts">
   {{if .Charts.HasTimeline}}{{.Charts.Throughput}}{{.Charts.ResponseTime}}{{.Charts.ErrorRate}}{{.Charts.VUsers}}{{end}}
@@ -385,7 +389,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "risk_summary"}}
-<h2>Top Risks</h2>
+<h2>{{sectionTitle "risk_summary"}}</h2>
 {{range .Findings}}
   <div class="finding"><div class="finding-head {{if eq .Severity "major"}}major{{end}}"><span class="fid">{{.ID}}</span><span class="ft">{{.Title}}</span><span class="pill {{sevPill .Severity}}">{{sevLabel .Severity}}</span></div>
   <div class="finding-body">{{if .Impact}}<p>{{.Impact}}</p>{{else if .Observed}}<p>{{.Observed}}</p>{{end}}</div></div>
@@ -394,9 +398,9 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "rca"}}
-<h2>Root-Cause Analysis <span class="pill">Generated</span></h2>
+<h2>{{sectionTitle "rca"}}</h2>
 {{with .RootCause}}
-<p class="muted">{{rootCauseSource .}}. Generated from archived evidence; analyst findings are reported separately.</p>
+<p class="muted">Generated from archived evidence{{if ne $.Profile.ID "executive"}} · {{rootCauseSource .}}{{end}}. Analyst findings are reported separately.</p>
 <p><strong>{{rootCauseOutcome .Outcome}}.</strong> {{.Summary}}</p>
 {{if .Validity}}<p>Run validity: {{rootCauseOutcome .Validity}}{{range .ValidityReasons}} · {{.}}{{end}}</p>{{end}}
 {{range .Notes}}<p class="muted">{{.}}</p>{{end}}
@@ -408,7 +412,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
     {{if .Explains}}<dt>Explains</dt><dd>{{join .Explains}}</dd>{{end}}
     {{if .Detail}}<dt>Detail</dt><dd>{{.Detail}}</dd>{{end}}
     {{range .Chain}}<dt>Evidence</dt><dd>{{.}}</dd>{{end}}
-    {{if .Reasons}}<dt>Confidence</dt><dd>{{join .Reasons}}</dd>{{end}}
+    {{if .Reasons}}<dt>Confidence</dt><dd><ul>{{range .Reasons}}<li>{{.}}</li>{{end}}</ul></dd>{{end}}
     {{if $.RootCause}}{{if eq $.RootCause.Source "v2"}}<dt>Contradicting evidence</dt><dd>{{if .Contradicting}}{{join .Contradicting}}{{else}}None found{{end}}</dd>
     <dt>Would disprove it</dt><dd>{{if .Falsification}}{{.Falsification}}{{else}}Not provided{{end}}</dd>{{end}}{{end}}
     {{if .Competing}}<dt>Also supported</dt><dd>{{join .Competing}}</dd>{{end}}
@@ -416,13 +420,13 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
   </dl></div>
 </div>
 {{end}}
-{{if .RootCause}}{{if gt (len .RootCause.Hypotheses) (len .RootCauseHypotheses)}}<p class="muted">{{sub (len .RootCause.Hypotheses) (len .RootCauseHypotheses)}} more ranked in the Detailed Technical report.</p>{{end}}
+{{if .RootCause}}{{if gt (len .RootCause.Hypotheses) (len .RootCauseHypotheses)}}<p class="muted">{{sub (len .RootCause.Hypotheses) (len .RootCauseHypotheses)}} more ranked in the Engineer report.</p>{{end}}
 {{with .RootCause.BrowserBaseline}}<div class="browser-baseline"><p>{{.Summary}}</p>{{if .Findings}}<ul>{{range .Findings}}<li>{{.}}</li>{{end}}</ul>{{end}}{{if .Qualification}}<p class="muted">{{range $i, $q := .Qualification}}{{if $i}}; {{end}}{{$q}}{{end}}.</p>{{end}}{{range .Limitations}}<p class="muted">Limitation: {{.}}</p>{{end}}</div>{{end}}
-{{if .RootCause.Limitations}}<details><summary>Limitations</summary><ul>{{range .RootCause.Limitations}}<li>{{.}}</li>{{end}}</ul></details>{{end}}{{end}}
+{{if .RootCause.Limitations}}<h3>Limitations</h3><ul>{{range .RootCause.Limitations}}<li>{{.}}</li>{{end}}</ul>{{end}}{{end}}
 {{end}}
 
 {{define "root_cause"}}
-<h2>Findings</h2>
+<h2>{{sectionTitle "root_cause"}}</h2>
 {{range .Findings}}
 <div class="finding">
   <div class="finding-head {{if eq .Severity "major"}}major{{end}}"><span class="fid">{{.ID}}</span><span class="ft">{{.Title}}</span><span class="pill {{sevPill .Severity}}">{{sevLabel .Severity}}</span></div>
@@ -441,35 +445,35 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "recommendations"}}
-<h2>Recommendations</h2>
+<h2>{{sectionTitle "recommendations"}}</h2>
 <div class="analyst">
   {{with index .Annotations.SectionComments "recommendations"}}<p>{{.}}</p>{{else}}<p class="muted">Document recommended follow-up actions, owners, target dates, retest scope, or accepted risks here.</p>{{end}}
 </div>
 {{end}}
 
 {{define "signoff"}}
-{{if .Annotations.VerdictOverride}}<p>Analyst assessment: {{.Annotations.VerdictOverride}} — {{.Annotations.VerdictExplanation}}</p><p>Assessment author: {{with .Annotations.VerdictAuthor}}{{.}}{{else}}Not provided{{end}}</p>{{else}}<p>Analyst assessment: Not provided</p>{{end}}
-<h2>Recommendation &amp; Sign-Off</h2>
+<h2>{{sectionTitle "signoff"}}</h2>
+{{if .Annotations.VerdictOverride}}<p>Analyst assessment: {{.Annotations.VerdictOverride}} — {{.Annotations.VerdictExplanation}}</p><p>Assessment author: {{with .Annotations.VerdictAuthor}}{{.}}{{else}}Not yet recorded{{end}}</p>{{else}}<p class="muted">No analyst assessment has been recorded.</p>{{end}}
 <div class="signoff">
-  <div class="sign-cell"><b>Prepared by</b><div class="sign-line"></div><div class="sign-meta">{{if .Annotations.PreparedBy}}{{.Annotations.PreparedBy}}{{else}}Not provided{{end}}</div></div>
-  <div class="sign-cell"><b>Approver</b><div class="sign-line"></div><div class="sign-meta">Not provided</div></div>
+  <div class="sign-cell"><b>Prepared by</b><div class="sign-line"></div><div class="sign-meta">{{if .Annotations.PreparedBy}}{{.Annotations.PreparedBy}}{{else}}Name and date{{end}}</div></div>
+  <div class="sign-cell"><b>Approver</b><div class="sign-line"></div><div class="sign-meta">Name and date</div></div>
 </div>
 {{end}}
 
 {{define "release_trend"}}
-<h2>Release Trend</h2>
+<h2>{{sectionTitle "release_trend"}}</h2>
 {{with .Report.ReleaseTrend}}
 <p class="muted">Release: {{if .ReleaseName}}{{.ReleaseName}}{{else}}{{.ReleaseID}}{{end}}.</p>
 <p class="muted">Metric population: {{if eq .Current.MetricPopulation "transaction"}}named transaction attempts{{else}}Unknown (legacy archive records){{end}}.</p>
   {{if .HasBaseline}}
-  <p class="muted">This run vs the prior run in release <strong>{{if .ReleaseName}}{{.ReleaseName}}{{else}}{{.ReleaseID}}{{end}}</strong> (baseline {{if .Baseline.RunName}}{{.Baseline.RunName}}{{else}}{{.Baseline.RunID}}{{end}}{{if not .Baseline.CompletedAt.IsZero}}, completed {{formatTime .Baseline.CompletedAt}}{{end}}; {{.RunCount}} archived run(s)).</p>
+  <p class="muted">This run vs the prior run in release <strong>{{if .ReleaseName}}{{.ReleaseName}}{{else}}{{.ReleaseID}}{{end}}</strong> (baseline {{if .Baseline.RunName}}{{.Baseline.RunName}}{{else}}{{.Baseline.RunID}}{{end}}{{if not .Baseline.CompletedAt.IsZero}}, completed {{formatTime .Baseline.CompletedAt}}{{end}}; {{.RunCount}} archived {{if eq .RunCount 1}}run{{else}}runs{{end}}).</p>
   <table>
     <thead><tr><th>Metric</th><th class="num">Prior run</th><th class="num">This run</th><th class="num">Change</th></tr></thead>
     <tbody>
-      <tr><td>Error rate</td><td class="num">{{formatPercent .Baseline.ErrorPct}}</td><td class="num">{{formatPercent .Current.ErrorPct}}</td><td class="num">{{signed .Deltas.ErrorPctDelta}} pp</td></tr>
-      <tr><td>Avg response</td><td class="num">{{f0 .Baseline.AvgResponseMs}} ms</td><td class="num">{{f0 .Current.AvgResponseMs}} ms</td><td class="num">{{signed .Deltas.AvgResponseMsDelta}} ms ({{signedPct .Deltas.AvgResponsePctDelta}})</td></tr>
+      <tr><td>Error rate</td><td class="num">{{formatPercent .Baseline.ErrorPct}}</td><td class="num">{{formatPercent .Current.ErrorPct}}</td><td class="num">{{signed .Deltas.ErrorPctDelta}} pts</td></tr>
+      <tr><td>Avg latency</td><td class="num">{{f0 .Baseline.AvgResponseMs}} ms</td><td class="num">{{f0 .Current.AvgResponseMs}} ms</td><td class="num">{{signed .Deltas.AvgResponseMsDelta}} ms ({{signedPct .Deltas.AvgResponsePctDelta}})</td></tr>
       <tr><td>Peak TPS</td><td class="num">{{formatFloat .Baseline.PeakTPS}}</td><td class="num">{{formatFloat .Current.PeakTPS}}</td><td class="num">{{signed .Deltas.PeakTPSDelta}}</td></tr>
-      <tr><td>Completeness</td><td class="num">{{f0 .Baseline.CompletenessPct}}%</td><td class="num">{{f0 .Current.CompletenessPct}}%</td><td class="num">{{signed .Deltas.CompletenessDelta}} pts</td></tr>
+      <tr><td>Evidence coverage</td><td class="num">{{f0 .Baseline.CompletenessPct}}%</td><td class="num">{{f0 .Current.CompletenessPct}}%</td><td class="num">{{signed .Deltas.CompletenessDelta}} pts</td></tr>
     </tbody>
   </table>
   {{if .Regressed}}<div class="finding"><div class="finding-body"><strong>Regressions vs prior run</strong><p>{{join .Regressions}}</p></div></div>{{else}}<p class="muted">No regressions detected versus the prior run.</p>{{end}}
@@ -482,7 +486,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "dashboard_panels"}}
-<h2>Imported Dashboard Panels</h2>
+<h2>{{sectionTitle "dashboard_panels"}}</h2>
 {{with .Report.DashboardPanels}}
   {{range .Dashboards}}
   <h3>{{if .Title}}{{.Title}}{{else}}Dashboard{{end}}</h3>
@@ -507,18 +511,18 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "run_context"}}
-<h2>Run Context &amp; Confidence</h2>
+<h2>{{sectionTitle "run_context"}}</h2>
 <div class="kpis">
-  <div class="kpi"><b>Data completeness</b><div class="v">{{f0 .Report.Completeness.ScorePct}}%</div></div>
+  <div class="kpi"><b>Evidence coverage</b><div class="v">{{f0 .Report.Completeness.ScorePct}}%</div></div>
   <div class="kpi"><b>Environment</b><div class="v">{{reportEnvironment .Report}}</div></div>
   <div class="kpi"><b>Runtime overrides</b><div class="v">{{if .Report.ChangeAttribution.RuntimeOverrides}}Yes{{else}}No{{end}}</div></div>
 </div>
 {{end}}
 
 {{define "controller_failover"}}
-<h2>Controller Failover</h2>
+<h2>{{sectionTitle "controller_failover"}}</h2>
 {{with .Report.Manifest.Continuity}}{{if .Failovers}}
-<p class="section-copy">This run survived {{len .Failovers}} HA controller failover(s). A standby controller adopted the run. Generator archives provide retained measurements; completeness and missing sources are evaluated separately. During each gap the controller observed nothing live: controller-derived overlays (target TPS, telemetry health) are absent for those windows, and controller-driven shapes (stage schedules, traffic profiles, goal control) held their last value until adoption.</p>
+<p class="section-copy">This run survived {{len .Failovers}} HA controller {{if eq (len .Failovers) 1}}failover{{else}}failovers{{end}}. A standby controller adopted the run. Generator archives provide retained measurements; completeness and missing sources are evaluated separately. During each gap the controller observed nothing live: controller-derived overlays (target TPS, telemetry health) are absent for those windows, and controller-driven shapes (stage schedules, traffic profiles, goal control) held their last value until adoption.</p>
 <table>
   <thead><tr><th>Adopted at</th><th>Generation</th><th class="num">Unobserved gap (s)</th><th class="num">Generators adopted</th><th class="num">Finished during gap</th></tr></thead>
   <tbody>
@@ -532,17 +536,17 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "telemetry_acceptance"}}
-<h2>Telemetry Acceptance</h2>
+<h2>{{sectionTitle "telemetry_acceptance"}}</h2>
 {{with .TelemetryAcceptanceView}}
 <p class="section-copy">{{.Summary}}</p>
 {{if .Pins}}<table><thead><tr><th>Policy</th><th>Name</th><th class="num">Revision</th><th>SHA-256</th></tr></thead><tbody>
-{{range .Pins}}<tr><td>{{.Kind}}</td><td>{{.Name}}</td><td class="num">{{.Revision}}</td><td>{{.SHA256}}</td></tr>{{end}}
+{{range .Pins}}<tr><td>{{telemetryLabel .Kind}}</td><td>{{.Name}}</td><td class="num">{{.Revision}}</td><td>{{.SHA256}}</td></tr>{{end}}
 </tbody></table>{{end}}
 {{if .Criteria}}<table><thead><tr><th>Criterion</th><th>Result</th><th>Observed</th><th>Bound</th><th>Threshold</th><th>Basis</th><th>Reason</th></tr></thead><tbody>
-{{range .Criteria}}<tr><td>{{.Criterion}}</td><td>{{.Outcome}}</td><td>{{.Observed}}</td><td>{{.Bound}}</td><td>{{.Threshold}}</td><td>{{.Basis}}</td><td>{{.Reason}}</td></tr>{{end}}
+{{range .Criteria}}<tr><td>{{.CriterionLabel}}</td><td>{{.OutcomeLabel}}</td><td>{{.Observed}}</td><td>{{.BoundLabel}}</td><td>{{.Threshold}}</td><td>{{.BasisLabel}}</td><td>{{.Reason}}</td></tr>{{end}}
 </tbody></table>{{end}}
-{{if .Loss}}<table><thead><tr><th>Loss counter</th><th>Total</th><th>State</th><th>Reason</th></tr></thead><tbody>
-{{range .Loss}}<tr><td>{{.Counter}}</td><td>{{.Value}}</td><td>{{.State}}</td><td>{{.Reason}}</td></tr>{{end}}
+{{if .Loss}}<table><thead><tr><th>Loss counter</th><th class="num">Total</th><th>State</th><th>Reason</th></tr></thead><tbody>
+{{range .Loss}}<tr><td>{{.Label}}</td><td>{{.Value}}</td><td>{{.StateLabel}}</td><td>{{.ReasonLabel}}</td></tr>{{end}}
 </tbody></table>{{else}}<p class="section-copy">Run-level loss totals were not recorded for this run.</p>{{end}}
 <p class="section-copy">Coverage: {{.Coverage}}</p>
 {{if .Sources}}<table><thead><tr><th>Source</th><th>Observed</th></tr></thead><tbody>
@@ -550,15 +554,15 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 </tbody></table>{{end}}
 <p class="section-copy">Classified time: {{.Breach}}</p>
 <p class="section-copy">Clock quality: {{.Clock}}</p>
-{{if .Stages}}<table><thead><tr><th>Stage</th><th>Availability</th><th class="num">Samples</th><th class="num">p50 ms</th><th class="num">p95 ms</th><th class="num">p99 ms</th><th class="num">max ms</th><th>Excluded</th></tr></thead><tbody>
-{{range .Stages}}<tr><td>{{.Stage}}</td><td>{{.Availability}}</td><td class="num">{{.Samples}}</td><td class="num">{{.P50}}</td><td class="num">{{.P95}}</td><td class="num">{{.P99}}</td><td class="num">{{.Max}}</td><td>{{.Excluded}}</td></tr>{{end}}
+{{if .Stages}}<table><thead><tr><th>Stage</th><th>Availability</th><th class="num">Samples</th><th class="num">P50 (ms)</th><th class="num">P95 (ms)</th><th class="num">P99 (ms)</th><th class="num">Max (ms)</th><th>Excluded</th></tr></thead><tbody>
+{{range .Stages}}<tr><td>{{.Label}}</td><td>{{.AvailabilityLabel}}</td><td class="num">{{.SamplesLabel}}</td><td class="num">{{.P50}}</td><td class="num">{{.P95}}</td><td class="num">{{.P99}}</td><td class="num">{{.Max}}</td><td>{{.ExcludedLabel}}</td></tr>{{end}}
 </tbody></table>{{end}}
-{{if .Exclusions}}<ul>{{range .Exclusions}}<li>Excluded — {{.}}</li>{{end}}</ul>{{end}}
+{{if .Exclusions}}<ul>{{range .Exclusions}}<li>Excluded — {{telemetryExclusion .}}</li>{{end}}</ul>{{end}}
 {{end}}
 {{end}}
 
 {{define "browser_findings"}}
-<h2>Browser Findings</h2>
+<h2>{{sectionTitle "browser_findings"}}</h2>
 {{with .BrowserFindingsView}}
 <p class="section-copy">{{.Summary}}</p>
 {{if .Findings}}<table><thead><tr><th>Finding</th><th>State</th><th>Severity</th><th>Observed</th><th>Summary</th></tr></thead><tbody>
@@ -570,7 +574,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "interaction_map"}}
-<h2>Interaction Patterns and Heatmaps</h2>
+<h2>{{sectionTitle "interaction_map"}}</h2>
 {{with .InteractionMapView}}
 <p class="section-copy">{{.Summary}}</p>
 {{if .Patterns}}<table><thead><tr><th>Pattern</th><th>Provenance</th><th>Route</th><th>Action</th><th class="num">Gestures</th><th>Detail</th></tr></thead><tbody>
@@ -586,7 +590,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "journey_risk"}}
-<h2>Journey Risk</h2>
+<h2>{{sectionTitle "journey_risk"}}</h2>
 {{with .JourneyRiskView}}
 <p class="section-copy">{{.Summary}}</p>
 {{if .Journeys}}<table><thead><tr><th>Journey</th><th class="num">Eligible</th><th class="num">Completed</th><th class="num">Failed</th><th class="num">Aborted</th><th class="num">Skipped</th><th class="num">Censored</th><th class="num">Failure rate</th></tr></thead><tbody>
@@ -597,8 +601,8 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "completeness"}}
-<h2>Completeness Score</h2>
-<p class="section-copy">{{formatFloat .Report.Completeness.ScorePct}}% — {{.Report.Completeness.Status}}</p>
+<h2>{{sectionTitle "completeness"}}</h2>
+<p class="section-copy">{{f0 .Report.Completeness.ScorePct}}% of expected archive evidence was captured — {{tokenLabel .Report.Completeness.Status}}.</p>
 {{with .Report.Manifest}}{{with .SourceCoverage}}
 <p class="section-copy">Generator sources known at collection time. This inventory does not prove complete shard history or that all measurements survived.</p>
 <table><thead><tr><th>Generator source</th><th>Collection</th></tr></thead><tbody>
@@ -610,7 +614,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
   <thead><tr><th>Dimension</th><th>Severity</th><th class="num">Penalty</th><th>Finding</th></tr></thead>
   <tbody>
     {{range .Report.Completeness.Findings}}
-    <tr><td>{{.Dimension}}</td><td>{{.Severity}}</td><td class="num">-{{formatFloat .Penalty}}</td><td>{{.Message}}</td></tr>
+    <tr><td>{{tokenLabel .Dimension}}</td><td>{{tokenLabel .Severity}}</td><td class="num">-{{formatFloat .Penalty}}</td><td>{{.Message}}</td></tr>
     {{end}}
   </tbody>
 </table>
@@ -618,18 +622,18 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "change_attribution"}}
-<h2>Change Attribution</h2>
+<h2>{{sectionTitle "change_attribution"}}</h2>
 <div class="overview">
-  <div class="metric"><span class="metric-label">Scripts</span><span class="metric-value">{{if .Report.ChangeAttribution.ScriptRevisions}}{{join .Report.ChangeAttribution.ScriptRevisions}}{{else}}n/a{{end}}</span></div>
-  <div class="metric"><span class="metric-label">Scenario</span><span class="metric-value">{{if .Report.ChangeAttribution.ScenarioRevision}}{{.Report.ChangeAttribution.ScenarioRevision}}{{else}}n/a{{end}}</span></div>
-  <div class="metric"><span class="metric-label">Environment</span><span class="metric-value">{{reportEnvironment .Report}}</span></div>
-  <div class="metric"><span class="metric-label">Generators</span><span class="metric-value">{{if .Report.ChangeAttribution.GeneratorVersions}}{{join .Report.ChangeAttribution.GeneratorVersions}}{{else}}n/a{{end}}</span></div>
+  <div class="metric"><span class="metric-label">Scripts</span><span class="metric-text">{{reportScripts .Report}}</span></div>
+  <div class="metric"><span class="metric-label">Scenario</span><span class="metric-text mono">{{if .Report.ChangeAttribution.ScenarioRevision}}{{.Report.ChangeAttribution.ScenarioRevision}}{{else}}Not recorded{{end}}</span></div>
+  <div class="metric"><span class="metric-label">Environment</span><span class="metric-text">{{reportEnvironment .Report}}</span></div>
+  <div class="metric"><span class="metric-label">Generators</span><span class="metric-text">{{if .Report.ChangeAttribution.GeneratorVersions}}{{join .Report.ChangeAttribution.GeneratorVersions}}{{else}}Not recorded{{end}}</span></div>
 </div>
 <p class="section-copy">Runtime overrides {{if .Report.ChangeAttribution.RuntimeOverrides}}were applied{{if .Report.ChangeAttribution.RuntimeOverrideFields}} to: {{join .Report.ChangeAttribution.RuntimeOverrideFields}}{{end}}{{else}}were not applied{{end}}.</p>
 {{end}}
 
 {{define "schema_compatibility"}}
-<h2>Schema Compatibility</h2>
+<h2>{{sectionTitle "schema_compatibility"}}</h2>
 <p class="section-copy">Report schema {{.Report.SchemaVersion}} is {{.Report.Compatibility.Status}} with archive manifest {{.Report.Compatibility.ManifestSchemaVersion}}.</p>
 <table>
   <thead><tr><th>Output</th><th>Artifact</th><th>Status</th><th>Schema</th></tr></thead>
@@ -643,13 +647,13 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "summary_timeline"}}
-<h2>Summary Timeline</h2>
+<h2>{{sectionTitle "summary_timeline"}}</h2>
 {{if .Report.SummaryTimeline}}
 <table>
-  <thead><tr><th>Timestamp</th><th class="num">Active VUsers</th><th class="num">TPS</th><th class="num">Target TPS</th><th class="num">Gap</th><th class="num">P95 (ms)</th><th class="num">Error %</th><th class="num">Total Tx</th><th class="num">Total Errors</th></tr></thead>
+  <thead><tr><th class="nowrap">Time (UTC)</th><th class="num">Active VUsers</th><th class="num">TPS</th><th class="num">Target TPS</th><th class="num">Gap</th><th class="num">P95 (ms)</th><th class="num">Error rate</th><th class="num">Transactions</th><th class="num">Errors</th></tr></thead>
   <tbody>
     {{range .Report.SummaryTimeline}}
-    <tr><td>{{formatTime .Timestamp}}</td><td class="num">{{.ActiveVUsers}}</td><td class="num">{{formatFloat .TPS}}</td><td class="num">{{formatFloat .TargetTPS}}</td><td class="num"><span class="pill {{if .ThroughputTargetMissed}}fail{{else}}pass{{end}}">{{formatPercent .ThroughputGapPct}}</span></td><td class="num">{{if .HasP95}}{{formatFloat .P95Ms}}{{else}}unavailable{{end}}</td><td class="num">{{formatPercent .ErrorPct}}</td><td class="num">{{.TotalTx}}</td><td class="num">{{.TotalErrors}}</td></tr>
+    <tr><td class="nowrap">{{clockTime .Timestamp}}</td><td class="num">{{.ActiveVUsers}}</td><td class="num">{{formatFloat .TPS}}</td><td class="num">{{formatFloat .TargetTPS}}</td><td class="num"><span class="pill {{if .ThroughputTargetMissed}}fail{{else}}pass{{end}}">{{formatPercent .ThroughputGapPct}}</span></td><td class="num">{{if .HasP95}}{{f0 .P95Ms}}{{else}}Not recorded{{end}}</td><td class="num">{{formatPercent .ErrorPct}}</td><td class="num">{{hint .TotalTx}}</td><td class="num">{{hint .TotalErrors}}</td></tr>
     {{end}}
   </tbody>
 </table>
@@ -657,12 +661,12 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "actions"}}
-<h2>Action Summary</h2>
+<h2>{{sectionTitle "actions"}}</h2>
 <table>
-  <thead><tr><th>Action</th><th class="num">Request / action records</th><th class="num">Errors</th><th class="num">Error %</th><th class="num">Avg (ms)</th><th class="num">Max (ms)</th></tr></thead>
+  <thead><tr><th>Action</th><th class="num">Records</th><th class="num">Errors</th><th class="num">Error rate</th><th class="num">Avg (ms)</th><th class="num">Max (ms)</th></tr></thead>
   <tbody>
     {{range .ActionRows}}
-    <tr><td>{{.Name}}</td><td class="num">{{.Stats.Transactions}}</td><td class="num">{{.Stats.Errors}}</td><td class="num">{{formatPercent .Stats.ErrorPct}}</td><td class="num">{{formatFloat .Stats.AvgResponseMs}}</td><td class="num">{{formatFloat .Stats.MaxResponseMs}}</td></tr>
+    <tr><td>{{.Name}}</td><td class="num">{{hint .Stats.Transactions}}</td><td class="num">{{hint .Stats.Errors}}</td><td class="num">{{formatPercent .Stats.ErrorPct}}</td><td class="num">{{msValue .Stats.AvgResponseMs}}</td><td class="num">{{msValue .Stats.MaxResponseMs}}</td></tr>
     {{else}}
     <tr><td colspan="6" class="muted">No action-level archive data was recorded.</td></tr>
     {{end}}
@@ -671,16 +675,16 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "network_phases"}}
-<h2>Network Phase Breakdown</h2>
+<h2>{{sectionTitle "network_phases"}}</h2>
 {{if gt .Report.NetworkPhases.Samples 0}}
-<p class="section-copy">Connection-time decomposition across {{.Report.NetworkPhases.Samples}} measured transaction(s).</p>
+<p class="section-copy">Averages across {{hint .Report.NetworkPhases.Samples}} measured requests and transactions; a new connection is not opened for every request, so averages sit well below a single connection's time. Root-cause analysis compares each interval with its own baseline instead.</p>
 <table>
   <thead><tr><th>Phase</th><th class="num">Avg (ms)</th><th class="num">Max (ms)</th></tr></thead>
   <tbody>
-    <tr><td>DNS</td><td class="num">{{f0 .Report.NetworkPhases.Overall.AvgDNSMs}}</td><td class="num">{{f0 .Report.NetworkPhases.Overall.MaxDNSMs}}</td></tr>
-    <tr><td>Connect (TCP)</td><td class="num">{{f0 .Report.NetworkPhases.Overall.AvgConnectMs}}</td><td class="num">{{f0 .Report.NetworkPhases.Overall.MaxConnectMs}}</td></tr>
-    <tr><td>TLS handshake</td><td class="num">{{f0 .Report.NetworkPhases.Overall.AvgTLSMs}}</td><td class="num">{{f0 .Report.NetworkPhases.Overall.MaxTLSMs}}</td></tr>
-    <tr><td>TTFB (server + transfer)</td><td class="num">{{f0 .Report.NetworkPhases.Overall.AvgTTFBMs}}</td><td class="num">{{f0 .Report.NetworkPhases.Overall.MaxTTFBMs}}</td></tr>
+    <tr><td>DNS</td><td class="num">{{msValue .Report.NetworkPhases.Overall.AvgDNSMs}}</td><td class="num">{{msValue .Report.NetworkPhases.Overall.MaxDNSMs}}</td></tr>
+    <tr><td>Connect (TCP)</td><td class="num">{{msValue .Report.NetworkPhases.Overall.AvgConnectMs}}</td><td class="num">{{msValue .Report.NetworkPhases.Overall.MaxConnectMs}}</td></tr>
+    <tr><td>TLS handshake</td><td class="num">{{msValue .Report.NetworkPhases.Overall.AvgTLSMs}}</td><td class="num">{{msValue .Report.NetworkPhases.Overall.MaxTLSMs}}</td></tr>
+    <tr><td>TTFB (server + transfer)</td><td class="num">{{msValue .Report.NetworkPhases.Overall.AvgTTFBMs}}</td><td class="num">{{msValue .Report.NetworkPhases.Overall.MaxTTFBMs}}</td></tr>
   </tbody>
 </table>
 {{with versionPhaseRows .Report.NetworkPhases}}
@@ -739,13 +743,13 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "errors"}}
-<h2>Error Patterns</h2>
+<h2>{{sectionTitle "errors"}}</h2>
 {{if .Report.ErrorPatterns}}
 <table>
-  <thead><tr><th>Pattern</th><th class="num">Occurrences</th><th>First Seen</th><th>Latest Seen</th><th>Actions</th><th>Snapshot</th></tr></thead>
+  <thead><tr><th>Pattern</th><th class="num">Occurrences</th><th>First seen</th><th>Latest seen</th><th>Actions</th><th>Snapshot</th></tr></thead>
   <tbody>
     {{range .Report.ErrorPatterns}}
-    <tr><td>{{.Sample}}</td><td class="num">{{.Count}}</td><td>{{formatTime .FirstSeen}}</td><td>{{formatTime .LatestSeen}}</td><td>{{if .Actions}}{{join .Actions}}{{else}}n/a{{end}}</td><td>{{if .Snapshot}}retained{{else}}n/a{{end}}</td></tr>
+    <tr><td>{{.Sample}}</td><td class="num">{{hint .Count}}</td><td>{{formatTime .FirstSeen}}</td><td>{{formatTime .LatestSeen}}</td><td>{{if .Actions}}{{join .Actions}}{{else}}n/a{{end}}</td><td>{{if .Snapshot}}retained{{else}}n/a{{end}}</td></tr>
     {{end}}
   </tbody>
 </table>
@@ -753,17 +757,17 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "resources"}}
-<h2>Resource Peaks</h2>
+<h2>{{sectionTitle "resources"}}</h2>
 <div class="overview">
-  <div class="metric"><span class="metric-label">CPU Peak</span><span class="metric-value">{{formatFloat .Report.ResourcePeaks.CPUProcessPct}}%</span></div>
-  <div class="metric"><span class="metric-label">Memory Peak</span><span class="metric-value">{{formatFloat .Report.ResourcePeaks.MemProcessMB}} MB</span></div>
-  <div class="metric"><span class="metric-label">Net Sent Peak</span><span class="metric-value">{{formatFloat .Report.ResourcePeaks.NetSentKbps}} KB/s</span></div>
-  <div class="metric"><span class="metric-label">Net Recv Peak</span><span class="metric-value">{{formatFloat .Report.ResourcePeaks.NetRecvKbps}} KB/s</span></div>
+  <div class="metric"><span class="metric-label">CPU peak</span><span class="metric-value">{{formatFloat .Report.ResourcePeaks.CPUProcessPct}}%</span></div>
+  <div class="metric"><span class="metric-label">Memory peak</span><span class="metric-value">{{formatFloat .Report.ResourcePeaks.MemProcessMB}} MB</span></div>
+  <div class="metric"><span class="metric-label">Network sent peak</span><span class="metric-value">{{formatFloat .Report.ResourcePeaks.NetSentKbps}} KB/s</span></div>
+  <div class="metric"><span class="metric-label">Network received peak</span><span class="metric-value">{{formatFloat .Report.ResourcePeaks.NetRecvKbps}} KB/s</span></div>
 </div>
 {{end}}
 
 {{define "browser"}}
-<h2>Browser Metrics</h2>
+<h2>{{sectionTitle "browser"}}</h2>
 {{if .Report.Overview.Browser}}
 <p>{{legacyBrowserSummaryNote}}</p>
 <div class="overview">
@@ -774,7 +778,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
   <div class="metric"><span class="metric-label">Avg INP</span><span class="metric-value">{{formatFloat .Report.Overview.Browser.AvgINPMs}} ms</span></div>
 </div>
 {{if .BrowserEngineRows}}
-<h3>Engine Rollup</h3>
+<h3>Engine rollup</h3>
 <table>
   <thead><tr><th>Engine</th><th class="num">Samples</th><th class="num">Avg LCP</th><th class="num">Avg CLS</th><th class="num">Avg INP</th></tr></thead>
   <tbody>
@@ -785,7 +789,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 </table>
 {{end}}
 {{if .BrowserPlatformRows}}
-<h3>Platform Rollup</h3>
+<h3>Platform rollup</h3>
 <table>
   <thead><tr><th>Platform</th><th>Engine</th><th class="num">Samples</th><th class="num">Avg LCP</th><th class="num">Avg CLS</th><th class="num">Avg INP</th></tr></thead>
   <tbody>
@@ -796,7 +800,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 </table>
 {{end}}
 {{if .BrowserDeviceRows}}
-<h3>Device Rollup</h3>
+<h3>Device rollup</h3>
 <table>
   <thead><tr><th>Device</th><th>Platform</th><th>Engine</th><th>Tier</th><th class="num">Avg LCP</th><th class="num">Avg INP</th></tr></thead>
   <tbody>
@@ -810,10 +814,10 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "soap"}}
-<h2>SOAP Diagnostics</h2>
+<h2>{{sectionTitle "soap"}}</h2>
 {{if or .SOAPOperationRows .SOAPFaultCodeRows .SOAPFaultBuckets .SOAPPayloadBuckets}}
 {{if .SOAPOperationRows}}
-<h3>SOAP Operation Summary</h3>
+<h3>SOAP operation summary</h3>
 <table>
   <thead><tr><th>Operation</th><th class="num">Request / action records</th><th class="num">Errors</th><th class="num">Error %</th><th class="num">Avg (ms)</th></tr></thead>
   <tbody>
@@ -824,30 +828,30 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 </table>
 {{end}}
 {{if .SOAPFaultCodeRows}}
-<h3>SOAP Fault Codes</h3>
+<h3>SOAP fault codes</h3>
 <table>
   <thead><tr><th>Code</th><th class="num">Count</th></tr></thead>
   <tbody>{{range .SOAPFaultCodeRows}}<tr><td>{{.Name}}</td><td class="num">{{.Count}}</td></tr>{{end}}</tbody>
 </table>
 {{end}}
 {{if .SOAPFaultCategoryRows}}
-<h3>SOAP Fault Categories</h3>
+<h3>SOAP fault categories</h3>
 <table>
   <thead><tr><th>Category</th><th class="num">Count</th></tr></thead>
   <tbody>{{range .SOAPFaultCategoryRows}}<tr><td>{{.Name}}</td><td class="num">{{.Count}}</td></tr>{{end}}</tbody>
 </table>
 {{end}}
 {{if .SOAPFaultBuckets}}
-<h3>SOAP Fault Timeline</h3>
+<h3>SOAP fault timeline</h3>
 <table>
   <thead><tr><th>Timestamp</th><th class="num">Total</th><th>Codes</th><th>Categories</th></tr></thead>
   <tbody>{{range .SOAPFaultBuckets}}<tr><td>{{formatTime .Timestamp}}</td><td class="num">{{.Total}}</td><td>{{.Codes}}</td><td>{{.Categories}}</td></tr>{{end}}</tbody>
 </table>
 {{end}}
 {{if .SOAPPayloadBuckets}}
-<h3>SOAP Payload Timeline</h3>
+<h3>SOAP payload timeline</h3>
 <table>
-  <thead><tr><th>Timestamp</th><th class="num">Samples</th><th class="num">Avg Request KB</th><th class="num">Avg Response KB</th><th class="num">Avg Envelope Overhead KB</th><th class="num">Max Envelope Overhead KB</th></tr></thead>
+  <thead><tr><th>Timestamp</th><th class="num">Samples</th><th class="num">Avg request (KB)</th><th class="num">Avg response (KB)</th><th class="num">Avg envelope overhead (KB)</th><th class="num">Max envelope overhead (KB)</th></tr></thead>
   <tbody>{{range .SOAPPayloadBuckets}}<tr><td>{{formatTime .Timestamp}}</td><td class="num">{{.Samples}}</td><td class="num">{{formatFloat .AvgRequestPayloadKB}}</td><td class="num">{{formatFloat .AvgResponsePayloadKB}}</td><td class="num">{{formatFloat .AvgEnvelopeOverheadKB}}</td><td class="num">{{formatFloat .MaxEnvelopeOverheadKB}}</td></tr>{{end}}</tbody>
 </table>
 {{end}}
@@ -855,31 +859,31 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "web2_migration"}}
-<h2>Web 2.0 Migration</h2>
+<h2>{{sectionTitle "web2_migration"}}</h2>
 {{if .Report.Web2Migration}}
 <div class="overview">
   <div class="metric"><span class="metric-label">Status</span><span class="metric-value">{{.Report.Web2Migration.Status}}</span></div>
-  <div class="metric"><span class="metric-label">Imported Steps</span><span class="metric-value">{{.Report.Web2Migration.ImportedSteps}}</span></div>
-  <div class="metric"><span class="metric-label">Replayed Steps</span><span class="metric-value">{{.Report.Web2Migration.ReplayedSteps}}</span></div>
-  <div class="metric"><span class="metric-label">Failed Steps</span><span class="metric-value">{{.Report.Web2Migration.FailedSteps}}</span></div>
+  <div class="metric"><span class="metric-label">Imported steps</span><span class="metric-value">{{.Report.Web2Migration.ImportedSteps}}</span></div>
+  <div class="metric"><span class="metric-label">Replayed steps</span><span class="metric-value">{{.Report.Web2Migration.ReplayedSteps}}</span></div>
+  <div class="metric"><span class="metric-label">Failed steps</span><span class="metric-value">{{.Report.Web2Migration.FailedSteps}}</span></div>
 </div>
 {{else}}<p class="muted">No TruClient/Web 2.0 migration evidence is present.</p>{{end}}
 {{end}}
 
 {{define "test_setup"}}
-<h2>Test setup</h2>
+<h2>{{sectionTitle "test_setup"}}</h2>
 <table>
 <thead><tr><th>Component</th><th>Detail</th></tr></thead>
 <tbody>
 <tr><td>Environment</td><td>{{reportEnvironment .Report}}</td></tr>
 <tr><td>Scenario revision</td><td>{{if .Report.ChangeAttribution.ScenarioRevision}}{{.Report.ChangeAttribution.ScenarioRevision}}{{else}}n/a{{end}}</td></tr>
-<tr><td>Load generation</td><td>APEX Load{{if gt .GeneratorCount 0}} · {{.GeneratorCount}} generator(s){{end}}{{if .Report.ChangeAttribution.GeneratorVersions}} · {{join .Report.ChangeAttribution.GeneratorVersions}}{{end}}</td></tr>
-<tr><td>Scripts</td><td>{{if .Report.ChangeAttribution.ScriptRevisions}}{{join .Report.ChangeAttribution.ScriptRevisions}}{{else}}n/a{{end}}</td></tr>
+<tr><td>Load generation</td><td>APEX Load{{if gt .GeneratorCount 0}} · {{.GeneratorCount}} load {{if eq .GeneratorCount 1}}generator{{else}}generators{{end}}{{end}}{{if .Report.ChangeAttribution.GeneratorVersions}} · {{join .Report.ChangeAttribution.GeneratorVersions}}{{end}}</td></tr>
+<tr><td>Scripts</td><td>{{reportScripts .Report}}</td></tr>
 </tbody></table>
 {{end}}
 
 {{define "raw_exports"}}
-<h2>Data sources &amp; glossary</h2>
+<h2>{{sectionTitle "raw_exports"}}</h2>
 <table>
 <thead><tr><th>Artifact</th><th>Detail</th></tr></thead>
 <tbody>
@@ -889,12 +893,12 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 <tr><td>Resource samples</td><td>{{.Report.Overview.ResourceSamples}}</td></tr>
 <tr><td>Report schema</td><td><span class="mono">{{.Report.SchemaVersion}}</span></td></tr>
 </tbody></table>
-<p class="section-copy"><strong>Glossary.</strong> <strong>TPS</strong> — completed transactions per second.
-<strong>p95</strong> — 95th-percentile response time over the run. <strong>VU</strong> — virtual user.</p>
+<p class="section-copy"><strong>Glossary.</strong> <strong>TPS</strong> — attempts per second, successful and failed (shown as attempts/s).
+<strong>P95</strong> — 95th-percentile response time over the run. <strong>VUsers</strong> — virtual users. <strong>Evidence coverage</strong> — the share of expected archive evidence that was captured.</p>
 {{end}}
 
 {{define "generator_manifest"}}
-<h2>Appendix C — Generator assignment manifest</h2>
+<h2>{{sectionTitle "generator_manifest"}}</h2>
 {{with .Manifest}}
 <h3>Assignment strategy</h3>
 <table>
@@ -928,8 +932,8 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 <tr><td colspan="8" class="muted">No generator inventory snapshot was recorded.</td></tr>
 {{end}}
 </tbody></table>
-{{if gt $.InventoryOverflow 0}}<p class="section-copy">… and {{$.InventoryOverflow}} more generator(s) not shown.</p>{{end}}
-<h3>Scripts &amp; groups</h3>
+{{if gt $.InventoryOverflow 0}}<p class="section-copy">… and {{$.InventoryOverflow}} more load {{if eq $.InventoryOverflow 1}}generator{{else}}generators{{end}} not shown.</p>{{end}}
+<h3>Scripts and groups</h3>
 <table>
 <thead><tr><th>Group</th><th>Script</th><th>Protocol</th><th class="num">VUsers</th><th>Ramp up</th></tr></thead>
 <tbody>
@@ -945,7 +949,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "audit_identity"}}
-<h2>Run Identity</h2>
+<h2>{{sectionTitle "audit_identity"}}</h2>
 <table><tbody>
   <tr><th>Run name</th><td>{{reportRunName .Report}}</td><th>Status</th><td>{{.Report.Manifest.Status}}</td></tr>
   <tr><th>Completed</th><td>{{formatTime .Report.Manifest.CompletedAt}}</td><th>Scenario</th><td>{{identityName .Report.IdentityNames.Scenario .Report.Manifest.Provenance.ScenarioID}}</td></tr>
@@ -954,7 +958,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "authorization"}}
-<h2>Authorization &amp; Sign-off</h2>
+<h2>{{sectionTitle "authorization"}}</h2>
 <table><tbody>
   <tr><th>Created by</th><td>{{.Report.Manifest.Provenance.CreatedByDisplayName}} <span class="mono">{{.Report.Manifest.Provenance.CreatedBySubject}}</span></td><th>Started by</th><td>{{.Report.Manifest.Provenance.StartedByDisplayName}} <span class="mono">{{.Report.Manifest.Provenance.StartedBySubject}}</span></td></tr>
   <tr><th>Stopped by</th><td>{{.Report.Manifest.Provenance.StoppedByDisplayName}} <span class="mono">{{.Report.Manifest.Provenance.StoppedBySubject}}</span></td><th>Scheduled start</th><td>{{if .Report.Manifest.Provenance.ScheduledStartAt}}{{formatTime .Report.Manifest.Provenance.ScheduledStartAt}}{{else}}n/a{{end}}</td></tr>
@@ -962,7 +966,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "governance"}}
-<h2>Governance &amp; Provenance</h2>
+<h2>{{sectionTitle "governance"}}</h2>
 {{with .Report.Manifest.Provenance.Governance}}
 <table><tbody>
   <tr><th>Capacity reservation</th><td class="mono">{{if .CapacityReservationID}}{{.CapacityReservationID}}{{else}}n/a{{end}}</td><th>Launch status</th><td>{{if .LaunchPreflight}}{{.LaunchPreflight.Status}}{{else}}n/a{{end}}</td></tr>
@@ -972,7 +976,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "provenance"}}
-<h2>Run Configuration &amp; Provenance</h2>
+<h2>{{sectionTitle "provenance"}}</h2>
 <table><tbody>
   <tr><th>Scenario mode</th><td>{{if .Report.Manifest.Provenance.ScenarioMode}}{{.Report.Manifest.Provenance.ScenarioMode}}{{else}}n/a{{end}}</td><th>Total VUsers</th><td>{{.Report.Manifest.Provenance.TotalVUsers}}</td></tr>
   <tr><th>Duration</th><td>{{if .Report.Manifest.Provenance.Duration}}{{.Report.Manifest.Provenance.Duration}}{{else}}n/a{{end}}</td><th>Start delay</th><td>{{if .Report.Manifest.Provenance.StartDelay}}{{.Report.Manifest.Provenance.StartDelay}}{{else}}none{{end}}</td></tr>
@@ -981,8 +985,8 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "evidence_tiers"}}
-<h2>Completeness &amp; Evidence Tiers</h2>
-<p class="section-copy">Completeness score: <strong>{{formatFloat .Report.Completeness.ScorePct}}%</strong> ({{.Report.Completeness.Status}}).</p>
+<h2>{{sectionTitle "evidence_tiers"}}</h2>
+<p class="section-copy">Evidence coverage: <strong>{{f0 .Report.Completeness.ScorePct}}%</strong> ({{tokenLabel .Report.Completeness.Status}}).</p>
 <table><thead><tr><th>Tier</th><th>Status</th><th class="num">Count</th><th>Notes</th></tr></thead><tbody>
   {{range .Report.EvidenceTiers}}<tr><td>{{.Label}}</td><td>{{.Status}}</td><td class="num">{{.Count}}</td><td>{{.Reason}}</td></tr>
   {{else}}<tr><td colspan="4" class="muted">No evidence tiers were declared for this run.</td></tr>{{end}}
@@ -990,8 +994,8 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "artifact_integrity"}}
-<h2>Artifact Integrity</h2>
-{{with .Report.Integrity}}<div class="integrity-banner {{if eq .Status "verified"}}pass{{else if eq .Status "verified_partial"}}caution{{else}}fail{{end}}"><span class="integrity-label">{{if eq .Status "verified"}}&#10003; Integrity Verified{{else if eq .Status "verified_partial"}}&#9888; Integrity Partially Verified{{else}}&#10007; Integrity {{.Status}}{{end}}</span><span>{{.Summary}}</span></div>{{end}}
+<h2>{{sectionTitle "artifact_integrity"}}</h2>
+{{with .Report.Integrity}}<div class="integrity-banner {{if eq .Status "verified"}}pass{{else if eq .Status "verified_partial"}}caution{{else}}fail{{end}}"><span class="integrity-label">{{if eq .Status "verified"}}&#10003; Integrity verified{{else if eq .Status "verified_partial"}}&#9888; Integrity partially verified{{else}}&#10007; Integrity {{.Status}}{{end}}</span><span>{{.Summary}}</span></div>{{end}}
 <table><thead><tr><th>Artifact</th><th>Type</th><th class="num">Records</th><th class="num">Bytes</th><th>SHA-256</th></tr></thead><tbody>
   {{range .Report.ArtifactInventory}}<tr><td class="mono">{{.Name}}</td><td>{{.RecordType}} {{.Format}}</td><td class="num">{{.Count}}</td><td class="num">{{.SizeBytes}}</td><td class="mono">{{if .SHA256}}{{.SHA256}}{{else}}not captured{{end}}</td></tr>
   {{else}}<tr><td colspan="5" class="muted">No artifact inventory was available.</td></tr>{{end}}
@@ -999,7 +1003,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 
 {{define "report_authorship"}}
-<h2>Report Authorship / Edit Trail</h2>
+<h2>{{sectionTitle "report_authorship"}}</h2>
 <table><tbody>
   <tr><th>Prepared by</th><td>{{if .Annotations.PreparedBy}}{{.Annotations.PreparedBy}}{{else}}n/a{{end}}</td><th>Updated by</th><td>{{if .Annotations.UpdatedBy}}{{.Annotations.UpdatedBy}}{{else}}n/a{{end}}</td></tr>
   <tr><th>Updated at</th><td>{{formatTime .Annotations.UpdatedAt}}</td><th>Verdict override</th><td>{{if .Annotations.VerdictOverride}}{{.Annotations.VerdictOverride}} — {{.Annotations.VerdictExplanation}}{{else}}none{{end}}</td></tr>

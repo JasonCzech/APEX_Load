@@ -1256,7 +1256,7 @@ describe('SettingsPage', () => {
     await setFieldValue(inputs[0], 'Payments')
     await setFieldValue(inputs[1], 'Payment systems')
 
-    const addButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Add Domain') as HTMLButtonElement | undefined
+    const addButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Add domain') as HTMLButtonElement | undefined
     expect(addButton?.disabled).toBe(false)
     expect(addButton).toBeTruthy()
     if (!addButton) return
@@ -1305,7 +1305,7 @@ describe('SettingsPage', () => {
     const inputs = Array.from(domainSection.querySelector('.inline-create-row')?.querySelectorAll('input') || []) as HTMLInputElement[]
     await setFieldValue(inputs[0], 'Payments')
     await setFieldValue(inputs[1], 'Payment systems')
-    const addButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Add Domain') as HTMLButtonElement
+    const addButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Add domain') as HTMLButtonElement
 
     await act(async () => {
       addButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -1526,7 +1526,7 @@ describe('SettingsPage', () => {
     if (!createInput) return
     await setFieldValue(createInput, 'Restricted')
 
-    const addButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Add Domain') as HTMLButtonElement | undefined
+    const addButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Add domain') as HTMLButtonElement | undefined
     const saveButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Save') as HTMLButtonElement | undefined
     const deleteButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Delete') as HTMLButtonElement | undefined
 
@@ -4632,7 +4632,7 @@ describe('SettingsPage', () => {
     if (!nameInput || !domainSection) return
     await setFieldValue(nameInput, 'Retail')
     const addButton = Array.from(domainSection.querySelectorAll('button'))
-      .find(button => button.textContent === 'Add Domain') as HTMLButtonElement | undefined
+      .find(button => button.textContent === 'Add domain') as HTMLButtonElement | undefined
     await act(async () => addButton?.click())
     await act(async () => {
       await new Promise(resolve => setTimeout(resolve, 0))
@@ -4684,7 +4684,7 @@ describe('SettingsPage', () => {
     if (!nameInput || !domainSection) return
     await setFieldValue(nameInput, 'Retail')
     const addButton = Array.from(domainSection.querySelectorAll('button'))
-      .find(button => button.textContent === 'Add Domain') as HTMLButtonElement | undefined
+      .find(button => button.textContent === 'Add domain') as HTMLButtonElement | undefined
     await act(async () => addButton?.click())
     await flushPromises()
 

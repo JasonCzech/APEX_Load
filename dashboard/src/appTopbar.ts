@@ -29,7 +29,7 @@ export function pageTitleForView(view: AppView, options: TopbarPageTitleOptions 
     case 'command-center':
       return 'Command Center'
     case 'report':
-      return 'Run Results'
+      return 'Run results'
     case 'repository':
       return 'Repository'
     case 'tests':

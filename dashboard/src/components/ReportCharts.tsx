@@ -63,14 +63,23 @@ function ActionBarShape({ payload, x, y, width, height }: BarShapeProps) {
   )
 }
 
-// Top 8 actions by transaction count, drawn slowest-first, each flagged against
-// the run-wide average response time so the chart can single out the offenders.
+// The chart's action limit; the exports draw the same busiest actions
+// (Go reportActionLatencyLimit).
+const ACTION_BAR_LIMIT = 20
+
+// The busiest actions by transaction count (up to ACTION_BAR_LIMIT), drawn
+// slowest-first, each flagged against the run-wide average response time so
+// the chart can single out the offenders.
+function actionEntries(report: RunArchiveReport) {
+  return Object.entries((report.metric_populations ? report.by_request : report.by_action) || {})
+}
+
 function buildActionBars(report: RunArchiveReport): ActionBar[] {
   const runAverage = (report.metric_populations ? report.metric_populations.action?.avg_response_ms : report.overview?.avg_response_ms) ?? 0
-  const entries = Object.entries((report.metric_populations ? report.by_request : report.by_action) || {})
+  const entries = actionEntries(report)
   entries.sort((a, b) => b[1].transactions - a[1].transactions)
   return entries
-    .slice(0, 8)
+    .slice(0, ACTION_BAR_LIMIT)
     .map(([name, stats]) => {
       const avg = round(stats.avg_response_ms)
       return { name, avg, aboveRunAverage: runAverage > 0 && avg >= round(runAverage) }
@@ -129,6 +138,7 @@ export default function ReportCharts({ report }: Props) {
   const hasTarget = useMemo(() => timeline.some((point) => point.target > 0), [timeline])
 
   const actionBars = useMemo(() => buildActionBars(report), [report])
+  const actionTotal = useMemo(() => actionEntries(report).length, [report])
   const runAverageMs = round((report.metric_populations ? report.metric_populations.action?.avg_response_ms : report.overview?.avg_response_ms) ?? 0)
   const highlightsSlowActions = actionBars.some((bar) => bar.aboveRunAverage)
 
@@ -158,7 +168,7 @@ export default function ReportCharts({ report }: Props) {
             </ResponsiveContainer>
           </ExportableChart>
 
-          <ExportableChart definitionId="report-p95-response-time" title="Response Time (p95, ms)" description="Ninety-fifth percentile response time in milliseconds over the archived run timeline." rows={timeline} columns={timelineColumns}>
+          <ExportableChart definitionId="report-p95-response-time" title="Response time (P95, ms)" description="Ninety-fifth percentile response time in milliseconds over the archived run timeline." rows={timeline} columns={timelineColumns}>
             <ResponsiveContainer width="100%" height={220}>
               <AreaChart data={timeline} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
                 <CartesianGrid stroke={GRID} strokeDasharray="4 4" />
@@ -170,7 +180,7 @@ export default function ReportCharts({ report }: Props) {
             </ResponsiveContainer>
           </ExportableChart>
 
-          <ExportableChart definitionId="report-error-rate" title="Error Rate (%)" description="Error percentage reported in archived intervals; population availability is stated above." rows={timeline} columns={timelineColumns}>
+          <ExportableChart definitionId="report-error-rate" title="Error rate (%)" description="Error percentage reported in archived intervals; population availability is stated above." rows={timeline} columns={timelineColumns}>
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={timeline} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
                 <CartesianGrid stroke={GRID} strokeDasharray="4 4" />
@@ -199,11 +209,14 @@ export default function ReportCharts({ report }: Props) {
       {actionBars.length > 0 && (
         <ExportableChart
           definitionId="report-action-response-time"
-          title="Average Response Time by Action (ms)"
+          title="Average response time by action (ms)"
           description="Average response time by action, with actions at or above the run average highlighted."
           rows={actionBars}
           columns={actionColumns}
-          note={highlightsSlowActions ? `Highlighted bars are at or above the run average of ${runAverageMs} ms.` : undefined}
+          note={[
+            actionTotal > actionBars.length ? `The ${actionBars.length.toLocaleString()} busiest of ${actionTotal.toLocaleString()} actions; the Action summary lists them all.` : '',
+            highlightsSlowActions ? `Highlighted bars are at or above the run average of ${runAverageMs} ms.` : '',
+          ].filter(Boolean).join(' ') || undefined}
         >
           <ResponsiveContainer width="100%" height={Math.max(160, actionBars.length * 34 + 24)}>
             <BarChart data={actionBars} layout="vertical" margin={{ top: 8, right: 32, bottom: 4, left: 8 }}>

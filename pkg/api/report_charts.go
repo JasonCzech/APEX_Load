@@ -90,10 +90,10 @@ func buildReportCharts(report *RunArchiveReport) reportCharts {
 		}
 		charts.Throughput = svgLineChart("Throughput (TPS)", "TPS", startLabel, endLabel, throughputSeries)
 		if hasCompleteP95 {
-			charts.ResponseTime = svgLineChart("Response Time (p95, ms)", "ms", startLabel, endLabel,
+			charts.ResponseTime = svgLineChart("Response time (P95, ms)", "ms", startLabel, endLabel,
 				[]reportChartSeries{{Label: "p95 latency", Color: reportChartAccent, Values: p95}})
 		}
-		charts.ErrorRate = svgLineChart("Error Rate (%)", "%", startLabel, endLabel,
+		charts.ErrorRate = svgLineChart("Error rate (%)", "%", startLabel, endLabel,
 			[]reportChartSeries{{Label: "Error %", Color: reportChartAccent2, Values: errPct}})
 		charts.VUsers = svgLineChart("Active VUsers", "VUsers", startLabel, endLabel,
 			[]reportChartSeries{{Label: "Active VUsers", Color: reportChartAccent, Values: vusers}})
@@ -103,13 +103,13 @@ func buildReportCharts(report *RunArchiveReport) reportCharts {
 	if report.MetricPopulations != nil {
 		actions = report.ByRequest
 	}
-	if bars := topActionLatencyBars(actions, 8); len(bars) > 0 {
+	if bars := topActionLatencyBars(actions, reportActionLatencyLimit); len(bars) > 0 {
 		charts.HasActions = true
 		average := report.Overview.AvgResponseMs
 		if report.MetricPopulations != nil {
 			average = report.MetricPopulations["action"].AvgResponseMs
 		}
-		charts.ActionLatency = svgBarChart("Average Response Time by Action (ms)", "ms", bars, average)
+		charts.ActionLatency = svgBarChart(actionLatencyTitle(len(bars), len(actions)), "ms", bars, average)
 	}
 
 	return charts
@@ -117,6 +117,19 @@ func buildReportCharts(report *RunArchiveReport) reportCharts {
 
 // topActionLatencyBars selects the busiest actions (by transaction count) and
 // orders the resulting bars by average response time descending.
+// reportActionLatencyLimit is how many of the busiest actions the
+// response-time-by-action chart draws (the dashboard's ACTION_BAR_LIMIT).
+const reportActionLatencyLimit = 20
+
+// actionLatencyTitle names the response-time-by-action chart, saying when it
+// draws only the busiest of the run's actions.
+func actionLatencyTitle(shown, total int) string {
+	if total > shown {
+		return fmt.Sprintf("Average response time by action (ms), %d busiest of %d", shown, total)
+	}
+	return "Average response time by action (ms)"
+}
+
 func topActionLatencyBars(actions map[string]RunArchiveActionStats, limit int) []reportChartBar {
 	if len(actions) == 0 {
 		return nil

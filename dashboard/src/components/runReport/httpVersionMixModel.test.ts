@@ -18,11 +18,11 @@ describe('httpVersionMixModel', () => {
   })
 
   it('publishes ratios with their denominators and says when there is none', () => {
-    expect(ratioText(mix.fallback_ratio, 'upgrade-eligible auto+h3 actions')).toBe('50.0% (1 of 2 upgrade-eligible auto+h3 actions)')
+    expect(ratioText(mix.fallback_ratio, 'upgrade-eligible auto+h3 actions')).toBe('50.00% (1 of 2 upgrade-eligible auto+h3 actions)')
     expect(ratioText({ numerator: 0, denominator: 0, value: 0 }, 'QUIC attempts')).toBe('n/a (no QUIC attempts)')
     expect(ratioText(undefined, 'QUIC attempts')).toBe('n/a (no QUIC attempts)')
-    expect(ratioText({ numerator: 3, denominator: 209733, value: 3 / 209733 }, 'QUIC attempts')).toBe(`<0.1% (3 of ${(209733).toLocaleString()} QUIC attempts)`)
-    expect(ratioParts({ numerator: 3, denominator: 209733, value: 3 / 209733 }, 'QUIC attempts')).toEqual({ value: '<0.1%', detail: `3 of ${(209733).toLocaleString()} QUIC attempts` })
+    expect(ratioText({ numerator: 3, denominator: 209733, value: 3 / 209733 }, 'QUIC attempts')).toBe(`<0.01% (3 of ${(209733).toLocaleString()} QUIC attempts)`)
+    expect(ratioParts({ numerator: 3, denominator: 209733, value: 3 / 209733 }, 'QUIC attempts')).toEqual({ value: '<0.01%', detail: `3 of ${(209733).toLocaleString()} QUIC attempts` })
   })
 
   it('labels routing tokens and never shows a raw unknown token', () => {
@@ -42,7 +42,7 @@ describe('httpVersionMixModel', () => {
     const summary = { version_mix: mix, by_http_version: { '3': { count: 1, avg_connect_ms: 12 }, '2': { count: 2 }, cache: { count: 0 } } } as unknown as RunArchiveNetworkPhaseSummary
     const view = versionMixView(summary)!
     expect(view.usedHTTP3).toBe(true)
-    expect(view.quicFailure).toBe('66.7% (2 of 3 QUIC attempts)')
+    expect(view.quicFailure).toBe('66.67% (2 of 3 QUIC attempts)')
     expect(versionPhaseRows(summary).map(row => row.label)).toEqual(['HTTP/2', 'HTTP/3'])
     expect(versionMixView({ samples: 3 })).toBeNull()
     expect(versionMixView(undefined)).toBeNull()

@@ -80,6 +80,7 @@ import {
 import "./RecordingStudio.css";
 import RecordingProfilesCard from "./RecordingProfilesCard";
 import type { RecordingProfile } from "../types/recordingProfiles";
+import { formatDateTime } from "../utils/dateTime";
 
 interface RecordedRequest {
   seq: number;
@@ -2982,9 +2983,7 @@ export default function RecordingStudio({
                           {session.network_request_count || 0} requests
                         </span>
                         <span>
-                          {new Date(
-                            session.stopped_at || session.started_at,
-                          ).toLocaleString()}
+                          {formatDateTime(session.stopped_at || session.started_at, { seconds: true })}
                         </span>
                       </span>
                     </button>
@@ -3606,7 +3605,7 @@ export default function RecordingStudio({
                   </span>
                   <span className="rec-session-meta">
                     <span>{session.base_url || "No base URL"}</span>
-                    <span>{new Date(session.started_at).toLocaleString()}</span>
+                    <span>{formatDateTime(session.started_at, { seconds: true })}</span>
                   </span>
                 </button>
                 <div className="rec-session-actions">

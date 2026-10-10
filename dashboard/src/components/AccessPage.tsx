@@ -1662,7 +1662,7 @@ export default function AccessPage({
         {canManageUserLifecycle && (
           <button className="btn btn-secondary btn-sm" type="button" onClick={() => addBindingDraft(setter, 'global')}>Add Global Role</button>
         )}
-        <button className="btn btn-secondary btn-sm" type="button" onClick={() => addBindingDraft(setter, 'domain')} disabled={domains.length === 0 && !activeDomain}>Add Domain</button>
+        <button className="btn btn-secondary btn-sm" type="button" onClick={() => addBindingDraft(setter, 'domain')} disabled={domains.length === 0 && !activeDomain}>Add domain</button>
         <button className="btn btn-secondary btn-sm" type="button" onClick={() => addBindingDraft(setter, 'project')} disabled={projects.length === 0}>Add Project</button>
         <button className="btn btn-secondary btn-sm" type="button" onClick={() => addBindingDraft(setter, 'application_repository')} disabled={!applicationRepository}>Add Repository</button>
       </div>
@@ -1716,7 +1716,7 @@ export default function AccessPage({
               <input value={editUserForm.subject} onChange={event => setEditUserForm(prev => ({ ...prev, subject: event.target.value }))} disabled={!canManageUserLifecycle} />
             </label>
             <FormField label="Email" htmlFor="edit-user-email" error={editUserEmailInvalid ? 'Enter a valid email address.' : undefined}><input value={editUserForm.email} onChange={event => setEditUserForm(prev => ({ ...prev, email: event.target.value }))} disabled={!canManageUserLifecycle} aria-invalid={editUserEmailInvalid || undefined} /></FormField>
-            <FormField label="Display Name" htmlFor="edit-user-displayName"><input value={editUserForm.displayName} onChange={event => setEditUserForm(prev => ({ ...prev, displayName: event.target.value }))} disabled={!canManageUserLifecycle} /></FormField>
+            <FormField label="Display name" htmlFor="edit-user-displayName"><input value={editUserForm.displayName} onChange={event => setEditUserForm(prev => ({ ...prev, displayName: event.target.value }))} disabled={!canManageUserLifecycle} /></FormField>
           </div>
           <div className="access-account-actions">
             <button className="btn btn-primary btn-sm" type="button" onClick={updateSelectedUser} disabled={accessMutationBusy || !canManageUserBindings || (canManageUserLifecycle && editUserEmailInvalid)}>Save changes</button>
@@ -1760,7 +1760,7 @@ export default function AccessPage({
         </div>
         <dl className="access-detail-grid">
           <div><dt>Email</dt><dd>{selectedUser.email || 'None'}</dd></div>
-          <div><dt>Last Seen</dt><dd>{formatTimestamp(selectedUser.last_seen_at)}</dd></div>
+          <div><dt>Last seen</dt><dd>{formatTimestamp(selectedUser.last_seen_at)}</dd></div>
           <div><dt>Created</dt><dd>{formatTimestamp(selectedUser.created_at)}</dd></div>
           <div><dt>Updated</dt><dd>{formatTimestamp(selectedUser.updated_at)}</dd></div>
           <div><dt>Usage</dt><dd>{canViewUserActivity ? usageSummary(selectedUsage) : 'Unavailable'}</dd></div>
@@ -2242,9 +2242,9 @@ export default function AccessPage({
               )}
             </div>
             <TabList className="access-subtab-row" role="tablist" aria-label="User workspace views" onKeyDown={handleTabKey}>
-              <button type="button" role="tab" aria-selected={userSubTab === 'existing'} className={`access-subtab ${userSubTab === 'existing' ? 'active' : ''}`} onClick={() => runGuarded(() => setUserSubTab('existing'))} tabIndex={(userSubTab === 'existing') ? 0 : -1}>Existing Users</button>
+              <button type="button" role="tab" aria-selected={userSubTab === 'existing'} className={`access-subtab ${userSubTab === 'existing' ? 'active' : ''}`} onClick={() => runGuarded(() => setUserSubTab('existing'))} tabIndex={(userSubTab === 'existing') ? 0 : -1}>Existing users</button>
               {canManageUserLifecycle && (
-                <button type="button" role="tab" aria-selected={userSubTab === 'onboard'} className={`access-subtab ${userSubTab === 'onboard' ? 'active' : ''}`} onClick={() => runGuarded(() => setUserSubTab('onboard'))} tabIndex={(userSubTab === 'onboard') ? 0 : -1}>Onboard Users</button>
+                <button type="button" role="tab" aria-selected={userSubTab === 'onboard'} className={`access-subtab ${userSubTab === 'onboard' ? 'active' : ''}`} onClick={() => runGuarded(() => setUserSubTab('onboard'))} tabIndex={(userSubTab === 'onboard') ? 0 : -1}>Onboard users</button>
               )}
             </TabList>
 
@@ -2307,7 +2307,7 @@ export default function AccessPage({
                         <SortHeader label="Email" field="email" sort={userSort} onSort={field => setUserSort(prev => nextSort(prev, field, userSortDefaults))} />
                         <SortHeader label="Roles" field="roles" sort={userSort} onSort={field => setUserSort(prev => nextSort(prev, field, userSortDefaults))} />
                         <SortHeader label="Domains / Projects" field="access" sort={userSort} onSort={field => setUserSort(prev => nextSort(prev, field, userSortDefaults))} />
-                        <SortHeader label="Last Seen" field="last_seen" sort={userSort} onSort={field => setUserSort(prev => nextSort(prev, field, userSortDefaults))} />
+                        <SortHeader label="Last seen" field="last_seen" sort={userSort} onSort={field => setUserSort(prev => nextSort(prev, field, userSortDefaults))} />
                         <SortHeader label="Created" field="created" sort={userSort} onSort={field => setUserSort(prev => nextSort(prev, field, userSortDefaults))} />
                         <SortHeader label="Updated" field="updated" sort={userSort} onSort={field => setUserSort(prev => nextSort(prev, field, userSortDefaults))} />
                         <SortHeader label="Usage" field="usage" sort={userSort} onSort={field => setUserSort(prev => nextSort(prev, field, userSortDefaults))} numeric />
@@ -2360,7 +2360,7 @@ export default function AccessPage({
                   {filteredUsers.length === 0 && (
                     <div className="access-empty-state">
                       <strong>{Object.values(userFilters).some(Boolean) ? 'No users match these filters' : 'No users in this scope'}</strong>
-                      <span>{Object.values(userFilters).some(Boolean) ? 'Clear search or filters to see other users.' : canManageUserLifecycle ? 'Open Onboard Users to create the first account.' : 'Only users in your permitted scope are shown. Ask an identity administrator to create an account.'}</span>
+                      <span>{Object.values(userFilters).some(Boolean) ? 'Clear search or filters to see other users.' : canManageUserLifecycle ? 'Open Onboard users to create the first account.' : 'Only users in your permitted scope are shown. Ask an identity administrator to create an account.'}</span>
                     </div>
                   )}
                 </div>
@@ -2392,7 +2392,7 @@ export default function AccessPage({
                     <small id="identity-subject-help">The stable user identifier supplied by your identity provider, not the display name. Ask your identity administrator for this value.</small>
                   </label>
                   <FormField label="Email" htmlFor="new-user-email" error={onboardEmailInvalid ? 'Enter a valid email address.' : undefined}><input value={userForm.email} onChange={event => setUserForm(prev => ({ ...prev, email: event.target.value }))} placeholder="person@example.com" aria-invalid={onboardEmailInvalid || undefined} /></FormField>
-                  <FormField label="Display Name" htmlFor="new-user-displayName"><input value={userForm.displayName} onChange={event => setUserForm(prev => ({ ...prev, displayName: event.target.value }))} placeholder="Jordan Lee" /></FormField>
+                  <FormField label="Display name" htmlFor="new-user-displayName"><input value={userForm.displayName} onChange={event => setUserForm(prev => ({ ...prev, displayName: event.target.value }))} placeholder="Jordan Lee" /></FormField>
                 </div>
                 <div className="access-control-section">
                   <h4>Initial Permissions</h4><p>Viewer can inspect results. Editor can author and run tests. Project Admin additionally manages project access and settings.</p>
@@ -2411,7 +2411,7 @@ export default function AccessPage({
                 )}
                 <div className="access-form-actions">
                   <button className="btn btn-primary" type="button" onClick={createUser} disabled={accessMutationBusy || !canManageUserLifecycle || !userForm.subject.trim() || onboardEmailInvalid}>
-                    Create User
+                    Create user
                   </button>
                 </div>
               </>

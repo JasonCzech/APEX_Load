@@ -7,7 +7,8 @@ describe('Solarized Light theme tokens', () => {
     const css = readFileSync(new URL('./index.css', import.meta.url), 'utf8')
     const block = css.match(/:root\[data-theme='solarized-light'\] \{([\s\S]*?)\n\}/)?.[1] || ''
 
-    expect(block).toContain('--accent: #5f6f00;')
+    // Olive, darkened to clear 4.5:1 on the selected-state fill #e0dcbf.
+    expect(block).toContain('--accent: #536100;')
     expect(block).toContain('--info: #657b83;')
     // Solarized yellow, darkened to clear 3:1 on the card surface (#b58900 was 2.7:1).
     expect(block).toContain('--chart-1: #a47c04;')

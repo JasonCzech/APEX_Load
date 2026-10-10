@@ -1,4 +1,5 @@
 import { CapacityTimeslot, LaunchConflict, LaunchPreflightResponse } from '../types'
+import { formatDateTime } from '../utils/dateTime'
 
 // Pure schedule / launch-window / timezone / cron formatters extracted from
 // NewTestPage. These are stateless helpers with their own unit-test surface in
@@ -59,12 +60,10 @@ export function reservationStartISO(preflight?: LaunchPreflightResponse | null) 
   return ceilDateToReservationIncrement(sourceDate).toISOString()
 }
 
+// formatDateTime falls back to the viewer's clock, still labelled, for an
+// unknown zone name.
 function formatTimeslotInstant(date: Date, timeZone?: string) {
-  try {
-    return date.toLocaleString(undefined, timeZone ? { timeZone } : undefined)
-  } catch {
-    return date.toLocaleString()
-  }
+  return formatDateTime(date, { timeZone, seconds: true })
 }
 
 export function formatTimeslotLabel(slot: CapacityTimeslot) {

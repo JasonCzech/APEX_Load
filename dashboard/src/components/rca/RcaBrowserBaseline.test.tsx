@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { RcaBrowserBaseline } from '../../types/rca'
 import RcaBrowserBaselineSection from './RcaBrowserBaseline'
-import { normalizeRcaAssessment } from './rcaModel'
+import { formatRcaTime, normalizeRcaAssessment } from './rcaModel'
 import { rcaTestAssessment } from './rcaTestFixture'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -54,7 +54,7 @@ describe('RcaBrowserBaselineSection', () => {
     act(() => root.render(<RcaBrowserBaselineSection baseline={labelled} />))
     const row = container.querySelector('tbody tr')?.textContent || ''
     expect(row).toContain('lcp chromium desktop checkout')
-    expect(row).toContain('vusers=10 from 2026-10-08 12:00:00 UTC')
+    expect(row).toContain(`vusers=10 from ${formatRcaTime('2026-10-08T12:00:00Z')}`)
     expect(container.textContent).toContain('(partial: Pacing changed)')
     act(() => root.render(<RcaBrowserBaselineSection baseline={{ ...labelled, policy: 'web@2' }} />))
     expect(container.textContent).toContain("floors and baseline mode from the run's browser policy web@2")

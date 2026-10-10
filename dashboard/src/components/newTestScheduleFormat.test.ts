@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { CapacityTimeslot, LaunchConflict, LaunchPreflightResponse } from '../types'
+import { formatDateTime } from '../utils/dateTime'
 import {
   RESERVATION_INCREMENT_MINUTES,
   formatScheduleInstant,
@@ -151,15 +152,15 @@ describe('formatTimeslotLabel', () => {
 
   it('renders the window in the reservation timezone and names that zone', () => {
     const label = formatTimeslotLabel({ start_at: startAt, end_at: endAt, timezone: zone } as CapacityTimeslot)
-    expect(label).toContain(new Date(startAt).toLocaleString(undefined, { timeZone: zone }))
-    expect(label).toContain(new Date(endAt).toLocaleString(undefined, { timeZone: zone }))
+    expect(label).toContain(formatDateTime(startAt, { timeZone: zone, seconds: true }))
+    expect(label).toContain(formatDateTime(endAt, { timeZone: zone, seconds: true }))
     expect(label).toContain(zone)
-    expect(label).not.toContain(new Date(startAt).toLocaleString())
+    expect(label).not.toContain(formatDateTime(startAt, { seconds: true }))
   })
 
   it('falls back to the browser zone when the slot carries none', () => {
     const label = formatTimeslotLabel({ start_at: startAt, end_at: endAt } as CapacityTimeslot)
-    expect(label).toBe(`${new Date(startAt).toLocaleString()} → ${new Date(endAt).toLocaleString()}`)
+    expect(label).toBe(`${formatDateTime(startAt, { seconds: true })} → ${formatDateTime(endAt, { seconds: true })}`)
   })
 
   it('keeps raw values and capacity for an unparseable window', () => {

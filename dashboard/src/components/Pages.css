@@ -5421,13 +5421,17 @@
   letter-spacing: var(--label-tracking, 0.05em);
   padding: 2px 7px;
   border-radius: 4px;
+  /* The tint marks the mode; the text stays primary, because accent text on
+     the tint over a selected card fell under 4.5:1 in the Solarized themes. */
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
-  color: var(--accent-text);
+  color: var(--text-primary);
 }
 
 .new-test-scenario-card-mode.goal {
+  border-color: rgba(var(--warning-rgb), 0.4);
   background: rgba(var(--warning-rgb), 0.12);
-  color: var(--warning-text);
+  color: var(--text-primary);
 }
 
 .new-test-scenario-card-meta {

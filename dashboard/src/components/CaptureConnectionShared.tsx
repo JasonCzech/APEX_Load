@@ -1,5 +1,6 @@
 import { settingsHref } from './settingsNavigation'
 import './CaptureConnections.css'
+import { formatDateTime } from '../utils/dateTime'
 
 export function CaptureSetupHelp({ missing, credentials, editing }: { missing: string[]; credentials: string[]; editing: boolean }) {
   return <aside className="capture-setup-help">
@@ -22,7 +23,7 @@ export function CaptureConnectionHealth({ enabled, missing, checkedAt, updatedAt
 }) {
   return <div className="capture-connection-health">
     <p>Configuration: {missing.length ? 'Incomplete draft' : 'Complete'} · New tests: {enabled ? 'Enabled' : 'Disabled'}</p>
-    <p>Last check: {checkedAt ? `${status || 'Unknown'} · ${new Date(checkedAt).toLocaleString()}` : 'Not tested'}</p>
+    <p>Last check: {checkedAt ? `${status || 'Unknown'} · ${formatDateTime(checkedAt, { seconds: true })}` : 'Not tested'}</p>
     {checkedAt && updatedAt && Date.parse(updatedAt) > Date.parse(checkedAt) && <p>Configuration changed since this check. Test saved connection again to verify the current settings.</p>}
     {message && <p>{message}</p>}
     {capabilities && <ul>{Object.entries(capabilities).map(([name, health]) => <li key={name}>{name}: {health.status}{health.message ? ` — ${health.message}` : ''}</li>)}</ul>}

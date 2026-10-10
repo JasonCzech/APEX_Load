@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"maps"
 	"math"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -276,18 +277,22 @@ func reportRootCauseFromV2(a *rca.Assessment, completedAt *time.Time) ReportRoot
 	for _, h := range a.Hypotheses {
 		out := ReportRootCauseHypothesis{
 			ID: h.ID, Rank: h.Rank, Title: rcaSignatureTitle(h.Signature), Confidence: h.Confidence,
-			Reasons: append([]string{}, h.ConfidenceReasons...), Falsification: h.Falsification, Limitations: append([]string{}, h.Limitations...),
+			Falsification: h.Falsification,
 		}
+		for _, reason := range h.ConfidenceReasons {
+			out.Reasons = append(out.Reasons, rcaSentence(reason))
+		}
+		for _, limitation := range h.Limitations {
+			out.Limitations = append(out.Limitations, rcaLimitationSentence(limitation))
+		}
+		symptoms := make([]string, 0, len(h.Symptoms))
 		for _, id := range h.Symptoms {
-			out.Explains = append(out.Explains, label(id))
+			symptoms = append(symptoms, label(id))
 		}
-		for _, step := range h.Chain {
-			cause := label(step.From)
-			if anomaly, ok := anomalies[step.From]; ok {
-				cause += " (" + rcaEffectText(anomaly) + ")"
-			}
-			out.Chain = append(out.Chain, cause+" "+rcaRelationText(step.Relation)+" "+label(step.To))
-		}
+		// A series that changed more than once is one symptom with a count,
+		// not the same label repeated.
+		out.Explains = rcaCollapseLabels(symptoms)
+		out.Chain = rcaChainLines(h.Chain, anomalies, label)
 		for _, ref := range h.Contradicting {
 			out.Contradicting = append(out.Contradicting, ref.Locator)
 		}
@@ -407,6 +412,81 @@ func rcaSeriesTitle(id string) string {
 	return strings.Join(parts[1:len(parts)-1], "/") + " · " + metric
 }
 
+// rcaCollapseLabels keeps each label once, in first-seen order, counting a
+// label that repeats: "Login · error rate (2 changes)".
+func rcaCollapseLabels(labels []string) []string {
+	counts := map[string]int{}
+	order := make([]string, 0, len(labels))
+	for _, label := range labels {
+		if counts[label] == 0 {
+			order = append(order, label)
+		}
+		counts[label]++
+	}
+	out := make([]string, 0, len(order))
+	for _, label := range order {
+		if n := counts[label]; n > 1 {
+			label = fmt.Sprintf("%s (%d changes)", label, n)
+		}
+		out = append(out, label)
+	}
+	return out
+}
+
+// rcaChainLines states a hypothesis's evidence chain one line per cause and
+// relation, naming every symptom it reaches, instead of one line per step.
+func rcaChainLines(chain []rca.ChainStep, anomalies map[string]rca.Anomaly, label func(string) string) []string {
+	type group struct {
+		cause, relation string
+		targets         []string
+	}
+	var groups []*group
+	byKey := map[string]*group{}
+	for _, step := range chain {
+		cause := label(step.From)
+		if anomaly, ok := anomalies[step.From]; ok {
+			cause += " (" + rcaEffectText(anomaly) + ")"
+		}
+		key := cause + "\x00" + step.Relation
+		g, ok := byKey[key]
+		if !ok {
+			g = &group{cause: cause, relation: step.Relation}
+			byKey[key] = g
+			groups = append(groups, g)
+		}
+		g.targets = append(g.targets, label(step.To))
+	}
+	lines := make([]string, 0, len(groups))
+	for _, g := range groups {
+		lines = append(lines, g.cause+" "+rcaRelationText(g.relation)+" "+strings.Join(rcaCollapseLabels(g.targets), ", "))
+	}
+	return lines
+}
+
+// rcaCompetingPattern matches the engine's "competing <signature> could not
+// be judged" limitation, which names the signature by its identifier.
+var rcaCompetingPattern = regexp.MustCompile(`competing ([a-z][a-z0-9_]*) could not be judged`)
+
+// rcaLimitationSentence presents an engine limitation for people: signature
+// identifiers become their titles and the sentence starts with a capital.
+// Stored analyses keep the engine's wording, so this applies to old ones too.
+func rcaLimitationSentence(text string) string {
+	text = rcaCompetingPattern.ReplaceAllStringFunc(text, func(match string) string {
+		name := rcaCompetingPattern.FindStringSubmatch(match)[1]
+		return "the competing cause " + rcaSignatureTitle(name) + " could not be judged"
+	})
+	return rcaSentence(text)
+}
+
+// rcaSentence capitalizes the first letter of an engine phrase.
+func rcaSentence(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return text
+	}
+	return strings.ToUpper(text[:1]) + text[1:]
+}
+
 func rcaRelationText(relation string) string {
 	switch relation {
 	case rca.RelationPrecedes:
@@ -432,11 +512,14 @@ func rcaEffectText(a rca.Anomaly) string {
 		sign = "-"
 	}
 	magnitude := math.Abs(a.Effect)
+	// Two significant digits under 1, so a small change never reads as zero.
 	digits := 2
 	if magnitude >= 100 {
 		digits = 0
 	} else if magnitude >= 10 {
 		digits = 1
+	} else if magnitude > 0 && magnitude < 1 {
+		digits = min(int(math.Ceil(-math.Log10(magnitude)))+1, 6)
 	}
 	amount := strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.*f", digits, magnitude), "0"), ".")
 	switch a.Unit {

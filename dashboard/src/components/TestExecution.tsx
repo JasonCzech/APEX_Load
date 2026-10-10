@@ -820,7 +820,7 @@ export default function TestExecution({
     },
     {
       id: 'archive-error-patterns',
-      title: 'Error Patterns',
+      title: 'Error patterns',
       category: 'Archive Evidence',
       description: 'Grouped failure signatures and first retained snapshots.',
       defaultWidth: 'full',
@@ -868,7 +868,7 @@ export default function TestExecution({
     },
     {
       id: 'archive-analysis',
-      title: 'Archive Analysis',
+      title: 'Archive analysis',
       category: 'Analysis & Drilldown',
       description: 'Graph nodes, links, and transaction path evidence.',
       defaultWidth: 'full',
@@ -876,7 +876,7 @@ export default function TestExecution({
     },
     {
       id: 'action-summary',
-      title: 'Action Summary',
+      title: 'Action summary',
       category: 'Analysis & Drilldown',
       description: 'Archived totals by action and protocol grouping.',
       defaultWidth: 'full',
@@ -892,7 +892,7 @@ export default function TestExecution({
     },
     {
       id: 'transaction-drilldown',
-      title: 'Transaction Drill-Down',
+      title: 'Transaction drill-down',
       category: 'Analysis & Drilldown',
       description: 'Archived event table, filters, and transaction evidence.',
       defaultWidth: 'full',

@@ -52,6 +52,9 @@ describe('rcaModel', () => {
     expect(formatRcaEffect({ effect: -4.25, unit: '%' })).toBe('−4.25 pts')
     expect(formatRcaEffect({ effect: 12.5, unit: '1/s' })).toBe('+12.5/s')
     expect(formatRcaEffect({ effect: Number.NaN, unit: 'ms' })).toBe('Not recorded')
+    // A small change keeps two significant digits rather than reading as zero.
+    expect(formatRcaEffect({ effect: 0.0012, unit: '%' })).toBe('+0.0012 pts')
+    expect(formatRcaEffect({ effect: -0.5, unit: 'ms' })).toBe('−0.5 ms')
   })
 
   it('round-trips windows and rejects malformed ones', () => {

@@ -382,22 +382,28 @@
 
 .report-chart-card {
   margin: 0;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line, var(--border));
   border-radius: 12px;
   padding: 14px 14px 6px;
+  background: var(--bg-card);
+}
+
+/* Charts are reused by the run report and live graphs, which follow the app
+   theme; only the composer's paper is light in every theme. */
+.report-paper .report-chart-card {
   background: #fff;
 }
 
 .report-chart-card figcaption {
   font: 600 13px/1.2 "Avenir Next", "Segoe UI", sans-serif;
-  color: var(--ink);
+  color: var(--ink, var(--text-primary));
   margin-bottom: 8px;
 }
 
 /* Explains a chart's colour encoding so the highlight is never colour-alone. */
 .report-chart-note {
   font: 400 11px/1.4 "Avenir Next", "Segoe UI", sans-serif;
-  color: var(--muted);
+  color: var(--muted, var(--text-secondary));
   margin: -4px 0 8px;
 }
 

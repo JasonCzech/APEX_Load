@@ -58,6 +58,8 @@ import {
 } from './useExecutionArchiveModel'
 import { formatFixed, formatPercentValue } from '../utils/numberFormat'
 import { MISSING_VALUE } from './runReport/reportPresentation'
+import { formatMsValue } from './runReport/runReportModel'
+import { formatDateTime } from '../utils/dateTime'
 
 type ArchiveView =
   | 'all'
@@ -130,7 +132,7 @@ interface Props {
 
 function formatArchiveTimestamp(value?: string): string {
   if (!value) return MISSING_VALUE
-  return new Date(value).toLocaleString()
+  return formatDateTime(value, { seconds: true })
 }
 
 function formatArchiveTime(value?: string): string {
@@ -650,7 +652,7 @@ function renderBrowserSummary(
       <div className="archive-section-header archive-section-header-stack">
         <div>
           <h3 className="chart-title">Browser Metrics</h3>
-          <p className="archive-section-copy">Legacy action summaries: client-side rendering and interaction timings averaged over browser actions. They are not qualified final document measurements; compare document metrics through browser document lifecycle evidence and Baseline Comparison.</p>
+          <p className="archive-section-copy">Legacy action summaries: client-side rendering and interaction timings averaged over browser actions. They are not qualified final document measurements; compare document metrics through browser document lifecycle evidence and Baseline comparison.</p>
         </div>
         <span className="archive-chip">{formatBrowserSampleCount(summary?.samples)}</span>
       </div>
@@ -1165,7 +1167,7 @@ export default function TestExecutionArchive({
                         <thead><tr><th>Time</th><th>Level</th><th>Message</th><th>Trace</th></tr></thead>
                         <tbody>{archiveReport.elk_samples?.map((sample, index) => (
                           <tr key={sample.id || `${sample.timestamp}-${index}`}>
-                            <td>{sample.timestamp ? new Date(sample.timestamp).toLocaleString() : '—'}</td>
+                            <td>{sample.timestamp ? formatDateTime(sample.timestamp, { seconds: true }) : '—'}</td>
                             <td>{sample.level || '—'}</td>
                             <td>{sample.message || '—'}</td>
                             <td>{sample.trace_id || '—'}</td>
@@ -1180,7 +1182,7 @@ export default function TestExecutionArchive({
                       <p className="scenario-script-status">Bounded, deduplicated, redacted problem summaries and Grail log samples captured during the run.</p>
                       <table className="advanced-group-table">
                         <thead><tr><th>Type</th><th>Time</th><th>Status</th><th>Summary</th><th>Correlation</th></tr></thead>
-                        <tbody>{archiveReport.dynatrace_evidence?.map((record, index) => <tr key={`${record.type}-${record.problem?.id || record.log?.trace_id || index}`}><td>{record.log ? 'Log sample' : record.problem ? 'Problem summary' : record.type}</td><td>{record.log?.timestamp ? new Date(record.log.timestamp).toLocaleString() : record.problem?.start_time ? new Date(record.problem.start_time).toLocaleString() : '—'}</td><td>{record.log?.status || record.problem?.severity || record.problem?.status || '—'}</td><td>{record.log?.message || record.problem?.title || '—'}</td><td>{record.log?.trace_id || record.problem?.affected_entity || '—'}</td></tr>)}</tbody>
+                        <tbody>{archiveReport.dynatrace_evidence?.map((record, index) => <tr key={`${record.type}-${record.problem?.id || record.log?.trace_id || index}`}><td>{record.log ? 'Log sample' : record.problem ? 'Problem summary' : record.type}</td><td>{record.log?.timestamp ? formatDateTime(record.log.timestamp, { seconds: true }) : record.problem?.start_time ? formatDateTime(record.problem.start_time, { seconds: true }) : '—'}</td><td>{record.log?.status || record.problem?.severity || record.problem?.status || '—'}</td><td>{record.log?.message || record.problem?.title || '—'}</td><td>{record.log?.trace_id || record.problem?.affected_entity || '—'}</td></tr>)}</tbody>
                       </table>
                     </div>
                   )}
@@ -1207,7 +1209,7 @@ export default function TestExecutionArchive({
                   <div className="tx-section archive-summary-section">
                     <div className="archive-section-header">
                       <div>
-                        <h3 className="chart-title">Error Patterns</h3>
+                        <h3 className="chart-title">Error patterns</h3>
                         <p className="archive-section-copy">Whole-run failures across all populations, independent of the selected metric population. The first retained snapshot is preserved for each cluster.</p>
                       </div>
                     </div>
@@ -1216,7 +1218,7 @@ export default function TestExecutionArchive({
                         <tr>
                           <th>Pattern</th>
                           <th>Occurrences</th>
-                          <th>First Seen</th>
+                          <th>First seen</th>
                           <th>Latest Seen</th>
                           <th>Actions</th>
                           <th>Snapshot</th>
@@ -1422,7 +1424,7 @@ export default function TestExecutionArchive({
                 <div className="tx-section archive-summary-section archive-analysis-section" data-testid="archive-analysis-section">
                   <div className="archive-section-header archive-section-header-stack">
                     <div>
-                      <h3 className="chart-title">Archive Analysis</h3>
+                      <h3 className="chart-title">Archive analysis</h3>
                       <p className="archive-section-copy">Merged graph and filtered transaction path evidence from the archived run.</p>
                     </div>
                     <div className="archive-filter-bar">
@@ -1448,7 +1450,7 @@ export default function TestExecutionArchive({
                       <div className="archive-analysis-panel">
                         <div className="archive-section-header archive-subsection-header">
                           <div>
-                            <h3 className="chart-title">Graph Nodes</h3>
+                            <h3 className="chart-title">Graph nodes</h3>
                           </div>
                         </div>
                         <table className="tx-table archive-analysis-table" data-testid="archive-analysis-nodes">
@@ -1480,7 +1482,7 @@ export default function TestExecutionArchive({
                       <div className="archive-analysis-panel">
                         <div className="archive-section-header archive-subsection-header">
                           <div>
-                            <h3 className="chart-title">Graph Links</h3>
+                            <h3 className="chart-title">Graph links</h3>
                           </div>
                         </div>
                         <table className="tx-table archive-analysis-table" data-testid="archive-analysis-edges">
@@ -1519,7 +1521,7 @@ export default function TestExecutionArchive({
                     <div className="archive-analysis-drilldown">
                       <div className="archive-section-header archive-subsection-header">
                         <div>
-                          <h3 className="chart-title">Analysis Drill-Down</h3>
+                          <h3 className="chart-title">Analysis drill-down</h3>
                         </div>
                         <span className="archive-chip">
                           {archiveAnalysis.total > 0 ? `${archiveAnalysis.offset + 1}-${archiveAnalysis.offset + archiveAnalysis.transactions.length} of ${archiveAnalysis.total}` : '0 events'}
@@ -1567,8 +1569,8 @@ export default function TestExecutionArchive({
                 <div className="tx-section archive-action-section">
               <div className="archive-section-header">
                 <div>
-                  <h3 className="chart-title">{archivePopulation === 'transaction' ? 'Named Transaction Summary' : archivePopulation === 'unknown' ? 'Unclassified Record Summary' : 'Action Summary'}</h3>
-                  <p className="archive-section-copy">Archived {archivePopulation === 'transaction' ? 'named transaction' : archivePopulation === 'unknown' ? 'unclassified record' : 'request / action'} totals.</p>
+                  <h3 className="chart-title">{archivePopulation === 'transaction' ? 'Named transaction summary' : archivePopulation === 'unknown' ? 'Unclassified record summary' : 'Action summary'}</h3>
+                  <p className="archive-section-copy">Archived {archivePopulation === 'transaction' ? 'named transaction' : archivePopulation === 'unknown' ? 'unclassified record' : 'request / action'} totals · {archiveActionEntries.length.toLocaleString()} {archivePopulation === 'transaction' ? (archiveActionEntries.length === 1 ? 'transaction' : 'transactions') : archivePopulation === 'unknown' ? (archiveActionEntries.length === 1 ? 'record name' : 'record names') : (archiveActionEntries.length === 1 ? 'action' : 'actions')}.</p>
                 </div>
               </div>
               <table className="tx-table">
@@ -1576,7 +1578,7 @@ export default function TestExecutionArchive({
                   <tr>
                     <th>Action</th>
                     <th>Count</th>
-                    <th>Errors</th>
+                    <th>Error count</th>
                     <th>Error rate</th>
                     <th>Avg (ms)</th>
                     <th>P50 (ms)</th>
@@ -1587,18 +1589,18 @@ export default function TestExecutionArchive({
                   </tr>
                 </thead>
                 <tbody>
-                  {archiveActionEntries.slice(0, 8).map(([name, stats]) => (
+                  {archiveActionEntries.map(([name, stats]) => (
                     <tr key={name}>
                       <td className="tx-name">{name}</td>
                       <td>{formatArchiveCount(stats.transactions)}</td>
                       <td className={(stats.errors || 0) > 0 ? 'error-cell' : ''}>{formatArchiveCount(stats.errors)}</td>
                       <td>{formatArchivePercent(stats.error_pct)}</td>
-                      <td>{formatArchiveNumber(stats.avg_response_ms)}</td>
-                      <td>{formatArchiveNumber(stats.p50_ms)}</td>
-                      <td>{formatArchiveNumber(stats.p90_ms)}</td>
-                      <td>{formatArchiveNumber(stats.p95_ms)}</td>
-                      <td>{formatArchiveNumber(stats.p99_ms)}</td>
-                      <td>{formatArchiveNumber(stats.max_response_ms)}</td>
+                      <td>{formatMsValue(stats.avg_response_ms)}</td>
+                      <td>{formatMsValue(stats.p50_ms)}</td>
+                      <td>{formatMsValue(stats.p90_ms)}</td>
+                      <td>{formatMsValue(stats.p95_ms)}</td>
+                      <td>{formatMsValue(stats.p99_ms)}</td>
+                      <td>{formatMsValue(stats.max_response_ms)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1608,7 +1610,7 @@ export default function TestExecutionArchive({
                 <>
                   <div className="archive-section-header archive-subsection-header">
                     <div>
-                      <h3 className="chart-title">SOAP Operation Summary</h3>
+                      <h3 className="chart-title">SOAP operation summary</h3>
                       <p className="archive-section-copy">Archived totals grouped by extracted SOAP operation tags.</p>
                     </div>
                   </div>
@@ -1643,7 +1645,7 @@ export default function TestExecutionArchive({
                 <>
                   <div className="archive-section-header archive-subsection-header">
                     <div>
-                      <h3 className="chart-title">Region Summary</h3>
+                      <h3 className="chart-title">Region summary</h3>
                       <p className="archive-section-copy">Archived response time and errors grouped by the generator region that produced each transaction.</p>
                     </div>
                   </div>
@@ -1836,7 +1838,7 @@ export default function TestExecutionArchive({
                 <div className="tx-section archive-drilldown-section">
               <div className="archive-section-header archive-section-header-stack">
                 <div>
-                  <h3 className="chart-title">Transaction Drill-Down</h3>
+                  <h3 className="chart-title">Transaction drill-down</h3>
                   <p className="archive-section-copy">Sample archived events for the selected {archivePopulation === 'transaction' ? 'named transaction' : archivePopulation === 'unknown' ? 'unclassified legacy record' : 'request / action'}.</p>
                 </div>
                 <div className="archive-filter-bar">

@@ -50,9 +50,9 @@ vi.mock('./components/TestExecution', async () => {
     ['graphs', 'Graphs'],
     ['diagnostics', 'Diagnostics'],
     ['archive', 'Archive'],
-    ['action-summary', 'Action Summary'],
+    ['action-summary', 'Action summary'],
     ['load-impact', 'Load Impact'],
-    ['transaction-drilldown', 'Transaction Drill-Down'],
+    ['transaction-drilldown', 'Transaction drill-down'],
   ] as const
 
   function persistedTab() {

@@ -7,6 +7,7 @@ import type { MetricsHistoryPoint } from '../types'
 import { ANALYTICS_QUERY_VERSION, fetchDashboardDefinition, type DashboardDefinitionPanel, type DashboardDefinition } from '../hooks/api/useDashboardDefinitionsApi'
 import ExportableChart from './ExportableChart'
 import { nativeBrowserDocumentMetrics, nativeMetrics, nativePopulationMetrics, nativePanelRows } from './nativeAnalyticsModel'
+import { formatDateTime } from '../utils/dateTime'
 
 export default function NativeAnalyticsPanel({ panel, history }: { panel: DashboardDefinitionPanel; history: MetricsHistoryPoint[] }) {
   const rows = nativePanelRows(panel, history)
@@ -124,7 +125,7 @@ export function NativeProjectPanels({ definitions, history, testId }: { definiti
   const past = revision && opened && opened.id === current.id && opened.revision === revision && opened.revision !== head.revision ? opened : null
   const definition = past || head
   return <section className="native-project-panels" aria-label="Project analytics panels"><label>Project dashboard<select aria-label="Project dashboard" value={current.id} onChange={event => setSelected(event.target.value)}>{definitions.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-    {retained.length > 1 && <label>Saved revision<select aria-label="Saved revision" value={revision || head.revision} onChange={event => { setRevisionError(''); setRevision(Number(event.target.value) === head.revision ? 0 : Number(event.target.value)) }}>{retained.map(item => <option key={item.revision} value={item.revision}>{item.revision === head.revision ? `Current (revision ${item.revision})` : `Revision ${item.revision} · ${new Date(item.saved_at).toLocaleString()}`}</option>)}</select></label>}
+    {retained.length > 1 && <label>Saved revision<select aria-label="Saved revision" value={revision || head.revision} onChange={event => { setRevisionError(''); setRevision(Number(event.target.value) === head.revision ? 0 : Number(event.target.value)) }}>{retained.map(item => <option key={item.revision} value={item.revision}>{item.revision === head.revision ? `Current (revision ${item.revision})` : `Revision ${item.revision} · ${formatDateTime(item.saved_at, { seconds: true })}`}</option>)}</select></label>}
     {past && <p role="status">Showing saved revision {past.revision} of “{past.name}”, exactly as it was saved. The current revision is {past.current_revision ?? head.revision}.</p>}
     {revisionError && <p role="alert">{revisionError}</p>}
     {definition.tabs.map(tab => <section key={tab.id} aria-label={tab.title}>{tab.panels.filter(panel => panel.query).map(panel => <article key={panel.id}><h3>{panel.title}</h3>{panel.query?.evidence_mode ? testId ? <NativeEvidencePanel key={`${testId}-${JSON.stringify(panel.query)}`} panel={panel} testId={testId} /> : <p>Run identity unavailable.</p> : panel.query?.population ? testId ? <ArchivedNativePanel key={`${testId}-${JSON.stringify(panel.query)}`} panel={panel} testId={testId} /> : <p>Archive run identity unavailable.</p> : <NativeAnalyticsPanel panel={panel} history={history} />}</article>)}</section>)}

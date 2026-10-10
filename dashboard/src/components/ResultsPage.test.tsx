@@ -1344,7 +1344,7 @@ describe('ResultsPage', () => {
     expect(container.textContent).toContain('Results Library')
     expect(container.querySelector('.results-filter-bar')).toBeNull()
     expect(selectByLabel(container, 'Associated Release')?.value).toBe('rel-1')
-    expect(inputByPlaceholder(container, 'Find runs by name, reference or scenario...')).toBeTruthy()
+    expect(inputByPlaceholder(container, 'Find runs by name, reference or scenario…')).toBeTruthy()
     expect(selectByLabel(container, 'Status')?.value).toBe('all')
     expect(selectByLabel(container, 'Archive State')?.value).toBe('all')
     expect(container.textContent).not.toContain('Release Results')
@@ -1387,12 +1387,12 @@ describe('ResultsPage', () => {
     expect(container.querySelector('.library-source-table thead th:last-child')?.classList.contains('results-actions-column')).toBe(true)
     expect(sourceRowNamed(container, 'iPhone Checkout').querySelector('td:last-child .results-row-actions')).toBeTruthy()
 
-    await changeInput(inputByPlaceholder(container, 'Find runs by name, reference or scenario...'), 'LOC-RUN-20260512-001')
+    await changeInput(inputByPlaceholder(container, 'Find runs by name, reference or scenario…'), 'LOC-RUN-20260512-001')
     expect(sourceRowNamed(container, 'iPhone Checkout')).toBeDefined()
     expect(container.textContent).not.toContain('iPad Checkout')
     expect(container.textContent).not.toContain('Visible Sources')
     expect(container.querySelector('.results-selection-bar')).toBeNull()
-    await changeInput(inputByPlaceholder(container, 'Find runs by name, reference or scenario...'), '')
+    await changeInput(inputByPlaceholder(container, 'Find runs by name, reference or scenario…'), '')
 
     expect(container.querySelector('a[href="/api/v1/tests/run-a/archive/root-cause"]')).toBeNull()
     expect(sourceRowNamed(container, 'iPhone Checkout').textContent).not.toContain('Root Cause')
@@ -1558,7 +1558,7 @@ describe('ResultsPage', () => {
     })
     expect(buttonByText(container, 'Delete Selected (1)')).toBeDefined()
 
-    await changeInput(inputByPlaceholder(container, 'Find runs by name, reference or scenario...'), 'iPad Checkout')
+    await changeInput(inputByPlaceholder(container, 'Find runs by name, reference or scenario…'), 'iPad Checkout')
     await flushPromises()
 
     expect(buttonByText(container, 'Delete Selected (0)')).toBeUndefined()
@@ -1832,12 +1832,12 @@ describe('ResultsPage', () => {
       release_id: 'rel-1',
     }))
 
-    await changeInput(inputByPlaceholder(container, 'Find runs by name, reference or scenario...'), 'Remote Name')
+    await changeInput(inputByPlaceholder(container, 'Find runs by name, reference or scenario…'), 'Remote Name')
     expect(sourceRowNamed(container, 'Remote Name Match')).toBeDefined()
     expect(container.textContent).not.toContain('Remote ID Match')
     expect(container.textContent).not.toContain('iPhone Checkout')
 
-    await changeInput(inputByPlaceholder(container, 'Find runs by name, reference or scenario...'), '')
+    await changeInput(inputByPlaceholder(container, 'Find runs by name, reference or scenario…'), '')
     await changeSelect(selectByLabel(container, 'Status')!, 'failed')
     expect(sourceRowNamed(container, 'Remote Name Match')).toBeDefined()
     expect(container.textContent).not.toContain('Remote ID Match')

@@ -304,7 +304,7 @@ export default function JsonViewer({ data, defaultExpandedDepth = 2, autoExpandP
         <input
           type="text"
           className="form-control input-sm json-viewer-filter"
-          placeholder="Filter JSON..."
+          placeholder="Filter JSON…"
           value={filterText}
           onChange={(e) => setFilterText(e.target.value)}
         />

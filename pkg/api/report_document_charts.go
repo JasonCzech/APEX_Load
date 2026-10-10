@@ -77,10 +77,10 @@ func reportDocumentChartSpecs(report *RunArchiveReport) []reportDocumentChartSpe
 			}
 		}
 		if completeP95 {
-			specs = append(specs, base("response-time", "Response Time (p95, ms)", "ms", reportChartSeries{Label: "p95 latency", Color: reportChartAccent, Values: series(func(p RunArchiveSummaryPoint) float64 { return p.P95Ms })}))
+			specs = append(specs, base("response-time", "Response time (P95, ms)", "ms", reportChartSeries{Label: "p95 latency", Color: reportChartAccent, Values: series(func(p RunArchiveSummaryPoint) float64 { return p.P95Ms })}))
 		}
 		specs = append(specs,
-			base("error-rate", "Error Rate (%)", "%", reportChartSeries{Label: "Error %", Color: reportChartAccent2, Values: series(func(p RunArchiveSummaryPoint) float64 { return p.ErrorPct })}),
+			base("error-rate", "Error rate (%)", "%", reportChartSeries{Label: "Error %", Color: reportChartAccent2, Values: series(func(p RunArchiveSummaryPoint) float64 { return p.ErrorPct })}),
 			base("vusers", "Active VUsers", "VUsers", reportChartSeries{Label: "Active VUsers", Color: reportChartAccent, Values: series(func(p RunArchiveSummaryPoint) float64 { return float64(p.ActiveVUsers) })}),
 		)
 	}
@@ -88,12 +88,12 @@ func reportDocumentChartSpecs(report *RunArchiveReport) []reportDocumentChartSpe
 	if report.MetricPopulations != nil {
 		actions = report.ByRequest
 	}
-	if bars := topActionLatencyBars(actions, 8); len(bars) > 0 {
+	if bars := topActionLatencyBars(actions, reportActionLatencyLimit); len(bars) > 0 {
 		average := report.Overview.AvgResponseMs
 		if report.MetricPopulations != nil {
 			average = report.MetricPopulations["action"].AvgResponseMs
 		}
-		specs = append(specs, reportDocumentChartSpec{ID: "action-latency", Title: "Average Response Time by Action (ms)", Unit: "ms", Bars: bars, HighlightAt: average, Height: max(192, 75+len(bars)*31)})
+		specs = append(specs, reportDocumentChartSpec{ID: "action-latency", Title: actionLatencyTitle(len(bars), len(actions)), Unit: "ms", Bars: bars, HighlightAt: average, Height: max(192, 75+len(bars)*31)})
 	}
 	return specs
 }

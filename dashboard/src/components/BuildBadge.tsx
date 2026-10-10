@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useSystemApi } from '../hooks/api/useSystemApi'
 import { VersionResponse } from '../types'
 import './BuildBadge.css'
+import { formatDateTime } from '../utils/dateTime'
 
 // Maps a runtime environment to a badge tone. Anything Kubernetes-like (incl.
 // aks/eks/gke) reads as "running in the cluster" (green); container/local read
@@ -21,7 +22,7 @@ function envTone(environment: string): 'cluster' | 'container' | 'local' {
 function formatBuildTime(buildTime?: string): string | null {
   if (!buildTime) return null
   const parsed = new Date(buildTime)
-  return Number.isNaN(parsed.getTime()) ? buildTime : parsed.toLocaleString()
+  return Number.isNaN(parsed.getTime()) ? buildTime : formatDateTime(parsed, { seconds: true })
 }
 
 function formatVersionLabel(version?: string): string {

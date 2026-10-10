@@ -21,14 +21,17 @@ interface FlagRow {
   flag: Flag
   label: string
   description: string
+  // env is the controller's environment list that turns the flag on for
+  // the projects it names.
+  env: string
 }
 
 const ROWS: FlagRow[] = [
-  { flag: { group: 'root_cause', key: 'enabled' }, label: 'Compute root-cause analyses', description: 'Editors can analyze an archived run; analyses already saved stay readable when this is off.' },
-  { flag: { group: 'root_cause', key: 'present' }, label: 'Show root cause in summaries and reports', description: 'Run summaries, Results, the dashboard, Command Center, Diagnostics and exported reports show the generated root cause. Run validity is shown either way.' },
-  { flag: { group: 'root_cause', key: 'auto_analyze' }, label: 'Analyze every archived run automatically', description: 'An analysis is queued as soon as a run’s archive is finalized. Requested analyses still run first.' },
-  { flag: { group: 'root_cause', key: 'auto_enrich' }, label: 'Capture provider evidence when a run is archived', description: 'Freezes the monitor sources and datasets as they stand at archive time, for later analyses to reuse.' },
-  { flag: { group: 'business_keys', key: 'enabled' }, label: 'Allow business-key lookups', description: 'Approved business-key mappings digest values such as order IDs, and editors can find a run’s requests and logs by them.' },
+  { flag: { group: 'root_cause', key: 'enabled' }, label: 'Compute root-cause analyses', description: 'Editors can analyze an archived run; analyses already saved stay readable when this is off.', env: 'APEXLOAD_RCA_V2_PROJECTS' },
+  { flag: { group: 'root_cause', key: 'present' }, label: 'Show root cause in summaries and reports', description: 'Run summaries, Results, the dashboard, Command Center, Diagnostics and exported reports show the generated root cause. Run validity is shown either way.', env: 'APEXLOAD_RCA_V2_PRESENT_PROJECTS' },
+  { flag: { group: 'root_cause', key: 'auto_analyze' }, label: 'Analyze every archived run automatically', description: 'An analysis is queued as soon as a run’s archive is finalized. Requested analyses still run first.', env: 'APEXLOAD_RCA_AUTO_ANALYZE_PROJECTS' },
+  { flag: { group: 'root_cause', key: 'auto_enrich' }, label: 'Capture provider evidence when a run is archived', description: 'Freezes the monitor sources and datasets as they stand at archive time, for later analyses to reuse.', env: 'APEXLOAD_RCA_AUTO_ENRICH_PROJECTS' },
+  { flag: { group: 'business_keys', key: 'enabled' }, label: 'Allow business-key lookups', description: 'Approved business-key mappings digest values such as order IDs, and editors can find a run’s requests and logs by them.', env: 'APEXLOAD_BUSINESS_KEY_PROJECTS' },
 ]
 
 const read = (gates: ProjectAnalysisGates, flag: Flag) => (flag.group === 'root_cause' ? gates.root_cause[flag.key] : gates.business_keys[flag.key])
@@ -37,7 +40,7 @@ function settingsPath(projectId: string) {
   return `/projects/${encodeURIComponent(projectId)}/analysis-settings`
 }
 
-// ProjectAnalysisSettingsPanel is Settings › Project › Analysis: the
+// ProjectAnalysisSettingsPanel is Settings › Workspaces › Project analysis: the
 // project's root-cause and business-key opt-ins. A flag the deployment turns
 // on for the project is shown on and cannot be turned off here. Saves send
 // the revision that was read, so a newer save is never overwritten.
@@ -104,7 +107,7 @@ export default function ProjectAnalysisSettingsPanel({ projectId, projectName, c
   const rootCauseOn = draft.root_cause.enabled || current.forced_by_env.root_cause.enabled
   return (
     <div className="settings-subsection project-analysis-settings">
-      <h3>Analysis{projectName ? ` · ${projectName}` : ''}</h3>
+      <h3>Project analysis{projectName ? ` · ${projectName}` : ''}</h3>
       <p className="setting-desc">
         Root-cause analysis judges an archived run’s validity, finds where its series changed and ranks the likely causes. It runs on the controller from the run’s archive and monitor evidence.
         The CI validity gate is set in the project’s GitHub Actions policy, not here.
@@ -121,8 +124,8 @@ export default function ProjectAnalysisSettingsPanel({ projectId, projectName, c
               <label className="checkbox-label" htmlFor={id}>
                 <input id={id} type="checkbox" checked={value} disabled={!canEdit || saving || forced || needsRootCause} onChange={event => toggle(row.flag, event.target.checked)} />
                 <span className="setting-label">{row.label}</span>
-                {forced && <span className="project-analysis-forced" title="The deployment’s environment lists turn this on for the project.">On for this deployment</span>}
               </label>
+              {forced && <span className="setting-desc project-analysis-forced"><strong>On for this deployment.</strong> The controller’s <code>{row.env}</code> setting names this project, so it stays on here; a controller administrator changes that list.</span>}
               <span className="setting-desc">{needsRootCause ? `${row.description} Turn on computing analyses first.` : row.description}</span>
             </div>
           )
@@ -131,7 +134,7 @@ export default function ProjectAnalysisSettingsPanel({ projectId, projectName, c
       <p className="setting-desc">
         {current.settings.revision > 0
           ? `Revision ${current.settings.revision}${current.settings.updated_by ? ` by ${current.settings.updated_by}` : ''}${current.settings.updated_at ? ` · ${formatDateTime(current.settings.updated_at)}` : ''}.`
-          : 'Not changed yet; only the deployment’s lists apply.'}
+          : 'Not changed yet for this project. Only what the deployment turns on applies.'}
       </p>
       {!canEdit && <p className="settings-error-inline">A project administrator changes these settings.</p>}
       {error && <p className="settings-error-inline" role="alert">{error}</p>}

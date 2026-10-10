@@ -517,6 +517,11 @@ func (c *docxConverter) contents(out *bytes.Buffer, n *html.Node) {
 			c.paragraph(out, trimRuns(runs), docxParaProps{after: 40, indent: 360, hang: 360})
 		}
 	}
+	// The sections that do not apply to the run are named after the contents,
+	// as in the HTML.
+	if note := findNode(n, func(x *html.Node) bool { return hasClass(x, "not-captured") }); note != nil {
+		c.inlineParagraph(out, note, docxRunProps{size: 18, color: docxSlate}, docxParaProps{before: 80, after: 40}, false)
+	}
 	c.spacer(out)
 }
 

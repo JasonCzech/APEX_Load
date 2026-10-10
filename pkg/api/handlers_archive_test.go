@@ -670,7 +670,7 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 			t.Fatalf("pdf report content disposition = %q, want engineer pdf filename", got)
 		}
 		body := resp.Body.String()
-		if !strings.HasPrefix(body, "%PDF-1.4") || !strings.Contains(body, "Archive API Run") || !strings.Contains(body, "Top Actions") {
+		if !strings.HasPrefix(body, "%PDF-1.4") || !strings.Contains(body, "Archive API Run") || !strings.Contains(body, "Top actions") {
 			t.Fatalf("pdf report body missing expected PDF report content:\n%s", body)
 		}
 	})
@@ -687,7 +687,7 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		if !strings.Contains(body, "Profile: Executive") {
 			t.Fatalf("executive pdf body missing profile label:\n%s", body)
 		}
-		if strings.Contains(body, "Top Actions") {
+		if strings.Contains(body, "Top actions") {
 			t.Fatalf("executive pdf report should omit action drilldown:\n%s", body)
 		}
 	})
@@ -701,10 +701,10 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 			t.Fatalf("audit pdf report status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
 		}
 		body := resp.Body.String()
-		if !strings.HasPrefix(body, "%PDF-1.4") || !strings.Contains(body, "Profile: Audit") || !strings.Contains(body, "Artifact Integrity") {
+		if !strings.HasPrefix(body, "%PDF-1.4") || !strings.Contains(body, "Profile: Audit") || !strings.Contains(body, "Artifact integrity") {
 			t.Fatalf("audit pdf body missing evidence package content:\n%s", body)
 		}
-		if strings.Contains(body, "Top Actions") {
+		if strings.Contains(body, "Top actions") {
 			t.Fatalf("audit pdf report should omit action drilldown:\n%s", body)
 		}
 	})
@@ -728,7 +728,7 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 			t.Fatalf("open DOCX response: %v", err)
 		}
 		document := string(readDOCXTestPart(t, archive, "word/document.xml"))
-		if !strings.Contains(document, "Archive API Run") || !strings.Contains(document, "Action Summary") {
+		if !strings.Contains(document, "Archive API Run") || !strings.Contains(document, "Action summary") {
 			t.Fatalf("DOCX response missing engineer report content: %s", document)
 		}
 	})
@@ -948,13 +948,13 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		if !strings.Contains(body, testRun.Name) {
 			t.Fatalf("expected report to contain test name %q", testRun.Name)
 		}
-		if !strings.Contains(body, "Executive Summary Report") {
+		if !strings.Contains(body, "Executive report") {
 			t.Fatalf("expected report to contain executive profile label, got %q", body)
 		}
 		if strings.Contains(body, "Action Summary") {
 			t.Fatalf("executive report should omit action summary, got %q", body)
 		}
-		if strings.Contains(body, "Summary Timeline") {
+		if strings.Contains(body, "Summary timeline") {
 			t.Fatalf("executive report should omit summary timeline, got %q", body)
 		}
 	})

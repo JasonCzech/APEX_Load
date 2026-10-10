@@ -1,3 +1,4 @@
+import { formatPercentValue } from '../../utils/numberFormat'
 import type { HTTPVersionMix, HTTPVersionRatio, RunArchiveHTTPVersionMix, RunArchiveNetworkPhases, RunArchiveNetworkPhaseSummary } from '../../types'
 
 /** Mix buckets in display order; the report exports use the same labels. */
@@ -53,10 +54,10 @@ export function versionMixRows(mix: HTTPVersionMix | undefined): VersionMixRow[]
   })
 }
 
-// A share that rounds to 0.0% but is not zero reads "<0.1%".
+// A share as the app states percentages; one that rounds to zero but is not
+// zero reads "<0.01%".
 function ratioPercent(value: number): string {
-  if (value > 0 && value < 0.0005) return '<0.1%'
-  return `${(value * 100).toFixed(1)}%`
+  return formatPercentValue(value * 100)
 }
 
 /** A ratio with its denominator, or why it has none. */

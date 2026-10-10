@@ -17,12 +17,12 @@ func TestWriteRunArchiveReportPDFWithProfile(t *testing.T) {
 	engineerPDF := engineer.String()
 	for _, expected := range []string{
 		"%PDF-1.4",
-		"Checkout Evidence - Detailed Technical Report",
-		"Profile: Detailed Technical",
-		"Top Actions",
-		"Browser Metrics",
-		"Resource Peaks",
-		"Network Phase Breakdown",
+		"Checkout Evidence - Engineer report",
+		"Profile: Engineer",
+		"Top actions",
+		"Browser metrics",
+		"Resource peaks",
+		"Network phase breakdown",
 		"checkout: 42 tx",
 	} {
 		if !strings.Contains(engineerPDF, expected) {
@@ -35,10 +35,10 @@ func TestWriteRunArchiveReportPDFWithProfile(t *testing.T) {
 		t.Fatalf("write executive pdf returned error: %v", err)
 	}
 	executivePDF := executive.String()
-	if !strings.Contains(executivePDF, "Profile: Executive Summary") {
+	if !strings.Contains(executivePDF, "Profile: Executive") {
 		t.Fatalf("executive pdf missing profile label:\n%s", executivePDF)
 	}
-	if strings.Contains(executivePDF, "Top Actions") || strings.Contains(executivePDF, "Browser Metrics") {
+	if strings.Contains(executivePDF, "Top actions") || strings.Contains(executivePDF, "Browser metrics") {
 		t.Fatalf("executive pdf should omit engineer drilldown sections:\n%s", executivePDF)
 	}
 
@@ -49,9 +49,9 @@ func TestWriteRunArchiveReportPDFWithProfile(t *testing.T) {
 	auditPDF := audit.String()
 	for _, expected := range []string{
 		"Profile: Audit",
-		"Run Identity and Authorization",
-		"Schema Compatibility",
-		"Artifact Integrity",
+		"Run identity",
+		"Schema compatibility",
+		"Artifact integrity",
 		"approval-1 approved",
 		"release gate approved",
 	} {
@@ -59,17 +59,17 @@ func TestWriteRunArchiveReportPDFWithProfile(t *testing.T) {
 			t.Fatalf("audit pdf missing %q:\n%s", expected, auditPDF)
 		}
 	}
-	if strings.Contains(auditPDF, "Top Actions") || strings.Contains(auditPDF, "Browser Metrics") {
+	if strings.Contains(auditPDF, "Top actions") || strings.Contains(auditPDF, "Browser metrics") {
 		t.Fatalf("audit pdf should omit engineer drilldown sections:\n%s", auditPDF)
 	}
 	// Audit is a compliance artifact: it must not leak performance-tuning metrics.
-	for _, forbidden := range []string{"Peak TPS", "Throughput gap", "Network Phase Breakdown"} {
+	for _, forbidden := range []string{"Peak TPS", "Throughput gap", "Network phase breakdown"} {
 		if strings.Contains(auditPDF, forbidden) {
 			t.Fatalf("audit pdf should omit tuning metric %q:\n%s", forbidden, auditPDF)
 		}
 	}
 	// Network phases are an engineer-only section.
-	if strings.Contains(executivePDF, "Network Phase Breakdown") {
+	if strings.Contains(executivePDF, "Network phase breakdown") {
 		t.Fatalf("executive pdf should omit network-phase drilldown:\n%s", executivePDF)
 	}
 }

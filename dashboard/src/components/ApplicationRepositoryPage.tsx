@@ -1214,7 +1214,7 @@ export default function ApplicationRepositoryPage({
             <input
               value={filters.query}
               onChange={event => setFilters(prev => ({ ...prev, query: event.target.value }))}
-              placeholder="Find by name, ID, project, release, protocol, status..."
+              placeholder="Find by name, ID, project, release, protocol, status…"
             />
           </label>} actions={<button className="btn btn-secondary" type="button" onClick={refreshCatalogAssets} disabled={catalogLoading}>Refresh</button>} filters={<><div className="repository-filter-row" aria-label="Repository filters">
           <label>

@@ -710,6 +710,12 @@
 .report-toolbar-title { overflow-wrap: anywhere; }
 .run-report-page .archive-report-card, .run-report-page .tx-section { min-width: 0; max-width: 100%; }
 .run-report-page .tx-section { overflow-x: auto; }
+/* In the report, an evidence view is one card like the panels beside it: its
+   sections do not draw a second card inside it. */
+.run-report-page .archive-report-card .tx-section { border: 0; border-radius: 0; padding: 0; background: transparent; }
+/* Side-by-side sections keep their outline so the columns stay apart. */
+.run-report-page .archive-report-card .archive-report-layout:not(.single-view) > .tx-section { border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+.run-report-page .archive-report-card { border-radius: 8px; box-shadow: var(--shadow-sm); }
 .run-report-page .archive-section-header-stack { flex-direction: column; align-items: stretch; }
 .run-report-page .archive-dimension-filter-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
 .run-report-page .archive-dimension-filter-bar input, .run-report-page .archive-dimension-filter-bar select { width: 100%; min-width: 0; }
@@ -726,6 +732,11 @@
 .run-execution-facts dd { margin: 0; font-size: 18px; font-weight: 600; overflow-wrap: anywhere; }
 .run-report-panel h2 { margin: 0 0 10px; font-size: 18px; }
 .run-report-panel p { line-height: 1.55; overflow-wrap: anywhere; }
+/* Lists in a report card sit inside its text column, not in its padding. */
+.release-readiness ul { margin: 8px 0 0; padding-left: 20px; }
+.release-readiness ul ul { margin-top: 4px; }
+.release-readiness li + li { margin-top: 6px; }
+.run-report-next-steps p .btn { margin-left: 8px; vertical-align: baseline; }
 .run-execution-outcome { border-left: 3px solid var(--border); }
 .run-execution-outcome-failed { border-left-color: var(--danger-text); }
 .run-execution-outcome-failed h2 { color: var(--danger-text); }

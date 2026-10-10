@@ -234,7 +234,8 @@
 
   --warning-bg: rgba(234, 116, 0, 0.1);
   --warning-border: rgba(234, 116, 0, 0.32);
-  --warning-text: #994c00;
+  /* Clears 4.5:1 on a warning fill inside a selected row, too (#994c00 was 4.48:1). */
+  --warning-text: #8a4400;
   /* Text on a solid --warning fill (badges, warning buttons). */
   --warning-fill-text: #ffffff;
 
@@ -354,19 +355,21 @@
   
   --text-primary: #002b36;
   --text-secondary: #073642;
-  --text-muted: #52676f;
+  /* Muted text and the accent clear 4.5:1 on the selected-state fills
+     (#e0dcbf), not only on the page (#52676f and #5f6f00 were 4.0–4.4:1). */
+  --text-muted: #4a5d64;
   
-  --accent: #5f6f00;
-  --accent-rgb: 95, 111, 0;
-  --accent-soft: rgba(95, 111, 0, 0.11);
-  --accent-border: rgba(95, 111, 0, 0.36);
+  --accent: #536100;
+  --accent-rgb: 83, 97, 0;
+  --accent-soft: rgba(83, 97, 0, 0.11);
+  --accent-border: rgba(83, 97, 0, 0.36);
   --accent-contrast: #fdf6e3;
   --logo-wave: #a4b81c;
   /* Text-safe accent and filled-danger tokens (≥4.5:1). */
   --accent-text: var(--accent);
   --danger-fill: #c0261f;
   --danger-fill-text: #ffffff;
-  --accent-hover: #4d5b00;
+  --accent-hover: #444f00;
 
   --success: #859900;
   --success-rgb: 133, 153, 0;

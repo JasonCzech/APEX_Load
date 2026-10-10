@@ -120,11 +120,57 @@ export const comparisonApi = {
     return response.blob()
   },
 }
-export function number(value?: number): string { return value === undefined || !Number.isFinite(value) ? 'Unavailable' : value.toLocaleString(undefined, { maximumFractionDigits: 2 }) }
-export function difference(current?: number, baseline?: number): string {
+// number states a comparison value with the precision the exports and the
+// findings use (Go comparisonNumber): whole numbers from 100, one decimal
+// from 10, up to three below, three significant digits under 1.
+export function number(value?: number): string {
+  if (value === undefined || !Number.isFinite(value)) return 'Unavailable'
+  const abs = Math.abs(value)
+  const digits = abs >= 100 ? 0 : abs >= 10 ? 1 : abs > 0 && abs < 1 ? Math.min(Math.ceil(-Math.log10(abs)) + 2, 12) : 3
+  return (value === 0 ? 0 : value).toLocaleString(undefined, { maximumFractionDigits: digits })
+}
+// withUnit appends a unit the way the findings write it: "%" and rates
+// ("/s") attach, other units follow a space.
+export function withUnit(text: string, unit?: string): string {
+  if (!unit || text === 'Unavailable') return text
+  return unit === '%' || unit.startsWith('/') ? `${text}${unit}` : `${text} ${unit}`
+}
+export function difference(current?: number, baseline?: number, unit?: string): string {
   if (current === undefined || baseline === undefined) return 'Unavailable'
   const delta = current - baseline
-  return `${delta > 0 ? '+' : ''}${number(delta)}${baseline === 0 ? ' · baseline zero' : ` (${delta > 0 ? '+' : ''}${number(delta / Math.abs(baseline) * 100)}%)`}`
+  const sign = delta > 0 ? '+' : ''
+  const pct = delta / Math.abs(baseline) * 100
+  return `${sign}${withUnit(number(delta), unit === '%' ? 'pts' : unit)}${baseline === 0 ? ' · baseline zero' : ` (${sign}${pct.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%)`}`
+}
+// verdictBlockers say why a comparison evaluated no acceptance metric: the
+// runs that did not complete, the setup that differs or could not be
+// verified, and the comparability caveats most rows carry (Go
+// evaluateBaselineRegression treats each of these as unavailable).
+export function verdictBlockers(snapshot: ComparisonSnapshot): string[] {
+  const out: string[] = []
+  const incomplete = [snapshot.current, ...snapshot.baselines].filter(run => run.status !== 'COMPLETE').map(run => run.name || run.id)
+  if (incomplete.length) out.push(`Not completed: ${incomplete.join(', ')}. Only completed runs are evaluated.`)
+  const setup = [...new Set(snapshot.setup.filter(diff => diff.status !== 'match').map(diff => diff.field))]
+  if (setup.length) out.push(`Setup differs or could not be verified: ${setup.join(', ')}. See Setup differences.`)
+  const caveats = new Map<string, number>()
+  for (const row of snapshot.transactions) {
+    for (const cell of Object.values(row.baselines)) {
+      for (const reason of cell?.qualification || []) {
+        if (reason !== 'Fewer than 100 successful transaction samples') caveats.set(reason, (caveats.get(reason) || 0) + 1)
+      }
+    }
+  }
+  const top = [...caveats].sort((a, b) => b[1] - a[1]).slice(0, 3)
+  if (top.length) out.push(`Comparability caveats: ${top.map(([reason, count]) => `${reason} (${count.toLocaleString()} ${count === 1 ? 'row' : 'rows'})`).join('; ')}.`)
+  return out
+}
+
+// metricUnit is the unit of a transaction comparison metric.
+export function metricUnit(metric: string): string {
+  if (metric === 'samples') return ''
+  if (metric === 'throughput' || metric === 'successful_throughput') return '/s'
+  if (metric === 'error_pct') return '%'
+  return 'ms'
 }
 export const metricOptions = [ ['p95', 'Successful P95'], ['mean', 'Successful mean'], ['p50', 'Successful P50'], ['p90', 'Successful P90'], ['p99', 'Successful P99'], ['min', 'Successful minimum'], ['max', 'Successful maximum'], ['throughput', 'Attempts/s'], ['successful_throughput', 'Successful TPS'], ['error_pct', 'Error rate'], ['samples', 'Sample count'] ] as const
 export type Metric = typeof metricOptions[number][0]

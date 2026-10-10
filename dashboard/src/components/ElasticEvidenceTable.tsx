@@ -1,13 +1,14 @@
 import type { ElasticRecord } from '../types/elastic'
 import { elasticAttributes, elasticScalarValue } from './elasticMonitoringModel'
 import './ElasticEvidence.css'
+import { formatDateTime } from '../utils/dateTime'
 
 export default function ElasticEvidenceTable({ evidence }: { evidence: ElasticRecord[] }) {
   if (!evidence.length) return <p>No retained matching Elastic or OpenSearch records.</p>
   return <div className="advanced-group-table-wrap"><table className="advanced-group-table"><thead><tr><th>Time</th><th>Source / query</th><th>Kind / severity</th><th>Service / record</th><th>Projection</th><th>Correlation</th></tr></thead><tbody>{evidence.map((record, index) => {
     const attributes = elasticAttributes(record)
     return <tr key={`${record.source_id || ''}:${record.id || index}`}>
-      <td>{record.timestamp_utc ? new Date(record.timestamp_utc).toLocaleString() : '—'}{record.ingested_at && <p>Ingested {new Date(record.ingested_at).toLocaleString()}</p>}{record.received_at && <p>Observed {new Date(record.received_at).toLocaleString()}</p>}</td>
+      <td>{record.timestamp_utc ? formatDateTime(record.timestamp_utc, { seconds: true }) : '—'}{record.ingested_at && <p>Ingested {formatDateTime(record.ingested_at, { seconds: true })}</p>}{record.received_at && <p>Observed {formatDateTime(record.received_at, { seconds: true })}</p>}</td>
       <td>{record.source_id || record.provider || '—'}{record.query_id && <span> · {record.query_id}</span>}</td>
       <td>{record.kind || '—'} · {record.severity || record.log?.level || record.status || '—'}</td>
       <td>{record.service || '—'}<br />{record.index && <span>{record.index} · </span>}{record.document_id || record.id || '—'}</td>

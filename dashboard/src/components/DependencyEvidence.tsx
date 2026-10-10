@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { request } from '../hooks/apiClient'
+import { formatDateTime } from '../utils/dateTime'
 
 interface Evidence {
   timestamp: string
@@ -47,7 +48,7 @@ export default function DependencyEvidence({ testId, projectId, select }: { test
     </form>
     {error && <p role="alert">{error}</p>}
     {evidence && <>
-      <p role="status">Coverage: {evidence.coverage} · {new Date(evidence.timestamp).toLocaleString()} · {evidence.interval_seconds}s interval</p>
+      <p role="status">Coverage: {evidence.coverage} · {formatDateTime(evidence.timestamp, { seconds: true })} · {evidence.interval_seconds}s interval</p>
       <ul>{evidence.graph?.nodes.filter(node => node.kind === 'dependency').map(node => <li key={node.id}>
         {node.label} ({node.dependency_type ?? 'unknown'}) · P95 {node.p95_ms ?? 'unavailable'} ms · {node.errors ?? 0} errors
         {evidence.monitors.filter(monitor => monitor.dependency === node.label).map(monitor => <div key={monitor.source_id}>{monitor.name}: {monitor.coverage} ({monitor.state}) {monitor.metrics.map(metric => <button type="button" key={metric} onClick={() => select(monitor.source_id, metric, new Date(Date.parse(evidence.timestamp) - evidence.interval_seconds * 1000).toISOString(), evidence.timestamp)}>Inspect {metric}</button>)}</div>)}

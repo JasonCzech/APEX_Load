@@ -338,5 +338,5 @@ export function formatAuditTimestamp(value?: string): string {
     return 'Unknown'
   }
   const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
+  return Number.isNaN(parsed.getTime()) ? value : formatSharedDateTime(parsed, { seconds: true })
 }

@@ -2,6 +2,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 
 import type { AnalysisPoint } from '../types/analysis'
 import { formatAnalysisTimeTick } from '../utils/analysisTime'
+import { formatPercentValue } from '../utils/numberFormat'
 import './CorrelationEvidence.css'
 
 // Lagged correlation evidence (B6). Each series keeps its own semantics:
@@ -138,7 +139,7 @@ export default function CorrelationEvidence({ scores, semantics, left, right }: 
               <td>{score.lag_seconds}</td>
               <td>{score.coefficient == null ? (UNAVAILABLE[score.unavailable || ''] || 'Insufficient variation or evidence') : score.coefficient.toFixed(3)}</td>
               <td>{score.pairs} / {score.expected_buckets}</td>
-              <td>{(100 * score.coverage).toFixed(1)}%</td>
+              <td>{formatPercentValue(100 * score.coverage)}</td>
             </tr>
           ))}
         </tbody>

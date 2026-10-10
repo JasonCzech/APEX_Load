@@ -3506,7 +3506,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                     type="search"
                     value={scriptLibraryQuery}
                     onChange={(event) => setScriptLibraryQuery(event.target.value)}
-                    placeholder="Find scripts..."
+                    placeholder="Find scripts…"
                   />
                 </label>
               </div>
@@ -3716,7 +3716,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
         <>
               <label className="library-search scenario-clone-search">
                 <span>Search existing scenarios</span>
-                <input type="search" value={scenarioCloneQuery} onChange={event => setScenarioCloneQuery(event.target.value)} placeholder="Scenario, script, data pool, release..." />
+                <input type="search" value={scenarioCloneQuery} onChange={event => setScenarioCloneQuery(event.target.value)} placeholder="Scenario, script, data pool, release…" />
               </label>
               <div className="data-table scenario-clone-table">
                 <table>
@@ -4900,7 +4900,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                   type="search"
                   value={scenarioQuery}
                   onChange={(event) => setScenarioQuery(event.target.value)}
-                  placeholder="Find scenarios, scripts, or data pools..."
+                  placeholder="Find scenarios, scripts, or data pools…"
                 />
               </label>)}
             filterControls={(

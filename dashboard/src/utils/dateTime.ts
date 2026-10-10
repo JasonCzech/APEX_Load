@@ -51,3 +51,16 @@ export function formatDateOnly(value: string | number | Date | null | undefined,
     return date.toLocaleDateString(undefined, format)
   }
 }
+
+/**
+ * A time of day within a run, as chart axes show it: "6:03:16 PM". For labels
+ * that sit beside a chart; anything that names a moment on its own uses
+ * formatDateTime.
+ */
+export function formatTimeOfDay(value: string | number | Date | null | undefined, options: Pick<DateTimeDisplayOptions, 'seconds' | 'fallback'> = {}): string {
+  const { seconds = true, fallback = '—' } = options
+  if (value === undefined || value === null || value === '') return fallback
+  const date = toDate(value)
+  if (Number.isNaN(date.getTime())) return typeof value === 'string' ? value : fallback
+  return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', ...(seconds ? { second: '2-digit' } : {}) })
+}

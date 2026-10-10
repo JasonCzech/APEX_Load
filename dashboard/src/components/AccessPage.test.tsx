@@ -455,7 +455,7 @@ describe('AccessPage', () => {
   it('hides existing identities on creation and exposes permission selections', async () => {
     await act(async () => root.render(<AccessPage projects={projects} domains={domains} canManageUserLifecycle canManageUserBindings canManageServiceAccounts canViewUserActivity authMode="local" />))
     await flushPromises()
-    await clickButton(container,'Onboard Users')
+    await clickButton(container,'Onboard users')
     expect(container.querySelector('aside')).toBeNull()
     expect(container.textContent).toContain('does not create a new local login')
     await clickButton(container,'Service accounts',true)
@@ -491,7 +491,7 @@ describe('AccessPage', () => {
     })
     await flushPromises()
     expect(container.textContent).toContain('No users in this scope')
-    expect(container.textContent).toContain('Open Onboard Users to create the first account.')
+    expect(container.textContent).toContain('Open Onboard users to create the first account.')
     expect(container.textContent).not.toContain('Adjust search or filters')
   })
 
@@ -729,7 +729,7 @@ describe('AccessPage', () => {
     await flushPromises()
     await act(async () => root.render(renderAccess(true)))
     await flushPromises()
-    await clickButton(container, 'Onboard Users')
+    await clickButton(container, 'Onboard users')
     await clickButton(container, 'Service accounts', true)
     expect(container.querySelector('[role="dialog"]')).toBeNull()
     expect(container.querySelector('section[aria-label="Service accounts access workspace"]')).not.toBeNull()
@@ -745,7 +745,7 @@ describe('AccessPage', () => {
     })
     await flushPromises()
 
-    await clickButton(container, 'Onboard Users')
+    await clickButton(container, 'Onboard users')
     const subjectInput = inputByPlaceholder(container, 'oidc-subject-or-upstream-user')
     expect(subjectInput).toBeTruthy()
     if (!subjectInput) return
@@ -784,7 +784,7 @@ describe('AccessPage', () => {
   // just-saved draft flagged dirty, or the guard opens right after the create
   // (and stacks over the one-time API-key dialog for service accounts).
   it.each([
-    { kind: 'user', initial: 'onboard' as AccessView, submit: 'Create User', settled: 'Users access workspace' },
+    { kind: 'user', initial: 'onboard' as AccessView, submit: 'Create user', settled: 'Users access workspace' },
     { kind: 'service account', initial: 'create-account' as AccessView, submit: 'Create account', settled: 'Service accounts access workspace' },
   ])('does not raise the unsaved-changes guard after creating a $kind through a guarded route', async ({ kind, initial, submit, settled }) => {
     function GuardedAccess() {
@@ -889,7 +889,7 @@ describe('AccessPage', () => {
       )
     })
     await flushPromises()
-    await clickButton(container, 'Onboard Users')
+    await clickButton(container, 'Onboard users')
     const subjectInput = inputByPlaceholder(container, 'oidc-subject-or-upstream-user')
     const emailInput = inputByPlaceholder(container, 'person@example.com')
     expect(subjectInput).toBeTruthy()
@@ -1001,7 +1001,7 @@ describe('AccessPage', () => {
       root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle canManageUserBindings canViewUserActivity={false} canManageServiceAccounts={false} />)
     })
     await flushPromises()
-    await clickButton(container, 'Onboard Users')
+    await clickButton(container, 'Onboard users')
     const subjectInput = inputByPlaceholder(container, 'oidc-subject-or-upstream-user')
     const emailInput = inputByPlaceholder(container, 'person@example.com')
     const nameInput = inputByPlaceholder(container, 'Jordan Lee')
@@ -1013,7 +1013,7 @@ describe('AccessPage', () => {
     changeInput(emailInput, 'cara@example.com')
     changeInput(nameInput, 'Cara QA')
 
-    await clickButton(container, 'Create User')
+    await clickButton(container, 'Create user')
     await flushPromises()
 
     expect(tablePrimaryTexts(container)).toContain('Cara QA')
@@ -1062,12 +1062,12 @@ describe('AccessPage', () => {
     await flushPromises()
     expect(apiMock.listAuthUsers).toHaveBeenLastCalledWith({ limit: 50, offset: 0, domain_id: 'domain-1', project_id: 'project-1' })
 
-    await clickButton(container, 'Onboard Users')
+    await clickButton(container, 'Onboard users')
     const subjectInput = inputByPlaceholder(container, 'oidc-subject-or-upstream-user')
     expect(subjectInput).toBeTruthy()
     if (!subjectInput) return
     changeInput(subjectInput, 'cara')
-    await clickButton(container, 'Create User')
+    await clickButton(container, 'Create user')
     await flushPromises()
     expect(tablePrimaryTexts(container)).toContain('Cara QA')
 
@@ -1250,7 +1250,7 @@ describe('AccessPage', () => {
     })
     await flushPromises()
 
-    expect(container.textContent).toContain('Existing Users')
+    expect(container.textContent).toContain('Existing users')
     expect(container.textContent).toContain('Alice Admin')
     expect(container.textContent).toContain('3,000 VUser seconds')
 
@@ -1292,7 +1292,7 @@ describe('AccessPage', () => {
     expect(apiMock.listAuthUsers).toHaveBeenLastCalledWith({ limit: 50, offset: 0, role: 'editor' })
     expect(tablePrimaryTexts(container)).toEqual(['Alice Admin'])
 
-    await clickButton(container, 'Onboard Users')
+    await clickButton(container, 'Onboard users')
     const subjectInput = inputByPlaceholder(container, 'oidc-subject-or-upstream-user')
     const emailInput = inputByPlaceholder(container, 'person@example.com')
     const nameInput = inputByPlaceholder(container, 'Jordan Lee')
@@ -1307,7 +1307,7 @@ describe('AccessPage', () => {
       changeInput(emailInput, 'cara@example.com')
       changeInput(nameInput, 'Cara QA')
     })
-    await clickButton(container, 'Add Domain')
+    await clickButton(container, 'Add domain')
     await clickButton(container, 'Add Project')
     const onboardProjectRows = Array.from(container.querySelectorAll<HTMLElement>('.access-binding-draft-row')).filter(row => {
       const scopeSelect = row.querySelector('select') as HTMLSelectElement | null
@@ -1320,7 +1320,7 @@ describe('AccessPage', () => {
     await act(async () => {
       changeSelect(onboardSecondProjectSelect, 'project-2')
     })
-    await clickButton(container, 'Create User')
+    await clickButton(container, 'Create user')
     await flushPromises()
     expect(apiMock.onboardAuthUser).toHaveBeenCalledWith({
       subject: 'cara',
@@ -1334,7 +1334,7 @@ describe('AccessPage', () => {
     })
     expect(apiMock.createAuthUserBinding.mock.calls.filter(call => call[0] === 'user-3')).toEqual([])
 
-    await clickButton(container, 'Existing Users')
+    await clickButton(container, 'Existing users')
     const aliceButton = findButton(container, 'Alice Admin')
     expect(aliceButton).toBeTruthy()
     if (!aliceButton) return
@@ -1382,7 +1382,7 @@ describe('AccessPage', () => {
     await flushPromises()
     expect(apiMock.disableAuthUser).toHaveBeenCalledWith('user-1')
 
-    await clickScopedButton(editManagement, 'Add Domain')
+    await clickScopedButton(editManagement, 'Add domain')
     await clickScopedButton(editManagement, 'Add Project')
     const editProjectRows = Array.from(editManagement.querySelectorAll<HTMLElement>('.access-binding-draft-row')).filter(row => {
       const scopeSelect = row.querySelector('select') as HTMLSelectElement | null
@@ -1417,10 +1417,10 @@ describe('AccessPage', () => {
     await flushPromises()
 
     expect(apiMock.listAuthUsers).toHaveBeenCalledWith({ limit: 50, offset: 0 })
-    expect(container.textContent).toContain('Existing Users')
+    expect(container.textContent).toContain('Existing users')
     expect(container.textContent).toContain('Alice Admin')
-    expect(container.textContent).not.toContain('Onboard Users')
-    expect(container.textContent).not.toContain('Create User')
+    expect(container.textContent).not.toContain('Onboard users')
+    expect(container.textContent).not.toContain('Create user')
 
     const userManagement = container.querySelector('.access-user-management') as HTMLElement | null
     expect(userManagement?.textContent).toContain('User Access')

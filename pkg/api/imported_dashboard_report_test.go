@@ -75,7 +75,7 @@ func TestDashboardPanelsRenderersPopulated(t *testing.T) {
 	var pdf []string
 	dashboardPanelsPDF(data, &pdf)
 	joined := strings.Join(pdf, "\n")
-	if !strings.Contains(joined, "Imported Dashboard Panels") || !strings.Contains(joined, "CPU") || !strings.Contains(joined, "Up") {
+	if !strings.Contains(joined, "Imported dashboard panels") || !strings.Contains(joined, "CPU") || !strings.Contains(joined, "Up") {
 		t.Fatalf("PDF missing content: %q", joined)
 	}
 

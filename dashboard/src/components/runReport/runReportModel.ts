@@ -49,7 +49,15 @@ export function formatNumber(value: number | undefined, digits = 0): string {
 
 export function formatMs(value: number | undefined): string {
   if (!finite(value)) return MISSING_VALUE
-  return `${formatNumber(value, value >= 100 ? 0 : 1)} ms`
+  return `${formatMsValue(value)} ms`
+}
+
+// formatMsValue is formatMs without the unit, for table cells whose column
+// header names it ("P95 (ms)"): whole milliseconds from 100 ms, one decimal
+// below.
+export function formatMsValue(value: number | undefined): string {
+  if (!finite(value)) return MISSING_VALUE
+  return formatNumber(value, value >= 100 ? 0 : 1)
 }
 
 export function formatPct(value: number | undefined, digits = 2): string {

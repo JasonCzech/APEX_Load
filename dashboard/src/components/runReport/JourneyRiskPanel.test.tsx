@@ -55,10 +55,10 @@ describe('JourneyRiskPanel', () => {
     expect(mocks.api.getTestArchiveJourneys).toHaveBeenCalledWith('run-1', {}, expect.objectContaining({ signal: expect.any(AbortSignal) }))
     const text = container.textContent || ''
     expect(text).toContain("Checkout journeys revision 2 (the run's pinned policy)")
-    expect(text).toContain('Weighted failure index: 20.0%')
+    expect(text).toContain('Weighted failure index: 20.00%')
     expect(text).toContain('Step risk index: Unscored: no weighted journey recorded a step.')
     const cells = Array.from(container.querySelectorAll('tbody td')).map(cell => cell.textContent)
-    expect(cells).toEqual(['Purchase', '3', '2', '1', '2', '1', '1', '20.0%', '2 of 13'])
+    expect(cells).toEqual(['Purchase', '3', '2', '1', '2', '1', '1', '20.00%', '2 of 13'])
     expect(text).toContain('Purchase: failed — group web, VUser 1, iteration 2, first failed step pay')
     expect(text).toContain('never revenue or conversion impact')
   })
@@ -181,7 +181,7 @@ describe('JourneyRiskPanel', () => {
 
   it('formats fractions and reasons', () => {
     expect(formatJourneyFraction(undefined)).toBe('—')
-    expect(formatJourneyFraction(0.25)).toBe('25.0%')
+    expect(formatJourneyFraction(0.25)).toBe('25.00%')
     expect(journeyUnavailableText('no_journey_policy')).toContain('pinned no journey policy')
     expect(journeyUnavailableText('other')).toContain('(other)')
     expect(journeyUnscoredText('accounting_incomplete')).toContain('incomplete')

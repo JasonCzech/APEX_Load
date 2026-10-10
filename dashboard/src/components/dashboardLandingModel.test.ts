@@ -86,9 +86,24 @@ describe('dashboard root-cause attention', () => {
     // Without root cause presented, a suspect run still opens the run.
     expect(byId['rca-suspect:shaky']).toMatchObject({ tone: 'warning', testId: 'shaky' })
     expect(byId['rca-suspect:shaky'].destination).toBeUndefined()
-    expect(byId['rca-cause:found:a-1']).toMatchObject({ tone: 'info', title: 'Found: Pool exhaustion', destination: 'root-cause', rootCause: { analysis: 'a-1', hypothesis: 'h-1' } })
-    expect(byId['rca-cause:found:a-1'].detail).toContain('high confidence')
+    // The same words as the report and Results: rank, title and confidence.
+    expect(byId['rca-cause:found:a-1']).toMatchObject({ tone: 'info', title: 'Found root cause: #1 Pool exhaustion (high confidence)', destination: 'root-cause', rootCause: { analysis: 'a-1', hypothesis: 'h-1' } })
+    expect(byId['rca-cause:found:a-1'].detail).toBe('Leading root-cause hypothesis for Checkout · p95 latency')
     expect(items.some(item => item.id.startsWith('rca-cause:broken'))).toBe(false)
+  })
+
+  it("flags the release's latest archived run when it regressed, unless its acceptance already failed", () => {
+    const trend = { release_id: 'r-1', run_count: 2, has_baseline: true, regressed: true, regressions: ['error rate regressed'], baseline: { run_name: 'Baseline run' } }
+    const archive = { archive: { transaction_count: 10 } as TestSummary['archive'] }
+    const regressed = { ...report('Not assessed'), release_trend: trend } as unknown as RunArchiveReport
+    // completed is newest first; an older regression is history.
+    const items = buildDashboardAttention([], [], [run('worse', { name: 'Worse', ...archive }), run('older', { name: 'Older', ...archive })], { worse: regressed, older: regressed })
+    expect(items.find(item => item.id === 'release-regression:worse')).toMatchObject({ tone: 'warning', title: 'Worse regressed', detail: 'Against Baseline run: error rate regressed', testId: 'worse' })
+    expect(items.some(item => item.id === 'release-regression:older')).toBe(false)
+    const failed = { ...report('Fail', false, true), release_trend: trend } as unknown as RunArchiveReport
+    expect(buildDashboardAttention([], [], [run('failed', archive)], { failed }).some(item => item.id.startsWith('release-regression:'))).toBe(false)
+    const steady = { ...report('Not assessed'), release_trend: { ...trend, regressed: false, regressions: [] } } as unknown as RunArchiveReport
+    expect(buildDashboardAttention([], [], [run('steady', archive), run('older', archive)], { steady, older: regressed }).some(item => item.id.startsWith('release-regression:'))).toBe(false)
   })
 
   it('says nothing about valid runs or projects that do not present root cause', () => {

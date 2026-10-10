@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
 
 import type { RunArchiveSLARow, TransactionEvent } from '../../types'
-import { formatMs, formatNumber, formatPct } from './runReportModel'
+import { formatMs, formatMsValue, formatNumber, formatPct } from './runReportModel'
 import { MISSING_VALUE } from './reportPresentation'
 import { formatDateTime } from '../../utils/dateTime'
 
@@ -72,15 +72,16 @@ function ScoreboardRow({ row, selected, onSelect }: { row: RunArchiveSLARow; sel
     <tr className={selected ? 'selected' : ''} onClick={() => onSelect?.(row.name)}>
       <td>{row.name}</td>
       <td>{formatNumber(row.volume, 0)}</td>
-      <td>{formatMs(row.min_ms)}</td>
-      <td>{formatMs(row.p50_ms)}</td>
-      <td>{formatMs(row.p90_ms)}</td>
-      <td>{formatMs(row.p95_ms)}</td>
-      <td>{formatMs(row.p99_ms)}</td>
-      <td>{formatMs(row.max_ms)}</td>
-      <td>{row.has_sla ? formatMs(row.sla_ms) : MISSING_VALUE}</td>
+      <td>{formatMsValue(row.min_ms)}</td>
+      <td>{formatMsValue(row.p50_ms)}</td>
+      <td>{formatMsValue(row.p90_ms)}</td>
+      <td>{formatMsValue(row.p95_ms)}</td>
+      <td>{formatMsValue(row.p99_ms)}</td>
+      <td>{formatMsValue(row.max_ms)}</td>
+      <td>{row.has_sla ? formatMsValue(row.sla_ms) : MISSING_VALUE}</td>
       <td>{formatPct(row.error_pct)}</td>
-      <td><span className={`run-report-sla-pill run-report-sla-${row.result_kind}`}>{resultLabel(row.result_kind)}</span></td>
+      {/* Only a judged result is a status pill; no SLA is plain text, as in the SLA column. */}
+      <td>{row.result_kind === 'na' ? <span title="No SLA">{MISSING_VALUE}</span> : <span className={`run-report-sla-pill run-report-sla-${row.result_kind}`}>{resultLabel(row.result_kind)}</span>}</td>
     </tr>
   )
 }
@@ -130,13 +131,13 @@ export default function TransactionSlaScoreboard({
     setSortDir(key === 'name' ? 'asc' : 'desc')
   }
 
-  if (rows.length === 0) return <section className="run-report-panel"><h2>Transaction SLA Scoreboard</h2><p>No named transaction samples are available for an SLA scorecard. Request / action evidence remains available below.</p></section>
+  if (rows.length === 0) return <section className="run-report-panel"><h2>Transaction SLA scoreboard</h2><p>No named transaction samples are available for an SLA scorecard. Request / action evidence remains available below.</p></section>
 
   return (
     <section className="run-report-panel run-report-scoreboard">
       <div className="run-report-section-heading">
         <div>
-          <h2>Transaction SLA Scoreboard</h2>
+          <h2>Transaction SLA scoreboard</h2>
           <p>{filteredRows.length} of {rows.length} transactions shown</p>
         </div>
         <div className="run-report-table-controls">
@@ -151,15 +152,15 @@ export default function TransactionSlaScoreboard({
           <thead>
             <tr>
               <SortableTh label="Transaction" sortKey="name" activeKey={sortKey} direction={sortDir} onSort={sort} />
-              <SortableTh label="Volume" sortKey="volume" activeKey={sortKey} direction={sortDir} onSort={sort} />
-              <th>Min</th>
-              <SortableTh label="P50" sortKey="p50" activeKey={sortKey} direction={sortDir} onSort={sort} />
-              <SortableTh label="P90" sortKey="p90" activeKey={sortKey} direction={sortDir} onSort={sort} />
-              <SortableTh label="P95" sortKey="p95" activeKey={sortKey} direction={sortDir} onSort={sort} />
-              <SortableTh label="P99" sortKey="p99" activeKey={sortKey} direction={sortDir} onSort={sort} />
-              <th>Max</th>
-              <th>SLA</th>
-              <SortableTh label="Errors" sortKey="error" activeKey={sortKey} direction={sortDir} onSort={sort} />
+              <SortableTh label="Count" sortKey="volume" activeKey={sortKey} direction={sortDir} onSort={sort} />
+              <th>Min (ms)</th>
+              <SortableTh label="P50 (ms)" sortKey="p50" activeKey={sortKey} direction={sortDir} onSort={sort} />
+              <SortableTh label="P90 (ms)" sortKey="p90" activeKey={sortKey} direction={sortDir} onSort={sort} />
+              <SortableTh label="P95 (ms)" sortKey="p95" activeKey={sortKey} direction={sortDir} onSort={sort} />
+              <SortableTh label="P99 (ms)" sortKey="p99" activeKey={sortKey} direction={sortDir} onSort={sort} />
+              <th>Max (ms)</th>
+              <th>SLA (ms)</th>
+              <SortableTh label="Error rate" sortKey="error" activeKey={sortKey} direction={sortDir} onSort={sort} />
               <SortableTh label="Result" sortKey="result" activeKey={sortKey} direction={sortDir} onSort={sort} />
             </tr>
           </thead>
@@ -185,8 +186,8 @@ export default function TransactionSlaScoreboard({
             {filteredRows.map(row => (
               <tr key={row.name}>
                 <td>{row.name}</td>
-                <td>{row.volume}</td>
-                <td>{row.result_kind}</td>
+                <td>{formatNumber(row.volume, 0)}</td>
+                <td>{row.result_kind === 'na' ? 'No SLA' : resultLabel(row.result_kind)}</td>
               </tr>
             ))}
           </tbody>

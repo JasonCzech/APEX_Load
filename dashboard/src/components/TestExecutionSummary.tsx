@@ -7,6 +7,7 @@ import { websocketSummaryLines } from '../utils/websocketDiagnostics'
 
 import { GoalConfig, LiveDependencyMap, LiveErrorPattern, MetricsHistoryPoint, RunComparisonBaseline, TransactionResponseTimeSLAResult, TxMetrics } from '../types'
 import TransactionResponseTimeSLATable from './TransactionResponseTimeSLATable'
+import { formatDateTime } from '../utils/dateTime'
 
 interface MetricsSummary {
  properties?: Record<string, TxMetrics>
@@ -124,7 +125,7 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
             </div>
             {baseline?.completed_at && (
               <div className="server-telemetry-baseline-badge">
-                Prev run {new Date(baseline.completed_at).toLocaleString()}
+                Prev run {formatDateTime(baseline.completed_at, { seconds: true })}
               </div>
             )}
           </div>
@@ -325,7 +326,7 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
 
       {errorPatterns.length > 0 && (
         <div className="tx-section">
-          <h3 className="chart-title">Live Error Patterns</h3>
+          <h3 className="chart-title">Live Error patterns</h3>
           <p className="server-telemetry-subtitle">Recurring live failures grouped by normalized signature, with first and latest sightings for quick triage.</p>
           <div className="error-pattern-grid">
             {errorPatterns.map((pattern) => (

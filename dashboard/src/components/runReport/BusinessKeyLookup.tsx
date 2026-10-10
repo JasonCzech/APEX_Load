@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { request } from '../../hooks/apiClient'
 import type { MonitorSource } from '../../types/runMonitoring'
 import type { BusinessKeyLookupResponse, BusinessKeyMapping, BusinessKeyMappingDefinition } from '../../types/businessKeys'
+import type { ProjectAnalysisSettingsResponse } from '../../types/rca'
 import { getErrorMessage } from '../../utils/errorUtils'
 import { parseBusinessKeyValues } from './businessKeyModel'
 import { formatMs } from './runReportModel'
@@ -112,7 +113,27 @@ export default function BusinessKeyLookup({ testId, projectId, canLookup, canApp
   const [error, setError] = useState('')
   const [reload, setReload] = useState(0)
 
+  // The project's gates say whether business keys are on, so a project
+  // without them is not asked for mappings it refuses; the mappings' own
+  // refusal still covers a gate that could not be read. The gate is read once
+  // per project, not again after each mapping change.
+  // The gate is kept with the project it was read for, so a project switch
+  // never acts on the previous project's answer.
+  const [gateRead, setGateRead] = useState<{ projectId: string; enabled: boolean } | null>(null)
+  const gate = gateRead?.projectId === projectId ? gateRead.enabled : null
   useEffect(() => {
+    let cancelled = false
+    request<ProjectAnalysisSettingsResponse>(`/projects/${encodeURIComponent(projectId)}/analysis-settings`)
+      .then(settings => { if (!cancelled) setGateRead({ projectId, enabled: settings?.effective?.business_keys?.enabled !== false }) }, () => { if (!cancelled) setGateRead({ projectId, enabled: true }) })
+    return () => { cancelled = true }
+  }, [projectId])
+
+  useEffect(() => {
+    if (gate === null) return undefined
+    if (!gate) {
+      setEnabled(false)
+      return undefined
+    }
     let cancelled = false
     setLoadError('')
     request<BusinessKeyMappingDefinition[]>(mappingsPath(projectId))
@@ -130,7 +151,7 @@ export default function BusinessKeyLookup({ testId, projectId, canLookup, canApp
         else setLoadError(getErrorMessage(err, 'Unable to load business key mappings'))
       })
     return () => { cancelled = true }
-  }, [projectId, reload])
+  }, [gate, projectId, reload])
 
   // Another run never sees this run's values or results.
   useEffect(() => { setText(''); setSent([]); setResult(null); setError('') }, [testId])
@@ -155,8 +176,8 @@ export default function BusinessKeyLookup({ testId, projectId, canLookup, canApp
   // Someone who could use it learns the capability exists; others see nothing.
   if (!enabled) return canLookup
     ? <p className="run-report-muted" role="note">Business key lookup is not enabled for this project. {settingsHref
-      ? <>Turn it on in <a href={settingsHref}>Settings › Project › Analysis</a>.</>
-      : 'A project administrator turns it on in Settings › Project › Analysis.'}</p>
+      ? <>Turn it on in <a href={settingsHref}>Settings › Workspaces › Project analysis</a>.</>
+      : 'A project administrator turns it on in Settings › Workspaces › Project analysis.'}</p>
     : null
   return (
     <section className="run-report-panel business-key-lookup" aria-label="Business key lookup">

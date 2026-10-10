@@ -10,6 +10,10 @@ interface Props<T> {
   definitionId: string
   title: string
   description: string
+  // exportDescription is written into a downloaded SVG in place of
+  // description, for provenance (selection, filters) that a screen reader
+  // should not have to hear.
+  exportDescription?: string
   rows: readonly T[]
   columns: readonly ChartExportColumn<T>[]
   note?: string
@@ -21,7 +25,7 @@ function safeChartFilename(title: string, definitionId: string): string {
   return source.replace(/[^a-z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, '') || 'apexload-chart'
 }
 
-export default function ExportableChart<T>({ definitionId, title, description, rows, columns, note, children, allowSVG = true, hideCaption = false }: Props<T>) {
+export default function ExportableChart<T>({ definitionId, title, description, exportDescription, rows, columns, note, children, allowSVG = true, hideCaption = false }: Props<T>) {
   const chartRef = useRef<HTMLDivElement>(null)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
@@ -48,7 +52,7 @@ export default function ExportableChart<T>({ definitionId, title, description, r
     setBusy('svg')
     setError('')
     try {
-      await downloadBlob(new Blob([buildChartSVG(svg, title, description)], { type: 'image/svg+xml;charset=utf-8' }), `${filename}.svg`)
+      await downloadBlob(new Blob([buildChartSVG(svg, title, exportDescription ?? description)], { type: 'image/svg+xml;charset=utf-8' }), `${filename}.svg`)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to export chart SVG')
     } finally {

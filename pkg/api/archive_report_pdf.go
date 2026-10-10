@@ -40,7 +40,7 @@ func writeRunArchiveReportPDFWithProfileAndAnnotations(report *RunArchiveReport,
 	}
 	lines := buildRunArchiveReportPDFLines(report, profile, annotations, manifest)
 	headings := buildDOCXSectionHeadings(report, profile, annotations, manifest)
-	headings["Review Summary"] = struct{}{}
+	headings["Review summary"] = struct{}{}
 	var charts []reportDocumentChart
 	if _, hasGraphs := reportSectionSet(profile.IncludedSections)["graphs"]; hasGraphs {
 		var err error
@@ -79,7 +79,7 @@ func buildRunArchiveReportPDFLines(report *RunArchiveReport, profile RunArchiveR
 	lines := []string{
 		title,
 		"Profile: " + profile.Label,
-		"Generated: " + time.Now().UTC().Format(time.RFC3339),
+		"Generated: " + formatReportDateTime(time.Now()),
 	}
 	if preparedBy := strings.TrimSpace(data.Annotations.PreparedBy); preparedBy != "" {
 		lines = append(lines, "Prepared by: "+preparedBy)
@@ -89,13 +89,13 @@ func buildRunArchiveReportPDFLines(report *RunArchiveReport, profile RunArchiveR
 	if report.Manifest != nil {
 		lines = append(lines,
 			"Run: "+reportRunName(report),
-			"Completed: "+formatPDFTime(report.Manifest.CompletedAt),
+			"Completed: "+formatPDFDisplayTime(report.Manifest.CompletedAt),
 			"",
 		)
 	}
 
 	lines = append(lines,
-		"Review Summary",
+		"Review summary",
 		"Outcome: "+data.Verdict.Status,
 		data.Verdict.Explanation,
 		"Environment: "+reportEnvironment(report),
@@ -125,8 +125,12 @@ func buildRunArchiveReportPDFLines(report *RunArchiveReport, profile RunArchiveR
 		}
 	}
 	lines = append(lines, "")
-	for _, section := range reportSectionsForProfile(profile) {
+	sections, notCaptured := reportApplicableSections(profile, &data)
+	for _, section := range sections {
 		section.PDF(&data, &lines)
+	}
+	if len(notCaptured) > 0 {
+		lines = append(lines, "Not captured for this run: "+strings.Join(notCaptured, ", ")+".", "")
 	}
 
 	return lines
@@ -147,21 +151,21 @@ func appendReleaseTrendPDFLines(lines *[]string, trend *RunArchiveReleaseTrendSu
 	if trend == nil {
 		return
 	}
-	*lines = append(*lines, "Release Trend")
+	*lines = append(*lines, reportSectionTitle("release_trend"))
 	label := "Unknown (legacy archive records)"
 	if trend.Current.MetricPopulation == "transaction" {
 		label = "Named transaction attempts"
 	}
 	*lines = append(*lines, "Metric population: "+label)
-	*lines = append(*lines, fmt.Sprintf("Release: %s (%d archived run(s))", firstNonEmptyPDFValue(firstNonEmptyReportText(trend.ReleaseName, trend.ReleaseID)), trend.RunCount))
+	*lines = append(*lines, fmt.Sprintf("Release: %s (%s)", firstNonEmptyPDFValue(firstNonEmptyReportText(trend.ReleaseName, trend.ReleaseID)), reportCountNoun(int64(trend.RunCount), "archived run", "archived runs")))
 	if trend.HasBaseline && trend.Baseline != nil && trend.Deltas != nil {
 		baseline := trend.Baseline
 		*lines = append(*lines,
-			fmt.Sprintf("Baseline (prior run): %s, completed %s", firstNonEmptyPDFValue(baseline.RunName, baseline.RunID), formatPDFTime(baseline.CompletedAt)),
-			fmt.Sprintf("Error rate: %s -> %s (%+.2f pp)", formatReportPercentage(baseline.ErrorPct), formatReportPercentage(trend.Current.ErrorPct), trend.Deltas.ErrorPctDelta),
-			fmt.Sprintf("Avg response: %.1f ms -> %.1f ms (%+.1f ms / %+.1f%%)", baseline.AvgResponseMs, trend.Current.AvgResponseMs, trend.Deltas.AvgResponseMsDelta, trend.Deltas.AvgResponsePctDelta),
+			fmt.Sprintf("Baseline (prior run): %s, completed %s", firstNonEmptyPDFValue(baseline.RunName, baseline.RunID), formatPDFDisplayTime(baseline.CompletedAt)),
+			fmt.Sprintf("Error rate: %s -> %s (%+.2f pts)", formatReportPercentage(baseline.ErrorPct), formatReportPercentage(trend.Current.ErrorPct), trend.Deltas.ErrorPctDelta),
+			fmt.Sprintf("Avg latency: %s -> %s (%+.1f ms / %+.1f%%)", formatReportMs(baseline.AvgResponseMs), formatReportMs(trend.Current.AvgResponseMs), trend.Deltas.AvgResponseMsDelta, trend.Deltas.AvgResponsePctDelta),
 			fmt.Sprintf("Peak TPS: %.1f -> %.1f (%+.1f)", baseline.PeakTPS, trend.Current.PeakTPS, trend.Deltas.PeakTPSDelta),
-			fmt.Sprintf("Completeness: %.0f%% -> %.0f%% (%+.1f pts)", baseline.CompletenessPct, trend.Current.CompletenessPct, trend.Deltas.CompletenessDelta),
+			fmt.Sprintf("Evidence coverage: %.0f%% -> %.0f%% (%+.1f pts)", baseline.CompletenessPct, trend.Current.CompletenessPct, trend.Deltas.CompletenessDelta),
 		)
 		if trend.Regressed {
 			*lines = append(*lines, "Regressions vs prior run: "+strings.Join(trend.Regressions, "; "))
@@ -605,11 +609,22 @@ func formatPDFInt(value int64) string {
 	return strconv.FormatInt(value, 10)
 }
 
+// formatPDFTime is a moment in RFC 3339 for the CSV, which stays machine
+// readable; PDF lines use formatPDFDisplayTime.
 func formatPDFTime(value time.Time) string {
 	if value.IsZero() {
 		return "n/a"
 	}
 	return value.UTC().Format(time.RFC3339)
+}
+
+// formatPDFDisplayTime states a moment in a PDF line as the other report
+// formats do.
+func formatPDFDisplayTime(value time.Time) string {
+	if value.IsZero() {
+		return "Not recorded"
+	}
+	return formatReportDateTime(value)
 }
 
 func firstNonEmptyPDFValue(values ...string) string {

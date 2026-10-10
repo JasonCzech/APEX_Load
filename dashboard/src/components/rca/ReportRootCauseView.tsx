@@ -25,7 +25,7 @@ export default function ReportRootCauseView({ view, limit }: { view: ReportRootC
           </li>
         ))}
       </ol>}
-      {view.hypotheses.length > shown.length && <p className="report-hint">{view.hypotheses.length - shown.length} more ranked in the Detailed Technical report.</p>}
+      {view.hypotheses.length > shown.length && <p className="report-hint">{view.hypotheses.length - shown.length} more ranked in the Engineer report.</p>}
       {view.browser_baseline && <div className="report-browser-baseline">
         <p>{view.browser_baseline.summary}</p>
         {view.browser_baseline.findings?.length ? <ul className="report-list">{view.browser_baseline.findings.map((finding, i) => <li key={i}>{finding}</li>)}</ul> : null}

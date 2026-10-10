@@ -157,7 +157,7 @@
   color: var(--text-muted);
 }
 
-/* Active Tests Grid */
+/* Active tests Grid */
 .dash-active-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
@@ -1434,7 +1434,7 @@
   border-color: var(--text-muted);
 }
 
-/* Release Trend Analysis panel */
+/* Release trend analysis panel */
 .dash-release-trend-analysis {
   background: var(--bg-card);
   border: 1px solid var(--border);

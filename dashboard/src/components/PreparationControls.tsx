@@ -2,6 +2,7 @@ import RuntimeResourceReservations from './RuntimeResourceReservations'
 import { useEffect, useRef, useState } from 'react'
 import { request } from '../hooks/apiClient'
 import type { AnalysisCapabilities, Preparation, PreparationCapacityPolicy } from '../types/analysis'
+import { formatDateTime } from '../utils/dateTime'
 
 export default function PreparationControls({ testId, projectId, status, canEdit = false }: { testId: string; projectId?: string; status: string; canEdit?: boolean }) {
   const [capacity, setCapacity] = useState<PreparationCapacityPolicy>({ selection: 'existing', spot: 'off' })
@@ -42,7 +43,7 @@ export default function PreparationControls({ testId, projectId, status, canEdit
   return <section className="tx-section" aria-label="Run preparation">
     <h3>Prepare run</h3>
     <p>Stage assets and reserve capacity before sending target traffic. Readiness expires after 30 minutes.</p>
-    {preparation && preparation.state !== 'none' && <p role="status">{preparation.state}{preparation.expires_at ? ` · Expires ${new Date(preparation.expires_at).toLocaleString()}` : ''}</p>}
+    {preparation && preparation.state !== 'none' && <p role="status">{preparation.state}{preparation.expires_at ? ` · Expires ${formatDateTime(preparation.expires_at, { seconds: true })}` : ''}</p>}
     {canEdit && ['QUEUED', 'PENDING'].includes(status) && !['preparing', 'ready'].includes(preparation?.state ?? '') && <fieldset disabled={busy}>
       <legend>Preparation capacity</legend>
       <label>Capacity<select aria-label="Capacity" value={capacity.selection} onChange={e => setCapacity({ selection: e.target.value as 'existing' | 'ephemeral', spot: 'off' })}><option value="existing">Reserve existing generators</option><option value="ephemeral">Provision ephemeral generators</option></select></label>

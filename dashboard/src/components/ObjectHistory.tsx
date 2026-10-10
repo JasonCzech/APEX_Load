@@ -5,6 +5,7 @@ import { getErrorMessage } from '../utils/errorUtils'
 import './ObjectActivity.css'
 import Notice from './ux/Notice'
 import { activityActionLabel } from './objectActivityModel'
+import { formatDateTime } from '../utils/dateTime'
 
 export function ActivityAttribution({ activity }: { activity?: ObjectActivitySummary }) {
   const actor = (event?: ObjectActivityEvent) => event?.actor_display_name || event?.actor_subject || 'Unknown'
@@ -28,7 +29,7 @@ export function ActivityTable({ events }: { events: ObjectActivityEvent[] }) {
   return <div className="object-activity-table"><table data-table-pagination="off"><caption className="sr-only">Object activity history</caption><thead><tr>{['Time', 'Actor', 'Action', 'Object', 'Outcome', 'Changes'].map(value => <th key={value} scope="col">{value}</th>)}</tr></thead><tbody>{events.map(event => {
     const scope = `projectId=${encodeURIComponent(event.project_id)}`
     const link = event.resource_type === 'script' ? `#/scripts?mode=edit&scriptId=${encodeURIComponent(event.resource_id)}&${scope}` : event.resource_type === 'test' ? `#/test/${encodeURIComponent(event.resource_id)}?${scope}` : event.resource_type === 'scenario' ? `#/new-test?scenarioId=${encodeURIComponent(event.resource_id)}&${scope}` : `#/results?${scope}`
-    return <tr key={event.id}><td><time dateTime={event.created_at}>{new Date(event.created_at).toLocaleString()}</time></td><td>{event.actor_display_name || event.actor_subject || 'Unknown'}<small>{event.actor_type}{event.initiated_by ? ` · Initiated by ${event.initiated_by}` : ''}</small></td><td>{activityActionLabel(event.action)}</td><td>{event.deleted ? <span>{event.resource_name || event.resource_id} (deleted)</span> : <a href={link}>{event.resource_name || event.resource_id}</a>}<small>{event.resource_type} · {event.resource_id}</small></td><td>{event.status}</td><td>{event.changed_fields?.join(', ') || '—'}</td></tr>
+    return <tr key={event.id}><td><time dateTime={event.created_at}>{formatDateTime(event.created_at, { seconds: true })}</time></td><td>{event.actor_display_name || event.actor_subject || 'Unknown'}<small>{event.actor_type}{event.initiated_by ? ` · Initiated by ${event.initiated_by}` : ''}</small></td><td>{activityActionLabel(event.action)}</td><td>{event.deleted ? <span>{event.resource_name || event.resource_id} (deleted)</span> : <a href={link}>{event.resource_name || event.resource_id}</a>}<small>{event.resource_type} · {event.resource_id}</small></td><td>{event.status}</td><td>{event.changed_fields?.join(', ') || '—'}</td></tr>
   })}</tbody></table>{!events.length && <p>No retained activity found. Historical attribution may be unknown.</p>}</div>
 }
 

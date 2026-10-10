@@ -200,7 +200,7 @@ test('analysis preserves evidence gaps, saved baselines, filtered deltas and rep
   )
   await page.goto(`/#/dashboard?${scopeQuery(workspace)}`)
   await page.reload()
-  await page.getByRole('tab', { name: /^Load Comparison/ }).click()
+  await page.getByRole('tab', { name: /^Load comparison/ }).click()
   const panel = page.getByTestId('load-comparison-panel')
   await expect(
     panel.getByRole('region', { name: 'Load comparison data' }),
@@ -237,7 +237,7 @@ test('analysis preserves evidence gaps, saved baselines, filtered deltas and rep
     path: testInfo.outputPath('load-comparison-desktop.png'),
     fullPage: true,
   })
-  await page.getByRole('tab', { name: /^Release Trend Analysis/ }).click()
+  await page.getByRole('tab', { name: /^Release trend analysis/ }).click()
   await page
     .getByRole('combobox', { name: 'Transaction', exact: true })
     .selectOption('Checkout')

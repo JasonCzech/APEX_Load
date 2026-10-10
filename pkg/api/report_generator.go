@@ -93,11 +93,17 @@ var profileHTMLFuncMap = template.FuncMap{
 	"reportRunName":            reportRunName,
 	"identityName":             identityName,
 	"reportEnvironment":        reportEnvironment,
-	"populationRate":           reportPopulationRate,
-	"headline":                 reportHeadline,
-	"fms":                      formatReportMs,
-	"executionLabel":           reportExecutionLabel,
-	"elapsedDuration":          reportElapsedDuration,
+	"reportScripts":            reportScriptLabels,
+	"populationRate": func(rate *float64) string {
+		if rate == nil {
+			return "Unknown"
+		}
+		return fmt.Sprintf("%.1f", *rate)
+	},
+	"headline":        reportHeadline,
+	"fms":             formatReportMs,
+	"executionLabel":  reportExecutionLabel,
+	"elapsedDuration": reportElapsedDuration,
 	"formatTime": func(value any) string {
 		var t time.Time
 		switch typed := value.(type) {
@@ -108,12 +114,12 @@ var profileHTMLFuncMap = template.FuncMap{
 				t = *typed
 			}
 		default:
-			return "n/a"
+			return "Not recorded"
 		}
 		if t.IsZero() {
-			return "n/a"
+			return "Not recorded"
 		}
-		return t.UTC().Format(time.RFC3339)
+		return formatReportDateTime(t)
 	},
 	"formatFloat": func(value float64) string {
 		return fmt.Sprintf("%.1f", value)
@@ -136,10 +142,29 @@ var profileHTMLFuncMap = template.FuncMap{
 	"http3PreflightRows":    reportHTTP3PreflightRows,
 	"http3PreflightSummary": reportHTTP3PreflightSummary,
 	"f0": func(value float64) string {
-		return fmt.Sprintf("%.0f", value)
+		return groupThousands(fmt.Sprintf("%.0f", value))
 	},
-	"hint": func(value int64) string {
-		return formatPDFInt(value)
+	"hint": func(value any) string {
+		switch typed := value.(type) {
+		case int:
+			return formatReportCount(int64(typed))
+		case int32:
+			return formatReportCount(int64(typed))
+		case int64:
+			return formatReportCount(typed)
+		case uint64:
+			return groupThousands(strconv.FormatUint(typed, 10))
+		case float64:
+			return groupThousands(fmt.Sprintf("%.0f", typed))
+		}
+		return fmt.Sprint(value)
+	},
+	"clock":     formatReportClock,
+	"clockTime": formatChartClock,
+	// msValue is a millisecond value for a column whose header carries the
+	// unit: one decimal below 100 ms, whole and grouped from there.
+	"msValue": func(value float64) string {
+		return strings.TrimSuffix(formatReportMs(value), " ms")
 	},
 	"join": func(values []string) string {
 		return strings.Join(values, ", ")
@@ -152,9 +177,12 @@ var profileHTMLFuncMap = template.FuncMap{
 	"signedPct": func(value float64) string {
 		return fmt.Sprintf("%+.2f%%", value)
 	},
-	"rootCauseSource":  reportRootCauseSourceLabel,
-	"rootCauseOutcome": rcaHumanize,
-	"sub":              func(a, b int) int { return a - b },
+	"rootCauseSource":    reportRootCauseSourceLabel,
+	"sectionTitle":       reportSectionTitle,
+	"telemetryExclusion": telemetryExclusionText,
+	"telemetryLabel":     telemetryReportLabel,
+	"rootCauseOutcome":   rcaHumanize,
+	"sub":                func(a, b int) int { return a - b },
 	"sevPill": func(severity string) string {
 		if strings.EqualFold(severity, "major") {
 			return "warn"
@@ -206,7 +234,7 @@ func renderRunArchiveHTMLReportWithAnnotations(report *RunArchiveReport, profile
 	data := buildRunArchiveReportRenderData(report, profile, annotations, manifest)
 	data.Charts = buildReportCharts(report)
 
-	sections := reportSectionsForProfile(profile)
+	sections, notCaptured := reportApplicableSections(profile, &data)
 	rendered := make([]renderedReportSection, 0, len(sections))
 	for _, section := range sections {
 		body, err := section.HTML(&data)
@@ -217,7 +245,7 @@ func renderRunArchiveHTMLReportWithAnnotations(report *RunArchiveReport, profile
 	}
 
 	var buf bytes.Buffer
-	if err := runArchiveReportShellTemplate.Execute(&buf, reportShellData{Data: &data, Sections: rendered}); err != nil {
+	if err := runArchiveReportShellTemplate.Execute(&buf, reportShellData{Data: &data, Sections: rendered, NotCaptured: notCaptured}); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -409,8 +437,9 @@ func manifestInventoryRows(manifest *TestRunManifest, limit int) ([]GeneratorInv
 }
 
 var (
-	reportLogoOnce sync.Once
-	reportLogoURI  template.URL
+	reportLogoOnce  sync.Once
+	reportLogoURI   template.URL
+	reportLogoBytes []byte
 )
 
 // reportLogoDataURI returns the APEX Load logo as a base64 data URI so reports
@@ -418,14 +447,24 @@ var (
 // asset cannot be read. Wrapped as template.URL so html/template emits the
 // data: URI without rewriting it to a safe placeholder.
 func reportLogoDataURI() template.URL {
-	reportLogoOnce.Do(func() {
-		data, err := StaticFS.ReadFile("static/apex-load-logo.png")
-		if err != nil {
-			return
-		}
-		reportLogoURI = template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(data))
-	})
+	reportLogoOnce.Do(loadReportLogo)
 	return reportLogoURI
+}
+
+// reportLogoPNG is the APEX Load mark the reports embed (nil when the static
+// bundle has none).
+func reportLogoPNG() []byte {
+	reportLogoOnce.Do(loadReportLogo)
+	return reportLogoBytes
+}
+
+func loadReportLogo() {
+	data, err := StaticFS.ReadFile("static/apex-load-logo.png")
+	if err != nil {
+		return
+	}
+	reportLogoBytes = data
+	reportLogoURI = template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(data))
 }
 
 func buildHTMLCountRows(source map[string]int64) []runArchiveHTMLCountRow {
@@ -529,6 +568,57 @@ func reportEnvironment(report *RunArchiveReport) string {
 		return strings.TrimSpace(report.ChangeAttribution.Environment)
 	}
 	return "Not recorded"
+}
+
+// reportScriptLabels names the run's scripts for the change-attribution
+// section: each archived script ID as its group's script name with the ID's
+// first eight characters, so a reader recognizes the script and can still
+// match it; an ID no group names stays as recorded. The CSV keeps the IDs.
+func reportScriptLabels(report *RunArchiveReport) string {
+	if report == nil || len(report.ChangeAttribution.ScriptRevisions) == 0 {
+		return "Not recorded"
+	}
+	names := map[string]string{}
+	if report.Manifest != nil {
+		for _, group := range report.Manifest.Provenance.Groups {
+			if id, name := strings.TrimSpace(group.ScriptID), strings.TrimSpace(group.ScriptName); id != "" && name != "" {
+				names[id] = name
+			}
+		}
+	}
+	labels := make([]string, 0, len(report.ChangeAttribution.ScriptRevisions))
+	for _, id := range report.ChangeAttribution.ScriptRevisions {
+		if name, ok := names[id]; ok {
+			short := id
+			if len(short) > 8 {
+				short = short[:8]
+			}
+			labels = append(labels, name+" ("+short+")")
+			continue
+		}
+		labels = append(labels, id)
+	}
+	return strings.Join(labels, ", ")
+}
+
+// formatReportDateTime is how a report states a moment: readable, to the
+// second, and always in UTC so every reader sees the same time.
+func formatReportDateTime(t time.Time) string {
+	return t.UTC().Format("Jan 2, 2006, 3:04:05 PM") + " UTC"
+}
+
+// formatReportClock is a time of day within the run, labelled UTC.
+func formatReportClock(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return formatChartClock(t) + " UTC"
+}
+
+// formatReportCount groups a count's thousands for readers ("7,970"); CSV
+// and machine fields keep formatPDFInt.
+func formatReportCount(value int64) string {
+	return groupThousands(strconv.FormatInt(value, 10))
 }
 
 func formatReportPercentage(value float64) string {

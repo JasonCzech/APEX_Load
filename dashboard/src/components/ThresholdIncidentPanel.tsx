@@ -4,6 +4,7 @@ import { settingsHref } from './settingsNavigation'
 import { thresholdAlertMetricLabel } from '../thresholdAlerts'
 
 import { incidentHealth, type Incident, type IncidentResponse, type IncidentHealth } from './thresholdIncidentModel'
+import { formatDateTime } from '../utils/dateTime'
 
 export default function ThresholdIncidentPanel({ projectId, canManage, onSelectTest, onHealth }: { projectId?: string; canManage: boolean; onSelectTest?: (id: string) => void; onHealth: (health: IncidentHealth) => void }) {
  const [data, setData] = useState<IncidentResponse | null>(null)
@@ -60,7 +61,7 @@ export default function ThresholdIncidentPanel({ projectId, canManage, onSelectT
  return <div className="monitor-body">
   <strong role="status">{projectId ? health.label : 'Select a project'}</strong>
   <p className="monitor-status-note">{health.summary}</p>
-  {data && <p className="monitor-status-note">{data.global_policy_count} global policies enabled · Last evaluation: {data.last_evaluated_at ? new Date(data.last_evaluated_at).toLocaleString() : 'None received'}. History is shared across operators and retained across reloads.</p>}
+  {data && <p className="monitor-status-note">{data.global_policy_count} global policies enabled · Last evaluation: {data.last_evaluated_at ? formatDateTime(data.last_evaluated_at, { seconds: true }) : 'None received'}. History is shared across operators and retained across reloads.</p>}
   {error && <p role="alert">{error} Previously loaded incidents may be stale.</p>}
   {ackError && <p role="alert">{ackError}</p>}
   <div className="monitor-workflow-actions">
@@ -78,8 +79,8 @@ export default function ThresholdIncidentPanel({ projectId, canManage, onSelectT
    <div className="monitor-alert-history">{data?.incidents.map(incident => <article key={incident.id}>
     <strong>{incident.test_name || incident.test_id} · {thresholdAlertMetricLabel(incident.payload.metric || '')}</strong>
     <p>{incident.severity} · {incident.active ? 'Active breach' : 'Resolved'}{incident.payload.action === 'stop_requested' ? ' · Auto-stop requested' : ''} · {incident.payload.value} / threshold {incident.payload.threshold}{incident.payload.transaction ? ` · ${incident.payload.transaction}` : ''}</p>
-    <p className="monitor-status-note">First observed {new Date(incident.first_seen_at).toLocaleString()} · Last observed {new Date(incident.last_seen_at).toLocaleString()}</p>
-    {incident.acknowledged_at && <p className="monitor-status-note">Acknowledged by {incident.acknowledged_by} at {new Date(incident.acknowledged_at).toLocaleString()}</p>}
+    <p className="monitor-status-note">First observed {formatDateTime(incident.first_seen_at, { seconds: true })} · Last observed {formatDateTime(incident.last_seen_at, { seconds: true })}</p>
+    {incident.acknowledged_at && <p className="monitor-status-note">Acknowledged by {incident.acknowledged_by} at {formatDateTime(incident.acknowledged_at, { seconds: true })}</p>}
     <div className="monitor-workflow-actions">{onSelectTest && <button type="button" className="btn btn-secondary btn-sm" onClick={() => onSelectTest(incident.test_id)}>Open test</button>}{canManage && <button type="button" className="btn btn-secondary btn-sm" disabled={!!ackBusy} onClick={() => void acknowledge(incident)}>{ackBusy === incident.id ? 'Saving…' : incident.acknowledged_at ? 'Clear acknowledgement' : 'Acknowledge'}</button>}</div>
    </article>)}</div>
    {data?.incidents.length === 0 && <p>No persisted incidents match these filters.</p>}

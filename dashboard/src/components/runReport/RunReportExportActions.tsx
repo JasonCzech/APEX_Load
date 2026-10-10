@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import type { ReportLens } from '../../appRouting'
 import { downloadBlob } from '../../utils/fileUtils'
+import { REPORT_LENS_LABELS } from './reportLensLabels'
 
 interface Props {
   testId: string
@@ -47,7 +48,7 @@ export default function RunReportExportActions({ testId, lens, testName, downloa
       <div className="run-report-section-heading">
         <div>
           <h2>Export</h2>
-          <p>Choose a file for how your audience will review this {lens} report.</p>
+          <p>Download the {REPORT_LENS_LABELS[lens]} report in the format your audience reviews it in.</p>
         </div>
       </div>
       <div className="run-report-export-actions">

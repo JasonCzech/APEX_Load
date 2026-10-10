@@ -178,7 +178,7 @@ export default function OracleEBusinessReviewImport({ projectId, onClose, onOper
 
       <div className="sample-import-actions">
         <button className="btn btn-primary btn-lg" type="button" onClick={handleReview} disabled={operationBusy || (!sourceText.trim() && files.length === 0)}>
-          {reviewTask.pending ? <><span className="spinner" /> Reviewing...</> : 'Run Review'}
+          {reviewTask.pending ? <><span className="spinner" /> Reviewing…</> : 'Run Review'}
         </button>
       </div>
 

@@ -4727,7 +4727,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                 : 'This archive was classified without creating an executable APEX Load script.'}</p>
             </div>
             <button className="btn btn-primary" onClick={handleSaveReviewArtifact} disabled={reviewArtifactSaving || classpathUploadInProgress}>
-              {reviewArtifactSaving ? <><span className="spinner" /> Saving review artifact...</> : dependencyBundle ? 'Save dependency review' : 'Save review artifact'}
+              {reviewArtifactSaving ? <><span className="spinner" /> Saving review artifact…</> : dependencyBundle ? 'Save dependency review' : 'Save review artifact'}
             </button>
           </div>
 

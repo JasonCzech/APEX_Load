@@ -1,4 +1,6 @@
 import type { RunArchiveReport, TestSummary } from '../types'
+import { formatDateTime } from '../utils/dateTime'
+import { rcaSummaryLine } from './rca/rcaModel'
 
 export type AcceptanceState = 'Pass' | 'Fail' | 'Inconclusive' | 'Not assessed' | 'Unavailable' | 'Loading'
 export type DashboardReports = Record<string, RunArchiveReport | null>
@@ -62,11 +64,11 @@ export interface DashboardAttentionItem {
 
 export function pendingRunDetail(test: TestSummary): string {
   if (test.status === 'SCHEDULED') {
-    return test.scheduled_start_at ? `Scheduled for ${new Date(test.scheduled_start_at).toLocaleString()}` : 'Awaiting scheduled start'
+    return test.scheduled_start_at ? `Scheduled for ${formatDateTime(test.scheduled_start_at)}` : 'Awaiting scheduled start'
   }
   const position = test.queue_position ? `Queue #${test.queue_position}` : test.status === 'RESERVED' ? 'Reserved' : 'Queued'
   const reason = test.pending_reason || (test.status === 'RESERVED' ? 'Capacity reserved; awaiting dispatch' : 'Waiting for capacity')
-  return `${position} · ${reason}${test.pending_since ? ` · since ${new Date(test.pending_since).toLocaleString()}` : ''}`
+  return `${position} · ${reason}${test.pending_since ? ` · since ${formatDateTime(test.pending_since)}` : ''}`
 }
 
 export function buildDashboardAttention(
@@ -100,8 +102,18 @@ export function buildDashboardAttention(
     if (dashboardAcceptance(test, reports) === 'Fail') {
       items.push({ id: `acceptance-failed:${test.id}`, tone: 'danger', title: `${test.name} acceptance failed`, detail: reports[test.id]?.verdict?.explanation || 'Review the recorded acceptance assessment.', testId: test.id })
     } else if (test.status === 'FAILED' || test.status === 'ABORTED') {
-      items.push({ id: `execution-${test.status.toLowerCase()}:${test.id}`, tone: test.status === 'FAILED' ? 'danger' : 'warning', title: `${test.name} ${test.status.toLowerCase()}`, detail: `Execution ended ${new Date(test.ended_at || test.created_at).toLocaleString()}`, testId: test.id })
+      items.push({ id: `execution-${test.status.toLowerCase()}:${test.id}`, tone: test.status === 'FAILED' ? 'danger' : 'warning', title: `${test.name} ${test.status.toLowerCase()}`, detail: `Execution ended ${formatDateTime(test.ended_at || test.created_at)}`, testId: test.id })
     }
+  }
+  // The release's latest archived run regressing against its predecessor is
+  // worth a look even without acceptance criteria (a failed acceptance
+  // already says more). Earlier runs' regressions are history once a newer
+  // run exists, as on the release-quality card. completed is newest first.
+  const latest = completed.find(test => test.archive)
+  const trend = latest ? reports[latest.id]?.release_trend : undefined
+  if (latest && trend?.regressed && dashboardAcceptance(latest, reports) !== 'Fail') {
+    items.push({ id: `release-regression:${latest.id}`, tone: 'warning', title: `${latest.name} regressed`,
+      detail: `Against ${trend.baseline?.run_name || 'the previous run in the release'}: ${trend.regressions?.length ? trend.regressions.join(', ') : 'review the release trend'}`, testId: latest.id })
   }
   // A run its generators or telemetry could not carry, and a run whose
   // cause was found, are worth a look; each opens the run's root cause.
@@ -117,8 +129,10 @@ export function buildDashboardAttention(
     }
     if (presented && summary?.outcome === 'supported' && summary.top_hypothesis) {
       const top = summary.top_hypothesis
-      items.push({ id: `rca-cause:${test.id}:${summary.analysis_id || ''}`, tone: 'info', title: `${test.name}: ${top.title}`,
-        detail: `Leading root-cause hypothesis${top.confidence ? ` (${top.confidence} confidence)` : ''}${top.explains?.length ? ` for ${top.explains[0]}` : ''}`,
+      // The same wording as the run's report and Results: rank, title and
+      // confidence, so a low-confidence hypothesis never reads as fact.
+      items.push({ id: `rca-cause:${test.id}:${summary.analysis_id || ''}`, tone: 'info', title: `${test.name} root cause: ${rcaSummaryLine(summary)?.text || top.title}`,
+        detail: `Leading root-cause hypothesis${top.explains?.length ? ` for ${top.explains[0]}` : ''}`,
         testId: test.id, destination: 'root-cause', rootCause: { analysis: summary.analysis_id, hypothesis: top.id } })
     }
   }

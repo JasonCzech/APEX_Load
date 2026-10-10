@@ -175,15 +175,15 @@ func hasReportAcceptanceCriteria(config *GoalConfig) bool {
 func reportConditionalConcerns(report *RunArchiveReport) []string {
 	concerns := make([]string, 0, 3)
 	if t := report.Overview.Telemetry; t != nil && (t.DegradedIntervals > 0 || t.BreachedIntervals > 0) {
-		concerns = append(concerns, fmt.Sprintf("telemetry was degraded for %d interval(s)", t.DegradedIntervals+t.BreachedIntervals))
+		concerns = append(concerns, "telemetry was degraded for "+reportCountNoun(int64(t.DegradedIntervals+t.BreachedIntervals), "interval", "intervals"))
 	}
 	// Unscored telemetry is never healthy: whether it met its budget is
 	// unknown, so it cannot leave a run passing outright.
 	if t := report.Overview.Telemetry; t != nil && t.UnscoredIntervals > 0 {
-		concerns = append(concerns, fmt.Sprintf("telemetry could not be scored for %d interval(s)", t.UnscoredIntervals))
+		concerns = append(concerns, "telemetry could not be scored for "+reportCountNoun(int64(t.UnscoredIntervals), "interval", "intervals"))
 	}
 	if report.Overview.ThroughputMissedIntervals > 0 {
-		concerns = append(concerns, fmt.Sprintf("throughput missed its target in %d interval(s)", report.Overview.ThroughputMissedIntervals))
+		concerns = append(concerns, "throughput missed its target in "+reportCountNoun(int64(report.Overview.ThroughputMissedIntervals), "interval", "intervals"))
 	}
 	if status := strings.ToLower(strings.TrimSpace(report.Completeness.Status)); status != "" && status != "complete" && status != "ok" {
 		concerns = append(concerns, fmt.Sprintf("data completeness was %.0f%% (%s)", report.Completeness.ScorePct, report.Completeness.Status))
@@ -229,15 +229,15 @@ func deriveReportFindings(report *RunArchiveReport) []ReportFinding {
 		findings = append(findings, ReportFinding{
 			Title:    "Recurring error pattern",
 			Severity: severity,
-			Observed: fmt.Sprintf("%q occurred %d time(s) (first seen %s, latest %s).",
-				pattern.Sample, pattern.Count, formatChartClock(pattern.FirstSeen), formatChartClock(pattern.LatestSeen)),
+			Observed: fmt.Sprintf("%q occurred %s (first seen %s, latest %s).",
+				pattern.Sample, reportCountNoun(int64(pattern.Count), "time", "times"), formatReportClock(pattern.FirstSeen), formatReportClock(pattern.LatestSeen)),
 			Evidence: evidence,
 		})
 	}
 
 	for _, finding := range report.Completeness.Findings {
 		findings = append(findings, ReportFinding{
-			Title:    "Data completeness: " + finding.Dimension,
+			Title:    "Evidence coverage: " + strings.ToLower(reportTokenLabel(finding.Dimension)),
 			Severity: completenessSeverityToFinding(finding.Severity),
 			Observed: finding.Message,
 		})
@@ -247,8 +247,8 @@ func deriveReportFindings(report *RunArchiveReport) []ReportFinding {
 		findings = append(findings, ReportFinding{
 			Title:    "Throughput below target",
 			Severity: "minor",
-			Observed: fmt.Sprintf("Throughput missed its target in %d interval(s); peak gap %.1f%% against a %.1f TPS target.",
-				report.Overview.ThroughputMissedIntervals, report.Overview.MaxThroughputGapPct, report.Overview.PeakTargetTPS),
+			Observed: fmt.Sprintf("Throughput missed its target in %s; peak gap %.1f%% against a %.1f TPS target.",
+				reportCountNoun(int64(report.Overview.ThroughputMissedIntervals), "interval", "intervals"), report.Overview.MaxThroughputGapPct, report.Overview.PeakTargetTPS),
 		})
 	}
 
@@ -446,6 +446,7 @@ func attachReportVerdictAndSLA(report *RunArchiveReport) {
 	}
 	verdict := deriveReportVerdict(report)
 	report.Verdict = &verdict
+	report.GeneratedFindings = deriveReportFindings(report)
 	report.SLARows = buildSLAComplianceRowMap(report)
 	if report.Manifest != nil {
 		report.TransactionResponseTimeSLAResults = append([]TransactionResponseTimeSLAResult(nil), report.Manifest.TransactionResponseTimeSLAResults...)

@@ -2851,7 +2851,7 @@ function ErrorDetailsTable({
               <SortableHeader label="Status" sortKey="statusCode" sort={sort} onSort={onSort} align="right" />
               <SortableHeader label="Affected Groups" sortKey="group" sort={sort} onSort={onSort} />
               <SortableHeader label="Actions" sortKey="transaction" sort={sort} onSort={onSort} />
-              <SortableHeader label="First Seen" sortKey="firstSeen" sort={sort} onSort={onSort} />
+              <SortableHeader label="First seen" sortKey="firstSeen" sort={sort} onSort={onSort} />
               <SortableHeader label="Latest Seen" sortKey="latestSeen" sort={sort} onSort={onSort} />
               <SortableHeader label="Evidence" sortKey="evidenceCount" sort={sort} onSort={onSort} align="right" />
             </tr>
