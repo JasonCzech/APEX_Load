@@ -451,6 +451,25 @@ func TestHandleSaveEnterpriseArchiveImportCodesInvalidAttestationForFreshConvers
 	}
 }
 
+func TestHandleSaveEnterpriseArchiveImportReportsBusyProtectedDraftAsRetryable(t *testing.T) {
+	// Another request (an in-flight guided-repair inspection or a duplicate
+	// save) holds the protected draft when this save arrives.
+	server, masked, manager, held := protectedDraftHeldByAnotherRequest(t)
+	payload := map[string]any{"operation_id": "enterprise-busy-draft", "scripts": masked}
+	assertImportDraftBusyResponse(t, postEnterpriseArchiveBatch(t, server, payload))
+	if scripts := server.runner.ListScripts(); len(scripts) != 0 {
+		t.Fatalf("busy save stored scripts: %#v", scripts)
+	}
+
+	if err := manager.Release(held.Claim); err != nil {
+		t.Fatal(err)
+	}
+	saved := postEnterpriseArchiveBatch(t, server, payload)
+	if saved.Code != http.StatusCreated {
+		t.Fatalf("retry status = %d body=%s", saved.Code, saved.Body.String())
+	}
+}
+
 func postEnterpriseArchiveBatch(t *testing.T, server *Server, payload map[string]any) *httptest.ResponseRecorder {
 	t.Helper()
 	body, err := json.Marshal(payload)

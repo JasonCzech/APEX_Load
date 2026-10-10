@@ -90,6 +90,69 @@ describe('SecretBindingReview', () => {
     return onApply
   }
 
+  it('probes project secret status once while the parent re-renders with equal requirements', async () => {
+    // Importers rebuild their requirement arrays on every render, and unrelated
+    // polling re-renders them constantly. Equal names must not trigger another
+    // status request each time.
+    const renderCopy = () => root.render(
+      <SecretBindingReview
+        projectId="project-1"
+        requirements={requirements.map(requirement => ({ ...requirement }))}
+        onApply={vi.fn()}
+      />,
+    )
+    await act(async () => renderCopy())
+    for (let rerender = 0; rerender < 5; rerender += 1) {
+      await act(async () => renderCopy())
+    }
+    expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledTimes(1)
+    expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledWith('project-1', ['ORDER_API_TOKEN', 'REFRESH_TOKEN'])
+  })
+
+  it('re-checks project secret status once when the operator returns to the page', async () => {
+    // Secrets are typically configured on another page or tab; returning
+    // fires both focus and visibilitychange, which must coalesce.
+    await act(async () => root.render(<SecretBindingReview projectId="project-1" requirements={requirements} onApply={vi.fn()} />))
+    expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'))
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledTimes(2)
+    await act(async () => root.render(<SecretBindingReview projectId="project-1" requirements={requirements.map(requirement => ({ ...requirement }))} onApply={vi.fn()} />))
+    expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the known credential status visible during a background re-check', async () => {
+    await act(async () => root.render(<SecretBindingReview projectId="project-1" requirements={requirements} onApply={vi.fn()} />))
+    expect(container.textContent).not.toContain('Checking project secret store')
+    let finishRecheck: (value: unknown) => void = () => {}
+    apiMock.getProjectSecretStatuses.mockImplementationOnce(() => new Promise(resolve => { finishRecheck = resolve }))
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledTimes(2)
+    expect(container.textContent).not.toContain('Checking project secret store')
+    await act(async () => finishRecheck({
+      project_id: 'project-1',
+      capabilities: { provider: 'database', writable: true, create_supported: true, replace_supported: true, source_secret_migration_policy_enabled: false },
+      secrets: [],
+    }))
+    expect(container.textContent).not.toContain('Checking project secret store')
+  })
+
+  it('does not re-check credential status on focus while a commit is applying', async () => {
+    const handle = { current: null as SecretBindingReviewHandle | null }
+    let finishApply: () => void = () => {}
+    const onApply = vi.fn(() => new Promise<void>(resolve => { finishApply = resolve }))
+    await act(async () => root.render(<SecretBindingReview ref={value => { handle.current = value }} projectId="project-1" requirements={requirements} onApply={onApply} />))
+    let commit: Promise<boolean> = Promise.resolve(false)
+    await act(async () => { commit = handle.current!.commit() })
+    expect(onApply).toHaveBeenCalledTimes(1)
+    const callsDuringApply = apiMock.getProjectSecretStatuses.mock.calls.length
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledTimes(callsDuringApply)
+    await act(async () => { finishApply(); await commit })
+  })
+
   it('edits credentials inline, retains edits across review tabs, and cancels without writing secrets', async () => {
     const onApply = vi.fn()
     const onEditingChange = vi.fn()

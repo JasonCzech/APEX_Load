@@ -139,19 +139,33 @@ func (s *Server) processImportRepair(w http.ResponseWriter, r *http.Request, app
 		writeError(w, 409, "Repair receipt is expired or unavailable")
 		return
 	}
-	candidate, claim, err := s.claimProtectedImportCandidateSession(r, enterpriseArchiveSaveProfile, id, req.ProjectID)
+	// Preview never replaces the candidate, so it reads without the consume
+	// lease. Holding that lease would make a concurrent save or credential
+	// binding of the same draft fail while this inspection runs.
+	var candidate *protectedImportCandidate
+	var claim *importsession.Claim
+	if apply {
+		candidate, claim, err = s.claimProtectedImportCandidateSession(r, enterpriseArchiveSaveProfile, id, req.ProjectID)
+	} else {
+		candidate, err = s.openProtectedImportCandidateSession(r, enterpriseArchiveSaveProfile, id, req.ProjectID)
+	}
 	if err != nil {
 		writeError(w, 409, "Candidate is stale, expired, unavailable, or outside this project")
 		return
 	}
 	defer clearProtectedImportCandidate(candidate)
-	defer s.releaseImportCandidateClaim(claim)
+	if claim != nil {
+		defer s.releaseImportCandidateClaim(claim)
+	}
 	if _, batched := scriptBatch(candidate.Script); batched {
 		writeError(w, 409, "Use the protected batch repair workflow for this candidate")
 		return
 	}
-	lease := s.startImportCandidateClaimLease(claim)
-	defer lease.stop()
+	var lease *importCandidateClaimLease
+	if claim != nil {
+		lease = s.startImportCandidateClaimLease(claim)
+		defer lease.stop()
+	}
 	before := repairDisclosure(candidate.Script)
 	draft := cloneScriptDefinition(candidate.Script)
 	allocation, err := applyImportRepair(draft, req)

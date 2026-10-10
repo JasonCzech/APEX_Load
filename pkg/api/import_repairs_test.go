@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
@@ -10,6 +11,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/importsession"
+	"io"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -189,6 +191,94 @@ func TestImportRepairRejectsExpiredCandidate(t *testing.T) {
 	server.handlePreviewImportRepair(w, httptest.NewRequest("POST", "/", bytes.NewReader(body)))
 	if w.Code != 409 {
 		t.Fatalf("expired candidate returned %d", w.Code)
+	}
+}
+
+// consumeDuringReadStore makes a competing consumer claim the candidate as
+// soon as a repair request has read it, while that request is still
+// evaluating. This is the dashboard's save path: the guided-repair panel
+// inspects every rotated candidate while the operator's save claims it.
+type consumeDuringReadStore struct {
+	*importartifact.EncryptedStore
+	sessionID string
+	attempted bool
+	consumed  error
+}
+
+func (s *consumeDuringReadStore) OpenSessionScoped(ctx context.Context, scope importsession.Scope) (io.ReadCloser, importsession.SessionDescriptor, error) {
+	reader, descriptor, err := s.EncryptedStore.OpenSessionScoped(ctx, scope)
+	if err != nil || scope.ID != s.sessionID {
+		return reader, descriptor, err
+	}
+	return &consumeOnCloseReader{ReadCloser: reader, consume: func() { s.consume(ctx, scope) }}, descriptor, nil
+}
+
+func (s *consumeDuringReadStore) ClaimSessionScoped(ctx context.Context, scope importsession.Scope, maxBytes int64) ([]byte, importsession.SessionDescriptor, error) {
+	payload, descriptor, err := s.EncryptedStore.ClaimSessionScoped(ctx, scope, maxBytes)
+	if err == nil && scope.ID == s.sessionID {
+		s.consume(ctx, scope)
+	}
+	return payload, descriptor, err
+}
+
+func (s *consumeDuringReadStore) consume(ctx context.Context, scope importsession.Scope) {
+	if s.attempted {
+		return
+	}
+	s.attempted = true
+	payload, descriptor, err := s.EncryptedStore.ClaimSessionScoped(ctx, scope, importCandidateSessionMaxBytes)
+	clear(payload)
+	if err != nil {
+		s.consumed = err
+		return
+	}
+	s.consumed = s.EncryptedStore.ReleaseSessionClaim(scope.ID, scope.ProjectID, scope.Actor, descriptor.ClaimToken)
+}
+
+type consumeOnCloseReader struct {
+	io.ReadCloser
+	consume func()
+}
+
+func (r *consumeOnCloseReader) Close() error {
+	err := r.ReadCloser.Close()
+	r.consume()
+	return err
+}
+
+func TestImportRepairPreviewDoesNotBlockConcurrentCandidateConsumer(t *testing.T) {
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{Key: bytes.Repeat([]byte{0x5a}, 32), KeyID: "preview-consumer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(ServerConfig{BrunoArtifactDir: t.TempDir(), BrunoArtifactWrapper: wrapper})
+	draft := &dsl.Script{ID: "inspect", Name: "inspect", Version: "1.0", Protocol: "http", Config: dsl.ScriptConfig{BaseURL: "https://example.test"}, ProjectID: "p", Actions: []dsl.Action{{Name: "submit", Type: "POST", Method: "POST", Target: "https://example.test/", Body: "{{secret.MISSING}}"}}}
+	ensureScriptImportPreserved(draft, enterpriseArchiveSaveProfile)
+	id, _, err := server.registerImportCandidateSession(httptest.NewRequest("POST", "/", nil), enterpriseArchiveSaveProfile, draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	objects, err := server.brunoArtifactStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	spy := &consumeDuringReadStore{EncryptedStore: objects, sessionID: id}
+	if server.importSessions, err = importsession.NewManager(spy); err != nil {
+		t.Fatal(err)
+	}
+
+	token := importDraftProtectedTokenPrefix + id
+	body, _ := json.Marshal(ImportRepairRequest{CandidateID: token, Revision: token, ProjectID: "p", Operation: ImportRepairOperation{Type: "inspect"}})
+	w := httptest.NewRecorder()
+	server.handlePreviewImportRepair(w, httptest.NewRequest("POST", "/", bytes.NewReader(body)))
+	if w.Code != 200 {
+		t.Fatalf("inspect status %d: %s", w.Code, w.Body.String())
+	}
+	if !spy.attempted {
+		t.Fatal("inspection never read the candidate")
+	}
+	if spy.consumed != nil {
+		t.Fatalf("a read-only inspection blocked the candidate's consumer: %v", spy.consumed)
 	}
 }
 

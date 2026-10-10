@@ -169,6 +169,9 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 				if claim != nil {
 					s.releaseImportDraftAttestation(claim)
 				}
+				if writeImportDraftBusy(w, err) {
+					return
+				}
 				writeEnterpriseArchiveDraftInvalid(w, "enterprise archive import draft is invalid or expired; run the conversion again")
 				return
 			}

@@ -39,6 +39,10 @@ var (
 	ErrSessionClaimLost = errors.New("Bruno import session claim was lost")
 	ErrSessionExpired   = errors.New("protected import session expired")
 	ErrSessionScope     = errors.New("protected import session scope is invalid")
+	// ErrSessionConsumed reports a session whose claim was consumed by a
+	// committed operation. Stores also make it match os.ErrNotExist, because
+	// the session can never become claimable again.
+	ErrSessionConsumed = errors.New("protected import session was already consumed")
 )
 
 // ObjectRef identifies one immutable encrypted object. BackendKey is opaque to
@@ -72,6 +76,9 @@ type SessionDescriptor struct {
 	ExpirationDisabled bool        `json:"expiration_disabled,omitempty"`
 	RelatedObjects     []ObjectRef `json:"related_objects,omitempty"`
 	CapacitySlot       *int        `json:"capacity_slot,omitempty"`
+	// Consumed marks a claimed session whose consumer committed. Stale-claim
+	// recovery must never restore it; cleanup only finishes deleting it.
+	Consumed bool `json:"consumed,omitempty"`
 }
 
 // EffectiveProfile returns the stored profile or the legacy Bruno profile for
@@ -391,6 +398,29 @@ func (m *Manager) Complete(ctx context.Context, claim Claim) error {
 	return m.backend.CompleteSessionClaim(
 		ctx, claim.ID, claim.ProjectID, claim.Actor, claim.Token,
 	)
+}
+
+// ConsumableProtectedStore can durably mark a held claim as consumed, so a
+// commit whose cleanup fails is never recovered into a claimable session.
+type ConsumableProtectedStore interface {
+	MarkSessionClaimConsumed(id, projectID, actor, claimToken string) error
+}
+
+// MarkConsumed records that the claim's consumer committed, without deleting
+// anything. Use it when a commit is durable but completing the claim did not
+// happen or did not finish; Complete marks the claim itself before cleanup.
+func (m *Manager) MarkConsumed(claim Claim) error {
+	if m == nil || m.backend == nil {
+		return errors.New("protected import session store is required")
+	}
+	if err := validateClaim(claim); err != nil {
+		return err
+	}
+	consumable, ok := m.backend.(ConsumableProtectedStore)
+	if !ok {
+		return errors.New("protected import session store cannot mark consumed claims")
+	}
+	return consumable.MarkSessionClaimConsumed(claim.ID, claim.ProjectID, claim.Actor, claim.Token)
 }
 
 func (m *Manager) FinalizeCommitted(ctx context.Context, scope Scope) error {

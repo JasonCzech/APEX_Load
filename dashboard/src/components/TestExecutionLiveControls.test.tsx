@@ -311,6 +311,7 @@ describe('TestExecutionLiveControls', () => {
     const observerInput = container.querySelector<HTMLInputElement>('input[aria-label="Checkout VUser target value"]')
     expect(observerSlider?.max).toBe('10')
     expect(observerInput?.max).toBe('10')
+    expect(observerInput).toBeTruthy()
     if (!observerInput) return
     await act(async () => {
       setInputValue(observerInput, '42')

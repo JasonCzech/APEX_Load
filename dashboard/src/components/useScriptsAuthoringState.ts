@@ -31,6 +31,8 @@ export interface AuthoringReturnTarget {
   /** The importer to return to, when the return target is an import surface. */
   importLauncher?: string | null
   importMode?: string | null
+  /** The source surface's unsaved-work guards. The source stays open behind the editor, so leaving the editor for it keeps them. */
+  retainedGuardIds?: string[]
 }
 
 export interface AuthoringState {
@@ -148,6 +150,7 @@ function normalizeAuthoringReturnTarget(returnTarget?: AuthoringReturnTarget | n
     ...(description ? { description } : {}),
     ...(importLauncher ? { importLauncher } : {}),
     ...(importLauncher && importMode ? { importMode } : {}),
+    ...(returnTarget.retainedGuardIds?.length ? { retainedGuardIds: [...returnTarget.retainedGuardIds] } : {}),
   }
 }
 
@@ -186,6 +189,8 @@ export function useScriptsAuthoringState({
   const invalidateEditRequest = useCallback(() => {
     editRequestGenerationRef.current += 1
   }, [])
+  // The edit request that opens a saved script, while it is the latest.
+  const savedScriptReopenRef = useRef(-1)
 
   const setSubview = useCallback((subView: ScriptsAuthoringEntryView) => {
     invalidateEditRequest()
@@ -387,14 +392,28 @@ export function useScriptsAuthoringState({
     }
   }, [getScript, getScriptAuthoring, projectId])
 
+  // reopenSavedScript loads a saved script that came back without its
+  // authoring projection. The editor and its source stay as they are until
+  // the saved script opens. The return that follows the save in the same turn
+  // (Save changes on the way back) leaves that load standing; a later Back or
+  // Close returns to the source as usual and drops the load.
+  const reopenSavedScript = useCallback((savedScript: StoredScript, notice?: string | null, retainedDraft?: ScriptDefinition, retainedState?: ScriptSaveOptions) => {
+    void handleEdit(savedScript.id, notice, retainedDraft, retainedState)
+    const generation = editRequestGenerationRef.current
+    savedScriptReopenRef.current = generation
+    setTimeout(() => {
+      if (savedScriptReopenRef.current === generation) savedScriptReopenRef.current = -1
+    }, 0)
+  }, [handleEdit])
+
   const handleSavedScript = useCallback((savedScript: StoredScript, notice?: string | null, retainedDraft?: ScriptDefinition, retainedState?: ScriptSaveOptions) => {
     let authoring: ScriptAuthoringBaseline
     try { authoring = baselineFromSavedScript(savedScript, savedScript.project_id) } catch {
-      void handleEdit(savedScript.id, notice, retainedDraft, retainedState)
+      reopenSavedScript(savedScript, notice, retainedDraft, retainedState)
       return
     }
     if (!savedScript.script) {
-      void handleEdit(savedScript.id, notice, retainedDraft, retainedState)
+      reopenSavedScript(savedScript, notice, retainedDraft, retainedState)
       return
     }
     invalidateEditRequest()
@@ -417,7 +436,7 @@ export function useScriptsAuthoringState({
       importMode: null,
       importFiles: null,
     })
-  }, [handleEdit, invalidateEditRequest])
+  }, [invalidateEditRequest, reopenSavedScript])
 
   const openCreateOptionsWithNotice = useCallback((notice: string) => {
     invalidateEditRequest()
@@ -428,6 +447,12 @@ export function useScriptsAuthoringState({
   }, [invalidateEditRequest])
 
   const returnToDraftSource = useCallback(() => {
+    // The save just made is opening the saved script (reopenSavedScript): it
+    // wins over the return that follows it.
+    if (savedScriptReopenRef.current === editRequestGenerationRef.current) {
+      savedScriptReopenRef.current = -1
+      return
+    }
     invalidateEditRequest()
     setAuthoringState(previous => {
       const returnTarget = previous.draftReturnTarget

@@ -19,16 +19,18 @@ type Props = {
   focusPath?: string; focusRequest?: number; onBusyChange?: (busy: boolean) => void
   view?: 'overview' | 'data' | 'hidden'; additionalFindings?: ImportFinding[]; onReview?: (result: RepairResult) => void
   onReviewedChange?: (issueIds: string[]) => void
+  // The importer is saving, converting, or otherwise consuming this draft.
+  inspectionPaused?: boolean
 }
 const labels: Record<string, string> = { restore_body: 'Restored body', add_parameter: 'Parameter values, one per line', add_extractor: 'Extractor expression', bind_variable: 'Existing producer or parameter name', replace_proxy_secret: 'Project secret name' }
 
-export function ImportGuidedRepair({ script, projectId, disabled, disabledReason, onApplied, onViewSource, onSection, onCredentialTarget, onReimport, view = 'overview', additionalFindings = [], onReview, onReviewedChange, categoryFocus, focusPath, focusRequest, onBusyChange }: Props) {
+export function ImportGuidedRepair({ script, projectId, disabled, disabledReason, onApplied, onViewSource, onSection, onCredentialTarget, onReimport, view = 'overview', additionalFindings = [], onReview, onReviewedChange, categoryFocus, focusPath, focusRequest, onBusyChange, inspectionPaused = false }: Props) {
   const settings = useImportSettings()
   const candidate = String(script.metadata?.import?.preserved?.server_import_attestation_v1 || '')
   const scope = `${candidate}:${projectId}`
   const currentScope = useRef(scope)
   currentScope.current = scope
-  const inspectionRef = useRef<{ scope: string; promise: Promise<RepairResult> } | null>(null)
+  const inspectionRef = useRef<{ scope: string; promise: Promise<RepairResult>; delivered?: boolean } | null>(null)
   const onReviewRef = useRef(onReview); onReviewRef.current = onReview
   useEffect(() => { currentScope.current = scope; return () => { currentScope.current = '' } }, [scope])
   const [review, setReview] = useState<RepairResult | null>(null)
@@ -89,7 +91,8 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
   const hiddenAsReviewed = filter === 'all' || filter === 'review' ? issues.filter(i => inView(i) && !i.blocking && reviewed.has(i.id)).length : 0
   const expiry = review?.expires_at ? new Date(review.expires_at).getTime() : NaN
   const expired = Number.isFinite(expiry) && expiry <= now
-  const locked = !!disabled || busy || loading || expired
+  // While the importer consumes this draft, no repair may race it either.
+  const locked = !!disabled || busy || loading || expired || inspectionPaused
   const hasUniqueParameters = script.parameters?.some(parameter => parameter.selection === 'unique')
   const allocationUnavailable = !candidate.startsWith('protected:')
     ? 'Allocation preview requires a protected import draft. Re-import with encrypted import storage configured to enable it.'
@@ -98,6 +101,7 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
     : loading ? 'Checking the import draft. Allocation preview will be available when the check finishes.'
     : busy ? 'An import operation is in progress. Wait for it to finish before previewing allocation.'
     : disabled ? disabledReason || 'Allocation preview is unavailable while this draft is locked. Finish pending operations or refresh the import review.'
+    : inspectionPaused ? 'An import operation is in progress. Wait for it to finish before previewing allocation.'
     : ''
   const canRepair = candidate.startsWith('protected:') && !!review && !selectedResolved && !finding?.code.startsWith('diagnostic:')
   const preceding = entries.slice(0, entries.findIndex(e => e.path === finding?.action_path)).filter(e => !!e.action.target && e.action.type !== 'http_sequence')
@@ -107,19 +111,29 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
     const timer = setInterval(() => setNow(Date.now()), 30000)
     return () => clearInterval(timer)
   }, [])
+  const resetScopeRef = useRef<string | null>(null)
   useEffect(() => {
-    setAllocationPreview(null); setReview(null); setPreview(null); setShowComparison(false); setValue(''); setError(''); setPending(null); setBusy(false)
-    setLoading(false)
+    const inspectionScope = `${candidate}:${projectId}`
+    if (resetScopeRef.current !== inspectionScope) {
+      resetScopeRef.current = inspectionScope
+      setAllocationPreview(null); setReview(null); setPreview(null); setShowComparison(false); setValue(''); setError(''); setPending(null); setBusy(false)
+      setLoading(false)
+    }
     if (!candidate.startsWith('protected:')) return
+    // A save or draft mutation consumes this candidate. Inspecting it at the same
+    // time only races that request and reports a stale candidate, so wait until
+    // the importer is idle; an inspection that already started is still shown.
+    const started = inspectionRef.current?.scope === inspectionScope ? inspectionRef.current : null
+    if (started?.delivered || (inspectionPaused && !started)) return
     let active = true
     setLoading(true)
-    // StrictMode replays effects; duplicate inspections compete for the protected candidate lease.
-    const inspectionScope = `${candidate}:${projectId}`
-    if (inspectionRef.current?.scope !== inspectionScope) inspectionRef.current = { scope: inspectionScope, promise: request<RepairResult>('/scripts/import/repairs/preview', { method: 'POST', body: JSON.stringify({ candidate_id: candidate, revision: candidate, project_id: projectId, finding: '', action_path: '', operation: { type: 'inspect' } }) }) }
-    inspectionRef.current.promise
-      .then(result => { if (active) { setReview(result); onReviewRef.current?.(result) } }).catch(e => { if (active) setError(String(e.message || e)) }).finally(() => { if (active) setLoading(false) })
+    // StrictMode replays effects; reuse one inspection per candidate instead of issuing duplicates.
+    const inspection = started
+      ?? (inspectionRef.current = { scope: inspectionScope, promise: request<RepairResult>('/scripts/import/repairs/preview', { method: 'POST', body: JSON.stringify({ candidate_id: candidate, revision: candidate, project_id: projectId, finding: '', action_path: '', operation: { type: 'inspect' } }) }) })
+    inspection.promise
+      .then(result => { if (active) { inspection.delivered = true; setReview(result); onReviewRef.current?.(result) } }).catch(e => { if (active) { inspection.delivered = true; setError(String(e.message || e)) } }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [candidate, projectId])
+  }, [candidate, projectId, inspectionPaused])
   const lastFocus = useRef<number>()
   useEffect(() => {
     if (!focusPath || lastFocus.current === focusRequest) return

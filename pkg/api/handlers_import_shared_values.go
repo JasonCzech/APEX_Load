@@ -82,6 +82,9 @@ func (s *Server) handleApplyImportSharedValues(w http.ResponseWriter, r *http.Re
 		}
 		claim, err := s.claimImportDraftMutation(r, script)
 		if err != nil {
+			if writeImportDraftBusy(w, err) {
+				return
+			}
 			writeScriptImportResponse(w, http.StatusConflict, map[string]any{
 				"error": "credential-preserving import draft is invalid or expired; run the import again",
 				"code":  "import_draft_attestation_invalid",

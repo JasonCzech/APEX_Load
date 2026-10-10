@@ -112,7 +112,7 @@ function Probe() {
         disabled={!activeApplication || !releases.some(release => release.id !== activeRelease?.id)}
         onClick={() => {
           const inactive = releases.find(release => release.id !== activeRelease?.id)
-          if (!inactive || !activeApplication) return
+          if (!inactive || !activeApplication) return // the button is disabled otherwise
           void refreshReleases(activeApplication.id, {
             preserveRelease: {
               ...inactive,

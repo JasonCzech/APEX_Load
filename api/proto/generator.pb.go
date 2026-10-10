@@ -3866,8 +3866,14 @@ type MetricsBatchTelemetry struct {
 	// subscribers in this process, cumulative from zero. Absent from older
 	// generators, which report only the process-wide count.
 	TestDroppedSubscriberBatches *int64 `protobuf:"varint,9,opt,name=test_dropped_subscriber_batches,json=testDroppedSubscriberBatches,proto3,oneof" json:"test_dropped_subscriber_batches,omitempty"`
-	unknownFields                protoimpl.UnknownFields
-	sizeCache                    protoimpl.SizeCache
+	// collection_sequence identifies the collection that produced the batch's
+	// window. It increases with every collection in the generator process
+	// (source_epoch), and a batch that re-sends the last window (stopping,
+	// paused, terminal, a subscription replay) repeats it. Zero from older
+	// generators.
+	CollectionSequence uint64 `protobuf:"varint,10,opt,name=collection_sequence,json=collectionSequence,proto3" json:"collection_sequence,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *MetricsBatchTelemetry) Reset() {
@@ -3959,6 +3965,13 @@ func (x *MetricsBatchTelemetry) GetDroppedSubscriberBatches() int64 {
 func (x *MetricsBatchTelemetry) GetTestDroppedSubscriberBatches() int64 {
 	if x != nil && x.TestDroppedSubscriberBatches != nil {
 		return *x.TestDroppedSubscriberBatches
+	}
+	return 0
+}
+
+func (x *MetricsBatchTelemetry) GetCollectionSequence() uint64 {
+	if x != nil {
+		return x.CollectionSequence
 	}
 	return 0
 }
@@ -7463,7 +7476,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x1csource_epoch_started_unix_ms\x18  \x01(\x03R\x18sourceEpochStartedUnixMs\x12;\n" +
 	"\x1asequence_prefix_state_only\x18! \x01(\bR\x17sequencePrefixStateOnly\x12F\n" +
 	"\x10joint_metrics_v4\x18\" \x03(\v2\x1c.apexload.v1.MetricAggregateR\x0ejointMetricsV4\x12K\n" +
-	"\x12joint_metrics_info\x18# \x01(\v2\x1d.apexload.v1.JointMetricsInfoR\x10jointMetricsInfo\"\x88\x04\n" +
+	"\x12joint_metrics_info\x18# \x01(\v2\x1d.apexload.v1.JointMetricsInfoR\x10jointMetricsInfo\"\xb9\x04\n" +
 	"\x15MetricsBatchTelemetry\x12'\n" +
 	"\x0fdropped_results\x18\x01 \x01(\x03R\x0edroppedResults\x12/\n" +
 	"\x14collected_at_unix_ms\x18\x02 \x01(\x03R\x11collectedAtUnixMs\x12/\n" +
@@ -7473,7 +7486,9 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x1bgenerator_processing_lag_ms\x18\x06 \x01(\x01R\x18generatorProcessingLagMs\x12(\n" +
 	"\x10transport_lag_ms\x18\a \x01(\x01R\x0etransportLagMs\x12<\n" +
 	"\x1adropped_subscriber_batches\x18\b \x01(\x03R\x18droppedSubscriberBatches\x12J\n" +
-	"\x1ftest_dropped_subscriber_batches\x18\t \x01(\x03H\x00R\x1ctestDroppedSubscriberBatches\x88\x01\x01B\"\n" +
+	"\x1ftest_dropped_subscriber_batches\x18\t \x01(\x03H\x00R\x1ctestDroppedSubscriberBatches\x88\x01\x01\x12/\n" +
+	"\x13collection_sequence\x18\n" +
+	" \x01(\x04R\x12collectionSequenceB\"\n" +
 	" _test_dropped_subscriber_batches\"~\n" +
 	"\vGroupMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12#\n" +

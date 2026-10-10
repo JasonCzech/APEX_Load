@@ -83,6 +83,23 @@ describe('adapter retirement', () => {
     expect(LEGACY_FLAT_FORM_FIELDS.length).toBe(34)
   })
 
+  // The script editor's session state (the paired baseline, the dirty
+  // calculation, the initial-save flag and guarded navigation) has one owner,
+  // useScriptAuthoringSession, and its Save button follows the shared save
+  // rule; the editor keeps no copy of either.
+  it('keeps the script editor\'s session state in useScriptAuthoringSession', () => {
+    const source = sources['./components/ScriptEditor.tsx'] ?? ''
+    expect(source).toMatch(/import \{[^}]*\buseScriptAuthoringSession\b[^}]*\} from '\.\/useScriptAuthoringSession'/)
+    expect(source).toMatch(/\} = scriptSaveAvailability\(/)
+    const copies: (string | RegExp)[] = [
+      // The baseline, the initial-save flag and the guard.
+      'useNavigationGuard', 'useNavigationGuardRunner', 'admitScriptAuthoringBaseline', 'setAuthoringBaseline', 'setAuthoringRevisionState', 'setReviewedAuthoringBaseline', 'setInitialSaveRequired', 'getScriptAuthoring(',
+      // The dirty calculation and the save rule.
+      /!==\s*baselineJsonRef\.current/, /jsonDirty\s*\|\|\s*pendingParameterDataCellEditCount/, 'const saveScriptDisabled =', 'const saveScriptTitle =',
+    ]
+    expect(copies.filter(copy => typeof copy === 'string' ? source.includes(copy) : copy.test(source))).toEqual([])
+  })
+
   it('resolves each retired copy\'s callers through its owner', () => {
     const missing = OWNED_CALLERS.filter(({ path, owner }) => !owner.test(sources[path] ?? '')).map(({ path, owner }) => `${path}: ${owner}`)
     expect(missing).toEqual([])

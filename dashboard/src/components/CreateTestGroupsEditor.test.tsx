@@ -134,7 +134,7 @@ describe('CreateTestGroupsEditor', () => {
     const scriptSelect = Array.from(container.querySelectorAll('select')).find(select => (
       Array.from(select.options).some(option => option.value === 'script-http')
     ))
-    expect(scriptSelect).toBeDefined()
+    expect(scriptSelect).toBeTruthy()
     if (!scriptSelect) return
     await act(async () => {
       setSelectValue(scriptSelect, 'script-http')
@@ -161,6 +161,7 @@ describe('CreateTestGroupsEditor', () => {
     const observerVusers = container.querySelector<HTMLInputElement>('input[type="number"]')
     expect(observerVusers?.max).toBe('10')
     expect(container.textContent).toContain('Observer canaries are capped at 10 VUsers.')
+    expect(observerVusers).toBeTruthy()
     if (!observerVusers) return
     await act(async () => {
       setInputValue(observerVusers, '11')
@@ -284,6 +285,7 @@ describe('CreateTestGroupsEditor', () => {
     const vusersInput = container.querySelector<HTMLInputElement>('input[type="number"]')
     expect(vusersInput?.disabled).toBe(false)
     expect(container.textContent).toContain('must match its peak stage target of 100 VUsers')
+    expect(vusersInput).toBeTruthy()
     if (!vusersInput) return
     await act(async () => {
       setInputValue(vusersInput, '100')

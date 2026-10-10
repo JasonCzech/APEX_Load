@@ -726,7 +726,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
   const sourceMigrationSelected = sourceMigrationControlled ? externalSourceMigrationSelected : migrateSourceValues
   const effectiveSourceMigrationSelected = sourceMigrationSelected && !sourceSessionUnavailable
 
-  const uniqueValidNames = useMemo(
+  const computedUniqueValidNames = useMemo(
     () => Array.from(new Set([
       ...activeValidNames,
       ...(effectiveSourceMigrationSelected
@@ -737,6 +737,40 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
     ].filter(isValidSecretBindingName))).sort(),
     [activeValidNames, effectiveSourceMigrationSelected, migrationGroups, visibleRequirementIDs],
   )
+  // Importers rebuild requirement arrays on every render, and unrelated polling
+  // re-renders them constantly. Key the status probe on the names themselves so
+  // an equal list keeps its identity instead of issuing another request.
+  const uniqueValidNamesKey = computedUniqueValidNames.join('\u0000')
+  const uniqueValidNames = useMemo(
+    () => (uniqueValidNamesKey ? uniqueValidNamesKey.split('\u0000') : []),
+    [uniqueValidNamesKey],
+  )
+  // Project secrets are usually configured on another page, tab, or window.
+  // Re-check when the operator returns instead of on every re-render. A commit
+  // in flight probes for itself, and a background re-check keeps showing the
+  // last known statuses rather than flashing "checking" on every focus.
+  const statusRefreshAtRef = useRef(0)
+  const backgroundStatusRefreshRef = useRef(false)
+  const applyingRef = useRef(applying)
+  applyingRef.current = applying
+  useEffect(() => {
+    if (!projectId || !uniqueValidNamesKey) return
+    const refresh = () => {
+      if (document.visibilityState !== 'visible' || applyingRef.current) return
+      // Returning to a tab fires both visibilitychange and focus.
+      const now = Date.now()
+      if (now - statusRefreshAtRef.current < 1000) return
+      statusRefreshAtRef.current = now
+      backgroundStatusRefreshRef.current = true
+      setProbeRetryGeneration(current => current + 1)
+    }
+    document.addEventListener('visibilitychange', refresh)
+    window.addEventListener('focus', refresh)
+    return () => {
+      document.removeEventListener('visibilitychange', refresh)
+      window.removeEventListener('focus', refresh)
+    }
+  }, [projectId, uniqueValidNamesKey])
 
   useEffect(() => {
     if (!sourceSecretSessionExpiresAt) return
@@ -768,8 +802,12 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
       return
     }
     let cancelled = false
-    setProbeState('loading')
-    setProbeError('')
+    const background = backgroundStatusRefreshRef.current
+    backgroundStatusRefreshRef.current = false
+    if (!background) {
+      setProbeState('loading')
+      setProbeError('')
+    }
     const statusRequest = uniqueValidNames.length <= PROJECT_SECRET_STATUS_BATCH_SIZE
       ? api.getProjectSecretStatuses(projectId, uniqueValidNames)
         .then(response => projectSecretStatusSnapshot([response], projectId))

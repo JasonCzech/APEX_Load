@@ -368,7 +368,7 @@ describe('JMeterImport', () => {
     expect(container.textContent).toContain('JMS')
 
     const coverageButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Import Coverage')
-    expect(coverageButton).toBeDefined()
+    expect(coverageButton).toBeTruthy()
     if (!coverageButton) return
     await act(async () => {
       coverageButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -377,7 +377,7 @@ describe('JMeterImport', () => {
     expect(container.textContent).toContain('Coverage Details')
 
     const coverageDetails = container.querySelector('details') as HTMLDetailsElement | null
-    expect(coverageDetails).not.toBeNull()
+    expect(coverageDetails).toBeTruthy()
     if (!coverageDetails) {
       return
     }
@@ -396,7 +396,7 @@ describe('JMeterImport', () => {
     }
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -411,7 +411,7 @@ describe('JMeterImport', () => {
     })
 
     const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Only'))
-    expect(validateButton).toBeDefined()
+    expect(validateButton).toBeTruthy()
     if (!validateButton) {
       return
     }
@@ -464,7 +464,7 @@ describe('JMeterImport', () => {
 
     expect(container.textContent).toContain('Import Coverage')
     const coverageButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Import Coverage')
-    expect(coverageButton).toBeDefined()
+    expect(coverageButton).toBeTruthy()
     if (!coverageButton) return
     await act(async () => {
       coverageButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -492,7 +492,7 @@ describe('JMeterImport', () => {
     await flushPromises()
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -507,7 +507,7 @@ describe('JMeterImport', () => {
     })
 
     const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Only'))
-    expect(validateButton).toBeDefined()
+    expect(validateButton).toBeTruthy()
     if (!validateButton) {
       return
     }
@@ -519,7 +519,7 @@ describe('JMeterImport', () => {
     await flushPromises()
 
     const editButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open draft in Visual Editor'))
-    expect(editButton).toBeDefined()
+    expect(editButton).toBeTruthy()
     if (!editButton) {
       return
     }
@@ -964,7 +964,7 @@ describe('JMeterImport', () => {
     await flushPromises()
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -979,7 +979,7 @@ describe('JMeterImport', () => {
     })
 
     const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Only'))
-    expect(validateButton).toBeDefined()
+    expect(validateButton).toBeTruthy()
     if (!validateButton) {
       return
     }
@@ -991,7 +991,7 @@ describe('JMeterImport', () => {
     await flushPromises()
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => /^Save \d+ drafts?/.test(button.textContent || ''))
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) {
       return
     }
@@ -1070,7 +1070,7 @@ describe('JMeterImport', () => {
     await flushPromises()
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -1085,7 +1085,7 @@ describe('JMeterImport', () => {
     })
 
     const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Only'))
-    expect(validateButton).toBeDefined()
+    expect(validateButton).toBeTruthy()
     if (!validateButton) {
       return
     }
@@ -1097,7 +1097,7 @@ describe('JMeterImport', () => {
     await flushPromises()
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => /^Save \d+ drafts?/.test(button.textContent || ''))
-    expect(saveButton).toBeDefined()
+    expect(saveButton).toBeTruthy()
     if (!saveButton) {
       return
     }
@@ -1133,7 +1133,7 @@ describe('JMeterImport', () => {
     await flushPromises()
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
+    expect(fileInput).toBeTruthy()
     if (!fileInput) {
       return
     }
@@ -1148,7 +1148,7 @@ describe('JMeterImport', () => {
     })
 
     const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Only'))
-    expect(validateButton).toBeDefined()
+    expect(validateButton).toBeTruthy()
     if (!validateButton) {
       return
     }

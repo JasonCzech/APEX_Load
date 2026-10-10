@@ -148,14 +148,14 @@ describe('CreateTestModal', () => {
 
     await clickRuntimeTab('Iteration Pacing')
     const pacingSelect = controlByLabel<HTMLSelectElement>('Pacing', 'select')
-    expect(pacingSelect).toBeDefined()
+    expect(pacingSelect).toBeTruthy()
     if (!pacingSelect) return
     await act(async () => {
       pacingSelect.value = 'fixed_delay'
       pacingSelect.dispatchEvent(new Event('change', { bubbles: true }))
     })
     const delayInput = controlByLabel<HTMLInputElement>('Pacing delay (seconds)', 'input')
-    expect(delayInput).toBeDefined()
+    expect(delayInput).toBeTruthy()
     if (!delayInput) return
     await act(async () => {
       setInputValue(delayInput, '1.2')
@@ -163,14 +163,14 @@ describe('CreateTestModal', () => {
 
     await clickRuntimeTab('Think Time')
     const distributionSelect = controlByLabel<HTMLSelectElement>('Distribution', 'select')
-    expect(distributionSelect).toBeDefined()
+    expect(distributionSelect).toBeTruthy()
     if (!distributionSelect) return
     await act(async () => {
       distributionSelect.value = 'fixed'
       distributionSelect.dispatchEvent(new Event('change', { bubbles: true }))
     })
     const thinkTimeInput = controlByLabel<HTMLInputElement>('Mean (ms)', 'input')
-    expect(thinkTimeInput).toBeDefined()
+    expect(thinkTimeInput).toBeTruthy()
     if (!thinkTimeInput) return
     await act(async () => {
       setInputValue(thinkTimeInput, '900')
@@ -183,8 +183,8 @@ describe('CreateTestModal', () => {
     const snapshotOnErrorCheckbox = Array.from(container.querySelectorAll('input')).find(
       input => input.getAttribute('type') === 'checkbox' && input.parentElement?.textContent?.includes('Snapshot on error'),
     ) as HTMLInputElement | undefined
-    expect(continueOnErrorCheckbox).toBeDefined()
-    expect(snapshotOnErrorCheckbox).toBeDefined()
+    expect(continueOnErrorCheckbox).toBeTruthy()
+    expect(snapshotOnErrorCheckbox).toBeTruthy()
     if (!continueOnErrorCheckbox || !snapshotOnErrorCheckbox) return
     // Continue-on-error is enabled for every scenario unless it is explicitly
     // disabled, so the box starts checked; clicking it is the explicit opt-out,
@@ -200,7 +200,7 @@ describe('CreateTestModal', () => {
       button => button.textContent?.includes('Create Queued Run'),
     ) as HTMLButtonElement | undefined
 
-    expect(submitButton).toBeDefined()
+    expect(submitButton).toBeTruthy()
     if (!submitButton) {
       return
     }
@@ -347,8 +347,9 @@ describe('CreateTestModal', () => {
     const lossTolerance = Array.from(placement?.parentElement?.querySelectorAll('label') || [])
       .find(label => label.textContent?.includes('Tolerate generator loss'))
       ?.querySelector<HTMLInputElement>('input')
-    expect(eastWeight).toBeDefined()
+    expect(eastWeight).toBeTruthy()
     expect(lossTolerance?.checked).toBe(true)
+    expect(lossTolerance).toBeTruthy()
     if (!eastWeight || !lossTolerance) return
 
     await act(async () => {
@@ -794,7 +795,7 @@ describe('CreateTestModal', () => {
 
     const nameInput = Array.from(container.querySelectorAll<HTMLInputElement>('input'))
       .find(input => input.placeholder?.includes('auto-generated'))
-    expect(nameInput).toBeDefined()
+    expect(nameInput).toBeTruthy()
     if (!nameInput) return
 
     await act(async () => {

@@ -24,7 +24,7 @@ The first round raised 40 findings: 2 high, 9 medium and 29 low. The high ones w
 - **B8 and C8:** the reference harnesses called `syscall.Getrusage`, which breaks the Windows build of the API tests. The rusage and RSS helpers are now build-tagged, with a stub that records the values as not measured.
 - **C8:** a run that stopped on a fatal error was written as a `pending` F4 request. It is now `failed`.
 
-The review also found a gap in A8: the plan's script session absorption (the editor's paired baseline, dirty calculation, save state and navigation moving into `useScriptAuthoringSession`) was not done. It is recorded as a deviation rather than done in a review round. That is a deep move inside the 7,300-line script editor, already deferred once from A5.
+The review also found a gap in A8: the plan's script session absorption (the editor's paired baseline, dirty calculation, save state and navigation moving into `useScriptAuthoringSession`) was not done. It was recorded as a deviation rather than done in a review round, since it is a deep move inside the 7,300-line script editor and was already deferred once from A5. It was done after the wave (see the A8 notes of the specification and `docs/qa/ADAPTER_RETIREMENT.md`).
 
 Later rounds:
 - **Round 2:** E7 was clean. The other packages had 16 findings, mostly partial fixes. The medium ones were generated API docs not regenerated after a new report field (found by two reviewers), and C8's live loss path counting successes only.
@@ -46,7 +46,7 @@ A final review read the whole wave through four lenses: API contracts and securi
 Notable corrections from review:
 
 - **Loss accounting.** The C8 harness accounts loss per path. The archive's samples, and separately the live totals (successes and recorded errors) plus the dropped-results counter, must account for every served request but those aborted in flight at the stop. A reported lost publication may account for at most one generator's largest window.
-- **The live run total is short.** With that accounting, 20-second local runs show the archive exact (43,189 served, 43,189 archived) while the live totals fall 1,900 to 5,900 short with no recorded errors and every loss counter at 0. A live window can go missing, and the final window is counted again by each terminal publication. This defect predates the wave; the harness now exposes it and fails the reference workload on the live path. It is not fixed here.
+- **The live run total was short.** With that accounting, 20-second local runs showed the archive exact (43,189 served, 43,189 archived) while the live totals fell 1,900 to 5,900 short with no recorded errors and every loss counter at 0. A live window could go missing, and the final window was counted again by each terminal publication. This defect predates the wave, and the harness exposed it by failing the reference workload on the live path. It was not fixed in this wave. The follow-up fix, which also covers a stop requested on the controller, and its limits (after a controller takeover, and with older generators) are recorded in the C8 notes of the specification.
 - **Exports.** Evaluation failures and store errors stay out of exported reports. Report CSV cells that an editor or the target authored never become spreadsheet formulas, while numbers are kept. `browser_intelligence` left the JSON report contract, which never filled it.
 - **The Browser area** appears only for browser groups, document evidence or a pinned browser policy (journey risk, which any protocol may pin, stays on the Performance area). A Browser link to another run falls back to Summary, and loading states never read as absent evidence.
 - **Template seeds.** Applying a template keeps the scenario's authored iterations, log level, auto transactions, error flags and browser settings that the template does not set.
@@ -57,7 +57,7 @@ Notable corrections from review:
 The specification records each package's deviations in full; in brief:
 
 - **Adapter retirement (A8):**
-  - Script session absorption is not done (see Review). Validation is not bound to capability, policy or approval revisions, which have no client-visible revision yet.
+  - Script session absorption was done after the wave (see Review). The Scripts page keeps the routing state. Validation is not bound to capability, policy or approval revisions, which have no client-visible revision yet.
   - TestHub keeps a form as its editing view, holding only canonical values.
   - The wizard's model chart keeps its own builder. A queued run's preview draws profile-mapped groups from their ramps. `NewTestPage`'s group edit draft stays a run-only projection.
 - **Browser area (E6):**
@@ -80,7 +80,7 @@ The specification records each package's deviations in full; in brief:
   - The benchmark does not measure spill, live lag, a cold replica, a worker crash, disk exhaustion or contention, and does not check scratch capacity.
   - The platform lanes run the native checks only, without install, uninstall or pinned hashes, and post no acceptance records.
 - **Telemetry (C8):**
-  - The reference workload fails on the live path (see Review). Its transport and sample-age P99 spikes remain unexplained, and generator processing includes the half-second aggregation window, so the default budgets read a run as breached.
+  - The reference workload failed on the live path (see Review; fixed after the wave, with the limits the specification lists). Its transport and sample-age P99 spikes remain unexplained, and generator processing includes the half-second aggregation window, so the default budgets read a run as breached.
   - It runs in one process, not on the reference controller shape, without collector traffic, an overload trial or native analytics, and it records no queue or byte volumes.
   - No test changes the cadence or policy within a run, and no acceptance record is published.
 

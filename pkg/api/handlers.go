@@ -840,6 +840,9 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 			importDraftAttestationToken(script) != "" {
 			importAttestationClaim, err = s.claimImportDraftAttestation(r, script)
 			if err != nil {
+				if writeImportDraftBusy(w, err) {
+					return
+				}
 				writeError(w, http.StatusConflict, "credential-preserving import draft is invalid or expired; run the import again")
 				return
 			}

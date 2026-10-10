@@ -192,6 +192,9 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   const [accessNotice, setAccessNotice] = useState('')
   const [scriptsLoadError, setScriptsLoadError] = useState('')
   const [secretDialogScript, setSecretDialogScript] = useState<StoredScript | null>(null)
+  // Saved scripts that asked to set up their secrets, waiting for the
+  // library's secrets dialog one after another.
+  const [secretDialogQueue, setSecretDialogQueue] = useState<StoredScript[]>([])
   const [selectedScriptIds, setSelectedScriptIds] = useState<Set<string>>(new Set())
   const [assignmentScripts, setAssignmentScripts] = useState<StoredScript[] | null>(null)
   const [moveScripts, setMoveScripts] = useState<StoredScript[] | null>(null)
@@ -232,7 +235,17 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     onNavigate?.('settings')
   }, [onNavigate])
 
-  useEffect(() => { setSecretDialogScript(null) }, [activeProjectId])
+  useEffect(() => { setSecretDialogScript(null); setSecretDialogQueue([]) }, [activeProjectId])
+  useEffect(() => {
+    if (secretDialogScript || secretDialogQueue.length === 0) return
+    setSecretDialogScript(secretDialogQueue[0])
+    setSecretDialogQueue(queue => queue.slice(1))
+  }, [secretDialogQueue, secretDialogScript])
+  const queueSecretDialog = useCallback((script: StoredScript) => {
+    // The dialog needs the script's definition; one without it would never
+    // open, or close, and would hold up the rest.
+    if (script.script) setSecretDialogQueue(queue => [...queue, script])
+  }, [])
 
   const openProjectSecrets = useCallback((script?: StoredScript) => {
     if (script?.id && script.script) {
@@ -930,9 +943,16 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   const handleSaved = useCallback((script: StoredScript, options?: ScriptSaveOptions) => {
     void refresh()
     void refreshAuthoringSessions()
+    if (options?.returnedToSource) {
+      // The editor went back to the archive review that opened it, which took
+      // the save; a page embedding this one still hears of it.
+      if (options.configureSecrets) queueSecretDialog(script)
+      onScriptSaved?.(script)
+      return
+    }
     handleSavedScript(script, undefined, options?.retainedDraft, options)
-    if (options?.configureSecrets) setSecretDialogScript(script)
-  }, [handleSavedScript, refresh, refreshAuthoringSessions])
+    if (options?.configureSecrets) queueSecretDialog(script)
+  }, [handleSavedScript, onScriptSaved, queueSecretDialog, refresh, refreshAuthoringSessions])
 
   const handleImported = useCallback((result: ImportedSaveResult) => {
     void refresh()

@@ -278,6 +278,9 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 				if protectedClaim != nil {
 					s.releaseImportCandidateClaim(protectedClaim)
 				}
+				if writeImportDraftBusy(w, claimErr) {
+					return
+				}
 				writeError(w, http.StatusConflict, fmt.Sprintf("imported script %d protected candidate is invalid, expired, or already claimed; run the conversion again", index+1))
 				return
 			}
@@ -326,6 +329,9 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 				if claimErr != nil || claim == nil || claim.Script == nil {
 					if claim != nil {
 						s.releaseImportDraftAttestation(claim)
+					}
+					if writeImportDraftBusy(w, claimErr) {
+						return
 					}
 					writeError(w, http.StatusConflict, fmt.Sprintf("imported script %d draft is invalid or expired; run the conversion again", index+1))
 					return

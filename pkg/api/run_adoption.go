@@ -655,6 +655,30 @@ func (tr *TestRunner) installRunAdoptionHandlesLocked(b *distributedExecutionBac
 	return nil
 }
 
+// adoptedRunTotals starts a taken-over run's totals from its stored history,
+// not from a copy this process kept: a standby may hold an early hydration of
+// the run, and a former owner its own count up to when it lost the run. The
+// stored windows carry no run totals, so the start is their sum, bounded and
+// approximate. If the history cannot be read, the totals start from the
+// history the run holds, at its next window. It is read when the run resumes,
+// after its generators are secured and before any of its windows is counted.
+func (tr *TestRunner) adoptedRunTotals(test *ManagedTest) runTotalsAccumulator {
+	var totals runTotalsAccumulator
+	if tr.historyStore == nil {
+		return totals
+	}
+	restored := &ManagedTest{ID: test.ID}
+	if err := tr.loadStoredTestHistoryLimit(restored, maxManagedTestHistory); err != nil {
+		slog.Warn("failed to load stored history for an adopted run's totals", "test_id", test.ID, "error", err)
+		return totals
+	}
+	tr.mu.RLock()
+	groups := append([]TestGroup(nil), test.Groups...)
+	tr.mu.RUnlock()
+	totals.countWindow(nil, restored.History, groups)
+	return totals
+}
+
 func (tr *TestRunner) installAdoptedRun(b *distributedExecutionBackend, candidate *runAdoptionCandidate, adopted, completed, archives map[string]generatorClient, generation uint64, ownerID string) {
 	test := candidate.test
 	// cloneClientMap returns nil for an empty map, and a run whose generators
@@ -1177,6 +1201,7 @@ func (tr *TestRunner) resumeAdoptedRun(test *ManagedTest) {
 		streams[target] = stream
 	}
 
+	runTotals := tr.adoptedRunTotals(test)
 	tr.mu.Lock()
 	// Admission is already open, so an operator stop may have landed while
 	// supervision was re-claimed. The streams are still installed then: the
@@ -1195,6 +1220,7 @@ func (tr *TestRunner) resumeAdoptedRun(test *ManagedTest) {
 	test.remoteMetricsStream = streams[first]
 	test.remoteMetricsStreamsByTarget = cloneMetricsStreamMap(streams)
 	test.remoteMetricsBatchesByTarget = make(map[string]generatorrpc.MetricsBatch)
+	test.runTotals = runTotals
 	stopping := test.Status == "STOPPING"
 	if !stopping {
 		test.remoteFinalizing = false

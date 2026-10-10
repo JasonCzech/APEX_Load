@@ -1542,6 +1542,9 @@ func (s *Server) handleApplyScriptSecretBindings(w http.ResponseWriter, r *http.
 		var claimErr error
 		mutationClaim, claimErr = s.claimImportDraftMutation(r, req.Script)
 		if claimErr != nil {
+			if writeImportDraftBusy(w, claimErr) {
+				return
+			}
 			writeJSON(w, http.StatusConflict, map[string]any{
 				"error": "credential-preserving import draft is invalid or expired; run the import again",
 				"code":  "import_draft_attestation_invalid",

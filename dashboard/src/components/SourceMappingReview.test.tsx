@@ -967,7 +967,7 @@ describe('SourceMappingReview', () => {
     await flushPromises()
 
     const sourceMaximize = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Expand source') as HTMLButtonElement | undefined
-    expect(sourceMaximize).toBeDefined()
+    expect(sourceMaximize).toBeTruthy()
     if (!sourceMaximize) return
 
     await act(async () => {
@@ -1016,7 +1016,7 @@ describe('SourceMappingReview', () => {
     await flushPromises()
 
     const logoutRow = container.querySelector('tr[data-mapping-id="logout"]') as HTMLTableRowElement | null
-    expect(logoutRow).not.toBeNull()
+    expect(logoutRow).toBeTruthy()
     if (!logoutRow) return
 
     await act(async () => {
@@ -1097,9 +1097,9 @@ describe('SourceMappingReview', () => {
     const homepageRow = container.querySelector('tr[data-mapping-id="homepage"]') as HTMLTableRowElement | null
     const logoutRow = container.querySelector('tr[data-mapping-id="logout"]') as HTMLTableRowElement | null
 
-    expect(tableScroller).not.toBeNull()
-    expect(homepageRow).not.toBeNull()
-    expect(logoutRow).not.toBeNull()
+    expect(tableScroller).toBeTruthy()
+    expect(homepageRow).toBeTruthy()
+    expect(logoutRow).toBeTruthy()
     if (!tableScroller || !homepageRow || !logoutRow) return
 
     Object.defineProperty(tableScroller, 'clientHeight', { configurable: true, value: 20 })
