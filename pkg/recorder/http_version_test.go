@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -107,5 +108,27 @@ func TestRecordRequestRetainsSeparateObservedProtocols(t *testing.T) {
 	}
 	if session.Requests[0].RequestHTTPVersion != "HTTP/1.1" || session.Requests[0].ResponseHTTPVersion != "HTTP/2.0" {
 		t.Fatal("request/response legs collapsed")
+	}
+}
+
+func TestRecorderConversionNotesOriginsAdvertisingHTTP3(t *testing.T) {
+	now := time.Now()
+	session := &Session{ID: "alt-svc-recording", Name: "Alt-Svc recording", BaseURL: "https://app.example.test", StartedAt: now, Requests: []RecordedRequest{
+		{Seq: 1, Timestamp: now, Method: "GET", URL: "https://app.example.test/", Path: "/", StatusCode: 200, RequestHTTPVersion: "HTTP/1.1", ResponseHTTPVersion: "HTTP/2.0",
+			ResponseHeadersMulti: map[string][]string{"Alt-Svc": {`h3=":443"; ma=86400`}, "Content-Type": {"text/html"}}},
+		{Seq: 2, Timestamp: now, Method: "GET", URL: "https://api.example.test/data", Path: "/data", StatusCode: 200, RequestHTTPVersion: "HTTP/1.1", ResponseHTTPVersion: "HTTP/1.1"},
+	}}
+	result := ConvertSession(session, session.Name)
+	if len(result.Diagnostics) != 1 {
+		t.Fatalf("diagnostics = %+v", result.Diagnostics)
+	}
+	note := result.Diagnostics[0]
+	if note.Code != "origin_advertises_h3" || note.Location != "https://app.example.test" || note.Severity != "info" {
+		t.Fatalf("note = %+v", note)
+	}
+	for _, warning := range result.Warnings {
+		if strings.Contains(warning, "HTTP/3") {
+			t.Fatalf("observation leaked into warnings: %q", warning)
+		}
 	}
 }

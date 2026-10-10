@@ -199,6 +199,15 @@ describe("RecordingStudio", () => {
         },
       ],
       warnings: ["review dynamic headers"],
+      diagnostics: [
+        {
+          code: "origin_advertises_h3",
+          element: "HTTP/3 advertisement",
+          location: "https://shop.example.test",
+          detail: "The origin advertises HTTP/3 (Alt-Svc). The import keeps each request's captured HTTP version.",
+          severity: "info",
+        },
+      ],
       unsupported_elements: [],
       assumptions: [],
       review_sections: [],
@@ -1021,6 +1030,11 @@ describe("RecordingStudio", () => {
     );
     expect(container.textContent).toContain("Checkout Preview");
     expect(container.textContent).toContain("review dynamic headers");
+    const notes = container.querySelector('[aria-label="Recording notes"]');
+    expect(notes?.textContent).toContain(
+      "HTTP/3 advertisement (https://shop.example.test): The origin advertises HTTP/3 (Alt-Svc).",
+    );
+    expect(container.querySelector(".rec-warnings")?.textContent).not.toContain("HTTP/3");
     expect(container.textContent).toContain("{{var.session_id}}");
     expect(container.textContent).toContain("85% confidence");
     expect(container.textContent).toContain("reused in a later request");

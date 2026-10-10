@@ -3,8 +3,8 @@ package http
 import "github.com/jasonczech/apexload/pkg/protocol"
 
 // Native HTTP producers bound their own typed Aura reports and scalar resource
-// and warning observations. Preserve those types and bounds while adding three
-// fixed-enum version receipts. A generic evidence projection would drop typed
+// and warning observations. Preserve those types and bounds while adding the
+// fixed-enum version receipts and the Alt-Svc HTTP/3 observation. A generic evidence projection would drop typed
 // Aura reports or truncate raw payloads before fresh-credential classification.
 func buildHTTPProtocolEvidence(_ *protocol.Action, result *protocol.Result) map[string]any {
 	if result == nil {
@@ -22,6 +22,9 @@ func buildHTTPProtocolEvidence(_ *protocol.Action, result *protocol.Result) map[
 	}
 	if result.HTTPVersionSource != "" {
 		evidence["http_version_source"] = result.HTTPVersionSource
+	}
+	if result.HTTPAltSvcH3Advertised {
+		evidence["alt_svc_h3_advertised"] = true
 	}
 	if len(evidence) == 0 {
 		return nil

@@ -727,6 +727,10 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		case resp.ProtoMajor == 2 && resp.ProtoMinor == 0:
 			result.HTTPVersionNegotiated = VersionHTTP2
 		}
+		// Observation only: an advertisement never changes routing for this
+		// policy; it tells the tester the target offers a protocol the run
+		// is not exercising.
+		result.HTTPAltSvcH3Advertised = AltSvcAdvertisesH3(resp.Header.Values("Alt-Svc"))
 	}
 	if !cacheHit && staleCacheEntry != nil && resp != nil && resp.StatusCode == http.StatusNotModified {
 		h.cache.refresh(req, staleCacheEntry, resp, time.Now())

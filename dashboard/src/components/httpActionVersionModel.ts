@@ -110,5 +110,7 @@ export function httpReplayVersionEvidence(evidence: ProtocolEvidence | undefined
     actual: source === 'wire' && (negotiated === '1.1' || negotiated === '2')
       ? `HTTP/${negotiated}` : source === 'cache' ? 'Not measured (cached response)' : 'Not observed',
     source: source === 'wire' ? 'Wire response' : source === 'cache' ? 'Cached response' : 'Not observed',
+    // Observation only: the wire response advertised final HTTP/3 in Alt-Svc.
+    advertisesHTTP3: source === 'wire' && evidence.alt_svc_h3_advertised === true,
   }
 }

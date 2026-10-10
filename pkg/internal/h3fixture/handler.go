@@ -36,6 +36,7 @@ func (s *Server) handler(listener string) http.Handler {
 	mux.HandleFunc("/slow", handleSlow)
 	mux.HandleFunc("/sse", handleSSE)
 	mux.HandleFunc("/bytes", handleBytes)
+	mux.HandleFunc("/cacheable", handleCacheable)
 	mux.HandleFunc("/", s.handleIndex)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -253,4 +254,10 @@ func handleBytes(w http.ResponseWriter, r *http.Request) {
 		}
 		remaining -= size
 	}
+}
+
+// handleCacheable returns a response any HTTP cache may keep for an hour.
+func handleCacheable(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	writeJSON(w, http.StatusOK, map[string]any{"proto": r.Proto, "cacheable": true})
 }

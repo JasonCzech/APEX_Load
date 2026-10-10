@@ -93,6 +93,10 @@ func convertThroughSharedPipeline(session *Session, name string, opts ConvertOpt
 		}
 	}
 	for _, item := range converted.Unsupported {
+		if item.Severity == diag.Info && item.Code == sample.OriginAdvertisesH3Code {
+			result.Diagnostics = append(result.Diagnostics, item)
+			continue
+		}
 		if item.Severity != diag.Warning && item.Severity != diag.Blocker {
 			continue
 		}

@@ -6,8 +6,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -102,7 +104,11 @@ func parseHAR(content string, includeStaticAssets bool, diagnostics *diag.Collec
 	filtered := 0
 	skipped := 0
 	warnings := []string{}
+	h3Origins := map[string]struct{}{}
 	for index, item := range items {
+		if origin := harOriginAdvertisingH3(item); origin != "" {
+			h3Origins[origin] = struct{}{}
+		}
 		if !includeStaticAssets && isStaticHAREntry(item) {
 			filtered++
 			continue
@@ -153,6 +159,10 @@ func parseHAR(content string, includeStaticAssets bool, diagnostics *diag.Collec
 	}
 	if len(exchanges) > 1 {
 		warnings = append(warnings, "HAR import preserves inter-request think time when entry timestamps are available, but browser-specific asset metadata is not preserved")
+	}
+	for _, origin := range slices.Sorted(maps.Keys(h3Origins)) {
+		diagnostics.AddCoded(diag.Info, OriginAdvertisesH3Code, "HTTP/3 advertisement", origin,
+			"The origin advertises HTTP/3 (Alt-Svc). The import keeps each request's captured HTTP version.")
 	}
 	if filtered > 0 {
 		diagnostics.Add(diag.Info, "HAR static asset filter", "HAR import", fmt.Sprintf("%d static asset entr%s skipped by default; enable include_static_assets to retain browser assets", filtered, pluralSuffix(filtered, "y was", "ies were")))
@@ -553,6 +563,44 @@ func isHARWebSocketUpgrade(item map[string]any) bool {
 	return strings.EqualFold(rawHARHeaderLookup(requestData["headers"], "Upgrade"), "websocket") ||
 		strings.EqualFold(rawHARHeaderLookup(responseData["headers"], "Upgrade"), "websocket") ||
 		intValue(responseData["status"]) == 101
+}
+
+// OriginAdvertisesH3Code marks an origin whose captured responses advertised
+// final HTTP/3 in Alt-Svc. It is an observation; it never changes a policy.
+const OriginAdvertisesH3Code = "origin_advertises_h3"
+
+// harOriginAdvertisingH3 returns the request origin when the entry's
+// response advertised final HTTP/3, else "".
+func harOriginAdvertisingH3(item map[string]any) string {
+	responseData, _ := item["response"].(map[string]any)
+	values := rawHARHeaderValues(responseData["headers"], "Alt-Svc")
+	if len(values) == 0 || !httpprotocol.AltSvcAdvertisesH3(values) {
+		return ""
+	}
+	requestData, _ := item["request"].(map[string]any)
+	parsed, err := url.Parse(stringValue(requestData["url"]))
+	if err != nil || parsed.Host == "" || !strings.EqualFold(parsed.Scheme, "https") {
+		return ""
+	}
+	return strings.ToLower(parsed.Scheme + "://" + parsed.Host)
+}
+
+func rawHARHeaderValues(value any, name string) []string {
+	items, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	var values []string
+	for _, item := range items {
+		mapped, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if strings.EqualFold(stringValue(mapped["name"]), name) {
+			values = append(values, stringValue(mapped["value"]))
+		}
+	}
+	return values
 }
 
 func rawHARHeaderLookup(value any, name string) string {

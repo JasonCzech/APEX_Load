@@ -793,6 +793,7 @@ type Result struct {
 	HTTPVersionPolicy          string `json:"-"`
 	HTTPVersionNegotiated      string `json:"-"`
 	HTTPVersionSource          string `json:"-"`
+	HTTPAltSvcH3Advertised     bool   `json:"-"` // wire response advertised final HTTP/3 in Alt-Svc
 	ProtocolEvidence           map[string]any
 	Snapshot                   *ErrorSnapshot // populated when snapshot_on_error is enabled
 	SourceStepID               string

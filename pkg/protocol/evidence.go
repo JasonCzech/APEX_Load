@@ -43,6 +43,9 @@ func BuildProtocolEvidence(action *Action, result *Result) map[string]any {
 	if result.HTTPVersionSource != "" {
 		evidence["http_version_source"] = result.HTTPVersionSource
 	}
+	if result.HTTPAltSvcH3Advertised {
+		evidence["alt_svc_h3_advertised"] = true
+	}
 	copyResponseContentReceipt(evidence, result.ProtocolEvidence)
 	if len(result.WarningCodes) > 0 {
 		evidence["warnings"] = result.WarningCodes

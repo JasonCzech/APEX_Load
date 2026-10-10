@@ -425,6 +425,7 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 	response := s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Script:               result.Script,
 		Warnings:             result.Warnings,
+		Diagnostics:          result.Diagnostics,
 		Correlations:         result.Correlations,
 		SkipDraftAttestation: true,
 	})
@@ -487,6 +488,7 @@ func (s *Server) handlePreviewRecordingConversion(w http.ResponseWriter, r *http
 	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Script:                  result.Script,
 		Warnings:                result.Warnings,
+		Diagnostics:             result.Diagnostics,
 		Correlations:            result.Correlations,
 		RecordingSessionID:      id,
 		RecordingSnapshotDigest: snapshotDigest,

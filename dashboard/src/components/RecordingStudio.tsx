@@ -2359,6 +2359,11 @@ export default function RecordingStudio({
         new Date(a.stopped_at || a.started_at).getTime(),
     );
   const convertResult = convertTask.value;
+  // Informational observations (for example origins that advertise HTTP/3);
+  // warnings and blockers arrive in convertResult.warnings.
+  const recordingNotes = (convertResult?.diagnostics || []).filter(
+    (item) => item.severity === "info",
+  );
   const convertedStoredScript = recorderImportStoredScript(convertResult);
   const convertedReviewScript = recorderImportReviewScript(convertResult);
   const convertedScript = convertedReviewScript || convertedStoredScript;
@@ -4035,6 +4040,16 @@ export default function RecordingStudio({
               {convertResult.warnings.map((w, i) => (
                 <div key={i} className="rec-warning-item">
                   {w}
+                </div>
+              ))}
+            </div>
+          )}
+          {recordingNotes.length > 0 && (
+            <div className="rec-notes" aria-label="Recording notes">
+              {recordingNotes.map((note) => (
+                <div key={`${note.code}-${note.location}`} className="rec-note-item">
+                  {note.element}
+                  {note.location ? ` (${note.location})` : ""}: {note.detail}
                 </div>
               ))}
             </div>

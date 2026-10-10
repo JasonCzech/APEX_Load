@@ -63,6 +63,7 @@ export interface ProtocolEvidence {
   http_version_policy?: HTTPActionVersion
   http_version_negotiated?: '1.1' | '2'
   http_version_source?: 'wire' | 'cache'
+  alt_svc_h3_advertised?: boolean
   protocol?: string
   operation?: string
   target?: string

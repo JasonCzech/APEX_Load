@@ -39,6 +39,11 @@ type Collector struct {
 }
 
 func (c *Collector) Add(sev Severity, element, location, detail string) {
+	c.AddCoded(sev, "", element, location, detail)
+}
+
+// AddCoded records a diagnostic with a stable machine-readable code.
+func (c *Collector) AddCoded(sev Severity, code, element, location, detail string) {
 	element = strings.TrimSpace(element)
 	detail = strings.TrimSpace(detail)
 	location = strings.TrimSpace(location)
@@ -49,12 +54,13 @@ func (c *Collector) Add(sev Severity, element, location, detail string) {
 		sev = Warning
 	}
 	item := Diagnostic{
+		Code:     strings.TrimSpace(code),
 		Element:  element,
 		Detail:   detail,
 		Severity: sev,
 		Location: location,
 	}
-	key := strings.Join([]string{string(item.Severity), item.Element, item.Location, item.Detail}, "\x00")
+	key := strings.Join([]string{string(item.Severity), item.Code, item.Element, item.Location, item.Detail}, "\x00")
 	if c.seen == nil {
 		c.seen = map[string]struct{}{}
 	}

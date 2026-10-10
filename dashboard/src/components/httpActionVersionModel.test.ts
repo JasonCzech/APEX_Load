@@ -123,7 +123,7 @@ describe('qualified HTTP version evidence', () => {
 
   it('retains a measured wire version independently of the selected policy', () => {
     expect(httpReplayVersionEvidence({ http_version_policy: 'auto', http_version_negotiated: '1.1', http_version_source: 'wire' }))
-      .toEqual({ policy: 'Auto-negotiate (HTTP/2 or HTTP/1.1)', actual: 'HTTP/1.1', source: 'Wire response' })
+      .toEqual({ policy: 'Auto-negotiate (HTTP/2 or HTTP/1.1)', actual: 'HTTP/1.1', source: 'Wire response', advertisesHTTP3: false })
     expect(httpReplayVersionEvidence({ http_version_policy: '2', http_version_negotiated: '2', http_version_source: 'wire' })?.actual).toBe('HTTP/2')
   })
 
@@ -131,8 +131,11 @@ describe('qualified HTTP version evidence', () => {
     expect(httpReplayVersionEvidence({ http_version_policy: '2' })?.actual).toBe('Not observed')
     expect(httpReplayVersionEvidence({ http_version_policy: '2', http_version_source: 'cache', http_version_negotiated: '2' })?.actual).toBe('Not measured (cached response)')
     expect(httpReplayVersionEvidence({ http_version_source: 'wire', http_version_negotiated: 'HTTP/2', http_version_policy: 'private-detail' } as unknown as ProtocolEvidence))
-      .toEqual({ policy: 'Not retained', actual: 'Not observed', source: 'Wire response' })
+      .toEqual({ policy: 'Not retained', actual: 'Not observed', source: 'Wire response', advertisesHTTP3: false })
     expect(httpReplayVersionEvidence(undefined)).toBeNull()
+    expect(httpReplayVersionEvidence({ http_version_source: 'wire', http_version_negotiated: '2', alt_svc_h3_advertised: true })?.advertisesHTTP3).toBe(true)
+    expect(httpReplayVersionEvidence({ http_version_source: 'cache', alt_svc_h3_advertised: true })?.advertisesHTTP3).toBe(false)
+    expect(httpReplayVersionEvidence({ http_version_source: 'wire', alt_svc_h3_advertised: 'yes' } as unknown as ProtocolEvidence)?.advertisesHTTP3).toBe(false)
     expect(httpReplayVersionEvidence({ protocol: 'http', metadata: { http_version: '2' } })).toBeNull()
   })
 })

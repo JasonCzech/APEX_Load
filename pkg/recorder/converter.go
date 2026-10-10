@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
+	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/recordingprofile"
@@ -41,6 +42,10 @@ type ConvertResult struct {
 	Script       *dsl.Script   `json:"script"`
 	Correlations []Correlation `json:"correlations"`
 	Warnings     []string      `json:"warnings,omitempty"`
+	// Diagnostics carries coded, informational observations from the shared
+	// conversion pipeline, such as origins that advertise HTTP/3. Warnings
+	// and blockers stay in Warnings.
+	Diagnostics diag.Diagnostics `json:"diagnostics,omitempty"`
 	// Baseline is the raw recorded observation of each converted request,
 	// with ID the index of its action in Script: the recorded side of a
 	// record-vs-replay correlation diagnosis. It holds source values; the
