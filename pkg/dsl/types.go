@@ -838,8 +838,8 @@ type HTTPConfig struct {
 	AuraRecordedFailures string `json:"aura_recorded_failures,omitempty" jsonschema:"enum=,enum=require_success,enum=accept_recorded"`
 
 	// Connection
-	Version         string `json:"version,omitempty" jsonschema:"enum=,enum=1.1,enum=2"` // "1.1" exact, "2" required/no fallback; empty auto-negotiates HTTP/1.1 or HTTP/2
-	MaxConnsPerHost int    `json:"max_conns_per_host,omitempty"`                         // default: 100
+	Version         string `json:"version,omitempty" jsonschema:"enum=,enum=1.1,enum=2,enum=auto+h3,enum=3"` // "1.1" exact, "2" required/no fallback; empty auto-negotiates HTTP/1.1 or HTTP/2; "auto+h3" upgrades to advertised HTTP/3; "3" requires HTTP/3
+	MaxConnsPerHost int    `json:"max_conns_per_host,omitempty"`                                             // default: 100
 	MaxIdleConns    int    `json:"max_idle_conns,omitempty"`
 	KeepAlive       *bool  `json:"keep_alive,omitempty"` // default: true
 

@@ -8,6 +8,8 @@ export const HTTP_ACTION_VERSION_OPTIONS = [
   { value: 'auto', label: 'Auto-negotiate (HTTP/2 or HTTP/1.1)' },
   { value: '1.1', label: 'Require HTTP/1.1' },
   { value: '2', label: 'Require HTTP/2 (no fallback)' },
+  { value: 'auto+h3', label: 'Upgrade to HTTP/3 when advertised' },
+  { value: '3', label: 'Require HTTP/3 (no fallback)' },
 ] as const
 const HTTP_FAMILIES = new Set(['http', 'http/1.1', 'http/2', 'soap', 'java_http'])
 const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'])
@@ -15,7 +17,7 @@ const NON_REQUEST_TYPES = new Set(['http_sequence', 'http_oauth2_token', 'cookie
 const own = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key)
 
 export function isHTTPActionVersion(value: unknown): value is HTTPActionVersion {
-  return value === 'auto' || value === '1.1' || value === '2'
+  return value === 'auto' || value === '1.1' || value === '2' || value === 'auto+h3' || value === '3'
 }
 
 export function supportsHTTPActionVersion(action: ScriptActionDefinition, protocol: string): boolean {

@@ -55,7 +55,7 @@ import {
   type HTTPTransportTabId,
   type RuntimeSettingsSectionId,
 } from './scriptEditorRuntimeSettingsModel'
-import { HTTP_VERSION_OPTIONS, formatScriptHTTPVersion, scriptHTTPVersionSettings } from './httpVersionModel'
+import { HTTP3_EXECUTION_NOTE, HTTP_VERSION_OPTIONS, formatScriptHTTPVersion, isHTTP3Policy, scriptHTTPVersionSettings } from './httpVersionModel'
 import { formatPacingTiming } from './runtimeTiming'
 import SecondsFromMillisecondsInput from './SecondsFromMillisecondsInput'
 import HttpRequestDefaultsEditor, {
@@ -1184,7 +1184,7 @@ export function ScriptRuntimeSettingsView({
               <select value={httpVersionSettings.selection} aria-invalid={!httpVersionSettings.valid}
                 onChange={e => {
                   const value = e.target.value
-                  if (value === '' || value === '1.1' || value === '2') updateField('config.http', { ...script.config.http, version: value })
+                  if (HTTP_VERSION_OPTIONS.some(option => option.value === value)) updateField('config.http', { ...script.config.http, version: value })
                 }}>
                 {HTTP_VERSION_OPTIONS.map(option => (
                   <option key={option.value || 'default'} value={option.value}>{option.value === '' ? httpVersionSettings.defaultLabel : option.label}</option>
@@ -1195,6 +1195,7 @@ export function ScriptRuntimeSettingsView({
             {!httpVersionSettings.valid && <p role="alert">This script HTTP version is unsupported. Its original value is preserved until you choose a supported setting or edit the source JSON.</p>}
             <div className="form-hint full-width">
               Effective script policy: {httpVersionSettings.effectiveLabel}. Explicit versions are exact; required HTTP/2 never falls back to HTTP/1.1. Each request can inherit this policy or select its own policy, including Auto.
+              {isHTTP3Policy(httpVersionSettings.selection) && <> {HTTP3_EXECUTION_NOTE}</>}
             </div>
             <label><span>Max Conns/Host</span>
               <input type="number" value={script.config.http?.max_conns_per_host || 100}

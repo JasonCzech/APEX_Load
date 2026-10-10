@@ -168,7 +168,8 @@ func TestHeaderListIssuesPreserveOrdinaryDuplicatesAndIdentifyUnsupportedOccurre
 			{Name: "Expect", Value: "custom-expectation"},
 			{Name: "expect", Value: "100-Continue"},
 		}
-		for _, version := range []string{"", VersionHTTP11} {
+		// auto+h3 may still use HTTP/1.1 over TCP, so the rule applies to it.
+		for _, version := range []string{"", VersionHTTP11, VersionAutoH3} {
 			issues := HeaderListIssuesForVersion(lateContinue, version)
 			if len(issues) != 1 ||
 				issues[0].Code != HeaderListIssueExpectContinueUnsupported ||
@@ -176,8 +177,10 @@ func TestHeaderListIssuesPreserveOrdinaryDuplicatesAndIdentifyUnsupportedOccurre
 				t.Fatalf("version %q issues = %#v", version, issues)
 			}
 		}
-		if issues := HeaderListIssuesForVersion(lateContinue, VersionHTTP2); len(issues) != 0 {
-			t.Fatalf("HTTP/2 issues = %#v", issues)
+		for _, version := range []string{VersionHTTP2, VersionHTTP3} {
+			if issues := HeaderListIssuesForVersion(lateContinue, version); len(issues) != 0 {
+				t.Fatalf("version %q issues = %#v", version, issues)
+			}
 		}
 
 		firstContinue := protocol.HeaderList{
@@ -199,7 +202,7 @@ func TestHeaderListIssuesPreserveOrdinaryDuplicatesAndIdentifyUnsupportedOccurre
 		if issues := HeaderListIssuesForVersion(headers, VersionHTTP11); len(issues) != 0 {
 			t.Fatalf("HTTP/1.1 issues = %#v", issues)
 		}
-		for _, version := range []string{"", VersionHTTP2} {
+		for _, version := range []string{"", VersionHTTP2, VersionHTTP3, VersionAutoH3} {
 			issues := HeaderListIssuesForVersion(headers, version)
 			if len(issues) != len(headers) {
 				t.Fatalf("version %q issues = %#v", version, issues)
@@ -889,8 +892,9 @@ func TestHTTPVersionCapabilityAndHTTP10PreTransportRejection(t *testing.T) {
 		t.Fatalf("ValidateVersion(HTTP/1.0) = %v", err)
 	}
 	var unsupported *UnsupportedVersionError
-	if err := ValidateVersion("3"); !errors.Is(err, ErrUnsupportedVersion) || !errors.As(err, &unsupported) {
-		t.Fatalf("ValidateVersion(3) = %v, want structured unsupported-version error", err)
+	// 3 is now policy vocabulary; a draft token stays unsupported.
+	if err := ValidateVersion("h3-29"); !errors.Is(err, ErrUnsupportedVersion) || !errors.As(err, &unsupported) {
+		t.Fatalf("ValidateVersion(h3-29) = %v, want structured unsupported-version error", err)
 	}
 
 	var requests atomic.Int32

@@ -347,7 +347,7 @@ func containsOpenAPIField(fields []string, want string) bool {
 
 func assertOptionalHTTPVersionSchema(t *testing.T, schema oasSchema) {
 	t.Helper()
-	if schema.Type != "string" || schema.Nullable || !reflect.DeepEqual(schema.Enum, []string{"auto", "1.1", "2"}) || len(schema.Properties) != 0 {
+	if schema.Type != "string" || schema.Nullable || !reflect.DeepEqual(schema.Enum, []string{"auto", "1.1", "2", "auto+h3", "3"}) || len(schema.Properties) != 0 {
 		t.Fatalf("HTTP version wire schema = %#v, want non-null strict scalar enum", schema)
 	}
 }

@@ -298,7 +298,9 @@ func TestGeneratedSchemaHTTPVersionMatchesRuntimeContract(t *testing.T) {
 		{name: "exact HTTP 1.1", version: stringPointer("1.1")},
 		{name: "required HTTP 2", version: stringPointer("2")},
 		{name: "HTTP 1.0 is unsupported", version: stringPointer("1.0"), wantInvalid: true},
-		{name: "unknown version is unsupported", version: stringPointer("3"), wantInvalid: true},
+		{name: "upgrade to HTTP 3", version: stringPointer("auto+h3")},
+		{name: "required HTTP 3", version: stringPointer("3")},
+		{name: "unknown version is unsupported", version: stringPointer("h3-29"), wantInvalid: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

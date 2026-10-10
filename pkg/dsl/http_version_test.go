@@ -16,7 +16,7 @@ func mustDSLHTTPVersion(t *testing.T, policy string) OptionalHTTPVersion {
 }
 
 func TestHTTPVersionLeafValidationAndSequenceChildren(t *testing.T) {
-	for _, raw := range []string{`null`, `""`, `"3"`, `2`, `false`, `{}`, `[]`} {
+	for _, raw := range []string{`null`, `""`, `"h3"`, `"h3-29"`, `"HTTP/3"`, `2`, `false`, `{}`, `[]`} {
 		for _, child := range []bool{false, true} {
 			action := `{"name":"request","type":"GET","target":"/","http_version":` + raw + `}`
 			if child {

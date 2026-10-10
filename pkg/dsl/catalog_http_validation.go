@@ -142,7 +142,7 @@ func validateHTTPSequenceRequestIssues(label string, requestIndex int, request m
 		var version OptionalHTTPVersion
 		if err := decodeHTTPSequenceChildField(raw, &version); err != nil {
 			knownMalformedField = true
-			issues = append(issues, childLabel+".http_version must be auto, 1.1, or 2")
+			issues = append(issues, childLabel+".http_version must be auto, 1.1, 2, auto+h3, or 3")
 		} else if err := version.Validate(); err != nil {
 			issues = append(issues, childLabel+": "+err.Error())
 		}

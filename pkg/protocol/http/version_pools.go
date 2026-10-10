@@ -86,7 +86,10 @@ func (h *HTTP) initializeHTTPPolicyPools(ctx context.Context, config map[string]
 		h.policyPools[policy] = &httpPolicyPool{client: client, transport: transport, oauthClient: oauthClient, oauthTransport: oauthTransport}
 	}
 	defaultPolicy := h.httpVersion
-	if defaultPolicy == "" {
+	if defaultPolicy == "" || VersionUsesQUIC(defaultPolicy) {
+		// An HTTP/3 session policy has no pool on this runtime; requests that
+		// inherit it are refused before dispatch, so the automatic pool only
+		// serves session traffic outside request leaves.
 		defaultPolicy = "auto"
 	}
 	pool := h.policyPools[defaultPolicy]
@@ -98,7 +101,16 @@ func (h *HTTP) effectiveHTTPVersion(action *protocol.Action) (string, error) {
 	if action == nil {
 		return "", fmt.Errorf("http action is required")
 	}
-	return action.HTTPVersion.Resolve(h.httpVersion)
+	policy, err := action.HTTPVersion.Resolve(h.httpVersion)
+	if err != nil {
+		return "", err
+	}
+	// A leaf HTTP/3 policy has no pool on this runtime. Refuse it here, before
+	// forHTTPVersion could fall back to the session's TCP pool.
+	if VersionUsesQUIC(policy) {
+		return "", ErrHTTP3NotEnabled
+	}
+	return policy, nil
 }
 
 func (h *HTTP) forHTTPVersion(policy string) *HTTP {

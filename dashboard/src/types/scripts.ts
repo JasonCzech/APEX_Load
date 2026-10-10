@@ -151,7 +151,7 @@ export interface CorrelationDiagnoseResponse {
   truncated?: boolean
 }
 
-export type HTTPActionVersion = 'auto' | '1.1' | '2'
+export type HTTPActionVersion = 'auto' | '1.1' | '2' | 'auto+h3' | '3'
 
 export interface ScriptActionDefinition {
   pacing_ids?: string[]

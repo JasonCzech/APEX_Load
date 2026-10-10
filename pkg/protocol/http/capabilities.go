@@ -51,6 +51,12 @@ var supportedMethods = [...]string{
 const (
 	VersionHTTP11 = "1.1"
 	VersionHTTP2  = "2"
+	// VersionHTTP3 requires final HTTP/3 over QUIC from the first request,
+	// with no TCP fallback.
+	VersionHTTP3 = "3"
+	// VersionAutoH3 negotiates HTTP/2 or HTTP/1.1 over TCP and upgrades later
+	// requests to a same-host HTTP/3 alternative the origin advertised.
+	VersionAutoH3 = "auto+h3"
 )
 
 var supportedVersions = [...]string{
@@ -69,7 +75,17 @@ var (
 	// ErrHTTP2Required prefixes transport failures when version 2 was selected.
 	// The configured transport has no HTTP/1 fallback in this mode.
 	ErrHTTP2Required = errors.New("http version 2 is required")
+	// ErrHTTP3NotEnabled is returned before any traffic when a request
+	// resolves to an HTTP/3 policy (3 or auto+h3) on a runtime that cannot
+	// execute it. Scripts holding those policies still validate and save.
+	ErrHTTP3NotEnabled = errors.New("HTTP/3 execution is not enabled on this installation")
 )
+
+// VersionUsesQUIC reports whether a normalized policy can send requests over
+// QUIC: exact HTTP/3, or the auto+h3 upgrade.
+func VersionUsesQUIC(version string) bool {
+	return version == VersionHTTP3 || version == VersionAutoH3
+}
 
 // UnsupportedVersionError identifies an unknown explicit HTTP version without
 // requiring callers to parse its Error text.
@@ -170,7 +186,9 @@ type RuntimeCapabilities struct {
 }
 
 // NormalizeVersion canonicalizes an authored HTTP version. An empty value
-// means runtime negotiation (HTTP/1.1 with opportunistic HTTP/2).
+// means runtime negotiation (HTTP/1.1 with opportunistic HTTP/2). Final
+// HTTP/3 spellings become 3; draft tokens such as h3-29 are left as they are,
+// so they stay observations and never become a policy.
 func NormalizeVersion(raw string) string {
 	version := strings.TrimSpace(raw)
 	switch strings.ToUpper(version) {
@@ -180,19 +198,24 @@ func NormalizeVersion(raw string) string {
 		return VersionHTTP11
 	case "HTTP/2", "HTTP/2.0":
 		return VersionHTTP2
+	case "HTTP/3", "HTTP/3.0", "H3":
+		return VersionHTTP3
 	default:
 		return version
 	}
 }
 
 // SupportedVersions returns the exact, executable explicit version modes.
-// Empty/omitted remains a supported automatic negotiation mode.
+// Empty/omitted remains a supported automatic negotiation mode. HTTP/3
+// policies are absent until the runtime can execute them.
 func SupportedVersions() []string {
 	return append([]string(nil), supportedVersions[:]...)
 }
 
 // VersionExecutable reports whether raw is an executable explicit version or
-// the empty automatic mode.
+// the empty automatic mode. HTTP/3 policies are valid vocabulary but are not
+// executable on this runtime, so importers keep treating captured HTTP/3 as
+// an observation.
 func VersionExecutable(raw string) bool {
 	switch NormalizeVersion(raw) {
 	case "", VersionHTTP11, VersionHTTP2:
@@ -202,11 +225,14 @@ func VersionExecutable(raw string) bool {
 	}
 }
 
-// ValidateVersion is the authoritative runtime HTTP-version validation.
+// ValidateVersion is the authoritative structural HTTP-version validation
+// for a session (config) policy. It accepts the HTTP/3 policies whether or
+// not this installation can execute them; a request that resolves to one is
+// refused at dispatch with ErrHTTP3NotEnabled.
 func ValidateVersion(raw string) error {
 	version := NormalizeVersion(raw)
 	switch version {
-	case "", VersionHTTP11, VersionHTTP2:
+	case "", VersionHTTP11, VersionHTTP2, VersionHTTP3, VersionAutoH3:
 		return nil
 	case "1.0":
 		return ErrHTTP10Unsupported
@@ -245,7 +271,9 @@ func headerListIssuesForVersion(headers protocol.HeaderList, version string, all
 
 	normalizedVersion := NormalizeVersion(version)
 	exactHTTP11 := normalizedVersion == VersionHTTP11
-	exactHTTP2 := normalizedVersion == VersionHTTP2
+	// Exact HTTP/2 and exact HTTP/3 never fall back to HTTP/1.1, so its
+	// Expect rule does not apply to them; auto+h3 may still use HTTP/1.1.
+	noHTTP1 := normalizedVersion == VersionHTTP2 || normalizedVersion == VersionHTTP3
 	singletonCounts := make(map[string]int, 2)
 	expectCount := 0
 	firstExpectHasContinue := false
@@ -323,7 +351,7 @@ func headerListIssuesForVersion(headers protocol.HeaderList, version string, all
 			hasContinue := httpguts.HeaderValuesContainsToken([]string{header.Value}, "100-continue")
 			if expectCount == 0 {
 				firstExpectHasContinue = hasContinue
-			} else if !exactHTTP2 && hasContinue && !firstExpectHasContinue {
+			} else if !noHTTP1 && hasContinue && !firstExpectHasContinue {
 				issues = append(issues, HeaderListIssue{
 					Code:   HeaderListIssueExpectContinueUnsupported,
 					Index:  index,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatHTTPVersion, formatScriptHTTPVersion, HTTP_VERSION_OPTIONS, scriptHTTPVersionSettings } from './httpVersionModel'
+import { formatHTTPVersion, formatScriptHTTPVersion, HTTP3_EXECUTION_NOTE, HTTP_VERSION_OPTIONS, inheritedHTTPActionVersion, isHTTP3Policy, scriptHTTPVersionSettings } from './httpVersionModel'
 
 describe('httpVersionModel', () => {
   it('formats supported, automatic, and unexpected versions', () => {
@@ -31,5 +31,24 @@ describe('effective script HTTP version labels', () => {
     expect(scriptHTTPVersionSettings('http/2', 'HTTP/1.1')).toMatchObject({ selection: '1.1', valid: true })
     expect(scriptHTTPVersionSettings('http/2', '  ')).toMatchObject({ selection: 'existing-auto', valid: true, effectiveLabel: 'Auto-negotiate (HTTP/2 or HTTP/1.1)' })
     for (const value of [null, 'auto', '1.0', 2, {}, []]) expect(scriptHTTPVersionSettings('http/2', value)).toMatchObject({ selection: 'invalid', valid: false })
+  })
+})
+
+describe('HTTP/3 policies', () => {
+  it('labels and parses auto+h3 and 3 like the engine', () => {
+    expect(formatHTTPVersion('auto+h3')).toBe('Upgrade to HTTP/3 when advertised')
+    expect(formatHTTPVersion('3')).toBe('HTTP/3 required (no fallback)')
+    for (const raw of ['3', 'HTTP/3', 'http/3.0', 'h3', ' H3 ']) expect(inheritedHTTPActionVersion('http', raw)).toBe('3')
+    expect(inheritedHTTPActionVersion('http', 'auto+h3')).toBe('auto+h3')
+    // auto+h3 is an exact token, and draft tokens never become a policy.
+    for (const raw of ['AUTO+H3', 'auto+h2', 'h3-29']) expect(inheritedHTTPActionVersion('http', raw)).toBeNull()
+    expect(scriptHTTPVersionSettings('http', '3')).toMatchObject({ selection: '3', valid: true, effectiveLabel: 'HTTP/3 required (no fallback)' })
+    expect(scriptHTTPVersionSettings('http/2', 'auto+h3')).toMatchObject({ selection: 'auto+h3', valid: true })
+  })
+
+  it('names the execution requirement only for the HTTP/3 policies', () => {
+    expect(isHTTP3Policy('3') && isHTTP3Policy('auto+h3')).toBe(true)
+    for (const value of ['', 'auto', '1.1', '2', 'h3', undefined]) expect(isHTTP3Policy(value)).toBe(false)
+    expect(HTTP3_EXECUTION_NOTE).toContain('HTTP/3 execution enabled')
   })
 })

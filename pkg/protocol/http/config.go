@@ -410,6 +410,13 @@ func applyHTTPVersion(transport *http.Transport, config map[string]any) (string,
 	if err := ValidateVersion(version); err != nil {
 		return "", err
 	}
+	if VersionUsesQUIC(version) {
+		// The session keeps the HTTP/3 policy so precedence still holds: a
+		// request that overrides it runs, and one that inherits it is refused
+		// by effectiveHTTPVersion. The baseline transport is the automatic one.
+		transport.ForceAttemptHTTP2 = true
+		return version, nil
+	}
 
 	switch version {
 	case VersionHTTP2:

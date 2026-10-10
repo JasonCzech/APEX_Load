@@ -8,7 +8,10 @@ import (
 
 // OptionalHTTPVersion preserves absence separately from an authored JSON null or
 // empty string. Its zero value inherits the session policy. Explicit policies
-// are strict scalars: auto, 1.1, or 2. Values are never interpolated.
+// are strict scalars: auto, 1.1, 2, auto+h3, or 3. Values are never
+// interpolated. The HTTP/3 policies are valid vocabulary on every
+// installation; whether one can execute is decided at admission and by the
+// runtime, not here.
 type OptionalHTTPVersion struct {
 	value   string
 	present bool
@@ -29,14 +32,12 @@ func (value OptionalHTTPVersion) Validate() error {
 		return nil
 	}
 	if value.null {
-		return fmt.Errorf("http_version must be a non-null string: auto, 1.1, or 2")
+		return fmt.Errorf("http_version must be a non-null string: %s", httpVersionPolicyList)
 	}
-	switch value.value {
-	case "auto", "1.1", "2":
-		return nil
-	default:
-		return fmt.Errorf("http_version must be auto, 1.1, or 2")
+	if !validHTTPVersionPolicy(value.value) {
+		return fmt.Errorf("http_version must be %s", httpVersionPolicyList)
 	}
+	return nil
 }
 
 // Resolve returns the effective transport policy. The inherited policy has
@@ -51,12 +52,21 @@ func (value OptionalHTTPVersion) Resolve(inherited string) (string, error) {
 	if inherited == "" {
 		return "auto", nil
 	}
-	switch inherited {
-	case "auto", "1.1", "2":
-		return inherited, nil
-	default:
+	if !validHTTPVersionPolicy(inherited) {
 		return "", fmt.Errorf("inherited HTTP version is unsupported")
 	}
+	return inherited, nil
+}
+
+// httpVersionPolicyList names the accepted explicit policies for messages.
+const httpVersionPolicyList = "auto, 1.1, 2, auto+h3, or 3"
+
+func validHTTPVersionPolicy(value string) bool {
+	switch value {
+	case "auto", "1.1", "2", "auto+h3", "3":
+		return true
+	}
+	return false
 }
 
 func (value OptionalHTTPVersion) MarshalJSON() ([]byte, error) {
@@ -76,7 +86,7 @@ func (value *OptionalHTTPVersion) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 	if err := json.Unmarshal(data, &value.value); err != nil {
-		return fmt.Errorf("http_version must be a string: auto, 1.1, or 2")
+		return fmt.Errorf("http_version must be a string: %s", httpVersionPolicyList)
 	}
 	return nil
 }

@@ -178,3 +178,12 @@ func roundDurationToMillis(value time.Duration) time.Duration {
 	}
 	return time.Duration(math.Round(float64(value)/float64(time.Millisecond))) * time.Millisecond
 }
+
+// NetworkShapingActive reports whether web_runtime network simulation
+// settings shape traffic, using the same rules as the runtime: a preset or
+// custom mode that resolves to latency or bandwidth, or any jitter or loss.
+// Shaping wraps TCP connections only, which is why QUIC policies reject it.
+func NetworkShapingActive(mode, preset string, latencyMS, bandwidthKbps, jitterMS int, packetLossPct float64) bool {
+	latency, bandwidth := resolveNetworkProfile(mode, preset, latencyMS, bandwidthKbps)
+	return latency > 0 || bandwidth > 0 || jitterMS > 0 || packetLossPct > 0
+}

@@ -1,6 +1,7 @@
 import { useId } from 'react'
 import type { ScriptActionDefinition } from '../types/scripts'
 import { httpCapturedVersionEvidence, HTTP_ACTION_VERSION_OPTIONS, httpActionVersionSettings, isHTTPActionVersion } from './httpActionVersionModel'
+import { HTTP3_EXECUTION_NOTE, isHTTP3Policy } from './httpVersionModel'
 
 type Props = {
   action: ScriptActionDefinition
@@ -30,6 +31,7 @@ export function HTTPActionVersionFields({ action, index, protocol, scriptVersion
     {!settings.valid && <p role="alert">This request has an unsupported HTTP version value. Choose a supported policy or review the source JSON. Its original value is preserved until you edit it.</p>}
     {settings.inherited === null && <p role="alert">The script HTTP version is unsupported. Review Runtime Settings before replay.</p>}
     <p>Authored policy: {settings.present ? settings.effectiveLabel : `Inherit script setting (${settings.inheritedLabel})`}.</p>
+    {isHTTP3Policy(settings.policy) && <p>{HTTP3_EXECUTION_NOTE}</p>}
     <dl><dt>{observations.requestLabel}</dt><dd>{observations.request}</dd>
       <dt>{observations.responseLabel}</dt><dd>{observations.response}</dd></dl>
     {observations.proxyLegs && <p>The client-to-proxy and proxy-to-origin observations describe different connections.</p>}

@@ -76,7 +76,7 @@ func GenerateSchema() ([]byte, error) {
 	action["required"] = []any{"name", "type"}
 	action["allOf"] = actionTypeClauses()
 	if properties, ok := action["properties"].(map[string]any); ok {
-		properties["http_version"] = map[string]any{"type": "string", "enum": []string{"auto", "1.1", "2"}}
+		properties["http_version"] = map[string]any{"type": "string", "enum": []string{"auto", "1.1", "2", "auto+h3", "3"}}
 		if typeProperty, ok := properties["type"].(map[string]any); ok {
 			typeProperty["description"] = "Action type discriminator. Known types are listed in examples; protocols accepting request-shaped actions (http, soap, java_http) also accept other method spellings."
 			typeProperty["examples"] = knownActionTypeNames()

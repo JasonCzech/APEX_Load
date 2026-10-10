@@ -584,7 +584,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -1066,7 +1066,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -1198,7 +1198,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -5116,7 +5116,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -5598,7 +5598,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -5730,7 +5730,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -5947,7 +5947,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -6429,7 +6429,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -6561,7 +6561,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -6680,7 +6680,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -7162,7 +7162,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -7294,7 +7294,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -12070,7 +12070,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -12552,7 +12552,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -12684,7 +12684,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -12963,7 +12963,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -13445,7 +13445,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -13577,7 +13577,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -13673,7 +13673,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -14155,7 +14155,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -14287,7 +14287,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -14373,7 +14373,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -14789,7 +14789,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -14867,7 +14867,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -14930,7 +14930,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -15346,7 +15346,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -15424,7 +15424,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -15539,7 +15539,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -16021,7 +16021,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -16153,7 +16153,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -16214,7 +16214,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -16630,7 +16630,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -16708,7 +16708,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -17579,7 +17579,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -18061,7 +18061,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -18193,7 +18193,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -18444,7 +18444,7 @@ export interface operations {
                   "extractors"?: Array<Record<string, unknown>>;
                   "header_list"?: Record<string, unknown>;
                   "headers"?: Record<string, string>;
-                  "http_version"?: "auto" | "1.1" | "2";
+                  "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                   "max_redirects"?: (number) | null;
                   "metadata"?: Record<string, unknown>;
                   "method"?: string;
@@ -18539,7 +18539,7 @@ export interface operations {
                   "extractors"?: Array<Record<string, unknown>>;
                   "header_list"?: Record<string, unknown>;
                   "headers"?: Record<string, string>;
-                  "http_version"?: "auto" | "1.1" | "2";
+                  "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                   "max_redirects"?: (number) | null;
                   "metadata"?: Record<string, unknown>;
                   "method"?: string;
@@ -18611,7 +18611,7 @@ export interface operations {
                   "extractors"?: Array<Record<string, unknown>>;
                   "header_list"?: Record<string, unknown>;
                   "headers"?: Record<string, string>;
-                  "http_version"?: "auto" | "1.1" | "2";
+                  "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                   "max_redirects"?: (number) | null;
                   "metadata"?: Record<string, unknown>;
                   "method"?: string;
@@ -18653,7 +18653,7 @@ export interface operations {
                   "extractors"?: Array<Record<string, unknown>>;
                   "header_list"?: Record<string, unknown>;
                   "headers"?: Record<string, string>;
-                  "http_version"?: "auto" | "1.1" | "2";
+                  "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                   "max_redirects"?: (number) | null;
                   "metadata"?: Record<string, unknown>;
                   "method"?: string;
@@ -18748,7 +18748,7 @@ export interface operations {
                   "extractors"?: Array<Record<string, unknown>>;
                   "header_list"?: Record<string, unknown>;
                   "headers"?: Record<string, string>;
-                  "http_version"?: "auto" | "1.1" | "2";
+                  "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                   "max_redirects"?: (number) | null;
                   "metadata"?: Record<string, unknown>;
                   "method"?: string;
@@ -18820,7 +18820,7 @@ export interface operations {
                   "extractors"?: Array<Record<string, unknown>>;
                   "header_list"?: Record<string, unknown>;
                   "headers"?: Record<string, string>;
-                  "http_version"?: "auto" | "1.1" | "2";
+                  "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                   "max_redirects"?: (number) | null;
                   "metadata"?: Record<string, unknown>;
                   "method"?: string;
@@ -21252,7 +21252,7 @@ export interface operations {
                   "extractors"?: Array<Record<string, unknown>>;
                   "header_list"?: Record<string, unknown>;
                   "headers"?: Record<string, string>;
-                  "http_version"?: "auto" | "1.1" | "2";
+                  "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                   "max_redirects"?: (number) | null;
                   "metadata"?: Record<string, unknown>;
                   "method"?: string;
@@ -21345,7 +21345,7 @@ export interface operations {
                   "extractors"?: Array<Record<string, unknown>>;
                   "header_list"?: Record<string, unknown>;
                   "headers"?: Record<string, string>;
-                  "http_version"?: "auto" | "1.1" | "2";
+                  "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                   "max_redirects"?: (number) | null;
                   "metadata"?: Record<string, unknown>;
                   "method"?: string;
@@ -21417,7 +21417,7 @@ export interface operations {
                   "extractors"?: Array<Record<string, unknown>>;
                   "header_list"?: Record<string, unknown>;
                   "headers"?: Record<string, string>;
-                  "http_version"?: "auto" | "1.1" | "2";
+                  "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                   "max_redirects"?: (number) | null;
                   "metadata"?: Record<string, unknown>;
                   "method"?: string;
@@ -21510,7 +21510,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -21992,7 +21992,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -22124,7 +22124,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -22326,7 +22326,7 @@ export interface operations {
                   "extractors"?: Array<Record<string, unknown>>;
                   "header_list"?: Record<string, unknown>;
                   "headers"?: Record<string, string>;
-                  "http_version"?: "auto" | "1.1" | "2";
+                  "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                   "max_redirects"?: (number) | null;
                   "metadata"?: Record<string, unknown>;
                   "method"?: string;
@@ -22419,7 +22419,7 @@ export interface operations {
                   "extractors"?: Array<Record<string, unknown>>;
                   "header_list"?: Record<string, unknown>;
                   "headers"?: Record<string, string>;
-                  "http_version"?: "auto" | "1.1" | "2";
+                  "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                   "max_redirects"?: (number) | null;
                   "metadata"?: Record<string, unknown>;
                   "method"?: string;
@@ -22491,7 +22491,7 @@ export interface operations {
                   "extractors"?: Array<Record<string, unknown>>;
                   "header_list"?: Record<string, unknown>;
                   "headers"?: Record<string, string>;
-                  "http_version"?: "auto" | "1.1" | "2";
+                  "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                   "max_redirects"?: (number) | null;
                   "metadata"?: Record<string, unknown>;
                   "method"?: string;
@@ -22584,7 +22584,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -23066,7 +23066,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -23198,7 +23198,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -23410,7 +23410,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -23892,7 +23892,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -24024,7 +24024,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -25075,7 +25075,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Record<string, unknown>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -25170,7 +25170,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Record<string, unknown>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -25242,7 +25242,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Record<string, unknown>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -25346,7 +25346,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -25762,7 +25762,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -25840,7 +25840,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -25986,7 +25986,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -26402,7 +26402,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -26480,7 +26480,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -26643,7 +26643,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Record<string, unknown>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -26738,7 +26738,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Record<string, unknown>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -26810,7 +26810,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Record<string, unknown>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -28042,7 +28042,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -28524,7 +28524,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -28656,7 +28656,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -28764,7 +28764,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -29246,7 +29246,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -29378,7 +29378,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -36555,7 +36555,7 @@ export interface operations {
             "extractors"?: Array<Record<string, unknown>>;
             "header_list"?: Array<Record<string, unknown>>;
             "headers"?: Record<string, string>;
-            "http_version"?: "auto" | "1.1" | "2";
+            "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
             "max_redirects"?: (number) | null;
             "metadata"?: Record<string, unknown>;
             "method"?: string;
@@ -36658,7 +36658,7 @@ export interface operations {
             "extractors"?: Array<Record<string, unknown>>;
             "header_list"?: Array<Record<string, unknown>>;
             "headers"?: Record<string, string>;
-            "http_version"?: "auto" | "1.1" | "2";
+            "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
             "max_redirects"?: (number) | null;
             "metadata"?: Record<string, unknown>;
             "method"?: string;
@@ -36782,7 +36782,7 @@ export interface operations {
             "extractors"?: Array<Record<string, unknown>>;
             "header_list"?: Array<Record<string, unknown>>;
             "headers"?: Record<string, string>;
-            "http_version"?: "auto" | "1.1" | "2";
+            "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
             "max_redirects"?: (number) | null;
             "metadata"?: Record<string, unknown>;
             "method"?: string;
@@ -39002,7 +39002,7 @@ export interface operations {
               }>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -39616,7 +39616,7 @@ export interface operations {
               }>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -39770,7 +39770,7 @@ export interface operations {
               }>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -39923,7 +39923,7 @@ export interface operations {
                   "extractors"?: Array<Record<string, unknown>>;
                   "header_list"?: Record<string, unknown>;
                   "headers"?: Record<string, string>;
-                  "http_version"?: "auto" | "1.1" | "2";
+                  "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                   "max_redirects"?: (number) | null;
                   "metadata"?: Record<string, unknown>;
                   "method"?: string;
@@ -40016,7 +40016,7 @@ export interface operations {
                   "extractors"?: Array<Record<string, unknown>>;
                   "header_list"?: Record<string, unknown>;
                   "headers"?: Record<string, string>;
-                  "http_version"?: "auto" | "1.1" | "2";
+                  "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                   "max_redirects"?: (number) | null;
                   "metadata"?: Record<string, unknown>;
                   "method"?: string;
@@ -40088,7 +40088,7 @@ export interface operations {
                   "extractors"?: Array<Record<string, unknown>>;
                   "header_list"?: Record<string, unknown>;
                   "headers"?: Record<string, string>;
-                  "http_version"?: "auto" | "1.1" | "2";
+                  "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                   "max_redirects"?: (number) | null;
                   "metadata"?: Record<string, unknown>;
                   "method"?: string;
@@ -40181,7 +40181,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -40663,7 +40663,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -40795,7 +40795,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -54062,7 +54062,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -54544,7 +54544,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -54676,7 +54676,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -55980,7 +55980,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -56462,7 +56462,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -56594,7 +56594,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -75402,7 +75402,7 @@ export interface operations {
                   "extractors"?: Array<Record<string, unknown>>;
                   "header_list"?: Record<string, unknown>;
                   "headers"?: Record<string, string>;
-                  "http_version"?: "auto" | "1.1" | "2";
+                  "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                   "max_redirects"?: (number) | null;
                   "metadata"?: Record<string, unknown>;
                   "method"?: string;
@@ -75495,7 +75495,7 @@ export interface operations {
                   "extractors"?: Array<Record<string, unknown>>;
                   "header_list"?: Record<string, unknown>;
                   "headers"?: Record<string, string>;
-                  "http_version"?: "auto" | "1.1" | "2";
+                  "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                   "max_redirects"?: (number) | null;
                   "metadata"?: Record<string, unknown>;
                   "method"?: string;
@@ -75567,7 +75567,7 @@ export interface operations {
                   "extractors"?: Array<Record<string, unknown>>;
                   "header_list"?: Record<string, unknown>;
                   "headers"?: Record<string, string>;
-                  "http_version"?: "auto" | "1.1" | "2";
+                  "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                   "max_redirects"?: (number) | null;
                   "metadata"?: Record<string, unknown>;
                   "method"?: string;
@@ -75660,7 +75660,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -76142,7 +76142,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -76274,7 +76274,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -76375,7 +76375,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -76855,7 +76855,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -76987,7 +76987,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -87973,7 +87973,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -88455,7 +88455,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -88587,7 +88587,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -88687,7 +88687,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -89169,7 +89169,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -89301,7 +89301,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -106584,7 +106584,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -107066,7 +107066,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -107198,7 +107198,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -107526,7 +107526,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -108008,7 +108008,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -108140,7 +108140,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -108249,7 +108249,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -108731,7 +108731,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -108863,7 +108863,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -109041,7 +109041,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -109523,7 +109523,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -109655,7 +109655,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -110012,7 +110012,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -110494,7 +110494,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -110626,7 +110626,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -110722,7 +110722,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -111204,7 +111204,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -111336,7 +111336,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -111422,7 +111422,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -111838,7 +111838,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -111916,7 +111916,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -111979,7 +111979,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -112395,7 +112395,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -112473,7 +112473,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -114036,7 +114036,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -114518,7 +114518,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -114650,7 +114650,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -114751,7 +114751,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -115231,7 +115231,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -115363,7 +115363,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -115457,7 +115457,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -115939,7 +115939,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -116071,7 +116071,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -126373,7 +126373,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -126855,7 +126855,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -126987,7 +126987,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -127181,7 +127181,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -127663,7 +127663,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -127795,7 +127795,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -134483,7 +134483,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -134965,7 +134965,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -135097,7 +135097,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -136521,7 +136521,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -136937,7 +136937,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -137015,7 +137015,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -137134,7 +137134,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -137616,7 +137616,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -137748,7 +137748,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -137866,7 +137866,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Record<string, unknown>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -137961,7 +137961,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Record<string, unknown>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -138033,7 +138033,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Record<string, unknown>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -139656,7 +139656,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -140138,7 +140138,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -140270,7 +140270,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -141111,7 +141111,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -141593,7 +141593,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -141725,7 +141725,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -142643,7 +142643,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -143125,7 +143125,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -143257,7 +143257,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -144197,7 +144197,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -144679,7 +144679,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -144811,7 +144811,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -145752,7 +145752,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -146234,7 +146234,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -146366,7 +146366,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -147306,7 +147306,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -147788,7 +147788,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -147920,7 +147920,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -157439,7 +157439,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -157921,7 +157921,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -158053,7 +158053,7 @@ export interface operations {
               "extractors"?: Array<Record<string, unknown>>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -158160,7 +158160,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -158642,7 +158642,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -158774,7 +158774,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -164216,7 +164216,7 @@ export interface operations {
               }>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -164830,7 +164830,7 @@ export interface operations {
               }>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -164984,7 +164984,7 @@ export interface operations {
               }>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -165135,7 +165135,7 @@ export interface operations {
                   "extractors"?: Array<Record<string, unknown>>;
                   "header_list"?: Record<string, unknown>;
                   "headers"?: Record<string, string>;
-                  "http_version"?: "auto" | "1.1" | "2";
+                  "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                   "max_redirects"?: (number) | null;
                   "metadata"?: Record<string, unknown>;
                   "method"?: string;
@@ -165228,7 +165228,7 @@ export interface operations {
                   "extractors"?: Array<Record<string, unknown>>;
                   "header_list"?: Record<string, unknown>;
                   "headers"?: Record<string, string>;
-                  "http_version"?: "auto" | "1.1" | "2";
+                  "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                   "max_redirects"?: (number) | null;
                   "metadata"?: Record<string, unknown>;
                   "method"?: string;
@@ -165300,7 +165300,7 @@ export interface operations {
                   "extractors"?: Array<Record<string, unknown>>;
                   "header_list"?: Record<string, unknown>;
                   "headers"?: Record<string, string>;
-                  "http_version"?: "auto" | "1.1" | "2";
+                  "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                   "max_redirects"?: (number) | null;
                   "metadata"?: Record<string, unknown>;
                   "method"?: string;
@@ -165393,7 +165393,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -165875,7 +165875,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -166007,7 +166007,7 @@ export interface operations {
                 "extractors"?: Array<Record<string, unknown>>;
                 "header_list"?: Array<Record<string, unknown>>;
                 "headers"?: Record<string, string>;
-                "http_version"?: "auto" | "1.1" | "2";
+                "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
                 "max_redirects"?: (number) | null;
                 "metadata"?: Record<string, unknown>;
                 "method"?: string;
@@ -170635,7 +170635,7 @@ export interface operations {
               }>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -171249,7 +171249,7 @@ export interface operations {
               }>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;
@@ -171403,7 +171403,7 @@ export interface operations {
               }>;
               "header_list"?: Array<Record<string, unknown>>;
               "headers"?: Record<string, string>;
-              "http_version"?: "auto" | "1.1" | "2";
+              "http_version"?: "auto" | "1.1" | "2" | "auto+h3" | "3";
               "max_redirects"?: (number) | null;
               "metadata"?: Record<string, unknown>;
               "method"?: string;

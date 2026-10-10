@@ -37,7 +37,7 @@ func TestValidateScriptIssues_HTTPVersionUsesRuntimeContract(t *testing.T) {
 		{name: "exact HTTP 1.1", version: "1.1"},
 		{name: "required HTTP 2", version: "2"},
 		{name: "HTTP 1.0 unsupported", version: "1.0", wantIssue: "http version 1.0 is not supported by the native runtime"},
-		{name: "unknown version", version: "3", wantIssue: `unsupported HTTP version "3"`},
+		{name: "unknown version", version: "h3-29", wantIssue: `unsupported HTTP version "h3-29"`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

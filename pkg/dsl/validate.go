@@ -128,6 +128,7 @@ func validateScriptIssues(script *Script, allowPreservedJavaVMCredentials bool) 
 	issues = append(issues, validateGRPCConfigIssues(script)...)
 	issues = append(issues, validateWebRuntimeIssues(script)...)
 	issues = append(issues, validateHTTPHeaderContractIssues(script)...)
+	issues = append(issues, validateHTTP3PolicyIssues(script)...)
 	issues = append(issues, validateGoalConfigIssues(script.GoalConfig)...)
 
 	return issues

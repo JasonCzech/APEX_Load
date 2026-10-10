@@ -393,7 +393,7 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
     if (protocol === 'http/2') expect(select.options[0].textContent).toBe('Protocol default (HTTP/2 required (no fallback))')
     expect(onUpdateField).not.toHaveBeenCalled()
     expect(script.config.http?.version).toBe(version)
-    expect(Array.from(select.options).filter(option => !option.disabled).map(option => option.value)).toEqual(['', '1.1', '2'])
+    expect(Array.from(select.options).filter(option => !option.disabled).map(option => option.value)).toEqual(['', '1.1', '2', 'auto+h3', '3'])
   })
 
   it.each([null, 'auto', '1.0', 2, {}, []].map(value => ({ value })))('retains malformed global $value visibly until an intentional edit', ({ value }) => {
@@ -468,6 +468,8 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
       'Auto-negotiate (HTTP/2 or HTTP/1.1)',
       'Require HTTP/1.1',
       'Require HTTP/2 (no fallback)',
+      'Upgrade to HTTP/3 when advertised',
+      'Require HTTP/3 (no fallback)',
     ])
     expect(version?.querySelector('option[value="1.0"]')).toBeNull()
     expect(container.textContent).toContain('required HTTP/2 never falls back to HTTP/1.1')
@@ -479,6 +481,31 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
     })
 
     expect(onUpdateField).toHaveBeenCalledWith('config.http', { version: '' })
+    expect(container.textContent).not.toContain('runs need HTTP/3 execution enabled')
+    act(() => {
+      if (!version) return
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set
+      setter?.call(version, '3')
+      version.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenLastCalledWith('config.http', { version: '3' })
+  })
+
+  it('keeps an HTTP/3 script policy selected and names its execution requirement', () => {
+    const script: ScriptDefinition = { name: 'H3', version: '1', protocol: 'http', config: { base_url: 'https://api.example.com', http: { version: 'auto+h3' } }, actions: [] }
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView activeHTTPTransportTab="connection" activeSection="http" canEditProtocol={false}
+          onSave={vi.fn()} onSelectHTTPTransportTab={vi.fn()} onSelectSection={vi.fn()} onUpdateField={vi.fn()}
+          onUpdateProtocol={vi.fn()} saveDisabled={false} saving={false} script={script} />,
+      )
+    })
+    const version = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
+      .find(select => select.parentElement?.textContent?.includes('HTTP Version'))
+    expect(version?.value).toBe('auto+h3')
+    expect(version?.getAttribute('aria-invalid')).toBe('false')
+    expect(container.textContent).toContain('Effective script policy: Upgrade to HTTP/3 when advertised')
+    expect(container.textContent).toContain('runs need HTTP/3 execution enabled')
   })
 
   it('offers target TPS pacing in script runtime settings', () => {

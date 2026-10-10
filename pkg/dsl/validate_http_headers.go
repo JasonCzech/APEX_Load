@@ -285,7 +285,7 @@ func decodeHTTPSequenceChildHeaders(label string, index int, rawRequest any) (Ac
 	var issues []string
 	if raw, exists := request["http_version"]; exists {
 		if err := decodeHTTPSequenceChildField(raw, &child.HTTPVersion); err != nil {
-			issues = append(issues, childLabel+".http_version must be auto, 1.1, or 2")
+			issues = append(issues, childLabel+".http_version must be auto, 1.1, 2, auto+h3, or 3")
 		} else if err := child.HTTPVersion.Validate(); err != nil {
 			issues = append(issues, childLabel+": "+err.Error())
 		}

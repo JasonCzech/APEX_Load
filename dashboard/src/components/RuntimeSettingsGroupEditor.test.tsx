@@ -1284,9 +1284,13 @@ describe('RuntimeSettingsGroupEditor', () => {
       'Inherit',
       'Require HTTP/1.1',
       'Require HTTP/2 (no fallback)',
+      'Upgrade to HTTP/3 when advertised',
+      'Require HTTP/3 (no fallback)',
     ])
     expect(version.querySelector('option[value="1.0"]')).toBeNull()
     expect(container.textContent).toContain('required HTTP/2 never falls back to HTTP/1.1')
+    act(() => setSelectValue(version, 'auto+h3'))
+    expect(onChange.mock.calls[onChange.mock.calls.length - 1]?.[1].http.version).toBe('auto+h3')
     act(() => setSelectValue(version, '2'))
     const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
     expect(last.http).toEqual({

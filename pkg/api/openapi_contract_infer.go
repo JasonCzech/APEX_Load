@@ -1761,8 +1761,8 @@ func protocolRuntimeCapacityOpenAPISchema() oasSchema {
 func optionalHTTPVersionOpenAPISchema() oasSchema {
 	return oasSchema{
 		Type:        "string",
-		Enum:        []string{"auto", "1.1", "2"},
-		Description: "Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version.",
+		Enum:        []string{"auto", "1.1", "2", "auto+h3", "3"},
+		Description: "Omit to inherit the session policy. Explicit auto negotiates HTTP/2 or HTTP/1.1; 1.1 and 2 require that version; auto+h3 upgrades to an advertised HTTP/3 alternative; 3 requires HTTP/3 with no fallback. The HTTP/3 policies always save but run only where HTTP/3 execution is enabled.",
 	}
 }
 

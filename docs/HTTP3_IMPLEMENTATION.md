@@ -1,6 +1,6 @@
 # HTTP/3 Implementation Plan and Decision Records
 
-Status: Wave 0 complete; Wave 1 next. Native HTTP/3 execution is **not** available yet; the web support matrix still lists HTTP/3 as a gap.
+Status: Wave 0 complete; Wave 1 in progress. Native HTTP/3 execution is **not** available yet; the web support matrix still lists HTTP/3 as a gap.
 
 This file is the in-repo companion to the HTTP/3 delivery specification (24 work packages in 7 waves). It records the decisions the code depends on, the measurements behind them, and what each wave has delivered. Code references are to `main`.
 
@@ -9,7 +9,7 @@ This file is the in-repo companion to the HTTP/3 delivery specification (24 work
 | Wave | Scope | Status |
 | --- | --- | --- |
 | 0 | Fixture, quic-go contract tests, Alt-Svc observation, browser protocol evidence and QUIC setting, cURL TCP versions, DevWeb disclosure | Complete (see deviations) |
-| 1 | Version vocabulary and resolver, `config.http.quic`, `APEXLOAD_HTTP3` flag and `native_http3_v1` capability | Not started |
+| 1 | Version vocabulary and resolver, `config.http.quic`, `APEXLOAD_HTTP3` flag and `native_http3_v1` capability | In progress (WP1.1 done) |
 | 2 | Exact HTTP/3 (`3`) preview | Not started |
 | 3 | `auto+h3` upgrade pilot | Not started |
 | 4 | Recording and import mapping | Not started |
@@ -95,3 +95,9 @@ Decision: each VUser lazily creates one `quic.Transport` and UDP socket per loca
 | WP0.4 | `config.browser.quic` (`auto`, `off`) for VUsers, Runtime Settings and group overrides; browser recorder `quic_mode` with a Recording Studio option | Per-request protocol badges in the recorder are deferred: the recorder has no live request list. "Advertised but not observed" is reported in the conversion notes |
 | WP0.5 | cURL `--http1.1`, `--http2`, `--http2-prior-knowledge` mapped (prior knowledge is exact HTTP/2 only on `http://`; on HTTPS curl still negotiates, so it maps to automatic); `--http1.0`, `-0`, `--http3`, `--http3-only` and cleartext `--http2` keep specific gates | Postman is not mapped: no real exported collection has yet shown that its HTTP version setting is serialized |
 | WP0.6 | `devweb_http3_enabled` disclosure; `PROTOCOL_SUPPORT.md` HTTP version rules corrected | The DevWeb key is detected by name pattern under the transport sections until a real DevWeb 24.3+ `rts.yml` confirms it |
+
+## Wave 1 delivery notes
+
+| WP | Delivered | Deviation from the specification |
+| --- | --- | --- |
+| WP1.1 | `auto+h3` and `3` at every level (script, request, `http_sequence` children, runtime-settings overrides) in the DSL, JSON schema, OpenAPI and dashboard types; `NormalizeVersion` maps `HTTP/3`, `HTTP/3.0` and `h3` to `3` while draft tokens stay unsupported; one precedence (request, group, scenario, script, alias) shared with the existing policies; save-time rejection of exact `3` with an `http://` URL, a TLS maximum below 1.3, a custom proxy or integrated auth, and of either policy with network shaping; HTTP/1.1-only `Expect` rule skipped for exact `3`; the runtime refuses any request that resolves to an HTTP/3 policy before sending, while overrides to other policies still run | The `http/3` protocol alias waits until every dispatch path recognizes it (Wave 2). The post-resolution URL check lands with the transport (WP2.1), because this runtime refuses all HTTP/3 requests before resolution matters. The two policies are already offered in the existing version selects so a stored policy displays correctly; the QUIC panel and capability-aware messages remain WP5.2 |

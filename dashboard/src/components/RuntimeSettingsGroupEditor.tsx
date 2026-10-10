@@ -22,6 +22,7 @@ import {
   type RuntimeFieldKey,
 } from './runtimeSettingsModel'
 import { editReplacementSection, materializeRuntimeSettingsForApply } from './runtimeSettingsApply'
+import { HTTP3_EXECUTION_NOTE, isHTTP3Policy } from './httpVersionModel'
 import { useBrowserEmulationCatalog } from '../hooks/useBrowserEmulationCatalog'
 import WebHttpTab from './runtimeTabs/WebHttpTab'
 import { JavaEnvSettingsFields, type JavaEnvSettingsValue } from './JavaEnvSettingsFields'
@@ -1172,6 +1173,7 @@ export default function RuntimeSettingsGroupEditor({
                   </label>
                   <div className="form-hint">
                     Inherit uses the next configured layer; an effective empty value auto-negotiates. Explicit versions are exact, and required HTTP/2 never falls back to HTTP/1.1.
+                    {isHTTP3Policy(draft.http?.version) && <> {HTTP3_EXECUTION_NOTE}</>}
                   </div>
                   <label><span>Max connections / host</span><input className="settings-input" type="number" min={0} value={draft.http?.max_conns_per_host ?? ''} onChange={event => patchHttp({ max_conns_per_host: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.max_conns_per_host)} /></label>
                   <label><span>Max idle connections</span><input className="settings-input" type="number" min={0} value={draft.http?.max_idle_conns ?? ''} onChange={event => patchHttp({ max_idle_conns: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.max_idle_conns)} /></label>

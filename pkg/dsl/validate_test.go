@@ -633,7 +633,7 @@ func TestValidateScriptIssues_WebRuntimeValidation(t *testing.T) {
 				ExtendedOptions: []string{"advanced_trace", "wiretap"},
 			},
 			HTTP: HTTPConfig{
-				Version:          "3",
+				Version:          "h3-29",
 				MaxConnsPerHost:  httpprotocol.MaxConfiguredConnsPerHost + 1,
 				MaxIdleConns:     -1,
 				ConnectTimeoutMs: -1,
@@ -692,7 +692,7 @@ func TestValidateScriptIssues_WebRuntimeValidation(t *testing.T) {
 	assertIssue(t, issues, "config.run_logic.block_scheduling must be sequential, random, or percentage")
 	assertIssue(t, issues, "config.run_logic.action_sequence[1] must be init, action, teardown, vuser_init, or vuser_end")
 	assertIssue(t, issues, "config.log.extended_options[1] must be parameter_substitution, data_returned, or advanced_trace")
-	assertIssue(t, issues, `config.http.version: unsupported HTTP version "3"`)
+	assertIssue(t, issues, `config.http.version: unsupported HTTP version "h3-29"`)
 	assertIssue(t, issues, "config.http.max_conns_per_host must be between 0 and 256")
 	assertIssue(t, issues, "config.http.max_idle_conns must be between 0 and 32")
 	assertIssue(t, issues, "config.http.connect_timeout_ms must be between 0 and 3600000")

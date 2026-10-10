@@ -27,6 +27,23 @@ function renderEditor(input: ScriptActionDefinition, protocol: string, scriptHTT
 }
 
 describe('request HTTP version fields', () => {
+  it('writes the HTTP/3 policies and names their execution requirement', () => {
+    const onUpdate = vi.fn()
+    act(() => root.render(<HTTPActionVersionFields action={action()} index={2} protocol="http" scriptVersion="" onUpdate={onUpdate} />))
+    expect(Array.from(select().options).map(option => option.value)).toEqual(['inherit', 'auto', '1.1', '2', 'auto+h3', '3'])
+    change('3')
+    expect(onUpdate).toHaveBeenLastCalledWith(2, 'http_version', '3')
+    act(() => root.render(<HTTPActionVersionFields action={action({ http_version: 'auto+h3' })} index={2} protocol="http" scriptVersion="" onUpdate={onUpdate} />))
+    expect(select().value).toBe('auto+h3')
+    expect(container.textContent).toContain('runs need HTTP/3 execution enabled')
+    // An inherited HTTP/3 script policy carries the same note.
+    act(() => root.render(<HTTPActionVersionFields action={action()} index={2} protocol="http" scriptVersion="3" onUpdate={onUpdate} />))
+    expect(select().selectedOptions[0].textContent).toContain('HTTP/3 required (no fallback)')
+    expect(container.textContent).toContain('runs need HTTP/3 execution enabled')
+    act(() => root.render(<HTTPActionVersionFields action={action({ http_version: '1.1' })} index={2} protocol="http" scriptVersion="3" onUpdate={onUpdate} />))
+    expect(container.textContent).not.toContain('runs need HTTP/3 execution enabled')
+  })
+
   it.each(['http', 'http/1.1', 'http/2', 'soap', 'java_http'])('shows accessible leaf controls in %s and inherits the passed script default', protocol => {
     renderEditor(action(), protocol, '2')
     const region = container.querySelector('[aria-label="Request HTTP version policy"]')!
