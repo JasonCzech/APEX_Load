@@ -167,9 +167,11 @@ type http3RouteObserver interface {
 type http3RouteObserverKey struct{}
 
 // upgradeRoundTripper routes auto+h3 requests: TCP until the origin
-// advertises a same-host HTTP/3 alternative, then QUIC to it.
+// advertises a same-host HTTP/3 alternative, then QUIC to it. Fallback to
+// TCP happens only when the request cannot have reached the target.
 type upgradeRoundTripper struct {
 	tcp       stdhttp.RoundTripper // automatic HTTP/2-or-HTTP/1.1 pool
+	http11    stdhttp.RoundTripper // exact HTTP/1.1 pool, for H3_VERSION_FALLBACK
 	h3        stdhttp.RoundTripper
 	cache     *altSvcCache
 	route     http3RouteRoundTripper // proxy and PAC route decision
@@ -232,6 +234,25 @@ func (rt *upgradeRoundTripper) RoundTrip(req *stdhttp.Request) (*stdhttp.Respons
 		rt.cache.observe(req.URL, resp.Header.Values("Alt-Svc"))
 		return resp, nil
 	}
+	if req.Context().Err() != nil {
+		return nil, err // the caller's own cancellation: no fallback
+	}
+	var h3Err *h3transport.Error
+	if !errors.As(err, &h3Err) {
+		return nil, err
+	}
+	switch {
+	case h3Err.Class == h3transport.ClassVersionFallback &&
+		(h3Err.Certainty == h3transport.NotSent || idempotentReplayable(req)):
+		return rt.fallback(req, key, "h3_version_fallback", rt.http11, observer)
+	case h3Err.Certainty == h3transport.NotSent:
+		// The QUIC path failed before the request was sent: keep the origin
+		// on TCP for broken_ttl_ms and run this request once on TCP.
+		rt.cache.markBroken(key, rt.brokenTTL)
+		return rt.fallback(req, key, "quic_connect_failed", rt.tcp, observer)
+	}
+	// possibly_sent and rejected_unprocessed fail: the target may have
+	// processed the request, or quic-go already used its single retry.
 	return nil, err
 }
 
@@ -243,7 +264,7 @@ func (rt *upgradeRoundTripper) tcpRoundTrip(req *stdhttp.Request, key string) (*
 	return resp, err
 }
 
-// fallback runs a request the alternative did not process over TCP, once.
+// fallback replays a request that never reached the target over TCP, once.
 // It needs a body it can rebuild; quic-go has already closed the original.
 func (rt *upgradeRoundTripper) fallback(req *stdhttp.Request, key, kind string, transport stdhttp.RoundTripper, observer http3RouteObserver) (*stdhttp.Response, error) {
 	retry := req.Clone(req.Context())
@@ -265,4 +286,16 @@ func (rt *upgradeRoundTripper) fallback(req *stdhttp.Request, key, kind string, 
 		rt.cache.observe(req.URL, resp.Header.Values("Alt-Svc"))
 	}
 	return resp, err
+}
+
+// idempotentReplayable reports whether a request may run again after the
+// target might have seen it: an idempotent method with a rebuildable body
+// (RFC 9110 §9.2.2).
+func idempotentReplayable(req *stdhttp.Request) bool {
+	switch req.Method {
+	case stdhttp.MethodGet, stdhttp.MethodHead, stdhttp.MethodOptions, stdhttp.MethodPut, stdhttp.MethodDelete, stdhttp.MethodTrace:
+	default:
+		return false
+	}
+	return req.Body == nil || req.Body == stdhttp.NoBody || req.GetBody != nil
 }

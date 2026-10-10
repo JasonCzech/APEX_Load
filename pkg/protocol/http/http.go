@@ -583,7 +583,8 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	var dnsStart, connStart, tlsStart time.Time
 	// HTTP/3 attempt budget: QUIC attempts for every redirect hop the action
 	// may follow, plus one quic-go retry for the whole action. auto+h3's TCP
-	// attempts are not charged.
+	// attempts, fallbacks included, are not charged: the router falls back at
+	// most once per hop.
 	var h3Cancel context.CancelCauseFunc
 	h3AttemptLimit := h.maxRedirects
 	if action.MaxRedirects != nil {
@@ -1536,6 +1537,12 @@ func (h *HTTP) transportErrorMessage(err error) string {
 			cause = urlError.Err
 		}
 		return ErrHTTP3Required.Error() + ": " + cause.Error()
+	}
+	var h3Err *h3transport.Error
+	if h != nil && h.httpVersion == VersionAutoH3 && errors.As(err, &h3Err) {
+		// The router fails an upgraded request only when falling back could
+		// repeat it; the certainty says whether the target may have seen it.
+		return "auto+h3 HTTP/3 attempt failed: " + h3Err.Error()
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		// Depending on scheduler timing, net/http may wrap a client timeout as

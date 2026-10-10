@@ -164,11 +164,22 @@ func (s *Server) handleEffect(w http.ResponseWriter, r *http.Request) {
 }
 
 // handlePartial applies the side effect, sends part of a response and then
-// aborts, leaving the client unsure whether the write took effect.
+// aborts, leaving the client unsure whether the write took effect. With
+// headers=0 it aborts before any response header, so the client cannot tell
+// whether the request was processed at all.
 func (s *Server) handlePartial(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(io.Discard, io.LimitReader(r.Body, maxRequestBody))
 	if key := ledgerKey(r); key != "" {
 		s.Ledger.applyEffect(key)
+	}
+	if r.URL.Query().Get("headers") == "0" {
+		if streamer, ok := w.(http3.HTTPStreamer); ok {
+			str := streamer.HTTPStream()
+			str.CancelRead(quic.StreamErrorCode(http3.ErrCodeInternalError))
+			str.CancelWrite(quic.StreamErrorCode(http3.ErrCodeInternalError))
+			return
+		}
+		panic(http.ErrAbortHandler)
 	}
 	w.Header().Set("Content-Length", strconv.Itoa(partialBodySize))
 	w.WriteHeader(http.StatusOK)

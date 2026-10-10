@@ -334,6 +334,7 @@ func (h *HTTP) newUpgradePool(quic stdhttp.RoundTripper, tlsBelow bool, baseline
 	h.altSvc = newAltSvcCache(time.Now)
 	router := &upgradeRoundTripper{
 		tcp:       tcpBase["auto"],
+		http11:    tcpBase[VersionHTTP11],
 		h3:        quic,
 		cache:     h.altSvc,
 		route:     http3RouteRoundTripper{proxy: baseline.Proxy, pac: pacSource, allowed: h.allowedTargetHosts},

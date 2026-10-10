@@ -3,17 +3,21 @@ package http
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/internal/h3fixture"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/http/internal/h3transport"
 )
 
 // upgradeReceipt asserts the routing fields every auto+h3 receipt carries.
@@ -100,6 +104,111 @@ func TestAutoH3CoalescesConcurrentRequestsOntoOneDial(t *testing.T) {
 	}
 }
 
+func TestAutoH3FallsBackToTCPWhenQUICCannotConnect(t *testing.T) {
+	for _, state := range []h3fixture.QUICState{h3fixture.QUICClosed, h3fixture.QUICBlackholed} {
+		fixture := h3fixture.Start(t, h3fixture.Options{Advertise: h3fixture.AdvertiseSamePort})
+		h := http3Session(t, nil)
+		run(t, h, h3Get(t, fixture.URL("/echo"), "auto+h3"))
+		if err := fixture.SetQUICState(state); err != nil {
+			t.Fatal(err)
+		}
+		fellBack := run(t, h, h3Get(t, fixture.URL("/effect?key=f"), "auto+h3"))
+		if !fellBack.Success {
+			t.Fatalf("state %v: %s", state, fellBack.ErrorMessage)
+		}
+		upgradeReceipt(t, "fallback", fellBack, VersionHTTP2, "upgraded", "quic_connect_failed", true)
+		if fellBack.ProtocolEvidence["quic_connection"] != "dial_failed" || fellBack.ProtocolEvidence["attempt_count"] != 2 ||
+			fellBack.ProtocolEvidence["http3_failure_certainty"] != nil {
+			t.Fatalf("state %v: fallback receipt %v", state, fellBack.ProtocolEvidence)
+		}
+		if fixture.Ledger.Effects("f") != 1 {
+			t.Fatalf("state %v: the fallen-back write took effect %d times", state, fixture.Ledger.Effects("f"))
+		}
+		// The origin is now known broken: no QUIC attempt until the TTL ends.
+		next := run(t, h, h3Get(t, fixture.URL("/echo"), "auto+h3"))
+		upgradeReceipt(t, "broken", next, VersionHTTP2, "broken_cache", "none", false)
+	}
+}
+
+func TestAutoH3BrokenOriginRetriesQUICAfterItsTTL(t *testing.T) {
+	fixture := h3fixture.Start(t, h3fixture.Options{Advertise: h3fixture.AdvertiseSamePort})
+	h := http3Session(t, nil)
+	var now atomic.Int64
+	now.Store(time.Now().UnixNano())
+	h.altSvc.now = func() time.Time { return time.Unix(0, now.Load()) }
+	run(t, h, h3Get(t, fixture.URL("/echo"), "auto+h3"))
+	if err := fixture.SetQUICState(h3fixture.QUICClosed); err != nil {
+		t.Fatal(err)
+	}
+	run(t, h, h3Get(t, fixture.URL("/echo"), "auto+h3"))
+	if err := fixture.SetQUICState(h3fixture.QUICServing); err != nil {
+		t.Fatal(err)
+	}
+	upgradeReceipt(t, "within TTL", run(t, h, h3Get(t, fixture.URL("/echo"), "auto+h3")), VersionHTTP2, "broken_cache", "none", false)
+	now.Add(int64(QUICBrokenTTLDefaultMS*time.Millisecond) + 1)
+	upgradeReceipt(t, "after TTL", run(t, h, h3Get(t, fixture.URL("/echo"), "auto+h3")), VersionHTTP3, "upgraded", "none", true)
+}
+
+func TestAutoH3NeverRepeatsARequestTheTargetMayHaveSeen(t *testing.T) {
+	fixture := h3fixture.Start(t, h3fixture.Options{Advertise: h3fixture.AdvertiseSamePort})
+	h := http3Session(t, nil)
+	run(t, h, h3Get(t, fixture.URL("/echo"), "auto+h3"))
+	for _, tc := range []struct{ key, query, certainty string }{
+		// Dropped before any response header: the target may or may not
+		// have processed it.
+		{"p", "headers=0", "possibly_sent"},
+		// Dropped mid-body: the response had started, so the request was
+		// sent and the router had already returned it.
+		{"q", "", ""},
+	} {
+		target := fixture.URL("/partial?key=" + tc.key)
+		if tc.query != "" {
+			target += "&" + tc.query
+		}
+		partial := &protocol.Action{Name: "write", Type: "POST", Target: target, Body: []byte("payload"), HTTPVersion: versionOverride(t, "auto+h3")}
+		failed := run(t, h, partial)
+		certainty, _ := failed.ProtocolEvidence["http3_failure_certainty"].(string)
+		if failed.Success || certainty != tc.certainty || failed.ProtocolEvidence["http_version_fallback"] != "none" || fixture.Ledger.Effects(tc.key) != 1 {
+			t.Fatalf("a drop after the effect (%s): success=%v effects=%d receipt=%v", tc.key, failed.Success, fixture.Ledger.Effects(tc.key), failed.ProtocolEvidence)
+		}
+		if fixture.Ledger.Count(func(a h3fixture.Attempt) bool { return a.Key == tc.key && a.Listener == "tcp" }) != 0 {
+			t.Fatalf("the write (%s) was repeated on TCP", tc.key)
+		}
+	}
+	// Both rejections are absorbed by quic-go's one retry and then fail:
+	// the target refused it unprocessed, but the action's attempts are spent.
+	fixture.RejectNextQUICRequests(2)
+	rejected := run(t, h, h3Get(t, fixture.URL("/effect?key=r"), "auto+h3"))
+	if rejected.Success || rejected.ProtocolEvidence["quic_error_class"] != "request_rejected" ||
+		rejected.ProtocolEvidence["http_version_fallback"] != "none" || fixture.Ledger.Effects("r") != 0 {
+		t.Fatalf("rejected twice: %s %v", rejected.ErrorMessage, rejected.ProtocolEvidence)
+	}
+}
+
+func TestAutoH3VersionFallbackReplaysOnlyReplaySafeRequests(t *testing.T) {
+	fixture := h3fixture.Start(t, h3fixture.Options{Advertise: h3fixture.AdvertiseSamePort})
+	h := http3Session(t, nil)
+	run(t, h, h3Get(t, fixture.URL("/echo"), "auto+h3"))
+	fixture.VersionFallbackNextQUICRequests(1)
+	get := run(t, h, h3Get(t, fixture.URL("/echo"), "auto+h3"))
+	if !get.Success {
+		t.Fatal(get.ErrorMessage)
+	}
+	upgradeReceipt(t, "GET", get, VersionHTTP11, "upgraded", "h3_version_fallback", true)
+	fixture.VersionFallbackNextQUICRequests(1)
+	post := run(t, h, &protocol.Action{Name: "write", Type: "POST", Target: fixture.URL("/effect?key=v"), Body: []byte("x"), HTTPVersion: versionOverride(t, "auto+h3")})
+	if post.Success || post.ProtocolEvidence["http3_failure_certainty"] != "possibly_sent" || fixture.Ledger.Effects("v") != 0 ||
+		!strings.HasPrefix(post.ErrorMessage, "auto+h3 HTTP/3 attempt failed: possibly_sent") {
+		t.Fatalf("POST after H3_VERSION_FALLBACK: success=%v effects=%d receipt=%v", post.Success, fixture.Ledger.Effects("v"), post.ProtocolEvidence)
+	}
+	// Exact 3 never falls back; the receipt names the refusal.
+	fixture.VersionFallbackNextQUICRequests(1)
+	exact := run(t, h, h3Get(t, fixture.URL("/echo"), "3"))
+	if exact.Success || exact.ProtocolEvidence["quic_error_class"] != "version_fallback" || exact.ProtocolEvidence["http_version_fallback"] != nil {
+		t.Fatalf("exact 3 after H3_VERSION_FALLBACK: %s %v", exact.ErrorMessage, exact.ProtocolEvidence)
+	}
+}
+
 func TestAutoH3MisdirectedRequestKeepsTheOriginOnTCP(t *testing.T) {
 	fixture := h3fixture.Start(t, h3fixture.Options{Advertise: h3fixture.AdvertiseSamePort})
 	h := http3Session(t, nil)
@@ -170,6 +279,49 @@ func TestAutoH3IsRefusedWithoutTheFlag(t *testing.T) {
 	result := run(t, h, h3Get(t, fixture.URL("/echo"), "auto+h3"))
 	if result.Success || !errors.Is(HTTP3UpgradeExecutionError(), ErrHTTP3NotEnabled) || len(fixture.Ledger.Attempts()) != 0 {
 		t.Fatalf("flag off: success=%v message=%q attempts=%d", result.Success, result.ErrorMessage, len(fixture.Ledger.Attempts()))
+	}
+}
+
+// failingQUIC fails every request with a fixed HTTP/3 error, consuming the
+// body as quic-go does.
+type failingQUIC struct{ err error }
+
+func (f failingQUIC) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+		_ = req.Body.Close()
+	}
+	return nil, f.err
+}
+
+type countingTCP struct{ calls atomic.Int64 }
+
+func (c *countingTCP) RoundTrip(req *http.Request) (*http.Response, error) {
+	c.calls.Add(1)
+	return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody, Header: http.Header{}, Request: req}, nil
+}
+
+func TestUpgradeRouterNeverReplaysABodyItCannotRebuild(t *testing.T) {
+	origin, _ := url.Parse("https://example.test")
+	for _, failure := range []*h3transport.Error{
+		{Certainty: h3transport.NotSent, Class: h3transport.ClassTimeout, Err: errors.New("handshake timed out")},
+		{Certainty: h3transport.PossiblySent, Class: h3transport.ClassVersionFallback, Err: errors.New("H3_VERSION_FALLBACK")},
+	} {
+		tcp := &countingTCP{}
+		cache := newAltSvcCache(time.Now)
+		cache.observe(origin, []string{`h3=":443"`})
+		router := &upgradeRoundTripper{tcp: tcp, http11: tcp, h3: failingQUIC{err: failure}, cache: cache, brokenTTL: time.Minute}
+		for _, method := range []string{http.MethodPost, http.MethodPut} {
+			req, _ := http.NewRequest(method, origin.String()+"/write", io.NopCloser(strings.NewReader("streamed")))
+			req.GetBody = nil
+			if _, err := router.RoundTrip(req); err == nil {
+				t.Fatalf("%s %s: a body without GetBody was replayed", failure.Certainty, method)
+			}
+			cache.broken = map[string]time.Time{}
+		}
+		if tcp.calls.Load() != 0 {
+			t.Fatalf("%s: TCP ran %d times", failure.Certainty, tcp.calls.Load())
+		}
 	}
 }
 

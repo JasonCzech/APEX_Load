@@ -57,6 +57,9 @@ const (
 	ClassConnectionClosed   ErrorClass = "connection_closed"
 	ClassRequestRejected    ErrorClass = "request_rejected"
 	ClassPossiblySent       ErrorClass = "possibly_sent"
+	// ClassVersionFallback: the server reset the stream with
+	// H3_VERSION_FALLBACK, asking for HTTP/1.1 (RFC 9114 §8.1).
+	ClassVersionFallback ErrorClass = "version_fallback"
 )
 
 // Error is a failed HTTP/3 request with its transmission certainty.
@@ -213,6 +216,12 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	var h3Err *http3.Error
 	switch {
+	case errors.As(err, &h3Err) && h3Err.ErrorCode == http3.ErrCodeVersionFallback:
+		certainty := PossiblySent
+		if !written.Load() {
+			certainty = NotSent
+		}
+		return nil, &Error{Certainty: certainty, Class: ClassVersionFallback, Err: err}
 	case errors.As(err, &h3Err) && h3Err.ErrorCode == http3.ErrCodeRequestRejected:
 		return nil, &Error{Certainty: RejectedUnprocessed, Class: ClassRequestRejected, Err: err}
 	case !written.Load():
