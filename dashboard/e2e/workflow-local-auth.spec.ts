@@ -88,6 +88,27 @@ test('[U02] viewer cannot launch and sign-out does not reopen a protected worksp
   await expect(page.locator('nav.sidebar-nav')).toBeHidden()
 })
 
+test('editor and viewer monitoring, schedules and new-test pages ask only for what the role may read', async ({ page }) => {
+  test.setTimeout(120_000)
+  // A request the controller refuses is console noise and an empty panel;
+  // these pages check the session's access first and say what is not shown.
+  const refused: string[] = []
+  page.on('response', response => {
+    if (response.status() === 403 && new URL(response.url()).pathname.startsWith('/api/')) refused.push(`${response.request().method()} ${new URL(response.url()).pathname}`)
+  })
+  for (const persona of ['dev', 'user']) {
+    await login(page, persona)
+    for (const route of ['/#/monitoring', '/#/monitoring?category=telemetry', '/#/monitoring?category=alerts', '/#/fleet', '/#/schedules', '/#/new-test']) {
+      await page.goto(route)
+      await expect(page.locator('main')).toBeVisible()
+      await page.waitForLoadState('networkidle')
+    }
+    await signOut(page)
+    await expect(page.getByRole('heading', { name: 'Choose a test persona' })).toBeVisible()
+  }
+  expect(refused).toEqual([])
+})
+
 test('[U03] viewer personal settings persist without exposing administrative settings', async ({ page }) => {
   await login(page, 'user')
   const adminSettingsRequests: string[] = []

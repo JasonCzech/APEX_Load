@@ -38,6 +38,10 @@ describe('apiGuideAccess docs visibility classification', () => {
     expect(examples.get('POST /api/v1/ci/runs')).toEqual(['manage_tests'])
     expect(examples.get('GET /api/v1/ci/runs/{id}')).toEqual(['view_tests'])
     expect(examples.get('POST /api/v1/ci/runs/{id}/abort')).toEqual(['manage_tests'])
+    // Controller-wide observer reads need a viewer of the whole deployment.
+    expect(examples.get('GET /api/v1/schedules/health')).toEqual(['view_global_observers'])
+    expect(examples.get('GET /api/v1/monitoring/prometheus/graphs')).toEqual(['view_global_observers'])
+    expect(examples.get('GET /api/v1/results/imports')).toEqual(['view_global_observers'])
   })
 
   it('fails closed for unclassified routes at runtime', () => {

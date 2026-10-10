@@ -27,6 +27,8 @@ func TestRBACMatrixAgreesWithRouteCatalog(t *testing.T) {
 		checkProject bool
 	}{
 		{operation: "view_system", method: http.MethodGet, path: "/api/v1/system/settings"},
+		{operation: "view_global_observers", method: http.MethodGet, path: "/api/v1/schedules/health"},
+		{operation: "view_global_observers", method: http.MethodGet, path: "/api/v1/monitoring/prometheus/graphs"},
 		{operation: "manage_system", method: http.MethodPut, path: "/api/v1/system/settings"},
 		{operation: "view_audit", method: http.MethodGet, path: "/api/v1/auth/audit-events"},
 		{operation: "manage_service_accounts", method: http.MethodGet, path: "/api/v1/auth/service-accounts"},
@@ -56,6 +58,9 @@ func TestRBACMatrixAgreesWithRouteCatalog(t *testing.T) {
 		}
 		if !roleSetEqual(requirement.GlobalRoles, op.GlobalRoles) {
 			t.Errorf("operation %q (%s %s): global roles route=%v != matrix=%v", c.operation, c.method, c.path, requirement.GlobalRoles, op.GlobalRoles)
+		}
+		if requirement.RequireUnrestrictedViewer != op.RequireUnrestrictedViewer {
+			t.Errorf("operation %q (%s %s): unrestricted viewer route=%v != matrix=%v", c.operation, c.method, c.path, requirement.RequireUnrestrictedViewer, op.RequireUnrestrictedViewer)
 		}
 		if c.checkProject && !roleSetEqual(requirement.ProjectRoles, op.ProjectRoles) {
 			t.Errorf("operation %q (%s %s): project roles route=%v != matrix=%v", c.operation, c.method, c.path, requirement.ProjectRoles, op.ProjectRoles)

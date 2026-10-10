@@ -283,3 +283,42 @@ func saveLocalScopeTestProject(t *testing.T, store *storage.SQLiteStore) string 
 	}
 	return projectID
 }
+
+// view_global_observers tells the dashboard whether the controller-wide
+// observer routes (schedule health, platform graphs) will answer: Local Test
+// Login's seeded scope-bound viewer may read settings (view_system) but not
+// those, exactly as the routes enforce; an established global viewer may.
+func TestEffectiveAccessGlobalObserversMatchesUnrestrictedRoutes(t *testing.T) {
+	server, _ := newLocalAuthTestServer(t, false)
+	allowed := func(user *AuthenticatedUser, id string) bool {
+		for _, resource := range buildUserEffectiveAccess(server.store, authAccessMatrix, user, storage.DefaultProjectID, "", "") {
+			for _, operation := range resource.Operations {
+				if operation.ID == id {
+					return operation.Allowed
+				}
+			}
+		}
+		t.Fatalf("operation %q missing from effective access", id)
+		return false
+	}
+	routeAllows := func(user *AuthenticatedUser, path string) bool {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		requirement, found := accessRequirementForRequest(request)
+		if !found {
+			t.Fatalf("route %s not in catalog", path)
+		}
+		return userHasGlobalGrantForRequirement(user, requirement)
+	}
+	localEditor := &AuthenticatedUser{
+		LocalScopeBoundViewer: true,
+		GlobalRoles:           map[string]struct{}{RoleViewer: {}},
+		ProjectRoles:          map[string]map[string]struct{}{storage.DefaultProjectID: {RoleEditor: {}}},
+	}
+	if !allowed(localEditor, "view_system") || allowed(localEditor, "view_global_observers") || routeAllows(localEditor, "/api/v1/schedules/health") {
+		t.Fatal("a scope-bound local viewer reads settings but not the controller-wide observers")
+	}
+	externalViewer := &AuthenticatedUser{GlobalRoles: map[string]struct{}{RoleViewer: {}}}
+	if !allowed(externalViewer, "view_global_observers") || !routeAllows(externalViewer, "/api/v1/schedules/health") {
+		t.Fatal("an established global viewer reads the controller-wide observers")
+	}
+}

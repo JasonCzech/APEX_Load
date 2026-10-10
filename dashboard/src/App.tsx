@@ -3668,6 +3668,9 @@ function AppShell({
                   onSelectTest={openRun}
                   canManageSystem={canManageSystem}
                   canManageProjects={canManageProjects}
+                  // An access lookup that failed leaves the observers to the
+                  // controller to refuse, as before; loading asks for nothing yet.
+                  globalObservers={!effectiveAccessLoaded ? "loading" : effectiveAccessError || isEffectiveOperationAllowed(effectiveAccessResources, "view_global_observers", true) ? "allowed" : "denied"}
                   onScheduleForDate={navigateToScheduleForDate}
                   activeCategoryId={monitorCategoryForView(view)}
                   onCategoryChange={navigateToMonitorCategory}

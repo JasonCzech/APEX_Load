@@ -89,6 +89,9 @@ type AuthAccessOperation struct {
 	ProjectRoles    []string `json:"project_roles,omitempty"`
 	DomainRoles     []string `json:"domain_roles,omitempty"`
 	RepositoryRoles []string `json:"application_repository_roles,omitempty"`
+	// RequireUnrestrictedViewer mirrors the routes' unrestrictedViewerGlobalAccess:
+	// Local Test Login's seeded, scope-bound viewer binding does not grant it.
+	RequireUnrestrictedViewer bool `json:"-"`
 }
 
 type AuthAccessResource struct {
@@ -296,6 +299,10 @@ var authAccessMatrix = []AuthAccessResource{
 			// infrastructure gates already read.
 			{ID: "view_deployment_targets", Label: "View per-domain deployment targets", GlobalRoles: []string{RoleSystemAdmin}},
 			{ID: "manage_deployment_targets", Label: "Choose the cloud a domain's fleet pools deploy into", GlobalRoles: []string{RoleSystemAdmin}},
+			// The controller-wide observer surfaces (schedule health, platform
+			// graphs, fleet capacity, usage) need a viewer of the whole
+			// deployment; the dashboard reads this before asking for them.
+			{ID: "view_global_observers", Label: "View controller-wide schedule health, platform graphs, capacity and usage", GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, RequireUnrestrictedViewer: true},
 		},
 	},
 	{
@@ -2765,7 +2772,7 @@ func buildUserEffectiveAccess(store storage.Store, resources []AuthAccessResourc
 		for _, operation := range resource.Operations {
 			allowed := false
 			grantSource := ""
-			scopedLocalViewer := user.LocalScopeBoundViewer && ((projectID != "" && len(operation.ProjectRoles) > 0) ||
+			scopedLocalViewer := user.LocalScopeBoundViewer && (operation.RequireUnrestrictedViewer || (projectID != "" && len(operation.ProjectRoles) > 0) ||
 				(domainID != "" && len(operation.DomainRoles) > 0) ||
 				(repositoryID != "" && len(operation.RepositoryRoles) > 0))
 			if len(operation.GlobalRoles) > 0 && userHasEffectiveGlobalRole(user, operation.GlobalRoles, scopedLocalViewer) {

@@ -51,6 +51,10 @@ interface Props {
   canManageSystem?: boolean
   canManageProjects?: boolean
   canManageTests?: boolean
+  // globalObservers says whether the session may read the controller-wide
+  // observers (schedule health, platform graphs): 'loading' until effective
+  // access answers. Only those it may read are requested.
+  globalObservers?: 'allowed' | 'denied' | 'loading'
   initialCategoryId?: MonitorCategoryId
   activeCategoryId?: MonitorCategoryId
   onCategoryChange?: (categoryId: MonitorCategoryId) => void
@@ -444,7 +448,7 @@ function restartErrorMessage(error: unknown): string {
 
 const FLEET_ALERT_PAGE = 25
 
-export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], onSelectTest, canManageSystem = false, canManageProjects = false, canManageTests = false, initialCategoryId = 'overview', activeCategoryId: controlledCategoryId, onCategoryChange, onScheduleForDate, fleetEventSignal = 0 }: Props) {
+export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], onSelectTest, canManageSystem = false, canManageProjects = false, canManageTests = false, globalObservers = 'allowed', initialCategoryId = 'overview', activeCategoryId: controlledCategoryId, onCategoryChange, onScheduleForDate, fleetEventSignal = 0 }: Props) {
   const api = useApi()
   const { listClusters } = useClustersApi()
   const { listFleetPools } = useFleetApi()
@@ -468,9 +472,12 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   refreshScopeRef.current = activeProjectId
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [scheduleHealth, setScheduleHealth] = useState<ScenarioScheduleHealth | null>(null)
-  // A role the scheduler's health is not shown to is not asked again: each
-  // refresh would only repeat the refusal.
-  const [scheduleHealthForbidden, setScheduleHealthForbidden] = useState(false)
+  // A role the scheduler's health is not shown to is not asked for it; one
+  // refused anyway (an older controller without the operation) is not asked
+  // again, since each refresh would only repeat the refusal.
+  const [scheduleHealthRefused, setScheduleHealthRefused] = useState(false)
+  const scheduleHealthForbidden = globalObservers === 'denied' || scheduleHealthRefused
+  const scheduleHealthSkipped = scheduleHealthForbidden || globalObservers === 'loading'
   const [runCalendar, setRunCalendar] = useState<RunCalendarResponse | null>(null)
   const [calendarView, setCalendarView] = useState<RunCalendarView>(() => readCalendarPreferences(activeProjectId).view)
   const [calendarAnchor, setCalendarAnchor] = useState<Date>(() => readCalendarPreferences(activeProjectId).anchor)
@@ -893,7 +900,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     }
 
     const [scheduleHealthRes, runCalendarRes] = await Promise.all([
-      scheduleHealthForbidden ? Promise.resolve<ApiCallResult<ScenarioScheduleHealth>>({ ok: false, forbidden: true }) : settleApiCall(() => api.getScheduleHealth()),
+      scheduleHealthSkipped ? Promise.resolve(null) : settleApiCall(() => api.getScheduleHealth()),
       settleApiCall(() => api.getRunCalendar({
         from: calendarRange.from.toISOString(),
         to: calendarRange.to.toISOString(),
@@ -903,13 +910,15 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       })),
     ])
     if (!isCurrent()) return
-    if (scheduleHealthRes.ok) setScheduleHealth(scheduleHealthRes.value)
-    else if (scheduleHealthRes.forbidden) setScheduleHealthForbidden(true)
+    if (scheduleHealthRes?.ok) setScheduleHealth(scheduleHealthRes.value)
+    else if (scheduleHealthRes && !scheduleHealthRes.ok && scheduleHealthRes.forbidden) setScheduleHealthRefused(true)
     if (runCalendarRes.ok) setRunCalendar(runCalendarRes.value)
-    // Health the role cannot see does not make the calendar stale.
-    recordCardFreshness([{ cardId: 'run-calendar', ok: (scheduleHealthRes.ok || Boolean(scheduleHealthRes.forbidden)) && runCalendarRes.ok }])
-    if (scheduleHealthRes.ok || runCalendarRes.ok) setLastRefreshed(new Date())
-  }), [activeCategoryId, activeProjectId, api, calendarRange.from, calendarRange.to, canManageSystem, loadHealth, recordCardFreshness, refreshReadiness, runCoalescedRefresh, scheduleHealthForbidden])
+    // Health the role cannot see (or not yet asked for) does not make the
+    // calendar stale.
+    const healthSettled = !scheduleHealthRes || scheduleHealthRes.ok || Boolean(scheduleHealthRes.forbidden)
+    recordCardFreshness([{ cardId: 'run-calendar', ok: healthSettled && runCalendarRes.ok }])
+    if (scheduleHealthRes?.ok || runCalendarRes.ok) setLastRefreshed(new Date())
+  }), [activeCategoryId, activeProjectId, api, calendarRange.from, calendarRange.to, canManageSystem, loadHealth, recordCardFreshness, refreshReadiness, runCoalescedRefresh, scheduleHealthSkipped])
 
   const refreshAllCategories = useCallback(async (): Promise<boolean> => {
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return false
@@ -1774,7 +1783,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       id: 'elk-connections',
       title: 'Elastic (ELK) Connections',
       icon: <span aria-hidden="true">ELK</span>,
-      content: <ELKConnectionsCard summaryOnly projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} />,
+      content: <ELKConnectionsCard summaryOnly projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} canView={canManageTests || canManageProjects || canManageSystem} />,
     },
     {
       id: 'dynatrace-connections',
@@ -1984,7 +1993,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         {canManageSystem && (activeCategoryId === 'fleet' ? [['pools', 'Configure pools'], ['clusters', 'Connect cluster'], ['cloud', 'Connections & targets'], ['capacity', 'Capacity source'], ['allocations', 'Standing allocations']] : activeCategoryId === 'alerts' ? [['thresholds', 'Alert & stop policies'], ['notifications', 'Notification routes']] : activeCategoryId === 'telemetry' ? [['prometheus', 'APEX platform graphs'], ['grafana', 'Grafana'], ['dashboards', 'Import dashboards']] : activeCategoryId === 'schedules' ? [['scheduling', 'Schedule defaults'], ['allocations', 'Standing allocations']] : [['platform', 'Controller settings'], ['authentication', 'Authentication']]).map(([id, label]) => <a className="related-link" key={id} href={settingsHref(id)}>{label}</a>)}
       </div>
       {activeCategoryId === 'telemetry' && <p className="monitor-context-actions">APM profiles describe outbound events and trace delivery. Test capture reads external data into an opted-in run. {(canManageSystem || canManageProjects) && <><a href={settingsHref('elk-capture')}>Elastic capture settings</a> · <a href={settingsHref('dynatrace-capture')}>Dynatrace capture settings</a> · <a href={settingsHref('prometheus-capture')}>Prometheus test monitoring settings</a></>}</p>}
-      {activeCategoryId === 'telemetry' && <MonitoringEvidenceCard canManage={canManageSystem} />}
+      {activeCategoryId === 'telemetry' && <MonitoringEvidenceCard canManage={canManageSystem} access={globalObservers} />}
       {activeCategoryId === 'alerts' && <section className="monitor-advisories" aria-label="System advisories">
         <h2>System advisories</h2>
         {statusSummaryEntries.length === 0 ? <p>No deployment advisories reported.</p> : statusSummaryEntries.map(entry => <div key={entry.label}>

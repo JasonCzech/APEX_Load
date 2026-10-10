@@ -45,6 +45,12 @@ it('limits private-network editing to administrators and does not expose endpoin
   expect(approval.disabled).toBe(false)
 })
 
+it("does not ask for connections a role cannot list, and says who sees them", async () => {
+  await act(async () => root.render(<ELKConnectionsCard projectId="p" summaryOnly canView={false} />))
+  expect(api.listELKConnections).not.toHaveBeenCalled()
+  expect(container.textContent).toContain("shown to its editors and administrators")
+})
+
 it('opens only an explicitly approved dashboard destination on a verified saved connection', async () => {
   api.listELKConnections.mockResolvedValue({ connections: [{ ...saved, config: { ...saved.config, dashboards_url: 'https://dashboards.example.com/apex', kibana_endpoint: 'https://health.example.com' } }] })
   await act(async () => root.render(<ELKConnectionsCard projectId="p" canManage />))

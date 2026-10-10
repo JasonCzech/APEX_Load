@@ -142,6 +142,20 @@ describe('TimeslotsPanel', () => {
     expect(description).not.toContain(new Date(startAt).toLocaleString(undefined, displayFormat))
   })
 
+  it('asks only administrators for fleet pools, which only they may read', async () => {
+    capacityApiMock.listTimeslots.mockResolvedValue({ timeslots: [], count: 0 })
+    await act(async () => {
+      root.render(<TimeslotsPanel projectId="proj-a" />)
+    })
+    await flush()
+    expect(fleetApiMock.listFleetPools).not.toHaveBeenCalled()
+    await act(async () => {
+      root.render(<TimeslotsPanel projectId="proj-a" canManage />)
+    })
+    await flush()
+    expect(fleetApiMock.listFleetPools).toHaveBeenCalled()
+  })
+
   it('prompts to select a project when none is active and does not fetch', async () => {
     await act(async () => {
       root.render(<TimeslotsPanel canManage />)

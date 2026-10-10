@@ -175,11 +175,26 @@ function classifyLibrary(route: ApiEndpointCatalogRoute) {
   return readWrite(method, ['view_system'], ['manage_system'])
 }
 
+// The controller-wide observer reads need a viewer of the whole deployment
+// (the routes' unrestricted-viewer rule), which view_global_observers states.
+const GLOBAL_OBSERVER_READS = new Set([
+  '/api/v1/schedules/health',
+  '/api/v1/monitoring/prometheus/graphs',
+  '/api/v1/fleet/capacity',
+  '/api/v1/fleet/load-zones',
+  '/api/v1/system/usage',
+  '/api/v1/system/usage/export',
+  '/api/v1/system/usage/snapshots',
+  '/api/v1/system/entitlements/usage',
+  '/api/v1/results/imports',
+])
+
 export function classifyEndpointForDocs(route: ApiEndpointCatalogRoute): DocsVisibilityClassification {
   const segment = pathSegment(route.path)
 
   if (segment === 'auth') return classifyAuth(route)
   if (route.public) return classification([])
+  if (route.method === 'GET' && GLOBAL_OBSERVER_READS.has(route.path)) return classification(['view_global_observers'])
 
   switch (segment) {
     case 'analysis':

@@ -406,9 +406,10 @@ func TestHandleGetAuthAccessMatrixReturnsResourcePolicies(t *testing.T) {
 	if payload.Resources[0].ID != "system_configuration" {
 		t.Fatalf("first resource = %#v, want system configuration", payload.Resources[0])
 	}
-	// view_system, manage_system, view_deployment_targets, manage_deployment_targets.
-	if len(payload.Resources[0].Operations) != 4 {
-		t.Fatalf("system configuration operations = %#v, want 4 operations", payload.Resources[0].Operations)
+	// view_system, manage_system, view_deployment_targets, manage_deployment_targets,
+	// view_global_observers.
+	if len(payload.Resources[0].Operations) != 5 {
+		t.Fatalf("system configuration operations = %#v, want 5 operations", payload.Resources[0].Operations)
 	}
 	if payload.Resources[0].Operations[1].GlobalRoles[0] != RoleSystemAdmin {
 		t.Fatalf("manage system roles = %#v, want system admin", payload.Resources[0].Operations[1].GlobalRoles)

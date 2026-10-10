@@ -14,7 +14,9 @@ import { useElasticInspection } from './useElasticInspection'
 import ElasticInspectionResult from './ElasticInspectionResult'
 import { request } from '../hooks/apiClient'
 
-interface Props { projectId?: string; canManage?: boolean; summaryOnly?: boolean; canApprovePrivateNetworks?: boolean }
+// canView says the session may list the project's connections (its editors
+// and administrators); others are not asked for a list the controller refuses.
+interface Props { projectId?: string; canManage?: boolean; canView?: boolean; summaryOnly?: boolean; canApprovePrivateNetworks?: boolean }
 
 const emptyDraft = (): ELKConnectionInput => ({
   name: '', description: '', enabled: false, endpoint: '', index_pattern: '', timestamp_field: '@timestamp',
@@ -43,7 +45,7 @@ export default function ELKConnectionsCard(props: Props) {
   return <ELKConnectionEditor key={props.projectId || 'none'} {...props} />
 }
 
-function ELKConnectionEditor({ projectId, canManage = false, summaryOnly = false, canApprovePrivateNetworks = false }: Props) {
+function ELKConnectionEditor({ projectId, canManage = false, canView = true, summaryOnly = false, canApprovePrivateNetworks = false }: Props) {
   const api = useELKConnectionsApi()
   const [connections, setConnections] = useState<ELKConnection[]>([])
   const [editing, setEditing] = useState<ELKConnection | null>(null)
@@ -65,7 +67,7 @@ function ELKConnectionEditor({ projectId, canManage = false, summaryOnly = false
   const resetDraft = () => { setEditing(null); setDraft(emptyDraft()); setEditorOpen(false) }
 
   const load = useCallback(async () => {
-    if (!projectId) { setConnections([]); setLoading(false); return }
+    if (!projectId || !canView) { setConnections([]); setLoading(false); return }
     setLoading(true)
     try {
       const result = await api.listELKConnections(projectId)
@@ -75,7 +77,7 @@ function ELKConnectionEditor({ projectId, canManage = false, summaryOnly = false
     }
     catch (err) { if (mounted.current) setError(getErrorMessage(err, 'Failed to load ELK connections')) }
     finally { if (mounted.current) setLoading(false) }
-  }, [api, projectId])
+  }, [api, canView, projectId])
   useEffect(() => { void load() }, [load])
   useEffect(() => {
     const controller = new AbortController()
@@ -113,6 +115,7 @@ function ELKConnectionEditor({ projectId, canManage = false, summaryOnly = false
   useNavigationGuard(guard, dirty)
 
   if (!projectId) return <div><p>Select a project to configure Elasticsearch capture.</p></div>
+  if (!canView) return <div className="capture-connections" aria-label="ELK connections"><p>The project's Elastic connections are shown to its editors and administrators.</p></div>
   return <div className="capture-connections" aria-label="ELK connections">
     <p>Connect Elasticsearch or OpenSearch over HTTPS, directly from the controller or through an assigned collector. Tests select reusable sources for logs, metrics, traces, errors, and component health.</p>
     {notice && <p role="status">{notice}</p>}

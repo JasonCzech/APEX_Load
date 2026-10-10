@@ -174,8 +174,13 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
   }, [load])
 
   // Fleet pools power the optional pool-scoping selector (reserve within one pool's
-  // capacity envelope instead of the global pool).
+  // capacity envelope instead of the global pool). Pools are an administrator's
+  // view, as reserving is, so others are not asked for a list they are refused.
   useEffect(() => {
+    if (!canManage) {
+      setPools([])
+      return undefined
+    }
     let cancelled = false
     listAllFleetPools(fleetApi.listFleetPools).then(nextPools => {
       if (!cancelled) setPools(nextPools)
@@ -183,7 +188,7 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
       if (!cancelled) setPools([])
     })
     return () => { cancelled = true }
-  }, [fleetApi])
+  }, [canManage, fleetApi])
 
   const poolName = useCallback((id?: string) => {
     if (!id) return ''
@@ -412,7 +417,10 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
                   {slot.timezone ? <span>{slot.timezone}</span> : null}
                   {slot.scenario_id ? <span>scenario: {slot.scenario_id}</span> : null}
                   {slot.requested_capacity?.generators ? <span>{slot.requested_capacity.generators} gen</span> : null}
-                  {slot.requested_capacity?.pool_id ? <a className="pp-pill pp-pill-muted" href={settingsHref('pools', window.location.hash, slot.requested_capacity.pool_id)}>pool: {poolName(slot.requested_capacity.pool_id)}</a> : null}
+                  {/* Pool names and settings are an administrator's; others see that the slot is pool-scoped. */}
+                  {slot.requested_capacity?.pool_id ? canManage
+                    ? <a className="pp-pill pp-pill-muted" href={settingsHref('pools', window.location.hash, slot.requested_capacity.pool_id)}>pool: {poolName(slot.requested_capacity.pool_id)}</a>
+                    : <span className="pp-pill pp-pill-muted" title={`Fleet pool ${slot.requested_capacity.pool_id}`}>in a fleet pool</span> : null}
                   {slot.conflict_summary ? <span>{slot.conflict_summary}</span> : null}
                 </div>
               </div>

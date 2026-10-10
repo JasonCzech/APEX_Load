@@ -611,6 +611,13 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     setLaunchApplication(current => !projectChanged && launchPlacementPinnedRef.current && current && (!current.project_id || current.project_id === activeProjectID)
       ? current : workspaceMatches ? workspaceApplication : null)
   }, [workspaceApplication, activeProjectID])
+  const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
+  const [effectiveAccessLoaded, setEffectiveAccessLoaded] = useState(false)
+  const [effectiveAccessError, setEffectiveAccessError] = useState('')
+  // A role that cannot create runs or schedules is not asked for estimates,
+  // readiness, schedule previews or capture connections the controller
+  // refuses; the page says why.
+  const canManageTests = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_tests'), [effectiveAuthAccessResources])
   useEffect(() => {
     let cancelled = false
     setApplications([]); setAssignmentScripts([])
@@ -635,6 +642,13 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       setELKConnectionId('')
       return () => { cancelled = true }
     }
+    // The list is the project's editors' (as a run is); a viewer's page says
+    // so instead of asking. Until access is known, nothing is asked yet.
+    if (!effectiveAccessLoaded) { setELKLoading(true); return () => { cancelled = true } }
+    if (!effectiveAccessError && !canManageTests) {
+      setELKConnections([]); setELKLoading(false); setELKError(false); setELKForbidden(true)
+      return () => { cancelled = true }
+    }
     setELKLoading(true); setELKError(false); setELKForbidden(false)
     void listELKConnections(activeProjectID).then(response => {
       if (cancelled) return
@@ -645,7 +659,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       if (!cancelled) { setELKConnections([]); if (cause instanceof ApiError && cause.status === 403) setELKForbidden(true); else setELKError(true) }
     }).finally(() => { if (!cancelled) setELKLoading(false) })
     return () => { cancelled = true }
-  }, [api, activeProjectID, captureRetry])
+  }, [api, activeProjectID, canManageTests, captureRetry, effectiveAccessError, effectiveAccessLoaded])
   useEffect(() => {
     let cancelled = false
     const applicationId = activeApplication?.id
@@ -711,9 +725,6 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const [scheduledPreflightLoading, setScheduledPreflightLoading] = useState(false)
   const [scheduledStartLocal, setScheduledStartLocal] = useState(initialPrefillStartLocal || '')
   const scheduledStartBaselineRef = useRef(initialPrefillStartLocal || '')
-  const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
-  const [effectiveAccessLoaded, setEffectiveAccessLoaded] = useState(false)
-  const [effectiveAccessError, setEffectiveAccessError] = useState('')
   const [effectiveAccessRetryNonce, setEffectiveAccessRetryNonce] = useState(0)
   const [generatorInventory, setGeneratorInventory] = useState<SystemInventoryGenerator[]>([])
   const [generatorInventoryLoading, setGeneratorInventoryLoading] = useState(false)
@@ -1069,9 +1080,6 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     : !scheduleDraft.cron_expr.trim() ? 'Enter a schedule frequency or cron expression.'
       : currentSchedulePreview?.error || ''
 
-  // A role that cannot create runs or schedules is not asked for estimates,
-  // readiness or schedule previews the controller refuses; the page says why.
-  const canManageTests = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_tests'), [effectiveAuthAccessResources])
   // Live "next runs" preview: re-fetch (debounced) from the backend so the
   // shown fire times use the exact production cron evaluator (tz/DST/windows/
   // pause/Quartz specifiers) and cannot diverge from what the scheduler will do.

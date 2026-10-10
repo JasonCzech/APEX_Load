@@ -902,6 +902,32 @@ describe('MonitoringPage', () => {
     expect(alertCard?.textContent).not.toContain('No fleet placement alerts detected')
   })
 
+  it('asks for schedule health only once access allows the controller-wide observers', async () => {
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" globalObservers="denied" />)
+    })
+    await flushAsyncWork()
+    expect(apiMock.getScheduleHealth).not.toHaveBeenCalled()
+    expect(apiMock.getHealth).toHaveBeenCalled()
+
+    // While access is loading nothing is asked yet either; once allowed it is.
+    await act(async () => root.unmount())
+    root = createRoot(container)
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" globalObservers="loading" />)
+    })
+    await flushAsyncWork()
+    expect(apiMock.getScheduleHealth).not.toHaveBeenCalled()
+    await act(async () => root.unmount())
+    root = createRoot(container)
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" globalObservers="allowed" />)
+    })
+    await flushAsyncWork()
+    await flushAsyncWork()
+    expect(apiMock.getScheduleHealth).toHaveBeenCalledTimes(1)
+  })
+
   it('retries every initial category when a hidden mount becomes visible', async () => {
     let visibility: DocumentVisibilityState = 'hidden'
     const visibilitySpy = vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility)

@@ -2,7 +2,7 @@
 
 import { act, type ReactNode } from 'react'
 import { createRoot, Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 
 import NewTestPage from './NewTestPage'
 import { CLEARABLE_RUNTIME_SECTIONS, type ClearableRuntimeSection } from './newTestRunModel'
@@ -4312,6 +4312,9 @@ describe('NewTestPage', () => {
   })
 
   it('disables run and schedule mutations when effective RBAC denies test management', async () => {
+    const listELKConnections = vi.fn().mockResolvedValue({ connections: [] })
+    Object.assign(apiMock, { listELKConnections })
+    onTestFinished(() => { delete (apiMock as Record<string, unknown>).listELKConnections })
     apiMock.getAuthEffectiveAccess.mockResolvedValue({
       enabled: true,
       authenticated: true,
@@ -4350,6 +4353,11 @@ describe('NewTestPage', () => {
     expect(scheduleButton?.disabled).toBe(true)
     expect(container.textContent).toContain('Current session can view scenarios but cannot create runs or schedules for this project.')
     expect(container.querySelector('[role="alert"]')?.classList.contains('page-error-banner')).toBe(true)
+    // Nothing the controller would refuse this role is asked for.
+    expect(apiMock.estimateTest).not.toHaveBeenCalled()
+    expect(apiMock.preflightTest).not.toHaveBeenCalled()
+    expect(listELKConnections).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Not checked: your role cannot start runs in this project')
 
     const schedulesButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Schedules')
     expect(schedulesButton).toBeTruthy()

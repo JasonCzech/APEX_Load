@@ -22,3 +22,14 @@ it('queries the selected time range and distinguishes no samples from unavailabl
   expect(host.textContent).toContain('Previously loaded samples may be stale')
  }finally{act(()=>root.unmount());host.remove();vi.resetAllMocks()}
 })
+it('does not ask for deployment-wide graphs a role cannot read', async () => {
+ const host=document.createElement('div');document.body.appendChild(host);const root=createRoot(host)
+ try {
+  await act(async()=>root.render(<MonitoringEvidenceCard canManage={false} access="denied"/>))
+  expect(request).not.toHaveBeenCalled()
+  expect(host.textContent).toContain('shown to workspace-wide viewers and administrators')
+  await act(async()=>root.render(<MonitoringEvidenceCard canManage={false} access="loading"/>))
+  expect(request).not.toHaveBeenCalled()
+  expect(host.textContent).toContain('Checking datasource')
+ }finally{act(()=>root.unmount());host.remove();vi.resetAllMocks()}
+})
